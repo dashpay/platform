@@ -4200,10 +4200,14 @@ mod tests {
 
     /// The fee estimate reads the stored keys an update disables; a key id the identity does
     /// not have must be refused with the consensus error before it, not fail as a Drive
-    /// internal error. Checked at protocol version 14 (mainnet) and the latest version.
+    /// internal error, while a key it has passes the check and gets its fee estimated.
+    /// Checked at protocol version 14 and the latest version.
     #[tokio::test]
     async fn should_refuse_identity_update_disabling_a_missing_key_with_a_consensus_error() {
-        for protocol_version in [14, PlatformVersion::latest().protocol_version] {
+        for (protocol_version, disable_key_id) in [14, PlatformVersion::latest().protocol_version]
+            .into_iter()
+            .flat_map(|version| [(version, 42), (version, 1)])
+        {
             let platform_version =
                 PlatformVersion::get(protocol_version).expect("expected a platform version");
 
@@ -4231,7 +4235,7 @@ mod tests {
                 revision: 1,
                 nonce: 1,
                 add_public_keys: vec![],
-                disable_public_keys: vec![42],
+                disable_public_keys: vec![disable_key_id],
                 user_fee_increase: 0,
                 signature_public_key_id: key.id(),
                 signature: Default::default(),
@@ -4270,13 +4274,29 @@ mod tests {
                 )
                 .expect("expected a consensus error, not an internal error");
 
-            assert_matches!(
-                validation_result.errors.as_slice(),
-                [ConsensusError::StateError(
-                    StateError::MissingIdentityPublicKeyIdsError(error)
-                )] if error.ids() == &vec![42],
-                "protocol version {protocol_version}"
-            );
+            if disable_key_id == 42 {
+                assert_matches!(
+                    validation_result.errors.as_slice(),
+                    [ConsensusError::StateError(
+                        StateError::MissingIdentityPublicKeyIdsError(error)
+                    )] if error.ids() == &vec![42],
+                    "protocol version {protocol_version}"
+                );
+            } else {
+                assert!(
+                    validation_result.errors.is_empty(),
+                    "protocol version {protocol_version}: {:?}",
+                    validation_result.errors
+                );
+                assert!(
+                    validation_result
+                        .data
+                        .as_ref()
+                        .and_then(|result| result.fee_result.as_ref())
+                        .is_some(),
+                    "protocol version {protocol_version}: expected a fee estimate"
+                );
+            }
         }
     }
 
