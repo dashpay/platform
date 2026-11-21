@@ -10,7 +10,7 @@ Capabilities tracked: **32**
 | --- | --- | ---: | ---: | ---: | ---: |
 | Swift | SDK | 19 | 11 | 1 | 1 |
 | Swift | Example app | 5 | 14 | 4 | 9 |
-| Kotlin | SDK | 14 | 14 | 3 | 1 |
+| Kotlin | SDK | 15 | 14 | 2 | 1 |
 | Kotlin | Example app | 6 | 13 | 3 | 10 |
 
 ## Restart coverage
@@ -55,7 +55,7 @@ Capabilities tracked: **32**
 | `errors.signing_key_unavailable_discriminator` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
 | `shielded.core_wallet_drain` | supported / unsupported / tested | unsupported / unsupported / not_applicable |
 | `network.adaptive_quorum_source` | supported / supported / tested | supported / supported / tested |
-| `shielded.shield_from_identity_to_recipient` | supported / unsupported / not_applicable | unsupported / unsupported / not_applicable |
+| `shielded.shield_from_identity_to_recipient` | supported / unsupported / not_applicable | supported / unsupported / not_applicable |
 
 Source: [`docs/sdk/sdk-parity-manifest.json`](../../docs/sdk/sdk-parity-manifest.json).
 Detailed legacy view mapping remains in [`PARITY.md`](PARITY.md), but its manual totals are not authoritative.
