@@ -471,7 +471,8 @@ unsafe fn resume_identity_top_up_to_recorded_recipient_signer_inner(
 ///
 /// The identity is looked up on Platform first, because an assignment is
 /// permanent: an identity Platform does not know is `ErrorIdentityNotFound`
-/// (7) and nothing is assigned; a failed lookup is the SDK's error.
+/// (7) and nothing is assigned; a failed lookup is
+/// `ErrorIdentityLookupFailed` (80).
 ///
 /// Errors: `ErrorAssetLockNotTracked` (23) for an unknown outpoint,
 /// `ErrorAssetLockAlreadyConsumed` (24) for a consumed lock and for a

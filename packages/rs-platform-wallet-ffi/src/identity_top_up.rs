@@ -403,8 +403,9 @@ pub unsafe extern "C" fn platform_wallet_top_up_identity_with_funding_signer(
 /// (the largest top-up minimum across the supported protocol versions, 50_500
 /// duffs today), `ErrorIdentityNotFound` (7) for an identity
 /// Platform does not know, and a persistence error when the host's persister
-/// does not declare `ASSET_LOCK_IDENTITY_RECIPIENTS`. A failed lookup is
-/// reported as the SDK error for now. In every one of these
+/// does not declare `ASSET_LOCK_IDENTITY_RECIPIENTS`, and
+/// `ErrorIdentityLookupFailed` (80) for a lookup that fails in transport or
+/// proof. In every one of these
 /// `out_asset_lock_outpoint` is all zero: nothing was built, nothing was
 /// paid, and a new call is safe.
 ///
