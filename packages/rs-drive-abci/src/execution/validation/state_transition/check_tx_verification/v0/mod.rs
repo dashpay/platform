@@ -43,6 +43,8 @@ use crate::execution::validation::state_transition::ValidationMode;
 use crate::execution::validation::state_transition::processor::traits::address_balances_and_nonces::StateTransitionAddressBalancesAndNoncesValidation;
 use crate::execution::validation::state_transition::batch::BatchTransitionCheckTxStateValidatingTransformer;
 use crate::execution::validation::state_transition::identity_update::added_key_proofs_of_possession::v0::IdentityUpdateAddedKeyProofsOfPossessionValidationV0;
+use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_exist_in_state::validate_identity_public_key_ids_exist_in_state;
+use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use crate::execution::validation::state_transition::state_transitions::data_contract_common::check_tx_schema_patterns::validate_contract_schema_patterns_for_check_tx;
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
@@ -296,6 +298,29 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
 
                 if !result.is_valid() {
                     return Ok(ConsensusValidationResult::new_with_errors(result.errors));
+                }
+
+                // The fee estimate below reads the stored keys an update disables, and Drive
+                // fails with an internal error on a key id the identity does not have. A block
+                // refuses such an update in state validation, which check tx does not run, so
+                // the same check runs here first and the client gets
+                // `MissingIdentityPublicKeyIdsError` instead. Identity keys are never removed,
+                // so a recheck cannot find a key missing that this check found. Admission is
+                // not consensus, so every protocol version gets this.
+                let key_ids_to_disable = identity_update.public_key_ids_to_disable();
+                if !key_ids_to_disable.is_empty() {
+                    let result = validate_identity_public_key_ids_exist_in_state(
+                        identity_update.identity_id(),
+                        key_ids_to_disable,
+                        platform.drive,
+                        &mut state_transition_execution_context,
+                        None,
+                        platform_version,
+                    )?;
+
+                    if !result.is_valid() {
+                        return Ok(ConsensusValidationResult::new_with_errors(result.errors));
+                    }
                 }
             }
 
