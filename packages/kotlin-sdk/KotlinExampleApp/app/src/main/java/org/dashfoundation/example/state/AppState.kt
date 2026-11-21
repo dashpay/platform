@@ -253,6 +253,9 @@ class AppState(
                     _sdk.value = newSdk
                     _currentNetwork.value = network
                     recordAppliedDevnet(devnet)
+                    // Never carry the previous network's protocol version;
+                    // afterPublish learns the new one.
+                    _platformProtocolVersion.value = null
                 }
             }
             _errorMessage.value = null
@@ -287,11 +290,9 @@ class AppState(
     private suspend fun afterPublish(newSdk: Sdk) {
         refreshQuorumSource()
         // Eagerly learn the network's protocol version (iOS
-        // `refreshProtocolVersion(for:)` parity): reset first so a
-        // network switch never carries the previous network's
-        // version, then refresh off the UI path. Non-fatal — the
-        // SDK still ratchets from response metadata if this fails.
-        _platformProtocolVersion.value = null
+        // `refreshProtocolVersion(for:)` parity; reset on publish), off
+        // the UI path. Non-fatal — the SDK still ratchets from response
+        // metadata if this fails.
         scope.launch {
             try {
                 val version = newSdk.system.refreshProtocolVersion()

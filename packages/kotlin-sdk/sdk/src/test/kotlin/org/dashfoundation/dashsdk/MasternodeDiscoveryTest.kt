@@ -9,6 +9,7 @@ import java.io.ByteArrayInputStream
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.URI
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
 /**
@@ -46,10 +47,14 @@ class MasternodeDiscoveryTest {
 
     @Test
     fun shouldGiveUpOnAServerThatTricklesItsHeadersPastTheDeadline() {
-        ServerSocket(0, 1, InetAddress.getLoopbackAddress()).use { server ->
+        // Bind and connect to the same IPv4 loopback address: a server on
+        // ::1 would refuse the client and pass the test without a deadline.
+        ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { server ->
+            val accepted = AtomicBoolean(false)
             val trickler = thread(isDaemon = true) {
                 try {
                     server.accept().use { socket ->
+                        accepted.set(true)
                         val out = socket.getOutputStream()
                         out.write("HTTP/1.1 200 OK\r\n".toByteArray())
                         // One header byte every 200 ms: each read finishes
@@ -69,6 +74,7 @@ class MasternodeDiscoveryTest {
             assertNull(Sdk.fetchBounded(url, deadlineMs = 1_000))
             val elapsedMs = (System.nanoTime() - started) / 1_000_000
             assertTrue("took $elapsedMs ms", elapsedMs < 4_000)
+            assertTrue("the client never connected", accepted.get())
             trickler.interrupt()
         }
     }
