@@ -1691,4 +1691,119 @@ mod tests {
             Some(1)
         );
     }
+
+    /// A masternode identity key is an `ECDSA_HASH160` key: a full secp256k1
+    /// key of the role's purpose is not selected, even one the signer holds.
+    #[test]
+    fn should_not_select_a_full_public_key_the_signer_can_sign_with() {
+        let (signer, hash, _) = fixture();
+        let adapter = DerivedKeyIdentitySigner {
+            signer: &signer,
+            path: DerivationPath::from_str("m/9'/1'/3'/2'/0").unwrap(),
+            expected_key_hash160: hash,
+        };
+        let full_key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::OWNER,
+            security_level: SecurityLevel::CRITICAL,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: true,
+            data: BinaryData::new(signer.secret.public_key().to_compressed().to_vec()),
+            disabled_at: None,
+        }
+        .into();
+        assert!(adapter.can_sign_with(&full_key));
+
+        let identity = identity_with(Identifier::from(WITHDRAWN_FROM), vec![full_key]);
+
+        let selected = select_withdrawal_key(&identity, MasternodeWithdrawalKey::Owner, &adapter);
+
+        assert!(
+            matches!(selected, Err(PlatformWalletError::InvalidIdentityData(_))),
+            "{selected:?}"
+        );
+    }
+
+    /// Removes the wallet from its manager while it supplies the master key.
+    struct RemovingMasterKey {
+        manager: Arc<tokio::sync::RwLock<WalletManager<PlatformWalletInfo>>>,
+    }
+
+    #[async_trait]
+    impl MasterKeyProvider for RemovingMasterKey {
+        type Error = KeychainLocked;
+
+        async fn master_key(
+            &self,
+            wallet_id: &WalletId,
+        ) -> Result<ExtendedPrivKey, KeychainLocked> {
+            let _ = self.manager.write().await.remove_wallet(wallet_id);
+            Ok(test_master())
+        }
+    }
+
+    /// A wallet removed while the provider ran is reported missing; no key is
+    /// derived for it.
+    #[test]
+    fn should_report_a_wallet_removed_while_the_provider_ran_as_missing() {
+        let runtime = Runtime::new().unwrap();
+        let (manager, wallet_id) = runtime.block_on(test_platform_wallet_manager());
+        let wallet = runtime.block_on(manager.get_wallet(&wallet_id)).unwrap();
+        let (path, _, hash) = receive_key(0);
+        let provider = RemovingMasterKey {
+            manager: Arc::clone(wallet.wallet_manager()),
+        };
+
+        let result = runtime.block_on(wallet.private_key_for_hash160(&path, &hash, &provider));
+
+        assert!(
+            matches!(
+                result,
+                Err(CoreAddressKeyError::Wallet(
+                    PlatformWalletError::WalletNotFound(_)
+                ))
+            ),
+            "{:?}",
+            result.err()
+        );
+    }
+
+    fn assert_send<T: Send>(_: &T) {}
+
+    /// Hosts run a withdrawal on a multi-threaded runtime (`tokio::spawn`), so
+    /// its future is `Send` for either key source.
+    #[test]
+    fn should_withdraw_through_a_send_future_with_either_key_source() {
+        let runtime = Runtime::new().unwrap();
+        let (manager, wallet_id) = runtime.block_on(test_platform_wallet_manager());
+        let wallet = runtime.block_on(manager.get_wallet(&wallet_id)).unwrap();
+        let (_, script, _) = receive_key(0);
+        let keys = wallet
+            .masternode_withdrawal_keys(None, Some(&script), None, None)
+            .unwrap();
+        let provider = TestMasterKey::new(None);
+        let (signer, hash, _) = fixture();
+        let adapter = DerivedKeyIdentitySigner {
+            signer: &signer,
+            path: DerivationPath::from_str("m/9'/1'/3'/2'/0").unwrap(),
+            expected_key_hash160: hash,
+        };
+
+        let from_wallet = manager.masternode_withdraw_with(
+            transfer_request(),
+            MasternodeKeySource::Wallet {
+                wallet: &wallet,
+                keys: &keys,
+                master_key: &provider,
+            },
+        );
+        let from_host = manager.masternode_withdraw_with(
+            transfer_request(),
+            MasternodeKeySource::<Infallible>::Host { signer: &adapter },
+        );
+
+        assert_send(&from_wallet);
+        assert_send(&from_host);
+    }
 }
