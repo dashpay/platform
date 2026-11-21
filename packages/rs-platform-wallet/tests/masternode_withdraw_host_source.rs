@@ -198,7 +198,7 @@ async fn should_pay_a_host_payout_key_withdrawal_to_the_enabled_transfer_key_add
 }
 
 /// A host key that is only the identity's disabled payout key is refused
-/// before anything is signed, as a key mismatch for the TRANSFER purpose.
+/// before anything is signed, as a payout key mismatch.
 #[tokio::test]
 async fn should_refuse_a_host_key_the_identity_has_disabled_before_signing() {
     let manager = manager_with_owner_identity().await;
@@ -210,13 +210,10 @@ async fn should_refuse_a_host_key_the_identity_has_disabled_before_signing() {
 
     match result {
         Err(MasternodeWithdrawalError::Wallet(
-            PlatformWalletError::MasternodeWithdrawalKeyMismatch {
-                identity_id,
-                purpose,
-            },
+            PlatformWalletError::MasternodeWithdrawalKeyMismatch { identity_id, key },
         )) => {
             assert_eq!(identity_id, owner_identity_id());
-            assert_eq!(purpose, Purpose::TRANSFER);
+            assert_eq!(key, MasternodeWithdrawalKey::Transfer);
         }
         other => panic!("expected MasternodeWithdrawalKeyMismatch, got {other:?}"),
     }

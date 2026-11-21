@@ -1309,10 +1309,13 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::InvalidParameter(..) => {
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
             }
-            // A masternode withdrawal key that is not the identity's current
-            // owner or payout key: caller input, refused before anything was
-            // sent, on the code the boundary returned for it before.
-            PlatformWalletError::MasternodeWithdrawalKeyMismatch { .. } => {
+            // A masternode withdrawal key that is not, or names no, current
+            // owner or payout key of the identity: caller input, refused
+            // before anything was sent. The tracked withdrawal returned this
+            // code for a wrong key before; the wallet withdrawal returned
+            // ErrorUnknown.
+            PlatformWalletError::MasternodeWithdrawalKeyMismatch { .. }
+            | PlatformWalletError::MasternodeWithdrawalKeyAbsent { .. } => {
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
             }
             // A second producer of code 31 (the arm above is the first),
@@ -1675,11 +1678,11 @@ mod tests {
     use dpp::consensus::basic::{BasicError, UnsupportedVersionError};
     use dpp::consensus::state::address_funds::AddressInvalidNonceError;
     use dpp::consensus::state::token::TokenOncePerIdentityDistributionAlreadyClaimedError;
-    use dpp::identity::Purpose;
     use dpp::prelude::Identifier;
     use dpp::ProtocolError;
     use key_wallet::account::StandardAccountType;
     use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
+    use platform_wallet::MasternodeWithdrawalKey;
     use std::time::Duration;
 
     #[test]
@@ -1823,20 +1826,22 @@ mod tests {
         );
     }
 
-    /// A masternode withdrawal key that is not the identity's current key is
-    /// caller input: hosts keep the parameter code they had for it.
+    /// A masternode withdrawal key that is not, or names no, current key of
+    /// the identity is caller input: the parameter code.
     #[test]
     fn should_map_a_masternode_withdrawal_key_mismatch_to_the_parameter_code() {
-        let result: PlatformWalletFFIResult =
-            PlatformWalletError::MasternodeWithdrawalKeyMismatch {
-                identity_id: Identifier::from([1u8; 32]),
-                purpose: Purpose::TRANSFER,
-            }
-            .into();
-        assert_eq!(
-            result.code,
-            PlatformWalletFFIResultCode::ErrorInvalidParameter
-        );
+        let identity_id = Identifier::from([1u8; 32]);
+        let key = MasternodeWithdrawalKey::Transfer;
+        for error in [
+            PlatformWalletError::MasternodeWithdrawalKeyMismatch { identity_id, key },
+            PlatformWalletError::MasternodeWithdrawalKeyAbsent { identity_id, key },
+        ] {
+            let result: PlatformWalletFFIResult = error.into();
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorInvalidParameter
+            );
+        }
     }
 
     #[test]

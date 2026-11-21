@@ -59,6 +59,7 @@ mod transfer_to_addresses;
 mod update;
 pub(crate) use key_selection::usable_authentication_key;
 mod withdrawal;
+pub(crate) use signing_key::AvailableSigningKey;
 pub(crate) use withdrawal::SignerRef;
 
 // DashPay-contract operations, namespaced behind `IdentityWallet::dashpay()`.

@@ -21,7 +21,7 @@ use crate::manager::PlatformWalletManager;
 /// Whether `key` is an enabled `ECDSA_HASH160` key for `purpose`. Drive
 /// disables a masternode identity's replaced keys instead of removing them,
 /// so a disabled key is stale.
-pub(crate) fn is_enabled_hash160_key(key: &IdentityPublicKey, purpose: Purpose) -> bool {
+fn is_enabled_hash160_key(key: &IdentityPublicKey, purpose: Purpose) -> bool {
     key.purpose() == purpose && key.key_type() == KeyType::ECDSA_HASH160 && !key.is_disabled()
 }
 
