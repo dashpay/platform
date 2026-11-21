@@ -1560,6 +1560,13 @@ The 4.2 release line was renamed 5.0. This release follows 4.2.0-beta.7.
 
 ### Changed
 
+- **platform-wallet (breaking):** Core → Shielded funding
+  (`PlatformWallet::shielded_fund_from_asset_lock`) proves its Orchard bundle
+  while the asset lock's InstantSend lock is awaited, on Tokio's blocking pool,
+  and reuses that proof for the ChainLock fallback and retries. The prover is
+  moved into that task, so the method now requires
+  `P: OrchardProver + Copy + Send + 'static`: pass `&CachedOrchardProver`
+  instead of a borrowed, non-`'static` prover.
 - **dashmate:** use the floating Tenderdash `1.8` image tag and migrate existing configurations.
 
 ## [4.2.0-beta.3](https://github.com/dashpay/platform/compare/v4.2.0-beta.2...v4.2.0-beta.3) (2026-09-20)

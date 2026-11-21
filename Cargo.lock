@@ -8003,6 +8003,7 @@ dependencies = [
  "futures-io",
  "futures-sink",
  "libc",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]
