@@ -308,5 +308,5 @@ private fun phaseLabel(phase: Phase): String = when (phase) {
     is Phase.Idle -> "Queued"
     is Phase.InFlight -> "In flight"
     is Phase.Completed -> "Funded"
-    is Phase.Failed -> "Failed"
+    is Phase.Failed -> phase.failure.title
 }

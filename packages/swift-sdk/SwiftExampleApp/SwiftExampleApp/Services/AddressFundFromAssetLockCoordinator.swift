@@ -99,6 +99,7 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
         platformAccountIndex: UInt32,
         recipientHash: Data,
         recipientType: UInt8,
+        resuming: AssetLockBuiltOutPoint? = nil,
         body: @escaping () async throws -> UInt64
     ) -> AddressFundFromAssetLockController {
         let key = SlotKey(
@@ -113,9 +114,15 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
                 // the existing controller lets the caller bind to its
                 // progress / terminal state without disrupting it.
                 return existing
+            case .failed where !existing.phase.permitsSubmit(resuming: resuming):
+                // The failure's class forbids this operation (the payment
+                // may have left, or it holds a lock this call does not
+                // resume): keep the failed state instead of paying again.
+                return existing
             case .idle, .failed:
-                // Legitimate restart paths.
-                existing.submit(body: body)
+                // Legitimate restart paths: a retry the failure's class
+                // allows, or the resume of the lock it holds.
+                existing.submit(resuming: resuming, body: body)
                 // No retention sweep here — the slot is sticky on
                 // .failed (we want the user to see + dismiss the
                 // error) and a duplicate sweep on retry would just
@@ -138,7 +145,7 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
         phaseObservers[key] = controller.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
-        controller.submit(body: body)
+        controller.submit(resuming: resuming, body: body)
         scheduleRetentionSweep(key: key, controller: controller)
         return controller
     }
@@ -146,19 +153,33 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
     /// Manually drop a controller from the map. Used by the UI's
     /// "Dismiss" action on a `.failed` row (failures stay
     /// indefinitely until acknowledged so the user can read the
-    /// error).
+    /// error) and its "Done" after a completion.
+    ///
+    /// A failed slot is dropped only when its failure releases it
+    /// (`PaymentFailure.holdsSlot`, any `.notSent`): `startFunding` gates a
+    /// restart only on a slot it still holds, so dropping a failure that may
+    /// have left, holds a lock, or has no class would let a fresh lock be
+    /// funded for the same recipient. Such a slot stays until its lock is
+    /// resumed or the app restarts. Returns whether the controller was
+    /// dropped (← `RegistrationCoordinator.dismiss`).
+    @discardableResult
     func dismiss(
         walletId: Data,
         platformAccountIndex: UInt32,
         recipientHash: Data
-    ) {
+    ) -> Bool {
         let key = SlotKey(
             walletId: walletId,
             platformAccountIndex: platformAccountIndex,
             recipientHash: recipientHash
         )
+        if let controller = controllers[key], case .failed(let failure) = controller.phase,
+           failure.holdsSlot {
+            return false
+        }
         controllers.removeValue(forKey: key)
         phaseObservers.removeValue(forKey: key)
+        return true
     }
 
     // MARK: - Retention sweep

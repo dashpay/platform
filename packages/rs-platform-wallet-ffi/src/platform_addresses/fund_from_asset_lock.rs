@@ -87,6 +87,50 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_signer(
     on_asset_lock_built: AssetLockBuiltFn,
     on_asset_lock_built_context: *mut c_void,
 ) -> PlatformWalletFFIResult {
+    // A panic must not unwind across this `extern "C"` frame: it can strike after the
+    // asset lock reached the wire, so it becomes the ambiguous funding result.
+    catch_funding_panic("platform-address fund-from-asset-lock", || {
+        platform_address_wallet_fund_from_asset_lock_signer_inner(
+            handle,
+            amount_duffs,
+            account_index,
+            platform_account_index,
+            addresses,
+            addresses_count,
+            _fee_strategy,
+            _fee_strategy_count,
+            signer_address_handle,
+            core_signer_handle,
+            out_changeset,
+            on_asset_lock_built,
+            on_asset_lock_built_context,
+        )
+    })
+}
+
+/// Body of [`platform_address_wallet_fund_from_asset_lock_signer`].
+///
+/// An ordinary Rust function, so a panic unwinds into [`catch_funding_panic`] instead of
+/// across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[allow(clippy::too_many_arguments)]
+unsafe fn platform_address_wallet_fund_from_asset_lock_signer_inner(
+    handle: Handle,
+    amount_duffs: u64,
+    account_index: u32,
+    platform_account_index: u32,
+    addresses: *const FundingAddressEntryFFI,
+    addresses_count: usize,
+    _fee_strategy: *const FeeStrategyStepFFI,
+    _fee_strategy_count: usize,
+    signer_address_handle: *mut SignerHandle,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_changeset: *mut PlatformAddressChangeSetFFI,
+    on_asset_lock_built: AssetLockBuiltFn,
+    on_asset_lock_built_context: *mut c_void,
+) -> PlatformWalletFFIResult {
     check_ptr!(out_changeset);
     // Sentinel first: address decoding, the wallet lookup, and the async
     // fund below are all fallible. See `PlatformAddressChangeSetFFI::empty`
@@ -190,6 +234,44 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_signer(
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_address_wallet_resume_fund_from_asset_lock_signer(
+    handle: Handle,
+    out_point: *const OutPointFFI,
+    platform_account_index: u32,
+    addresses: *const FundingAddressEntryFFI,
+    addresses_count: usize,
+    _fee_strategy: *const FeeStrategyStepFFI,
+    _fee_strategy_count: usize,
+    signer_address_handle: *mut SignerHandle,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_changeset: *mut PlatformAddressChangeSetFFI,
+) -> PlatformWalletFFIResult {
+    // A panic must not unwind across this `extern "C"` frame: it can strike after the
+    // asset lock reached the wire, so it becomes the ambiguous funding result.
+    catch_funding_panic("platform-address resume fund-from-asset-lock", || {
+        platform_address_wallet_resume_fund_from_asset_lock_signer_inner(
+            handle,
+            out_point,
+            platform_account_index,
+            addresses,
+            addresses_count,
+            _fee_strategy,
+            _fee_strategy_count,
+            signer_address_handle,
+            core_signer_handle,
+            out_changeset,
+        )
+    })
+}
+
+/// Body of [`platform_address_wallet_resume_fund_from_asset_lock_signer`].
+///
+/// An ordinary Rust function, so a panic unwinds into [`catch_funding_panic`] instead of
+/// across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[allow(clippy::too_many_arguments)]
+unsafe fn platform_address_wallet_resume_fund_from_asset_lock_signer_inner(
     handle: Handle,
     out_point: *const OutPointFFI,
     platform_account_index: u32,
@@ -399,6 +481,50 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_external_s
     on_asset_lock_built: AssetLockBuiltFn,
     on_asset_lock_built_context: *mut c_void,
 ) -> PlatformWalletFFIResult {
+    // A panic must not unwind across this `extern "C"` frame: it can strike after the
+    // asset lock reached the wire, so it becomes the ambiguous funding result.
+    catch_funding_panic("platform-address external fund-from-asset-lock", || {
+        platform_address_wallet_fund_from_asset_lock_external_signer_inner(
+            handle,
+            amount_duffs,
+            account_index,
+            platform_account_index,
+            addresses,
+            addresses_count,
+            _fee_strategy,
+            _fee_strategy_count,
+            signer_address_handle,
+            core_signer_handle,
+            out_changeset,
+            on_asset_lock_built,
+            on_asset_lock_built_context,
+        )
+    })
+}
+
+/// Body of [`platform_address_wallet_fund_from_asset_lock_external_signer`].
+///
+/// An ordinary Rust function, so a panic unwinds into [`catch_funding_panic`] instead of
+/// across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[allow(clippy::too_many_arguments)]
+unsafe fn platform_address_wallet_fund_from_asset_lock_external_signer_inner(
+    handle: Handle,
+    amount_duffs: u64,
+    account_index: u32,
+    platform_account_index: u32,
+    addresses: *const FundingAddressEntryFFI,
+    addresses_count: usize,
+    _fee_strategy: *const FeeStrategyStepFFI,
+    _fee_strategy_count: usize,
+    signer_address_handle: *mut SignerHandle,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_changeset: *mut PlatformAddressChangeSetFFI,
+    on_asset_lock_built: AssetLockBuiltFn,
+    on_asset_lock_built_context: *mut c_void,
+) -> PlatformWalletFFIResult {
     check_ptr!(out_changeset);
     // Sentinel first — see `platform_address_wallet_fund_from_asset_lock_signer`.
     *out_changeset = PlatformAddressChangeSetFFI::empty();
@@ -537,6 +663,47 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_external_s
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_address_wallet_resume_fund_from_asset_lock_external_signer(
+    handle: Handle,
+    out_point: *const OutPointFFI,
+    platform_account_index: u32,
+    addresses: *const FundingAddressEntryFFI,
+    addresses_count: usize,
+    _fee_strategy: *const FeeStrategyStepFFI,
+    _fee_strategy_count: usize,
+    signer_address_handle: *mut SignerHandle,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_changeset: *mut PlatformAddressChangeSetFFI,
+) -> PlatformWalletFFIResult {
+    // A panic must not unwind across this `extern "C"` frame: it can strike after the
+    // asset lock reached the wire, so it becomes the ambiguous funding result.
+    catch_funding_panic(
+        "platform-address external resume fund-from-asset-lock",
+        || {
+            platform_address_wallet_resume_fund_from_asset_lock_external_signer_inner(
+                handle,
+                out_point,
+                platform_account_index,
+                addresses,
+                addresses_count,
+                _fee_strategy,
+                _fee_strategy_count,
+                signer_address_handle,
+                core_signer_handle,
+                out_changeset,
+            )
+        },
+    )
+}
+
+/// Body of [`platform_address_wallet_resume_fund_from_asset_lock_external_signer`].
+///
+/// An ordinary Rust function, so a panic unwinds into [`catch_funding_panic`] instead of
+/// across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[allow(clippy::too_many_arguments)]
+unsafe fn platform_address_wallet_resume_fund_from_asset_lock_external_signer_inner(
     handle: Handle,
     out_point: *const OutPointFFI,
     platform_account_index: u32,

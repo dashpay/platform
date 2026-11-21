@@ -64,6 +64,75 @@ branch's diff.
 6. **Blocks 98–99 are terminal sentinels** (`NotFound`, `ErrorUnknown`) and are
    not an allocation frontier. New codes go after the highest allocated value
    below them.
+7. **Give a new `PlatformWalletError` variant its payment-delivery class** in
+   `PlatformWalletError::payment_delivery` (the match has no wildcard arm, so
+   the crate does not compile until you do). A variant is `NotSent` only when
+   every failure it reports was raised before anything was dispatched or
+   proves nothing was sent; any doubt is `MaybeSent`; a variant that holds a
+   tracked asset lock the payment resumes is `LockHeld(out_point)`. Codes have
+   no class: an export that reports a payment's failure under a code of its
+   own choosing routes it through the wallet error
+   (`PlatformWalletFFIResult::err_from_wallet_error`, or the error's `From`).
+   When the new variant can be `MaybeSent` or `LockHeld`, its Swift case must
+   carry `payment: PlatformPaymentClass?`.
+
+## Payment delivery: retry, wait or resume
+
+Every `PlatformWalletFFIResult` carries `payment_delivery`
+(`PlatformWalletFFIPaymentDelivery`), `held_asset_lock` (`OutPointFFI`) and
+`retryable` (`bool`):
+
+| `payment_delivery` | Meaning | Host action |
+|---|---|---|
+| `None` (0) | success | — |
+| `NotSent` (1) | the failed payment never left the wallet | a retry may be offered |
+| `MaybeSent` (2) | the payment may have left the wallet | wait for sync, never offer a second payment |
+| `LockHeld` (3) | the payment holds the tracked asset lock in `held_asset_lock` | resume that lock, never fund a new one |
+| `Unknown` (4) | no wallet error classified the failure (an FFI-boundary refusal, or an export with no wallet error) | unclassified: never retry automatically |
+
+`held_asset_lock` is the outpoint the resume entry points take (raw txid in
+wire order, vout); it is all zero unless `payment_delivery` is `LockHeld`.
+
+The class is the Rust wallet's (`PlatformWalletError::payment_delivery`;
+`held_asset_lock()` reads the `LockHeld` outpoint), set on the result by the
+`From<PlatformWalletError>` conversion, by `map_spend_result`, and by every
+arm that folds a payment's error into a shared code
+(`PlatformWalletFFIResult::err_from_wallet_error`), so it survives a fold into
+`ErrorWalletOperation`. A result built from a code alone
+(`PlatformWalletFFIResult::err`) is `Unknown`: the FFI never derives a class
+from a code.
+
+`retryable` is the wallet's own retry decision
+(`PlatformWalletError::is_retryable`, next to `payment_delivery`): never under
+`MaybeSent`, never under `LockHeld` (running the operation again would fund a
+second payment; the payment goes on by resuming `held_asset_lock`, which the
+host reads from `payment_delivery`), and under `NotSent` only for the failures the same call
+can get past by running again (no recorded anchor yet, a shielded broadcast
+refused before sending, a drain out of budget, an unfinished private-contact
+store read, a transient persister). `false` on success and under `Unknown`.
+
+**Hosts read these fields; they never derive them from lists of codes or from
+each other.** Kotlin exposes them as `DashSdkError.delivery`,
+`DashSdkError.heldAssetLock` and `isRetryable` (the result's `retryable`
+alone, for platform-wallet errors). Swift exposes `PlatformWalletError.delivery`
+(`PlatformPaymentDelivery.lockHeld(AssetLockBuiltOutPoint)` for a held lock):
+every case a `MaybeSent` or `LockHeld` wallet error can reach carries the
+result's own class and retry (`payment: PlatformPaymentClass?`, read through
+`delivery` and `isRetryable`); every other case is `nil`, unclassified, which a
+host never retries automatically.
+
+The held-lock errors are `FinalityTimeout` (folded into code 6 or 99),
+`AssetLockInputContested` (48) and `AssetLockRecipientMismatch` (61, resumed
+with the recorded recipient). The other asset-lock errors that leave a lock
+on the network but name none this payment can resume (`AssetLockAlreadyConsumed`,
+`AssetLockTooManyInputs`, `AssetLockProofWait`, `AssetLockExpired`,
+`AssetLockNotChainLocked`) are `MaybeSent`. Code 21 (`ErrorAddressNonceMismatch`)
+is `MaybeSent`: a nonce verdict no proof backs can follow an earlier dispatch
+that landed, so a re-fetch and re-sign may pay twice.
+
+**ABI:** `payment_delivery`, `held_asset_lock` and `retryable` were added to a struct every
+export returns by value, which changes its size: a C ABI break. Hosts rebuild
+against the new header together with the library.
 
 ## Merged allocations (`v4.2-dev`)
 

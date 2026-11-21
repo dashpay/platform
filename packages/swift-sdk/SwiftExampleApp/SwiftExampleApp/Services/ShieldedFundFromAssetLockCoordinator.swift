@@ -116,6 +116,7 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
         walletId: Data,
         recipientRaw43: Data,
         operationId: String,
+        resuming: AssetLockBuiltOutPoint? = nil,
         body: @escaping () async throws -> Void
     ) -> StartFundingResult {
         let key = SlotKey(walletId: walletId, recipientRaw43: recipientRaw43)
@@ -142,6 +143,12 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
                 // below and REPLACE the retained controller (its sweep
                 // is identity-guarded, so the old retention timer can't
                 // evict the replacement).
+            case .failed where !existing.phase.permitsSubmit(resuming: resuming):
+                // The failure's class forbids this operation (the payment
+                // may have left, or it holds a lock this call does not
+                // resume): re-present the failed state instead of paying
+                // again.
+                return .started(existing)
             case .idle, .failed:
                 // Legitimate restart paths. We've already checked
                 // the same-recipient slot here; before letting the
@@ -155,7 +162,7 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
                 ) {
                     return .blockedByOtherWalletFunding(blocker)
                 }
-                existing.submit(operationId: operationId, body: body)
+                existing.submit(operationId: operationId, resuming: resuming, body: body)
                 // Spawn a fresh retention sweep. The original sweep
                 // exited the moment the first attempt hit `.failed`
                 // (see `scheduleRetentionSweep`'s `.failed: return`
@@ -184,7 +191,7 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
             recipientRaw43: recipientRaw43
         )
         controllers[key] = controller
-        controller.submit(operationId: operationId, body: body)
+        controller.submit(operationId: operationId, resuming: resuming, body: body)
         scheduleRetentionSweep(key: key, controller: controller)
         return .started(controller)
     }
@@ -209,10 +216,24 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
     /// Manually drop a controller from the map. Used by the UI's
     /// "Dismiss" action on a `.failed` row (failures stay
     /// indefinitely until acknowledged so the user can read the
-    /// error).
-    func dismiss(walletId: Data, recipientRaw43: Data) {
+    /// error) and its "Done" after a completion.
+    ///
+    /// A failed slot is dropped only when its failure releases it
+    /// (`PaymentFailure.holdsSlot`, any `.notSent`): `startFunding` gates a
+    /// restart only on a slot it still holds, so dropping a failure that may
+    /// have left, holds a lock, or has no class would let a fresh lock be
+    /// funded for the same recipient. Such a slot stays until its lock is
+    /// resumed or the app restarts. Returns whether the controller was
+    /// dropped (← `RegistrationCoordinator.dismiss`).
+    @discardableResult
+    func dismiss(walletId: Data, recipientRaw43: Data) -> Bool {
         let key = SlotKey(walletId: walletId, recipientRaw43: recipientRaw43)
+        if let controller = controllers[key], case .failed(let failure) = controller.phase,
+           failure.holdsSlot {
+            return false
+        }
         controllers.removeValue(forKey: key)
+        return true
     }
 
     // MARK: - Retention sweep

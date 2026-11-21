@@ -26,7 +26,7 @@ final class DpnsMarketplacePresentationTests: XCTestCase {
         let changed = DpnsMarketplaceUI.error(
             PlatformWalletError.priceChanged(documentId: "doc", expected: 10, actual: 12)
         )
-        XCTAssertTrue(changed.contains("Nothing was purchased"))
+        XCTAssertFalse(changed.contains("Nothing was purchased"))
         XCTAssertTrue(changed.contains("10 credits"))
         XCTAssertTrue(changed.contains("12 credits"))
 
@@ -49,6 +49,38 @@ final class DpnsMarketplacePresentationTests: XCTestCase {
         )
         XCTAssertTrue(signing.contains("signing key is unavailable"))
         XCTAssertTrue(signing.contains("Unlock or repair"))
+    }
+
+    /// A failed trade leads with what its payment class allows, never with
+    /// a claim the case's own text would make: a changed price that may
+    /// have been sent waits for sync, and only a retryable NotSent offers a
+    /// retry.
+    func testTradeFailureFollowsThePaymentClass() throws {
+        let maybe = try XCTUnwrap(DpnsMarketplaceUI.tradeFailure(
+            PlatformWalletError.priceChanged(documentId: "doc", expected: 10, actual: 12, payment: .maybeSent)
+        ))
+        XCTAssertEqual(maybe.action, .wait)
+        XCTAssertTrue(maybe.message.hasPrefix(PlatformPaymentRecovery.reconcile.suggestion))
+        XCTAssertTrue(maybe.message.contains("12 credits"))
+        XCTAssertFalse(maybe.message.contains("Nothing was purchased"))
+
+        let retry = try XCTUnwrap(DpnsMarketplaceUI.tradeFailure(PlatformWalletError.walletOperation(
+            "refused", payment: PlatformPaymentClass(delivery: .notSent, isRetryable: true)
+        )))
+        XCTAssertEqual(retry.action, .retry)
+        XCTAssertTrue(retry.message.hasPrefix(PlatformPaymentRecovery.retry.suggestion))
+
+        // An SDK error without a wallet class reads as unconfirmed, no retry.
+        let unclassified = try XCTUnwrap(DpnsMarketplaceUI.tradeFailure(SDKError.timeout("timeout")))
+        XCTAssertEqual(unclassified.action, .wait)
+        XCTAssertTrue(unclassified.message.hasPrefix(PlatformPaymentRecovery.unconfirmed.suggestion))
+        XCTAssertFalse(unclassified.message.lowercased().contains("try again"))
+
+        // No payment was attempted: a wallet error Rust gave no class (a
+        // Swift-side input check) or the sheet's own check is not a trade
+        // failure, and shows as its own message.
+        XCTAssertNil(DpnsMarketplaceUI.tradeFailure(PlatformWalletError.notForSale("gone")))
+        XCTAssertNil(DpnsMarketplaceUI.tradeFailure(CocoaError(.validationNumberTooSmall)))
     }
 
     func testHistoryRecognizesTransferToSelfAsDelist() {

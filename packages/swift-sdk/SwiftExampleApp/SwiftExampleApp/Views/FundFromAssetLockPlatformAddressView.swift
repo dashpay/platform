@@ -363,23 +363,31 @@ struct FundFromAssetLockPlatformAddressView: View {
                     .padding(.top, 4)
                 }
             }
-        case .failed(let message):
+        case .failed(let failure):
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Top Up failed", systemImage: "xmark.octagon.fill")
+                    Label(failure.title, systemImage: "xmark.octagon.fill")
                         .foregroundColor(.red)
                         .font(.headline)
-                    Text(message)
+                    Text(failure.message)
                         .font(.callout)
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
-                    Button("Dismiss") {
-                        walletManager.addressFundFromAssetLockCoordinator.dismiss(
-                            walletId: controller.walletId,
-                            platformAccountIndex: controller.platformAccountIndex,
-                            recipientHash: controller.recipientHash
-                        )
-                        dismiss()
+                    // Only a failure that releases its slot
+                    // (`PaymentFailure.holdsSlot`) offers Dismiss: one that
+                    // may have left or holds a lock keeps the controller, so
+                    // a fresh lock is never funded for this recipient (the
+                    // coordinator refuses the same dismissal). Leaving the
+                    // screen keeps it in the pending list.
+                    if !failure.holdsSlot {
+                        Button("Dismiss") {
+                            walletManager.addressFundFromAssetLockCoordinator.dismiss(
+                                walletId: controller.walletId,
+                                platformAccountIndex: controller.platformAccountIndex,
+                                recipientHash: controller.recipientHash
+                            )
+                            dismiss()
+                        }
                     }
                 }
             }
@@ -546,6 +554,7 @@ struct FundFromAssetLockPlatformAddressView: View {
         // balance of the recipient so the terminal section can
         // surface a meaningful number.
         let body: () async throws -> UInt64
+        var resuming: AssetLockBuiltOutPoint?
         if let lock = resumeFromLock {
             // Resume path: outpoint is decoded from the persisted
             // `outPointHex` (canonical `<txid display hex>:<vout>`
@@ -556,6 +565,7 @@ struct FundFromAssetLockPlatformAddressView: View {
                 )
                 return
             }
+            resuming = .resuming(txid: parsed.txid, vout: parsed.vout)
             body = {
                 let updates = try await addressWallet.resumeFundFromAssetLock(
                     outPointTxid: parsed.txid,
@@ -617,6 +627,7 @@ struct FundFromAssetLockPlatformAddressView: View {
             platformAccountIndex: platformAcct,
             recipientHash: recipientHash,
             recipientType: recipientType,
+            resuming: resuming,
             body: body
         )
         controller.preSubmitConsumedOutpoints = preSubmitOutpoints

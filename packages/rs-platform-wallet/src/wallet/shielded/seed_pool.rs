@@ -242,7 +242,9 @@ impl PlatformWallet {
             // real note lands at ~REAL_NOTE_VALUE_CREDITS and the surplus
             // is structurally zero.
             let num_actions = shield_from_asset_lock_num_actions(dummy_outputs);
-            let pool_fee = self.shield_from_asset_lock_pool_fee(num_actions)?;
+            let pool_fee = self
+                .shield_from_asset_lock_pool_fee(num_actions)
+                .map_err(|e| seed_batch_failure(e, batches_submitted > 0))?;
             let lock_credits = pool_fee
                 .checked_add(REAL_NOTE_VALUE_CREDITS)
                 .ok_or_else(|| {
@@ -252,31 +254,15 @@ impl PlatformWallet {
                 })?;
             let amount_duffs = lock_credits.div_ceil(CREDITS_PER_DUFF);
 
-            // Rapid back-to-back batches chain unconfirmed L1 change
-            // outputs; around core's unconfirmed-ancestor depth limit
-            // (~25 chained txs) InstantSend/ChainLock proofs stop
-            // arriving until a core block confirms the chain, and the
-            // funding resolution surfaces `FinalityTimeout`. That's a
-            // transient pacing condition, not a failure — retry the
-            // batch a few times with a pause to let a block land
-            // instead of aborting the whole run.
-            //
-            // The timed-out lock is already broadcast and tracked, so the
-            // retry MUST resume it (`FromExistingAssetLock` with the
-            // outpoint from the error) rather than build a fresh lock:
-            // re-funding from wallet balance would strand the original
-            // lock, burn another UTXO per attempt, and chain the new lock
-            // on top of the very unconfirmed-ancestor depth that caused
-            // the stall.
-            let mut attempt = 0u32;
-            let mut funding = AssetLockFunding::FromWalletBalance {
-                amount_duffs,
-                account_index: funding_account_index,
-            };
-            loop {
-                attempt += 1;
-                match self
-                    .shielded_fund_from_asset_lock(
+            // Retries a finality timeout by resuming the batch's own lock.
+            fund_seed_batch(
+                batches_submitted,
+                AssetLockFunding::FromWalletBalance {
+                    amount_duffs,
+                    account_index: funding_account_index,
+                },
+                |funding| {
+                    self.shielded_fund_from_asset_lock(
                         coordinator,
                         funding,
                         vec![(recipient, None)],
@@ -286,32 +272,13 @@ impl PlatformWallet {
                         dummy_outputs,
                         settings,
                         // Bounded: a ChainLock timeout here is the deliberate
-                        // unconfirmed-ancestor pacing signal this loop retries on.
+                        // unconfirmed-ancestor pacing signal the batch retries on.
                         Some(CL_FALLBACK_TIMEOUT),
                         None,
                     )
-                    .await
-                {
-                    Ok(()) => break,
-                    Err(PlatformWalletError::FinalityTimeout(out_point))
-                        if attempt < SEED_BATCH_FINALITY_RETRIES =>
-                    {
-                        tracing::warn!(
-                            batch = batches_submitted,
-                            attempt,
-                            %out_point,
-                            "seed batch finality timed out; pausing for a core block then \
-                             resuming the tracked lock"
-                        );
-                        funding = AssetLockFunding::FromExistingAssetLock {
-                            out_point,
-                            consume_invitation_voucher: false,
-                        };
-                        tokio::time::sleep(SEED_BATCH_RETRY_PAUSE).await;
-                    }
-                    Err(e) => return Err(e),
-                }
-            }
+                },
+            )
+            .await?;
 
             batches_submitted += 1;
 
@@ -373,6 +340,86 @@ impl PlatformWallet {
     }
 }
 
+/// Fund one seed batch with `fund`, starting from `funding`, and class its
+/// failure for the whole run ([`seed_batch_failure`]).
+///
+/// Rapid back-to-back batches chain unconfirmed L1 change outputs; around
+/// core's unconfirmed-ancestor depth limit (~25 chained txs) InstantSend /
+/// ChainLock proofs stop arriving until a core block confirms the chain, and
+/// the funding resolution surfaces `FinalityTimeout`. That's a transient
+/// pacing condition, not a failure — retry the batch a few times with a pause
+/// to let a block land instead of aborting the whole run.
+///
+/// The timed-out lock is already broadcast and tracked, so the retry MUST
+/// resume it (`FromExistingAssetLock` with the outpoint from the error) rather
+/// than build a fresh lock: re-funding from wallet balance would strand the
+/// original lock, burn another UTXO per attempt, and chain the new lock on top
+/// of the very unconfirmed-ancestor depth that caused the stall. A failure of
+/// that retry follows this batch's own broadcast, so it is classed as
+/// dispatched even in the run's first batch.
+async fn fund_seed_batch<F, Fut>(
+    batches_submitted: u64,
+    mut funding: AssetLockFunding,
+    mut fund: F,
+) -> Result<(), PlatformWalletError>
+where
+    F: FnMut(AssetLockFunding) -> Fut,
+    Fut: std::future::Future<Output = Result<(), PlatformWalletError>>,
+{
+    let mut attempt = 0u32;
+    loop {
+        attempt += 1;
+        match fund(funding).await {
+            Ok(()) => return Ok(()),
+            Err(PlatformWalletError::FinalityTimeout(out_point))
+                if attempt < SEED_BATCH_FINALITY_RETRIES =>
+            {
+                tracing::warn!(
+                    batch = batches_submitted,
+                    attempt,
+                    %out_point,
+                    "seed batch finality timed out; pausing for a core block then \
+                     resuming the tracked lock"
+                );
+                funding = AssetLockFunding::FromExistingAssetLock {
+                    out_point,
+                    consume_invitation_voucher: false,
+                };
+                tokio::time::sleep(SEED_BATCH_RETRY_PAUSE).await;
+            }
+            // A retry resumes the lock this batch already broadcast, so the
+            // batch dispatched even when the resume is refused.
+            Err(e) => return Err(seed_batch_failure(e, batches_submitted > 0 || attempt > 1)),
+        }
+    }
+}
+
+/// The error a seed run ends with, classed for the whole run rather than the
+/// last batch alone. `dispatched` says the run already moved Core funds: a
+/// committed batch, or this batch's own lock broadcast (a finality retry that
+/// resumes it). After that a refusal is not `NotSent`.
+///
+/// A held batch lock is not offered for resume either, and becomes
+/// `MaybeSent` with no held lock, keeping its diagnostic: the batch carried
+/// `dummy_outputs` fillers that the generic resume (a single-note shield)
+/// cannot reproduce, so resuming it would not complete the batch the run was
+/// building. The lock stays tracked, so the wallet's resumable-lock list still
+/// lists it.
+fn seed_batch_failure(error: PlatformWalletError, dispatched: bool) -> PlatformWalletError {
+    use crate::PaymentDelivery;
+    match error.payment_delivery() {
+        PaymentDelivery::LockHeld(_) => PlatformWalletError::PaymentAlreadyDispatched {
+            held_lock: None,
+            source: Box::new(match error {
+                PlatformWalletError::PaymentAlreadyDispatched { source, .. } => *source,
+                other => other,
+            }),
+        },
+        PaymentDelivery::NotSent if dispatched => error.after_dispatch(),
+        PaymentDelivery::NotSent | PaymentDelivery::MaybeSent => error,
+    }
+}
+
 /// Estimate the number of [`MAX_ACTIONS_PER_BATCH`]-note batches needed to
 /// move the pool count from `current` to `target`, given `per_batch` notes
 /// per batch. Returns `0` when already at/above target. Pure arithmetic so
@@ -385,6 +432,99 @@ fn estimate_batches(current: u64, target: u64, per_batch: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A refusal after the run dispatched (a committed batch, or this batch's
+    /// own lock) is not `NotSent`, a held batch lock is not offered for the
+    /// generic resume, and a refusal before any dispatch keeps its own class.
+    #[test]
+    fn should_class_a_seed_failure_for_the_whole_run() {
+        use crate::PaymentDelivery;
+        let refusal = || PlatformWalletError::AssetLockInsufficientFunds {
+            available: 1,
+            required: 2,
+        };
+        let held = || {
+            PlatformWalletError::FinalityTimeout(dashcore::OutPoint::new(
+                dashcore::Txid::from_byte_array([7; 32]),
+                0,
+            ))
+        };
+
+        let first = seed_batch_failure(refusal(), false);
+        assert_eq!(first.payment_delivery(), PaymentDelivery::NotSent);
+
+        let after_dispatch = seed_batch_failure(refusal(), true);
+        assert_eq!(
+            after_dispatch.payment_delivery(),
+            PaymentDelivery::MaybeSent
+        );
+        assert!(!after_dispatch.is_retryable());
+        assert_eq!(after_dispatch.to_string(), refusal().to_string());
+
+        // A lock the funded-lock seam named as held, or a bare held lock.
+        let named = || PlatformWalletError::PaymentAlreadyDispatched {
+            held_lock: Some(dashcore::OutPoint::new(
+                dashcore::Txid::from_byte_array([8; 32]),
+                1,
+            )),
+            source: Box::new(refusal()),
+        };
+        for dispatched in [false, true] {
+            for error in [
+                seed_batch_failure(held(), dispatched),
+                seed_batch_failure(named(), dispatched),
+            ] {
+                assert_eq!(error.payment_delivery(), PaymentDelivery::MaybeSent);
+                assert_eq!(error.held_asset_lock(), None);
+            }
+            assert_eq!(
+                seed_batch_failure(named(), dispatched).to_string(),
+                refusal().to_string()
+            );
+        }
+    }
+
+    /// A batch whose own lock timed out is retried by resuming that lock, so
+    /// a refusal of the retry follows a broadcast: even in the run's first
+    /// batch it is not `NotSent`. A first attempt refused before anything was
+    /// broadcast keeps its own class.
+    #[tokio::test(start_paused = true)]
+    async fn should_class_a_refused_retry_of_the_first_batch_as_dispatched() {
+        use crate::PaymentDelivery;
+        let out_point = dashcore::OutPoint::new(dashcore::Txid::from_byte_array([7; 32]), 0);
+        let refusal = || PlatformWalletError::AssetLockNotTracked(out_point);
+        let first_funding = || AssetLockFunding::FromWalletBalance {
+            amount_duffs: 1,
+            account_index: 0,
+        };
+
+        let mut calls = Vec::new();
+        let error = fund_seed_batch(0, first_funding(), |funding| {
+            calls.push(funding);
+            let result = if calls.len() == 1 {
+                Err(PlatformWalletError::FinalityTimeout(out_point))
+            } else {
+                Err(refusal())
+            };
+            async move { result }
+        })
+        .await
+        .expect_err("the resume is refused");
+        assert_eq!(error.payment_delivery(), PaymentDelivery::MaybeSent);
+        assert!(!error.is_retryable());
+        assert!(matches!(
+            calls.as_slice(),
+            [
+                AssetLockFunding::FromWalletBalance { .. },
+                AssetLockFunding::FromExistingAssetLock { out_point: resumed, .. }
+            ] if *resumed == out_point
+        ));
+
+        let first = fund_seed_batch(0, first_funding(), |_| async { Err(refusal()) })
+            .await
+            .expect_err("the first attempt is refused");
+        assert_eq!(first.payment_delivery(), PaymentDelivery::NotSent);
+    }
 
     #[test]
     fn estimate_batches_rounds_up_and_floors_at_zero() {

@@ -221,8 +221,10 @@ struct PendingPlatformFundFromAssetLockRow: View {
             // this row renders inside a VStack card on the wallet
             // detail screen. Without an inline button the user had
             // no way to clear a failed funding short of an app
-            // restart.
-            if case .failed = controller.phase {
+            // restart. Only a failure that releases its slot
+            // (`PaymentFailure.holdsSlot`) offers it; the coordinator
+            // refuses any other.
+            if case .failed(let failure) = controller.phase, !failure.holdsSlot {
                 Button {
                     walletManager.addressFundFromAssetLockCoordinator.dismiss(
                         walletId: controller.walletId,

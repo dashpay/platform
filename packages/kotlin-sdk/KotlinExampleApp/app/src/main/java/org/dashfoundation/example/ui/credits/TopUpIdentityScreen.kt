@@ -34,12 +34,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.credits.FundingInput
-import org.dashfoundation.dashsdk.errors.DashSdkError
+import org.dashfoundation.dashsdk.errors.PaymentRecovery
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.util.PaymentFailure
 import org.dashfoundation.example.util.hexToBytes
 
 /**
@@ -70,13 +71,17 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
     var error by remember { mutableStateOf<String?>(null) }
     var isSubmitting by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf(false) }
+    // The last failed top-up, presented by its payment class; the button
+    // stays off while it holds its slot (PaymentFailure.holdsSlot).
+    var failure by remember { mutableStateOf<PaymentFailure?>(null) }
     // The top-up may have been broadcast and its outcome is not confirmed
-    // (code 20): shown as pending, and the same top-up cannot be sent again.
-    var pending by remember { mutableStateOf(false) }
+    // (Rust classes it MAYBE_SENT): shown as pending, and the same top-up
+    // cannot be sent again.
+    val pending = failure?.recovery == PaymentRecovery.Reconcile
 
     val amount = amountText.toLongOrNull()
     val canSubmit = wallet != null && manager != null && amount != null && amount > 0 &&
-        !isSubmitting
+        !isSubmitting && failure?.holdsSlot != true
 
     Scaffold(
         topBar = {
@@ -164,12 +169,14 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
                             signerHandle = mgr.signerHandle,
                         )
                         done = true
-                    } catch (e: DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed) {
-                        // Not a failure: the top-up may still execute, so no
-                        // retry is offered.
-                        pending = true
                     } catch (e: Exception) {
-                        error = e.message ?: "Top up failed"
+                        // A top-up that may have left (MAYBE_SENT) is pending,
+                        // not a failure: no alert, and the button stays off.
+                        val paymentFailure = PaymentFailure.ofPayment(e)
+                        failure = paymentFailure
+                        if (paymentFailure?.recovery != PaymentRecovery.Reconcile) {
+                            error = paymentFailure?.message ?: e.message ?: "Top up failed"
+                        }
                     } finally {
                         isSubmitting = false
                     }

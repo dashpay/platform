@@ -382,6 +382,12 @@ fun CreateIdentityScreen(navController: NavHostController) {
                                     walletId = wallet.walletId,
                                     identityIndex = identityIndex,
                                     fundingKind = IdentityRegistrationController.FundingKind.AssetLock,
+                                    // Names the lock this body resumes, so a slot whose
+                                    // failure holds that lock may restart through it.
+                                    resuming = org.dashfoundation.example.util.PaymentFailure.outPoint(
+                                        lock.outpointTxid,
+                                        lock.outpointVout,
+                                    ),
                                     body = {
                                         IdentityAssetLockRecovery.submitRegistrationResume(lock) {
                                             mgr.identityRegistration.resumeWithExistingAssetLock(

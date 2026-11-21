@@ -1,8 +1,11 @@
+use crate::core_wallet_types::OutPointFFI;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 use dpp::platform_value::string_encoding::Encoding;
 use platform_wallet::changeset::PersistenceErrorKind;
-use platform_wallet::PlatformWalletError;
+use platform_wallet::{
+    handback_failure_payment_class, panicked_payment_class, PaymentDelivery, PlatformWalletError,
+};
 use std::ffi::CString;
 use std::os::raw::c_char;
 
@@ -209,9 +212,9 @@ pub enum PlatformWalletFFIResultCode {
     /// addresses, or an identity registration from them)
     /// because the submitted address nonce raced Platform's expected next
     /// value (a lagging DAPI replica stale read; consensus code 40603). Its
-    /// OWN code so hosts can recognize this specific, self-healing
-    /// failure and retry: the retry re-fetches the address nonce, resolving
-    /// the mismatch without host intervention. A shield from Platform
+    /// OWN code so hosts can recognize this specific failure; it is not a
+    /// retry signal: reconcile the original operation before submitting
+    /// another transition (see its payment delivery below). A shield from Platform
     /// addresses does not report it: an endpoint's nonce verdict on a shield
     /// that was dispatched reads as [`Self::ErrorShieldedSpendUnconfirmed`],
     /// as no proof backs it, and an identity top-up from Platform addresses
@@ -221,6 +224,9 @@ pub enum PlatformWalletFFIResultCode {
     /// expected nonce values travel in the result `message` (the typed
     /// `Display`); they are not exposed as structured out-fields (that would
     /// require an ABI-breaking change to `PlatformWalletFFIResult`).
+    /// Its payment delivery is nonetheless `MaybeSent`: a verdict no proof
+    /// backs can follow an earlier dispatch of the same transition that
+    /// landed, so the re-fetched nonce may sign a second payment.
     ErrorAddressNonceMismatch = 21,
     /// Atomic Core selection found no or insufficient unreserved UTXOs.
     ErrorCoreInsufficientFunds = 22,
@@ -372,8 +378,10 @@ pub enum PlatformWalletFFIResultCode {
     /// Maps `SignedPaymentError::StaleToken`. The deferred reservation token is
     /// unknown, already broadcast, or already released — the guard that turns a
     /// double-broadcast (or a broadcast after release) into a typed error
-    /// instead of a second send. Did NOT touch the network; NOT retryable
-    /// (rebuild the payment). Release is idempotent and never surfaces this.
+    /// instead of a second send. Did NOT touch the network, but an earlier
+    /// broadcast of the token may have sent the payment, so it is `MaybeSent`:
+    /// let sync settle it before building the payment again. NOT retryable.
+    /// Release is idempotent and never surfaces this.
     ErrorReservationTokenConsumed = 35,
 
     /// Maps `SignedPaymentError::WalletMismatch`. The deferred reservation token
@@ -647,16 +655,18 @@ pub enum PlatformWalletFFIResultCode {
     /// An asset lock exceeds the asset-lock input cap (100: Dash Core relay
     /// policy, and Platform consensus for an instant proof): a drain of every
     /// eligible input, or a fixed amount (registration, top-up, invitation,
-    /// platform-address funding) held only in many small coins. Nothing was
-    /// broadcast. A drain host must not silently substitute a partial drain;
-    /// consolidating the coins lets either lock fit.
+    /// platform-address funding) held only in many small coins. A fresh build
+    /// submitted nothing; a resumed lock over the cap may have been sent by an
+    /// earlier attempt, so the result's `payment_delivery` says which. A drain
+    /// host must not silently substitute a partial drain; consolidating the
+    /// coins lets either lock fit.
     ErrorAssetLockTooManyInputs = 60,
 
     /// A shielded funding is being resumed to a different Orchard recipient
-    /// than the one its tracked asset lock recorded when it was built. Nothing
-    /// was submitted and nothing was paid; resume with the recorded recipient
-    /// (the row exposes it). Rows tracked before the recipient was recorded
-    /// carry none and accept the caller's.
+    /// than the one its tracked asset lock recorded when it was built. This
+    /// call submitted nothing new, but the lock is held (`LockHeld`): resume
+    /// it with the recorded recipient (the row exposes it). Rows tracked
+    /// before the recipient was recorded carry none and accept the caller's.
     ErrorAssetLockRecipientMismatch = 61,
 
     /// Maps `PlatformWalletError::PrivateContactRequestNeedsPrivateReply`:
@@ -805,6 +815,51 @@ pub enum PlatformWalletFFIResultCode {
     ErrorUnknown = 99,
 }
 
+/// Whether a failed payment may have left the wallet, carried on every
+/// [`PlatformWalletFFIResult`] as `payment_delivery`. Mirror of
+/// [`PaymentDelivery`], plus [`Self::None`] for a successful result and
+/// [`Self::Unknown`] for a failure no wallet error classified; the outpoint
+/// of [`PaymentDelivery::LockHeld`] rides the result's `held_asset_lock`.
+///
+/// The class is only ever the wallet error's own
+/// ([`PlatformWalletError::payment_delivery`]): this crate copies it and never
+/// derives one from a result code.
+///
+/// Hosts decide "retry", "wait" or "resume" from this, never from lists of
+/// result codes: `NotSent` may offer a retry, `MaybeSent` waits for sync and
+/// never offers a second payment, `LockHeld` resumes the held asset lock and
+/// never pays again.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlatformWalletFFIPaymentDelivery {
+    /// The result is a success.
+    None = 0,
+    /// The payment never left the wallet and can never execute.
+    NotSent = 1,
+    /// The payment may have left the wallet, and may execute or already has.
+    MaybeSent = 2,
+    /// The payment holds the tracked asset lock in `held_asset_lock`: it may
+    /// be on the network and its funds left the spendable balance. Resume
+    /// it; never fund a new one.
+    LockHeld = 3,
+    /// A failure no wallet error classified: refused at the FFI boundary (a
+    /// null pointer, an invalid handle, an argument that does not parse) or
+    /// reported by an export that carries no wallet error. It says nothing
+    /// about whether a payment left the wallet, so it never invites a second
+    /// one.
+    Unknown = 4,
+}
+
+impl From<PaymentDelivery> for PlatformWalletFFIPaymentDelivery {
+    fn from(delivery: PaymentDelivery) -> Self {
+        match delivery {
+            PaymentDelivery::NotSent => Self::NotSent,
+            PaymentDelivery::MaybeSent => Self::MaybeSent,
+            PaymentDelivery::LockHeld(_) => Self::LockHeld,
+        }
+    }
+}
+
 /// Which family a consensus rejection belongs to, paired with the numeric
 /// `consensus_code` on [`PlatformWalletFFIResult`].
 ///
@@ -852,13 +907,19 @@ impl PlatformWalletFFIConsensusErrorKind {
 /// failure came from anywhere else. They let a host branch on a rejection it
 /// would otherwise have to recognize by its rendered text.
 ///
-/// Both language surfaces are generated from this same source tree (Swift
-/// through the cbindgen header inside the xcframework, Kotlin through an rlib
-/// dependency of `rs-unified-sdk-jni`), so appending a field is a
-/// source-compatible change rather than an ABI break. What has not changed is
-/// that the struct carries no room for a *specific* error's values: those
-/// still ride the `message`, as the codes that document a JSON detail object
-/// below describe.
+/// `payment_delivery` and `held_asset_lock` say whether a failed payment may
+/// have left the wallet and, when it holds a tracked asset lock, which one.
+///
+/// **ABI:** the struct is returned by value from every export, so each field
+/// added to it changes its size and layout: a C ABI break. A host binary built
+/// against an older header misreads every result of a newer library (and the
+/// reverse), so hosts rebuild against the new header together with the
+/// library, never one without the other. Swift gets the header inside the
+/// xcframework and Kotlin links this crate as an rlib of
+/// `rs-unified-sdk-jni`, so both ship in lockstep with the library they were
+/// built from. What the struct still has no room for is a *specific* error's
+/// values: those ride the `message`, as the codes that document a JSON detail
+/// object below describe.
 #[repr(C)]
 #[derive(Debug)]
 pub struct PlatformWalletFFIResult {
@@ -871,7 +932,43 @@ pub struct PlatformWalletFFIResult {
     /// The family `consensus_code` belongs to, or
     /// [`PlatformWalletFFIConsensusErrorKind::None`] when there is no code.
     pub consensus_kind: PlatformWalletFFIConsensusErrorKind,
+    /// Whether the failed payment may have left the wallet:
+    /// [`PlatformWalletFFIPaymentDelivery::None`] on success, otherwise the
+    /// class of the wallet error behind the failure, or
+    /// [`PlatformWalletFFIPaymentDelivery::Unknown`] when no wallet error is
+    /// behind it.
+    ///
+    /// Added after `consensus_kind`: a C ABI break (see the struct docs), so
+    /// hosts rebuild against the header that has it, together with the
+    /// library.
+    pub payment_delivery: PlatformWalletFFIPaymentDelivery,
+    /// The tracked asset lock the failed payment holds, when
+    /// `payment_delivery` is [`PlatformWalletFFIPaymentDelivery::LockHeld`]:
+    /// resume it (it is the outpoint the resume entry points take, raw txid
+    /// in wire order), never fund a new one. All zero for every other
+    /// `payment_delivery`; read it only under `LockHeld`.
+    ///
+    /// Added with `payment_delivery`, the same C ABI break.
+    pub held_asset_lock: OutPointFFI,
+    /// Whether the host may run the failed operation again, as the wallet
+    /// error behind the failure decided it
+    /// ([`PlatformWalletError::is_retryable`]): never when the payment may
+    /// have left the wallet, and never when it holds `held_asset_lock`
+    /// (running it again would fund a second payment; the payment goes on by
+    /// resuming that lock, read from `payment_delivery`). `false` on success
+    /// and when no
+    /// wallet error is behind the failure. Hosts read it; they never derive
+    /// it from the code or from `payment_delivery`.
+    ///
+    /// Added after `held_asset_lock`: the same kind of C ABI break.
+    pub retryable: bool,
 }
+
+/// The `held_asset_lock` of a result that holds none.
+const NO_HELD_ASSET_LOCK: OutPointFFI = OutPointFFI {
+    txid: [0; 32],
+    vout: 0,
+};
 
 impl Drop for PlatformWalletFFIResult {
     fn drop(&mut self) {
@@ -891,6 +988,9 @@ impl PlatformWalletFFIResult {
             message: std::ptr::null_mut(),
             consensus_code: 0,
             consensus_kind: PlatformWalletFFIConsensusErrorKind::None,
+            payment_delivery: PlatformWalletFFIPaymentDelivery::None,
+            held_asset_lock: NO_HELD_ASSET_LOCK,
+            retryable: false,
         }
     }
 
@@ -902,6 +1002,9 @@ impl PlatformWalletFFIResult {
             message: c_msg.into_raw(),
             consensus_code: 0,
             consensus_kind: PlatformWalletFFIConsensusErrorKind::None,
+            payment_delivery: PlatformWalletFFIPaymentDelivery::Unknown,
+            held_asset_lock: NO_HELD_ASSET_LOCK,
+            retryable: false,
         }
     }
 
@@ -922,6 +1025,44 @@ impl PlatformWalletFFIResult {
         self
     }
 
+    /// Stamp the payment class of the wallet error behind an already-built
+    /// result (see [`payment_class`]): its delivery, the asset lock it holds
+    /// when that is [`PaymentDelivery::LockHeld`], and whether a retry is
+    /// allowed. Leaves `code` and `message` alone, like
+    /// [`Self::with_consensus_error`].
+    pub(crate) fn with_payment_class(
+        mut self,
+        (delivery, retryable): (PaymentDelivery, bool),
+    ) -> Self {
+        self.payment_delivery = delivery.into();
+        self.retryable = retryable;
+        self.held_asset_lock = match delivery {
+            PaymentDelivery::LockHeld(out_point) => OutPointFFI::from(&out_point),
+            PaymentDelivery::NotSent | PaymentDelivery::MaybeSent => NO_HELD_ASSET_LOCK,
+        };
+        self
+    }
+
+    /// Fold `error` into `code` with `message`, keeping the error's own
+    /// payment class (delivery, held asset lock, retry). For the arms that
+    /// report a payment's failure under a code of their own choosing, such as
+    /// the shared `ErrorWalletOperation`.
+    pub(crate) fn err_from_wallet_error(
+        code: PlatformWalletFFIResultCode,
+        message: impl Into<String>,
+        error: &PlatformWalletError,
+    ) -> Self {
+        Self::err(code, message).with_payment_class(payment_class(error))
+    }
+
+    /// `code` and `message` for a payment whose wallet call succeeded but
+    /// whose result could not be handed back (a txid or link that would not
+    /// marshal), carrying the wallet's class for that failure
+    /// ([`handback_failure_payment_class`]): `MaybeSent`, never retryable.
+    pub fn handback_failure(code: PlatformWalletFFIResultCode, message: impl Into<String>) -> Self {
+        Self::err(code, message).with_payment_class(handback_failure_payment_class())
+    }
+
     /// A `Success`-coded result that still carries an advisory `message`.
     ///
     /// Used by non-error outcomes that want to convey a human-readable
@@ -939,6 +1080,9 @@ impl PlatformWalletFFIResult {
             message: c_msg.into_raw(),
             consensus_code: 0,
             consensus_kind: PlatformWalletFFIConsensusErrorKind::None,
+            payment_delivery: PlatformWalletFFIPaymentDelivery::None,
+            held_asset_lock: NO_HELD_ASSET_LOCK,
+            retryable: false,
         }
     }
 }
@@ -1034,8 +1178,48 @@ fn trade_error_json_detail(
     }
 }
 
+/// What the wallet decided about `error`'s payment: whether it may have left
+/// the wallet ([`PlatformWalletError::payment_delivery`]) and whether a retry
+/// is allowed ([`PlatformWalletError::is_retryable`]). The FFI copies both and
+/// decides neither.
+pub(crate) fn payment_class(error: &PlatformWalletError) -> (PaymentDelivery, bool) {
+    (error.payment_delivery(), error.is_retryable())
+}
+
+/// The text a result reports for `operation` ending in `error`, worded by the
+/// error's payment class: "failed" only when nothing was sent
+/// ([`PaymentDelivery::NotSent`]). A payment that may have been sent, or that
+/// holds its asset lock, "did not complete": a host shows this text, and
+/// "failed" would tell the user nothing happened.
+pub(crate) fn outcome_message(operation: &str, error: &PlatformWalletError) -> String {
+    match error.payment_delivery() {
+        PaymentDelivery::NotSent => format!("{operation} failed: {error}"),
+        PaymentDelivery::MaybeSent | PaymentDelivery::LockHeld(_) => {
+            format!("{operation} did not complete: {error}")
+        }
+    }
+}
+
 impl From<PlatformWalletError> for PlatformWalletFFIResult {
     fn from(error: PlatformWalletError) -> Self {
+        let class = payment_class(&error);
+        Self::from_wallet_error_parts(error).with_payment_class(class)
+    }
+}
+
+impl PlatformWalletFFIResult {
+    /// The code, message and consensus verdict of the `From<PlatformWalletError>`
+    /// conversion; the caller stamps the error's payment-delivery class on
+    /// whichever result this returns.
+    fn from_wallet_error_parts(error: PlatformWalletError) -> Self {
+        // A refusal that followed a dispatch keeps its own code, message and
+        // verdict; only its payment class (stamped by the caller) differs.
+        let error = match error {
+            PlatformWalletError::PaymentAlreadyDispatched { source, .. } => {
+                return Self::from_wallet_error_parts(*source);
+            }
+            other => other,
+        };
         // Preserve the SDK's submission phase before any diagnostic can be
         // interpreted as a definitive nonce, balance or marketplace refusal.
         if matches!(
@@ -1656,6 +1840,11 @@ fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
 /// outcome is genuinely ambiguous and the code must never promise a definitive failure. See
 /// `shielded_send::catch_spend_panic` and the per-export call sites.
 ///
+/// `payment` is the payment class the panic result carries, chosen the same way: a payment
+/// export passes `Some((PaymentDelivery::MaybeSent, false))`, because its panic may come after
+/// a reservation or a broadcast; a read or another export that sends nothing passes `None` and
+/// keeps the [`PlatformWalletFFIPaymentDelivery::Unknown`] of [`PlatformWalletFFIResult::err`].
+///
 /// NOTE: this guard is only effective where panics unwind. The Android (`*-android`) and
 /// host/test profiles build with `panic = "unwind"`, so it works there; the iOS profiles
 /// (`dev-ios` / `release-ios`) build with `panic = "abort"` as part of their staticlib size
@@ -1664,19 +1853,61 @@ fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
 pub(crate) fn catch_panic_to_code(
     operation: &str,
     code: PlatformWalletFFIResultCode,
+    payment: Option<(PaymentDelivery, bool)>,
     guidance: &str,
     body: impl FnOnce() -> PlatformWalletFFIResult,
 ) -> PlatformWalletFFIResult {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
         Ok(result) => result,
-        Err(payload) => PlatformWalletFFIResult::err(
-            code,
-            format!(
-                "{operation} panicked: {}. {guidance}",
-                panic_payload_message(payload.as_ref())
-            ),
-        ),
+        Err(payload) => {
+            let result = PlatformWalletFFIResult::err(
+                code,
+                format!(
+                    "{operation} panicked: {}. {guidance}",
+                    panic_payload_message(payload.as_ref())
+                ),
+            );
+            match payment {
+                Some(class) => result.with_payment_class(class),
+                None => result,
+            }
+        }
     }
+}
+
+/// Post-panic guidance for the asset-lock funding exports. Paired with
+/// `ErrorTransactionBroadcastUnconfirmed` in [`catch_funding_panic`].
+const FUNDING_PANIC_GUIDANCE: &str = "The asset lock may or may not have been broadcast — do \
+     NOT retry; the funding UTXOs stay reserved, and the reservation TTL or the next sync \
+     reconciles the outcome (a tracked lock resumes via the resume entry point).";
+
+/// [`catch_panic_to_code`] specialized for the asset-lock funding exports: every export that
+/// builds, broadcasts, resumes or consumes an asset lock (identity registration and top-up,
+/// platform-address and shielded funding, the seed pool, the invitation voucher, the bare
+/// funded-proof build and the resume).
+///
+/// The panic is mapped to
+/// [`PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed`], NOT to a definitive
+/// failure code: a panic can strike after the asset-lock transaction reached the wire (broadcast
+/// precedes the ChainLock wait, the Platform submit, and the bookkeeping), so the outcome
+/// is genuinely ambiguous. That code's contract is exactly the conservative one this needs — the
+/// host must not auto-retry, the funding UTXOs' reservation is still held (`ReservationToken` is
+/// a plain id, not a drop-release guard, so the unwind does not free it and an immediate retry
+/// fails at input selection instead of double-spending), and the reservation TTL or a sync
+/// observing the transaction reconciles the outcome; a tracked lock is resumable through the
+/// flow's resume entry point. The result's payment class is the wallet's
+/// [`panicked_payment_class`]; this guard only marshals it.
+pub(crate) fn catch_funding_panic(
+    operation: &str,
+    body: impl FnOnce() -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    catch_panic_to_code(
+        operation,
+        PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        Some(panicked_payment_class()),
+        FUNDING_PANIC_GUIDANCE,
+        body,
+    )
 }
 
 #[cfg(test)]
@@ -1693,6 +1924,83 @@ mod tests {
     use key_wallet::account::StandardAccountType;
     use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
     use std::time::Duration;
+
+    /// A refusal that followed a dispatch keeps its source's code and
+    /// message (here the key-unavailable code 31 the host routes to key
+    /// repair) and carries the held lock of its own class.
+    #[test]
+    fn should_keep_the_source_code_of_a_refusal_after_dispatch() {
+        let out_point = dashcore::OutPoint::new(dashcore::Txid::from_byte_array([9; 32]), 2);
+        let source = || {
+            PlatformWalletError::Sdk(SdkError::Protocol(ProtocolError::Generic(format!(
+                "{}no private key",
+                platform_wallet::error::SIGNER_KEY_UNAVAILABLE_PREFIX
+            ))))
+        };
+        let mut result: PlatformWalletFFIResult = PlatformWalletError::PaymentAlreadyDispatched {
+            held_lock: Some(out_point),
+            source: Box::new(source()),
+        }
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+        );
+        assert_eq!(
+            result.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::LockHeld
+        );
+        assert_eq!(result.held_asset_lock.vout, 2);
+        assert!(!result.retryable);
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    /// A panic in a read or another export that sends nothing keeps the
+    /// unclassified result of `err`: no wallet error decided its class.
+    #[test]
+    fn catch_panic_to_code_without_a_class_reports_unknown() {
+        let result = catch_panic_to_code(
+            "read",
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            None,
+            "Nothing was sent.",
+            || panic!("read panicked"),
+        );
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        assert_eq!(
+            result.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::Unknown
+        );
+        assert!(!result.retryable);
+    }
+
+    /// A panic in a payment export carries the class its caller chose.
+    #[test]
+    fn catch_panic_to_code_with_a_class_stamps_it() {
+        let result = catch_panic_to_code(
+            "payment",
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+            Some((PaymentDelivery::MaybeSent, false)),
+            "Do not retry.",
+            || panic!("payment panicked"),
+        );
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+        );
+        assert_eq!(
+            result.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::MaybeSent
+        );
+        assert!(!result.retryable);
+        assert_eq!(result.held_asset_lock.txid, [0; 32]);
+        assert_eq!(result.held_asset_lock.vout, 0);
+    }
 
     #[test]
     fn ok_has_null_message() {
@@ -3359,5 +3667,190 @@ mod private_contact_request_error_tests {
             PlatformWalletFFIResultCode::ErrorIdentityNotFound
         );
         assert_eq!(result.code as u32, 7);
+    }
+}
+
+#[cfg(test)]
+mod payment_delivery_tests {
+    use super::*;
+    #[cfg(feature = "shielded")]
+    use crate::shielded_send::map_spend_result;
+    use dpp::address_funds::PlatformAddress;
+    use dpp::prelude::Identifier;
+
+    fn out_point() -> dashcore::OutPoint {
+        dashcore::OutPoint::new(dashcore::Txid::from_byte_array([3; 32]), 1)
+    }
+
+    /// Wallet errors of every class and every shared code.
+    fn errors() -> Vec<PlatformWalletError> {
+        vec![
+            PlatformWalletError::ShieldedBroadcastFailed("refused".into()),
+            PlatformWalletError::ShutdownIncomplete("drain".into()),
+            PlatformWalletError::PersisterStore(
+                platform_wallet::changeset::PersistenceError::backend_with_kind(
+                    PersistenceErrorKind::Transient,
+                    std::io::Error::other("busy"),
+                ),
+            ),
+            PlatformWalletError::ShieldedSpendUnconfirmed {
+                operation: "transfer",
+                reason: "timeout".into(),
+            },
+            PlatformWalletError::ShieldedBroadcastMaybeDelivered("transport".into()),
+            PlatformWalletError::ShieldedNoRecordedAnchor("mid-block".into()),
+            PlatformWalletError::TransactionBroadcast("rejected".into()),
+            PlatformWalletError::TransactionBroadcastUnconfirmed("timeout".into()),
+            PlatformWalletError::StaleReservation,
+            PlatformWalletError::PreparedPaymentAddressTaken("taken".into()),
+            PlatformWalletError::WalletRemovedBeforeSend("w".into()),
+            PlatformWalletError::InputMidBroadcast {
+                outpoint: out_point(),
+            },
+            PlatformWalletError::InputSumOverflow,
+            PlatformWalletError::AssetLockInsufficientFunds {
+                available: 1,
+                required: 2,
+            },
+            PlatformWalletError::AssetLockFundsAwaitingFinality { waiting: 1 },
+            PlatformWalletError::AssetLockNotTracked(out_point()),
+            PlatformWalletError::AssetLockAlreadyConsumed(out_point()),
+            PlatformWalletError::FinalityTimeout(out_point()),
+            PlatformWalletError::AssetLockInputContested {
+                out_point: out_point(),
+                input: out_point(),
+                spent_by: dashcore::Txid::from_byte_array([4; 32]),
+                height: None,
+            },
+            PlatformWalletError::AssetLockRecipientMismatch {
+                out_point: out_point(),
+                recorded: [1; 43],
+                requested: [2; 43],
+            },
+            PlatformWalletError::AssetLockTransaction("funded".into()),
+            PlatformWalletError::AddressNonceMismatch {
+                address: PlatformAddress::P2pkh([7; 20]),
+                provided_nonce: 1,
+                expected_nonce: 2,
+            },
+            PlatformWalletError::PlatformShieldCapacityExceeded {
+                available: 1,
+                required: 2,
+            },
+            PlatformWalletError::MasternodeWithdrawalUnconfirmed {
+                identity_id: Identifier::from([1; 32]),
+                amount_credits: 5,
+                reason: "timeout".into(),
+            },
+            PlatformWalletError::InvalidParameter("bad".into()),
+            PlatformWalletError::IdentityNotFound(Identifier::from([2; 32])),
+            PlatformWalletError::TransactionBuild("fee".into()),
+            PlatformWalletError::ShieldedBuildError("after".into()),
+            PlatformWalletError::WalletNotFound("w".into()),
+            PlatformWalletError::Sdk(dash_sdk::Error::Generic("transport".into())),
+            PlatformWalletError::Sdk(dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(
+                dash_sdk::Error::Generic("no proof".into()),
+            ))),
+            PlatformWalletError::Sdk(dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(
+                format!(
+                    "{}no key",
+                    platform_wallet::error::SIGNER_KEY_UNAVAILABLE_PREFIX
+                ),
+            ))),
+        ]
+    }
+
+    /// The `held_asset_lock` a result must carry for `error`: its outpoint
+    /// under `LockHeld`, all zero otherwise.
+    fn expected_held_asset_lock(error: &PlatformWalletError) -> ([u8; 32], u32) {
+        match error.held_asset_lock() {
+            Some(out_point) => (out_point.txid.to_byte_array(), out_point.vout),
+            None => ([0; 32], 0),
+        }
+    }
+
+    #[test]
+    fn should_carry_the_wallet_errors_own_class() {
+        for error in errors() {
+            let expected: PlatformWalletFFIPaymentDelivery = error.payment_delivery().into();
+            let retryable = error.is_retryable();
+            let held = expected_held_asset_lock(&error);
+            let rendered = format!("{error:?}");
+            let result = PlatformWalletFFIResult::from(error);
+            assert_eq!(result.payment_delivery, expected, "{rendered}");
+            assert_eq!(result.retryable, retryable, "{rendered}");
+            assert_eq!(
+                (result.held_asset_lock.txid, result.held_asset_lock.vout),
+                held,
+                "{rendered}"
+            );
+        }
+    }
+
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_keep_the_class_through_the_spend_mapping() {
+        for error in errors() {
+            let expected: PlatformWalletFFIPaymentDelivery = error.payment_delivery().into();
+            let retryable = error.is_retryable();
+            let held = expected_held_asset_lock(&error);
+            let rendered = format!("{error:?}");
+            let result = map_spend_result(Err(error), "shielded transfer");
+            assert_eq!(result.payment_delivery, expected, "{rendered}");
+            assert_eq!(result.retryable, retryable, "{rendered}");
+            assert_eq!(
+                (result.held_asset_lock.txid, result.held_asset_lock.vout),
+                held,
+                "{rendered}"
+            );
+        }
+        // A pre-dispatch failure folded into the shared code stays "not sent".
+        let folded = map_spend_result(
+            Err(PlatformWalletError::TransactionBuild("fee".into())),
+            "shielded transfer",
+        );
+        assert_eq!(
+            folded.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        assert_eq!(
+            folded.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::NotSent
+        );
+        assert_eq!(
+            map_spend_result(Ok(()), "shielded transfer").payment_delivery,
+            PlatformWalletFFIPaymentDelivery::None
+        );
+    }
+
+    /// A result no wallet error is behind carries no class of its own: the
+    /// FFI never guesses one from the code, whichever code it is.
+    #[test]
+    fn should_leave_a_result_built_from_a_code_unclassified() {
+        assert_eq!(
+            PlatformWalletFFIResult::ok().payment_delivery,
+            PlatformWalletFFIPaymentDelivery::None
+        );
+        for code in [
+            PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+            PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            PlatformWalletFFIResultCode::ErrorUnknown,
+            PlatformWalletFFIResultCode::ErrorNullPointer,
+        ] {
+            let result = PlatformWalletFFIResult::err(code, "x");
+            assert_eq!(
+                result.payment_delivery,
+                PlatformWalletFFIPaymentDelivery::Unknown,
+                "{code:?}"
+            );
+            assert!(!result.retryable, "{code:?}");
+            assert_eq!(
+                (result.held_asset_lock.txid, result.held_asset_lock.vout),
+                ([0; 32], 0),
+                "{code:?}"
+            );
+        }
     }
 }

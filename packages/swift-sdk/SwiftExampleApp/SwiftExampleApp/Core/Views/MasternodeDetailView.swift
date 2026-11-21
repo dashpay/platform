@@ -432,7 +432,7 @@ struct MasternodeDetailView: View {
             showClaimSheet = false
             // Reflect the new (reduced) balance.
             await fetchClaimableBalance()
-        } catch PlatformWalletError.masternodeWithdrawalUnconfirmed(let detail) {
+        } catch PlatformWalletError.masternodeWithdrawalUnconfirmed(let detail, _) {
             // Ambiguous: the claim may have executed and its nonce may have
             // been taken, so never re-submit blindly. Confirm stays disabled
             // until the balance is refreshed.

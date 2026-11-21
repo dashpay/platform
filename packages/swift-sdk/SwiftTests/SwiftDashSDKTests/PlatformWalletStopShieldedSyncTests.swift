@@ -129,7 +129,7 @@ final class PlatformWalletStopShieldedSyncTests: XCTestCase {
         line: UInt = #line
     ) {
         XCTAssertThrowsError(try call(), name, file: file, line: line) { error in
-            guard case PlatformWalletError.walletOperation(let message) = error,
+            guard case PlatformWalletError.walletOperation(let message, _) = error,
                   message.contains("Shielded sync stop in progress") else {
                 return XCTFail("\(name): expected the in-flight stop refusal, got \(error)", file: file, line: line)
             }
@@ -146,7 +146,7 @@ final class PlatformWalletStopShieldedSyncTests: XCTestCase {
         do {
             try await call()
             XCTFail("\(name): expected the in-flight stop refusal", file: file, line: line)
-        } catch PlatformWalletError.walletOperation(let message)
+        } catch PlatformWalletError.walletOperation(let message, _)
             where message.contains("Shielded sync stop in progress") {
             // Expected.
         } catch {
@@ -375,7 +375,7 @@ final class PlatformWalletStopShieldedSyncTests: XCTestCase {
             try await manager.stopShieldedSync()
             XCTFail("expected the native failure to throw")
         } catch {
-            if case PlatformWalletError.walletOperation(let message) = error {
+            if case PlatformWalletError.walletOperation(let message, _) = error {
                 XCTAssertFalse(message.contains("Shielded sync stop in progress"))
             }
         }
@@ -418,7 +418,7 @@ final class PlatformWalletStopShieldedSyncTests: XCTestCase {
             _ = try manager.createWallet(mnemonic: "unused", network: .testnet)
         }
         XCTAssertThrowsError(try syncCreate()) { error in
-            guard case PlatformWalletError.invalidHandle(let message) = error,
+            guard case PlatformWalletError.invalidHandle(let message, _) = error,
                   message.contains("async native operation is in flight") else {
                 return XCTFail("expected the synchronous create to be refused, got \(error)")
             }

@@ -66,7 +66,7 @@ final class ErrorHandlingTests: XCTestCase {
             code: .errorAssetLockInsufficientFunds,
             message: rendered
         )
-        guard case .assetLockInsufficientFunds(let message) = error else {
+        guard case .assetLockInsufficientFunds(let message, _) = error else {
             return XCTFail("expected typed assetLockInsufficientFunds error")
         }
         XCTAssertEqual(message, rendered)
@@ -125,7 +125,7 @@ final class ErrorHandlingTests: XCTestCase {
             code: .errorPersisterStoreTransient,
             message: busy
         )
-        guard case .persisterStoreTransient(let storeMessage) = storeTransient else {
+        guard case .persisterStoreTransient(let storeMessage, _) = storeTransient else {
             return XCTFail("expected typed persisterStoreTransient error")
         }
         XCTAssertEqual(storeMessage, busy)
@@ -147,7 +147,7 @@ final class ErrorHandlingTests: XCTestCase {
             return XCTFail("expected typed persisterLoadTransient error")
         }
 
-        guard case .persisterRestore(let restoreMessage) = PlatformWalletError(
+        guard case .persisterRestore(let restoreMessage, _) = PlatformWalletError(
             code: .errorPersisterRestore,
             message: "failed to restore persisted platform-address state: wallet is locked"
         ) else {
@@ -167,8 +167,9 @@ final class ErrorHandlingTests: XCTestCase {
         let busy = "failed to persist wallet registration changeset: "
             + "persistence backend error (Transient): database is locked"
         let expected: [(PlatformWalletResultCode, String)] = [
-            (.errorPersisterLoadTransient, "The wallet database is busy. Try again in a moment."),
-            (.errorPersisterStoreTransient, "The wallet database is busy. Try again in a moment."),
+            // Unclassified (no payment class): no retry is invited.
+            (.errorPersisterLoadTransient, "The wallet database is busy."),
+            (.errorPersisterStoreTransient, "The wallet database is busy."),
             (
                 .errorPersisterLoadFatal,
                 "The wallet data could not be read and may need to be restored."
@@ -226,7 +227,7 @@ final class ErrorHandlingTests: XCTestCase {
             consensus: PlatformConsensusError(code: 40722, kind: .state)
         )
 
-        guard case .consensusRejection(let consensus, let message) = error else {
+        guard case .consensusRejection(let consensus, let message, _) = error else {
             return XCTFail("expected typed consensusRejection error, got \(error)")
         }
         XCTAssertEqual(consensus.code, 40722)
@@ -266,7 +267,10 @@ final class ErrorHandlingTests: XCTestCase {
                 code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN,
                 message: nil,
                 consensus_code: 40722,
-                consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_STATE
+                consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_STATE,
+                payment_delivery: PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_MAYBE_SENT,
+                held_asset_lock: OutPointFFI(),
+                retryable: false
             )
         )
         XCTAssertEqual(
@@ -283,6 +287,336 @@ final class ErrorHandlingTests: XCTestCase {
             )
         )
         XCTAssertNil(invented.consensusError)
+    }
+
+    /// A raw held asset lock: txid of 7s, vout 2.
+    private static let heldOutPoint: OutPointFFI = {
+        var outPoint = OutPointFFI()
+        withUnsafeMutableBytes(of: &outPoint.txid) { $0.initializeMemory(as: UInt8.self, repeating: 7) }
+        outPoint.vout = 2
+        return outPoint
+    }()
+
+    private static func result(
+        _ code: PlatformWalletFFIResultCode,
+        _ delivery: PlatformWalletFFIPaymentDelivery,
+        held: OutPointFFI = OutPointFFI(),
+        retryable: Bool = false
+    ) -> PlatformWalletResult {
+        PlatformWalletResult(
+            PlatformWalletFFIResult(
+                code: code,
+                message: nil,
+                consensus_code: 0,
+                consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_NONE,
+                payment_delivery: delivery,
+                held_asset_lock: held,
+                retryable: retryable
+            )
+        )
+    }
+
+    private static var expectedHeldLock: PlatformPaymentDelivery {
+        .lockHeld(AssetLockBuiltOutPoint(rawBytes: Data(repeating: 7, count: 32) + Data([2, 0, 0, 0]))!)
+    }
+
+    /// The result wrapper reads the payment-delivery class off the C struct,
+    /// the held asset lock with it, and a success carries none.
+    func testShouldReadThePaymentDeliveryFromTheFFIResult() {
+        XCTAssertEqual(
+            Self.result(PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION, PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NOT_SENT)
+                .paymentDelivery,
+            .notSent
+        )
+        XCTAssertEqual(
+            Self.result(
+                PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION,
+                PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_LOCK_HELD,
+                held: Self.heldOutPoint
+            ).paymentDelivery,
+            Self.expectedHeldLock
+        )
+
+        let success = PlatformWalletResult(
+            PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
+        )
+        XCTAssertNil(success.paymentDelivery)
+    }
+
+    /// The catch-all codes keep the class the result carried instead of the
+    /// one their code shares: a pre-dispatch failure folded into code 6 or
+    /// 99 stays `.notSent`, and a held lock keeps its outpoint.
+    func testShouldKeepTheResultsDeliveryOnTheCatchAllCases() {
+        let notSentOperation = PlatformWalletError(
+            result: Self.result(PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION, PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NOT_SENT)
+        )
+        guard case .walletOperation = notSentOperation else {
+            return XCTFail("expected walletOperation, got \(notSentOperation)")
+        }
+        XCTAssertEqual(notSentOperation.delivery, .notSent)
+
+        let notSentUnknown = PlatformWalletError(
+            result: Self.result(PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN, PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NOT_SENT)
+        )
+        XCTAssertEqual(notSentUnknown.delivery, .notSent)
+
+        let timedOut = PlatformWalletError(
+            result: Self.result(
+                PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION,
+                PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_LOCK_HELD,
+                held: Self.heldOutPoint
+            )
+        )
+        XCTAssertEqual(timedOut.delivery, Self.expectedHeldLock)
+
+        for code in [
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INPUT_CONTESTED,
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_RECIPIENT_MISMATCH,
+        ] {
+            let held = PlatformWalletError(
+                result: Self.result(code, PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_LOCK_HELD, held: Self.heldOutPoint)
+            )
+            XCTAssertEqual(held.delivery, Self.expectedHeldLock, "\(held)")
+        }
+    }
+
+    /// Every case built from a result keeps the class and the retry that
+    /// result carried, whatever its code: Swift's view of a result is the
+    /// one Kotlin reads from the same fields. A failure no wallet error
+    /// classified stays unclassified.
+    func testShouldKeepTheResultsClassOnEveryCase() {
+        let deliveries: [(PlatformWalletFFIPaymentDelivery, PlatformPaymentDelivery?)] = [
+            (PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NOT_SENT, .notSent),
+            (PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_MAYBE_SENT, .maybeSent),
+            (PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_LOCK_HELD, Self.expectedHeldLock),
+            (PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_UNKNOWN, nil),
+        ]
+        var checked = 0
+        for raw in 1...99 {
+            let code = PlatformWalletFFIResultCode(rawValue: numericCast(raw))
+            guard PlatformWalletResultCode(ffi: code).rawValue == raw else { continue }
+            checked += 1
+            for (delivery, expected) in deliveries {
+                // Rust marks a retry only where nothing left the wallet:
+                // never an unclassified, maybe-sent or held-lock failure.
+                for retryable in expected == .notSent ? [false, true] : [false] {
+                    let error = PlatformWalletError(
+                        result: Self.result(code, delivery, held: Self.heldOutPoint, retryable: retryable)
+                    )
+                    XCTAssertEqual(error.delivery, expected, "\(error)")
+                    XCTAssertEqual(error.isRetryable, retryable, "\(error)")
+                }
+            }
+        }
+        XCTAssertGreaterThan(checked, 60, "every result code must be walked")
+
+        // The value-carrying marketplace cases and the consensus rejection
+        // keep it too, including the `.notSent` their code shares with
+        // maybe-sent failures.
+        let price = PlatformWalletError(
+            code: .errorDocumentPriceChanged,
+            message: #"{"documentId":"doc","expected":10,"actual":12}"#,
+            payment: .maybeSent
+        )
+        XCTAssertEqual(price.delivery, .maybeSent)
+        let credits = PlatformWalletError(
+            code: .errorInsufficientIdentityCredits,
+            message: #"{"identityId":"identity","required":101,"available":100}"#,
+            payment: .maybeSent
+        )
+        XCTAssertEqual(credits.delivery, .maybeSent)
+        let rejected = PlatformWalletError(
+            code: .errorUnknown,
+            message: "refused",
+            consensus: PlatformConsensusError(code: 40722, kind: .state),
+            payment: .maybeSent
+        )
+        XCTAssertEqual(rejected.delivery, .maybeSent)
+        let contest = PlatformWalletError(
+            code: .errorContestedNameNotTradable,
+            message: #"{"label":"a11ce","endsAtMs":1234}"#,
+            payment: PlatformPaymentClass(delivery: .notSent, isRetryable: true)
+        )
+        guard case .contestedNameNotTradable = contest else {
+            return XCTFail("expected contestedNameNotTradable, got \(contest)")
+        }
+        XCTAssertEqual(contest.delivery, .notSent)
+        XCTAssertTrue(contest.isRetryable)
+    }
+
+    /// The retry is the result's own: Swift reads it and decides nothing from
+    /// the case or the class.
+    func testShouldReadTheRetryFromTheResult() {
+        let notSent = PlatformWalletError(
+            result: Self.result(
+                PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION,
+                PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NOT_SENT,
+                retryable: true
+            )
+        )
+        XCTAssertTrue(notSent.isRetryable)
+        let refused = PlatformWalletError(
+            result: Self.result(
+                PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION,
+                PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NOT_SENT
+            )
+        )
+        XCTAssertFalse(refused.isRetryable)
+        // Unclassified: never retried automatically.
+        XCTAssertFalse(PlatformWalletError.shieldedBroadcastFailed("refused").isRetryable)
+        XCTAssertFalse(PlatformWalletError.walletOperation("guard").isRetryable)
+    }
+
+    /// The user-facing adapter takes a wallet error's retry from Rust's
+    /// class, not from the category its text suggests: a maybe-sent payment
+    /// whose message says "timeout" is not retryable, a Rust-approved retry
+    /// is not hidden by a "storage" category, and an unclassified wallet
+    /// error stays non-retryable.
+    func testShouldTakeTheUserFacingRetryFromTheWalletErrorsClass() {
+        let maybeSent = PlatformWalletError.shieldedSpendUnconfirmed("timeout", payment: .maybeSent)
+        XCTAssertFalse(ErrorCategorizer.toUserFacingError(maybeSent).isRetryable)
+
+        let safeRetry = PlatformWalletError.walletOperation(
+            "storage busy",
+            payment: PlatformPaymentClass(delivery: .notSent, isRetryable: true)
+        )
+        XCTAssertTrue(ErrorCategorizer.toUserFacingError(safeRetry).isRetryable)
+
+        XCTAssertFalse(ErrorCategorizer.toUserFacingError(PlatformWalletError.walletOperation("timeout")).isRetryable)
+    }
+
+    /// An unconfirmed shielded identity create is thrown as its own error,
+    /// not as a `PlatformWalletError`. A "timeout" diagnostic on it keeps
+    /// Rust's retry (false) and gets no "try again" suggestion: the identity
+    /// may exist, and its slot stays held.
+    func testShouldTakeTheUserFacingRetryOfAnUnconfirmedIdentityCreateFromRust() {
+        let unconfirmed = ShieldedIdentityCreateUnconfirmedError(
+            identityId: Data(repeating: 1, count: 32),
+            message: "timeout",
+            payment: .maybeSent
+        )
+        let userFacing = ErrorCategorizer.toUserFacingError(unconfirmed)
+        XCTAssertFalse(userFacing.isRetryable)
+        XCTAssertNil(userFacing.recoverySuggestion)
+
+        let unclassified = ShieldedIdentityCreateUnconfirmedError(
+            identityId: Data(repeating: 1, count: 32),
+            message: "timeout",
+            payment: nil
+        )
+        XCTAssertFalse(ErrorCategorizer.toUserFacingError(unclassified).isRetryable)
+    }
+
+    /// The throwing Core broadcast throws the error its native result
+    /// builds: a proven rejection keeps Rust's `.notSent`, an unconfirmed
+    /// one Rust's `.maybeSent`, instead of a class Swift picks itself.
+    func testShouldKeepRustsClassOnTheThrowingCoreBroadcast() {
+        func result(
+            _ code: PlatformWalletFFIResultCode,
+            _ delivery: PlatformWalletFFIPaymentDelivery
+        ) -> PlatformWalletResult {
+            PlatformWalletResult(PlatformWalletFFIResult(
+                code: code,
+                message: nil,
+                consensus_code: 0,
+                consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_NONE,
+                payment_delivery: delivery,
+                held_asset_lock: OutPointFFI(),
+                retryable: false
+            ))
+        }
+
+        XCTAssertThrowsError(try ManagedCoreWallet.broadcastTxid(
+            result: result(
+                PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_REJECTED,
+                PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NOT_SENT
+            ),
+            txid: "ab"
+        )) { error in
+            guard case .transactionBroadcastRejected = error as? PlatformWalletError else {
+                return XCTFail("expected transactionBroadcastRejected, got \(error)")
+            }
+            XCTAssertEqual((error as? PlatformWalletError)?.delivery, .notSent)
+        }
+
+        XCTAssertThrowsError(try ManagedCoreWallet.broadcastTxid(
+            result: result(
+                PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_UNCONFIRMED,
+                PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_MAYBE_SENT
+            ),
+            txid: "ab"
+        )) { error in
+            XCTAssertEqual((error as? PlatformWalletError)?.delivery, .maybeSent)
+        }
+
+        XCTAssertEqual(
+            try ManagedCoreWallet.broadcastTxid(
+                result: result(
+                    PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS,
+                    PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NONE
+                ),
+                txid: "ab"
+            ),
+            "ab"
+        )
+    }
+
+    /// A held asset lock is not a retry, in the wallet error or in the
+    /// generic user-facing one: running the payment again would fund a
+    /// second one while the first lock stays resumable. Rust classes it
+    /// `LockHeld` with `retryable == false`; the error keeps the outpoint,
+    /// so the payment goes on only by resuming that lock.
+    func testShouldNotOfferAUserFacingRetryForAHeldAssetLock() {
+        for code in [
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION,
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INPUT_CONTESTED,
+        ] {
+            let held = PlatformWalletError(
+                result: Self.result(code, PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_LOCK_HELD, held: Self.heldOutPoint)
+            )
+            XCTAssertEqual(held.delivery, Self.expectedHeldLock, "\(held)")
+            XCTAssertFalse(held.isRetryable, "\(held)")
+            XCTAssertFalse(ErrorCategorizer.toUserFacingError(held).isRetryable, "\(held)")
+        }
+    }
+
+    /// No class is ever derived from a code: a case Swift throws itself
+    /// without a result is unclassified whatever its case, unless the guard
+    /// passes one; a result-built case reads the result's class, not one
+    /// its code would suggest.
+    func testShouldNeverDeriveAPaymentDeliveryFromTheCode() {
+        let thrownBySwift: [PlatformWalletError] = [
+            .shieldedBroadcastFailed("refused"),
+            .shieldedNoRecordedAnchor("mid-block"),
+            .transactionBroadcastRejected("rejected"),
+            .shieldedSpendUnconfirmed("timeout"),
+            .transactionBroadcastUnconfirmed("timeout"),
+            .masternodeWithdrawalUnconfirmed("timeout"),
+            .walletOperation("folded"),
+            .unknown("folded"),
+        ]
+        for error in thrownBySwift {
+            XCTAssertNil(error.delivery, "\(error)")
+            XCTAssertFalse(error.isRetryable, "\(error)")
+        }
+        XCTAssertEqual(
+            PlatformWalletError.transactionBroadcastUnconfirmed("timeout", payment: .maybeSent).delivery,
+            .maybeSent
+        )
+        // A code that names a definitive refusal still reports what the
+        // result said, and an unconfirmed code a `.notSent` result.
+        let refused = PlatformWalletError(
+            result: Self.result(
+                PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_BROADCAST_FAILED,
+                PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NOT_SENT,
+                retryable: true
+            )
+        )
+        guard case .shieldedBroadcastFailed = refused else {
+            return XCTFail("expected shieldedBroadcastFailed, got \(refused)")
+        }
+        XCTAssertEqual(refused.delivery, .notSent)
+        XCTAssertTrue(refused.isRetryable)
     }
 
     /// rs-sdk-ffi's kind decodes to the same four families from its own
@@ -429,10 +763,10 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(corrupted.rawValue, 56)
         XCTAssertEqual(keysRequired.rawValue, 57)
         let detail = "Cannot read durable identity recovery record"
-        guard case .shieldedRecoveryCorrupted(let corruptedMessage) = PlatformWalletError(
+        guard case .shieldedRecoveryCorrupted(let corruptedMessage, _) = PlatformWalletError(
             code: corrupted, message: detail
         ) else { return XCTFail("lost typed corruption error") }
-        guard case .shieldedRecoveryKeysRequired(let keyMessage) = PlatformWalletError(
+        guard case .shieldedRecoveryKeysRequired(let keyMessage, _) = PlatformWalletError(
             code: keysRequired, message: detail
         ) else { return XCTFail("lost typed keys-required error") }
         XCTAssertEqual(corruptedMessage, detail)
@@ -447,7 +781,7 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(code.rawValue, 59)
         let detail = "teardown task 12 panicked with message \"boom\""
         let error = PlatformWalletError(code: code, message: detail)
-        guard case .spvProcessRestartRequired(let message) = error else {
+        guard case .spvProcessRestartRequired(let message, _) = error else {
             return XCTFail("lost typed restart-required error")
         }
         XCTAssertEqual(message, detail)
@@ -468,7 +802,7 @@ final class ErrorHandlingTests: XCTestCase {
         let detail = "the contact requests with 9fRYTJZW came or went privately; "
             + "reply to or rotate with it privately"
         let error = PlatformWalletError(code: code, message: detail)
-        guard case .privateContactRequestNeedsPrivateReply(let message) = error else {
+        guard case .privateContactRequestNeedsPrivateReply(let message, _) = error else {
             return XCTFail("lost typed private-reply error")
         }
         XCTAssertEqual(message, detail)
@@ -484,7 +818,7 @@ final class ErrorHandlingTests: XCTestCase {
         let detail = "this contact request needs a private reply, which is paid "
             + "from the shielded pool; this build has no shielded support"
         let error = PlatformWalletError(code: code, message: detail)
-        guard case .shieldedBuildRequired(let message) = error else {
+        guard case .shieldedBuildRequired(let message, _) = error else {
             return XCTFail("lost typed shielded-build error")
         }
         XCTAssertEqual(message, detail)
@@ -500,7 +834,7 @@ final class ErrorHandlingTests: XCTestCase {
         let detail = "get_private_document_entries needs protocol version 15; "
             + "the network is proven at protocol version 14"
         let error = PlatformWalletError(code: code, message: detail)
-        guard case .protocolVersionNotActive(let message) = error else {
+        guard case .protocolVersionNotActive(let message, _) = error else {
             return XCTFail("lost typed protocol-version error")
         }
         XCTAssertEqual(message, detail)
@@ -515,7 +849,7 @@ final class ErrorHandlingTests: XCTestCase {
         let detail = "a private contact request to 9fRYTJZW is in flight or not yet read "
             + "back from the store; sync private contact requests to settle it"
         let error = PlatformWalletError(code: code, message: detail)
-        guard case .privateContactRequestPending(let message) = error else {
+        guard case .privateContactRequestPending(let message, _) = error else {
             return XCTFail("lost typed pending error")
         }
         XCTAssertEqual(message, detail)
@@ -531,7 +865,7 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(code.rawValue, 72)
         let detail = "the wallet's private payments are not restored from the shielded store yet"
         let error = PlatformWalletError(code: code, message: detail)
-        guard case .privateContactPaymentsNotRestored(let message) = error else {
+        guard case .privateContactPaymentsNotRestored(let message, _) = error else {
             return XCTFail("lost typed not-restored error")
         }
         XCTAssertEqual(message, detail)
@@ -546,7 +880,7 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(code, .errorPrivateContactRecoveryUnsupported)
         XCTAssertEqual(code.rawValue, 73)
         let detail = "the persister does not keep the private contact request scan state atomically"
-        guard case .privateContactRecoveryUnsupported(let message) =
+        guard case .privateContactRecoveryUnsupported(let message, _) =
             PlatformWalletError(code: code, message: detail) else {
             return XCTFail("lost typed recovery-unsupported error")
         }
@@ -563,7 +897,7 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(code, .errorPrivateContactStoreNotRead)
         XCTAssertEqual(code.rawValue, 74)
         let detail = "the private contact request store was not read to its end for 9fRYTJZW"
-        guard case .privateContactStoreNotRead(let message) =
+        guard case .privateContactStoreNotRead(let message, _) =
             PlatformWalletError(code: code, message: detail) else {
             return XCTFail("lost typed store-not-read error")
         }
@@ -581,7 +915,7 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(code.rawValue, 75)
         let detail = "get_private_document_entries needs protocol version 15; "
             + "the SDK is pinned at protocol version 14"
-        guard case .sdkPinnedBelowProtocolVersion(let message) =
+        guard case .sdkPinnedBelowProtocolVersion(let message, _) =
             PlatformWalletError(code: code, message: detail) else {
             return XCTFail("lost typed pinned-SDK error")
         }
@@ -597,7 +931,7 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(code, .errorPublicContactRequestUnconfirmed)
         XCTAssertEqual(code.rawValue, 76)
         let detail = "a public contact request to 9fRYTJZW was broadcast and its outcome is not proved"
-        guard case .publicContactRequestUnconfirmed(let message) =
+        guard case .publicContactRequestUnconfirmed(let message, _) =
             PlatformWalletError(code: code, message: detail) else {
             return XCTFail("lost typed public-unconfirmed error")
         }
@@ -614,7 +948,7 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(code, .errorIdentityLookupFailed)
         XCTAssertEqual(code.rawValue, 80)
         let detail = "could not look up identity 9fRYTJZW on Platform; nothing was sent"
-        guard case .identityLookupFailed(let message) =
+        guard case .identityLookupFailed(let message, _) =
             PlatformWalletError(code: code, message: detail) else {
             return XCTFail("lost typed identity-lookup-failed error")
         }
@@ -667,7 +1001,7 @@ final class ErrorHandlingTests: XCTestCase {
         let rendered = "Identity has an unresolved shielded debit; "
             + "this request was not started. Wait for shielded sync"
         let error = PlatformWalletError(code: code, message: rendered)
-        guard case .shieldedIdentityDebitPending(let message) = error else {
+        guard case .shieldedIdentityDebitPending(let message, _) = error else {
             return XCTFail("expected typed shieldedIdentityDebitPending error")
         }
         XCTAssertEqual(message, rendered)
@@ -690,7 +1024,7 @@ final class ErrorHandlingTests: XCTestCase {
             code: .errorShieldedInsufficientBalance,
             message: "available 3623849220, required 3623849221"
         )
-        guard case .shieldedInsufficientBalance(let message) = error else {
+        guard case .shieldedInsufficientBalance(let message, _) = error else {
             return XCTFail("expected typed shieldedInsufficientBalance error")
         }
         XCTAssertEqual(message, "available 3623849220, required 3623849221")
@@ -1148,5 +1482,123 @@ final class ErrorHandlingTests: XCTestCase {
                 reason: "invalid handle"
             )
         )
+    }
+
+    // MARK: - Recovery follows Rust's payment class
+
+    /// Every class maps to one recovery and one displayed suggestion: a retry
+    /// only for a retryable `.notSent`, a wait for a non-retryable one, a
+    /// resume naming the held lock, a reconcile for `.maybeSent`, and an
+    /// unconfirmed outcome (never a retry) when nothing classified it.
+    func testShouldDecideTheRecoveryFromThePaymentClassAlone() {
+        let held = AssetLockBuiltOutPoint(rawBytes: Data(repeating: 7, count: 32) + Data([2, 0, 0, 0]))!
+        let cases: [(PlatformPaymentClass?, PlatformPaymentRecovery, String)] = [
+            (PlatformPaymentClass(delivery: .notSent, isRetryable: true), .retry,
+             "Nothing was sent. You can try again."),
+            (PlatformPaymentClass(delivery: .notSent, isRetryable: false), .wait,
+             "Nothing was sent. This request cannot go through as it is."),
+            (PlatformPaymentClass(delivery: .lockHeld(held), isRetryable: false), .resume(held),
+             "The funds are held in an asset lock. Resume that lock to finish; do not start a new payment."),
+            (.maybeSent, .reconcile,
+             "The payment may have gone through. Wait for the wallet to sync before doing anything else; "
+                + "do not send it again."),
+            (nil, .unconfirmed,
+             "Submission result is unconfirmed. Check history and reconcile the original operation "
+                + "before submitting again."),
+        ]
+        for (payment, recovery, text) in cases {
+            XCTAssertEqual(PlatformPaymentRecovery(payment), recovery, "\(String(describing: payment))")
+            XCTAssertEqual(PlatformPaymentRecovery(payment).suggestion, text)
+            XCTAssertEqual(ErrorRecovery.suggestion(for: payment), text)
+        }
+    }
+
+    /// The displayed text of a wallet error leads with its class's
+    /// suggestion and adds no category suggestion, whatever its message
+    /// says: a "network timeout" that may have been sent never reads
+    /// "try again", and its message does not leak the case's `payment:` tail.
+    func testShouldDisplayTheClassSuggestionNotOneInferredFromTheText() {
+        let held = AssetLockBuiltOutPoint(rawBytes: Data(repeating: 7, count: 32) + Data([2, 0, 0, 0]))!
+        let cases: [(PlatformWalletError, String, String)] = [
+            (.walletOperation("network timeout", payment: .maybeSent), "Submission unconfirmed",
+             PlatformPaymentRecovery.reconcile.suggestion),
+            (.invalidParameter("invalid input", payment: PlatformPaymentClass(delivery: .notSent, isRetryable: false)),
+             "Not sent", PlatformPaymentRecovery.wait.suggestion),
+            (.walletOperation("connection lost", payment: PlatformPaymentClass(delivery: .lockHeld(held), isRetryable: false)),
+             "Payment held", PlatformPaymentRecovery.resume(held).suggestion),
+            (.shieldedBroadcastFailed("network refused", payment: PlatformPaymentClass(delivery: .notSent, isRetryable: true)),
+             "Not sent", PlatformPaymentRecovery.retry.suggestion),
+        ]
+        for (error, title, suggestion) in cases {
+            let shown = ErrorCategorizer.toUserFacingError(error)
+            XCTAssertEqual(shown.title, title, "\(error)")
+            XCTAssertEqual(shown.message, "\(suggestion) \(error.localizedDescription)")
+            XCTAssertNil(shown.recoverySuggestion, "no category suggestion for \(error)")
+            XCTAssertFalse(shown.fullDescription.contains("payment:"), shown.fullDescription)
+            XCTAssertEqual(shown.isRetryable, error.isRetryable)
+            if !error.isRetryable {
+                XCTAssertFalse(shown.fullDescription.lowercased().contains("try again"), shown.fullDescription)
+            }
+        }
+    }
+
+    /// A held invitation voucher is reclaimed, not resumed; every other
+    /// class reads as it always does (← Kotlin `PaymentRecovery`).
+    func testShouldTellAnInvitationVoucherToBeReclaimed() {
+        let held = AssetLockBuiltOutPoint(rawBytes: Data(repeating: 7, count: 32) + Data([2, 0, 0, 0]))!
+        let resume = PlatformPaymentRecovery.resume(held)
+        XCTAssertTrue(resume.invitationVoucherSuggestion.contains("Reclaim the voucher"))
+        XCTAssertFalse(resume.invitationVoucherSuggestion.contains("Resume"))
+        for other in [PlatformPaymentRecovery.retry, .wait, .reconcile, .unconfirmed] {
+            XCTAssertEqual(other.invitationVoucherSuggestion, other.suggestion)
+        }
+    }
+
+    /// A wallet error that carries no class attempted no payment (a Swift
+    /// input check before any native call, a native refusal before the wallet
+    /// ran): it is titled by its category, not "Submission unconfirmed", shows
+    /// its own text, and is still offered no retry or retry text.
+    func testShouldNotTitleAnUnclassifiedWalletErrorAsAnUnconfirmedSubmission() {
+        for error in [
+            PlatformWalletError.invalidParameter("Amount must be greater than zero"),
+            PlatformWalletError.notFound("not found"),
+            PlatformWalletError.walletOperation("timeout"),
+        ] {
+            let shown = ErrorCategorizer.toUserFacingError(error)
+            XCTAssertEqual(shown.title, ErrorCategorizer.categorize(error).rawValue, "\(error)")
+            XCTAssertNotEqual(shown.title, "Submission unconfirmed")
+            XCTAssertEqual(shown.message, error.localizedDescription)
+            XCTAssertEqual(ErrorFormatter.userFriendlyMessage(from: error), error.localizedDescription)
+            XCTAssertNil(shown.recoverySuggestion)
+            XCTAssertFalse(shown.isRetryable)
+            XCTAssertFalse(shown.fullDescription.lowercased().contains("try again"), shown.fullDescription)
+        }
+        // The same error once Rust classed its payment follows the class.
+        let classed = ErrorCategorizer.toUserFacingError(
+            PlatformWalletError.walletOperation("timeout", payment: .maybeSent)
+        )
+        XCTAssertEqual(classed.title, "Submission unconfirmed")
+    }
+
+    /// The marketplace and persister texts do not claim an outcome the class
+    /// does not: a changed price says nothing about whether anything was
+    /// purchased, and a busy store invites a retry only where Rust allowed it.
+    func testShouldNotClaimAnOutcomeInTheCasesOwnText() {
+        let changed = PlatformWalletError.priceChanged(
+            documentId: "d", expected: 1, actual: 2, payment: .maybeSent
+        )
+        XCTAssertFalse(changed.errorDescription!.contains("Nothing was purchased"))
+
+        let retryable = PlatformPaymentClass(delivery: .notSent, isRetryable: true)
+        XCTAssertEqual(
+            PlatformWalletError.persisterStoreTransient("busy", payment: retryable).errorDescription,
+            "The wallet database is busy. Try again in a moment."
+        )
+        for busy in [
+            PlatformWalletError.persisterStoreTransient("busy", payment: PlatformPaymentClass(delivery: .notSent, isRetryable: false)),
+            PlatformWalletError.persisterLoadTransient("busy"),
+        ] {
+            XCTAssertEqual(busy.errorDescription, "The wallet database is busy.")
+        }
     }
 }

@@ -11,6 +11,8 @@ use dpp::identity::state_transition::asset_lock_proof::validate_asset_lock_trans
 use crate::error::PlatformWalletError;
 
 mod build;
+#[cfg(test)]
+mod funded_lock_tests;
 mod operation;
 pub use operation::{
     AssetLockOperationContext, AssetLockOperationRegistration, AssetLockOperationSnapshot,
@@ -66,9 +68,11 @@ pub(crate) fn max_asset_lock_inputs(version: &dpp::version::PlatformVersion) -> 
 /// before any re-send (`sync/recovery.rs`): a row built by a version before
 /// the pre-broadcast check, or by the build-only API, is otherwise re-sent on
 /// every resume, dropped silently by every peer, and never settles.
+/// `resumed` is which of the two asks: `true` for the resume.
 pub(crate) fn input_cap_violation(
     transaction: &Transaction,
     platform_version: &dpp::version::PlatformVersion,
+    resumed: bool,
 ) -> Option<PlatformWalletError> {
     let result = validate_asset_lock_transaction_inputs(transaction, platform_version);
     result.errors.iter().find_map(|error| match error {
@@ -77,6 +81,7 @@ pub(crate) fn input_cap_violation(
         )) => Some(PlatformWalletError::AssetLockTooManyInputs {
             count: usize::from(too_many.actual_inputs()),
             max: usize::from(too_many.max_inputs()),
+            resumed,
         }),
         _ => None,
     })
@@ -96,13 +101,18 @@ mod tests {
         let over_cap = instant_asset_lock_proof_transaction_fixture_with_inputs(None, None, 101);
         let at_cap = instant_asset_lock_proof_transaction_fixture_with_inputs(None, None, 100);
 
-        match input_cap_violation(&over_cap, PlatformVersion::latest()) {
-            Some(PlatformWalletError::AssetLockTooManyInputs { count, max }) => {
+        match input_cap_violation(&over_cap, PlatformVersion::latest(), true) {
+            Some(PlatformWalletError::AssetLockTooManyInputs {
+                count,
+                max,
+                resumed,
+            }) => {
                 assert_eq!(count, 101);
                 assert_eq!(max, 100);
+                assert!(resumed);
             }
             other => panic!("expected AssetLockTooManyInputs, got {other:?}"),
         }
-        assert!(input_cap_violation(&at_cap, PlatformVersion::latest()).is_none());
+        assert!(input_cap_violation(&at_cap, PlatformVersion::latest(), false).is_none());
     }
 }

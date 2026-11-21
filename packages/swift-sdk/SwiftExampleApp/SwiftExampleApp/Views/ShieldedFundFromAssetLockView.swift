@@ -129,7 +129,9 @@ struct ShieldedFundFromAssetLockView: View {
         case idle
         case inFlight
         case completed
-        case failed(String)
+        /// `title` and `message` come from `PaymentFailure` for a failed
+        /// payment, from the error itself when no payment was attempted.
+        case failed(title: String, message: String)
     }
     @State private var platformShieldPhase: PlatformShieldPhase = .idle
 
@@ -414,10 +416,10 @@ struct ShieldedFundFromAssetLockView: View {
                     .padding(.top, 4)
                 }
             }
-        case .failed(let message):
+        case .failed(let title, let message):
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Shield failed", systemImage: "xmark.octagon.fill")
+                    Label(title, systemImage: "xmark.octagon.fill")
                         .foregroundColor(.red)
                         .font(.headline)
                     Text(message)
@@ -588,28 +590,36 @@ struct ShieldedFundFromAssetLockView: View {
                     .padding(.top, 4)
                 }
             }
-        case .failed(let message):
+        case .failed(let failure):
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Shield failed", systemImage: "xmark.octagon.fill")
+                    Label(failure.title, systemImage: "xmark.octagon.fill")
                         .foregroundColor(.red)
                         .font(.headline)
-                    Text(message)
+                    Text(failure.message)
                         .font(.callout)
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
-                    Button {
-                        walletManager.shieldedFundFromAssetLockCoordinator.dismiss(
-                            walletId: controller.walletId,
-                            recipientRaw43: controller.recipientRaw43
-                        )
-                        dismiss()
-                    } label: {
-                        Text("Dismiss")
-                            .frame(maxWidth: .infinity)
+                    // Only a failure that releases its slot
+                    // (`PaymentFailure.holdsSlot`) offers Dismiss: one that
+                    // may have left or holds a lock keeps the controller, so
+                    // a fresh lock is never funded for this recipient (the
+                    // coordinator refuses the same dismissal). Leaving the
+                    // screen keeps it in the pending list.
+                    if !failure.holdsSlot {
+                        Button {
+                            walletManager.shieldedFundFromAssetLockCoordinator.dismiss(
+                                walletId: controller.walletId,
+                                recipientRaw43: controller.recipientRaw43
+                            )
+                            dismiss()
+                        } label: {
+                            Text("Dismiss")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .padding(.top, 4)
                     }
-                    .buttonStyle(.bordered)
-                    .padding(.top, 4)
                 }
             }
         default:
@@ -645,8 +655,12 @@ struct ShieldedFundFromAssetLockView: View {
                     )
                     await MainActor.run { platformShieldPhase = .completed }
                 } catch {
+                    let failure = PaymentFailure.ofPayment(error)
                     await MainActor.run {
-                        platformShieldPhase = .failed(error.localizedDescription)
+                        platformShieldPhase = .failed(
+                            title: failure?.title ?? "Shield did not start",
+                            message: failure?.message ?? error.localizedDescription
+                        )
                     }
                 }
             }
@@ -670,6 +684,7 @@ struct ShieldedFundFromAssetLockView: View {
         // always a new operation ("resume:<outpoint>" stays stable so a
         // re-tap of the SAME lock still rebinds).
         let operationId: String
+        var resuming: AssetLockBuiltOutPoint?
         let body: () async throws -> Void
         if let lock = resumeFromLock {
             guard let parsed = parseOutPoint(lock.outPointHex) else {
@@ -679,6 +694,7 @@ struct ShieldedFundFromAssetLockView: View {
                 return
             }
             operationId = "resume:\(lock.outPointHex)"
+            resuming = .resuming(txid: parsed.txid, vout: parsed.vout)
             body = {
                 try await manager.shieldedResumeFundFromAssetLock(
                     walletId: walletId,
@@ -722,6 +738,7 @@ struct ShieldedFundFromAssetLockView: View {
             walletId: walletId,
             recipientRaw43: recipient,
             operationId: operationId,
+            resuming: resuming,
             body: body
         ) {
         case .started(let controller):

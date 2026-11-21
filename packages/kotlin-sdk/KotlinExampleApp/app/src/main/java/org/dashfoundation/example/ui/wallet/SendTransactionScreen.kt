@@ -52,6 +52,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.errors.DashSdkError
+import org.dashfoundation.dashsdk.errors.PaymentDelivery
 import org.dashfoundation.dashsdk.funding.ShieldedProver
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.example.di.LocalAppContainer
@@ -63,6 +64,7 @@ import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
 import org.dashfoundation.example.util.DashAddress
 import org.dashfoundation.example.util.DashAddressType
+import org.dashfoundation.example.util.PaymentFailure
 import org.dashfoundation.example.util.ScannedPayment
 import org.dashfoundation.example.util.formatCredits
 import org.dashfoundation.example.util.formatDuffs
@@ -158,6 +160,11 @@ fun SendTransactionScreen(
     var isSending by remember { mutableStateOf(false) }
     var sentTxidHex by remember { mutableStateOf<String?>(null) }
     var successMessage by remember { mutableStateOf<String?>(null) }
+    // A send that failed in the SDK, presented by its payment class: never
+    // shown as a success, and "failed" only where nothing was sent. One that
+    // holds its slot stays stored after its alert, so Send stays refused
+    // (sendPermittedAfter) until the user leaves the form.
+    var paymentFailure by remember { mutableStateOf<PaymentFailure?>(null) }
 
     // Result hand-back from the QR scanner (← QRScannerView's onScan).
     val savedStateHandle = navController.currentBackStackEntry?.savedStateHandle
@@ -362,7 +369,7 @@ fun SendTransactionScreen(
     }
     val coreSendTotalDuffs = coreRecipients?.sumOf { it.second } ?: 0L
 
-    val canSend = when (flow) {
+    val canSend = sendPermittedAfter(paymentFailure) && when (flow) {
         SendFlow.CORE_TO_CORE -> coreRecipients != null
         SendFlow.SHIELDED_TO_SHIELDED -> (amountCredits ?: 0) > 0 && !memoOverLimit
         SendFlow.PLATFORM_TO_SHIELDED,
@@ -623,12 +630,16 @@ fun SendTransactionScreen(
                     .fillMaxWidth()
                     .testTag("send.submitButton"),
             ) {
+                // A failure that may have left the wallet or holds a lock
+                // stays stored: never pay again from this form.
+                if (!sendPermittedAfter(paymentFailure)) return@SubmitButton
                 val activeManager = manager
                 if (activeManager == null || flow == null) {
                     error = "Wallet is not ready. Try again in a moment."
                     return@SubmitButton
                 }
                 isSending = true
+                paymentFailure = null
                 scope.launch {
                     try {
                         when (flow) {
@@ -730,16 +741,12 @@ fun SendTransactionScreen(
                             }
                         }
                     } catch (t: Throwable) {
-                        if (shieldedOperationMayHaveGoneThrough(t)) {
-                            // It may have reached a node and its result is not
-                            // proved (a node's refusal or verdict included,
-                            // code 18), or the SDK could not confirm a
-                            // transition it may have accepted (code 20), so it
-                            // may already be on chain and a retry signs a
-                            // second transition: this must NOT read as a
-                            // retryable failure (← SendViewModel.swift).
-                            successMessage = "Transaction may have gone through — waiting for " +
-                                "the next shielded sync to confirm. Do not retry."
+                        // Every flow (Core, Platform, shielded) presents an SDK
+                        // failure by its payment class (← SendViewModel.swift);
+                        // anything else is this screen's own input check.
+                        val failure = PaymentFailure.ofPayment(t)
+                        if (failure != null) {
+                            paymentFailure = failure
                         } else {
                             error = t.message ?: "Failed to send the transaction."
                         }
@@ -798,16 +805,51 @@ fun SendTransactionScreen(
         )
     }
 
+    paymentFailure?.let { failure ->
+        // A failure that holds its slot closes the form and stays stored (it
+        // may have left the wallet, or holds a lock); a NOT_SENT one is
+        // cleared, leaving the form open for a corrected request.
+        val acknowledge: () -> Unit = {
+            if (failure.holdsSlot) {
+                navController.popBackStack()
+            } else {
+                paymentFailure = null
+            }
+        }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = acknowledge,
+            title = { Text(failure.title) },
+            text = {
+                Text(failure.message, modifier = Modifier.testTag("send.paymentFailure"))
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = acknowledge) { Text("OK") }
+            },
+        )
+    }
+
     ErrorAlertDialog(message = error, onDismiss = { error = null })
 }
 
 /**
+ * Whether Send may submit after [failure], the last one this form stored:
+ * never while it holds its slot ([PaymentFailure.holdsSlot]).
+ * ← Swift `SendViewModel.isHeldByPaymentFailure`.
+ */
+internal fun sendPermittedAfter(failure: PaymentFailure?): Boolean = failure?.holdsSlot != true
+
+/**
  * Whether a shielded operation's error means it may already be on chain, so
- * no retry is offered: a spend whose result is not proved (18) or a state
- * transition the SDK could not confirm after it may have been accepted (20).
- * ← Swift `SendViewModel.mayHaveGoneThrough`.
+ * no retry is offered: the native wallet classed the payment as maybe sent
+ * (a spend whose result is not proved, a state transition the SDK could not
+ * confirm, any other verdict no proof backs) or as holding an asset lock.
+ * Read from [DashSdkError.delivery], never from the error's type; only
+ * rs-sdk-ffi's unconfirmed transition, which carries no native class, is
+ * matched by type. ← Swift `SendViewModel.mayHaveGoneThrough`.
  */
 internal fun shieldedOperationMayHaveGoneThrough(error: Throwable): Boolean =
-    error is DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed ||
-        error is DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed ||
-        error is DashSdkError.StateTransitionResultUnconfirmed
+    when ((error as? DashSdkError)?.delivery) {
+        PaymentDelivery.MAYBE_SENT, PaymentDelivery.LOCK_HELD -> true
+        PaymentDelivery.NOT_SENT -> false
+        null -> error is DashSdkError.StateTransitionResultUnconfirmed
+    }

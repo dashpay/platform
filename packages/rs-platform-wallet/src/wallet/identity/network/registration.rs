@@ -228,34 +228,43 @@ impl IdentityWallet {
         // Both retries share the original `placeholder` Identity; the
         // CL-height retry also iterates inside the IS→CL fallback branch
         // so a freshly-upgraded CL proof gets the same patience.
+        //
+        // The Core lock exists from here on (broadcast by the resolution, or
+        // the resumed one), so every failure until Platform accepts goes
+        // through the funded-lock seam: the lock is named as held, never
+        // `NotSent`.
         let proof_out_point = out_point_from_proof(&proof);
-        let (submit_result, effective_proof) = self
-            .asset_locks
-            .submit_with_chain_lock_fallback(
-                proof,
-                settings,
-                None,
-                "identity registration",
-                |proof, s| {
-                    placeholder.put_to_platform_and_wait_for_response_with_signer(
-                        &self.sdk,
-                        proof,
-                        &path,
-                        asset_lock_signer,
-                        identity_signer,
-                        s,
-                    )
-                },
-            )
-            .await?;
         let identity = self
             .asset_locks
-            .reconcile_asset_lock_submit_result(
-                submit_result,
-                &proof_out_point,
-                &effective_proof,
-                None,
-            )
+            .with_funded_lock(tracked_out_point, async {
+                let (submit_result, effective_proof) = self
+                    .asset_locks
+                    .submit_with_chain_lock_fallback(
+                        proof,
+                        settings,
+                        None,
+                        "identity registration",
+                        |proof, s| {
+                            placeholder.put_to_platform_and_wait_for_response_with_signer(
+                                &self.sdk,
+                                proof,
+                                &path,
+                                asset_lock_signer,
+                                identity_signer,
+                                s,
+                            )
+                        },
+                    )
+                    .await?;
+                self.asset_locks
+                    .reconcile_asset_lock_submit_result(
+                        submit_result,
+                        &proof_out_point,
+                        &effective_proof,
+                        None,
+                    )
+                    .await
+            })
             .await?;
 
         // Step 4 (best-effort): bookkeeping — add to local
@@ -451,33 +460,39 @@ impl IdentityWallet {
         // bump `user_fee_increase` to bypass Tenderdash's invalid-tx
         // cache, and an unusable IS proof triggers an IS→CL upgrade on
         // the same outpoint.
+        // Every failure until Platform accepts goes through the funded-lock
+        // seam, as in `register_identity_with_funding`.
         let proof_out_point = out_point_from_proof(&proof);
-        let (submit_result, effective_proof) = self
-            .asset_locks
-            .submit_with_chain_lock_fallback(
-                proof,
-                settings,
-                None,
-                "identity top-up",
-                |proof, s| {
-                    identity.top_up_identity_with_signer_with_metadata(
-                        &self.sdk,
-                        proof,
-                        &path,
-                        asset_lock_signer,
-                        s,
-                    )
-                },
-            )
-            .await?;
         let (mut new_balance, metadata) = self
             .asset_locks
-            .reconcile_asset_lock_submit_result(
-                submit_result,
-                &proof_out_point,
-                &effective_proof,
-                None,
-            )
+            .with_funded_lock(tracked_out_point, async {
+                let (submit_result, effective_proof) = self
+                    .asset_locks
+                    .submit_with_chain_lock_fallback(
+                        proof,
+                        settings,
+                        None,
+                        "identity top-up",
+                        |proof, s| {
+                            identity.top_up_identity_with_signer_with_metadata(
+                                &self.sdk,
+                                proof,
+                                &path,
+                                asset_lock_signer,
+                                s,
+                            )
+                        },
+                    )
+                    .await?;
+                self.asset_locks
+                    .reconcile_asset_lock_submit_result(
+                        submit_result,
+                        &proof_out_point,
+                        &effective_proof,
+                        None,
+                    )
+                    .await
+            })
             .await?;
 
         // Step 4 (best-effort): persist the new balance + clean up the

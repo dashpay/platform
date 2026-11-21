@@ -29,7 +29,9 @@ pub mod wallet;
 #[cfg(feature = "spv-context")]
 pub mod spv_context_provider;
 
-pub use error::PlatformWalletError;
+pub use error::{
+    handback_failure_payment_class, panicked_payment_class, PaymentDelivery, PlatformWalletError,
+};
 pub use events::{PlatformEventHandler, PlatformEventManager};
 pub use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 // Surface the upstream `DerivedAddress` event payload through this

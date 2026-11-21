@@ -48,7 +48,9 @@ use dash_sdk::platform::transition::put_settings::PutSettings;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::{is_asset_lock_already_consumed, PlatformWalletError};
 use crate::wallet::asset_lock::manager::AssetLockManager;
+use crate::wallet::asset_lock::tracked::AssetLockStatus;
 use crate::wallet::asset_lock::AssetLockOperationContext;
+use crate::PaymentDelivery;
 
 use super::build::{AssetLockBuildAmount, AssetLockBuiltObserver};
 
@@ -300,6 +302,146 @@ pub(crate) fn out_point_from_proof(proof: &AssetLockProof) -> OutPoint {
 }
 
 // ---------------------------------------------------------------------------
+// Payment class once a lock exists
+// ---------------------------------------------------------------------------
+
+/// `error` as the end of a payment that holds the tracked lock `resumable`
+/// (`Some` only for a lock that is tracked, unconsumed and not
+/// consumption-unknown): named as [`PaymentDelivery::LockHeld`] through
+/// [`PlatformWalletError::PaymentAlreadyDispatched`], keeping `error`'s
+/// diagnostic and FFI code. The payment goes on by resuming that lock, which
+/// is safe whatever happened on Platform: a lock Platform already consumed is
+/// refused by the resume, never spent twice.
+///
+/// Kept as they are: an error that already names a held lock, one a step
+/// already classed as following a dispatch (a
+/// [`PlatformWalletError::PaymentAlreadyDispatched`], such as a drain
+/// completion that failed after Platform consumed the lock), and the errors
+/// that say this lock is not the way on (consumed or consumption unknown,
+/// untracked, tracked for another destination, over the input cap,
+/// unconfirmable because a finalized transaction took an input).
+pub(crate) fn hold_resumable_lock(
+    error: PlatformWalletError,
+    resumable: Option<OutPoint>,
+) -> PlatformWalletError {
+    let Some(out_point) = resumable else {
+        return error;
+    };
+    if matches!(error.payment_delivery(), PaymentDelivery::LockHeld(_))
+        || matches!(error, PlatformWalletError::PaymentAlreadyDispatched { .. })
+        || refuses_resume(&error)
+    {
+        return error;
+    }
+    PlatformWalletError::PaymentAlreadyDispatched {
+        held_lock: Some(out_point),
+        source: Box::new(error),
+    }
+}
+
+/// The diagnostic of [`AssetLockManager::handoff_failure`]. On its own, with
+/// no tracked row consulted, it is `MaybeSent`: the call built or resumed a
+/// lock, so its failure is never `NotSent`.
+pub fn handoff_failure_source() -> PlatformWalletError {
+    PlatformWalletError::AssetLockTransaction(
+        "the asset lock's proof could not be handed back".into(),
+    )
+}
+
+/// The errors whose own class is the answer even while the lock is tracked:
+/// resuming it is not the way on (see [`hold_resumable_lock`]).
+fn refuses_resume(error: &PlatformWalletError) -> bool {
+    matches!(
+        error,
+        PlatformWalletError::AssetLockAlreadyConsumed(_)
+            | PlatformWalletError::AssetLockNotTracked(_)
+            | PlatformWalletError::AssetLockFundingMismatch { .. }
+            | PlatformWalletError::AssetLockTooManyInputs { .. }
+            | PlatformWalletError::AssetLockInputConflict { .. }
+    )
+}
+
+impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
+    /// Run `phase`, the part of an asset-lock-funded operation that follows
+    /// the moment its Core lock exists (broadcast by this call, or resumed)
+    /// and ends when Platform accepts the funded transition, and class its
+    /// error as [`Self::funded_lock_error`] does.
+    ///
+    /// The one seam every funded flow routes that phase through: identity
+    /// registration and top-up, platform-address and shielded funding, the
+    /// invitation voucher, the IS→CL fallback, and the build pipeline's own
+    /// steps after its broadcast.
+    pub(crate) async fn with_funded_lock<T, Fut>(
+        &self,
+        out_point: Option<OutPoint>,
+        phase: Fut,
+    ) -> Result<T, PlatformWalletError>
+    where
+        Fut: Future<Output = Result<T, PlatformWalletError>>,
+    {
+        match phase.await {
+            Ok(value) => Ok(value),
+            Err(error) => Err(self.funded_lock_error(error, out_point).await),
+        }
+    }
+
+    /// The class of an error that ended an asset-lock-funded operation after
+    /// its lock at `out_point` was broadcast or resumed: never `NotSent`.
+    /// While the lock is tracked and unconsumed it is named as held (see
+    /// [`hold_resumable_lock`]); otherwise (consumed, consumption unknown,
+    /// gone, or no outpoint known) a `NotSent` refusal becomes `MaybeSent`.
+    pub(crate) async fn funded_lock_error(
+        &self,
+        error: PlatformWalletError,
+        out_point: Option<OutPoint>,
+    ) -> PlatformWalletError {
+        let resumable = match out_point {
+            Some(out_point) => self.resumable_lock(&out_point).await,
+            None => None,
+        };
+        hold_resumable_lock(error, resumable).after_dispatch()
+    }
+
+    /// The error of a call that built or resumed the lock at `out_point` but
+    /// could not hand its result back (the proof did not encode, the
+    /// derivation path held an interior NUL), classed as
+    /// [`Self::funded_lock_error`] classes it: the lock named as held while a
+    /// resume can take it on, `MaybeSent` once it is consumed,
+    /// consumption-unknown (`RecoveredFromChain`) or gone.
+    pub async fn handoff_failure(&self, out_point: OutPoint) -> PlatformWalletError {
+        self.funded_lock_error(handoff_failure_source(), Some(out_point))
+            .await
+    }
+
+    /// The resume's form of [`Self::funded_lock_error`]: a lock the failed
+    /// resume leaves tracked and unconsumed is named as held, and every other
+    /// error keeps its class, since a resume refused at its entry (the lock
+    /// not tracked, for one) dispatched nothing.
+    pub(crate) async fn resume_error(
+        &self,
+        error: PlatformWalletError,
+        out_point: &OutPoint,
+    ) -> PlatformWalletError {
+        let resumable = self.resumable_lock(out_point).await;
+        hold_resumable_lock(error, resumable)
+    }
+
+    /// `out_point` when it is a lock a resume can still take on: tracked, not
+    /// consumed, and not consumption-unknown (`RecoveredFromChain`, where
+    /// Platform may already have consumed it).
+    async fn resumable_lock(&self, out_point: &OutPoint) -> Option<OutPoint> {
+        match self.tracked_resume_metadata(out_point).await {
+            Some((_, _, status, _))
+                if !status.is_consumed() && status != AssetLockStatus::RecoveredFromChain =>
+            {
+                Some(*out_point)
+            }
+            _ => None,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Resolver on AssetLockManager
 // ---------------------------------------------------------------------------
 
@@ -471,14 +613,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         out_point: &OutPoint,
         cl_wait: Option<Duration>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath), PlatformWalletError> {
-        let chain_proof = self
-            .upgrade_to_persisted_chain_lock_proof(out_point, cl_wait)
-            .await?;
+        // The lock timed out after its broadcast (or resume): every failure
+        // from here on leaves it held, never `NotSent`.
+        self.with_funded_lock(Some(*out_point), async {
+            let chain_proof = self
+                .upgrade_to_persisted_chain_lock_proof(out_point, cl_wait)
+                .await?;
 
-        // The row now carries the proof, so this resume takes the
-        // already-final arm rather than waiting for one.
-        let (_, path) = self.resume_asset_lock(out_point, cl_wait).await?;
-        Ok((chain_proof, path))
+            // The row now carries the proof, so this resume takes the
+            // already-final arm rather than waiting for one.
+            let (_, path) = self.resume_asset_lock(out_point, cl_wait).await?;
+            Ok((chain_proof, path))
+        })
+        .await
     }
 
     /// Resolve an [`AssetLockFunding`] to a concrete proof + path +
@@ -625,7 +772,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 out_point,
                 consume_invitation_voucher,
             } => {
-                let (actual_funding_type, actual_identity_index, status) = self
+                let (actual_funding_type, actual_identity_index, status, _) = self
                     .tracked_resume_metadata(&out_point)
                     .await
                     .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;

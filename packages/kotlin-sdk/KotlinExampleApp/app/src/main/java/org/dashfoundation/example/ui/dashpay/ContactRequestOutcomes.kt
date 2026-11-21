@@ -3,6 +3,7 @@ package org.dashfoundation.example.ui.dashpay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import org.dashfoundation.dashsdk.errors.DashSdkError
+import org.dashfoundation.dashsdk.errors.PaymentDelivery
 import org.dashfoundation.dashsdk.tokens.Dashpay
 
 /**
@@ -113,13 +114,33 @@ sealed interface ContactRequestSubmissionOutcome {
             else -> SETTING_UP_PRIVATE_PAYMENTS_MESSAGE
         }
 
-        fun of(error: Throwable): ContactRequestSubmissionOutcome = when (error) {
-            is DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed,
-            is DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed,
-            is DashSdkError.StateTransitionResultUnconfirmed,
-            -> MayHaveGoneThrough
-            is DashSdkError.PlatformWallet.PrivateContactRequestPending -> PrivateRequestPending
-            is DashSdkError.PlatformWallet.PublicContactRequestUnconfirmed -> PublicRequestUnconfirmed
+        /**
+         * Reads the native payment class first: a failure it classes as maybe
+         * sent or holding an asset lock may have gone through, whatever its
+         * type. Only the two contact-request holds are told apart before it,
+         * because each carries a marker the class does not: the screens mark
+         * that contact pending (a private request in flight, which the wallet
+         * classes not sent and not retryable) or unconfirmed (a public
+         * request, classed maybe sent), instead of showing a generic failure
+         * or "may have gone through". An rs-sdk-ffi unconfirmed transition
+         * carries no native class and keeps its own arm.
+         */
+        fun of(error: Throwable): ContactRequestSubmissionOutcome = when {
+            error is DashSdkError.PlatformWallet.PrivateContactRequestPending -> PrivateRequestPending
+            error is DashSdkError.PlatformWallet.PublicContactRequestUnconfirmed -> PublicRequestUnconfirmed
+            else -> when ((error as? DashSdkError)?.delivery) {
+                PaymentDelivery.MAYBE_SENT, PaymentDelivery.LOCK_HELD -> MayHaveGoneThrough
+                PaymentDelivery.NOT_SENT -> failureOutcome(error)
+                null ->
+                    if (error is DashSdkError.StateTransitionResultUnconfirmed) {
+                        MayHaveGoneThrough
+                    } else {
+                        failureOutcome(error)
+                    }
+            }
+        }
+
+        private fun failureOutcome(error: Throwable): ContactRequestSubmissionOutcome = when (error) {
             is DashSdkError.PlatformWallet.PrivateContactPaymentsNotRestored -> PrivatePaymentsNotRestored
             is DashSdkError.PlatformWallet.PrivateContactStoreNotRead -> PrivateStoreNotRead
             is DashSdkError.PlatformWallet.PrivateContactRecoveryUnsupported ->

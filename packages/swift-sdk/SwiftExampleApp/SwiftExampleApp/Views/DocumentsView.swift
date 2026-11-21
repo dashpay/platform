@@ -1055,7 +1055,7 @@ struct EraseDocumentView: View {
                     }
                     isSubmitting = false
                 }
-            } catch PlatformWalletError.transactionBroadcastUnconfirmed(_) {
+            } catch PlatformWalletError.transactionBroadcastUnconfirmed(_, _) {
                 await MainActor.run {
                     actionError = .init(message: "Erase outcome unknown; do not resubmit automatically; read history first.")
                     isSubmitting = false

@@ -630,7 +630,7 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
         // A synchronous mutation remains excluded until the bounded native
         // read completes. Invalid seed input stops before the real FFI call.
         XCTAssertThrowsError(try manager.createWallet(seed: Data(), network: .testnet)) { error in
-            guard case PlatformWalletError.invalidHandle(let message) = error else {
+            guard case PlatformWalletError.invalidHandle(let message, _) = error else {
                 return XCTFail("Unexpected admission error: \(error)")
             }
             XCTAssertTrue(message.contains("async native operation"))
@@ -664,7 +664,7 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
         manager.shieldedLocalBalanceQueue.sync {}
         XCTAssertTrue(fixture.events.contains("free"))
         XCTAssertThrowsError(try manager.deleteWallet(walletId: Self.walletId)) { error in
-            guard case PlatformWalletError.invalidHandle(let message) = error else {
+            guard case PlatformWalletError.invalidHandle(let message, _) = error else {
                 return XCTFail("Expected deletion admission rejection, got \(error)")
             }
             XCTAssertTrue(message.contains("async native operation"))
@@ -673,7 +673,7 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
         // After delivery, deletion reaches its ordinary persistence check.
         // This fixture has no persister, so it never enters native deletion.
         XCTAssertThrowsError(try manager.deleteWallet(walletId: Self.walletId)) { error in
-            guard case PlatformWalletError.invalidHandle(let message) = error else {
+            guard case PlatformWalletError.invalidHandle(let message, _) = error else {
                 return XCTFail("Unexpected deletion preflight result: \(error)")
             }
             XCTAssertTrue(message.contains("requires a persistence handler"))

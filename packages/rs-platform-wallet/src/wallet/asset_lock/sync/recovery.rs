@@ -920,6 +920,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// row still needs a send afterwards, a retry is deferred until the
     /// transport comes up, off this thread. See
     /// [`resume_when_transport_ready`](Self::resume_when_transport_ready).
+    ///
+    /// Whatever ends a resume, an error that leaves the lock tracked and
+    /// unconsumed names it ([`PaymentDelivery::LockHeld`](crate::PaymentDelivery::LockHeld)
+    /// through [`PlatformWalletError::PaymentAlreadyDispatched`]), keeping the
+    /// failed step's diagnostic: the variants named above are then its
+    /// [`dispatched_source`](PlatformWalletError::dispatched_source). An entry
+    /// refusal (the lock not tracked, already consumed) keeps its own class.
     pub async fn resume_asset_lock(
         &self,
         out_point: &OutPoint,
@@ -934,7 +941,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 self.resume_when_transport_ready(*out_point, deferred_from, timeout);
             }
         }
-        result
+        // A lock the failed resume leaves tracked and unconsumed is the way
+        // on, whichever step failed: name it, keeping the step's diagnostic.
+        match result {
+            Ok(resumed) => Ok(resumed),
+            Err(error) => Err(self.resume_error(error, out_point).await),
+        }
     }
 
     /// One resume attempt, with no readiness-deferred retry: what the
@@ -1106,7 +1118,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         if local_finality.is_none() {
             if let Some(cap_error) = match status {
                 AssetLockStatus::Built | AssetLockStatus::Broadcast => {
-                    input_cap_violation(&tx, self.sdk.version())
+                    input_cap_violation(&tx, self.sdk.version(), true)
                 }
                 AssetLockStatus::InstantSendLocked
                 | AssetLockStatus::ChainLocked
@@ -2435,7 +2447,9 @@ mod tests {
         let (error, status, manager, signer) =
             resume_built_lock_with(Arc::new(AlwaysRejectedBroadcaster)).await;
 
-        let PlatformWalletError::TransactionBroadcastUnconfirmed(reason) = &error else {
+        let PlatformWalletError::TransactionBroadcastUnconfirmed(reason) =
+            error.dispatched_source()
+        else {
             panic!(
                 "a rejection that never dispatched must not be reported as a \
                  definite rejection, whose contract is that the inputs were \
@@ -4029,11 +4043,17 @@ mod tests {
 
         assert!(
             matches!(
-                outcome,
+                outcome
+                    .as_ref()
+                    .map_err(PlatformWalletError::dispatched_source),
                 Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
             ),
             "expected the unknown-outcome contract, got {outcome:?}"
         );
+        // The row survives, so the error names it as the way on.
+        let error = outcome.as_ref().expect_err("unknown outcome");
+        assert_eq!(error.held_asset_lock(), Some(fixture.out_point));
+        assert!(!error.is_retryable());
         let status = {
             let wm = fixture.wallet_manager.read().await;
             wm.get_wallet_info(&fixture.wallet_id)
@@ -4428,7 +4448,7 @@ mod tests {
             .expect_err("the transport is down for the whole bounded wait");
         assert!(
             matches!(
-                error,
+                error.dispatched_source(),
                 PlatformWalletError::TransactionBroadcastUnconfirmed(_)
             ),
             "the caller still gets the attempt's own verdict: {error:?}"
@@ -4720,7 +4740,7 @@ mod tests {
 
         assert!(
             matches!(
-                error,
+                error.dispatched_source(),
                 PlatformWalletError::TransactionBroadcastUnconfirmed(_)
             ),
             "an unbounded resume whose re-broadcast was ambiguous must end as a \
@@ -4795,7 +4815,7 @@ mod tests {
         );
         assert!(
             matches!(
-                error,
+                error.dispatched_source(),
                 PlatformWalletError::TransactionBroadcastUnconfirmed(_)
             ),
             "a rejected defensive re-broadcast must fail the resume as an unknown \
@@ -5101,7 +5121,7 @@ mod tests {
 
         assert!(
             matches!(
-                error,
+                error.dispatched_source(),
                 PlatformWalletError::TransactionBroadcastUnconfirmed(_)
             ),
             "an unbounded resume of a Broadcast row must end as a \
@@ -5330,7 +5350,9 @@ mod tests {
             Some(&BROADCAST_TRANSPORT_READY_WAIT),
             "an unbounded caller must still hand the transport wait a ceiling"
         );
-        let PlatformWalletError::TransactionBroadcastUnconfirmed(reason) = &error else {
+        let PlatformWalletError::TransactionBroadcastUnconfirmed(reason) =
+            error.dispatched_source()
+        else {
             panic!(
                 "once the wait expires the send is attempted anyway, and the \
                  pre-dispatch rejection it draws must surface as an unknown \
@@ -6338,10 +6360,16 @@ mod tests {
         assert!(
             matches!(
                 error,
-                PlatformWalletError::AssetLockTooManyInputs { count, max: 100 } if count > 100
+                PlatformWalletError::AssetLockTooManyInputs {
+                    count,
+                    max: 100,
+                    resumed: true,
+                } if count > 100
             ),
             "{error:?}"
         );
+        // An earlier attempt may have sent the row: ambiguous, not `NotSent`.
+        assert_eq!(error.payment_delivery(), crate::PaymentDelivery::MaybeSent);
         assert_eq!(row.sends(), 0, "nothing may be sent: every peer drops it");
         assert_eq!(
             row.status().await,

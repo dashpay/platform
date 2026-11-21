@@ -170,7 +170,7 @@ final class PlatformWalletShutdownTests: XCTestCase {
         XCTAssertEqual(manager.handle, NULL_HANDLE, "Admitted work owns its captured handle privately")
 
         func assertShutdownError(_ error: Error, operation: String) {
-            guard case .invalidHandle(let message) = error as? PlatformWalletError else {
+            guard case .invalidHandle(let message, _) = error as? PlatformWalletError else {
                 return XCTFail("Expected shutdown rejection, got \(error)")
             }
             XCTAssertEqual(message, "PlatformWalletManager not configured", operation)
@@ -388,7 +388,7 @@ final class PlatformWalletShutdownTests: XCTestCase {
             guard let walletError = error as? PlatformWalletError else {
                 return XCTFail("unexpected error: \(error)")
             }
-            guard case .invalidHandle(let message) = walletError else {
+            guard case .invalidHandle(let message, _) = walletError else {
                 return XCTFail("expected invalidHandle, got \(walletError)")
             }
             XCTAssertTrue(message.contains("cannot be configured after shutdown"))

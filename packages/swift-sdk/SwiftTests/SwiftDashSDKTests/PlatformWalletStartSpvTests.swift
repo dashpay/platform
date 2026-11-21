@@ -176,7 +176,7 @@ final class PlatformWalletStartSpvTests: XCTestCase {
             try await call()
             XCTFail("\(name): expected the in-flight \(inFlight) refusal, got no error", file: file, line: line)
         } catch {
-            guard case PlatformWalletError.walletOperation(let message) = error,
+            guard case PlatformWalletError.walletOperation(let message, _) = error,
                   message.contains("SPV \(inFlight) in progress") else {
                 return XCTFail(
                     "\(name): expected the in-flight \(inFlight) refusal, got \(error)",

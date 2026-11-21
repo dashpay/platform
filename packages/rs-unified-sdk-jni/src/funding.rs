@@ -655,11 +655,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
 // so — unlike the shield / fund paths — NO host signer or mnemonic-resolver
 // handle crosses the boundary; the host only supplies recipient + amount.
 // Each is a single blocking FFI call that runs the ~30s Halo 2 proof on a
-// Rust worker thread and returns only a status code. The retry-semantics-
-// bearing error codes (`ErrorShieldedSpendUnconfirmed` = do NOT retry,
-// `ErrorShieldedNoRecordedAnchor` / `ErrorShieldedBroadcastFailed` =
-// retryable) surface through `take_pwffi_error`'s offset codes and map to
-// the dedicated `DashSdkError.PlatformWallet` types on the Kotlin side.
+// Rust worker thread and returns only a status code. Errors surface through
+// `take_pwffi_error`'s offset codes and map to the dedicated
+// `DashSdkError.PlatformWallet` types on the Kotlin side; whether one may be
+// retried is the result's payment class and `retryable` flag, which
+// `take_pwffi_error` carries across, never the code.
 
 /// Shield from Platform balance (Type 15) — bridges
 /// `platform_wallet_manager_shielded_shield`.
@@ -1081,10 +1081,18 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         // the identity may already be live on-chain, so the host must
         // retain the id and hold its derivation slot instead of retrying
         // into a duplicate. Return a tagged variable-length payload
-        // (`[0|1] || identity_id || diagnostic_utf8`) so Kotlin can surface
-        // a typed unconfirmed result without losing the id or native error.
+        // (`[0|2] || identity_id || delivery || retryable || diagnostic_utf8`)
+        // so Kotlin can surface a typed unconfirmed result without losing the
+        // id, the native error, the result's payment-delivery class (the
+        // `PlatformWalletFFIPaymentDelivery` discriminant, `None` = 0 on
+        // success) or whether the wallet allows a retry (`0|1`). The
+        // unconfirmed tag is 2, not the earlier layout's 1 (whose diagnostic
+        // started right after the id), so Kotlin never reads a stale
+        // library's diagnostic bytes as a delivery class and a retry.
         let unconfirmed = result.code
             == platform_wallet_ffi::error::PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed;
+        let delivery = result.payment_delivery as u8;
+        let retryable = u8::from(result.retryable);
         let mut diagnostic = Vec::new();
         if unconfirmed {
             // Preserve the native diagnostic (the underlying DAPI /
@@ -1101,9 +1109,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         } else if take_pwffi_error(env, result) {
             return ptr::null_mut();
         }
-        let mut packed = Vec::with_capacity(33 + diagnostic.len());
-        packed.push(u8::from(unconfirmed));
+        let mut packed = Vec::with_capacity(35 + diagnostic.len());
+        packed.push(if unconfirmed { 2 } else { 0 });
         packed.extend_from_slice(&out_id);
+        packed.push(delivery);
+        packed.push(retryable);
         packed.extend_from_slice(&diagnostic);
         env.byte_array_from_slice(&packed)
             .map(|a| a.into_raw())

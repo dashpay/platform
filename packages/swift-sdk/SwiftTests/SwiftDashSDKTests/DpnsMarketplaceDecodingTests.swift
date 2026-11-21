@@ -105,7 +105,7 @@ final class DpnsMarketplaceDecodingTests: XCTestCase {
             code: .errorDocumentPriceChanged,
             message: #"{"documentId":"doc","expected":10,"actual":12}"#
         )
-        guard case .priceChanged(let documentId, let expected, let actual) = price else {
+        guard case .priceChanged(let documentId, let expected, let actual, _) = price else {
             return XCTFail("Expected priceChanged, got \(price)")
         }
         XCTAssertEqual(documentId, "doc")
@@ -119,7 +119,8 @@ final class DpnsMarketplaceDecodingTests: XCTestCase {
         guard case .insufficientIdentityCredits(
             let identityId,
             let required,
-            let available
+            let available,
+            _
         ) = credits else {
             return XCTFail("Expected insufficientIdentityCredits, got \(credits)")
         }
@@ -131,7 +132,7 @@ final class DpnsMarketplaceDecodingTests: XCTestCase {
             code: .errorContestedNameNotTradable,
             message: #"{"label":"a11ce","endsAtMs":1234}"#
         )
-        guard case .contestedNameNotTradable(let label, let endsAtMs) = contest else {
+        guard case .contestedNameNotTradable(let label, let endsAtMs, _) = contest else {
             return XCTFail("Expected contestedNameNotTradable, got \(contest)")
         }
         XCTAssertEqual(label, "a11ce")
@@ -143,7 +144,7 @@ final class DpnsMarketplaceDecodingTests: XCTestCase {
             code: .errorDocumentPriceChanged,
             message: #"{"documentId":"doc","expected":10}"#
         )
-        guard case .unknown(let detail) = malformed else {
+        guard case .unknown(let detail, _) = malformed else {
             return XCTFail("Expected unknown, got \(malformed)")
         }
         XCTAssertEqual(detail, #"{"documentId":"doc","expected":10}"#)

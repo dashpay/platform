@@ -368,8 +368,12 @@ final class CreateIdentityResumableTests: XCTestCase {
                 .isActive,
             ".completed: PersistentIdentity row covers the slot via the identity anti-join — don't double-block"
         )
-        XCTAssertFalse(IdentityRegistrationController.Phase.failed("nope").isActive,
-                       ".failed: user is expected to retry — let the lock resurface")
+        XCTAssertFalse(
+            IdentityRegistrationController.Phase
+                .failed(PaymentFailure(payment: .maybeSent, detail: "nope"))
+                .isActive,
+            ".failed: let the lock resurface; permitsSubmit gates what runs again"
+        )
         XCTAssertTrue(
             IdentityRegistrationController.Phase
                 .unconfirmed(
@@ -419,7 +423,10 @@ final class CreateIdentityResumableTests: XCTestCase {
             identityIndex: 1,
             fundingKind: .shieldedPool
         ) {
-            throw PlatformWalletError.shieldedBroadcastFailed("no node address to send to")
+            throw PlatformWalletError.shieldedBroadcastFailed(
+                "no node address to send to",
+                payment: PlatformPaymentClass(delivery: .notSent, isRetryable: true)
+            )
         }
         for _ in 0..<200 {
             if case .failed = failing.phase { break }

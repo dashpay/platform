@@ -38,10 +38,13 @@ struct TopUpIdentityView: View {
 
     @State private var isToppingUp: Bool = false
     @State private var submitError: SubmitError? = nil
+    /// The last top-up's failure: the Top Up button stays off while it holds
+    /// its slot (`PaymentFailure.holdsSlot`; ← Kotlin `TopUpIdentityScreen`).
+    @State private var failure: PaymentFailure? = nil
     @State private var newBalance: UInt64? = nil
     /// The top-up may have been broadcast and its outcome is not confirmed
-    /// (code 20): shown as pending, and the form is gone so the same top-up
-    /// cannot be sent again.
+    /// (Rust classes it `.maybeSent`): shown as pending, and the form is gone
+    /// so the same top-up cannot be sent again.
     @State private var isPending: Bool = false
 
     var body: some View {
@@ -70,7 +73,7 @@ struct TopUpIdentityView: View {
             }
             .alert(item: $submitError) { err in
                 Alert(
-                    title: Text("Could not top up identity"),
+                    title: Text(err.title),
                     message: Text(err.message),
                     dismissButton: .default(Text("OK"))
                 )
@@ -187,7 +190,7 @@ struct TopUpIdentityView: View {
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(!canSubmit || isToppingUp)
+            .disabled(!canSubmit || isToppingUp || failure?.holdsSlot == true)
         }
     }
 
@@ -361,18 +364,23 @@ struct TopUpIdentityView: View {
                     self.newBalance = balance
                     self.isToppingUp = false
                 }
-            } catch PlatformWalletError.transactionBroadcastUnconfirmed(_) {
-                // Not a failure: the top-up may still execute, so no retry
-                // is offered.
-                await MainActor.run {
-                    self.isPending = true
-                    self.isToppingUp = false
-                }
             } catch {
+                // Presented by Rust's payment class: a top-up that may have
+                // left (`.maybeSent`) is pending, not a failure, and the form
+                // is gone; any other failure shows its class's text, and the
+                // button stays off while it holds its slot. An error no
+                // payment raised shows as its own message.
+                let failure = PaymentFailure.ofPayment(error)
+                let mayHaveLeft: Bool
+                if case .reconcile? = failure?.recovery { mayHaveLeft = true } else { mayHaveLeft = false }
                 await MainActor.run {
-                    self.submitError = .init(
-                        message: error.localizedDescription
-                    )
+                    self.failure = failure
+                    if mayHaveLeft {
+                        self.isPending = true
+                    } else {
+                        self.submitError = failure.map { SubmitError(title: $0.title, message: $0.message) }
+                            ?? SubmitError(message: error.localizedDescription)
+                    }
                     self.isToppingUp = false
                 }
             }
@@ -464,5 +472,6 @@ private struct FundingAccountOption: Identifiable {
 
 private struct SubmitError: Identifiable {
     let id = UUID()
+    var title = "Could not top up identity"
     let message: String
 }

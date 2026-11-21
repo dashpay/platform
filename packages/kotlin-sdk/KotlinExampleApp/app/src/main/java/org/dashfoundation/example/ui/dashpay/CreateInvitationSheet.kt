@@ -40,6 +40,7 @@ import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.tokens.Dashpay
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
+import org.dashfoundation.example.util.PaymentFailure
 import org.dashfoundation.example.util.generateQrBitmap
 import org.dashfoundation.example.util.parseDashToDuffs
 import org.dashfoundation.example.util.toHex
@@ -150,7 +151,11 @@ fun CreateInvitationSheet(
                 )
                 createdLink = link
             } catch (t: Throwable) {
-                errorMessage = t.message ?: "Creating the invitation failed."
+                // By the native payment class; a held lock here is the
+                // invitation's voucher, which the user reclaims rather than
+                // resumes.
+                errorMessage = PaymentFailure.ofPayment(t, invitationVoucher = true)?.message
+                    ?: t.message ?: "Creating the invitation failed."
             } finally {
                 isCreating = false
                 // A successful create keeps the host's dismissal gate held

@@ -131,6 +131,44 @@ pub unsafe extern "C" fn asset_lock_manager_create_funded_proof(
     out_derivation_path: *mut *mut c_char,
     out_txid: *mut [u8; 32],
 ) -> PlatformWalletFFIResult {
+    // A panic must not unwind across this `extern "C"` frame: it can strike after the
+    // asset lock reached the wire, so it becomes the ambiguous funding result.
+    catch_funding_panic("funded asset-lock proof", || {
+        asset_lock_manager_create_funded_proof_inner(
+            handle,
+            amount_duffs,
+            account_index,
+            funding_type,
+            identity_index,
+            core_signer_handle,
+            out_proof_bytes,
+            out_proof_len,
+            out_derivation_path,
+            out_txid,
+        )
+    })
+}
+
+/// Body of [`asset_lock_manager_create_funded_proof`].
+///
+/// An ordinary Rust function, so a panic unwinds into [`catch_funding_panic`] instead of
+/// across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[allow(clippy::too_many_arguments)]
+unsafe fn asset_lock_manager_create_funded_proof_inner(
+    handle: Handle,
+    amount_duffs: u64,
+    account_index: u32,
+    funding_type: u32,
+    identity_index: u32,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_proof_bytes: *mut *mut u8,
+    out_proof_len: *mut usize,
+    out_derivation_path: *mut *mut c_char,
+    out_txid: *mut [u8; 32],
+) -> PlatformWalletFFIResult {
     check_ptr!(core_signer_handle);
     check_ptr!(out_proof_bytes);
     check_ptr!(out_proof_len);
@@ -162,16 +200,22 @@ pub unsafe extern "C" fn asset_lock_manager_create_funded_proof(
     let result = unwrap_option_or_return!(option);
     let (proof, path, out_point) = unwrap_result_or_return!(result);
 
-    let bytes = unwrap_result_or_return!(dpp::bincode::encode_to_vec(
-        &proof,
-        dpp::bincode::config::standard()
-    ));
+    // The lock is built, broadcast and tracked from here on: a failure to hand
+    // the result back names it as held. Both fallible steps run before any
+    // out-parameter is written, so a failure leaves nothing for the host to free.
+    let bytes = match dpp::bincode::encode_to_vec(&proof, dpp::bincode::config::standard()) {
+        Ok(bytes) => bytes,
+        Err(e) => return super::lock_handoff_failure(handle, out_point, e.into()),
+    };
+    let path_c = match CString::new(path.to_string()) {
+        Ok(path_c) => path_c,
+        Err(e) => return super::lock_handoff_failure(handle, out_point, e.into()),
+    };
 
     let len = bytes.len();
     let boxed = bytes.into_boxed_slice();
     *out_proof_bytes = Box::into_raw(boxed) as *mut u8;
     *out_proof_len = len;
-    let path_c = unwrap_result_or_return!(CString::new(path.to_string()));
     *out_derivation_path = path_c.into_raw();
     let mut txid_bytes = [0u8; 32];
     txid_bytes.copy_from_slice(&out_point.txid[..]);

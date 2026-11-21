@@ -46,6 +46,7 @@ import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.util.Base58
+import org.dashfoundation.example.util.PaymentFailure
 import org.dashfoundation.example.util.hexToBytes
 import java.text.DateFormat
 import java.util.Date
@@ -90,14 +91,14 @@ fun DpnsMarketplaceScreen(identityIdHex: String, navController: NavHostControlle
         lastSyncMs = (manager?.dpnsLastSyncUnixSeconds() ?: 0L) * 1_000L
     }
 
-    fun launch(block: suspend () -> Unit) {
+    fun launch(trade: Boolean = false, block: suspend () -> Unit) {
         if (busy) return
         busy = true
         scope.launch {
             try {
                 block()
             } catch (t: Throwable) {
-                error = t.message ?: "DPNS marketplace operation failed"
+                error = if (trade) dpnsTradeErrorMessage(t) else t.message ?: "DPNS marketplace operation failed"
             } finally {
                 busy = false
             }
@@ -230,7 +231,7 @@ fun DpnsMarketplaceScreen(identityIdHex: String, navController: NavHostControlle
                     pendingAction = null
                     return@MarketplaceConfirmationDialog
                 }
-                launch {
+                launch(trade = true) {
                     when (action) {
                         is MarketplaceAction.SetPrice -> {
                             val credits = actionPrice.toULongOrNull()
@@ -256,10 +257,16 @@ fun DpnsMarketplaceScreen(identityIdHex: String, navController: NavHostControlle
                             activeManager.signerHandle,
                         )
                     }
-                    val summary = activeManager.dpnsMarketplace.sync(activeWallet.handle)
-                    lastSyncMs = summary.syncUnixMs
-                    if (results.isNotEmpty()) {
-                        results = activeManager.dpnsMarketplace.search(activeWallet.handle, prefix.trim(), 50)
+                    // The trade is done; a failed refresh after it must not
+                    // read as a failed trade.
+                    try {
+                        val summary = activeManager.dpnsMarketplace.sync(activeWallet.handle)
+                        lastSyncMs = summary.syncUnixMs
+                        if (results.isNotEmpty()) {
+                            results = activeManager.dpnsMarketplace.search(activeWallet.handle, prefix.trim(), 50)
+                        }
+                    } catch (t: Throwable) {
+                        syncMessage = "Trade submitted; refreshing the marketplace failed: ${t.message}"
                     }
                 }
                 pendingAction = null
@@ -271,6 +278,17 @@ fun DpnsMarketplaceScreen(identityIdHex: String, navController: NavHostControlle
 
     ErrorAlertDialog(message = error, onDismiss = { error = null })
 }
+
+/**
+ * The text of a failed trade (set price, delist, transfer, purchase): a
+ * wallet error is presented by its payment class ([PaymentFailure]), never
+ * as "nothing was purchased" or "try again" unless the class says so. Any
+ * other throwable is the screen's own input check before anything was sent.
+ */
+internal fun dpnsTradeErrorMessage(t: Throwable): String =
+    PaymentFailure.ofPayment(t)?.let { "${it.title}: ${it.message}" }
+        ?: t.message
+        ?: "DPNS marketplace operation failed"
 
 @Composable
 private fun MarketplaceResultCard(

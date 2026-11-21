@@ -167,7 +167,7 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
         }
 
         guard let txPtr = txBytesPtr, txLen > 0 else {
-            throw PlatformWalletError.unknown("FFI returned success but transaction buffer was empty")
+            throw PlatformWalletError.unknown("FFI returned success but transaction buffer was empty", payment: .maybeSent)
         }
         defer { asset_lock_manager_free_tx_bytes(txPtr, txLen) }
         defer { if let p = pathPtr { platform_wallet_string_free(p) } }
@@ -181,7 +181,8 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
         // names the actual contract violation.
         guard let pathPtr, pathPtr.pointee != 0 else {
             throw PlatformWalletError.unknown(
-                "FFI returned success but derivation path was NULL or empty"
+                "FFI returned success but derivation path was NULL or empty",
+                payment: .maybeSent
             )
         }
         let path = String(cString: pathPtr)
@@ -211,8 +212,14 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
             ).check()
         }
 
+        // The lock is built, broadcast and tracked once the call succeeds,
+        // so a guard below is not `.notSent`. It cannot be `.lockHeld`
+        // either: the call hands back only the lock's txid, not the vout of
+        // its outpoint, so Swift has no outpoint to name. `.maybeSent` keeps
+        // a second lock from being funded; the tracked lock stays listed
+        // with the wallet's resumable asset locks.
         guard let proofPtr = proofBytesPtr, proofLen > 0 else {
-            throw PlatformWalletError.unknown("FFI returned success but proof buffer was empty")
+            throw PlatformWalletError.unknown("FFI returned success but proof buffer was empty", payment: .maybeSent)
         }
         defer { asset_lock_manager_free_proof_bytes(proofPtr, proofLen) }
         defer { if let p = pathPtr { platform_wallet_string_free(p) } }
@@ -222,10 +229,12 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
         // points to a non-empty NUL-terminated C string. Defaulting
         // to `""` would surface as opaque "key not found" / "derive
         // failed" errors at the next signing step; throwing here
-        // names the actual contract violation.
+        // names the actual contract violation. `.maybeSent` for the
+        // reason above: no outpoint to name.
         guard let pathPtr, pathPtr.pointee != 0 else {
             throw PlatformWalletError.unknown(
-                "FFI returned success but derivation path was NULL or empty"
+                "FFI returned success but derivation path was NULL or empty",
+                payment: .maybeSent
             )
         }
         let path = String(cString: pathPtr)
@@ -270,8 +279,11 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
             &proofBytesPtr, &proofLen, &pathPtr
         ).check()
 
+        // Past a successful resume only the wallet knows whether the lock is
+        // still resumable (it may be consumed or consumption-unknown), and a
+        // guard here cannot ask it: `.maybeSent`, never a held lock.
         guard let proofPtr = proofBytesPtr, proofLen > 0 else {
-            throw PlatformWalletError.unknown("FFI returned success but proof buffer was empty")
+            throw PlatformWalletError.unknown("FFI returned success but proof buffer was empty", payment: .maybeSent)
         }
         defer { asset_lock_manager_free_proof_bytes(proofPtr, proofLen) }
         defer { if let p = pathPtr { platform_wallet_string_free(p) } }
@@ -284,7 +296,8 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
         // names the actual contract violation.
         guard let pathPtr, pathPtr.pointee != 0 else {
             throw PlatformWalletError.unknown(
-                "FFI returned success but derivation path was NULL or empty"
+                "FFI returned success but derivation path was NULL or empty",
+                payment: .maybeSent
             )
         }
         let path = String(cString: pathPtr)
