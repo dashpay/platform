@@ -78,7 +78,7 @@ pub use masternode::{
     aggregate_masternodes, ListMembership, MasternodeKeyRole, MasternodeRecord, MasternodeSource,
     MasternodeStatus, TrackedMasternode, TrackedMasternodeSnapshot, WalletMasternodes,
 };
-pub use wallet::core_address_key::{CoreAddressKeyError, CoreAddressPrivateKey};
+pub use wallet::core_address_key::{CoreAddressKeyError, CoreAddressPrivateKey, MasterKeyProvider};
 pub use wallet::identity::network::{
     derive_identity_auth_keypair, fetch_identity_public_keys, AutoAcceptProofSource,
     ContactCryptoProvider, ContactInfoOpened, ContactInfoPublishOutcome, ContactInfoSealed,
@@ -95,7 +95,8 @@ pub use wallet::identity::{
     ProfileUpdate, RegistrationIndex, WithdrawalOutcome, DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use wallet::masternode_withdrawal::{
-    MasternodeWithdrawalKey, MasternodeWithdrawalKeys, MasternodeWithdrawalRequest,
+    MasternodeKeySource, MasternodeWithdrawalError, MasternodeWithdrawalKey,
+    MasternodeWithdrawalKeys, MasternodeWithdrawalRequest,
 };
 pub use wallet::mnemonic::{
     first_receive_address_for_mnemonic, master_key_for_mnemonic, parse_mnemonic_any_language,

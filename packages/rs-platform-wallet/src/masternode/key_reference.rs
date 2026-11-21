@@ -8,7 +8,7 @@ use std::future::Future;
 use dash_sdk::platform::Fetch;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::{Identity, KeyType, Purpose};
+use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose};
 use dpp::prelude::Identifier;
 
 use super::list::CurrentMasternodeList;
@@ -18,18 +18,20 @@ use crate::changeset::PlatformWalletPersistence;
 use crate::error::PlatformWalletError;
 use crate::manager::PlatformWalletManager;
 
-/// The hash of `identity`'s enabled `ECDSA_HASH160` key for `purpose`, the
-/// newest by key id if several are. Drive disables a masternode identity's
-/// replaced keys instead of removing them, so a disabled key is stale.
+/// Whether `key` is an enabled `ECDSA_HASH160` key for `purpose`. Drive
+/// disables a masternode identity's replaced keys instead of removing them,
+/// so a disabled key is stale.
+pub(crate) fn is_enabled_hash160_key(key: &IdentityPublicKey, purpose: Purpose) -> bool {
+    key.purpose() == purpose && key.key_type() == KeyType::ECDSA_HASH160 && !key.is_disabled()
+}
+
+/// The hash of `identity`'s enabled `ECDSA_HASH160` key for `purpose`
+/// ([`is_enabled_hash160_key`]), the newest by key id if several are.
 pub(super) fn enabled_key_hash(identity: &Identity, purpose: Purpose) -> Option<[u8; 20]> {
     identity
         .public_keys()
         .values()
-        .filter(|key| {
-            key.purpose() == purpose
-                && key.key_type() == KeyType::ECDSA_HASH160
-                && !key.is_disabled()
-        })
+        .filter(|key| is_enabled_hash160_key(key, purpose))
         .filter_map(|key| key.data().as_slice().try_into().ok())
         .next_back()
 }
