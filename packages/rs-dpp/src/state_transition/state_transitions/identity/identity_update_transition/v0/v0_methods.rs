@@ -349,7 +349,7 @@ mod tests {
             revision: identity.revision(),
             nonce: 5,
             add_public_keys: vec![added_in_creation],
-            // CRITICAL 1 stands in for HIGH 2.
+            // The added HIGH 4 replaces HIGH 2.
             disable_public_keys: vec![2],
             user_fee_increase: 0,
             signature_public_key_id: 0,

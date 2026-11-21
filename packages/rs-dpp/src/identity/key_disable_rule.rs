@@ -21,13 +21,12 @@ use crate::prelude::TimestampMillis;
 /// which DIP-11 forbids. Signing-side policy, not a consensus error: Platform would accept the
 /// update for every level but MASTER.
 ///
-/// A security level is a minimum: a key of a stronger level stands in for it, except MASTER,
-/// which signs identity updates and key-limits updates only. So a CRITICAL key keeps a HIGH key
-/// disableable, a MASTER key does not, and a MASTER key needs another MASTER key.
+/// Only a key of the same security level stands in for the disabled one, as DIP-11 words it: a
+/// CRITICAL key does not keep the last HIGH key disableable.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error(
     "cannot disable authentication key {key_id}: no other enabled, unexpired authentication key \
-     at security level {security_level} or one standing in for it would remain"
+     at security level {security_level} would remain"
 )]
 pub struct LastAuthenticationKeyError {
     /// The key the update would disable.
@@ -47,6 +46,8 @@ pub struct LastAuthenticationKeyError {
 /// same update adds. A key stands in for the disabled one only where it can sign everything the
 /// disabled one could:
 ///
+/// - **Security level.** The same level as the disabled key; DIP-11 does not let a stronger key
+///   stand in.
 /// - **Budget.** A key with a `total_budget` never counts: what is left of the budget lives in
 ///   Drive, and an exhausted key can no longer sign.
 /// - **Contract bounds.** An unbounded key is replaced only by an unbounded key; a bound key by
@@ -106,14 +107,10 @@ fn is_unexpired(key: &IdentityPublicKey, now_ms: Option<TimestampMillis>) -> boo
 }
 
 /// Whether `candidate` can sign whatever `disabled` could, as far as level and contract bounds
-/// go: the same level, or a stronger one other than MASTER, which signs identity updates and
-/// key-limits updates only; and no bounds, or the same bounds as `disabled`. The single place
-/// these comparisons of the rule are made.
+/// go: the same level, and no bounds or the same bounds as `disabled`. The single place these
+/// comparisons of the rule are made.
 fn stands_in_for(candidate: &IdentityPublicKey, disabled: &IdentityPublicKey) -> bool {
-    let (candidate_level, required_level) = (candidate.security_level(), disabled.security_level());
-    let level_suffices = candidate_level == required_level
-        || (candidate_level != SecurityLevel::MASTER
-            && candidate_level.stronger_security_than(required_level));
+    let level_suffices = candidate.security_level() == disabled.security_level();
     let bounds_suffice = match candidate.contract_bounds() {
         None => true,
         bounds => bounds == disabled.contract_bounds(),
@@ -216,17 +213,28 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn should_let_a_stronger_non_master_key_stand_in_for_a_weaker_level() {
-        // CRITICAL 1 still meets HIGH and MEDIUM requirements.
+    fn should_not_let_a_stronger_key_stand_in_for_a_weaker_level() {
+        // DIP-11 asks for another key "in the same security level": CRITICAL 1 does not keep
+        // the only HIGH or MEDIUM key disableable.
+        for (key_id, security_level) in [(2, SecurityLevel::HIGH), (3, SecurityLevel::MEDIUM)] {
+            assert_eq!(
+                check_keys_can_be_disabled(&one_key_per_level(), &[], &[key_id], Some(NOW_MS)),
+                Err(LastAuthenticationKeyError {
+                    key_id,
+                    security_level,
+                })
+            );
+        }
+        let second_high = authentication_key(4, SecurityLevel::HIGH);
         assert_eq!(
-            check_keys_can_be_disabled(&one_key_per_level(), &[], &[2, 3], Some(NOW_MS)),
+            check_keys_can_be_disabled(&one_key_per_level(), &[second_high], &[2], Some(NOW_MS)),
             Ok(())
         );
     }
 
     #[test]
     fn should_not_let_a_master_key_stand_in_for_critical() {
-        // MASTER signs identity and key-limits updates only, so it cannot replace the CRITICAL key.
+        // Only the same level stands in, so the MASTER key cannot replace the CRITICAL key.
         let identity = identity(vec![
             authentication_key(0, SecurityLevel::MASTER),
             authentication_key(1, SecurityLevel::CRITICAL),

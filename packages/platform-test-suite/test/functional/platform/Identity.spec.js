@@ -598,7 +598,8 @@ describe('Platform', () => {
 
         const newPublicKey = new IdentityPublicKeyWithWitness(1);
         newPublicKey.setId(nextKeyId);
-        newPublicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
+        // HIGH, so the disable test below keeps a HIGH key when it disables key 1 (DIP-11)
+        newPublicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.HIGH);
         newPublicKey.setData(identityPublicKey);
 
         const update = {
@@ -635,7 +636,7 @@ describe('Platform', () => {
 
         const identityBeforeUpdate = identity.toObject();
 
-        // HIGH key 1: the CRITICAL key 2 still stands in for it (DIP-11)
+        // HIGH key 1: the HIGH key 4 added above remains (DIP-11)
         const publicKeyToDisable = identity.getPublicKeyById(1);
         const update = {
           disable: [publicKeyToDisable],
