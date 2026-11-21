@@ -182,7 +182,7 @@ pub type AddressInfos = RetrievedObjects<PlatformAddress, AddressInfo>;
 /// document ids, where a contender's owner is its document's `owner_id` and one identity
 /// may own several contenders.
 /// If a contender is not found, it is represented as `None`.
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "mocks",
     derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
