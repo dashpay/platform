@@ -139,11 +139,16 @@ pub struct DocumentHistory {
     /// revisions only, and authenticated by protocol-15 proofs.
     pub lifecycle: Option<DocumentHistoryLifecycle>,
 }
-/// Verified history with the complete wire response needed for independent verification.
+/// Verified history with the request and complete wire response needed for independent
+/// verification ([`Self::verify`]).
 #[derive(Debug, Clone, PartialEq)]
 pub struct DocumentHistoryProofInfo {
     /// Decoded and verified history page.
     pub history: DocumentHistory,
+    /// The request the response answers, as sent: an SDK may send a version 1 query as
+    /// version 0 to a network below protocol 15, and a response verifies only against the
+    /// request of its own version.
+    pub request: dapi_grpc::platform::v0::GetDocumentHistoryRequest,
     /// Original metadata and the quorum-signed proof: a version 1 response from protocol 15,
     /// whose GroveDB payload carries one proof of the page and lifecycle, or a version 0
     /// response through protocol 14, which proves the page only.

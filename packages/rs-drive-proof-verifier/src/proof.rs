@@ -1671,8 +1671,9 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistoryProofInfo
     where
         Self: Sized + 'a,
     {
+        let request: platform::GetDocumentHistoryRequest = request.into();
         let response: platform::GetDocumentHistoryResponse = response.into();
-        let wire = response.clone();
+        let (sent, wire) = (request.clone(), response.clone());
         let (history, metadata, proof) = DocumentHistory::maybe_from_proof_with_metadata(
             request,
             response,
@@ -1683,6 +1684,7 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistoryProofInfo
         Ok((
             history.map(|history| Self {
                 history,
+                request: sent,
                 response: wire,
             }),
             metadata,
@@ -1692,16 +1694,15 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistoryProofInfo
 }
 
 impl DocumentHistoryProofInfo {
-    /// Independently authenticate the retained response against its original request.
+    /// Independently authenticate the retained response against the retained request.
     pub fn verify(
         &self,
-        request: platform::GetDocumentHistoryRequest,
         network: Network,
         platform_version: &PlatformVersion,
         provider: &dyn ContextProvider,
     ) -> Result<Option<DocumentHistory>, Error> {
         DocumentHistory::maybe_from_proof(
-            request,
+            self.request.clone(),
             self.response.clone(),
             network,
             platform_version,

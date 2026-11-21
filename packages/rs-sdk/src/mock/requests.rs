@@ -266,6 +266,7 @@ impl MockResponse for drive_proof_verifier::types::DocumentHistoryProofInfo {
         bincode::encode_to_vec(
             (
                 self.history.mock_serialize(sdk),
+                self.request.encode_to_vec(),
                 self.response.encode_to_vec(),
             ),
             BINCODE_CONFIG,
@@ -275,11 +276,13 @@ impl MockResponse for drive_proof_verifier::types::DocumentHistoryProofInfo {
 
     fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self {
         use dapi_grpc::Message;
-        let ((history, response), _): ((Vec<u8>, Vec<u8>), _) =
+        let ((history, request, response), _): ((Vec<u8>, Vec<u8>, Vec<u8>), _) =
             bincode::decode_from_slice(buf, BINCODE_CONFIG)
                 .expect("decode document history proof info");
         Self {
             history: drive_proof_verifier::types::DocumentHistory::mock_deserialize(sdk, &history),
+            request: dapi_grpc::platform::v0::GetDocumentHistoryRequest::decode(request.as_slice())
+                .expect("decode document history request"),
             response: dapi_grpc::platform::v0::GetDocumentHistoryResponse::decode(
                 response.as_slice(),
             )

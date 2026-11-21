@@ -16,7 +16,7 @@ pub mod data_contracts_by_range;
 pub mod data_contracts_latest_versions;
 pub mod decision_proposals;
 mod delegate;
-mod document_history;
+pub mod document_history;
 pub mod documents;
 pub mod dpns_usernames;
 pub mod encrypted_for;

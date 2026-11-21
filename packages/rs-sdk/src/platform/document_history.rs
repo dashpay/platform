@@ -3,8 +3,9 @@
 //! Protocol 15 serves only history request V1 (revision and cursor filters, lifecycle
 //! proofs) and protocol 14 only V0 (a start time). So an SDK that would send V1 first asks
 //! whether the network is proven below 15, with the protocol gate's own probe, and sends
-//! V0 when it is: the request the 5.0 SDK sent. Its answer has the same shape, without
-//! `lifecycle`, which the V0 proof does not carry.
+//! V0 when it is: the request the 5.0 SDK sent, with V1's inclusive start time. Its answer
+//! has the same shape, without `lifecycle`, which the V0 proof does not carry.
+//! [`fetch_document_history_with_lifecycle`] never falls back, for callers that need it.
 
 use super::fetch::fetch_proved;
 use super::{Fetch, ProtocolRequirement, Query};
@@ -28,8 +29,7 @@ impl Fetch for DocumentHistory {
         query: Q,
         request_settings: Option<RequestSettings>,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
-        let request = history_request_for_network(sdk, query, request_settings).await?;
-        fetch_proved::<Self, _>(sdk, request, request_settings).await
+        fetch_history(sdk, query, request_settings).await
     }
 }
 
@@ -43,50 +43,82 @@ impl Fetch for DocumentHistoryProofInfo {
         query: Q,
         request_settings: Option<RequestSettings>,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
-        let request = history_request_for_network(sdk, query, request_settings).await?;
-        fetch_proved::<Self, _>(sdk, request, request_settings).await
+        fetch_history(sdk, query, request_settings).await
     }
 }
 
-/// `query` encoded with the SDK's settings, as request V0 when it encodes to V1 and the
-/// network is proven below the version that serves V1 ([`Sdk::network_proven_below`]),
-/// asked under the caller's `request_settings` as the gate's own probe is.
+/// Fetch a page of a document's history with its authenticated lifecycle: request V1
+/// only, never the V0 fallback of [`DocumentHistory::fetch`]. On a network below protocol
+/// 15 it is refused with [`Error::ProtocolVersionNotActive`], so the answer always carries
+/// `lifecycle`.
+pub async fn fetch_document_history_with_lifecycle<Q: Query<GetDocumentHistoryRequest>>(
+    sdk: &Sdk,
+    query: Q,
+    request_settings: Option<RequestSettings>,
+) -> Result<Option<DocumentHistory>, Error> {
+    fetch_proved::<DocumentHistory, _>(sdk, query, request_settings)
+        .await
+        .map(|(history, _, _)| history)
+}
+
+/// Fetch `query` as request V0 when it encodes to V1 and the network is proven below the
+/// version that serves V1 ([`Sdk::network_proven_below_with_settings`]), asked under the
+/// caller's `request_settings` as the gate's own probe is.
 ///
 /// Otherwise the request is unchanged, and the protocol gate decides whether V1 is sent: a
 /// network proven at 15 serves it, and an SDK that cannot learn the network's version, or
 /// is pinned below 15 on a network at 15, refuses it as before.
-async fn history_request_for_network<Q: Query<GetDocumentHistoryRequest>>(
+///
+/// When V0 fails, the network may have reached 15 since it was proven below it. It is
+/// asked once more, past the probe hold, and V1 goes to the gate when it has.
+async fn fetch_history<T, Q>(
     sdk: &Sdk,
     query: Q,
     request_settings: Option<RequestSettings>,
-) -> Result<GetDocumentHistoryRequest, Error> {
+) -> Result<(Option<T>, ResponseMetadata, Proof), Error>
+where
+    T: Fetch<Query = GetDocumentHistoryRequest> + Send,
+    Q: Query<GetDocumentHistoryRequest>,
+{
     let settings = sdk.query_settings();
     let request = query.query(&settings)?;
-    let Some(requirement) = ProtocolRequirement::of_request(&request) else {
-        return Ok(request);
+    let Some(requirement) = ProtocolRequirement::of_request(&request)
+        .filter(|requirement| settings.network_protocol_basis() < requirement.protocol_version)
+    else {
+        return fetch_proved::<T, _>(sdk, request, request_settings).await;
     };
-    if settings.network_protocol_basis() >= requirement.protocol_version {
-        return Ok(request);
-    }
-    match sdk
+    let proven_below = sdk
         .network_proven_below_with_settings(requirement.protocol_version, request_settings)
         .await
-    {
-        Ok(true) => legacy_history_request(request).ok_or_else(|| {
+        .map_err(|error| {
             sdk.protocol_version_not_active(
                 requirement.protocol_version,
                 requirement.method,
-                Some(REVISION_AND_CURSOR_FILTERS),
                 None,
+                Some(error),
             )
-        }),
-        Ok(false) => Ok(request),
-        Err(error) => Err(sdk.protocol_version_not_active(
+        })?;
+    if !proven_below {
+        return fetch_proved::<T, _>(sdk, request, request_settings).await;
+    }
+    let legacy = legacy_history_request(request.clone()).ok_or_else(|| {
+        sdk.protocol_version_not_active(
             requirement.protocol_version,
             requirement.method,
+            Some(REVISION_AND_CURSOR_FILTERS),
             None,
-            Some(error),
-        )),
+        )
+    })?;
+    match fetch_proved::<T, _>(sdk, legacy, request_settings).await {
+        Err(error)
+            if sdk
+                .network_reached_past_hold(requirement.protocol_version, request_settings)
+                .await =>
+        {
+            tracing::debug!(%error, "history request V0 failed on a network now at protocol 15; sending V1");
+            fetch_proved::<T, _>(sdk, request, request_settings).await
+        }
+        answer => answer,
     }
 }
 
@@ -106,7 +138,9 @@ fn legacy_history_request(request: GetDocumentHistoryRequest) -> Option<GetDocum
             document_id: v1.document_id,
             limit: v1.limit,
             offset: None,
-            start_at_ms,
+            // V1 starts at its time and V0 after it (Drive's `start_after_ms`), so V0 starts
+            // one millisecond earlier. No revision is written at time 0, so 0 stays 0.
+            start_at_ms: start_at_ms.saturating_sub(1),
             prove: v1.prove,
         }
         .into(),
@@ -197,7 +231,9 @@ mod tests {
                 limit: Some(1),
                 ..query(filter)
             };
+            let v1 = query.query(&sdk.query_settings()).unwrap();
             let error = DocumentHistory::fetch(&sdk, query).await.unwrap_err();
+            assert_eq!(sdk.mock_dapi().lock().await.request_count(&v1), 0);
             assert!(
                 matches!(
                     error,
@@ -213,6 +249,18 @@ mod tests {
                 "{error:?}"
             );
         }
+    }
+
+    #[test]
+    fn should_start_v0_at_zero_for_a_start_time_of_zero() {
+        let settings_source = SdkBuilder::new_mock().build().unwrap();
+        let v1 = query(DocumentHistoryFilter::StartAtTime(0))
+            .query(&settings_source.query_settings())
+            .unwrap();
+        let Some(Version::V0(v0)) = legacy_history_request(v1).unwrap().version else {
+            panic!("start-time requests become V0");
+        };
+        assert_eq!(v0.start_at_ms, 0);
     }
 
     #[test]
@@ -236,7 +284,8 @@ mod tests {
                 document_id: vec![2; 32],
                 limit: Some(5),
                 offset: None,
-                start_at_ms: 1234,
+                // V0 starts after its time, V1 at it.
+                start_at_ms: 1233,
                 prove: true,
             }
         );

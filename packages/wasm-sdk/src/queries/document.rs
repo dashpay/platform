@@ -2,11 +2,6 @@ use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
-use dapi_grpc::platform::v0::get_document_history_response::{
-    get_document_history_response_v0::Result as HistoryResponseResultV0,
-    get_document_history_response_v1::Result as HistoryResponseResult,
-    Version as HistoryResponseVersion,
-};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::platform_value::Value;
@@ -16,13 +11,14 @@ use dash_sdk::platform::documents::document_history_query::{
     DocumentHistoryFilter, DocumentHistoryQuery,
 };
 use dash_sdk::platform::documents::document_query::DocumentQuery;
+use dash_sdk::platform::proto::{Proof, ResponseMetadata};
 use dash_sdk::platform::Fetch;
 use dash_sdk::platform::FetchMany;
 use drive::query::{
     IntegerRangeGridSpec, OrderClause, TimeRangeGridSpec, TimeRangeSelector, WhereClause,
     WhereOperator,
 };
-use drive_proof_verifier::types::{DocumentHistory, DocumentHistoryProofInfo};
+use drive_proof_verifier::types::DocumentHistory;
 use drive_proof_verifier::{DocumentSplitAverages, DocumentSplitCounts, DocumentSplitSums};
 use js_sys::{BigInt, Map};
 use serde::{Deserialize, Serialize};
@@ -1112,38 +1108,13 @@ pub(super) fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, Wasm
 }
 
 fn document_history_proof_response(
-    result: DocumentHistoryProofInfo,
+    (history, metadata, proof): (DocumentHistory, ResponseMetadata, Proof),
     contract_id: Identifier,
     document_type_name: &str,
 ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-    // Protocol 14 answers with a version 0 response, protocol 15 with version 1.
-    let (proof, metadata) = match result.response.version {
-        Some(HistoryResponseVersion::V0(response)) => (
-            match response.result {
-                Some(HistoryResponseResultV0::Proof(proof)) => Some(proof),
-                _ => None,
-            },
-            response.metadata,
-        ),
-        Some(HistoryResponseVersion::V1(response)) => (
-            match response.result {
-                Some(HistoryResponseResult::Proof(proof)) => Some(proof),
-                _ => None,
-            },
-            response.metadata,
-        ),
-        None => (None, None),
-    };
-    let Some(proof) = proof else {
-        return Err(WasmSdkError::generic(
-            "verified document history response carries no proof",
-        ));
-    };
     Ok(ProofMetadataResponseWasm::from_sdk_parts(
-        DocumentHistoryResultWasm::from_history(result.history, contract_id, document_type_name)?,
-        metadata.ok_or_else(|| {
-            WasmSdkError::generic("verified document history response carries no metadata")
-        })?,
+        DocumentHistoryResultWasm::from_history(history, contract_id, document_type_name)?,
+        metadata,
         proof,
     ))
 }
@@ -1187,10 +1158,15 @@ impl WasmSdk {
             .map_err(|error| {
                 WasmSdkError::not_found(format!("Document type not found: {error}"))
             })?;
-        let result = DocumentHistoryProofInfo::fetch(self.as_ref(), query)
-            .await?
+        let (history, metadata, proof) =
+            DocumentHistory::fetch_with_metadata_and_proof(self.as_ref(), query, None).await?;
+        let history = history
             .ok_or_else(|| WasmSdkError::not_found("document history response is missing"))?;
-        document_history_proof_response(result, contract_id, &document_type_name)
+        document_history_proof_response(
+            (history, metadata, proof),
+            contract_id,
+            &document_type_name,
+        )
     }
 
     #[wasm_bindgen(
@@ -1859,8 +1835,6 @@ mod tests {
 #[cfg(all(test, target_arch = "wasm32"))]
 mod history_wasm_tests {
     use super::*;
-    use crate::error::WasmSdkErrorKind;
-    use dash_sdk::platform::proto::get_document_history_response::GetDocumentHistoryResponseV1;
     use drive_proof_verifier::types::{
         DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryLifecycleTimes,
         DocumentHistoryState,
@@ -1868,46 +1842,6 @@ mod history_wasm_tests {
     use js_sys::{Array, Reflect};
     use wasm_bindgen::JsCast;
     use wasm_bindgen_test::wasm_bindgen_test;
-
-    #[wasm_bindgen_test]
-    fn should_return_an_error_when_history_proof_metadata_is_missing() {
-        let result = DocumentHistoryProofInfo {
-            history: DocumentHistory {
-                entries: vec![],
-                lifecycle: None,
-            },
-            response: GetDocumentHistoryResponseV1 {
-                metadata: None,
-                result: Some(HistoryResponseResult::Proof(Default::default())),
-            }
-            .into(),
-        };
-        let error = document_history_proof_response(result, [1; 32].into(), "note")
-            .expect_err("missing metadata must return an error");
-        assert_eq!(error.kind(), WasmSdkErrorKind::Generic);
-        assert_eq!(
-            error.to_string(),
-            "verified document history response carries no metadata"
-        );
-    }
-
-    #[wasm_bindgen_test]
-    fn should_return_an_error_when_history_response_has_no_proof() {
-        let result = DocumentHistoryProofInfo {
-            history: DocumentHistory {
-                entries: vec![],
-                lifecycle: None,
-            },
-            response: Default::default(),
-        };
-        let error = document_history_proof_response(result, [1; 32].into(), "note")
-            .expect_err("missing proof must return an error");
-        assert_eq!(error.kind(), WasmSdkErrorKind::Generic);
-        assert_eq!(
-            error.to_string(),
-            "verified document history response carries no proof"
-        );
-    }
 
     fn returned_history_entry(time_ms: u64, revision: u64) -> JsValue {
         let history = DocumentHistory {
@@ -2149,6 +2083,45 @@ mod history_wasm_tests {
         }
     }
 
+    /// Below protocol 15 the SDK sends request V0, whose proof carries revisions only: the
+    /// page reaches JavaScript with its entries, metadata and proof, and no `lifecycle`.
+    #[wasm_bindgen_test]
+    fn should_return_a_protocol_14_history_page_without_lifecycle() {
+        let history = DocumentHistory {
+            entries: vec![DocumentHistoryEntry {
+                time_ms: 2000,
+                revision: 2,
+                document: Document::V0(Default::default()),
+            }],
+            lifecycle: None,
+        };
+        let metadata = ResponseMetadata {
+            protocol_version: 14,
+            ..Default::default()
+        };
+        let proof = Proof {
+            grovedb_proof: vec![7, 8, 9],
+            ..Default::default()
+        };
+        let response =
+            document_history_proof_response((history, metadata, proof), [1; 32].into(), "note")
+                .unwrap();
+
+        assert_eq!(response.metadata().protocol_version(), 14);
+        assert_eq!(response.proof().grovedb_proof().to_vec(), vec![7, 8, 9]);
+        let json = response.to_json().unwrap();
+        let data = Reflect::get(&json, &"data".into()).unwrap();
+        let entries = Array::from(&Reflect::get(&data, &"entries".into()).unwrap());
+        assert_eq!(entries.length(), 1);
+        assert_eq!(
+            Reflect::get(&entries.get(0), &"revision".into()).unwrap(),
+            JsValue::from_str("2")
+        );
+        assert!(Reflect::get(&data, &"lifecycle".into())
+            .unwrap()
+            .is_undefined());
+    }
+
     #[wasm_bindgen_test]
     fn should_serialize_history_data_in_a_proof_metadata_response() {
         let history = DocumentHistory {
@@ -2164,14 +2137,7 @@ mod history_wasm_tests {
             }),
         };
         let response = document_history_proof_response(
-            DocumentHistoryProofInfo {
-                history,
-                response: GetDocumentHistoryResponseV1 {
-                    metadata: Some(Default::default()),
-                    result: Some(HistoryResponseResult::Proof(Default::default())),
-                }
-                .into(),
-            },
+            (history, Default::default(), Default::default()),
             [1; 32].into(),
             "note",
         )

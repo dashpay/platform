@@ -2873,3 +2873,149 @@ async fn should_refuse_a_generic_broadcast_of_a_private_document_transition_unti
         assert_eq!(probes(&sdk).await, 1, "pinned {pinned}");
     }
 }
+
+/// History reads choose their request version from what the gate's probe proves: request V0
+/// on a network below protocol 15, V1 at it.
+mod document_history {
+    use super::*;
+    use crate::platform::DocumentHistoryQuery;
+    use dapi_grpc::platform::v0::get_document_history_request::GetDocumentHistoryRequestV0;
+    use dapi_grpc::platform::v0::GetDocumentHistoryRequest;
+    use dpp::document::DocumentV0;
+    use drive::query::document_history_drive_query::DocumentHistoryFilter;
+    use drive_proof_verifier::types::{DocumentHistory, DocumentHistoryEntry};
+
+    fn query() -> DocumentHistoryQuery {
+        DocumentHistoryQuery {
+            data_contract_id: [1; 32].into(),
+            document_type_name: "note".into(),
+            document_id: [2; 32].into(),
+            filter: DocumentHistoryFilter::StartAtTime(2000),
+            limit: Some(5),
+        }
+    }
+
+    fn v1() -> GetDocumentHistoryRequest {
+        query()
+            .query(&QuerySettings {
+                request_settings: &RequestSettings::default(),
+                protocol_version: PlatformVersion::latest(),
+                verified_protocol_version: 0,
+                prove: true,
+            })
+            .unwrap()
+    }
+
+    /// The V0 request for revisions from 2000 on: after 1999.
+    fn v0() -> GetDocumentHistoryRequest {
+        GetDocumentHistoryRequestV0 {
+            data_contract_id: vec![1; 32],
+            document_type_name: "note".into(),
+            document_id: vec![2; 32],
+            limit: Some(5),
+            offset: None,
+            start_at_ms: 1999,
+            prove: true,
+        }
+        .into()
+    }
+
+    fn history() -> DocumentHistory {
+        DocumentHistory {
+            entries: vec![DocumentHistoryEntry {
+                time_ms: 2000,
+                revision: 2,
+                document: Document::V0(DocumentV0 {
+                    revision: Some(2),
+                    ..Default::default()
+                }),
+            }],
+            lifecycle: None,
+        }
+    }
+
+    /// An SDK pinned at 14, as in the upgrade rehearsal, asks the network for its version,
+    /// and sends V0 to a network proven at 14.
+    #[tokio::test]
+    async fn should_send_v0_to_a_network_the_probe_proves_at_14() {
+        let mut sdk = mock_sdk(V14, true, 0);
+        answer_probe(&sdk, "pv14").await;
+        sdk.mock()
+            .expect_fetch(v0(), Some(history()))
+            .await
+            .unwrap();
+        let fetched = DocumentHistory::fetch(&sdk, query()).await.unwrap();
+        assert_eq!(fetched, Some(history()));
+        assert_eq!(probes(&sdk).await, 1);
+        assert_eq!(sent(&sdk, &v0()).await, 1);
+        assert_eq!(sent(&sdk, &v1()).await, 0);
+    }
+
+    /// A network the probe proves at 15 or above gets V1.
+    #[tokio::test]
+    async fn should_send_v1_to_a_network_the_probe_proves_at_15() {
+        let mut sdk = mock_sdk(V14, false, 0);
+        answer_probe(&sdk, "newer").await;
+        sdk.mock()
+            .expect_fetch(v1(), Some(history()))
+            .await
+            .unwrap();
+        let fetched = DocumentHistory::fetch(&sdk, query()).await.unwrap();
+        assert_eq!(fetched, Some(history()));
+        assert_eq!(probes(&sdk).await, 1);
+        assert_eq!(sent(&sdk, &v1()).await, 1);
+        assert_eq!(sent(&sdk, &v0()).await, 0);
+    }
+
+    /// When the probe fails, neither version is sent, and the refusal says why.
+    #[tokio::test]
+    async fn should_refuse_with_the_cause_and_send_nothing_when_the_probe_fails() {
+        let sdk = mock_sdk(V14, true, 0);
+        match DocumentHistory::fetch(&sdk, query()).await {
+            Err(Error::ProtocolVersionNotActive {
+                method: "get_document_history",
+                required: PROTOCOL_VERSION_15,
+                feature: None,
+                cause: Some(_),
+                ..
+            }) => {}
+            other => panic!("expected a refusal with its cause, got {other:?}"),
+        }
+        assert_eq!(probes(&sdk).await, 1);
+        assert_eq!(sent(&sdk, &v0()).await, 0);
+        assert_eq!(sent(&sdk, &v1()).await, 0);
+    }
+
+    /// The network reached 15 after V0 was chosen, while a hold still showed it at 14:
+    /// the node refuses V0, the SDK asks once more past the hold and sends V1.
+    #[tokio::test]
+    async fn should_send_v1_when_the_network_reaches_15_after_v0_was_chosen() {
+        let mut sdk = mock_sdk(V14, false, V14);
+        sdk.probe_hold.set(ProbeHold {
+            network: V14,
+            epoch: 1,
+            until_ms: u64::MAX,
+        });
+        answer(
+            &sdk,
+            &v0(),
+            Err(Status::unknown(
+                "unsupported version for query: document_history, currently supporting \
+                 versions 1 to 1 on platform protocol 15, given 0",
+            )),
+        )
+        .await;
+        answer_probe(&sdk, "newer").await;
+        sdk.mock()
+            .expect_fetch(v1(), Some(history()))
+            .await
+            .unwrap();
+        let fetched = DocumentHistory::fetch_with_settings(&sdk, query(), once())
+            .await
+            .unwrap();
+        assert_eq!(fetched, Some(history()));
+        assert_eq!(sent(&sdk, &v0()).await, 1);
+        assert_eq!(probes(&sdk).await, 1);
+        assert_eq!(sent(&sdk, &v1()).await, 1);
+    }
+}

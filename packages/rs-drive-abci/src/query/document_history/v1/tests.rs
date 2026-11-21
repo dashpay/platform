@@ -212,7 +212,8 @@ fn should_verify_signed_legacy_history_from_protocol_14_with_protocol_15_client(
         document_id: document.id().to_vec(),
         limit: Some(2),
         offset: None,
-        start_at_ms: 1000,
+        // V0's start time is exclusive: the SDK asks for revisions from 2000 on as after 1999.
+        start_at_ms: 1999,
         prove: true,
     }
     .into();
@@ -513,7 +514,7 @@ fn history_api_proof_round_trip(gapped: bool) {
         );
         assert_eq!(
             exported
-                .verify(request.clone(), Network::Testnet, version, &provider)
+                .verify(Network::Testnet, version, &provider)
                 .unwrap(),
             Some(exported.history)
         );
