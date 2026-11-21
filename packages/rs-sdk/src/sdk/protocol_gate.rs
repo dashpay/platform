@@ -291,6 +291,17 @@ impl Sdk {
     /// one ([`Self::mock_verified_protocol_version`]). A version verified earlier, by this SDK
     /// or a clone, shows nothing then without a hold: the network may have upgraded since.
     pub async fn network_proven_below(&self, protocol_version: u32) -> Result<bool, Error> {
+        self.network_proven_below_with_settings(protocol_version, None)
+            .await
+    }
+
+    /// [`Self::network_proven_below`], with the probe sent under the caller's request
+    /// `settings` (the SDK's own when `None`), as the gate's probe is.
+    pub(crate) async fn network_proven_below_with_settings(
+        &self,
+        protocol_version: u32,
+        settings: Option<RequestSettings>,
+    ) -> Result<bool, Error> {
         let state = self.gate_state();
         let verified = state.settings.verified_protocol_version;
         if verified >= protocol_version {
@@ -305,7 +316,7 @@ impl Sdk {
         if !state.enforced || !state.has_context_provider {
             return Ok(false);
         }
-        self.probe_network_protocol_version(protocol_version, None)
+        self.probe_network_protocol_version(protocol_version, settings)
             .await?;
         let verified = self.query_settings().verified_protocol_version;
         Ok(verified != 0 && verified < protocol_version)

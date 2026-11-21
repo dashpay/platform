@@ -507,7 +507,10 @@ fn history_api_proof_round_trip(gapped: bool) {
             )
             .unwrap();
         let exported = exported.unwrap();
-        assert_eq!(exported.response, response);
+        assert_eq!(
+            exported.response,
+            GetDocumentHistoryResponse::from(response.clone())
+        );
         assert_eq!(
             exported
                 .verify(request.clone(), Network::Testnet, version, &provider)

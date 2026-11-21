@@ -28,7 +28,7 @@ impl Fetch for DocumentHistory {
         query: Q,
         request_settings: Option<RequestSettings>,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
-        let request = history_request_for_network(sdk, query).await?;
+        let request = history_request_for_network(sdk, query, request_settings).await?;
         fetch_proved::<Self, _>(sdk, request, request_settings).await
     }
 }
@@ -43,13 +43,14 @@ impl Fetch for DocumentHistoryProofInfo {
         query: Q,
         request_settings: Option<RequestSettings>,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
-        let request = history_request_for_network(sdk, query).await?;
+        let request = history_request_for_network(sdk, query, request_settings).await?;
         fetch_proved::<Self, _>(sdk, request, request_settings).await
     }
 }
 
 /// `query` encoded with the SDK's settings, as request V0 when it encodes to V1 and the
-/// network is proven below the version that serves V1 ([`Sdk::network_proven_below`]).
+/// network is proven below the version that serves V1 ([`Sdk::network_proven_below`]),
+/// asked under the caller's `request_settings` as the gate's own probe is.
 ///
 /// Otherwise the request is unchanged, and the protocol gate decides whether V1 is sent: a
 /// network proven at 15 serves it, and an SDK that cannot learn the network's version, or
@@ -57,6 +58,7 @@ impl Fetch for DocumentHistoryProofInfo {
 async fn history_request_for_network<Q: Query<GetDocumentHistoryRequest>>(
     sdk: &Sdk,
     query: Q,
+    request_settings: Option<RequestSettings>,
 ) -> Result<GetDocumentHistoryRequest, Error> {
     let settings = sdk.query_settings();
     let request = query.query(&settings)?;
@@ -66,7 +68,10 @@ async fn history_request_for_network<Q: Query<GetDocumentHistoryRequest>>(
     if settings.network_protocol_basis() >= requirement.protocol_version {
         return Ok(request);
     }
-    match sdk.network_proven_below(requirement.protocol_version).await {
+    match sdk
+        .network_proven_below_with_settings(requirement.protocol_version, request_settings)
+        .await
+    {
         Ok(true) => legacy_history_request(request).ok_or_else(|| {
             sdk.protocol_version_not_active(
                 requirement.protocol_version,
