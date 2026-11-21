@@ -34,12 +34,12 @@ use dashcore::transaction::special_transaction::provider_registration::ProviderM
 use dashcore::transaction::TransactionPayload;
 use dashcore::{Address as DashAddress, Network, OutPoint, Transaction, Txid};
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, Purpose};
 use dpp::prelude::Identifier;
 use key_wallet_manager::WalletManager;
 use serde_json::{json, Value};
 
+use super::key_reference::enabled_key_hash;
 use super::list::MasternodeListSummary;
 use super::locator::{
     operator_identity_ids, p2pkh_script_hash, MasternodeKeyReference, MasternodeKeyRole,
@@ -102,6 +102,24 @@ pub struct PlatformKeySnapshot {
     /// claimable amount). Display hint only — hosts re-read live before a
     /// withdrawal.
     pub owner_identity_balance: Option<u64>,
+}
+
+impl PlatformKeySnapshot {
+    /// Take the owner identity's enabled OWNER and TRANSFER keys and its
+    /// balance; a key it lacks keeps its last known value.
+    fn learn_owner_identity(&mut self, identity: &Identity) {
+        self.owner_key_hash = enabled_key_hash(identity, Purpose::OWNER).or(self.owner_key_hash);
+        self.payout_key_hash =
+            enabled_key_hash(identity, Purpose::TRANSFER).or(self.payout_key_hash);
+        self.owner_identity_balance = Some(identity.balance());
+    }
+
+    /// Take the operator identity's enabled TRANSFER key; without one the
+    /// last known value stays.
+    fn learn_operator_identity(&mut self, identity: &Identity) {
+        self.operator_payout_key_hash =
+            enabled_key_hash(identity, Purpose::TRANSFER).or(self.operator_payout_key_hash);
+    }
 }
 
 /// Everything learned about a tracked masternode so far. Every field is
@@ -625,7 +643,7 @@ where
 /// `ids`, in order. A missing identity moves on to the next id; a found one
 /// ends the search. A failed fetch ends it too, with the error: the next id
 /// may find an older identity while the current one was unreadable.
-async fn first_operator_identity<F, Fut, E>(
+pub(super) async fn first_operator_identity<F, Fut, E>(
     ids: impl IntoIterator<Item = Identifier>,
     mut fetch: F,
 ) -> Result<Option<Identity>, E>
@@ -903,8 +921,14 @@ impl TrackedMasternodes {
         pro_tx_hash: &[u8; 32],
         mut snapshot: TrackedMasternodeSnapshot,
     ) -> (TrackedMasternodeSnapshot, RefreshOutcome) {
-        // 1. Current list entry (local).
-        let list_now = self.spv.masternode_list_summaries().await;
+        // 1. Current list entry (local). A list that does not follow the
+        // chain is no current entry: the cached one stays.
+        let list_now = self
+            .spv
+            .current_masternode_list()
+            .await
+            .ok()
+            .map(|list| list.summaries);
         if let Some(Some(entry)) = list_now
             .as_ref()
             .map(|s| s.iter().find(|e| e.pro_tx_hash == *pro_tx_hash))
@@ -922,19 +946,7 @@ impl TrackedMasternodes {
         match Identity::fetch(self.sdk.as_ref(), Identifier::from(display)).await {
             Ok(Some(identity)) => {
                 let mut platform = snapshot.platform.clone().unwrap_or_default();
-                for key in identity.public_keys().values() {
-                    let data: Option<[u8; 20]> = key.data().as_slice().try_into().ok();
-                    match key.purpose() {
-                        Purpose::OWNER => {
-                            platform.owner_key_hash = data.or(platform.owner_key_hash)
-                        }
-                        Purpose::TRANSFER => {
-                            platform.payout_key_hash = data.or(platform.payout_key_hash)
-                        }
-                        _ => {}
-                    }
-                }
-                platform.owner_identity_balance = Some(identity.balance());
+                platform.learn_owner_identity(&identity);
                 snapshot.platform = Some(platform);
             }
             Ok(None) => {
@@ -966,12 +978,7 @@ impl TrackedMasternodes {
             {
                 Ok(Some(identity)) => {
                     let mut platform = snapshot.platform.clone().unwrap_or_default();
-                    platform.operator_payout_key_hash = identity
-                        .public_keys()
-                        .values()
-                        .find(|k| k.purpose() == Purpose::TRANSFER)
-                        .and_then(|k| k.data().as_slice().try_into().ok())
-                        .or(platform.operator_payout_key_hash);
+                    platform.learn_operator_identity(&identity);
                     snapshot.platform = Some(platform);
                 }
                 Ok(None) => {}
@@ -1234,10 +1241,12 @@ pub(crate) type TrackedMasternodeMap = BTreeMap<[u8; 32], TrackedMasternode>;
 
 #[cfg(test)]
 mod tests {
+    use super::super::key_reference::test_support::{identity_with, key};
     use super::super::list::test_support::{evonode, masternode};
     use super::*;
     use crate::changeset::{ClientStartState, PersistenceError, PlatformWalletChangeSet};
     use crate::wallet::platform_wallet::WalletId;
+    use dpp::identity::KeyType;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex, RwLock};
 
@@ -1770,5 +1779,69 @@ mod tests {
             Some("68.67.122.237:20001")
         );
         assert_eq!(details.platform_http_port, Some(1443));
+    }
+
+    /// A refresh takes the owner and payout keys from the owner identity's
+    /// ENABLED keys: Drive keeps a replaced payout key, disabled, and here it
+    /// sits after the current one in key order.
+    #[test]
+    fn should_learn_the_enabled_keys_of_an_owner_identity() {
+        let identity = identity_with(
+            Identifier::from([9u8; 32]),
+            vec![
+                key(
+                    0,
+                    Purpose::TRANSFER,
+                    KeyType::ECDSA_HASH160,
+                    [0x02; 20],
+                    false,
+                ),
+                key(1, Purpose::OWNER, KeyType::ECDSA_HASH160, [0x11; 20], false),
+                key(
+                    2,
+                    Purpose::TRANSFER,
+                    KeyType::ECDSA_HASH160,
+                    [0x01; 20],
+                    true,
+                ),
+            ],
+        );
+        let mut platform = PlatformKeySnapshot::default();
+
+        platform.learn_owner_identity(&identity);
+
+        assert_eq!(platform.owner_key_hash, Some([0x11; 20]));
+        assert_eq!(platform.payout_key_hash, Some([0x02; 20]));
+        assert_eq!(platform.owner_identity_balance, Some(0));
+    }
+
+    /// The operator payout key is the operator identity's ENABLED TRANSFER
+    /// key, even when a disabled one comes first in key order.
+    #[test]
+    fn should_learn_the_enabled_payout_key_of_an_operator_identity() {
+        let identity = identity_with(
+            Identifier::from([9u8; 32]),
+            vec![
+                key(
+                    0,
+                    Purpose::TRANSFER,
+                    KeyType::ECDSA_HASH160,
+                    [0x01; 20],
+                    true,
+                ),
+                key(
+                    1,
+                    Purpose::TRANSFER,
+                    KeyType::ECDSA_HASH160,
+                    [0x02; 20],
+                    false,
+                ),
+            ],
+        );
+        let mut platform = PlatformKeySnapshot::default();
+
+        platform.learn_operator_identity(&identity);
+
+        assert_eq!(platform.operator_payout_key_hash, Some([0x02; 20]));
     }
 }
