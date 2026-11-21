@@ -4,9 +4,11 @@ use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::platform::{DataContract, FetchMany};
 use dash_sdk::query_types::DataContracts;
+use serde_json::{Map, Value};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
+use crate::data_contract::json::contract_json_value;
 use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
@@ -84,29 +86,30 @@ pub unsafe extern "C" fn dash_sdk_data_contracts_fetch_many(
         Err(e) => return DashSDKResult::error(e),
     };
 
-    let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
+    let result: Result<String, DashSDKError> = wrapper.runtime.block_on(async {
         // Fetch data contracts
         let contracts: DataContracts = DataContract::fetch_many(&wrapper.sdk, identifiers)
             .await
-            .map_err(FFIError::from)?;
+            .map_err(|e| DashSDKError::from(FFIError::from(e)))?;
 
-        // Convert to JSON string
-        let mut json_parts = Vec::new();
+        // Render every contract at the SDK's network protocol version, the
+        // same way every other contract emitter does.
+        let platform_version = wrapper.sdk.version();
+        let mut entries = Map::new();
         for (id, contract_opt) in contracts {
             let contract_json = match contract_opt {
-                Some(contract) => {
-                    serde_json::to_string(&contract).unwrap_or_else(|_| "null".to_string())
-                }
-                None => "null".to_string(),
+                Some(contract) => contract_json_value(&contract, platform_version)?,
+                None => Value::Null,
             };
-            json_parts.push(format!(
-                "\"{}\":{}",
-                id.to_string(Encoding::Base58),
-                contract_json
-            ));
+            entries.insert(id.to_string(Encoding::Base58), contract_json);
         }
 
-        Ok(format!("{{{}}}", json_parts.join(",")))
+        serde_json::to_string(&Value::Object(entries)).map_err(|e| {
+            DashSDKError::new(
+                DashSDKErrorCode::SerializationError,
+                format!("Failed to serialize contracts: {}", e),
+            )
+        })
     });
 
     match result {
@@ -121,6 +124,6 @@ pub unsafe extern "C" fn dash_sdk_data_contracts_fetch_many(
             };
             DashSDKResult::success_string(c_str.into_raw())
         }
-        Err(e) => DashSDKResult::error(e.into()),
+        Err(e) => DashSDKResult::error(e),
     }
 }

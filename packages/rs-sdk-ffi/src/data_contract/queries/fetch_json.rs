@@ -1,3 +1,4 @@
+use crate::data_contract::json::contract_json_value;
 use crate::error::{DashSDKError, DashSDKErrorCode, FFIError};
 use crate::sdk::SDKWrapper;
 use crate::types::{DashSDKResult, SDKHandle};
@@ -49,9 +50,9 @@ pub unsafe extern "C" fn dash_sdk_data_contract_fetch_json(
 
     match result {
         Ok(Some(contract)) => {
-            // Convert to JSON via canonical serde (manual Serialize on the
-            // outer DataContract enum threads the active platform version).
-            match serde_json::to_value(&contract) {
+            // Render at the SDK's network protocol version, the same way
+            // every other contract emitter does.
+            match contract_json_value(&contract, wrapper.sdk.version()) {
                 Ok(json_value) => match serde_json::to_string(&json_value) {
                     Ok(json_string) => match CString::new(json_string) {
                         Ok(c_str) => DashSDKResult::success_string(c_str.into_raw()),
@@ -59,10 +60,7 @@ pub unsafe extern "C" fn dash_sdk_data_contract_fetch_json(
                     },
                     Err(e) => DashSDKResult::error(FFIError::from(e).into()),
                 },
-                Err(e) => DashSDKResult::error(DashSDKError::new(
-                    DashSDKErrorCode::SerializationError,
-                    format!("Failed to convert contract to JSON: {}", e),
-                )),
+                Err(e) => DashSDKResult::error(e),
             }
         }
         Ok(None) => DashSDKResult::error(DashSDKError::new(
