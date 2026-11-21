@@ -431,6 +431,23 @@ import kotlinx.serialization.Serializable
 @Serializable data class DecisionProposalDetail(val proposalId: String)
 
 /**
+ * Multiple choice proposal listings: a local identity's and the newest
+ * (← `MultipleChoiceProposalsView.swift`). Reached from the Platform Queries list, beside
+ * [DecisionProposalsList].
+ */
+@Serializable object MultipleChoiceProposalsList
+
+/** File a new multiple choice proposal (← `CreateMultipleChoiceProposalView`). */
+@Serializable object CreateMultipleChoiceProposal
+
+/**
+ * One multiple choice proposal: its choices and their tallies, how the vote ended, entering
+ * a choice, the edit and the masternode vote (← `MultipleChoiceProposalDetailView.swift`).
+ * [proposalId] is base58.
+ */
+@Serializable data class MultipleChoiceProposalDetail(val proposalId: String)
+
+/**
  * One contract group's members + live proposals (← `GroupDetailView.swift`).
  * [position] is the group contract position inside the contract's
  * `groups` map.

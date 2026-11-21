@@ -394,7 +394,7 @@ impl SqlitePersister {
             )?;
         }
 
-        let _report = crate::sqlite::migrations::run_for_open(&mut conn)?;
+        let _report = crate::sqlite::migrations::run_for_open(&mut conn, config.load_policy)?;
 
         // The open succeeded, so the claim passes to the persister, whose
         // `Drop` releases it.
@@ -1306,8 +1306,9 @@ impl PlatformWalletPersistence for SqlitePersister {
     fn persistence_capabilities(&self) -> PersistenceCapabilities {
         // Every `flush_inner` applies the complete changeset in one SQLite
         // transaction. The current schema also has lossless token balances,
-        // invitations, account pools, tracked asset locks, and
-        // deferred-contact-crypto queue rows.
+        // invitations, account pools, tracked asset locks,
+        // deferred-contact-crypto queue rows, and locked outpoints (applied
+        // by `core_state::apply`, handed back by `load_state`).
         // Do NOT attest WALLET_RESTORE (and therefore not provider restore):
         // token balances and the DashPay overlay have no load readers, so a
         // full restore remains lossy. Shielded viewing keys are native when
@@ -1325,7 +1326,8 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS)
             .union(PersistenceCapabilities::TRACKED_MASTERNODES)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
-            .union(PersistenceCapabilities::DASHPAY_PAYMENTS);
+            .union(PersistenceCapabilities::DASHPAY_PAYMENTS)
+            .union(PersistenceCapabilities::OUTPOINT_LOCKS);
         #[cfg(feature = "shielded")]
         {
             capabilities.union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
@@ -1684,6 +1686,21 @@ fn populated_field_count(cs: &PendingWrites) -> usize {
 /// Extracted from `load()`'s loop so the loop has somewhere to put a
 /// boundary: every `?` in here ends this wallet, not the file.
 fn load_one_wallet(
+    conn: &Connection,
+    wallet_id: WalletId,
+    ctx: &LoadCtx,
+) -> Result<platform_wallet::changeset::ClientWalletStartState, PersistenceError> {
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Deferred)
+        .map_err(WalletStorageError::from)
+        .map_err(PersistenceError::from)?;
+    let state = load_wallet_snapshot(&tx, wallet_id, ctx)?;
+    tx.commit()
+        .map_err(WalletStorageError::from)
+        .map_err(PersistenceError::from)?;
+    Ok(state)
+}
+
+fn load_wallet_snapshot(
     conn: &Connection,
     wallet_id: WalletId,
     ctx: &LoadCtx,
@@ -2395,6 +2412,7 @@ mod tests {
             "contacts",
             "core_address_pool",
             "core_instant_locks",
+            "core_locked_outpoints",
             "core_sync_state",
             "core_transactions",
             "core_utxos",
@@ -2410,18 +2428,21 @@ mod tests {
         // Not rehydrated by `load()`, but read on demand by a production
         // entry point, so the state is reachable rather than abandoned.
         const READ_BY_A_DEDICATED_API: &[&str] = &[
-            "dpns_name_states",      // get_dpns_name_state
-            "meta_contact",          // the kv object store
-            "meta_data_versions",    // schema::versions
-            "meta_global",           // the kv object store
-            "meta_identity",         // the kv object store
-            "meta_platform_address", // the kv object store
-            "meta_store_generation", // schema::versions
-            "meta_token",            // the kv object store
-            "meta_wallet",           // the kv object store
-            "tracked_masternodes",   // load_tracked_masternodes
+            "core_transaction_inputs", // core_history::apply
+            "dpns_name_states",        // get_dpns_name_state
+            "meta_contact",            // the kv object store
+            "meta_data_versions",      // schema::versions
+            "meta_global",             // the kv object store
+            "meta_identity",           // the kv object store
+            "meta_platform_address",   // the kv object store
+            "meta_store_generation",   // schema::versions
+            "meta_token",              // the kv object store
+            "meta_wallet",             // the kv object store
+            "tracked_masternodes",     // load_tracked_masternodes
         ];
         const INFRASTRUCTURE: &[&str] = &["refinery_schema_history"];
+        // First pre-repair bytes, retained for recovery.
+        const RETAINED_FOR_RECOVERY: &[&str] = &["core_transaction_record_originals"];
         // `load()` rehydrates these only with the `shielded` feature on, so
         // the classification follows the build rather than claiming one.
         #[cfg(feature = "shielded")]
@@ -2463,6 +2484,7 @@ mod tests {
                     && !READ_BY_A_DEDICATED_API.contains(&table.as_str())
                     && !LOAD_UNIMPLEMENTED_TABLES.contains(&table.as_str())
                     && !INFRASTRUCTURE.contains(&table.as_str())
+                    && !RETAINED_FOR_RECOVERY.contains(&table.as_str())
                     && !FEATURE_GATED.contains(&table.as_str())
                     && !NOT_REHYDRATED_WITHOUT_FEATURE.contains(&table.as_str())
             })

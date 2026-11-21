@@ -206,7 +206,7 @@ pub enum PlatformWalletFFIResultCode {
     ErrorTransactionBroadcastUnconfirmed = 20,
     /// Maps `PlatformWalletError::AddressNonceMismatch`. Platform rejected an
     /// address-funds transition (a transfer or withdrawal from Platform
-    /// addresses, or an identity registration or top-up from them)
+    /// addresses, or an identity registration from them)
     /// because the submitted address nonce raced Platform's expected next
     /// value (a lagging DAPI replica stale read; consensus code 40603). Its
     /// OWN code so hosts can recognize this specific, self-healing
@@ -214,7 +214,10 @@ pub enum PlatformWalletFFIResultCode {
     /// the mismatch without host intervention. A shield from Platform
     /// addresses does not report it: an endpoint's nonce verdict on a shield
     /// that was dispatched reads as [`Self::ErrorShieldedSpendUnconfirmed`],
-    /// as no proof backs it. The submitted and Platform-
+    /// as no proof backs it, and an identity top-up from Platform addresses
+    /// never reports it: its nonce verdict reads as
+    /// [`Self::ErrorTransactionBroadcastUnconfirmed`] (20) for the same
+    /// reason. The submitted and Platform-
     /// expected nonce values travel in the result `message` (the typed
     /// `Display`); they are not exposed as structured out-fields (that would
     /// require an ABI-breaking change to `PlatformWalletFFIResult`).
@@ -774,10 +777,22 @@ pub enum PlatformWalletFFIResultCode {
     /// failed: do not submit it again. A public contact request sync settles
     /// it, recording the request once its document is proved on Platform and
     /// freeing the pair once its transition is proved unable to write it.
+    /// Also what a public send or accept gets while another public request
+    /// to that identity is being sent: one public request to an identity is
+    /// sent at a time, and nothing is signed for the second.
     /// A private request pending to the identity is
     /// [`Self::ErrorPrivateContactRequestPending`] (71).
     ErrorPublicContactRequestUnconfirmed = 76,
 
+    /// Maps `PlatformWalletError::IdentityLookupFailed`: Platform could not be
+    /// asked for an identity the operation names (a transport or proof
+    /// failure of the lookup, not Platform's answer that the identity does not
+    /// exist, which is [`Self::ErrorIdentityNotFound`] (7)). Nothing was
+    /// signed, reserved or broadcast, so the operation may be retried as it
+    /// is; a host need not treat it as possibly delivered. Returned by both
+    /// identity top-ups from Platform addresses: the external one (identity
+    /// lookup) and the managed one (balance read before signing).
+    ErrorIdentityLookupFailed = 80,
     /// Maps `PlatformWalletError::AssetLockRecipientUnknown`: an unbound
     /// identity top-up lock records no identity to pay (it was rebuilt from
     /// the chain, for example after a restore from the seed, and its credit
@@ -1068,6 +1083,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
         // assigned a dedicated code yet — those still carry the
         // typed Display rendering as the message.
         let code = match &error {
+            PlatformWalletError::DocumentEraseBusy => {
+                PlatformWalletFFIResultCode::ErrorWalletOperation
+            }
             PlatformWalletError::IdentityBalanceUnavailable(_) => {
                 PlatformWalletFFIResultCode::ErrorIdentityBalanceUnavailable
             }
@@ -1188,7 +1206,8 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
                 PlatformWalletFFIResultCode::ErrorUnknown
             }
             // A definitively-failed address-nonce race (reaches the blanket impl
-            // via identity `top_up_from_addresses` → `?`/`.into()`). Exposing
+            // via `?`/`.into()` from the address-funds paths that promote it;
+            // an identity top-up from addresses never does). Exposing
             // provided/expected nonce as structured out-fields is INTENTIONALLY
             // out of scope: `PlatformWalletFFIResult` is by-value and has no
             // per-error value fields, so the values travel in the message
@@ -1283,6 +1302,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // submit it again.
             PlatformWalletError::PublicContactRequestUnconfirmed(..) => {
                 PlatformWalletFFIResultCode::ErrorPublicContactRequestUnconfirmed
+            }
+            // The recipient lookup failed before anything was signed or
+            // sent: a not-sent refusal, not an ambiguous SDK error.
+            PlatformWalletError::IdentityLookupFailed { .. } => {
+                PlatformWalletFFIResultCode::ErrorIdentityLookupFailed
             }
             // The wallet's private payments from an earlier process are not
             // restored yet: wallet readiness, not one contact's pending request.
@@ -3256,6 +3280,21 @@ mod private_contact_request_error_tests {
             map_spend_result(Err(unconfirmed()), "private contact request").code,
             PlatformWalletFFIResultCode::ErrorPublicContactRequestUnconfirmed
         );
+    }
+
+    /// A failed identity lookup, which sent nothing, reaches the host by its
+    /// own code rather than as the SDK error it wraps.
+    #[test]
+    fn should_report_a_failed_identity_lookup_by_its_own_code() {
+        let result = PlatformWalletFFIResult::from(PlatformWalletError::IdentityLookupFailed {
+            identity_id: [7; 32].into(),
+            source: dash_sdk::Error::Generic("unreachable".to_string()),
+        });
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorIdentityLookupFailed
+        );
+        assert_eq!(result.code as u32, 80);
     }
 
     /// A public contact request a loaded wallet refuses until its private
