@@ -311,7 +311,8 @@ pub unsafe extern "C" fn platform_wallet_claim_invitation(
         Err(e) => return e,
     };
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        wallet.identity().identity_creation_keys(keys_map)
+        let identity_wallet = wallet.identity().clone();
+        block_on_worker(async move { identity_wallet.identity_creation_keys(keys_map).await })
     });
     let result = unwrap_option_or_return!(option);
     let keys = unwrap_result_or_return!(result);

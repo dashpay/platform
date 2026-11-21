@@ -445,18 +445,29 @@ fn protocol_error(error: ProtocolError) -> PlatformWalletError {
 }
 
 impl IdentityWallet {
-    /// Validate `keys` for a new identity at the SDK's current platform
-    /// version, which on an unpinned SDK can lag the network until its first
-    /// proved response. A refusal happens before any lock is built, waited on
-    /// or signed for.
-    pub fn identity_creation_keys(
+    /// Validate `keys` for a new identity at the SDK's platform version. An
+    /// unpinned SDK lags the network until its first proved response, so when
+    /// a key format is not active yet at its version, the SDK first learns the
+    /// network's version (a proved refresh, best effort; a pinned SDK keeps
+    /// its own). A refusal happens before any lock is built, waited on or
+    /// signed for.
+    pub async fn identity_creation_keys(
         &self,
         keys: BTreeMap<KeyID, IdentityPublicKey>,
     ) -> Result<IdentityCreationKeys, PlatformWalletError> {
-        Ok(IdentityCreationKeys::new_identity(
-            keys,
-            self.sdk.version(),
-        )?)
+        match IdentityCreationKeys::new_identity(keys.clone(), self.sdk.version()) {
+            Err(IdentityCreationKeysError::InactiveKeyFormat {
+                protocol_version,
+                active_range,
+            }) if protocol_version < *active_range.start() => {
+                self.sdk.refresh_protocol_version().await?;
+                Ok(IdentityCreationKeys::new_identity(
+                    keys,
+                    self.sdk.version(),
+                )?)
+            }
+            result => Ok(result?),
+        }
     }
 
     /// The minimum asset-lock value (duffs) that registers `layout` at this
@@ -995,11 +1006,12 @@ mod tests {
         wallet
             .identity()
             .identity_creation_keys(keys.clone())
+            .await
             .expect("no size rule at 13");
 
         let (_manager, wallet) = wallet_at(PlatformVersion::latest()).await;
         assert!(matches!(
-            wallet.identity().identity_creation_keys(keys),
+            wallet.identity().identity_creation_keys(keys).await,
             Err(PlatformWalletError::IdentityCreationKeys(
                 IdentityCreationKeysError::StructureRefused { .. }
             ))
@@ -1038,6 +1050,7 @@ mod tests {
         let err = wallet
             .identity()
             .identity_creation_keys(keys.clone())
+            .await
             .expect_err("inactive format at 13");
         assert!(
             matches!(
@@ -1153,6 +1166,7 @@ mod tests {
         let keys = older_wallet
             .identity()
             .identity_creation_keys(older_only_keys())
+            .await
             .expect("accepted at 13");
         let sdk = dash_sdk::SdkBuilder::new_mock()
             .with_version(PlatformVersion::latest())
@@ -1168,8 +1182,9 @@ mod tests {
         assert_stale_keys_refused_at_write(&wallet, keys).await;
     }
 
-    #[tokio::test]
-    async fn should_revalidate_creation_keys_after_the_same_wallet_sdk_ratchets() {
+    /// An unpinned SDK seeded at protocol version 13 whose network answers a
+    /// protocol-version refresh with the latest version, proved.
+    async fn sdk_learning_the_latest_version() -> Arc<dash_sdk::Sdk> {
         let older = PlatformVersion::get(13).expect("version 13");
         let mut sdk = dash_sdk::SdkBuilder::new_mock()
             .with_initial_version(older)
@@ -1205,13 +1220,38 @@ mod tests {
             )
             .await
             .expect("confirmation");
-        let sdk = Arc::new(sdk);
+        Arc::new(sdk)
+    }
+
+    #[tokio::test]
+    async fn should_learn_the_network_version_before_refusing_a_key_format() {
+        let sdk = sdk_learning_the_latest_version().await;
+        let (manager, wallet_id) =
+            test_platform_wallet_manager_with_sdk(sdk, Arc::new(NoopTestPersister)).await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        for keys in keys_with_future_formats() {
+            wallet
+                .identity()
+                .identity_creation_keys(keys)
+                .await
+                .expect("the format is active on the network");
+        }
+        assert_eq!(
+            wallet.sdk().version().protocol_version,
+            PlatformVersion::latest().protocol_version
+        );
+    }
+
+    #[tokio::test]
+    async fn should_revalidate_creation_keys_after_the_same_wallet_sdk_ratchets() {
+        let sdk = sdk_learning_the_latest_version().await;
         let (manager, wallet_id) =
             test_platform_wallet_manager_with_sdk(sdk.clone(), Arc::new(NoopTestPersister)).await;
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         let keys = wallet
             .identity()
             .identity_creation_keys(older_only_keys())
+            .await
             .expect("accepted at 13");
         sdk.refresh_protocol_version()
             .await

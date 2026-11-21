@@ -988,7 +988,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
         Err(result) => return result,
     };
 
-    let public_keys = match wallet.identity().identity_creation_keys(keys_map) {
+    let identity_wallet = wallet.identity().clone();
+    let public_keys = match block_on_worker(async move {
+        identity_wallet.identity_creation_keys(keys_map).await
+    }) {
         Ok(keys) => keys,
         Err(e) => return e.into(),
     };
