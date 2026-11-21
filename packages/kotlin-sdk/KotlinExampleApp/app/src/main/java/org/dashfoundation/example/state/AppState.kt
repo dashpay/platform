@@ -211,14 +211,19 @@ class AppState(
         try {
             // Devnet has no built-in endpoints: the SDK discovers its DAPI
             // nodes from the quorum service, so take the URL from the devnet
-            // settings when the caller passed none.
-            val effectiveQuorumUrl = quorumUrl?.takeIf { it.isNotBlank() }
-                ?: if (network == Network.DEVNET) {
-                    resolvedDevnetQuorumUrl()
-                        ?: throw IllegalStateException(DEVNET_SETTINGS_MISSING)
-                } else {
-                    null
-                }
+            // settings when the caller passed none. The name and URL are read
+            // together here, before the build suspends, and published with
+            // the SDK: an edit made during the build waits for the next Apply.
+            val explicitQuorumUrl = quorumUrl?.takeIf { it.isNotBlank() }
+            val devnet = if (network == Network.DEVNET) {
+                val name = devnetNameOrNull()
+                val url = resolveDevnetQuorumUrl(name, explicitQuorumUrl ?: _devnetQuorumUrl.value)
+                    ?: throw IllegalStateException(DEVNET_SETTINGS_MISSING)
+                AppliedDevnet(name, url)
+            } else {
+                null
+            }
+            val effectiveQuorumUrl = devnet?.quorumUrl ?: explicitQuorumUrl
             val newSdk = Sdk.create(
                 SdkConfig(
                     network = network,
@@ -241,13 +246,7 @@ class AppState(
                 }
                 _sdk.value.also {
                     _sdk.value = newSdk
-                    recordAppliedDevnet(
-                        if (network == Network.DEVNET && effectiveQuorumUrl != null) {
-                            AppliedDevnet(devnetNameOrNull(), effectiveQuorumUrl)
-                        } else {
-                            null
-                        },
-                    )
+                    recordAppliedDevnet(devnet)
                 }
             }
             refreshQuorumSource()
@@ -301,8 +300,18 @@ class AppState(
         sdkLock.withLock {
             if (network == _currentNetwork.value && _sdk.value != null) return
             buildAndPublishSdk(network, dapiAddresses, quorumUrl)
-            dataStore.edit { it[KEY_NETWORK] = network.networkName }
+            // The new SDK is published, so the network it serves is now the
+            // current one. Saving the pick can still fail; then only the next
+            // launch starts on the old network.
             _currentNetwork.value = network
+            try {
+                dataStore.edit { it[KEY_NETWORK] = network.networkName }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _errorMessage.value =
+                    "Switched to ${network.displayName}, but could not save it: ${e.message}"
+            }
         }
     }
 
@@ -424,19 +433,30 @@ class AppState(
      *   (the app allows no cleartext traffic) or the provider refuses the
      *   name, such as a reserved network name like `mainnet`
      */
-    fun resolvedDevnetQuorumUrl(): String? {
-        _devnetQuorumUrl.value.trim().takeIf { it.isNotEmpty() }?.let { url ->
-            require(url.startsWith("https://", ignoreCase = true)) { DEVNET_QUORUM_URL_NOT_HTTPS }
-            return url
+    fun resolvedDevnetQuorumUrl(): String? =
+        resolveDevnetQuorumUrl(devnetNameOrNull(), _devnetQuorumUrl.value)
+
+    /**
+     * [url] when set, else the provider's URL for [name]. A set [name] is
+     * checked by the provider either way, so a URL never carries a refused
+     * name to SPV.
+     */
+    private fun resolveDevnetQuorumUrl(name: String?, url: String): String? {
+        val derived = name?.let { checkedName ->
+            try {
+                devnetQuorumBaseUrl(checkedName)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                throw IllegalArgumentException(
+                    e.message ?: "Devnet name '$checkedName' was refused",
+                    e,
+                )
+            }
         }
-        val name = devnetNameOrNull() ?: return null
-        return try {
-            devnetQuorumBaseUrl(name)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            throw IllegalArgumentException(e.message ?: "Devnet name '$name' was refused", e)
-        }
+        val explicit = url.trim().takeIf { it.isNotEmpty() } ?: return derived
+        require(explicit.startsWith("https://", ignoreCase = true)) { DEVNET_QUORUM_URL_NOT_HTTPS }
+        return explicit
     }
 
     private fun devnetSettingsResolve(): Boolean =
@@ -468,7 +488,7 @@ class AppState(
     /**
      * The SPV peer override for [network] — port of
      * `CoreSpvLauncher.peerOverride(network:)`: [localCorePeers] verbatim
-     * when [useLocalhostCore] is on; on devnet otherwise the active
+     * when [useLocalhostCore] is on and the list is not empty; on devnet otherwise the active
      * masternodes' Core P2P addresses from the applied settings'
      * `{quorumUrl}/masternodes` (each reports its own port, so none is
      * guessed); else empty (the FFI falls back to the network's built-in
@@ -487,10 +507,13 @@ class AppState(
         },
     ): List<String> {
         if (_useLocalhostCore.value) {
-            return _localCorePeers.value
+            val custom = _localCorePeers.value
                 .split(",")
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
+            // An empty custom list on devnet falls through to discovery: a
+            // devnet has no seed nodes to fall back on.
+            if (custom.isNotEmpty() || network != Network.DEVNET) return custom
         }
         if (network != Network.DEVNET) return emptyList()
         val applied = _appliedDevnet.value ?: throw IllegalStateException(DEVNET_NOT_APPLIED)

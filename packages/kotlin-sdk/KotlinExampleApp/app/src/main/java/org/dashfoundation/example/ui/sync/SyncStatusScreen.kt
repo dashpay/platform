@@ -149,11 +149,21 @@ fun SyncStatusScreen() {
                                     if (isRunning) {
                                         currentManager.stopSpv()
                                     } else {
+                                        // The manager is network-locked and is
+                                        // replaced only after a new SDK is
+                                        // published: never start the old one
+                                        // with the new network's settings.
+                                        val spvNetwork = currentManager.network
+                                        if (spvNetwork != network) {
+                                            error = "The wallet manager is still switching " +
+                                                "to ${network.displayName}. Try again in a moment."
+                                            return@launch
+                                        }
                                         // ← CoreContentView.startSync():
                                         // Documents/SPV/<network> + peer override.
                                         val dataDir = File(
                                             context.filesDir,
-                                            "spv/${network.networkName}",
+                                            "spv/${spvNetwork.networkName}",
                                         ).apply { mkdirs() }
                                         // ← CoreSpvLauncher.start: devnet needs
                                         // its name (SPV user agent) and takes
@@ -161,13 +171,13 @@ fun SyncStatusScreen() {
                                         // both from the settings the current
                                         // SDK was built with, not the fields
                                         // being edited.
-                                        val devnetName = appState.spvDevnetName(network)
-                                        if (network == Network.DEVNET && devnetName == null) {
+                                        val devnetName = appState.spvDevnetName(spvNetwork)
+                                        if (spvNetwork == Network.DEVNET && devnetName == null) {
                                             error = "Set the devnet name in Settings and press " +
                                                 "Apply Devnet Settings to start SPV on devnet."
                                             return@launch
                                         }
-                                        val peers = appState.spvPeerOverride(network)
+                                        val peers = appState.spvPeerOverride(spvNetwork)
                                         currentManager.startSpv(
                                             dataDir = dataDir.absolutePath,
                                             peers = peers,

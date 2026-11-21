@@ -129,6 +129,28 @@ class AppStateDevnetSettingsTest {
     }
 
     @Test
+    fun shouldDiscoverDevnetPeersWhenTheCustomPeerListIsEmpty() = runTest {
+        val session = newSession(File(temporaryFolder.root, "app.preferences_pb"))
+        try {
+            val appState = session.appState
+            appState.recordAppliedDevnet(AppState.AppliedDevnet("palmatum", PALMATUM_URL))
+            appState.setUseLocalhostCore(true)
+            appState.setLocalCorePeers(" , ")
+            val discovered = listOf("34.1.2.3:20001")
+            assertEquals(discovered, appState.spvPeerOverride(Network.DEVNET) { discovered })
+            assertEquals(emptyList<String>(), appState.spvPeerOverride(Network.TESTNET) { discovered })
+
+            appState.setLocalCorePeers("127.0.0.1:19999")
+            assertEquals(
+                listOf("127.0.0.1:19999"),
+                appState.spvPeerOverride(Network.DEVNET) { discovered },
+            )
+        } finally {
+            session.close()
+        }
+    }
+
+    @Test
     fun shouldDropPeersFoundForADevnetThatWasReplacedDuringTheLookup() = runTest {
         val session = newSession(File(temporaryFolder.root, "app.preferences_pb"))
         try {
@@ -163,6 +185,11 @@ class AppStateDevnetSettingsTest {
             advanceUntilIdle()
             appState.restorePreferences()
             assertEquals(Network.DEFAULT, appState.currentNetwork.value)
+
+            // A set URL does not let a refused name through to SPV.
+            appState.setDevnetName("mainnet")
+            appState.setDevnetQuorumUrl("https://10.0.2.2:8443")
+            assertThrows(IllegalArgumentException::class.java) { appState.resolvedDevnetQuorumUrl() }
 
             appState.setDevnetName("palmatum")
             appState.setDevnetQuorumUrl("http://10.0.2.2:8080")
