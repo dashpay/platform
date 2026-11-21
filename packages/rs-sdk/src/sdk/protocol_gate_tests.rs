@@ -122,6 +122,8 @@ use rs_dapi_client::{
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::time::timeout;
 
 /// The protocol version a later protocol upgrade's requests need.
 const V14: u32 = PROTOCOL_VERSION_14;
@@ -2301,6 +2303,36 @@ async fn should_let_waiting_calls_ask_when_the_asking_call_is_dropped() {
         "only the second call's probe reached the node"
     );
     assert_eq!(sent(&sdk, &fee_pots()).await, 1);
+}
+
+/// A call that asks the network can sit unpolled in the task that waits for another call,
+/// as in a `select!` or a buffered stream: the waiting call drives that probe itself.
+#[tokio::test]
+async fn should_answer_a_waiting_call_while_the_asking_call_is_not_polled() {
+    let mut sdk = mock_sdk(V13, false, 0);
+    answer_probe(&sdk, "pv14").await;
+    expect_fee_pots(&mut sdk).await;
+    let node = sdk.mock_dapi().lock().await;
+    let mut first = Box::pin(ContractFeePots::fetch_with_settings(
+        &sdk,
+        fee_pots(),
+        once(),
+    ));
+    assert!(
+        futures::poll!(&mut first).is_pending(),
+        "the first call asks, and waits for the node"
+    );
+    drop(node);
+    let second = timeout(
+        Duration::from_secs(5),
+        ContractFeePots::fetch_with_settings(&sdk, fee_pots(), once()),
+    )
+    .await
+    .expect("the second call does not wait on the unpolled first call");
+    second.expect("sent once the first call's probe shows 14");
+    assert_eq!(probes(&sdk).await, 1, "one probe serves both calls");
+    assert_eq!(sent(&sdk, &fee_pots()).await, 1);
+    drop(first);
 }
 
 /// Probes that overlap can finish in any order. The hold kept is the one of the newest epoch

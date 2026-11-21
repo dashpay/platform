@@ -31,16 +31,18 @@ use crate::platform::types::epoch::{
 };
 use crate::platform::{Fetch, FetchMany, ProtocolRequirement, Query, QuerySettings};
 use dapi_grpc::platform::v0::ResponseMetadata;
+use dash_async::single_flight::{Flight, SingleFlight};
 use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
 use dpp::version::PlatformVersion;
+use futures::future::{BoxFuture, FutureExt};
 use rs_dapi_client::RequestSettings;
 use std::cmp::Ordering as Order;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, PoisonError};
 
 /// What to do with a request that needs a protocol version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -130,13 +132,16 @@ impl ProbeHold {
     }
 }
 
+/// Why a probe failed, for the call that started it to take.
+type ProbeFailure = Arc<Mutex<Option<Box<Error>>>>;
+
 /// The [`ProbeHold`] an SDK and its clones share, and the probe one of them is running.
 #[derive(Debug, Default)]
 pub(super) struct SharedProbeHold {
     hold: Mutex<Option<ProbeHold>>,
-    /// Locked while a probe runs, so that calls made meanwhile wait for its answer instead
-    /// of asking too.
-    probing: tokio::sync::Mutex<()>,
+    /// The probe running, which calls made meanwhile poll and wait for instead of asking too.
+    /// Dropping the call that started it aborts it, so the others ask under their own settings.
+    probing: SingleFlight<BoxFuture<'static, ProbeFailure>>,
     /// How many probes the network answered, so that a call that waited for one can tell
     /// that it was answered.
     answered: AtomicU64,
@@ -407,8 +412,8 @@ impl Sdk {
     }
 
     /// Probe for `required` ([`Self::probe_network_protocol_version`]) and return why the
-    /// probe failed, if it did, unless another call is probing: then wait for its answer and
-    /// decide from it, as the call that probed does.
+    /// probe failed, if it did, unless another call is probing: then poll that probe too, wait
+    /// for its answer and decide from it, as the call that probed does.
     ///
     /// A call waits for one probe at most, which runs under the settings of the call that
     /// started it. When that probe failed, or its call was dropped, the call asks under its
@@ -419,11 +424,38 @@ impl Sdk {
         settings: Option<RequestSettings>,
     ) -> Option<Box<Error>> {
         let answered = self.probe_hold.answered();
-        let probing = self.probe_hold.probing.try_lock();
-        if probing.is_err() {
-            drop(self.probe_hold.probing.lock().await);
-        }
-        // A probe answered since this call decided to ask, or another answer decided it.
+        let started = match self.probe_hold.probing.join_or_start(|| {
+            let sdk = self.clone();
+            async move {
+                let failure = sdk
+                    .probe_unless_answered(required, settings, answered)
+                    .await;
+                Arc::new(Mutex::new(failure))
+            }
+            .boxed()
+        }) {
+            Flight::Started(started) => started,
+            Flight::Joined(running) => {
+                // Polled here too, as the call that started it may not be polled.
+                let _ = running.await;
+                return self
+                    .probe_unless_answered(required, settings, answered)
+                    .await;
+            }
+        };
+        let failure = started.await.ok()?;
+        let mut failure = failure.lock().unwrap_or_else(PoisonError::into_inner);
+        failure.take()
+    }
+
+    /// Probe for `required` and return why it failed, unless a probe answered since
+    /// `answered` was read, or another answer decided it.
+    async fn probe_unless_answered(
+        &self,
+        required: u32,
+        settings: Option<RequestSettings>,
+        answered: u64,
+    ) -> Option<Box<Error>> {
         if self.probe_hold.answered() != answered
             || decide(required, &self.gate_state()) != Gate::Probe
         {
@@ -435,7 +467,6 @@ impl Sdk {
         if probed.is_ok() {
             self.probe_hold.answered.fetch_add(1, Ordering::AcqRel);
         }
-        drop(probing);
         probed.err().map(Box::new)
     }
 
