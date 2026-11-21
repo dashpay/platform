@@ -34,6 +34,8 @@ mod support;
 mod tokens;
 mod transactions;
 mod tx_decode;
+#[cfg(feature = "test-hooks")]
+mod verdict_round_test_hook;
 mod wallet_manager;
 
 use jni::sys::{jint, JNI_VERSION_1_6};

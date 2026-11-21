@@ -7,13 +7,16 @@ import kotlinx.coroutines.runBlocking
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.config.SdkConfig
+import org.dashfoundation.dashsdk.ffi.VerdictRoundTestHook
 import org.dashfoundation.dashsdk.persistence.DashDatabase
+import org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler
 import org.dashfoundation.dashsdk.security.WalletStorage
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.AssumptionViolatedException
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -258,5 +261,245 @@ class WalletManagerRoundTripTest {
             assertEquals(1, state.getInt("dashpayPayments"))
             assertEquals(1, state.getInt("ignoredSenders"))
         }
+    }
+
+    /**
+     * Credit verdicts through REAL JNI (dashpay/platform#4638), then reopen.
+     *
+     * The JVM `PlatformWalletPersistenceHandlerTest` restart tests hand the
+     * handler its verdicts directly, so they stay green if the native side
+     * drops or mis-packs one. This round goes through
+     * [VerdictRoundTestHook.nativeDeliverUtxoCreditVerdictRound]: Rust
+     * builds the verdicts out of a `CoreChangeSet`, `FFIPersister::store`
+     * fires the verdict slot before the changeset, the JNI trampolines pack
+     * the 36-byte outpoints, codes and heights and the round's
+     * `utxos_added`, and the Kotlin handler stages and commits the rows. A
+     * fresh manager then restores from Room, and the engine's balance must
+     * count the credited coin only. Skipped when the native library was
+     * built without the `test-hooks` cargo feature
+     * (`./build_android.sh --test-hooks`), which is the only build with
+     * that hook, unless the run passes `-PrequireTestHooks=true` (as CI
+     * does): then a missing hook fails the test.
+     *
+     * Fixture, all paying the wallet's own BIP44 receive addresses:
+     *  - tx 1 vout 0, [CREDITED]: no verdict, so it is restored.
+     *  - tx 1 vout 1, [BORN_SPENT]: observed spent, so its row is born spent.
+     *  - tx 1 vout 2, [DOOMED]: doomed, so its row is born spent.
+     *  - tx 2 vout 0, [HELD]: stored earlier and then marked spent with no
+     *    spender link (a sweep hold). Re-delivered with an uncredited
+     *    verdict, it must stay spent. Without the verdict, the re-delivery
+     *    would clear the row and the coin would come back.
+     *
+     * What a native fault does here: a dropped verdict (any of the three)
+     * restores that coin. A mis-packed outpoint (txid bytes or vout
+     * encoding) matches no row, so all three come back. Verdicts shifted
+     * by one output put a verdict on the credited coin. A code moved onto
+     * the wrong entry puts the context-free uncredited code on a fresh
+     * row, which is then stored unspent. A count or length mismatch fails
+     * the round, and the hook throws. Each case changes the asserted
+     * restore set; [droppedVerdictsRestoreThePhantomCoins] and
+     * [verdictsShiftedByOneOutputChangeTheRestoreSet] check that it does.
+     * Not covered: swapping the two born-spent codes, or the observed-spent
+     * height, which the Kotlin handler only checks for length.
+     */
+    @Test
+    fun creditVerdictRoundThroughJniRestoresOnlyCreditedCoins() = runBlocking {
+        val outcome = deliverVerdictScenario(
+            verdicts = byteArrayOf(
+                CODE_CREDITED,
+                PlatformWalletPersistenceHandler.UTXO_CREDIT_VERDICT_OBSERVED_SPENT,
+                PlatformWalletPersistenceHandler.UTXO_CREDIT_VERDICT_DOOMED,
+                PlatformWalletPersistenceHandler.UTXO_CREDIT_VERDICT_UNCREDITED,
+            ),
+        )
+
+        // Room, as the handler committed it from the JNI-delivered round.
+        assertEquals(
+            "every fixture output has a row",
+            setOf(CREDITED, BORN_SPENT, DOOMED, HELD),
+            outcome.spentByAmount.keys,
+        )
+        assertEquals(false, outcome.spentByAmount[CREDITED])
+        assertEquals("observed-spent verdict → born spent", true, outcome.spentByAmount[BORN_SPENT])
+        assertEquals("doomed verdict → born spent", true, outcome.spentByAmount[DOOMED])
+        assertEquals("uncredited verdict vetoes the clear", true, outcome.spentByAmount[HELD])
+        assertTrue("a verdict never mints a spender link", outcome.unlinked)
+
+        // The restore set the load callback hands Rust, and what the engine
+        // actually holds after a fresh manager loaded it.
+        assertEquals(listOf(CREDITED), outcome.restoredAmounts)
+        assertEquals(CREDITED, outcome.reloadedEngineBalance)
+    }
+
+    /**
+     * Control for [creditVerdictRoundThroughJniRestoresOnlyCreditedCoins]:
+     * the same round with its verdicts dropped restores every coin. So that
+     * test's assertions do catch a lost verdict, and its fixture is not
+     * passing for an unrelated reason.
+     */
+    @Test
+    fun droppedVerdictsRestoreThePhantomCoins() = runBlocking {
+        val dropped = deliverVerdictScenario(
+            verdicts = byteArrayOf(CODE_CREDITED, CODE_CREDITED, CODE_CREDITED, CODE_CREDITED),
+        )
+        assertEquals(
+            listOf(CREDITED, BORN_SPENT, DOOMED, HELD),
+            dropped.restoredAmounts,
+        )
+        assertEquals(CREDITED + BORN_SPENT + DOOMED + HELD, dropped.reloadedEngineBalance)
+    }
+
+    /**
+     * Control for [creditVerdictRoundThroughJniRestoresOnlyCreditedCoins]:
+     * verdicts shifted by one output (a vout mis-pack) give a different
+     * restore set.
+     */
+    @Test
+    fun verdictsShiftedByOneOutputChangeTheRestoreSet() = runBlocking {
+        val shifted = deliverVerdictScenario(
+            verdicts = byteArrayOf(
+                PlatformWalletPersistenceHandler.UTXO_CREDIT_VERDICT_OBSERVED_SPENT,
+                PlatformWalletPersistenceHandler.UTXO_CREDIT_VERDICT_DOOMED,
+                PlatformWalletPersistenceHandler.UTXO_CREDIT_VERDICT_UNCREDITED,
+                CODE_CREDITED,
+            ),
+        )
+        // The credited coin is born spent, the uncredited code leaves a
+        // fresh row unspent, and the held coin is cleared and comes back.
+        assertEquals(listOf(DOOMED, HELD), shifted.restoredAmounts)
+        assertEquals(DOOMED + HELD, shifted.reloadedEngineBalance)
+    }
+
+    private class VerdictOutcome(
+        val spentByAmount: Map<Long, Boolean>,
+        val unlinked: Boolean,
+        val restoredAmounts: List<Long>,
+        val reloadedEngineBalance: Long,
+    )
+
+    /**
+     * Create the wallet, store [HELD] in a verdict-free round and mark it
+     * spent with no link, deliver the four-output round with [verdicts]
+     * (one per output, in the fixture order of the test KDoc) through the
+     * JNI hook, then read the result back from Room, from the restore
+     * callback and from a freshly loaded manager.
+     */
+    private suspend fun deliverVerdictScenario(verdicts: ByteArray): VerdictOutcome {
+        val walletId: ByteArray
+        val receive: List<String>
+        PlatformWalletManager(sdk, Network.TESTNET, db, walletStorage).use { manager ->
+            walletId = manager.createWallet(
+                mnemonic = testMnemonic,
+                name = "verdict-round-trip",
+                createDefaultAccounts = true,
+            ).walletId
+            val bip44 = db.accountDao().observeByWallet(walletId).first().single {
+                it.accountType == 0 && it.standardTag == 0 && it.accountIndex == 0
+            }
+            receive = db.coreAddressDao().observeByAccount(bip44.id).first()
+                .filter { it.poolTypeTag == 0 }
+                .sortedBy { it.addressIndex }
+                .map { it.address }
+                .take(4)
+            assertEquals("four BIP44 receive addresses persisted", 4, receive.size)
+        }
+
+        PlatformWalletPersistenceHandler(db, network = Network.TESTNET).use { handler ->
+            // Round 1: tx 2 alone, credited, so the HELD row exists. The
+            // hook is only in a library built with the `test-hooks` cargo
+            // feature: without it this first call is an UnsatisfiedLinkError,
+            // which skips the test, or fails it when the run asked for the
+            // hook (`-PrequireTestHooks=true`). Any other error still fails it.
+            try {
+                VerdictRoundTestHook.nativeDeliverUtxoCreditVerdictRound(
+                    handler,
+                    walletId,
+                    txTags = intArrayOf(2),
+                    addresses = arrayOf(receive[3]),
+                    amounts = longArrayOf(HELD),
+                    verdicts = byteArrayOf(CODE_CREDITED),
+                    spentAtHeights = intArrayOf(0),
+                    blockHeight = BLOCK_HEIGHT,
+                )
+            } catch (e: UnsatisfiedLinkError) {
+                val required = InstrumentationRegistry.getArguments()
+                    .getString("requireTestHooks")
+                    ?.toBoolean() == true
+                if (required) {
+                    throw AssertionError(
+                        "requireTestHooks is set but the library has no test hook; " +
+                            "build with ./build_android.sh --test-hooks",
+                        e,
+                    )
+                }
+                throw AssumptionViolatedException(
+                    "library built without the test-hooks feature; run ./build_android.sh --test-hooks",
+                    e,
+                )
+            }
+            val held = db.txoDao().observeByWallet(walletId).first().single { it.amount == HELD }
+            assertEquals(false, held.isSpent)
+            // A sweep hold: spent, no spender link.
+            assertEquals(1, db.txoDao().markSpentByOutpoint(held.outpoint, java.util.Date()))
+
+            // Round 2: tx 1 (three outputs) plus tx 2 again, with the verdicts.
+            VerdictRoundTestHook.nativeDeliverUtxoCreditVerdictRound(
+                handler,
+                walletId,
+                txTags = intArrayOf(1, 1, 1, 2),
+                addresses = arrayOf(receive[0], receive[1], receive[2], receive[3]),
+                amounts = longArrayOf(CREDITED, BORN_SPENT, DOOMED, HELD),
+                verdicts = verdicts,
+                spentAtHeights = IntArray(verdicts.size) { i ->
+                    if (verdicts[i] ==
+                        PlatformWalletPersistenceHandler.UTXO_CREDIT_VERDICT_OBSERVED_SPENT
+                    ) {
+                        BLOCK_HEIGHT - 1
+                    } else {
+                        0
+                    }
+                },
+                blockHeight = BLOCK_HEIGHT,
+            )
+        }
+
+        val rows = db.txoDao().observeByWallet(walletId).first()
+        val restored = PlatformWalletPersistenceHandler(db, network = Network.TESTNET).use { handler ->
+            handler.onLoadWalletList()
+                .single { it.walletId.contentEquals(walletId) }
+                .utxos
+                .map { it.valueDuffs }
+                .sorted()
+        }
+        val balance = PlatformWalletManager(sdk, Network.TESTNET, db, walletStorage).use { reloaded ->
+            reloaded.loadPersistedWallets()
+            assertNotNull(reloaded.wallet(forWalletId = walletId))
+            val balances = org.json.JSONArray(requireNotNull(reloaded.accountBalances(walletId)))
+            (0 until balances.length()).sumOf { i ->
+                val account = balances.getJSONObject(i)
+                account.getLong("confirmed") + account.getLong("unconfirmed") +
+                    account.getLong("immature") + account.getLong("locked")
+            }
+        }
+        return VerdictOutcome(
+            spentByAmount = rows.associate { it.amount to it.isSpent },
+            unlinked = rows.all { it.spendingTxid == null },
+            restoredAmounts = restored,
+            reloadedEngineBalance = balance,
+        )
+    }
+
+    private companion object {
+        /** No verdict: the engine credited the output. */
+        const val CODE_CREDITED: Byte = 0
+
+        // Distinct amounts identify each fixture output in every read-back,
+        // and any subset of them sums to a distinct balance.
+        const val CREDITED = 100_000L
+        const val BORN_SPENT = 200_000L
+        const val DOOMED = 400_000L
+        const val HELD = 800_000L
+
+        const val BLOCK_HEIGHT = 1_000
     }
 }

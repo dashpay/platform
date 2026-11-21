@@ -18,13 +18,27 @@ dpp = { path = "../rs-dpp" }
 serde_json = "1.0"
 platform-wallet-ffi = { path = "../rs-platform-wallet-ffi" }
 log = "0.4"
+# Serialization for the TXO-reconcile transport (the paged wallet
+# inventory and the outpoint-classification batch). Both exports are
+# shims over one platform-wallet call each: serde shapes the JSON
+# against the same field names the Kotlin side decodes, so a renamed
+# key fails the decode loudly instead of defaulting a row.
+serde = { version = "1", features = ["derive"] }
+hex = "0.4"
 zeroize = "1"
+# The test-only credit-verdict round hook (`verdict_round_test_hook.rs`,
+# `test-hooks` feature) builds a `CoreChangeSet` and drives it through
+# `FFIPersister::store`; the unit tests in `persistence.rs` and
+# `tx_decode.rs` also use `dashcore`. All three are already in the graph
+# through platform-wallet-ffi.
+dashcore = { workspace = true }
+key-wallet = { workspace = true }
+platform-wallet = { path = "../rs-platform-wallet" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.14"
 
 [dev-dependencies]
-dashcore = { workspace = true }
 # Anchors the cross-language golden-fixture test to the canonical DashPay
 # contract id, so the mirrored Kotlin constant can't drift undetected.
 dashpay-contract = { path = "../dashpay-contract" }
@@ -34,6 +48,9 @@ default = ["shielded"]
 # Forwards to `platform-wallet-ffi/shielded`. Pulls Orchard / ZK shielded
 # sync support into the Android library, matching the iOS framework.
 shielded = ["platform-wallet-ffi/shielded"]
+# Test-only JNI entry points for the instrumented Android suite
+# (`./build_android.sh --test-hooks`). Never enable for a published build.
+test-hooks = []
 tokio-metrics = [
     "platform-wallet-ffi/tokio-metrics",
     "rs-sdk-ffi/tokio-metrics",
