@@ -20,7 +20,9 @@ pub use key_candidates::{
     live_provider_key_candidates_blocking, provider_key_candidates, ProviderKeyCandidate,
     MAX_PROVIDER_KEY_CANDIDATES,
 };
-pub use list::{find_in_summaries, MasternodeListQuery, MasternodeListSummary};
+pub use list::{
+    find_in_summaries, CurrentMasternodeList, MasternodeListQuery, MasternodeListSummary,
+};
 pub use locator::{
     locate_in_summaries, parse_locator_input, parse_secret_for_role, verify_masternode_key,
     verify_masternode_key_id, verify_masternode_key_text, KeyVerification, LocateOptions,

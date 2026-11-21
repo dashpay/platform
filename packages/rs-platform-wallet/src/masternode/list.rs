@@ -18,6 +18,8 @@ use std::net::{IpAddr, SocketAddr};
 use dashcore::sml::masternode_list::MasternodeList;
 use dashcore::sml::masternode_list_entry::{EntryMasternodeType, MasternodeListEntry};
 
+use super::locator::MasternodeKeyReference;
+
 /// What the deterministic masternode list knows about one masternode.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MasternodeListSummary {
@@ -121,6 +123,36 @@ impl MasternodeListSummary {
         let mut out = self.pro_tx_hash;
         out.reverse();
         out
+    }
+}
+
+/// The masternode list while it follows the chain: one snapshot's height
+/// and entries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CurrentMasternodeList {
+    /// Core block height the list describes.
+    pub height: u32,
+    /// Every entry of the list, as [`MasternodeListSummary::all_from_list`].
+    pub summaries: Vec<MasternodeListSummary>,
+}
+
+impl CurrentMasternodeList {
+    /// Height and summaries of `list`. Crate-private: only a gated read
+    /// knows the list is current.
+    pub(crate) fn from_list(list: &MasternodeList) -> Self {
+        Self {
+            height: list.known_height,
+            summaries: MasternodeListSummary::all_from_list(list),
+        }
+    }
+
+    /// The keys the list knows for `pro_tx_hash` (wire order): voting,
+    /// operator, platform node. `None` when the node is not on this list.
+    pub fn key_reference(&self, pro_tx_hash: &[u8; 32]) -> Option<MasternodeKeyReference> {
+        self.summaries
+            .iter()
+            .find(|summary| &summary.pro_tx_hash == pro_tx_hash)
+            .map(MasternodeKeyReference::from_summary)
     }
 }
 
@@ -292,7 +324,7 @@ pub(crate) mod test_support {
 
 #[cfg(test)]
 mod tests {
-    use super::test_support::{evonode, ip, masternode};
+    use super::test_support::{evonode, evonode_entry, ip, masternode, masternode_entry};
     use super::*;
     use dashcore::bls_sig_utils::BLSPublicKey;
     use dashcore::sml::masternode_list_entry::MasternodeNetInfo;
@@ -527,5 +559,56 @@ mod tests {
         assert!(
             find_in_summaries(&list, &MasternodeListQuery::PlatformNodeId([1u8; 20])).is_empty()
         );
+    }
+
+    /// Height and entries come from the same list.
+    #[test]
+    fn should_carry_the_list_height_with_its_summaries() {
+        let empty = MasternodeList::empty(BlockHash::from_byte_array([1u8; 32]), 2_345_678);
+        assert_eq!(
+            CurrentMasternodeList::from_list(&empty),
+            CurrentMasternodeList {
+                height: 2_345_678,
+                summaries: Vec::new(),
+            }
+        );
+
+        let list = MasternodeList::build(
+            [masternode_entry(1), evonode_entry(2)]
+                .into_iter()
+                .map(|entry| (entry.pro_reg_tx_hash, std::sync::Arc::new(entry.into())))
+                .collect::<dashcore::sml::masternode_list::MasternodeMap>(),
+            std::collections::BTreeMap::new(),
+            BlockHash::from_byte_array([2u8; 32]),
+            1_000,
+        )
+        .build();
+        assert_eq!(
+            CurrentMasternodeList::from_list(&list),
+            CurrentMasternodeList {
+                height: 1_000,
+                summaries: vec![masternode(1), evonode(2)],
+            }
+        );
+    }
+
+    /// A listed node gets the keys the list knows; any other node, nothing.
+    #[test]
+    fn should_give_a_key_reference_only_for_a_listed_node() {
+        let current = CurrentMasternodeList {
+            height: 1,
+            summaries: vec![masternode(1), evonode(2)],
+        };
+
+        assert_eq!(
+            current.key_reference(&[2u8; 32]),
+            Some(MasternodeKeyReference {
+                voting_key_id: Some([2u8; 20]),
+                operator_public_key: Some([2u8; 48]),
+                platform_node_id: Some([2u8 ^ 0xFF; 20]),
+                ..Default::default()
+            })
+        );
+        assert_eq!(current.key_reference(&[3u8; 32]), None);
     }
 }
