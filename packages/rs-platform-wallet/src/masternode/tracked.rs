@@ -1117,7 +1117,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     }
 }
 
-/// Base58 P2PKH address for `hash` on `network`.
 /// The registration details of the transaction DAPI returned for
 /// `pro_tx_hash` (wire order), binding the reply to the request first.
 ///

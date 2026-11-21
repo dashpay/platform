@@ -7,6 +7,7 @@ use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIde
 use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
+use dpp::identity::Purpose;
 use dpp::prelude::{AddressNonce, CoreBlockHeight};
 use key_wallet::account::StandardAccountType;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
@@ -877,6 +878,20 @@ pub enum PlatformWalletError {
     /// masternode-list-unavailable code the locator already returns.
     #[error("the masternode list is not available yet")]
     MasternodeListUnavailable,
+
+    /// A masternode withdrawal's key is not one the owner identity holds,
+    /// enabled, for the withdrawal's purpose: not the node's current owner
+    /// or payout key. Nothing was broadcast. FFI maps it to the
+    /// invalid-parameter code, as the key is caller input.
+    #[error(
+        "this key is not the current {purpose} key of masternode identity {identity_id}; \
+         nothing was sent. Use the node's current owner or payout key (it may have been \
+         rotated)"
+    )]
+    MasternodeWithdrawalKeyMismatch {
+        identity_id: Identifier,
+        purpose: Purpose,
+    },
 
     #[error(
         "no selectable inputs: only funded addresses appear as destinations \
