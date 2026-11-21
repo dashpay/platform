@@ -28,7 +28,7 @@ import org.robolectric.RobolectricTestRunner
  * upserts, and a load of a missing or malformed row fails instead of reading
  * as "none". Parity with Swift `PlatformWalletPersistenceHandler`'s
  * `persistAssetLockOperationId` / `persistAssetLockShieldedRecipient` and the
- * SQLite store's V019–V021 triggers.
+ * SQLite store's V019, V020 and V022 triggers.
  */
 @RunWith(RobolectricTestRunner::class)
 class AssetLockSidecarPersistenceTest {

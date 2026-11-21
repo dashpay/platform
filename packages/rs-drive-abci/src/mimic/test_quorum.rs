@@ -1,6 +1,8 @@
 use crate::platform_types::validator::v0::ValidatorV0;
 use crate::platform_types::validator_set::v0::ValidatorSetV0;
-use dpp::bls::{PublicKey as BlsPublicKey, PublicKey, SecretKey as BlsPrivateKey, SecretKey};
+use dashcore_crypto::dash_pkc::__deps::ff::{Field, PrimeField};
+use dashcore_crypto::dash_pkc::bls::Fr;
+use dpp::bls::{PublicKey as BlsPublicKey, SecretKey as BlsPrivateKey};
 use dpp::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use dpp::dashcore_rpc::dashcore_rpc_json::{QuorumInfoResult, QuorumMember, QuorumType};
 use rand::rngs::StdRng;
@@ -122,6 +124,39 @@ fn random_socket_addr(rng: &mut StdRng) -> SocketAddr {
     SocketAddr::new(IpAddr::V4(random_ipv4_address(rng)), random_port(rng))
 }
 
+// TODO: replace this mock-only interpolation with dash-pkc secret-share recovery.
+// https://github.com/dashpay/base-sdk/issues/113
+fn recover_quorum_private_key(members: &[(ProTxHash, BlsPrivateKey)]) -> BlsPrivateKey {
+    assert!(members.len() >= 2, "expected at least two quorum members");
+    // Core reads the stored proTxHash bytes as a big-endian scalar, reduced modulo r.
+    let ids: Vec<_> = members
+        .iter()
+        .map(|(id, _)| {
+            Fr::from_bendian_reduce(&id.to_byte_array()).expect("nonzero quorum member id")
+        })
+        .collect();
+    let mut recovered = Fr::ZERO;
+    for (i, (_, key)) in members.iter().enumerate() {
+        // Interpolate the mock secret shares at zero: product of x_j / (x_j - x_i).
+        let mut numerator = Fr::ONE;
+        let mut denominator = Fr::ONE;
+        for (j, id) in ids.iter().enumerate() {
+            if i != j {
+                numerator *= id;
+                denominator *= *id - ids[i];
+            }
+        }
+        let inverse = denominator
+            .invert()
+            .expect("distinct quorum member identifiers");
+        let scalar = Fr::from_bendian_reduce(&key.to_be_bytes()).expect("nonzero member key");
+        recovered += scalar * numerator * inverse;
+    }
+    let mut bytes = recovered.to_repr();
+    bytes.reverse();
+    BlsPrivateKey::from_be_bytes(&bytes).expect("nonzero recovered quorum private key")
+}
+
 impl TestQuorumInfo {
     /// Constructs a new `TestQuorumInfo` object from a quorum hash and a list of `ProTxHash` identifiers.
     /// The `TestQuorumInfo` object contains a set of validators, as well as a map of validators indexed by their
@@ -133,39 +168,21 @@ impl TestQuorumInfo {
         pro_tx_hashes: Vec<ProTxHash>,
         rng: &mut StdRng,
     ) -> Self {
-        // We test on purpose with the bls library that Dash Core uses
-        let private_keys = bls_signatures::PrivateKey::generate_dash_many(pro_tx_hashes.len(), rng)
-            .expect("expected to generate private keys");
-        assert_eq!(
-            private_keys.len(),
-            pro_tx_hashes.len(),
-            "zipped private keys and pro_tx_hashes must have the same length"
-        );
-        let bls_id_private_key_pairs = private_keys
+        let members: Vec<_> = pro_tx_hashes
             .into_iter()
-            .zip(pro_tx_hashes)
-            .map(|(private_key, pro_tx_hashes)| {
-                (pro_tx_hashes.to_byte_array().to_vec(), private_key)
-            })
-            .collect::<Vec<_>>();
-        let recovered_private_key =
-            bls_signatures::PrivateKey::threshold_recover(&bls_id_private_key_pairs)
-                .expect("expected to recover a private key");
-        let validator_set: Vec<_> = bls_id_private_key_pairs
+            .map(|id| (id, BlsPrivateKey::random(&mut *rng)))
+            .collect();
+        let recovered_private_key = recover_quorum_private_key(&members);
+        let validator_set: Vec<_> = members
             .into_iter()
             .map(|(pro_tx_hash, key)| {
-                let public_key = key.g1_element().expect("expected to get public key");
+                let public_key = key.public_key();
                 ValidatorInQuorum {
-                    pro_tx_hash: ProTxHash::from_slice(pro_tx_hash.as_slice())
-                        .expect("expected 32 bytes for pro_tx_hash"),
-                    private_key: SecretKey::from_be_bytes(
-                        &key.to_bytes().to_vec().try_into().expect("32 bytes"),
-                    )
-                    .expect("expected conversion to work"),
-                    public_key: PublicKey::try_from(public_key.to_bytes().as_slice())
-                        .expect("expected conversion to work"),
+                    pro_tx_hash,
+                    private_key: key,
+                    public_key,
                     node_ip: random_socket_addr(rng).to_string(),
-                    node_id: PubkeyHash::from_slice(pro_tx_hash.split_at(20).0).unwrap(),
+                    node_id: PubkeyHash::from_slice(&pro_tx_hash.to_byte_array()[..20]).unwrap(),
                     core_port: 1,
                     platform_http_port: 2,
                     platform_p2p_port: 3,
@@ -173,9 +190,7 @@ impl TestQuorumInfo {
                 }
             })
             .collect();
-        let public_key = recovered_private_key
-            .g1_element()
-            .expect("expected to get G1 Element");
+        let public_key = recovered_private_key.public_key();
         let map = validator_set
             .iter()
             .map(|v| (v.pro_tx_hash, v.clone()))
@@ -186,16 +201,8 @@ impl TestQuorumInfo {
             quorum_index,
             validator_set,
             validator_map: map,
-            private_key: SecretKey::from_be_bytes(
-                &recovered_private_key
-                    .to_bytes()
-                    .to_vec()
-                    .try_into()
-                    .expect("32 bytes"),
-            )
-            .expect("expected conversion to work"),
-            public_key: PublicKey::try_from(public_key.to_bytes().as_slice())
-                .expect("expected conversion to work"),
+            private_key: recovered_private_key,
+            public_key,
         }
     }
 }
@@ -285,5 +292,144 @@ impl From<&TestQuorumInfo> for QuorumInfoResult {
             quorum_public_key: public_key.to_bytes().to_vec(),
             secret_key_share: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::SeedableRng;
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    struct MemberVector {
+        secret_key: String,
+        public_key: String,
+    }
+
+    #[derive(Deserialize)]
+    struct QuorumVector {
+        members: Vec<MemberVector>,
+        secret_key: String,
+        public_key: String,
+        signature: String,
+    }
+
+    fn member_hash(index: u8) -> ProTxHash {
+        let mut id = [0; 32];
+        id[0] = index + 1;
+        id[31] = index + 11;
+        ProTxHash::from_byte_array(id)
+    }
+
+    #[test]
+    fn should_preserve_frozen_core_quorum_keys_and_signatures() {
+        let vectors: Vec<QuorumVector> =
+            serde_json::from_str(include_str!("fixtures/core_quorums.json")).unwrap();
+        assert_eq!(vectors.len(), 3);
+        for vector in vectors {
+            let ids = (0..vector.members.len())
+                .map(|i| member_hash(i as u8))
+                .collect();
+            let quorum = TestQuorumInfo::from_quorum_hash_and_pro_tx_hashes(
+                100,
+                QuorumHash::from_byte_array([42; 32]),
+                Some(1),
+                ids,
+                &mut StdRng::seed_from_u64(42),
+            );
+            for (member, expected) in quorum.validator_set.iter().zip(vector.members) {
+                assert_eq!(
+                    hex::encode(member.private_key.to_be_bytes()),
+                    expected.secret_key
+                );
+                assert_eq!(
+                    hex::encode(member.public_key.to_bytes()),
+                    expected.public_key
+                );
+                let signature = member.private_key.sign(b"quorum compatibility").unwrap();
+                signature
+                    .verify(&member.public_key, b"quorum compatibility")
+                    .unwrap();
+            }
+            assert_eq!(
+                hex::encode(quorum.private_key.to_be_bytes()),
+                vector.secret_key
+            );
+            assert_eq!(hex::encode(quorum.public_key.to_bytes()), vector.public_key);
+            let signature = quorum.private_key.sign(b"quorum compatibility").unwrap();
+            assert_eq!(hex::encode(signature.to_bytes()), vector.signature);
+            signature
+                .verify(&quorum.public_key, b"quorum compatibility")
+                .unwrap();
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "at least two quorum members")]
+    fn should_reject_an_empty_quorum() {
+        TestQuorumInfo::from_quorum_hash_and_pro_tx_hashes(
+            100,
+            QuorumHash::from_byte_array([42; 32]),
+            None,
+            vec![],
+            &mut StdRng::seed_from_u64(42),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "at least two quorum members")]
+    fn should_reject_a_single_quorum_member() {
+        TestQuorumInfo::from_quorum_hash_and_pro_tx_hashes(
+            100,
+            QuorumHash::from_byte_array([42; 32]),
+            None,
+            vec![member_hash(0)],
+            &mut StdRng::seed_from_u64(42),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "distinct quorum member identifiers")]
+    fn should_reject_duplicate_quorum_members() {
+        TestQuorumInfo::from_quorum_hash_and_pro_tx_hashes(
+            100,
+            QuorumHash::from_byte_array([42; 32]),
+            None,
+            vec![member_hash(0); 2],
+            &mut StdRng::seed_from_u64(42),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "nonzero quorum member id")]
+    fn should_reject_a_zero_quorum_member_identifier() {
+        TestQuorumInfo::from_quorum_hash_and_pro_tx_hashes(
+            100,
+            QuorumHash::from_byte_array([42; 32]),
+            None,
+            vec![ProTxHash::all_zeros(), member_hash(0)],
+            &mut StdRng::seed_from_u64(42),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "distinct quorum member identifiers")]
+    fn should_reject_member_identifiers_equal_modulo_the_scalar_order() {
+        let mut one = [0; 32];
+        one[31] = 1;
+        let order_plus_one =
+            hex::decode("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000002")
+                .unwrap();
+        TestQuorumInfo::from_quorum_hash_and_pro_tx_hashes(
+            100,
+            QuorumHash::from_byte_array([42; 32]),
+            None,
+            vec![
+                ProTxHash::from_byte_array(one),
+                ProTxHash::from_slice(&order_plus_one).unwrap(),
+            ],
+            &mut StdRng::seed_from_u64(42),
+        );
     }
 }

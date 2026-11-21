@@ -63,6 +63,7 @@
     "platform_wallet_manager_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_manager_send_private_contact_request": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_manager_shielded_fund_from_wallet_drain": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
+    "platform_wallet_manager_shielded_shield_from_identity_to_recipient": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
     "platform_wallet_manager_shielded_wallet_drain_preview": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
     "platform_wallet_manager_shielded_wallet_drain_status": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
     "platform_wallet_manager_spv_rescan_filters": "packages/rs-platform-wallet-ffi/src/spv.rs",
@@ -74,6 +75,7 @@
     "platform_wallet_token_purchase": "packages/rs-platform-wallet-ffi/src/tokens/purchase.rs",
     "platform_wallet_token_transfer": "packages/rs-platform-wallet-ffi/src/tokens/transfer.rs",
     "platform_wallet_token_update_config": "packages/rs-platform-wallet-ffi/src/tokens/update_config.rs",
+    "platform_wallet_top_up_external_identity_from_addresses_with_signer": "packages/rs-platform-wallet-ffi/src/identity_top_up.rs",
     "platform_wallet_top_up_external_identity_with_funding_signer": "packages/rs-platform-wallet-ffi/src/identity_top_up.rs",
     "platform_wallet_top_up_from_addresses_with_signer": "packages/rs-platform-wallet-ffi/src/identity_top_up.rs",
     "platform_wallet_topup_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
@@ -1570,6 +1572,39 @@
       ]
     },
     {
+      "id": "identity.external_top_up_from_addresses",
+      "title": "Top up an identity the wallet does not manage from Platform addresses",
+      "area": "correctness",
+      "shared_apis": [
+        "platform_wallet_top_up_external_identity_from_addresses_with_signer"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "ManagedPlatformWallet.topUpExternalIdentityFromAddresses bridges the export; the example app has no screen that pays to someone else's identity."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI bridge or Kotlin wrapper for the external identity top-up yet."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ExternalIdentityTopUpTests.swift",
+          "id": "testMarshalsArgumentsAndReturnsTheBalanceTheExportWrites",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ExternalIdentityTopUpTests",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
       "id": "tokens.authorization_decisions",
       "title": "Shared token authorization and group-proposal decisions",
       "area": "shared_policy",
@@ -2151,6 +2186,39 @@
           "kind": "manual",
           "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "SYS-09",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "shielded.shield_from_identity_to_recipient",
+      "title": "Shield an identity's credits to someone else's shielded address",
+      "area": "correctness",
+      "shared_apis": [
+        "platform_wallet_manager_shielded_shield_from_identity_to_recipient"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "PlatformWalletManager.shieldedShieldFromIdentityToRecipient bridges the export; the example app has no screen that pays an identity's credits to another wallet's shielded address."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI bridge or Kotlin wrapper for shielding an identity's credits to a recipient yet."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ShieldFromIdentityToRecipientGuardTests.swift",
+          "id": "testRecipientNot43BytesThrowsInvalidParameter",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ShieldFromIdentityToRecipientGuardTests",
           "covers_restart": false
         }
       ]

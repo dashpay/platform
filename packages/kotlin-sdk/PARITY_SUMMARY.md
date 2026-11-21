@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **31**
+Capabilities tracked: **33**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 17 | 11 | 2 | 1 |
-| Swift | Example app | 5 | 14 | 3 | 9 |
-| Kotlin | SDK | 14 | 15 | 1 | 1 |
-| Kotlin | Example app | 6 | 14 | 1 | 10 |
+| Swift | SDK | 19 | 11 | 2 | 1 |
+| Swift | Example app | 5 | 14 | 5 | 9 |
+| Kotlin | SDK | 14 | 15 | 3 | 1 |
+| Kotlin | Example app | 6 | 14 | 3 | 10 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 11 | 18 |
-| Kotlin | 5 | 9 | 17 |
+| Swift | 2 | 11 | 20 |
+| Kotlin | 5 | 9 | 19 |
 
 ## Capability status
 
@@ -43,6 +43,7 @@ Capabilities tracked: **31**
 | `persistence.dashpay_payment_history` | partial / not-applicable / required | not-applicable / not-applicable / not_applicable |
 | `network.masternode_discovery` | partial / not-applicable / not_applicable | partial / not-applicable / not_applicable |
 | `identity.platform_address_auto_funding` | partial / partial / not_applicable | partial / partial / not_applicable |
+| `identity.external_top_up_from_addresses` | supported / unsupported / not_applicable | unsupported / unsupported / not_applicable |
 | `tokens.authorization_decisions` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `tokens.direct_purchase_quote` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `protocol.address_validation` | supported / supported / not_applicable | partial / partial / not_applicable |
@@ -55,6 +56,7 @@ Capabilities tracked: **31**
 | `errors.signing_key_unavailable_discriminator` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
 | `shielded.core_wallet_drain` | supported / unsupported / tested | unsupported / unsupported / not_applicable |
 | `network.adaptive_quorum_source` | supported / supported / tested | supported / supported / tested |
+| `shielded.shield_from_identity_to_recipient` | supported / unsupported / not_applicable | unsupported / unsupported / not_applicable |
 
 Source: [`docs/sdk/sdk-parity-manifest.json`](../../docs/sdk/sdk-parity-manifest.json).
 Detailed legacy view mapping remains in [`PARITY.md`](PARITY.md), but its manual totals are not authoritative.

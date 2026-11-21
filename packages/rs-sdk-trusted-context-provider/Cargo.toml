@@ -26,7 +26,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
 tracing = "0.1.41"
-lru = "0.16.3"
+lru = "0.19.0"
 arc-swap = "1.7.1"
 hex = "0.4.3"
 url = "2.5"
@@ -107,6 +107,13 @@ reqwest = { version = "0.12", features = ["json"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
+
+[dev-dependencies]
+# The test platform versions: the token marketplace is tested under one until protocol version
+# 16 has tables.
+platform-version = { path = "../rs-platform-version", features = [
+    "mock-versions",
+] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }

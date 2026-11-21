@@ -446,7 +446,9 @@ impl IdentityWallet {
     ///
     /// 1. Fetch the identity from Platform (proved) instead of the local
     ///    `IdentityManager`. An identity Platform does not know is
-    ///    [`PlatformWalletError::IdentityNotFound`]; nothing is built.
+    ///    [`PlatformWalletError::IdentityNotFound`], and a lookup that
+    ///    fails (transport or proof) is
+    ///    [`PlatformWalletError::IdentityLookupFailed`]; nothing is built.
     /// 2. Fund the lock from the wallet's unbound top-up account
     ///    (`IdentityTopUpNotBound`, DIP-9), which needs no registration
     ///    index. The lock's row records `identity_id` and is stored before
@@ -510,7 +512,8 @@ impl IdentityWallet {
     /// ([`TrackedAssetLock::is_unassigned_identity_top_up`]), after checking
     /// that Platform knows it: an assignment is permanent, so a mistyped id
     /// would otherwise strand the lock. An unknown identity is
-    /// [`PlatformWalletError::IdentityNotFound`] and nothing is assigned.
+    /// [`PlatformWalletError::IdentityNotFound`], a failed lookup
+    /// [`PlatformWalletError::IdentityLookupFailed`], and nothing is assigned.
     /// Afterwards a resume pays this identity and refuses any other.
     ///
     /// Also refused on a backend that cannot keep the assignment
@@ -546,14 +549,12 @@ impl IdentityWallet {
         &self,
         identity_id: &Identifier,
     ) -> Result<Identity, PlatformWalletError> {
-        // TODO(dashpay/platform#5860): report a failed lookup as
-        // `PlatformWalletError::IdentityLookupFailed` (FFI 80) once #5860
-        // merges, as its external top-up from Platform addresses does. Until
-        // then it surfaces as the plain SDK error; either way nothing is built
-        // or assigned.
         Identity::fetch(&self.sdk, *identity_id)
             .await
-            .map_err(PlatformWalletError::Sdk)?
+            .map_err(|source| PlatformWalletError::IdentityLookupFailed {
+                identity_id: *identity_id,
+                source,
+            })?
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))
     }
 
@@ -994,6 +995,56 @@ mod tests {
             built.lock().unwrap().is_empty(),
             "nothing was built, so no outpoint is reported"
         );
+    }
+
+    /// A lookup Platform cannot answer (here the mock has no answer for the
+    /// identity) is the not-sent lookup failure, not the SDK's error, on both
+    /// the external top-up and the assignment: nothing is built or assigned,
+    /// so the call may be retried as it is.
+    #[tokio::test]
+    async fn should_report_a_failed_identity_lookup_before_building_or_assigning() {
+        let answered = Identifier::from([0x63u8; 32]);
+        let target = Identifier::from([0x64u8; 32]);
+        let (wallet, signer) = wallet_where_platform_answers(answered, None).await;
+        let out_point = track_lock(
+            &wallet,
+            0,
+            AssetLockFundingType::IdentityTopUpNotBound,
+            None,
+        )
+        .await;
+
+        let top_up = wallet
+            .identity()
+            .top_up_external_identity_with_funding(
+                &target,
+                AssetLockFunding::FromWalletBalance {
+                    amount_duffs: 1_000_000,
+                    account_index: 0,
+                },
+                &signer,
+                None,
+                None,
+            )
+            .await;
+        let assign = wallet
+            .identity()
+            .assign_identity_top_up_recipient(&out_point, &target)
+            .await;
+
+        assert!(
+            matches!(&top_up, Err(PlatformWalletError::IdentityLookupFailed { identity_id, .. })
+                if *identity_id == target),
+            "{top_up:?}"
+        );
+        assert!(
+            matches!(&assign, Err(PlatformWalletError::IdentityLookupFailed { identity_id, .. })
+                if *identity_id == target),
+            "{assign:?}"
+        );
+        let tracked = wallet.asset_locks().list_tracked_locks().await;
+        assert_eq!(tracked.len(), 1, "only the pre-tracked lock exists");
+        assert!(tracked[0].is_unassigned_identity_top_up());
     }
 
     /// A known identity is still refused before any lock is built when the

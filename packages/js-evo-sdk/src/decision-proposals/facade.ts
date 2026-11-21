@@ -1,17 +1,24 @@
 import * as wasm from '../wasm.js';
 import type { EvoSDK } from '../sdk.js';
+import { MultipleChoiceProposalsFacade } from './multiple-choice-facade.js';
 
 /**
  * Decision proposals (protocol version 15): yes/no questions any identity puts to the
  * masternodes. A proposal is a `proposal` document of the decision proposals system contract;
  * creating it opens its vote poll, and its owner pays the decision proposal fund, 0.5 Dash.
  * Nothing acts on a result. Every read is a proved query.
+ *
+ * A question with more than two answers is a multiple choice proposal: see `multipleChoice`.
  */
 export class DecisionProposalsFacade {
   private sdk: EvoSDK;
 
+  /** Multiple choice proposals, their choices and the vote among them. */
+  public multipleChoice: MultipleChoiceProposalsFacade;
+
   constructor(sdk: EvoSDK) {
     this.sdk = sdk;
+    this.multipleChoice = new MultipleChoiceProposalsFacade(sdk);
   }
 
   /**

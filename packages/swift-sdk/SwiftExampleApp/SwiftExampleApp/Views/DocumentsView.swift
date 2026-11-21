@@ -864,16 +864,29 @@ struct DeleteDocumentView: View {
 
 // MARK: Erase
 
-/// Erases the retained revisions of a keep-history document that has
-/// already been deleted, one bounded chunk per broadcast. The row is still
-/// local because the deletion happened elsewhere (another device or the
-/// Settings builder). An ACTIVE or ABSENT lifecycle skips the broadcast.
-///
-/// The erase result only observes that the document is absent from
-/// ordinary reads, which it already was, so the sheet reads the lifecycle
-/// before and after each broadcast and shows what that read says. It stays
-/// open with the same id so further chunks can be submitted, and removes
-/// the local row only once the lifecycle reports the document absent.
+/// Display the Rust operation's decision and observations without deciding eligibility.
+func describeDocumentEraseOutcome(_ outcome: DocumentEraseOutcome) -> String {
+    switch outcome {
+    case .notSubmitted(let reason, _):
+        let explanation: String
+        switch reason {
+        case .active: explanation = "The document is active."
+        case .absent: explanation = "No retained revisions exist."
+        case .notNewestOwner(let owner):
+            explanation = "The newest retained revision belongs to \(owner.toBase58String()). Erase from that identity (Settings → Document Erase)."
+        case .preflightUnavailable:
+            explanation = "Lifecycle or ownership could not be read; read history before retrying."
+        }
+        return "Erase not submitted. " + explanation
+    case .submitted(let before, let after):
+        return "Erase submitted; document absence observed. " + (after.map {
+            DocumentHistoryLifecycle.describeEraseProgress(before: before, after: $0)
+        } ?? "Lifecycle not read; query the document history to see what remains.")
+    }
+}
+
+/// Displays one erase attempt at a time and removes the local row only after
+/// a proved observation reports the document absent.
 struct EraseDocumentView: View {
     let document: PersistentDocument
     private let documentIdText: String
@@ -901,6 +914,7 @@ struct EraseDocumentView: View {
     @State private var persistWarning: String?
     @State private var actionError: DocumentActionErrorBox?
 
+    // This hides a button for presentation; Rust re-decides eligibility on every call.
     private var canSubmitAnother: Bool {
         guard let lifecycle else { return submissions == 0 }
         return lifecycle.state == .erasing || lifecycle.state == .deleted
@@ -917,7 +931,7 @@ struct EraseDocumentView: View {
                         DetailRow(label: "Revisions retained", value: String(lifecycle.remainingRevisions))
                     }
                 } footer: {
-                    Text("Removes up to 100 retained revisions of a document that has already been deleted on Platform. The document type must allow erasure, and only the owner may start it. If the initial lifecycle read fails, an erase may still be submitted for an active document; consensus rejects it and still charges a fee. A broadcast only observes that the document is absent from ordinary reads; the lifecycle read after it says what remains. This cannot be undone.")
+                    Text("Removes up to 100 retained revisions of a document that has already been deleted on Platform. The document type must allow erasure, and only the owner may start it. The lifecycle and initial ownership must be read before an erase can be submitted. If either read is unavailable, read history before retrying. A broadcast only observes that the document is absent from ordinary reads; the lifecycle read after it says what remains. This cannot be undone.")
                 }
                 if submissions > 0 || progress != nil {
                     Section {
@@ -986,7 +1000,7 @@ struct EraseDocumentView: View {
                 lifecycle = observed
             }
             .alert(item: $actionError) { err in
-                Alert(title: Text("Erase failed"), message: Text(err.message), dismissButton: .default(Text("OK")))
+                Alert(title: Text("Erase status"), message: Text(err.message), dismissButton: .default(Text("OK")))
             }
         }
     }
@@ -1004,15 +1018,9 @@ struct EraseDocumentView: View {
             actionError = .init(message: DocumentActionError.identityNotFound.localizedDescription)
             return
         }
-        let docType = document.documentType_relation
-        let wallet: ManagedPlatformWallet
-        let signingKeyId: UInt32
-        do {
-            (wallet, signingKeyId) = try DocumentActionRunner.resolveSigning(
-                for: owner, documentType: docType, walletManager: walletManager
-            )
-        } catch {
-            actionError = .init(message: error.localizedDescription)
+        guard let walletId = owner.wallet?.walletId,
+              let wallet = walletManager.wallet(for: walletId) else {
+            actionError = .init(message: DocumentActionError.noWallet.localizedDescription)
             return
         }
 
@@ -1020,53 +1028,36 @@ struct EraseDocumentView: View {
         let signer = KeychainSigner(modelContainer: modelContext.container)
         let ownerId = owner.identityId
         let contractId = document.contractIdData
-        let contractIdBase58 = document.contractIdBase58
         let typeName = document.documentType
         let docId = document.id
-        let docIdBase58 = document.documentId
-        let sdk = appState.sdk
 
         Task {
             do {
-                let before = try? await sdk?.documentGetLifecycle(
-                    dataContractId: contractIdBase58, documentType: typeName, documentId: docIdBase58
-                )
-                if let before, before.state == .active || before.state == .absent {
-                    await MainActor.run {
-                        lifecycle = before
-                        progress = "Erase not submitted. " + (before.state == .absent
-                            ? "No retained revisions exist."
-                            : DocumentHistoryLifecycle.describeEraseProgress(before: before, after: before))
-                        isSubmitting = false
-                    }
-                    return
-                }
-                _ = try await wallet.eraseDocument(
-                    ownerIdentityId: ownerId,
+                let outcome = try await wallet.eraseDocumentAndObserve(
+                    submittingIdentityId: ownerId,
                     contractId: contractId,
                     documentType: typeName,
                     documentId: docId,
-                    signingKeyId: signingKeyId,
                     signer: signer
                 )
-                _ = signer
-                let after = try? await sdk?.documentGetLifecycle(
-                    dataContractId: contractIdBase58, documentType: typeName, documentId: docIdBase58
-                )
                 await MainActor.run {
-                    submissions += 1
-                    lifecycle = after
-                    if let after {
-                        progress = DocumentHistoryLifecycle.describeEraseProgress(before: before, after: after)
-                        if after.state == .absent {
+                    progress = describeDocumentEraseOutcome(outcome)
+                    switch outcome {
+                    case .notSubmitted(_, let before): lifecycle = before
+                    case .submitted(_, let after):
+                        submissions += 1
+                        lifecycle = after
+                        if after?.state == .absent {
                             persistWarning = DocumentPersistence.applyDelete(
-                                document: document,
-                                modelContext: modelContext
+                                document: document, modelContext: modelContext
                             )
                         }
-                    } else {
-                        progress = "Lifecycle not read; use Platform Queries → Get Document History to see what remains."
                     }
+                    isSubmitting = false
+                }
+            } catch PlatformWalletError.transactionBroadcastUnconfirmed(_) {
+                await MainActor.run {
+                    actionError = .init(message: "Erase outcome unknown; do not resubmit automatically; read history first.")
                     isSubmitting = false
                 }
             } catch {

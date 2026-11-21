@@ -25,7 +25,8 @@ impl TokenTradeModeWasm {
         TokenTradeModeWasm(TokenTradeMode::NotTradeable)
     }
 
-    /// Holders may list the token and make offers for it (protocol version 15).
+    /// Holders may list the token and make offers for it. Admitted from protocol version 16:
+    /// earlier versions refuse a contract or a configuration update that uses it.
     #[wasm_bindgen(js_name = "Tradeable")]
     pub fn tradeable() -> TokenTradeModeWasm {
         TokenTradeModeWasm(TokenTradeMode::Tradeable)

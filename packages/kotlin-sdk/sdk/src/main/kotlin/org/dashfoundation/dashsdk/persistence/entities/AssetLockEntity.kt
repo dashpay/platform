@@ -23,7 +23,7 @@ import java.util.Date
  * `packages/rs-platform-wallet-ffi/src/persistence.rs`). Each is immutable
  * once stored: the handler refuses a different value, and the
  * `asset_locks_*_immutable` triggers [DashDatabase] installs refuse one at
- * the SQL layer too, as the SQLite store's V019–V021 triggers do. A later
+ * the SQL layer too, as the SQLite store's V019, V020 and V022 triggers do. A later
  * upsert of the row carries them forward rather than clearing them.
  * `(walletId, operationId)` is unique, as SQLite's
  * `asset_locks_wallet_operation_id` index is (NULLs never collide).
@@ -99,7 +99,7 @@ data class AssetLockEntity(
      * (`fundingTypeRaw == 2`) was built or assigned to pay, so a resume after
      * restart pays that identity and refuses another
      * (`ASSET_LOCK_IDENTITY_RECIPIENTS`, bit 17; SQLite
-     * `V021__asset_lock_identity_recipient`). Null for every other lock, and
+     * `V022__asset_lock_identity_recipient`). Null for every other lock, and
      * for an unbound lock rebuilt from the chain until the user assigns one.
      */
     val identityRecipientId: ByteArray? = null,

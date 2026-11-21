@@ -31,6 +31,21 @@ pub(crate) fn mock_manager() -> PlatformWalletManager<FFIPersister> {
 
 /// [`mock_manager`] over `persister`.
 pub(crate) fn mock_manager_with(persister: FFIPersister) -> PlatformWalletManager<FFIPersister> {
+    mock_manager_on(
+        dash_sdk::SdkBuilder::new_mock()
+            .with_network(dashcore::Network::Testnet)
+            .build()
+            .expect("mock sdk"),
+        persister,
+    )
+}
+
+/// [`mock_manager_with`] over a caller-built mock `sdk`, for tests that seed
+/// the mock's expectations before the manager takes ownership of it.
+pub(crate) fn mock_manager_on(
+    sdk: dash_sdk::Sdk,
+    persister: FFIPersister,
+) -> PlatformWalletManager<FFIPersister> {
     let events = FFIEventHandler::new(
         EventHandlerCallbacks {
             context: std::ptr::null_mut(),
@@ -45,16 +60,7 @@ pub(crate) fn mock_manager_with(persister: FFIPersister) -> PlatformWalletManage
         None,
     );
     let _runtime_guard = runtime().enter();
-    PlatformWalletManager::new(
-        Arc::new(
-            dash_sdk::SdkBuilder::new_mock()
-                .with_network(dashcore::Network::Testnet)
-                .build()
-                .expect("mock sdk"),
-        ),
-        Arc::new(persister),
-        Arc::new(events),
-    )
+    PlatformWalletManager::new(Arc::new(sdk), Arc::new(persister), Arc::new(events))
 }
 
 /// Runs `call` with a dangling out pointer and returns the C string it wrote,
