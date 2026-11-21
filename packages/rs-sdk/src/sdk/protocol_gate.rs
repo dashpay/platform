@@ -165,6 +165,12 @@ impl SharedProbeHold {
         }
     }
 
+    pub(super) fn clear(&self) {
+        if let Ok(mut current) = self.hold.lock() {
+            *current = None;
+        }
+    }
+
     fn answered(&self) -> u64 {
         self.answered.load(Ordering::Acquire)
     }
@@ -291,6 +297,17 @@ impl Sdk {
     /// one ([`Self::mock_verified_protocol_version`]). A version verified earlier, by this SDK
     /// or a clone, shows nothing then without a hold: the network may have upgraded since.
     pub async fn network_proven_below(&self, protocol_version: u32) -> Result<bool, Error> {
+        self.network_proven_below_with_settings(protocol_version, None)
+            .await
+    }
+
+    /// [`Self::network_proven_below`], with the probe sent under the caller's request
+    /// `settings` (the SDK's own when `None`), as the gate's probe is.
+    pub(crate) async fn network_proven_below_with_settings(
+        &self,
+        protocol_version: u32,
+        settings: Option<RequestSettings>,
+    ) -> Result<bool, Error> {
         let state = self.gate_state();
         let verified = state.settings.verified_protocol_version;
         if verified >= protocol_version {
@@ -305,10 +322,56 @@ impl Sdk {
         if !state.enforced || !state.has_context_provider {
             return Ok(false);
         }
-        self.probe_network_protocol_version(protocol_version, None)
-            .await?;
-        let verified = self.query_settings().verified_protocol_version;
+        // One probe for every call asking at once, as the gate's own: a pinned SDK asks too,
+        // since the question is the network's version, not what this SDK speaks.
+        let failure = self
+            .probe_once_while(protocol_version, settings, |sdk| {
+                let state = sdk.gate_state();
+                let verified = state.settings.verified_protocol_version;
+                verified < protocol_version
+                    && !state
+                        .hold
+                        .is_some_and(|hold| hold.covers(protocol_version, verified, state.now_ms))
+            })
+            .await;
+        // Another call may have proven the version meanwhile, whatever this probe did.
+        let state = self.gate_state();
+        let verified = state.settings.verified_protocol_version;
+        if verified >= protocol_version {
+            return Ok(false);
+        }
+        if let Some(failure) = failure {
+            return Err(*failure);
+        }
         Ok(verified != 0 && verified < protocol_version)
+    }
+
+    /// Forget the probe hold, for a caller with a sign that the network moved past the
+    /// version the hold shows, such as a node refusing what that version serves. The next
+    /// request that needs more asks the network again.
+    pub(crate) fn forget_probe_hold(&self) {
+        self.probe_hold.clear();
+    }
+
+    /// Whether a verified answer shows the network at or above `protocol_version` after
+    /// asking it once more, past the probe hold ([`ProbeHold`]), under the caller's request
+    /// `settings`: for a call that sent what the network served before `protocol_version`
+    /// and failed, as the network may have reached it since. A hold can outlast its epoch
+    /// (when the epoch's first block came late), and the network can reach the version
+    /// between a probe and the request. `false` when the probe fails.
+    pub(crate) async fn network_reached_past_hold(
+        &self,
+        protocol_version: u32,
+        settings: Option<RequestSettings>,
+    ) -> bool {
+        let state = self.gate_state();
+        if state.enforced && state.has_context_provider {
+            self.probe_once_while(protocol_version, settings, |sdk| {
+                sdk.query_settings().verified_protocol_version < protocol_version
+            })
+            .await;
+        }
+        self.query_settings().verified_protocol_version >= protocol_version
     }
 
     /// Take `protocol_version` as the network's verified version, as if a proved answer had
@@ -418,15 +481,28 @@ impl Sdk {
         required: u32,
         settings: Option<RequestSettings>,
     ) -> Option<Box<Error>> {
+        self.probe_once_while(required, settings, |sdk| {
+            decide(required, &sdk.gate_state()) == Gate::Probe
+        })
+        .await
+    }
+
+    /// [`Self::probe_unless_probing`], for a call that still needs to ask while `needed`
+    /// says so: it does not ask when a probe answered while it waited, or `needed` no
+    /// longer holds.
+    async fn probe_once_while(
+        &self,
+        required: u32,
+        settings: Option<RequestSettings>,
+        needed: impl Fn(&Self) -> bool,
+    ) -> Option<Box<Error>> {
         let answered = self.probe_hold.answered();
         let probing = self.probe_hold.probing.try_lock();
         if probing.is_err() {
             drop(self.probe_hold.probing.lock().await);
         }
         // A probe answered since this call decided to ask, or another answer decided it.
-        if self.probe_hold.answered() != answered
-            || decide(required, &self.gate_state()) != Gate::Probe
-        {
+        if self.probe_hold.answered() != answered || !needed(self) {
             return None;
         }
         let probed = self
