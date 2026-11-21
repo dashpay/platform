@@ -126,6 +126,14 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_contested_usernames_by_identity(
 
 /// Get the vote state for a contested DPNS username
 ///
+/// `label` is a label or a full name in any case ("alice", "Alice.DASH"); the
+/// SDK normalizes it to the contest's index value.
+///
+/// # Returns
+/// A JSON object `{"winner"?, "contenders":[{"identifier","votes","voteCount"?}],
+/// "abstainVotes"?, "lockVotes"?}`. `votes` is the contender's debug text, kept
+/// for compatibility; `voteCount` is its tally, only when the tally was read.
+///
 /// # Safety
 /// This function is unsafe because it operates on raw pointers
 #[no_mangle]
@@ -197,6 +205,10 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_contested_vote_state(
                 );
                 // Convert votes to a simple format
                 contender_map.insert("votes".to_string(), json!(format!("{:?}", votes)));
+                // The contender's tally, only when it was read
+                if let Some(vote_count) = votes.vote_tally() {
+                    contender_map.insert("voteCount".to_string(), json!(vote_count));
+                }
                 contenders_array.push(json!(contender_map));
             }
             result_map.insert("contenders".to_string(), json!(contenders_array));

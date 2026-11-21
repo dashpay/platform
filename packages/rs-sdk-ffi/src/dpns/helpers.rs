@@ -1,10 +1,13 @@
 //! DPNS helper functions for validation and normalization
 
 use crate::{utils, DashSDKError, DashSDKErrorCode, DashSDKResult};
+use dash_sdk::platform::dpns_usernames::normalize_dpns_label;
 use std::ffi::CStr;
 
-/// Convert a string to homograph-safe characters by replacing 'o', 'i', and 'l'
-/// with '0', '1', and '1' respectively to prevent homograph attacks
+/// Normalize a DPNS label or full name to its `normalizedLabel`: strip an
+/// optional case-insensitive `.dash` suffix, then lowercase and replace 'o',
+/// 'i', and 'l' with '0', '1', and '1' to prevent homograph attacks
+/// ("Alice.DASH" -> "a11ce"). A normalized label is returned unchanged.
 ///
 /// # Safety
 /// - `name` must be a valid null-terminated C string
@@ -29,7 +32,7 @@ pub unsafe extern "C" fn dash_sdk_dpns_normalize_username(
         }
     };
 
-    let normalized = dash_sdk::platform::dpns_usernames::convert_to_homograph_safe_chars(name_str);
+    let normalized = normalize_dpns_label(name_str);
 
     match utils::c_string_from(normalized) {
         Ok(c_string) => DashSDKResult::success(c_string as *mut std::os::raw::c_void),

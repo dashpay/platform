@@ -4,6 +4,7 @@
 //! These are wrappers around the general contested resource queries that automatically
 //! set the DPNS contract ID and document type.
 
+use super::normalize_dpns_label;
 use crate::platform::fetch_many::FetchMany;
 use crate::{Error, Sdk};
 use dpp::platform_value::{Identifier, Value};
@@ -127,7 +128,9 @@ impl Sdk {
     ///
     /// # Arguments
     ///
-    /// * `label` - The username label to check (e.g., "alice")
+    /// * `name` - The username to check: a label or a full name, in any case (e.g. "alice",
+    ///   "Alice.DASH", or the normalized "a11ce"). It is normalized with
+    ///   [`normalize_dpns_label`] to the index value of the contest.
     /// * `limit` - Maximum number of contenders to return; `None` returns every contender, and
     ///   `Some(0)` returns an empty state without a request
     ///
@@ -136,7 +139,7 @@ impl Sdk {
     /// Returns the contenders and their vote counts for the username
     pub async fn get_contested_dpns_vote_state(
         &self,
-        label: &str,
+        name: &str,
         limit: Option<u32>,
     ) -> Result<Contenders, Error> {
         let dpns_contract_id = self.get_dpns_contract_id()?;
@@ -147,7 +150,7 @@ impl Sdk {
             index_name: "parentNameAndLabel".to_string(),
             index_values: vec![
                 Value::Text(DPNS_PARENT_DOMAIN.to_string()),
-                Value::Text(label.to_string()),
+                Value::Text(normalize_dpns_label(name)),
             ],
         };
 
@@ -992,10 +995,10 @@ mod tests {
     #[tokio::test]
     async fn should_read_every_contender_of_a_vote_state_across_pages() {
         let mut sdk = mock_sdk();
-        expect_vote_state_page(&mut sdk, "alice", None, 100, &contenders(0, 100)).await;
+        expect_vote_state_page(&mut sdk, "a11ce", None, 100, &contenders(0, 100)).await;
         expect_vote_state_page(
             &mut sdk,
-            "alice",
+            "a11ce",
             Some(contender(99)),
             100,
             &contenders(100, 160),
@@ -1003,7 +1006,7 @@ mod tests {
         .await;
 
         let state = sdk
-            .get_contested_dpns_vote_state("alice", None)
+            .get_contested_dpns_vote_state("a11ce", None)
             .await
             .expect("expected both pages to answer");
 
@@ -1020,10 +1023,10 @@ mod tests {
     #[tokio::test]
     async fn should_read_a_vote_state_limit_over_100_in_pages_of_at_most_100() {
         let mut sdk = mock_sdk();
-        expect_vote_state_page(&mut sdk, "alice", None, 100, &contenders(0, 100)).await;
+        expect_vote_state_page(&mut sdk, "a11ce", None, 100, &contenders(0, 100)).await;
         expect_vote_state_page(
             &mut sdk,
-            "alice",
+            "a11ce",
             Some(contender(99)),
             20,
             &contenders(100, 120),
@@ -1031,7 +1034,7 @@ mod tests {
         .await;
 
         let state = sdk
-            .get_contested_dpns_vote_state("alice", Some(120))
+            .get_contested_dpns_vote_state("a11ce", Some(120))
             .await
             .expect("expected both pages to answer");
 
@@ -1045,12 +1048,26 @@ mod tests {
     #[tokio::test]
     async fn should_read_a_vote_state_limit_of_at_most_100_in_one_page() {
         let mut sdk = mock_sdk();
-        expect_vote_state_page(&mut sdk, "alice", None, 10, &contenders(0, 10)).await;
+        expect_vote_state_page(&mut sdk, "a11ce", None, 10, &contenders(0, 10)).await;
 
         let state = sdk
-            .get_contested_dpns_vote_state("alice", Some(10))
+            .get_contested_dpns_vote_state("a11ce", Some(10))
             .await
             .expect("expected the page to answer");
+
+        assert_eq!(state.contenders.len(), 10);
+    }
+
+    /// A full name in any case addresses the contest of its normalized label
+    #[tokio::test]
+    async fn should_read_the_vote_state_of_a_full_name_from_its_normalized_label() {
+        let mut sdk = mock_sdk();
+        expect_vote_state_page(&mut sdk, "a11ce", None, 10, &contenders(0, 10)).await;
+
+        let state = sdk
+            .get_contested_dpns_vote_state("Alice.DASH", Some(10))
+            .await
+            .expect("expected the page of the normalized label to answer");
 
         assert_eq!(state.contenders.len(), 10);
     }

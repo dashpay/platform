@@ -29,6 +29,10 @@ use std::ffi::{c_char, c_void, CStr, CString};
 ///   where `id` is the resource's index value (text verbatim, bytes as
 ///   `"0x"` hex) and `index_values` is the array
 ///   `start_index_values + [id] + end_index_values` in the same encoding.
+///   `index_values` is the rendered path in the FFI string encoding (text as
+///   is, bytes as `"0x"` hex). It can be passed back as the key of
+///   `dash_sdk_contested_resource_get_vote_state` only when it covers every
+///   property of the index and every value is text or bytes.
 /// * Error message if operation fails
 ///
 /// # Safety

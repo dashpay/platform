@@ -71,13 +71,15 @@ extension SDK {
   // MARK: - Label normalization
 
   /// Homograph-normalize a DPNS label the way Platform does before indexing
-  /// it (`o` → `0`, `i`/`l` → `1`, lowercased): `"Alice"` → `"a11ce"`.
+  /// it (`o` → `0`, `i`/`l` → `1`, lowercased): `"Alice"` → `"a11ce"`. A full
+  /// name is accepted too: an optional case-insensitive `.dash` suffix is
+  /// dropped first (`"Alice.DASH"` → `"a11ce"`).
   ///
   /// Every read and write that addresses a vote poll by label must use the
   /// normalized form — Platform stores nothing under the raw form.
   ///
   /// Normalization is protocol behavior and is owned by Rust
-  /// (`dash_sdk::platform::dpns_usernames::convert_to_homograph_safe_chars`,
+  /// (`dash_sdk::platform::dpns_usernames::normalize_dpns_label`,
   /// reached through `dash_sdk_dpns_normalize_username`). This throws rather
   /// than falling back to a Swift reimplementation: a second copy of the
   /// mapping would drift from the canonical one and silently address a poll
