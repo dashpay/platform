@@ -1546,10 +1546,11 @@ fn tc_p4_012_load_query_count_bounded() {
         "per-wallet statement count must be constant \
          (N=1 → {count_one}, N=10 → {count_ten}, delta → {delta})"
     );
-    // Atomic replay also reads durable claims and spent prevout material.
+    // Atomic replay also reads durable claims and spent prevout material,
+    // and the load reads the wallet's locked outpoints.
     let per_wallet = delta / 9;
     assert!(
-        (1..=21).contains(&per_wallet),
+        (1..=22).contains(&per_wallet),
         "per-wallet statement count must be small + bounded, got {per_wallet}"
     );
     // Shared (wallet-count-independent) overhead: the `list_ids` +

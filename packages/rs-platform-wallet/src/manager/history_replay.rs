@@ -1672,7 +1672,7 @@ pub(crate) mod tests {
             .standard_bip44_accounts
             .get_mut(&0)
             .unwrap()
-            .next_receive_address(Some(&xpub), true)
+            .next_receive_address(Some(&xpub))
             .unwrap();
         (wallet, info, address)
     }
@@ -3072,7 +3072,7 @@ pub(crate) mod tests {
                     .standard_bip44_accounts
                     .get_mut(&index)
                     .unwrap()
-                    .next_receive_address(Some(&xpub), true)
+                    .next_receive_address(Some(&xpub))
                     .unwrap()
             })
             .collect();
@@ -4108,7 +4108,7 @@ pub(crate) mod tests {
                 .standard_bip44_accounts
                 .get_mut(&index)
                 .unwrap()
-                .next_receive_address(Some(&xpub), true)
+                .next_receive_address(Some(&xpub))
                 .unwrap()
         });
         (wallet, info, addresses)
@@ -4588,6 +4588,9 @@ pub(crate) mod tests {
         );
         parked.is_locked = true;
         parked.is_instantlocked = true;
+        // A stored spend lock comes back through the wallet's lock set, which
+        // is what sets a coin's lock flag.
+        restored.lock_outpoint(coin);
         // Parked in account 0, though account 1 derives its address.
         restored
             .accounts
