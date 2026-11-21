@@ -454,30 +454,26 @@ struct QueryDetailView: View {
             guard !name.isEmpty else {
                 throw SDKError.internalError("DPNS name is required")
             }
-            return try await sdk.dpnsGetContestedVoteState(name: name.trimmingCharacters(in: .whitespaces))
+            // 0 reads every contender (the SDK pages them)
+            return try await sdk.dpnsGetContestedVoteState(
+                name: name.trimmingCharacters(in: .whitespaces), limit: 0)
 
         case "getContestedDpnsNameVotersForIdentity":
             let name = queryInputs["name"] ?? ""
             let identityId = queryInputs["identityId"] ?? ""
             guard !name.isEmpty else {
-                throw SDKError.internalError("DPNS label is required")
+                throw SDKError.internalError("DPNS name is required")
             }
             guard !identityId.isEmpty else {
                 throw SDKError.internalError("Identity ID is required")
             }
 
-            let label = try sdk.dpnsNormalizeLabel(name.trimmingCharacters(in: .whitespaces))
-            let result = try await sdk.getContestedResourceVotersForIdentity(
-                dataContractId: DPNSVotePoll.contractId,
-                documentTypeName: DPNSVotePoll.documentTypeName,
-                indexName: DPNSVotePoll.indexName,
-                indexValues: DPNSVotePoll.indexValues(normalizedLabel: label),
-                contestantId: identityId,
-                startAtIdentifierInfo: nil,
-                count: 100,
-                orderAscending: true
+            // 0 reads every voter (the SDK pages them)
+            return try await sdk.dpnsGetContestedVotersForIdentity(
+                name: name.trimmingCharacters(in: .whitespaces),
+                contestantId: identityId.trimmingCharacters(in: .whitespaces),
+                limit: 0
             )
-            return result
 
         case "getContestedDpnsNameIdentityVotes":
             let identityId = queryInputs["identityId"] ?? ""
@@ -557,18 +553,13 @@ struct QueryDetailView: View {
             let limitStr = queryInputs["limit"] ?? ""
             let limit = limitStr.isEmpty ? nil : UInt32(limitStr)
             let orderAscending = queryInputs["orderAscending"] == "true"
-            // The wrapper ignores the result type, the locked and abstaining
-            // flag and the offset; fixed values are passed.
             return try await sdk.getContestedResources(
                 documentTypeName: documentTypeName,
                 dataContractId: dataContractId,
                 indexName: indexName,
-                resultType: "documents",
-                allowIncludeLockedAndAbstainingVoteTally: false,
                 startIndexValues: startIndexValues,
                 endIndexValues: endIndexValues,
                 limit: limit,
-                offset: nil,
                 orderAscending: orderAscending
             )
 
@@ -576,13 +567,12 @@ struct QueryDetailView: View {
             let dataContractId = queryInputs["dataContractId"] ?? ""
             let documentTypeName = queryInputs["documentTypeName"] ?? ""
             let indexName = queryInputs["indexName"] ?? ""
-            let indexValues = try parseIndexValues(queryInputs["indexValues"])
+            let indexValues = try parseIndexValues(queryInputs["indexValues"]) ?? []
             let resultTypeInput = (queryInputs["resultType"] ?? "").trimmingCharacters(in: .whitespaces)
             let resultType = resultTypeInput.isEmpty ? "documents_and_vote_tally" : resultTypeInput
             let allowIncludeLockedAndAbstainingVoteTally = queryInputs["allowIncludeLockedAndAbstainingVoteTally"] == "true"
             let countStr = queryInputs["count"] ?? ""
             let count = countStr.isEmpty ? nil : UInt32(countStr)
-            // The wrapper ignores a start position and an order, so the form offers neither.
             return try await sdk.getContestedResourceVoteState(
                 dataContractId: dataContractId,
                 documentTypeName: documentTypeName,
@@ -590,16 +580,14 @@ struct QueryDetailView: View {
                 indexValues: indexValues,
                 resultType: resultType,
                 allowIncludeLockedAndAbstainingVoteTally: allowIncludeLockedAndAbstainingVoteTally,
-                startAtIdentifierInfo: nil,
-                count: count,
-                orderAscending: false
+                count: count
             )
 
         case "getContestedResourceVotersForIdentity":
             let dataContractId = queryInputs["dataContractId"] ?? ""
             let documentTypeName = queryInputs["documentTypeName"] ?? ""
             let indexName = queryInputs["indexName"] ?? ""
-            let indexValues = try parseIndexValues(queryInputs["indexValues"])
+            let indexValues = try parseIndexValues(queryInputs["indexValues"]) ?? []
             let contestantId = queryInputs["contestantId"] ?? ""
             let countStr = queryInputs["count"] ?? ""
             let count = countStr.isEmpty ? nil : UInt32(countStr)
@@ -610,7 +598,6 @@ struct QueryDetailView: View {
                 indexName: indexName,
                 indexValues: indexValues,
                 contestantId: contestantId,
-                startAtIdentifierInfo: nil,
                 count: count,
                 orderAscending: orderAscending
             )
@@ -1016,7 +1003,7 @@ struct QueryDetailView: View {
 
         case "getContestedDpnsNameVotersForIdentity":
             return [
-                QueryInput(name: "name", label: "DPNS Label", required: true, placeholder: "e.g., alice"),
+                QueryInput(name: "name", label: "DPNS Name", required: true, placeholder: "e.g., alice or alice.dash"),
                 QueryInput(name: "identityId", label: "Identity ID", required: true, placeholder: "Base58 identity ID")
             ]
 
@@ -1054,7 +1041,7 @@ struct QueryDetailView: View {
                 QueryInput(name: "indexValues", label: "Index Values", required: true, placeholder: "e.g., dash, a11ce or [\"dash\",\"a11ce\"]"),
                 QueryInput(name: "resultType", label: "Result Type", required: false, placeholder: "Default: documents_and_vote_tally (or documents, vote_tally)"),
                 QueryInput(name: "allowIncludeLockedAndAbstainingVoteTally", label: "Include Locked and Abstaining", required: false, placeholder: "true/false"),
-                QueryInput(name: "count", label: "Count", required: false)
+                QueryInput(name: "count", label: "Request Limit", required: false, placeholder: "Single request; finished polls return all contenders")
             ]
 
         case "getContestedResourceVotersForIdentity":

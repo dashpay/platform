@@ -281,11 +281,8 @@ struct DiagnosticsView: View {
                         documentTypeName: "domain",
                         dataContractId: TestData.dpnsContractId,
                         indexName: "parentNameAndLabel",
-                        resultType: "documents",
-                        allowIncludeLockedAndAbstainingVoteTally: false,
                         startIndexValues: [DPNSVotePoll.parentDomain],
                         limit: 5,
-                        offset: 0,
                         orderAscending: true
                     )
                 }),
@@ -298,9 +295,7 @@ struct DiagnosticsView: View {
                         indexValues: TestData.testContestedIndexValues,
                         resultType: "documents_and_vote_tally",
                         allowIncludeLockedAndAbstainingVoteTally: false,
-                        startAtIdentifierInfo: nil,
-                        count: 5,
-                        orderAscending: true
+                        count: 5
                     )
                 }),
 
@@ -311,7 +306,6 @@ struct DiagnosticsView: View {
                         indexName: "parentNameAndLabel",
                         indexValues: TestData.testContestedIndexValues,
                         contestantId: TestData.testIdentityId,
-                        startAtIdentifierInfo: nil,
                         count: 5,
                         orderAscending: true
                     )

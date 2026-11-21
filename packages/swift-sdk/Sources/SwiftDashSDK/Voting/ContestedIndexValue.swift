@@ -4,9 +4,9 @@ import Foundation
 /// the contested-resource FFI reads.
 ///
 /// The FFI calls behind
-/// ``SDK/getContestedResources(documentTypeName:dataContractId:indexName:resultType:allowIncludeLockedAndAbstainingVoteTally:startIndexValues:endIndexValues:limit:offset:orderAscending:)``,
-/// ``SDK/getContestedResourceVoteState(dataContractId:documentTypeName:indexName:indexValues:resultType:allowIncludeLockedAndAbstainingVoteTally:startAtIdentifierInfo:count:orderAscending:)``,
-/// ``SDK/getContestedResourceVotersForIdentity(dataContractId:documentTypeName:indexName:indexValues:contestantId:startAtIdentifierInfo:count:orderAscending:)``
+/// ``SDK/getContestedResources(documentTypeName:dataContractId:indexName:startIndexValues:endIndexValues:limit:orderAscending:)``,
+/// ``SDK/getContestedResourceVoteState(dataContractId:documentTypeName:indexName:indexValues:resultType:allowIncludeLockedAndAbstainingVoteTally:count:)``,
+/// ``SDK/getContestedResourceVotersForIdentity(dataContractId:documentTypeName:indexName:indexValues:contestantId:count:orderAscending:)``
 /// and
 /// ``SDK/castContestedResourceVote(dataContractId:documentTypeName:indexName:indexValues:choice:proTxHash:votingPrivateKey:)``
 /// take index values as strings, read in this order:

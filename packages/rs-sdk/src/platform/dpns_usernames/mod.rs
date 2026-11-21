@@ -55,7 +55,7 @@ fn extract_dpns_label(name: &str) -> &str {
 /// Accepts either a bare label (e.g. `"alice"`) or a full DPNS name
 /// (e.g. `"alice.dash"`, `"Alice.DASH"`) and returns the normalized label
 /// (e.g. `"a11ce"`). A normalized label is returned unchanged.
-pub fn normalize_dpns_label(input: &str) -> String {
+fn normalize_dpns_label(input: &str) -> String {
     convert_to_homograph_safe_chars(extract_dpns_label(input))
 }
 
