@@ -7,7 +7,7 @@
 //! has the same shape, without `lifecycle`, which the V0 proof does not carry.
 //! [`fetch_document_history_with_lifecycle`] never falls back, for callers that need it.
 
-use super::fetch::fetch_proved;
+use super::fetch::{check_before_sending, fetch_proved};
 use super::{DocumentHistoryQuery, Fetch, ProtocolRequirement, Query};
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::{GetDocumentHistoryRequest, Proof, ResponseMetadata};
@@ -92,6 +92,9 @@ where
     else {
         return fetch_proved::<T, _>(sdk, query, request_settings).await;
     };
+    // A request refused as written is refused before the network is asked for its version,
+    // not with what that answer, or its failure, would say.
+    check_before_sending::<GetDocumentHistoryRequest, T>(&request, settings.protocol_version)?;
     let proven_below = sdk
         .network_proven_below_with_settings(requirement.protocol_version, request_settings)
         .await

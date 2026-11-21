@@ -93,6 +93,31 @@ async fn should_neither_ban_nor_retry_an_older_node_that_refuses_the_request() {
     }
 }
 
+/// A node that has dropped a query version is in step with a network that moved past it,
+/// as a node at protocol 15 is when it refuses history request V0. It must stay reachable,
+/// so the caller can ask it for the network's version and send the newer request.
+#[tokio::test]
+async fn should_neither_ban_nor_retry_a_node_that_refuses_an_older_query_version() {
+    assert_refused_by_one_node_without_a_ban(Status::unknown(
+        "unsupported version for query: document_history, currently supporting versions 1 to \
+         1 on platform protocol 15, given 0",
+    ))
+    .await;
+}
+
+/// A node that does not serve a newer query version yet is behind the network: another
+/// node may serve it.
+#[test]
+fn should_retry_elsewhere_when_a_node_refuses_a_newer_query_version() {
+    assert!(Status::unknown(
+        "unsupported version for query: document_history, currently supporting versions 0 to \
+         0 on platform protocol 14, given 1",
+    )
+    .can_retry());
+    // Not a version refusal the node wrote: the versions cannot be read.
+    assert!(Status::unknown("unsupported version for query: document_history").can_retry());
+}
+
 /// Only a refusal of the request is final: a fault inside the node still bans it and moves
 /// the request to the next node.
 #[tokio::test]

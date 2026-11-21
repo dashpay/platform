@@ -3020,6 +3020,71 @@ mod document_history {
         assert_eq!(sent(&sdk, &v1()).await, 1);
     }
 
+    /// A raw request without a proof is refused as written before the network is asked for
+    /// its version: a cold SDK sends neither the probe nor a history request.
+    #[tokio::test]
+    async fn should_refuse_an_unproved_request_before_asking_for_the_network_version() {
+        use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v1::Filter;
+        use dapi_grpc::platform::v0::get_document_history_request::GetDocumentHistoryRequestV1;
+
+        let sdk = mock_sdk(V14, true, 0);
+        for filter in [Filter::StartAtMs(2000), Filter::StartAtRevision(1)] {
+            let unproved: GetDocumentHistoryRequest = GetDocumentHistoryRequestV1 {
+                data_contract_id: vec![1; 32],
+                document_type_name: "note".into(),
+                document_id: vec![2; 32],
+                limit: Some(5),
+                prove: false,
+                filter: Some(filter),
+            }
+            .into();
+            let error = DocumentHistory::fetch(&sdk, unproved.clone())
+                .await
+                .expect_err("history is read with proofs only");
+            assert!(
+                matches!(&error, Error::InvalidRequest(message) if message.contains("proofs only")),
+                "{error:?}"
+            );
+            assert_eq!(sent(&sdk, &unproved).await, 0);
+        }
+        assert_eq!(probes(&sdk).await, 0);
+    }
+
+    /// The lifecycle read needs the lifecycle proof V1 carries, so on a network proven at
+    /// 14 it is refused as before the fallback, and V0 is not sent for a page it would drop.
+    #[tokio::test]
+    async fn should_refuse_the_lifecycle_read_below_protocol_15_without_sending_v0() {
+        let sdk = mock_sdk(V14, false, 0);
+        answer_probe(&sdk, "pv14").await;
+        let lifecycle_v0: GetDocumentHistoryRequest = GetDocumentHistoryRequestV0 {
+            data_contract_id: vec![1; 32],
+            document_type_name: "note".into(),
+            document_id: vec![2; 32],
+            limit: Some(1),
+            offset: None,
+            start_at_ms: 0,
+            prove: true,
+        }
+        .into();
+        let error = sdk
+            .document_current_lifecycle([1; 32].into(), "note".into(), [2; 32].into())
+            .await
+            .expect_err("lifecycle is not proven below protocol 15");
+        assert!(
+            matches!(
+                error,
+                Error::ProtocolVersionNotActive {
+                    method: "get_document_history",
+                    required: 15,
+                    network: V14,
+                    ..
+                }
+            ),
+            "{error:?}"
+        );
+        assert_eq!(sent(&sdk, &lifecycle_v0).await, 0);
+    }
+
     /// Any other V0 failure is returned as it is: the network is not asked again and V1
     /// is not sent.
     #[tokio::test]

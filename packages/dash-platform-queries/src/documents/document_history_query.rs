@@ -34,7 +34,8 @@ fn malformed(message: &str) -> Error {
 }
 
 /// The V0 form of a V1 history request, which a network below protocol version 15 serves:
-/// a start-time filter, the only one V0 has, starting one millisecond earlier.
+/// a start-time filter, the only one V0 has, starting one millisecond earlier. A start time
+/// of 0 asks V0 for everything after time 0, the earliest it can ask from.
 ///
 /// `Ok(None)` for a valid revision or cursor filter, which has no V0 form. A request V1
 /// itself refuses is an error, as Drive's history query validation reports it
@@ -90,7 +91,10 @@ pub fn history_request_below_protocol_15(
             limit: v1.limit,
             offset: None,
             // V1 starts at its time and V0 after it (Drive's `start_after_ms`), so V0 starts
-            // one millisecond earlier. No revision is written at time 0, so 0 stays 0.
+            // one millisecond earlier. V0 cannot start at time 0 itself, so 0 stays 0, which
+            // asks for everything after time 0. A revision's time is its block's time, in
+            // milliseconds since the Unix epoch, so a network holds no revision at time 0;
+            // only a test that writes with a default block time does.
             start_at_ms: start_at_ms.saturating_sub(1),
             prove: v1.prove,
         }

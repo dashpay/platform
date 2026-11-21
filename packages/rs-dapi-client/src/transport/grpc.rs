@@ -130,6 +130,26 @@ const OLDER_NODE_REQUEST_REFUSALS: [&str; 3] = [
     "proved path queries can not be for limit 0",
 ];
 
+/// Whether `message` is a node refusing a query version older than the ones it serves
+/// (Drive's `QueryError::UnsupportedQueryVersion`): "unsupported version for query: {name},
+/// currently supporting versions {min} to {max} on platform protocol {n}, given {given}",
+/// with `given` below `min`.
+///
+/// The network has moved past that request version, so every node in step with it refuses
+/// the request the same way: the node is not at fault, and the caller must choose a newer
+/// version. A version above `max` is the opposite case, a node behind the network, and
+/// stays retryable on another node.
+fn refuses_an_older_query_version(message: &str) -> bool {
+    let versions = || {
+        let (_, rest) = message.split_once("unsupported version for query: ")?;
+        let (_, rest) = rest.split_once(", currently supporting versions ")?;
+        let (min, rest) = rest.split_once(" to ")?;
+        let (_, given) = rest.rsplit_once(", given ")?;
+        Some((min.parse::<u32>().ok()?, given.trim().parse::<u32>().ok()?))
+    };
+    versions().is_some_and(|(min, given)| given < min)
+}
+
 impl CanRetry for dapi_grpc::tonic::Status {
     fn can_retry(&self) -> bool {
         // A failing SOCKS5 proxy fails every node alike: retrying elsewhere
@@ -144,9 +164,10 @@ impl CanRetry for dapi_grpc::tonic::Status {
         use dapi_grpc::tonic::Code::*;
 
         if matches!(code, Unknown | Internal)
-            && OLDER_NODE_REQUEST_REFUSALS
+            && (OLDER_NODE_REQUEST_REFUSALS
                 .iter()
                 .any(|refusal| self.message().contains(refusal))
+                || refuses_an_older_query_version(self.message()))
         {
             return false;
         }
