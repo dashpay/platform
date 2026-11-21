@@ -1329,6 +1329,12 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::InvalidParameter(..) => {
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
             }
+            // A masternode withdrawal key that is not the identity's current
+            // owner or payout key: caller input, refused before anything was
+            // sent, on the code the boundary returned for it before.
+            PlatformWalletError::MasternodeWithdrawalKeyMismatch { .. } => {
+                PlatformWalletFFIResultCode::ErrorInvalidParameter
+            }
             // A second producer of code 31 (the arm above is the first),
             // reached without any marker inspection at this layer: message
             // signing found no signable account for the address, or the signer
@@ -1689,6 +1695,7 @@ mod tests {
     use dpp::consensus::basic::{BasicError, UnsupportedVersionError};
     use dpp::consensus::state::address_funds::AddressInvalidNonceError;
     use dpp::consensus::state::token::TokenOncePerIdentityDistributionAlreadyClaimedError;
+    use dpp::identity::Purpose;
     use dpp::prelude::Identifier;
     use dpp::ProtocolError;
     use key_wallet::account::StandardAccountType;
@@ -1830,6 +1837,22 @@ mod tests {
     fn invalid_parameter_maps_to_the_parameter_code() {
         let result: PlatformWalletFFIResult =
             PlatformWalletError::InvalidParameter("names a set of accounts".to_string()).into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+    }
+
+    /// A masternode withdrawal key that is not the identity's current key is
+    /// caller input: hosts keep the parameter code they had for it.
+    #[test]
+    fn should_map_a_masternode_withdrawal_key_mismatch_to_the_parameter_code() {
+        let result: PlatformWalletFFIResult =
+            PlatformWalletError::MasternodeWithdrawalKeyMismatch {
+                identity_id: Identifier::from([1u8; 32]),
+                purpose: Purpose::TRANSFER,
+            }
+            .into();
         assert_eq!(
             result.code,
             PlatformWalletFFIResultCode::ErrorInvalidParameter

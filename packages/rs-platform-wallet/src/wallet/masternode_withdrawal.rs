@@ -27,6 +27,7 @@
 //!    does the same through a [`key_wallet::signer::Signer`] (on iOS the
 //!    mnemonic-resolver-backed signer — the seed never becomes resident).
 
+use std::convert::Infallible;
 use std::fmt;
 
 use async_trait::async_trait;
@@ -424,11 +425,18 @@ pub enum MasternodeKeySource<'a, K: MasterKeyProvider> {
     },
     /// A host-held key. It signs for the owner identity's enabled key of the
     /// request's purpose that it reports it can sign with; with none, the
-    /// withdrawal is refused before anything is broadcast. Name `K` as
-    /// [`std::convert::Infallible`].
+    /// withdrawal is refused before anything is broadcast. Build it with
+    /// [`MasternodeKeySource::host`].
     Host {
         signer: &'a dyn IdentitySigner<IdentityPublicKey>,
     },
+}
+
+impl<'a> MasternodeKeySource<'a, Infallible> {
+    /// A [`Self::Host`] source, which needs no master key provider.
+    pub fn host(signer: &'a dyn IdentitySigner<IdentityPublicKey>) -> Self {
+        Self::Host { signer }
+    }
 }
 
 /// Why [`PlatformWalletManager::masternode_withdraw_with`] failed.
@@ -510,8 +518,9 @@ fn p2pkh_address(hash: &[u8; 20], network: Network) -> DashAddress {
 }
 
 /// The owner identity's enabled key for `signing_key` (OWNER or TRANSFER
-/// purpose) that `signer` can sign with. Refuses when there is none, so
-/// nothing is signed or broadcast.
+/// purpose) that `signer` can sign with. Refuses with
+/// [`PlatformWalletError::MasternodeWithdrawalKeyMismatch`] when there is
+/// none, so nothing is signed or broadcast.
 fn select_withdrawal_key<'a>(
     identity: &'a Identity,
     signing_key: MasternodeWithdrawalKey,
@@ -526,12 +535,9 @@ fn select_withdrawal_key<'a>(
         .values()
         .filter(|key| is_enabled_hash160_key(key, purpose))
         .find(|key| signer.can_sign_with(key))
-        .ok_or_else(|| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "the masternode identity {} has no enabled {purpose:?} key this signer can sign \
-                 with; not broadcasting",
-                identity.id()
-            ))
+        .ok_or_else(|| PlatformWalletError::MasternodeWithdrawalKeyMismatch {
+            identity_id: identity.id(),
+            purpose,
         })
 }
 
@@ -959,7 +965,6 @@ mod tests {
     use key_wallet::Mnemonic;
     use key_wallet_manager::WalletManager;
     use std::cell::Cell;
-    use std::convert::Infallible;
     use std::str::FromStr;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::sync::Arc;
@@ -1613,10 +1618,9 @@ mod tests {
             ..transfer_request()
         };
 
-        let result = runtime.block_on(manager.masternode_withdraw_with(
-            request,
-            MasternodeKeySource::<Infallible>::Host { signer: &adapter },
-        ));
+        let result = runtime.block_on(
+            manager.masternode_withdraw_with(request, MasternodeKeySource::host(&adapter)),
+        );
 
         assert!(
             matches!(
@@ -1660,7 +1664,10 @@ mod tests {
                 vec![transfer(0, hash, true), transfer(1, [0xEE; 20], false)],
                 MasternodeWithdrawalKey::Transfer
             ),
-            Err(PlatformWalletError::InvalidIdentityData(_))
+            Err(PlatformWalletError::MasternodeWithdrawalKeyMismatch {
+                purpose: Purpose::TRANSFER,
+                ..
+            })
         ));
         // The signer's key, enabled, after a disabled copy.
         assert_eq!(
@@ -1677,7 +1684,10 @@ mod tests {
                 vec![transfer(0, hash, false)],
                 MasternodeWithdrawalKey::Owner
             ),
-            Err(PlatformWalletError::InvalidIdentityData(_))
+            Err(PlatformWalletError::MasternodeWithdrawalKeyMismatch {
+                purpose: Purpose::OWNER,
+                ..
+            })
         ));
         assert_eq!(
             selected(
@@ -1720,7 +1730,10 @@ mod tests {
         let selected = select_withdrawal_key(&identity, MasternodeWithdrawalKey::Owner, &adapter);
 
         assert!(
-            matches!(selected, Err(PlatformWalletError::InvalidIdentityData(_))),
+            matches!(
+                selected,
+                Err(PlatformWalletError::MasternodeWithdrawalKeyMismatch { .. })
+            ),
             "{selected:?}"
         );
     }
@@ -1798,10 +1811,8 @@ mod tests {
                 master_key: &provider,
             },
         );
-        let from_host = manager.masternode_withdraw_with(
-            transfer_request(),
-            MasternodeKeySource::<Infallible>::Host { signer: &adapter },
-        );
+        let from_host = manager
+            .masternode_withdraw_with(transfer_request(), MasternodeKeySource::host(&adapter));
 
         assert_send(&from_wallet);
         assert_send(&from_host);
