@@ -106,19 +106,18 @@ pub struct PlatformKeySnapshot {
 
 impl PlatformKeySnapshot {
     /// Take the owner identity's enabled OWNER and TRANSFER keys and its
-    /// balance; a key it lacks keeps its last known value.
+    /// balance. A key the identity no longer has enabled is gone: Drive
+    /// disables every payout key when the payout is no sole P2PKH output.
     fn learn_owner_identity(&mut self, identity: &Identity) {
-        self.owner_key_hash = enabled_key_hash(identity, Purpose::OWNER).or(self.owner_key_hash);
-        self.payout_key_hash =
-            enabled_key_hash(identity, Purpose::TRANSFER).or(self.payout_key_hash);
+        self.owner_key_hash = enabled_key_hash(identity, Purpose::OWNER);
+        self.payout_key_hash = enabled_key_hash(identity, Purpose::TRANSFER);
         self.owner_identity_balance = Some(identity.balance());
     }
 
-    /// Take the operator identity's enabled TRANSFER key; without one the
-    /// last known value stays.
+    /// Take the operator identity's enabled TRANSFER key; `None` once Drive
+    /// disabled it with the removal of the operator payout.
     fn learn_operator_identity(&mut self, identity: &Identity) {
-        self.operator_payout_key_hash =
-            enabled_key_hash(identity, Purpose::TRANSFER).or(self.operator_payout_key_hash);
+        self.operator_payout_key_hash = enabled_key_hash(identity, Purpose::TRANSFER);
     }
 }
 
