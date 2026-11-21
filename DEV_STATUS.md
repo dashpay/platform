@@ -12,7 +12,7 @@ The full test suite runs nightly at 11:00 PM UTC, including Docker image builds 
 
 ### Docker Images
 
-Docker images are built nightly and pushed to ECR, tagged by commit SHA.
+Docker images are built nightly and pushed to the GitHub Container Registry (GHCR), tagged by commit SHA. They are deleted after three days.
 
 | Image | Target |
 |-------|--------|
@@ -20,7 +20,7 @@ Docker images are built nightly and pushed to ECR, tagged by commit SHA.
 | `rs-dapi` | `rs-dapi` |
 | `dashmate-helper` | `dashmate-helper` |
 
-Images are available at: `<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/<image>:sha-<commit>`
+Images are available at: `ghcr.io/dashpay/platform/ci/<image>:sha-<commit>`
 
 To pull the latest nightly image, find the commit SHA from the most recent [scheduled Tests run](https://github.com/dashpay/platform/actions/workflows/tests.yml?query=event%3Aschedule).
 
