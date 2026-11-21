@@ -15,20 +15,27 @@ use std::ffi::{c_char, c_void, CStr, CString};
 /// * `contract_id` - Base58-encoded contract identifier
 /// * `document_type_name` - Name of the document type
 /// * `index_name` - Name of the index
-/// * `start_index_values_json` - JSON array of start index values. A
-///   `"0x"`-prefixed element is hex-decoded to bytes; any other element is
-///   taken verbatim as text (matches the cast-vote write path).
-/// * `end_index_values_json` - JSON array of end index values, parsed with the
-///   same `"0x"`-prefix-means-bytes convention.
+/// * `start_index_values_json` - JSON array of start index values. An
+///   element starting with a backslash is text with that one backslash
+///   removed; otherwise a `"0x"`-prefixed element is hex-decoded to bytes;
+///   otherwise the element is text, verbatim. To pass text that itself starts
+///   with `"0x"` or a backslash (the DPNS label "oxford" normalizes to
+///   `"0xf0rd"`), prepend one backslash. Shared with the read and vote FFIs.
+/// * `end_index_values_json` - JSON array of end index values, read the same
+///   way.
 /// * `count` - Maximum number of resources to return
 /// * `order_ascending` - Whether to order results in ascending order
 ///
 /// # Returns
 /// * JSON array of contested resources or null if not found. Each element is
 ///   `{"id", "contract_id", "document_type_name", "index_name", "index_values"}`
-///   where `id` is the resource's index value (text verbatim, bytes as
-///   `"0x"` hex) and `index_values` is the array
-///   `start_index_values + [id] + end_index_values` in the same encoding.
+///   where `id` is the resource's index value and `index_values` is the array
+///   `start_index_values + [id] + end_index_values`, each in the input
+///   encoding: text verbatim, or with one backslash in front when it starts
+///   with `"0x"` or a backslash; bytes and identifiers as `"0x"` hex. Text
+///   and byte values parse back unchanged; other kinds (integers) are for
+///   display only. `index_values` addresses a poll only when it covers every
+///   property of the index.
 /// * Error message if operation fails
 ///
 /// # Safety

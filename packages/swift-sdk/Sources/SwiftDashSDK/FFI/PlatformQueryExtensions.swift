@@ -1675,7 +1675,8 @@ extension SDK {
     /// Each returned resource carries `id` (its own index value) and
     /// `index_values` (the path to pass to
     /// ``getContestedResourceVoteState(dataContractId:documentTypeName:indexName:indexValues:resultType:allowIncludeLockedAndAbstainingVoteTally:startAtIdentifierInfo:count:orderAscending:)``),
-    /// both already encoded this way, so they may be passed back unchanged.
+    /// both already encoded this way. See ``ContestedIndexValue`` for when
+    /// they can be passed back unchanged.
     public func getContestedResources(
         documentTypeName: String,
         dataContractId: String,

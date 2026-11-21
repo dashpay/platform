@@ -1,5 +1,7 @@
 package org.dashfoundation.dashsdk.voting
 
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import org.dashfoundation.dashsdk.persistence.toHex
 
 /**
@@ -20,7 +22,10 @@ import org.dashfoundation.dashsdk.persistence.toHex
  * `0xf0rd`, which a raw string would send as hex.
  *
  * The `id` and `index_values` the contested resources query returns are
- * already encoded this way and may be passed back unchanged.
+ * already encoded this way. They may be passed back unchanged only when they
+ * are text or bytes and the path covers every property of the index (for
+ * DPNS, `["dash", label]`); an integer value comes back as display text and
+ * does not address the poll.
  */
 object ContestedIndexValue {
 
@@ -35,3 +40,11 @@ object ContestedIndexValue {
     /** Encode a byte value: `0x` followed by lowercase hex. */
     fun bytes(value: ByteArray): String = "0x" + value.toHex()
 }
+
+/**
+ * Encode already-encoded index values (see [ContestedIndexValue]) as the JSON
+ * string array the contested-resource FFI calls take. A real JSON serializer,
+ * so control characters and quotes in a text value are escaped too.
+ */
+internal fun encodeIndexValuesJson(values: List<String>): String =
+    JsonArray(values.map(::JsonPrimitive)).toString()

@@ -15,9 +15,12 @@ use std::ffi::{c_char, c_void, CStr, CString};
 /// * `contract_id` - Base58-encoded contract identifier
 /// * `document_type_name` - Name of the document type
 /// * `index_name` - Name of the index
-/// * `index_values_json` - JSON array of index values. A `"0x"`-prefixed
-///   element is hex-decoded to bytes; any other element is taken verbatim as
-///   text (matches the cast-vote write path).
+/// * `index_values_json` - JSON array of index values. An
+///   element starting with a backslash is text with that one backslash
+///   removed; otherwise a `"0x"`-prefixed element is hex-decoded to bytes;
+///   otherwise the element is text, verbatim. To pass text that itself starts
+///   with `"0x"` or a backslash (the DPNS label "oxford" normalizes to
+///   `"0xf0rd"`), prepend one backslash. Shared with the read and vote FFIs.
 /// * `contestant_id` - Base58-encoded contestant identifier
 /// * `count` - Maximum number of voters to return
 /// * `order_ascending` - Whether to order results in ascending order

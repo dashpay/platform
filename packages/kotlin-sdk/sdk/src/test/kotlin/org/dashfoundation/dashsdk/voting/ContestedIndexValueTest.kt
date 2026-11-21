@@ -1,6 +1,10 @@
 package org.dashfoundation.dashsdk.voting
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /**
@@ -41,5 +45,17 @@ class ContestedIndexValueTest {
             ContestedIndexValue.bytes(byteArrayOf(0xFA.toByte(), 0xCE.toByte(), 0x00, 0x01)),
         )
         assertEquals("0x", ContestedIndexValue.bytes(ByteArray(0)))
+    }
+
+    @Test
+    fun shouldEncodeIndexValuesAsAJsonArrayThatKeepsEscapesAndControlCharacters() {
+        val values = listOf("dash", ContestedIndexValue.text("0xf0rd"), "a\nb\"c\\d")
+        val json = encodeIndexValuesJson(values)
+        // Rust's serde_json rejects a raw control character inside a string.
+        assertFalse(json.contains('\n'))
+        val decoded = Json.parseToJsonElement(json)
+            .jsonArray
+            .map { it.jsonPrimitive.content }
+        assertEquals(listOf("dash", "\\0xf0rd", "a\nb\"c\\d"), decoded)
     }
 }

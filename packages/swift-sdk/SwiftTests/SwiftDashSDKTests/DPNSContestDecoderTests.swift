@@ -398,6 +398,13 @@ final class DPNSContestDecoderTests: XCTestCase {
     XCTAssertEqual(ContestedIndexValue.text("\\0xf0rd"), "\\\\0xf0rd")
   }
 
+  func testTextComparesPrefixesAsUTF8BytesNotGraphemes() {
+    // A combining mark after the prefix merges it into one grapheme, so
+    // `hasPrefix` would miss it; Rust still sees the `0x` or `\` bytes.
+    XCTAssertEqual(ContestedIndexValue.text("0x\u{301}"), "\\0x\u{301}")
+    XCTAssertEqual(ContestedIndexValue.text("\\\u{301}a"), "\\\\\u{301}a")
+  }
+
   func testTextLeavesOtherValuesUnchanged() {
     XCTAssertEqual(ContestedIndexValue.text("a11ce"), "a11ce")
     XCTAssertEqual(ContestedIndexValue.text("dash"), "dash")

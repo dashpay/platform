@@ -89,7 +89,7 @@ class VoteCasting internal constructor() {
                 dataContractId,
                 documentTypeName,
                 indexName,
-                encodeIndexValues(indexValues),
+                encodeIndexValuesJson(indexValues),
                 choice.discriminant,
                 contender,
                 proTxHash,
@@ -98,16 +98,4 @@ class VoteCasting internal constructor() {
             )
         }
     }
-
-    /**
-     * Encode [values] as a JSON array of strings — the shape
-     * `dash_sdk_contested_resource_cast_vote` parses (each element read as
-     * described on [castVote]'s `indexValues`). Minimal JSON escaping (quote +
-     * backslash) matches the DPNS text-label inputs the vote poll uses.
-     */
-    private fun encodeIndexValues(values: List<String>): String =
-        values.joinToString(prefix = "[", postfix = "]", separator = ",") { v ->
-            val escaped = v.replace("\\", "\\\\").replace("\"", "\\\"")
-            "\"$escaped\""
-        }
 }

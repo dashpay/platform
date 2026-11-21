@@ -21,13 +21,20 @@ import Foundation
 /// indexed as `0xf0rd`, which a raw string would send as hex.
 ///
 /// The `id` and `index_values` the contested resources query returns are
-/// already encoded this way and may be passed back unchanged.
+/// already encoded this way. They may be passed back unchanged only when
+/// they are text or bytes and the path covers every property of the index
+/// (for DPNS, `["dash", label]`); an integer value comes back as display
+/// text and does not address the poll.
 public enum ContestedIndexValue {
     /// Encode a text value: one backslash is prepended when `value` starts
     /// with `0x` or with a backslash, otherwise `value` is returned
     /// unchanged. `"0xf0rd"` becomes `"\0xf0rd"`, `"a11ce"` stays `"a11ce"`.
+    ///
+    /// The prefixes are compared as UTF-8 bytes, as Rust reads them, not as
+    /// grapheme clusters: `"0x\u{301}"` starts with `0x` on the wire even
+    /// though `String.hasPrefix("0x")` is false for it.
     public static func text(_ value: String) -> String {
-        if value.hasPrefix("0x") || value.hasPrefix("\\") {
+        if value.utf8.starts(with: "0x".utf8) || value.utf8.starts(with: "\\".utf8) {
             return "\\" + value
         }
         return value

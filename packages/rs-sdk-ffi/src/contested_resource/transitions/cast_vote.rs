@@ -73,10 +73,13 @@ pub enum ContestedResourceVoteChoiceFFI {
 /// * `document_type_name` — contested document type (e.g. `"domain"`).
 /// * `index_name` — contested index name (e.g. `"parentNameAndLabel"`).
 /// * `index_values_json` — JSON array of index values. Each element is decoded
-///   via an explicit type tag: a `"0x"`-prefixed string is hex-decoded to
-///   `Value::Bytes`, and any other string is taken verbatim as `Value::Text`.
-///   DPNS index values are text labels, so typical callers pass plain text
-///   (no `0x`). This matches the parsing used by the vote-state query FFI.
+///   via an explicit type tag: an element starting with a backslash is
+///   `Value::Text` with that one backslash removed; otherwise a
+///   `"0x"`-prefixed string is hex-decoded to `Value::Bytes`; otherwise the
+///   string is taken verbatim as `Value::Text`. To pass text that itself
+///   starts with `"0x"` or a backslash (the DPNS label "oxford" normalizes
+///   to `"0xf0rd"`), prepend one backslash. This matches the parsing used by
+///   the vote-state query FFI.
 /// * `vote_choice` — discriminant byte matching
 ///   [`ContestedResourceVoteChoiceFFI`]: `TowardsIdentity` (`0`), `Abstain`
 ///   (`1`) or `Lock` (`2`). Any other value is rejected with

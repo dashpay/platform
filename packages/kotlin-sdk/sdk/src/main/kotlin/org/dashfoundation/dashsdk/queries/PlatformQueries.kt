@@ -200,7 +200,8 @@ class Voting internal constructor(private val sdk: Sdk) {
      * must be sent as `\0xf0rd`) and bytes with [ContestedIndexValue.bytes].
      *
      * Each returned resource carries `id` and `index_values`, already encoded
-     * this way, so they may be passed back unchanged.
+     * this way (see [ContestedIndexValue] for when they can be passed back
+     * unchanged).
      */
     suspend fun contestedResources(
         contractId: String,
@@ -502,6 +503,17 @@ class Dpns internal constructor(private val sdk: Sdk) {
     /** Check label availability; returns the JSON availability object. */
     suspend fun checkAvailability(label: String): String? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.dpnsCheckAvailability(sdk.handle, label) }
+    }
+
+    /**
+     * Homograph-normalize a DPNS label (`oxford` -> `0xf0rd`), the form
+     * Platform indexes names and contests under. Computed by Rust
+     * (`dash_sdk_dpns_normalize_username`); no network call.
+     */
+    fun normalizeLabel(label: String): String = mapNativeErrors {
+        checkNotNull(QueriesNative.dpnsNormalizeUsername(label)) {
+            "DPNS label normalization returned no value"
+        }
     }
 
     /** Usernames owned by an identity (JSON array). */
