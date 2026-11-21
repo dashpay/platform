@@ -1,6 +1,8 @@
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 use dpp::platform_value::string_encoding::Encoding;
+use key_wallet::bip32::Error as Bip32Error;
+use key_wallet::Error as KeyWalletError;
 use platform_wallet::changeset::PersistenceErrorKind;
 use platform_wallet::PlatformWalletError;
 use std::ffi::CString;
@@ -1337,6 +1339,15 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             | PlatformWalletError::MasternodeWithdrawalKeyAbsent { .. } => {
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
             }
+            // A provider key index hint in the hardened range is caller input;
+            // any other refused provider key lookup is a wallet failure.
+            PlatformWalletError::ProviderKeyLookup {
+                source: KeyWalletError::Bip32(Bip32Error::InvalidChildNumber(_)),
+                ..
+            } => PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            PlatformWalletError::ProviderKeyLookup { .. } => {
+                PlatformWalletFFIResultCode::ErrorWalletOperation
+            }
             // A second producer of code 31 (the arm above is the first),
             // reached without any marker inspection at this layer: message
             // signing found no signable account for the address, or the signer
@@ -1701,7 +1712,7 @@ mod tests {
     use dpp::ProtocolError;
     use key_wallet::account::StandardAccountType;
     use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
-    use platform_wallet::MasternodeWithdrawalKey;
+    use platform_wallet::{MasternodeWithdrawalKey, ProviderKeyRole};
     use std::time::Duration;
 
     #[test]
@@ -1861,6 +1872,32 @@ mod tests {
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
             );
         }
+    }
+
+    /// A hardened provider key index hint is caller input; any other refused
+    /// lookup is a wallet failure.
+    #[test]
+    fn should_map_a_refused_provider_key_lookup_by_its_cause() {
+        let role = ProviderKeyRole::Owner;
+        let hardened_hint: PlatformWalletFFIResult = PlatformWalletError::ProviderKeyLookup {
+            role,
+            source: KeyWalletError::Bip32(Bip32Error::InvalidChildNumber(1 << 31)),
+        }
+        .into();
+        assert_eq!(
+            hardened_hint.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+
+        let wallet_failure: PlatformWalletFFIResult = PlatformWalletError::ProviderKeyLookup {
+            role,
+            source: KeyWalletError::KeyError("account xpub unreadable".to_string()),
+        }
+        .into();
+        assert_eq!(
+            wallet_failure.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
     }
 
     #[test]

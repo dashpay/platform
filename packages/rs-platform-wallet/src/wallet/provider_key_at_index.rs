@@ -865,9 +865,10 @@ impl PlatformWallet {
     ///
     /// Seedless: delegates to key-wallet's
     /// [`ManagedWalletInfo::find_provider_key`], which checks the key at
-    /// `index_hint` first, then the provider pool, then
-    /// [`DEFAULT_PROVIDER_KEY_WINDOW`] keys past it. A hint is verified, never
-    /// trusted, so it finds a key past that window.
+    /// `index_hint` first, then the provider pool's entries, then every index
+    /// below [`DEFAULT_PROVIDER_KEY_WINDOW`]. A key at or past that index and
+    /// outside the pool is found only through its hint, which is verified,
+    /// never trusted.
     ///
     /// Blocking (wallet-manager `blocking_read` — never call from an async
     /// runtime worker).
@@ -1625,6 +1626,7 @@ mod find_provider_key_tests {
     use super::*;
     use crate::test_support::sync_test_platform_wallet;
     use dashcore::hashes::hash160;
+    use key_wallet::bip32::Error as Bip32Error;
 
     /// An index well past the lookup window and the test wallet's pools.
     const FAR_INDEX: u32 = 300;
@@ -1718,7 +1720,7 @@ mod find_provider_key_tests {
                 result,
                 Err(PlatformWalletError::ProviderKeyLookup {
                     role: ProviderKeyRole::Owner,
-                    ..
+                    source: KeyWalletError::Bip32(Bip32Error::InvalidChildNumber(_)),
                 })
             ),
             "{result:?}"
