@@ -320,6 +320,41 @@ mod tests {
         assert_eq!(sdk.mock_dapi().lock().await.request_count(&raw), 0);
     }
 
+    /// A raw revision or cursor filter V1 refuses too is invalid, not a protocol 15 feature,
+    /// and nothing is sent.
+    #[tokio::test]
+    async fn should_refuse_a_malformed_raw_revision_or_cursor_filter_as_invalid() {
+        let sdk = sdk_at_protocol_14();
+        for (filter, limit) in [
+            (Filter::Revision(0), Some(1)),
+            (
+                Filter::StartAfter(
+                    dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v1::Cursor {
+                        time_ms: 2000,
+                        revision: 0,
+                    },
+                ),
+                Some(5),
+            ),
+            (Filter::Revision(2), Some(5)),
+        ] {
+            let raw: GetDocumentHistoryRequest = GetDocumentHistoryRequestV1 {
+                limit,
+                ..match raw_v1(Some(filter.clone()), true).version {
+                    Some(Version::V1(v1)) => v1,
+                    _ => unreachable!(),
+                }
+            }
+            .into();
+            let error = DocumentHistory::fetch(&sdk, raw.clone()).await.unwrap_err();
+            assert!(
+                matches!(&error, Error::InvalidRequest(_)),
+                "{filter:?}: {error:?}"
+            );
+            assert_eq!(sdk.mock_dapi().lock().await.request_count(&raw), 0);
+        }
+    }
+
     /// History is read with proofs only: an unproved raw request is refused before either
     /// version is sent.
     #[tokio::test]

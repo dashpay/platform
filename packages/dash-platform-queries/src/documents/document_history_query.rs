@@ -50,10 +50,19 @@ pub fn history_request_below_protocol_15(
     let Some(Version::V1(v1)) = request.version else {
         return Ok(Some(request));
     };
-    let start_at_ms = match &v1.filter {
+    // Every filter is validated as V1 first, so `Ok(None)` means only a valid filter with no
+    // V0 form, and a request V1 refuses too is reported as such.
+    let filter = match &v1.filter {
         None => return Err(malformed("a history request needs exactly one filter")),
-        Some(Filter::StartAtMs(start_at_ms)) => *start_at_ms,
-        Some(_) => return Ok(None),
+        Some(Filter::StartAtMs(time)) => DocumentHistoryFilter::StartAtTime(*time),
+        Some(Filter::StartAfter(cursor)) => DocumentHistoryFilter::StartAfter {
+            time_ms: cursor.time_ms,
+            revision: cursor.revision,
+        },
+        Some(Filter::StartAtRevision(revision)) => {
+            DocumentHistoryFilter::StartAtRevision(*revision)
+        }
+        Some(Filter::Revision(revision)) => DocumentHistoryFilter::Revision(*revision),
     };
     let identifier = |bytes: &[u8]| {
         <[u8; 32]>::try_from(bytes).map_err(|_| malformed("history identifiers are 32 bytes"))
@@ -62,7 +71,7 @@ pub fn history_request_below_protocol_15(
         contract_id: identifier(&v1.data_contract_id)?,
         document_type_name: v1.document_type_name.clone(),
         document_id: identifier(&v1.document_id)?,
-        filter: DocumentHistoryFilter::StartAtTime(start_at_ms),
+        filter: filter.clone(),
         limit: v1
             .limit
             .map(u16::try_from)
@@ -70,6 +79,9 @@ pub fn history_request_below_protocol_15(
             .map_err(|_| malformed("history limit out of bounds"))?,
     }
     .validate()?;
+    let DocumentHistoryFilter::StartAtTime(start_at_ms) = filter else {
+        return Ok(None);
+    };
     Ok(Some(
         GetDocumentHistoryRequestV0 {
             data_contract_id: v1.data_contract_id,
