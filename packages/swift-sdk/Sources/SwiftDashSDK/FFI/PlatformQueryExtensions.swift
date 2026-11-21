@@ -1748,6 +1748,11 @@ extension SDK {
 
     /// Get contested resource vote state.
     ///
+    /// `indexValues` is the poll's full index key, one value per index
+    /// property (for DPNS: `["dash", <normalized label>]`). Drive refuses a
+    /// key of the wrong length. Index values use the FFI convention: a
+    /// `"0x"`-prefixed value is hex bytes, anything else is text.
+    ///
     /// `resultType` names the FFI result type: `"documents"`, `"vote_tally"`
     /// or `"documents_and_vote_tally"`. The result is the FFI's JSON object
     /// (`contenders`, and with a tally `abstain_vote_tally`,
@@ -1764,7 +1769,7 @@ extension SDK {
         dataContractId: String,
         documentTypeName: String,
         indexName: String,
-        indexValues: [String]? = nil,
+        indexValues: [String],
         resultType: String,
         allowIncludeLockedAndAbstainingVoteTally: Bool,
         count: UInt32?
@@ -1781,7 +1786,7 @@ extension SDK {
             )
         }
 
-        let indexValuesJson = try Self.indexValuesJson(indexValues ?? [])
+        let indexValuesJson = try Self.indexValuesJson(indexValues)
 
         let json = try await performBlockingQuery { handle in
             try Self.consumeOptionalStringResult(
@@ -1809,16 +1814,21 @@ extension SDK {
     /// nobody voted. For a DPNS username use
     /// ``dpnsGetContestedVotersForIdentity(name:contestantId:limit:)``,
     /// which reports a contest that ended.
+    ///
+    /// `indexValues` is the poll's full index key, one value per index
+    /// property (for DPNS: `["dash", <normalized label>]`). Drive refuses a
+    /// key of the wrong length. Index values use the FFI convention: a
+    /// `"0x"`-prefixed value is hex bytes, anything else is text.
     public func getContestedResourceVotersForIdentity(
         dataContractId: String,
         documentTypeName: String,
         indexName: String,
-        indexValues: [String]? = nil,
+        indexValues: [String],
         contestantId: String,
         count: UInt32?,
         orderAscending: Bool
     ) async throws -> [[String: Any]] {
-        let indexValuesJson = try Self.indexValuesJson(indexValues ?? [])
+        let indexValuesJson = try Self.indexValuesJson(indexValues)
 
         let json = try await performBlockingQuery { handle in
             try Self.consumeOptionalStringResult(

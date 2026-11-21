@@ -567,7 +567,7 @@ struct QueryDetailView: View {
             let dataContractId = queryInputs["dataContractId"] ?? ""
             let documentTypeName = queryInputs["documentTypeName"] ?? ""
             let indexName = queryInputs["indexName"] ?? ""
-            let indexValues = try parseIndexValues(queryInputs["indexValues"])
+            let indexValues = try parseIndexValues(queryInputs["indexValues"]) ?? []
             let resultTypeInput = (queryInputs["resultType"] ?? "").trimmingCharacters(in: .whitespaces)
             let resultType = resultTypeInput.isEmpty ? "documents_and_vote_tally" : resultTypeInput
             let allowIncludeLockedAndAbstainingVoteTally = queryInputs["allowIncludeLockedAndAbstainingVoteTally"] == "true"
@@ -587,7 +587,7 @@ struct QueryDetailView: View {
             let dataContractId = queryInputs["dataContractId"] ?? ""
             let documentTypeName = queryInputs["documentTypeName"] ?? ""
             let indexName = queryInputs["indexName"] ?? ""
-            let indexValues = try parseIndexValues(queryInputs["indexValues"])
+            let indexValues = try parseIndexValues(queryInputs["indexValues"]) ?? []
             let contestantId = queryInputs["contestantId"] ?? ""
             let countStr = queryInputs["count"] ?? ""
             let count = countStr.isEmpty ? nil : UInt32(countStr)

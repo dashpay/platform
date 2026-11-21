@@ -5,6 +5,7 @@
 //! set the DPNS contract ID and document type.
 
 use super::normalize_dpns_label;
+use crate::platform::documents::contest_vote_state::read_not_older_than;
 use crate::platform::fetch_many::FetchMany;
 use crate::{Error, Sdk};
 use dpp::platform_value::{Identifier, Value};
@@ -175,6 +176,11 @@ impl Sdk {
     /// voters; when the nodes keep answering it from an older block, the error is a stale
     /// node one, and the call can be made again.
     ///
+    /// The pages are not one block's snapshot, but they never go back: a page after the first
+    /// is read at a height not below the page that gave its start, so an older block cannot
+    /// end the list early or leave out voters the earlier page already counted past. Nodes
+    /// that keep answering it from an older block are the same stale node error.
+    ///
     /// # Arguments
     ///
     /// * `name` - The username: a label or a full name, in any case (e.g. "alice",
@@ -224,17 +230,21 @@ impl Sdk {
                 }
                 None => DEFAULT_QUERY_LIMIT,
             };
-            let (page, metadata) = Voter::fetch_many_with_metadata(
-                self,
-                ContestedDocumentVotePollVotesDriveQuery {
-                    vote_poll: vote_poll.clone(),
-                    contestant_id,
-                    start_at,
-                    limit: Some(page_limit),
-                    offset: None,
-                    order_ascending: true,
-                },
-                None,
+            let query = ContestedDocumentVotePollVotesDriveQuery {
+                vote_poll: vote_poll.clone(),
+                contestant_id,
+                start_at,
+                limit: Some(page_limit),
+                offset: None,
+                order_ascending: true,
+            };
+            // A page continues the one that gave its start, whose height `last_page_height`
+            // still is: from an older block it could be short of voters that page already
+            // counted, or end the list early
+            let (page, metadata): (Voters, _) = read_not_older_than(
+                last_page_height,
+                |_| false,
+                || Voter::fetch_many_with_metadata(self, query.clone(), None),
             )
             .await?;
             let read = page.0.len();
@@ -1157,17 +1167,16 @@ mod tests {
         assert_eq!(state.contenders.len(), 10);
     }
 
-    /// The page of voters for `contestant` in the contest for `label` after `start_after`,
-    /// built here rather than with the code under test
-    async fn expect_voters_page(
-        sdk: &mut Sdk,
+    /// The query for the page of voters for `contestant` in the contest for `label` after
+    /// `start_after`, built here rather than with the code under test
+    fn voters_page_query(
+        sdk: &Sdk,
         label: &str,
         contestant: Identifier,
         start_after: Option<Identifier>,
         limit: u16,
-        page: &[Identifier],
-    ) {
-        let query = ContestedDocumentVotePollVotesDriveQuery {
+    ) -> ContestedDocumentVotePollVotesDriveQuery {
+        ContestedDocumentVotePollVotesDriveQuery {
             vote_poll: ContestedDocumentResourceVotePoll {
                 contract_id: sdk
                     .get_dpns_contract_id()
@@ -1184,7 +1193,19 @@ mod tests {
             limit: Some(limit),
             offset: None,
             order_ascending: true,
-        };
+        }
+    }
+
+    /// Registers `page` as the answer to [`voters_page_query`]
+    async fn expect_voters_page(
+        sdk: &mut Sdk,
+        label: &str,
+        contestant: Identifier,
+        start_after: Option<Identifier>,
+        limit: u16,
+        page: &[Identifier],
+    ) {
+        let query = voters_page_query(sdk, label, contestant, start_after, limit);
         let page = Voters::from_iter(page.iter().copied().map(Voter));
         sdk.mock()
             .expect_fetch_many::<usize, Voter, _, Voters>(query, Some(page))
@@ -1303,6 +1324,54 @@ mod tests {
         assert!(
             matches!(&error, Error::InvalidRequest(reason) if reason.contains("has ended")),
             "expected an invalid request saying the contest ended, got {error:?}"
+        );
+    }
+
+    /// The first page is full at block 11, and the page after it is only answered from block
+    /// 10, where it holds two voters: block 10 may hold fewer voters after the start than
+    /// block 11 does, so the short page does not end the list and nothing is returned
+    #[tokio::test]
+    async fn should_refuse_a_voters_page_older_than_the_page_that_gave_its_start() {
+        let contestant = contender(999);
+        let mut sdk = mock_sdk();
+        expect_voters_page(
+            &mut sdk,
+            "a11ce",
+            contestant,
+            None,
+            100,
+            &contenders(0, 100),
+        )
+        .await;
+        expect_voters_page(
+            &mut sdk,
+            "a11ce",
+            contestant,
+            Some(contender(99)),
+            100,
+            &contenders(100, 102),
+        )
+        .await;
+        let first_page = voters_page_query(&sdk, "a11ce", contestant, None, 100);
+        sdk.mock()
+            .set_response_height(10)
+            .set_response_height_for_many::<usize, Voter, _, Voters>(first_page, 11);
+
+        let error = sdk
+            .get_contested_dpns_voters_for_identity("a11ce", contestant, None)
+            .await
+            .expect_err("expected the older page to be refused");
+
+        assert!(
+            matches!(
+                &error,
+                Error::StaleNode(StaleNodeError::Height {
+                    expected_height: 11,
+                    received_height: 10,
+                    ..
+                })
+            ),
+            "expected a stale node error, got {error:?}"
         );
     }
 

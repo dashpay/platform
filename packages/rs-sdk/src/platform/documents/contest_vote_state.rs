@@ -4,6 +4,7 @@
 use crate::error::StaleNodeError;
 use crate::platform::fetch_many::FetchMany;
 use crate::{Error, Sdk};
+use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::voting::contender_structs::ContenderWithSerializedDocument;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use drive::config::DEFAULT_QUERY_LIMIT;
@@ -11,10 +12,42 @@ use drive::query::vote_poll_vote_state_query::{
     ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
 };
 use drive_proof_verifier::types::Contenders;
+use std::future::Future;
 
 /// How many times a read that must not be older than an earlier one is made before the nodes
 /// answering it are reported as stale
 const NOT_OLDER_READ_ATTEMPTS: usize = 3;
+
+/// Makes `read` until its response is from block `height` or later, or is one `accept_older`
+/// takes from any block.
+///
+/// A response can be behind an earlier one by the Sdk's height tolerance, and a read that
+/// continues or judges an earlier one says nothing about it from an older block. An older
+/// read is made again, [`NOT_OLDER_READ_ATTEMPTS`] times in all, and then refused as
+/// [`StaleNodeError::Height`], so the call can be made again.
+pub(crate) async fn read_not_older_than<T, Fut>(
+    height: u64,
+    accept_older: impl Fn(&T) -> bool,
+    mut read: impl FnMut() -> Fut,
+) -> Result<(T, ResponseMetadata), Error>
+where
+    Fut: Future<Output = Result<(T, ResponseMetadata), Error>>,
+{
+    let mut received_height = 0;
+    for _ in 0..NOT_OLDER_READ_ATTEMPTS {
+        let (response, metadata) = read().await?;
+        if metadata.height >= height || accept_older(&response) {
+            return Ok((response, metadata));
+        }
+        received_height = metadata.height;
+    }
+    Err(StaleNodeError::Height {
+        expected_height: height,
+        received_height,
+        tolerance_blocks: 0,
+    }
+    .into())
+}
 
 impl Sdk {
     /// The state of the contest `vote_poll`: its contenders with their documents and tallies,
@@ -34,6 +67,12 @@ impl Sdk {
     /// the next page empty, so an empty page after the first is read once more without a
     /// start, at a height not below the empty page's: if that names a winner, its record is
     /// returned in place of the live pages.
+    ///
+    /// The pages are not one block's snapshot, but they never go back: a page after the first
+    /// is read at a height not below the page that gave its start, so an older block cannot
+    /// end the list early or leave out contenders the earlier page already counted past.
+    /// When the nodes keep answering it from an older block, the error is a stale node one,
+    /// and the call can be made again.
     pub async fn fetch_contested_resource_vote_state(
         &self,
         vote_poll: &ContestedDocumentResourceVotePoll,
@@ -41,6 +80,8 @@ impl Sdk {
     ) -> Result<Contenders, Error> {
         let mut state: Option<Contenders> = None;
         let mut start_at = None;
+        // The height of the page that gave `start_at`
+        let mut start_height = 0;
         loop {
             let read = state.as_ref().map_or(0, |state| state.contenders.len());
             let page_limit = match limit {
@@ -53,20 +94,29 @@ impl Sdk {
                 }
                 None => DEFAULT_QUERY_LIMIT,
             };
-            let (page, metadata) = ContenderWithSerializedDocument::fetch_many_with_metadata(
-                self,
-                ContestedDocumentVotePollDriveQuery {
-                    vote_poll: vote_poll.clone(),
-                    result_type:
-                        ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
-                    allow_include_locked_and_abstaining_vote_tally: true,
-                    start_at,
-                    limit: Some(page_limit),
-                    offset: None,
+            let query = ContestedDocumentVotePollDriveQuery {
+                vote_poll: vote_poll.clone(),
+                result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
+                allow_include_locked_and_abstaining_vote_tally: true,
+                start_at,
+                limit: Some(page_limit),
+                offset: None,
+            };
+            // A page continues the one that gave its start: from an older block it could be
+            // short of contenders that page already counted, or end the list early
+            let (page, metadata) = read_not_older_than(
+                start_height,
+                |_| false,
+                || {
+                    ContenderWithSerializedDocument::fetch_many_with_metadata(
+                        self,
+                        query.clone(),
+                        None,
+                    )
                 },
-                None,
             )
             .await?;
+            start_height = metadata.height;
             // A page with a start selects only the keys after it, and the record of a contest
             // that ended lives at the first key: a contest that ended between requests answers
             // its next page empty. Read it again without a start, where a record that ended
@@ -123,33 +173,21 @@ impl Sdk {
         vote_poll: &ContestedDocumentResourceVotePoll,
         height: u64,
     ) -> Result<Contenders, Error> {
-        let mut received_height = 0;
-        for _ in 0..NOT_OLDER_READ_ATTEMPTS {
-            let (record, metadata) = ContenderWithSerializedDocument::fetch_many_with_metadata(
-                self,
-                ContestedDocumentVotePollDriveQuery {
-                    vote_poll: vote_poll.clone(),
-                    result_type:
-                        ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
-                    allow_include_locked_and_abstaining_vote_tally: true,
-                    start_at: None,
-                    limit: Some(1),
-                    offset: None,
-                },
-                None,
-            )
-            .await?;
-            if record.winner.is_some() || metadata.height >= height {
-                return Ok(record);
-            }
-            received_height = metadata.height;
-        }
-        Err(StaleNodeError::Height {
-            expected_height: height,
-            received_height,
-            tolerance_blocks: 0,
-        }
-        .into())
+        let query = ContestedDocumentVotePollDriveQuery {
+            vote_poll: vote_poll.clone(),
+            result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
+            allow_include_locked_and_abstaining_vote_tally: true,
+            start_at: None,
+            limit: Some(1),
+            offset: None,
+        };
+        let (record, _) = read_not_older_than(
+            height,
+            |record: &Contenders| record.winner.is_some(),
+            || ContenderWithSerializedDocument::fetch_many_with_metadata(self, query.clone(), None),
+        )
+        .await?;
+        Ok(record)
     }
 }
 
@@ -365,6 +403,91 @@ mod tests {
         );
         assert_eq!(state.abstain_vote_tally, Some(6));
         assert_eq!(state.lock_vote_tally, Some(2));
+    }
+
+    /// The first page is full at block 11, and the page after it is only answered from block
+    /// 10, where it holds two contenders: block 10 may hold fewer contenders after the start
+    /// than block 11 does, so the short page does not end the list and nothing is returned.
+    #[tokio::test]
+    async fn should_refuse_a_page_older_than_the_page_that_gave_its_start() {
+        let mut sdk = SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .expect("a mock sdk");
+        let vote_poll = ContestedDocumentResourceVotePoll {
+            contract_id: Identifier::new([7; 32]),
+            document_type_name: "domain".to_string(),
+            index_name: "parentNameAndLabel".to_string(),
+            index_values: vec![
+                Value::Text("dash".to_string()),
+                Value::Text("quantum".to_string()),
+            ],
+        };
+        let contender = |n: u8| {
+            let identity_id = Identifier::new([n; 32]);
+            (
+                identity_id,
+                ContenderWithSerializedDocument::V0(ContenderWithSerializedDocumentV0 {
+                    identity_id,
+                    serialized_document: None,
+                    vote_tally: Some(1),
+                }),
+            )
+        };
+        let query = |start_at: Option<([u8; 32], bool)>| ContestedDocumentVotePollDriveQuery {
+            vote_poll: vote_poll.clone(),
+            result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
+            allow_include_locked_and_abstaining_vote_tally: true,
+            start_at,
+            limit: Some(DEFAULT_QUERY_LIMIT),
+            offset: None,
+        };
+        let live = |contenders: BTreeMap<_, _>| Contenders {
+            winner: None,
+            contenders,
+            abstain_vote_tally: None,
+            lock_vote_tally: None,
+        };
+
+        let last = Identifier::new([DEFAULT_QUERY_LIMIT as u8; 32]);
+        sdk.mock()
+            .expect_fetch_many::<_, ContenderWithSerializedDocument, _, Contenders>(
+                query(None),
+                Some(live(
+                    (1..=DEFAULT_QUERY_LIMIT as u8).map(contender).collect(),
+                )),
+            )
+            .await
+            .expect("registers the first page");
+        sdk.mock()
+            .expect_fetch_many::<_, ContenderWithSerializedDocument, _, Contenders>(
+                query(Some((last.to_buffer(), false))),
+                Some(live(BTreeMap::from([contender(101), contender(102)]))),
+            )
+            .await
+            .expect("registers the older short page");
+        sdk.mock()
+            .set_response_height(10)
+            .set_response_height_for_many::<_, ContenderWithSerializedDocument, _, Contenders>(
+                query(None),
+                11,
+            );
+
+        let error = sdk
+            .fetch_contested_resource_vote_state(&vote_poll, None)
+            .await
+            .expect_err("expected the older page to be refused");
+        assert!(
+            matches!(
+                &error,
+                Error::StaleNode(StaleNodeError::Height {
+                    expected_height: 11,
+                    received_height: 10,
+                    ..
+                })
+            ),
+            "expected a stale node error, got {error:?}"
+        );
     }
 
     /// The page after a full live one is empty at block 11, and the read without a start is
