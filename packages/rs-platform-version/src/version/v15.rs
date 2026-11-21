@@ -1126,9 +1126,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///       a dotted name may be added to its object's own `required`, after which the dotted name
 ///       may go. An object written inline that the update adds requires only names among its
 ///       members, and no more than its `maxProperties`; a `required` on a schema of another type
-///       than `object` is left alone, as it names no member the type parses. Contract `validate_update` 2 holds the lists of a document
-///       type the update adds to the same rules
-///       (`DataContractInvalidRequiredFieldsUpdateError`).
+///       than `object` without a `$ref` is left alone, as it names no member the type parses.
+///       Contract `validate_update` 2 holds the lists of a document type the update adds to the
+///       same rules (`DataContractInvalidRequiredFieldsUpdateError`).
 ///     - Through a `$ref` members are added only as optional: the `required` beside a `$ref`
 ///       stays as it is, and a definition's own lists are not read for storage and stay fixed,
 ///       as do the lists below a `$ref`.
@@ -1147,11 +1147,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///       it points at, as an object the contract has.
 ///     - An object a contract has keeps the order of its members, and a member it gains comes
 ///       after them at its next free position (`DocumentTypeUpdateError`; for a `$defs`
-///       definition no type reaches through a `$ref` it keeps,
-///       `DataContractUpdateActionNotAllowedError`). An object a contract registered earlier
-///       keeps its order and its positions, gaps and repeats included, and stays updatable; when
-///       a stored position reads as no integer, the members an update adds follow one another
-///       from any position.
+///       definition a type gains a `$ref` to, `InvalidContractStructure`; for one no type
+///       reaches through a `$ref`, `DataContractUpdateActionNotAllowedError`). An object a
+///       contract registered earlier keeps its order and its positions, gaps and repeats
+///       included, and stays updatable; when a stored position reads as no integer, the members
+///       an update adds follow one another from any position.
 ///
 ///     `CONTRACT_VERSIONS_V7` selects `apply_required_since` 1, which admits `requiredSince` on a
 ///     member its object's `required` (or, at registration, the `required` beside its `$ref`)
