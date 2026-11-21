@@ -875,13 +875,17 @@ impl SpvRuntime {
     ) -> Option<Vec<MasternodeListSummary>> {
         self.current_masternode_list()
             .await
+            .ok()
             .map(|list| list.summaries)
     }
 
     /// The masternode list with its height, only while it follows the chain
-    /// ([`Self::is_ready`]). `None` otherwise, or when SPV restarted during
-    /// the read.
-    pub async fn current_masternode_list(&self) -> Option<CurrentMasternodeList> {
+    /// ([`Self::is_ready`]). Fails with
+    /// [`PlatformWalletError::MasternodeListUnavailable`] otherwise, or when
+    /// SPV restarted during the read.
+    pub async fn current_masternode_list(
+        &self,
+    ) -> Result<CurrentMasternodeList, PlatformWalletError> {
         // TODO: switch to dash-spv's current-list read (rust-dashcore S1: masternode-list freshness).
         self.while_following_the_chain(async {
             let list = {
@@ -891,6 +895,7 @@ impl SpvRuntime {
             Some(CurrentMasternodeList::from_list(&list))
         })
         .await
+        .ok_or(PlatformWalletError::MasternodeListUnavailable)
     }
 
     /// [`Self::masternode_list_entries`], but only while the list follows
@@ -2430,7 +2435,12 @@ mod tests {
     /// that does not follow the chain has no current list to hand out.
     #[tokio::test]
     async fn should_have_no_current_masternode_list_while_not_following_the_chain() {
-        assert_eq!(unstarted_runtime().current_masternode_list().await, None);
+        let read = unstarted_runtime().current_masternode_list().await;
+
+        assert!(
+            matches!(read, Err(PlatformWalletError::MasternodeListUnavailable)),
+            "expected MasternodeListUnavailable, got {read:?}"
+        );
     }
 
     /// dash-spv raises `NotConnected` from its zero-peer check before the
