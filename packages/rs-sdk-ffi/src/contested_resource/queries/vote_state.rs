@@ -9,7 +9,7 @@ use dash_sdk::dpp::voting::vote_polls::contested_document_resource_vote_poll::Co
 use dash_sdk::drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
 use dash_sdk::platform::dpns_usernames::ContenderRequest;
 use dash_sdk::platform::FetchMany;
-use dash_sdk::platform::{DataContract, Fetch};
+use dash_sdk::platform::{DataContract, Fetch, Identifier};
 use dash_sdk::query_types::Contenders;
 use std::ffi::{c_char, c_void, CStr, CString};
 
@@ -28,7 +28,14 @@ use std::ffi::{c_char, c_void, CStr, CString};
 /// * `count` - Maximum number of results to return
 ///
 /// # Returns
-/// * JSON array of contenders or null if not found
+/// * A JSON object, or no data when Platform has no contenders on record:
+///   `{"abstain_vote_tally":N,"lock_vote_tally":N,"winner_info":…,"block_info":{…},
+///   "contenders":[{"identity_id":"…","vote_count":N,"document":"hex"|null,"label":"…","created_at":<ms>}]}`
+///   - `abstain_vote_tally` and `lock_vote_tally` only for result types 1 and 2.
+///   - `winner_info` and `block_info` only once the poll has finished.
+///   - `contenders` for every result type, each with `identity_id` and
+///     `vote_count`. `document` only for result types 0 and 2, with `label`
+///     and `created_at` when the document decodes.
 /// * Error message if operation fails
 ///
 /// # Safety
@@ -162,7 +169,7 @@ fn get_contested_resource_vote_state(
             .try_into()
             .map_err(|_| "Contract ID must be exactly 32 bytes".to_string())?;
 
-        let contract_id = dash_sdk::platform::Identifier::new(contract_id);
+        let contract_id = Identifier::new(contract_id);
 
         // Parse index values
         let index_values_array: Vec<String> = serde_json::from_str(index_values_str)
@@ -237,59 +244,47 @@ fn get_contested_resource_vote_state(
                         block_info.time_ms
                     ));
                 }
-                // Add contenders
-                if result_type.has_documents() {
-                    // Decode each contender's document so callers get the
-                    // label the requester actually typed ("pizza") next to the
-                    // homograph-normalized index value ("p1zza"). Without this
-                    // a UI can only show the normalized form, which reads as a
-                    // typo to the person who submitted it.
-                    //
-                    // The same decode gives `created_at`, the document's
-                    // `$createdAt` in milliseconds: when the request was made,
-                    // passed on as the document holds it (0 included). The
-                    // decode is the SDK's `ContenderRequest`.
-                    //
-                    // Best-effort: the contract fetch or a single decode
-                    // failing must not fail the whole query. `label` and
-                    // `created_at` are then simply absent for that row: the
-                    // caller shows the normalized value instead of a label, and
-                    // has no date for the request.
-                    let contract: Option<DataContract> =
-                        DataContract::fetch(&sdk, contract_id).await.ok().flatten();
-                    let document_type = contract.as_ref().and_then(|contract| {
-                        contract.document_type_for_name(document_type_name_str).ok()
-                    });
+                // Add contenders. Every result type names them with their
+                // vote counts; only the document result types add the
+                // document and what decodes from it.
+                //
+                // Decoding each contender's document gives callers the label
+                // the requester actually typed ("pizza") next to the
+                // homograph-normalized index value ("p1zza"). Without this a
+                // UI can only show the normalized form, which reads as a typo
+                // to the person who submitted it.
+                //
+                // The same decode gives `created_at`, the document's
+                // `$createdAt` in milliseconds: when the request was made,
+                // passed on as the document holds it (0 included). The decode
+                // is the SDK's `ContenderRequest`.
+                //
+                // Best-effort: the contract fetch or a single decode failing
+                // must not fail the whole query. `label` and `created_at` are
+                // then simply absent for that row: the caller shows the
+                // normalized value instead of a label, and has no date for the
+                // request. A tally-only query has no documents to decode, so
+                // it skips the contract fetch.
+                let contract: Option<DataContract> = if result_type.has_documents() {
+                    DataContract::fetch(&sdk, contract_id).await.ok().flatten()
+                } else {
+                    None
+                };
+                let document_type = contract.as_ref().and_then(|contract| {
+                    contract.document_type_for_name(document_type_name_str).ok()
+                });
 
-                    let contenders_json: Vec<String> = contenders.contenders
-                        .iter()
-                        .map(|(id, contender)| {
-                            let document_json = if let Some(ref document) = contender.serialized_document() {
-                                format!(r#""document":"{}""#,
-                                    hex::encode(document))
-                            } else {
-                                r#""document":null"#.to_string()
-                            };
-
-                            let request = ContenderRequest::decode(
-                                contender,
-                                document_type,
-                                sdk.version(),
-                            );
-
-                            let vote_count = contender.vote_tally().unwrap_or(0);
-
-                            format!(
-                                r#"{{"identity_id":"{}","vote_count":{},{}{}}}"#,
-                                bs58::encode(id.as_bytes()).into_string(),
-                                vote_count,
-                                document_json,
-                                json_members(&request)
-                            )
-                        })
-                        .collect();
-                    result_json_parts.push(format!(r#""contenders":[{}]"#, contenders_json.join(",")));
-                }
+                let contenders_json: Vec<String> = contenders
+                    .contenders
+                    .iter()
+                    .map(|(id, contender)| {
+                        let request = result_type.has_documents().then(|| {
+                            ContenderRequest::decode(contender, document_type, sdk.version())
+                        });
+                        contender_json(id, contender, request.as_ref())
+                    })
+                    .collect();
+                result_json_parts.push(format!(r#""contenders":[{}]"#, contenders_json.join(",")));
                 Ok(Some(format!("{{{}}}", result_json_parts.join(","))))
             }
             Err(e) => Err(format!("Failed to fetch contested resource vote state: {}", e)),
@@ -297,10 +292,91 @@ fn get_contested_resource_vote_state(
     })
 }
 
+/// One contender object of the vote-state JSON:
+/// `{"identity_id":"…","vote_count":N}`. When `request` is given (the query
+/// asked for documents) the object also carries `"document"` (the serialized
+/// document in hex, or null) and the decoded request's `label` and
+/// `created_at` (see [`json_members`]).
+fn contender_json(
+    id: &Identifier,
+    contender: &ContenderWithSerializedDocument,
+    request: Option<&ContenderRequest>,
+) -> String {
+    let document_members = request
+        .map(|request| {
+            let document = match contender.serialized_document() {
+                Some(document) => format!(r#""{}""#, hex::encode(document)),
+                None => "null".to_string(),
+            };
+            format!(r#","document":{}{}"#, document, json_members(request))
+        })
+        .unwrap_or_default();
+    format!(
+        r#"{{"identity_id":"{}","vote_count":{}{}}}"#,
+        bs58::encode(id.as_bytes()).into_string(),
+        contender.vote_tally().unwrap_or(0),
+        document_members
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contested_resource::contender_document::test_support::{
+        requester_document, serialized_contender, CREATED_AT_MS,
+    };
     use crate::test_utils::test_utils::create_mock_sdk_handle;
+    use dash_sdk::dpp::document::DocumentV0Getters;
+    use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dash_sdk::dpp::version::PlatformVersion;
+    use dash_sdk::dpp::voting::contender_structs::ContenderWithSerializedDocumentV0;
+
+    #[test]
+    fn should_write_a_tally_only_contender_with_identity_id_and_vote_count_and_no_document() {
+        let id = Identifier::from([7u8; 32]);
+        let contender = ContenderWithSerializedDocument::V0(ContenderWithSerializedDocumentV0 {
+            identity_id: id,
+            serialized_document: None,
+            vote_tally: Some(3),
+        });
+        assert_eq!(
+            contender_json(&id, &contender, None),
+            format!(
+                r#"{{"identity_id":"{}","vote_count":3}}"#,
+                bs58::encode(id.as_bytes()).into_string()
+            )
+        );
+    }
+
+    #[test]
+    fn should_write_a_document_contender_with_its_document_label_and_created_at() {
+        let document = requester_document(1, "pizza", Some(CREATED_AT_MS));
+        let id = document.owner_id();
+        let contender = serialized_contender(document);
+        let platform_version = PlatformVersion::latest();
+        let contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("DPNS system contract");
+        let request = ContenderRequest::decode(
+            &contender,
+            contract.document_type_for_name("domain").ok(),
+            platform_version,
+        );
+        let hex_document = hex::encode(
+            contender
+                .serialized_document()
+                .as_ref()
+                .expect("serialized document"),
+        );
+        assert_eq!(
+            contender_json(&id, &contender, Some(&request)),
+            format!(
+                r#"{{"identity_id":"{}","vote_count":3,"document":"{}","label":"pizza","created_at":{}}}"#,
+                bs58::encode(id.as_bytes()).into_string(),
+                hex_document,
+                CREATED_AT_MS
+            )
+        );
+    }
 
     #[test]
     fn test_get_contested_resource_vote_state_null_handle() {
