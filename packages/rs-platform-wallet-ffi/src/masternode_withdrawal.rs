@@ -257,7 +257,7 @@ pub unsafe extern "C" fn platform_wallet_manager_masternode_withdraw(
     // future completes, so the signer is dropped before this frame returns.
     let signer_addr = mnemonic_resolver_handle as usize;
     let wallet_id_bytes = wallet.wallet_id();
-    let new_balance = unwrap_result_or_return!(block_on_worker(async move {
+    let outcome = unwrap_result_or_return!(block_on_worker(async move {
         let signer = MnemonicResolverCoreSigner::new(
             signer_addr as *mut MnemonicResolverHandle,
             wallet_id_bytes,
@@ -266,7 +266,7 @@ pub unsafe extern "C" fn platform_wallet_manager_masternode_withdraw(
         wallet.masternode_withdraw(request, &keys, &signer).await
     }));
 
-    *out_new_balance = new_balance;
+    *out_new_balance = outcome.remaining_credits;
     PlatformWalletFFIResult::ok()
 }
 

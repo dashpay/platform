@@ -93,7 +93,7 @@ pub use wallet::identity::{
     unmask_account_reference, BlockTime, ContactProfileEntry, ContactRequest, ContactXpubData,
     DashPayProfile, DashPayState, DpnsFetch, DpnsNameInfo, EstablishedContact, IdentityLocation,
     IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity, PrivateContact, PrivateKeyData,
-    ProfileUpdate, RegistrationIndex, DEFAULT_CONTACT_GAP_LIMIT,
+    ProfileUpdate, RegistrationIndex, WithdrawalOutcome, DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use wallet::masternode_withdrawal::{
     MasternodeWithdrawalKey, MasternodeWithdrawalKeys, MasternodeWithdrawalRequest,
