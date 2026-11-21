@@ -231,6 +231,12 @@ class Voting internal constructor(private val sdk: Sdk) {
      * [indexValuesJson] is a JSON array of the index path values;
      * [resultType] is the u8 enum discriminant. Returns JSON, or null.
      *
+     * Every JSON field except `contenders` may be absent, so read each as
+     * optional, not as zero: a contender's `vote_count` is left out when its
+     * tally was not read (documents-only result type); `abstain_vote_tally`
+     * and `lock_vote_tally` are left out when not returned; `winner_info`
+     * (with `block_info`) is present only once the poll has ended.
+     *
      * Index values are strings the FFI reads in this order: a value starting
      * with a backslash (`\`) is text with that one backslash removed; else a
      * `0x`-prefixed value is hex bytes; else the value is text. Encode text

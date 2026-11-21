@@ -1758,14 +1758,16 @@ extension SDK {
     ///
     /// `indexValues` is the poll's full index key, one value per index
     /// property (for DPNS: `["dash", <normalized label>]`). Drive refuses a
-    /// key of the wrong length. Index values use the FFI convention: a
-    /// `"0x"`-prefixed value is hex bytes, anything else is text.
+    /// key of the wrong length.
     ///
     /// `resultType` names the FFI result type: `"documents"`, `"vote_tally"`
-    /// or `"documents_and_vote_tally"`. The result is the FFI's JSON object
-    /// (`contenders`, and with a tally `abstain_vote_tally`,
-    /// `lock_vote_tally` and `winner_info`), or an empty dictionary when the
-    /// poll has no data.
+    /// or `"documents_and_vote_tally"`. The result is the FFI's JSON object,
+    /// or an empty dictionary when the poll has no data. Every field except
+    /// `contenders` may be absent, so decode each as optional, not as zero:
+    /// a contender's `vote_count` is left out when its tally was not read
+    /// (`"documents"` mode); `abstain_vote_tally` and `lock_vote_tally` are
+    /// left out when not returned; `winner_info` (with `block_info`) is
+    /// present only once the poll has ended.
     ///
     /// `count` is the limit of a single request (nil sends 100); a finished
     /// poll answers with every contender of its record whatever the limit.
