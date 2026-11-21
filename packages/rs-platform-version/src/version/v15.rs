@@ -1118,17 +1118,30 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     - A member the update adds is required exactly when a `required` list names it.
 ///     - An object's `required` loses no name, gains only members the same update adds (or one
 ///       the type already requires through a dotted name, which repairs that requirement), and
-///       does not grow past the object's `maxProperties`.
+///       does not grow past the object's `maxProperties`; nor does the type's own.
 ///     - No `required` list gains a dotted name, or loses one no other list still requires,
 ///       including the type's own list, those of the objects the update adds, and entries
 ///       written at any depth beside a `$ref` (`DocumentTypeUpdateError`,
 ///       `DataContractInvalidRequiredFieldsUpdateError`). A member the type requires only through
 ///       a dotted name may be added to its object's own `required`, after which the dotted name
-///       may go. An object written inline that the update adds requires only names among its
-///       members, and no more than its `maxProperties`; a `required` on a schema of another type
-///       than `object` without a `$ref` is left alone, as it names no member the type parses.
-///       Contract `validate_update` 2 holds the lists of a document type the update adds to the
-///       same rules (`DataContractInvalidRequiredFieldsUpdateError`).
+///       may go.
+///     - Everything a contract gains holds `required` lists a document can meet
+///       (`DataContract::validate_gained_requirements` 0, `CONTRACT_VERSIONS_V7`, run by contract
+///       `validate_update` 2 and by contract create state validation 0 on the parsed contract;
+///       `DataContractInvalidRequiredFieldsUpdateError`, paid). That covers every object a
+///       document type of a new contract reaches, every object of a type an update adds, and
+///       every object an update adds to a type it has, through a `$ref` the type keeps too.
+///       Each list the validator reads for such an object, in every schema it applies (the
+///       object as written, the definition its `$ref` points at, the entry written for it
+///       beside an enclosing `$ref`), names only members of the object as parsed, none a schema
+///       written with `additionalProperties: false` leaves out, no dotted name, and no more
+///       members than the least `maxProperties` of those schemas. A type's own list, the system
+///       timestamps aside, names only its declared properties, no more than its `maxProperties`.
+///       Each member of such a type is required exactly when a list names it, so the parser's
+///       reading of `meta_y` as naming `meta.y` is refused. A `required` written for a member
+///       parsed as anything but an object is left alone, as it names no member the type parses.
+///       An entry written beside a `$ref` a type keeps may not be added for a member documents
+///       stored before hold.
 ///     - Through a `$ref` members are added only as optional: the `required` beside a `$ref`
 ///       stays as it is, and a definition's own lists are not read for storage and stay fixed,
 ///       as do the lists below a `$ref`.
@@ -1144,11 +1157,15 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     - A `$ref` a contract gains points into its `$defs` (`#/$defs/...`), at a schema whose
 ///       objects, and those its own `$ref`s reach, are listed the same way
 ///       (`InvalidContractStructure`). A `$ref` the contract keeps is judged through the schema
-///       it points at, as an object the contract has.
+///       it points at, as an object the contract has. A schema reached deeper than the parse
+///       admits, or a `$ref` reaching the schema it is written in, is refused
+///       (`InvalidContractStructure`), as the parse refuses either in a document type.
 ///     - An object a contract has keeps the order of its members, and a member it gains comes
-///       after them at its next free position (`DocumentTypeUpdateError`; for a `$defs`
-///       definition a type gains a `$ref` to, `InvalidContractStructure`; for one no type
-///       reaches through a `$ref`, `DataContractUpdateActionNotAllowedError`). An object a
+///       after them at its next free position. The first check that finds a breach reports it:
+///       the walk of each document type (`DocumentTypeUpdateError`, or
+///       `InvalidContractStructure` for members a gained `$ref` reaches that are not at
+///       consecutive positions), then the walk of each `$defs` definition against the stored one
+///       (`DataContractUpdateActionNotAllowedError`). An object a
 ///       contract registered earlier keeps its order and its positions, gaps and repeats
 ///       included, and stays updatable; when a stored position reads as no integer, the members
 ///       an update adds follow one another from any position.

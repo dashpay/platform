@@ -52,6 +52,11 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 ///   update refuse a contract one of whose document types sums a property it lists as
 ///   transient, and a document create on such a type, which a contract registered earlier may
 ///   hold, is refused with the same error;
+/// - `validate_gained_requirements`, `Some(0)` rather than `None`: registration and update
+///   refuse a contract that gains an object, a document type or a whole contract's worth of
+///   them, with a `required` list naming a dotted name, a name its object does not have, or
+///   more names than its `maxProperties`, or a type a member of which the parser reads as
+///   required without a list naming it;
 /// - `registration_cost`, 3 rather than 2: the fee a state transition's contract is estimated
 ///   at bills each index by the keys it declares instead of parsing it, which compiled the
 ///   field matches of a contested index before anything bounded them;
@@ -83,6 +88,8 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
         // changed: a contract's schemas hold a bounded number of patterns of bounded size
         validate_schema_patterns: Some(0),
         validate_no_transient_summed_property: Some(0),
+        // changed: the objects a contract gains have required lists a document can meet (note 49)
+        validate_gained_requirements: Some(0),
         // changed: the fee estimate bills an index without compiling its field matches
         registration_cost: 3,
         // changed: an update of a contract whose stored schema repeats a key is refused, and the

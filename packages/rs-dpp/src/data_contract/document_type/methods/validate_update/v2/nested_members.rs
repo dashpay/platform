@@ -6,7 +6,9 @@
 //! optional one (or one required from a contract version) carries, so an object's members must
 //! keep their place and their requiredness, and a member may only be added after them. Contract
 //! `validate_update` 2 also holds an added member to the object's next free position, and an
-//! object the update adds to consecutive positions in map order (`MemberPositionOrder`). Its
+//! object the update adds to consecutive positions in map order (`MemberPositionOrder`), and
+//! every object the contract gains to `required` lists a document can meet
+//! ([`DocumentTypeRef::first_unmeetable_gained_requirement`], which registration runs too). Its
 //! requiredness is what the type's parse makes of it, whatever made it so: the
 //! object's own `required`, a `required` beside its `$ref`, a dotted name in an enclosing
 //! `required`, or the parser reading a required name of an enclosing property as naming it (a
@@ -24,12 +26,14 @@ use crate::data_contract::document_type::accessors::{
 };
 use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
 use crate::data_contract::document_type::property_names::{
-    CONST, ENUM, MAX_PROPERTIES, PROPERTIES, REF, REQUIRED, TYPE,
+    ADDITIONAL_PROPERTIES, CONST, ENUM, MAX_PROPERTIES, PROPERTIES, REF, REQUIRED, TYPE,
 };
-use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::document_type::schema::DefinitionsRoot;
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::validation::SimpleConsensusValidationResult;
 use indexmap::IndexMap;
 use platform_value::{Value, ValueMapHelper};
+use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
 
 impl DocumentTypeRef<'_> {
@@ -63,18 +67,23 @@ impl DocumentTypeRef<'_> {
     }
 
     /// The `required` lists the document validator reads keep what they hold, as the
-    /// type's own `required` does: in the list of every object the old type has (its own list,
+    /// type's own `required` does (whose list may not grow past the type's `maxProperties`
+    /// either): in the list of every object the old type has (its own list,
     /// or the one beside its `$ref`) no name is removed, and a name is added only for a member
     /// the same update adds to that object, or for one the type already parses as required
-    /// through a dotted name, which repairs that requirement. A dotted name is never one of an object's own
-    /// members, so none is added to any list, the type's own included, nor written in the list
-    /// of an object the update adds: the validator reads it as a property named with a dot,
-    /// which no document can hold, while the parser reads it as a nested requirement. One may leave a list when another list still requires the member it
-    /// names, which leaves the parse as it was and lets the validator accept documents again.
-    /// The type's own undotted names are judged by generation 1's required-fields check.
+    /// through a dotted name, which repairs that requirement. A dotted name is never one of an
+    /// object's own members, so none is added to any list, the type's own included: the
+    /// validator reads it as a property named with a dot, which no document can hold, while the
+    /// parser reads it as a nested requirement. One may leave a list when another list still
+    /// requires the member it names, which leaves the parse as it was and lets the validator
+    /// accept documents again. An entry written beside a `$ref` the type keeps may not be added
+    /// for a member documents stored before hold. The type's own undotted names are judged by
+    /// generation 1's required-fields check; the lists of an object the update adds, by
+    /// [`Self::first_unmeetable_gained_requirement`].
     pub(super) fn validate_required_lists_kept(
         &self,
         new_document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
     ) -> SimpleConsensusValidationResult {
         match first_required_list_change(
             self.properties(),
@@ -83,7 +92,14 @@ impl DocumentTypeRef<'_> {
             new_document_type.schema(),
             None,
             new_document_type.required_fields(),
-        ) {
+        )
+        .or_else(|| {
+            type_list_past_max_properties(
+                Some(self.schema()),
+                new_document_type.schema(),
+                platform_version,
+            )
+        }) {
             Some(details) => SimpleConsensusValidationResult::new_with_error(
                 DataContractInvalidRequiredFieldsUpdateError::new(self.name().clone(), details)
                     .into(),
@@ -92,26 +108,62 @@ impl DocumentTypeRef<'_> {
         }
     }
 
-    /// The `required` lists of a document type the update adds, which no stored document holds,
-    /// keep the rules of the lists of an object an update adds to a type it has: no list names a
-    /// dotted name, the type's own included, and the list of an object written inline names
-    /// only its members, and no more of them than its `maxProperties`. The type's own list may
-    /// also name system properties, and is not checked against its properties here.
-    pub(crate) fn validate_required_lists_of_added_type(&self) -> SimpleConsensusValidationResult {
-        match first_required_list_change(
-            &IndexMap::new(),
+    /// The first `required` list no document could meet, or member requiredness the lists do
+    /// not give, in what the contract gains in this type, the type as a registration or an
+    /// update writes it: `old` is the type as the contract stores it, `None` for a type the
+    /// update adds and every type of a contract being registered. `definitions` are the
+    /// contract's `$defs` as the registration or update writes them.
+    ///
+    /// An object the contract gains (in a type it has, at any depth, a definition it reaches
+    /// through a `$ref` the type keeps included) holds no stored document, so its lists are its
+    /// own to choose, except where no document could meet them. Every list the document
+    /// validator reads for it, in each schema it applies to the object (the object as written,
+    /// the schema its `$ref` points at, and the entry written for it beside an enclosing `$ref`),
+    /// names only members of the object as the type parses it (a `$ref` site need not restate
+    /// them), none a schema written for it with `additionalProperties: false` does not declare,
+    /// and no dotted name; together they name no more members than the least `maxProperties` of
+    /// those schemas lets the object hold. A member the type parses as anything but an object
+    /// holds no members, and the lists written for it are left alone. A type the contract gains
+    /// is held to that at every depth, and its own list names only its properties, the system
+    /// timestamps the validator leaves out of the list aside, no more of them than its
+    /// `maxProperties`; and each of its members is required exactly when a list names it by its
+    /// path, as a member an update adds to a type is (`validate_member_requiredness_kept`).
+    pub(crate) fn first_unmeetable_gained_requirement(
+        &self,
+        old: Option<DocumentTypeRef>,
+        definitions: &DefinitionsRoot,
+        new_contract_version: u32,
+        platform_version: &PlatformVersion,
+    ) -> Option<String> {
+        let gained = GainedObjects {
+            type_schema: self.schema(),
+            definitions,
+        };
+        let Some(old) = old else {
+            return first_unmeetable_type_list(*self, platform_version)
+                .or_else(|| {
+                    first_requiredness_change(
+                        &IndexMap::new(),
+                        self.properties(),
+                        None,
+                        &AddedMembers::of(self, new_contract_version),
+                    )
+                })
+                .or_else(|| {
+                    gained.first_unmeetable_list_below(
+                        &IndexMap::new(),
+                        self.properties(),
+                        vec![self.schema()],
+                        None,
+                    )
+                });
+        };
+        gained.first_unmeetable_list_below(
+            old.properties(),
             self.properties(),
-            &Value::Null,
-            self.schema(),
+            vec![self.schema()],
             None,
-            self.required_fields(),
-        ) {
-            Some(details) => SimpleConsensusValidationResult::new_with_error(
-                DataContractInvalidRequiredFieldsUpdateError::new(self.name().clone(), details)
-                    .into(),
-            ),
-            None => SimpleConsensusValidationResult::new(),
-        }
+        )
     }
 
     /// Every member an object keeps stays required or optional as it was, and keeps whether it
@@ -135,23 +187,11 @@ impl DocumentTypeRef<'_> {
         new_document_type: DocumentTypeRef,
         new_contract_version: u32,
     ) -> SimpleConsensusValidationResult {
-        let added = AddedMembers {
-            required_fields: new_document_type.required_fields(),
-            immutable: new_document_type
-                .immutable_fields()
-                .iter()
-                .chain(new_document_type.immutable_field_conditions().keys())
-                .map(String::as_str)
-                .collect(),
-            moderators_change_fields: !new_document_type.moderator_changeable_fields().is_empty(),
-            new_schema: new_document_type.schema(),
-            new_contract_version,
-        };
         match first_requiredness_change(
             self.properties(),
             new_document_type.properties(),
             None,
-            &added,
+            &AddedMembers::of(&new_document_type, new_contract_version),
         ) {
             Some(details) => SimpleConsensusValidationResult::new_with_error(
                 DataContractInvalidRequiredFieldsUpdateError::new(self.name().clone(), details)
@@ -224,6 +264,25 @@ struct AddedMembers<'a> {
     /// The new type's schema, as written.
     new_schema: &'a Value,
     new_contract_version: u32,
+}
+
+impl<'a> AddedMembers<'a> {
+    /// What a member `new_document_type` adds is judged against, in the contract version
+    /// `new_contract_version`.
+    fn of(new_document_type: &'a DocumentTypeRef, new_contract_version: u32) -> Self {
+        Self {
+            required_fields: new_document_type.required_fields(),
+            immutable: new_document_type
+                .immutable_fields()
+                .iter()
+                .chain(new_document_type.immutable_field_conditions().keys())
+                .map(String::as_str)
+                .collect(),
+            moderators_change_fields: !new_document_type.moderator_changeable_fields().is_empty(),
+            new_schema: new_document_type.schema(),
+            new_contract_version,
+        }
+    }
 }
 
 /// The first requiredness change below the object at `path` (`None`: the type's own
@@ -362,7 +421,9 @@ fn first_added_members_error(
 }
 
 /// The first change to a `required` list of an object the old type has, below the object at
-/// `path` (`None`: the type itself, whose dotted names only are judged here). `old_schema` and
+/// `path` (`None`: the type itself, whose dotted names only are judged here; the lists of an
+/// object the update adds are judged with the contract's `$defs` at hand,
+/// [`DocumentTypeRef::first_unmeetable_gained_requirement`]). `old_schema` and
 /// `new_schema` are the schemas of that object as the document type schema writes them; the
 /// walk stops at a `$ref`: the list written beside it stays as it is, since the object takes its
 /// members from a definition that other types may share, and the definition's own lists are not
@@ -476,36 +537,24 @@ fn first_required_list_change(
             return Some(change);
         }
     }
-    // An object the update adds holds no stored document, so its lists are its own to choose,
-    // except a dotted name, which would leave the object unable to hold any document
-    for (name, new_property) in new {
-        if old.contains_key(name)
-            || !matches!(new_property.property_type, DocumentPropertyType::Object(_))
-        {
-            continue;
-        }
-        if let Some(added_schema) = new_member_schemas.get(name.as_str()) {
-            if let Some(change) =
-                first_unmet_name_in_added_object(added_schema, &member_path(path, name), true)
-            {
-                return Some(change);
-            }
-        }
-    }
     // The `properties` written beside a `$ref` are not parsed, but the document validator reads
     // them, so an entry an update writes there, at any depth, holds no dotted name either
     if has_ref(new_schema) {
-        return first_dotted_name_in_entries_added(old_schema, new_schema, path);
+        return first_dotted_name_in_entries_added(old_schema, new_schema, Some(old), path);
     }
     None
 }
 
-/// The first dotted name in an entry of `new_schema`'s `properties`, as written, that
-/// `old_schema`'s does not have, at any depth below the entries both have, a schema written
-/// inline with another type than `object` holding none.
+/// The first entry of `new_schema`'s `properties`, as written beside a `$ref` the type keeps,
+/// that `old_schema`'s does not have and that is refused, at any depth below the entries both
+/// have: one written for a member the stored type parses (`old_members`, the members of the
+/// object the entries are written for), which the validator would hold every document stored
+/// before to, or one holding a `required` list no document could meet. A schema written inline
+/// with another type than `object` holds no members.
 fn first_dotted_name_in_entries_added(
     old_schema: &Value,
     new_schema: &Value,
+    old_members: Option<&IndexMap<String, DocumentProperty>>,
     path: Option<&str>,
 ) -> Option<String> {
     if is_inline_scalar(new_schema) {
@@ -516,11 +565,25 @@ fn first_dotted_name_in_entries_added(
         .into_iter()
         .find_map(|(name, entry)| {
             let entry_path = member_path(path, name);
+            let old_member = old_members.and_then(|old_members| old_members.get(name));
             match old_entries.get(name) {
                 Some(old_entry) => {
-                    first_dotted_name_in_entries_added(old_entry, entry, Some(&entry_path))
+                    let old_member_members = match old_member.map(|member| &member.property_type) {
+                        Some(DocumentPropertyType::Object(members)) => Some(members),
+                        _ => None,
+                    };
+                    first_dotted_name_in_entries_added(
+                        old_entry,
+                        entry,
+                        old_member_members,
+                        Some(&entry_path),
+                    )
                 }
-                None => first_unmet_name_in_added_object(entry, &entry_path, false),
+                None if old_member.is_some() => Some(format!(
+                    "an entry can not be written beside the $ref for '{entry_path}', a member \
+                     documents stored before hold: the document validator would hold them to it"
+                )),
+                None => first_unmeetable_list_in_entry(entry, &entry_path),
             }
         })
 }
@@ -575,69 +638,272 @@ fn holding_object_refusal(schema: &Value, path: &str) -> Option<String> {
     None
 }
 
-/// The first `required` list in the object the update adds at `path`, whose schema is `schema`,
-/// or in an object written inside it (beside a `$ref` too), that no document could meet: one
-/// naming a dotted name, which the validator reads as a property named with a dot, or more
-/// names than the object's `maxProperties` lets it hold, and, when `inline_members_known`, one
-/// naming a name an object written inline does not list among its members. An entry written
-/// beside a `$ref` restates members its definition supplies, so its names are not checked
-/// against the entry's own `properties`. A schema written inline with another type than
-/// `object` holds no members: the validator reads neither the `required` nor the `properties`
-/// written on it, and what the parser collects from them names no member it parses, so the walk
-/// stops there.
-fn first_unmet_name_in_added_object(
-    schema: &Value,
-    path: &str,
-    inline_members_known: bool,
-) -> Option<String> {
+/// The first `required` list in the entry written at `path` beside a `$ref`, or in an entry
+/// written inside it, that no document could meet: one naming a dotted name, which the validator
+/// reads as a property named with a dot, or more names than the entry's `maxProperties` lets an
+/// object hold. An entry beside a `$ref` restates members its definition supplies, so its names
+/// are not checked against the entry's own `properties`. A schema written inline with another
+/// type than `object` holds no members: the validator reads neither the `required` nor the
+/// `properties` written on it, and what the parser collects from them names no member it
+/// parses, so the walk stops there.
+fn first_unmeetable_list_in_entry(schema: &Value, path: &str) -> Option<String> {
     if is_inline_scalar(schema) {
         return None;
     }
-    let declared_type = schema
-        .as_map()
-        .and_then(|schema| schema.get_optional_key(TYPE))
-        .and_then(Value::as_text);
     let names = required_names(schema);
     if let Some(dotted) = names.iter().find(|name| name.contains('.')) {
+        return Some(dotted_name_refusal(path, dotted));
+    }
+    if let Some(refusal) = past_max_properties(path, names.len(), [schema]) {
+        return Some(refusal);
+    }
+    properties_as_written(schema)
+        .into_iter()
+        .find_map(|(name, entry)| {
+            first_unmeetable_list_in_entry(entry, &member_path(Some(path), name))
+        })
+}
+
+/// What the walk of the objects a contract gains in a document type reads: the type's schema
+/// and the contract's `$defs`, where a `$ref` resolves as the parser resolves it.
+struct GainedObjects<'a> {
+    type_schema: &'a Value,
+    definitions: &'a DefinitionsRoot<'a>,
+}
+
+impl GainedObjects<'_> {
+    /// The first `required` list no document could meet in an object the contract gains below
+    /// the object at `path` (`None`: the type itself), whose members as the stored type parses
+    /// them are `old` and as the new type parses them `new`, and which the validator reads in
+    /// `schemas` as written: an object `new` holds and `old` does not is judged with
+    /// [`Self::first_unmeetable_list_of_gained_object`], one both hold is searched below.
+    fn first_unmeetable_list_below(
+        &self,
+        old: &IndexMap<String, DocumentProperty>,
+        new: &IndexMap<String, DocumentProperty>,
+        schemas: Vec<&Value>,
+        path: Option<&str>,
+    ) -> Option<String> {
+        let read = self.schemas_read(schemas)?;
+        new.iter().find_map(|(name, new_property)| {
+            let DocumentPropertyType::Object(new_members) = &new_property.property_type else {
+                return None;
+            };
+            let member_schemas = member_schemas(&read, name);
+            let path = member_path(path, name);
+            match old.get(name).map(|property| &property.property_type) {
+                Some(DocumentPropertyType::Object(old_members)) => self
+                    .first_unmeetable_list_below(
+                        old_members,
+                        new_members,
+                        member_schemas,
+                        Some(&path),
+                    ),
+                Some(_) => None,
+                None => {
+                    self.first_unmeetable_list_of_gained_object(member_schemas, new_members, &path)
+                }
+            }
+        })
+    }
+
+    /// The first `required` list no document could meet in the object the contract gains at
+    /// `path`, whose members as the type parses them are `members` and which the validator reads
+    /// in `schemas` as written (and in the schema each `$ref` among them points at), or in an
+    /// object inside it. Every list those schemas hold names only members of the object, no
+    /// dotted name, and, together, no more members than the least `maxProperties` among them;
+    /// a schema written with `additionalProperties: false` admits only the members its own
+    /// `properties` declare, so the lists name none it does not.
+    fn first_unmeetable_list_of_gained_object(
+        &self,
+        schemas: Vec<&Value>,
+        members: &IndexMap<String, DocumentProperty>,
+        path: &str,
+    ) -> Option<String> {
+        let read = self.schemas_read(schemas)?;
+        let mut names = BTreeSet::new();
+        for name in read.iter().copied().flat_map(required_names) {
+            if name.contains('.') {
+                return Some(dotted_name_refusal(path, name));
+            }
+            if !members.contains_key(name) {
+                return Some(format!(
+                    "the required of '{path}' names '{name}', which is not one of its members, \
+                     so no document can hold the object"
+                ));
+            }
+            names.insert(name);
+        }
+        for schema in read
+            .iter()
+            .copied()
+            .filter(|schema| closes_its_members(schema))
+        {
+            let declared = properties_as_written(schema);
+            if let Some(undeclared) = names.iter().find(|name| !declared.contains_key(**name)) {
+                return Some(format!(
+                    "the required of '{path}' names '{undeclared}', which a schema written for \
+                     the object with additionalProperties false does not declare, so no document \
+                     can hold the object"
+                ));
+            }
+        }
+        if let Some(refusal) = past_max_properties(path, names.len(), read.iter().copied()) {
+            return Some(refusal);
+        }
+        members.iter().find_map(|(name, member)| {
+            let DocumentPropertyType::Object(member_members) = &member.property_type else {
+                return None;
+            };
+            self.first_unmeetable_list_of_gained_object(
+                member_schemas(&read, name),
+                member_members,
+                &member_path(Some(path), name),
+            )
+        })
+    }
+
+    /// Every schema the validator applies to an object written as `schemas`: each of them, and
+    /// the schema each `$ref` among them points at, resolved as the parser resolves it. `None`
+    /// when one points at nothing, which the parse refuses.
+    fn schemas_read<'s>(&'s self, schemas: Vec<&'s Value>) -> Option<Vec<&'s Value>> {
+        let mut read = Vec::with_capacity(schemas.len() * 2);
+        for schema in schemas {
+            read.push(schema);
+            if let Some(reference) = reference_of(schema) {
+                read.push(
+                    self.definitions
+                        .resolve(reference, Some(self.type_schema))?,
+                );
+            }
+        }
+        Some(read)
+    }
+}
+
+/// The schemas written for the member `name` in `read`, the schemas the validator applies to its
+/// object: the entries of their `properties` under that name.
+fn member_schemas<'s>(read: &[&'s Value], name: &str) -> Vec<&'s Value> {
+    read.iter()
+        .filter_map(|schema| properties_as_written(schema).get(name).copied())
+        .collect()
+}
+
+/// Whether `schema` writes `additionalProperties: false`, which the validator holds against the
+/// `properties` written in the same schema.
+fn closes_its_members(schema: &Value) -> bool {
+    schema
+        .as_map()
+        .and_then(|schema| schema.get_optional_key(ADDITIONAL_PROPERTIES))
+        .and_then(Value::as_bool)
+        == Some(false)
+}
+
+/// The first reason the own `required` of a document type the contract gains is one no
+/// document could meet: a dotted name, a name the validator holds a document to that is not one
+/// of its properties (the system timestamps the validation schema leaves out of the list are
+/// not), or more of those names than its `maxProperties` lets a document hold.
+fn first_unmeetable_type_list(
+    document_type: DocumentTypeRef,
+    platform_version: &PlatformVersion,
+) -> Option<String> {
+    let schema = document_type.schema();
+    if let Some(dotted) = required_names(schema)
+        .into_iter()
+        .find(|name| name.contains('.'))
+    {
         return Some(format!(
-            "the required of '{path}' can not name the dotted name '{dotted}': a required list \
-             names the members of its own object, and the document validator reads a dotted \
-             name as a property named with a dot, which no document can hold"
+            "the document type's required can not name the dotted name '{dotted}': a required \
+             list names the members of its own object, and the document validator reads a \
+             dotted name as a property named with a dot, which no document can hold"
         ));
     }
-    if let Some(max_properties) = max_properties(schema) {
-        if names.len() as u64 > max_properties {
-            return Some(format!(
-                "the required of '{path}' names {} members, more than the {max_properties} its \
-                 object may hold (maxProperties), so no document could hold the object",
-                names.len()
-            ));
+    let validated = validated_type_list(schema, platform_version)?;
+    if let Some(unknown) = validated
+        .iter()
+        .find(|name| !document_type.properties().contains_key(*name))
+    {
+        return Some(format!(
+            "the document type's required names '{unknown}', which is not one of its \
+             properties, so no document of the type can be stored"
+        ));
+    }
+    type_list_past_max_properties(None, schema, platform_version)
+}
+
+/// The names of the own `required` of the document type written as `schema` that the document
+/// validator holds a document to: those of its validation schema, which leaves out the system
+/// timestamps. `None` when the schema has no validation schema, which the parse refuses.
+fn validated_type_list(
+    schema: &Value,
+    platform_version: &PlatformVersion,
+) -> Option<BTreeSet<String>> {
+    let validation_schema =
+        DocumentType::enrich_with_base_schema(schema.clone(), None, platform_version).ok()?;
+    Some(
+        required_names(&validation_schema)
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+    )
+}
+
+/// Why the own `required` of the document type written as `new_schema` names more properties
+/// than its `maxProperties` lets a document hold, if it does and has grown since `old_schema`
+/// (`None` for a type the contract gains). The names counted are those the document validator
+/// holds a document to ([`validated_type_list`]).
+fn type_list_past_max_properties(
+    old_schema: Option<&Value>,
+    new_schema: &Value,
+    platform_version: &PlatformVersion,
+) -> Option<String> {
+    let max_properties = max_properties(new_schema)?;
+    let count = validated_type_list(new_schema, platform_version)?.len();
+    if count as u64 <= max_properties {
+        return None;
+    }
+    if let Some(old_schema) = old_schema {
+        if validated_type_list(old_schema, platform_version)
+            .is_some_and(|old_names| old_names.len() >= count)
+        {
+            return None;
         }
     }
-    let is_inline_object = !has_ref(schema) && declared_type == Some("object");
-    if inline_members_known && is_inline_object {
-        let members = inline_member_schemas(schema);
-        if let Some(unknown) = names.iter().find(|name| !members.contains_key(*name)) {
-            return Some(format!(
-                "the required of '{path}' names '{unknown}', which is not one of its members, \
-                 so no document can hold the object"
-            ));
-        }
-    }
-    let members = schema
-        .as_map()
-        .and_then(|schema| schema.get_optional_key(PROPERTIES))
-        .and_then(Value::as_map)?;
-    // Only an object written inline lists its members; those written beside a `$ref` restate
-    // the definition's
-    let inline_members_known = inline_members_known && is_inline_object;
-    members.iter().find_map(|(name, member)| {
-        first_unmet_name_in_added_object(
-            member,
-            &member_path(Some(path), name.as_text()?),
-            inline_members_known,
+    Some(format!(
+        "the document type's required names {count} properties, more than the \
+         {max_properties} a document may hold (maxProperties), so no document of the type could \
+         be stored"
+    ))
+}
+
+/// Why a `required` list naming `count` members of the object at `path` is one no document
+/// could meet: more than the least `maxProperties` of `schemas`, the schemas the validator reads
+/// for the object.
+fn past_max_properties<'s>(
+    path: &str,
+    count: usize,
+    schemas: impl IntoIterator<Item = &'s Value>,
+) -> Option<String> {
+    let max_properties = schemas.into_iter().filter_map(max_properties).min()?;
+    (count as u64 > max_properties).then(|| {
+        format!(
+            "the required of '{path}' names {count} members, more than the {max_properties} its \
+             object may hold (maxProperties), so no document could hold the object"
         )
     })
+}
+
+fn dotted_name_refusal(path: &str, dotted: &str) -> String {
+    format!(
+        "the required of '{path}' can not name the dotted name '{dotted}': a required list names \
+         the members of its own object, and the document validator reads a dotted name as a \
+         property named with a dot, which no document can hold"
+    )
+}
+
+/// The `$ref` written in `schema`, if it writes one as text.
+fn reference_of(schema: &Value) -> Option<&str> {
+    schema.as_map()?.get_optional_key(REF)?.as_text()
 }
 
 fn member_path(path: Option<&str>, name: &str) -> String {

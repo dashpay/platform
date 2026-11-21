@@ -107,7 +107,7 @@ impl DocumentTypeRef<'_> {
             return Ok(result);
         }
 
-        let result = self.validate_required_lists_kept(new_document_type);
+        let result = self.validate_required_lists_kept(new_document_type, platform_version);
 
         if !result.is_valid() {
             return Ok(result);

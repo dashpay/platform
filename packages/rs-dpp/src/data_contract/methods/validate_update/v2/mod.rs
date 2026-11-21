@@ -29,10 +29,12 @@ impl DataContract {
     /// The rule is about an update that submits schemas. A token configuration update submits
     /// none and stores the stored schemas and `$defs` as they are, so it does not come here.
     ///
-    /// Once generation 1 accepts the update, the `required` lists of a document type it adds keep
-    /// the rules of those of an object an update adds; the objects the contract gains list their
-    /// members at consecutive positions in map order, as at registration, and an object the
-    /// contract has keeps its members' order and gains new ones at its next free positions
+    /// Once generation 1 accepts the update, every object the contract gains, in a type it has
+    /// or in a type the update adds, has `required` lists a document can meet, and a type the
+    /// update adds the member requiredness its lists name
+    /// ([`DataContract::validate_gained_requirements`]); the objects the contract gains list
+    /// their members at consecutive positions in map order, as at registration, and an object
+    /// the contract has keeps its members' order and gains new ones at its next free positions
     /// ([`MemberPositionOrder`]).
     ///
     /// Delegating to generation 1 is safe because that generation is shipped and therefore
@@ -56,33 +58,13 @@ impl DataContract {
             return Ok(result);
         }
 
-        let result = self.validate_update_required_lists_of_added_types(new_data_contract);
+        let result =
+            new_data_contract.validate_gained_requirements(Some(self), platform_version)?;
         if !result.is_valid() {
             return Ok(result);
         }
 
         Ok(self.validate_update_member_position_order(new_data_contract, platform_version))
-    }
-
-    /// Refuses the update when a document type it adds has a `required` list naming a dotted
-    /// name, or the list of an object written inline naming a name that is not one of its
-    /// members or more names than its `maxProperties`, as an object it adds to a type the
-    /// contract has may not (`validate_required_lists_of_added_type`).
-    fn validate_update_required_lists_of_added_types(
-        &self,
-        new_data_contract: &DataContract,
-    ) -> SimpleConsensusValidationResult {
-        new_data_contract
-            .document_types()
-            .iter()
-            .filter(|(name, _)| !self.document_types().contains_key(*name))
-            .map(|(_, document_type)| {
-                document_type
-                    .as_ref()
-                    .validate_required_lists_of_added_type()
-            })
-            .find(|result| !result.is_valid())
-            .unwrap_or_default()
     }
 
     /// Refuses the update when an object of a document type's schema, or of the `$defs`, that
@@ -1236,65 +1218,333 @@ mod tests {
         }
     }
 
-    /// The `required` lists of a document type an update adds are held as an object an update
-    /// adds to a type is: they name only members their object has, and no more than its
-    /// `maxProperties` lets it hold.
+    /// A document type an update adds holds no stored document, and is held as every object an
+    /// update adds is: each `required` list the validator reads for an object (its own, an
+    /// inline object's, the one beside a `$ref`, the definition's, and those of the entries
+    /// written beside a `$ref`, read together with the definition's member) names only members
+    /// the object has, none a schema written for it with `additionalProperties: false` does not
+    /// declare, and no more than the least `maxProperties` lets it hold; the type's own names
+    /// only its properties, the system timestamps the validator leaves out aside; and each member
+    /// is required exactly when a list names it, so the parser reading a required name of an
+    /// enclosing property as naming a member (`meta_y` naming `meta.y`) is refused. Protocol
+    /// version 14 judges none of it.
     #[test]
     fn should_hold_the_required_lists_of_a_document_type_an_update_adds() {
-        let platform_version = PlatformVersion::latest();
         let stored = type_with(vec![("q", string_at(0))]);
-        for (case, meta, fragment) in [
+        let boolean_at =
+            |position: u64| platform_value!({ "type": "boolean", "position": position });
+        let definitions = BTreeMap::from([
+            ("m".to_string(), object_of(vec![("y", boolean_at(0))])),
+            (
+                "n".to_string(),
+                object_of(vec![(
+                    "inner",
+                    with_position(object_of(vec![("p", boolean_at(0))]), 0),
+                )]),
+            ),
+            (
+                "r".to_string(),
+                object_of(vec![(
+                    "inner",
+                    platform_value!({
+                        "type": "object",
+                        "position": 0,
+                        "properties": { "p": boolean_at(0) },
+                        "required": ["p"],
+                        "additionalProperties": false,
+                    }),
+                )]),
+            ),
+        ]);
+        for (case, added, refused) in [
             (
                 "an inline object requiring a name it does not have",
                 platform_value!({
                     "type": "object",
-                    "position": 0,
-                    "properties": { "y": { "type": "boolean", "position": 0 } },
-                    "required": ["w"],
+                    "properties": {
+                        "meta": {
+                            "type": "object",
+                            "position": 0,
+                            "properties": { "y": boolean_at(0) },
+                            "required": ["w"],
+                            "additionalProperties": false,
+                        },
+                    },
                     "additionalProperties": false,
                 }),
-                "'w'",
+                Some("'w'"),
             ),
             (
                 "an inline object requiring more members than its maxProperties",
                 platform_value!({
                     "type": "object",
-                    "position": 0,
                     "properties": {
-                        "y": { "type": "boolean", "position": 0 },
-                        "z": { "type": "boolean", "position": 1 },
+                        "meta": {
+                            "type": "object",
+                            "position": 0,
+                            "properties": { "y": boolean_at(0), "z": boolean_at(1) },
+                            "required": ["y", "z"],
+                            "maxProperties": 1,
+                            "additionalProperties": false,
+                        },
                     },
-                    "required": ["y", "z"],
+                    "additionalProperties": false,
+                }),
+                Some("maxProperties"),
+            ),
+            (
+                "an optional member the parser reads as required through an enclosing name",
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "meta_y": string_at(0),
+                        "meta": {
+                            "type": "object",
+                            "position": 1,
+                            "properties": { "y": boolean_at(0) },
+                            "additionalProperties": false,
+                        },
+                    },
+                    "required": ["meta_y"],
+                    "additionalProperties": false,
+                }),
+                Some("'meta.y'"),
+            ),
+            (
+                "the type requiring more properties than its maxProperties",
+                platform_value!({
+                    "type": "object",
+                    "properties": { "a": string_at(0), "b": string_at(1) },
+                    "required": ["a", "b"],
                     "maxProperties": 1,
                     "additionalProperties": false,
                 }),
-                "maxProperties",
+                Some("maxProperties"),
+            ),
+            (
+                "the type requiring a system timestamp and as many properties as its maxProperties",
+                platform_value!({
+                    "type": "object",
+                    "properties": { "a": string_at(0), "b": string_at(1) },
+                    "required": ["$createdAt", "a"],
+                    "maxProperties": 1,
+                    "additionalProperties": false,
+                }),
+                None,
+            ),
+            (
+                "the type requiring a name that is not one of its properties",
+                platform_value!({
+                    "type": "object",
+                    "properties": { "a": string_at(0) },
+                    "required": ["a", "zzz"],
+                    "additionalProperties": false,
+                }),
+                Some("'zzz'"),
+            ),
+            (
+                "a $ref requiring a name its definition does not have",
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "meta": { "$ref": "#/$defs/m", "position": 0, "required": ["typo"] },
+                    },
+                    "additionalProperties": false,
+                }),
+                Some("'typo'"),
+            ),
+            (
+                "an entry beside a $ref requiring a name its definition's member does not have",
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "meta": {
+                            "$ref": "#/$defs/n",
+                            "position": 0,
+                            "required": ["inner"],
+                            "properties": {
+                                "inner": {
+                                    "type": "object",
+                                    "properties": { "p": { "type": "boolean" } },
+                                    "required": ["zzz"],
+                                    "additionalProperties": false,
+                                },
+                            },
+                        },
+                    },
+                    "additionalProperties": false,
+                }),
+                Some("'zzz'"),
+            ),
+            (
+                "an entry beside a $ref letting its definition's member hold fewer members than \
+                 it requires",
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "meta": {
+                            "$ref": "#/$defs/r",
+                            "position": 0,
+                            "properties": {
+                                "inner": {
+                                    "type": "object",
+                                    "properties": { "p": { "type": "boolean", "position": 0 } },
+                                    "maxProperties": 0,
+                                    "additionalProperties": false,
+                                },
+                            },
+                        },
+                    },
+                    "additionalProperties": false,
+                }),
+                Some("maxProperties"),
+            ),
+            (
+                "a $ref closed to members its own properties do not declare, requiring one",
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "meta": {
+                            "$ref": "#/$defs/m",
+                            "position": 0,
+                            "required": ["y"],
+                            "additionalProperties": false,
+                        },
+                    },
+                    "additionalProperties": false,
+                }),
+                Some("additionalProperties false"),
+            ),
+            (
+                "the type requiring a system property it does not declare",
+                platform_value!({
+                    "type": "object",
+                    "properties": { "a": string_at(0) },
+                    "required": ["$ownerId", "a"],
+                    "additionalProperties": false,
+                }),
+                Some("'$ownerId'"),
+            ),
+            (
+                "a $ref requiring a member of its definition",
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "meta": { "$ref": "#/$defs/m", "position": 0, "required": ["y"] },
+                    },
+                    "additionalProperties": false,
+                }),
+                None,
             ),
         ] {
-            let (stored_contract, mut updated) =
-                stored_and_updated(stored.clone(), None, stored.clone(), None, platform_version);
-            updated
-                .set_document_schema(
-                    "added",
-                    type_with(vec![("meta", meta)]),
-                    false,
-                    &mut Vec::new(),
+            for platform_version in [
+                PlatformVersion::get(14).expect("expected protocol version 14"),
+                PlatformVersion::latest(),
+            ] {
+                let (stored_contract, mut updated) = stored_and_updated(
+                    stored.clone(),
+                    Some(definitions.clone()),
+                    stored.clone(),
+                    Some(definitions.clone()),
                     platform_version,
-                )
-                .expect("expected the new type to be set");
-            let result = stored_contract
-                .validate_update(&updated, &BlockInfo::default(), platform_version)
-                .expect("expected the update to be judged");
-            assert!(
-                matches!(
-                    result.errors.as_slice(),
-                    [ConsensusError::BasicError(
-                        BasicError::DataContractInvalidRequiredFieldsUpdateError(e)
-                    )] if e.details().contains(fragment)
+                );
+                updated
+                    .set_document_schema(
+                        "added",
+                        added.clone(),
+                        false,
+                        &mut Vec::new(),
+                        platform_version,
+                    )
+                    .expect("expected the new type to be set");
+                let result = stored_contract
+                    .validate_update(&updated, &BlockInfo::default(), platform_version)
+                    .expect("expected the update to be judged");
+                match refused.filter(|_| platform_version.protocol_version >= 15) {
+                    None => assert!(
+                        result.is_valid(),
+                        "{case} at protocol version {}: {:?}",
+                        platform_version.protocol_version,
+                        result.errors
+                    ),
+                    Some(fragment) => assert!(
+                        matches!(
+                            result.errors.as_slice(),
+                            [ConsensusError::BasicError(
+                                BasicError::DataContractInvalidRequiredFieldsUpdateError(e)
+                            )] if e.details().contains(fragment)
+                        ),
+                        "{case}: {:?}",
+                        result.errors
+                    ),
+                }
+            }
+        }
+    }
+
+    /// What an update gains in a document type the contract has is held as a type it adds is,
+    /// through the contract's dispatcher: a `$ref` it adds names in the list beside it only
+    /// members of its definition. Protocol version 14 judges none of it.
+    #[test]
+    fn should_hold_what_an_update_gains_in_a_type_the_contract_has() {
+        let definitions = BTreeMap::from([(
+            "m".to_string(),
+            object_of(vec![(
+                "y",
+                platform_value!({ "type": "boolean", "position": 0 }),
+            )]),
+        )]);
+        let stored = type_with(vec![("a", string_at(0))]);
+        let gaining = |beside: Value| {
+            type_with(vec![
+                ("a", string_at(0)),
+                (
+                    "meta",
+                    platform_value!({ "$ref": "#/$defs/m", "position": 1, "required": beside }),
                 ),
-                "{case}: {:?}",
-                result.errors
-            );
+            ])
+        };
+        for (case, beside, refused) in [
+            (
+                "a name its definition does not have",
+                platform_value!(["typo"]),
+                Some("'typo'"),
+            ),
+            ("a member of its definition", platform_value!(["y"]), None),
+        ] {
+            for platform_version in [
+                PlatformVersion::get(14).expect("expected protocol version 14"),
+                PlatformVersion::latest(),
+            ] {
+                let (stored_contract, updated) = stored_and_updated(
+                    stored.clone(),
+                    Some(definitions.clone()),
+                    gaining(beside.clone()),
+                    Some(definitions.clone()),
+                    platform_version,
+                );
+                let result = stored_contract
+                    .validate_update(&updated, &BlockInfo::default(), platform_version)
+                    .expect("expected the update to be judged");
+                match refused.filter(|_| platform_version.protocol_version >= 15) {
+                    None => assert!(
+                        result.is_valid(),
+                        "{case} at protocol version {}: {:?}",
+                        platform_version.protocol_version,
+                        result.errors
+                    ),
+                    Some(fragment) => assert!(
+                        matches!(
+                            result.errors.as_slice(),
+                            [ConsensusError::BasicError(
+                                BasicError::DataContractInvalidRequiredFieldsUpdateError(e)
+                            )] if e.details().contains(fragment)
+                        ),
+                        "{case}: {:?}",
+                        result.errors
+                    ),
+                }
+            }
         }
     }
 
