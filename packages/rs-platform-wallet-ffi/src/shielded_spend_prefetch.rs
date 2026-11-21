@@ -33,8 +33,7 @@ pub extern "C" fn platform_wallet_manager_shielded_prefetch_spend_anchors(
     // Called from an event callback, this can run while the export that
     // dispatched the event holds the registry, hence the recursive read.
     let lookup = PLATFORM_WALLET_MANAGER_STORAGE.with_item_recursive(handle, |manager| {
-        let _runtime = runtime().enter();
-        manager.prefetch_shielded_spend_anchors()
+        manager.prefetch_shielded_spend_anchors(runtime().handle())
     });
     match lookup {
         None => PlatformWalletFFIResult::err(
@@ -195,16 +194,17 @@ mod tests {
         );
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         {
-            let _runtime = runtime().enter();
-            assert!(manager.spawn_shielded_prefetch_for_testing(async move {
-                response_rx.await.expect("delayed response");
-                let key = sdk
-                    .context_provider()
-                    .expect("callback provider")
-                    .get_quorum_public_key(1, [2; 32], 3)
-                    .expect("host supplies the quorum key");
-                assert_eq!(key, [7; 48]);
-            }));
+            assert!(
+                manager.spawn_shielded_prefetch_for_testing(runtime().handle(), async move {
+                    response_rx.await.expect("delayed response");
+                    let key = sdk
+                        .context_provider()
+                        .expect("callback provider")
+                        .get_quorum_public_key(1, [2; 32], 3)
+                        .expect("host supplies the quorum key");
+                    assert_eq!(key, [7; 48]);
+                })
+            );
         }
         let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
         response_tx.send(()).expect("release delayed response");
@@ -264,16 +264,17 @@ mod tests {
         );
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         {
-            let _runtime = runtime().enter();
-            assert!(manager.spawn_shielded_prefetch_for_testing(async move {
-                response_rx.await.expect("delayed response");
-                let key = sdk
-                    .context_provider()
-                    .expect("callback provider")
-                    .get_quorum_public_key(1, [2; 32], 3)
-                    .expect("host supplies the quorum key");
-                assert_eq!(key, [7; 48]);
-            }));
+            assert!(
+                manager.spawn_shielded_prefetch_for_testing(runtime().handle(), async move {
+                    response_rx.await.expect("delayed response");
+                    let key = sdk
+                        .context_provider()
+                        .expect("callback provider")
+                        .get_quorum_public_key(1, [2; 32], 3)
+                        .expect("host supplies the quorum key");
+                    assert_eq!(key, [7; 48]);
+                })
+            );
         }
         response_tx.send(()).expect("release delayed response");
         entered_rx.recv_timeout(WAIT).expect("SDK callback entered");
@@ -322,16 +323,17 @@ mod tests {
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         {
-            let _runtime = runtime().enter();
-            assert!(manager.spawn_shielded_prefetch_for_testing(async move {
-                let _ = started_tx.send(());
-                if response_rx.await.is_ok() {
-                    let _ = sdk
-                        .context_provider()
-                        .expect("callback provider")
-                        .get_quorum_public_key(1, [2; 32], 3);
-                }
-            }));
+            assert!(
+                manager.spawn_shielded_prefetch_for_testing(runtime().handle(), async move {
+                    let _ = started_tx.send(());
+                    if response_rx.await.is_ok() {
+                        let _ = sdk
+                            .context_provider()
+                            .expect("callback provider")
+                            .get_quorum_public_key(1, [2; 32], 3);
+                    }
+                })
+            );
         }
         runtime()
             .block_on(started_rx)
