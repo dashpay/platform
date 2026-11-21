@@ -1,10 +1,13 @@
 //! Signer-aware identity key selection shared by wallet operations.
 
+use super::key_selection::{
+    check_signing_key, usable_signing_key, SigningScope, PLATFORM_SIGNING_KEY_TYPES,
+    WALLET_SIGNING_KEY_TYPES,
+};
 use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
-use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+use dpp::identity::{Identity, IdentityPublicKey, Purpose, SecurityLevel};
 use dpp::ProtocolError;
 
 /// Preserve the signer's unavailable-key discriminator through SDK and FFI errors.
@@ -44,60 +47,92 @@ pub(super) fn first_available<'a>(
     unavailable.map_or(Ok(None), |key| Err(signing_key_unavailable(key)))
 }
 
-/// Signer-aware `get_first_public_key_matching`: key-ID order, same eligibility policy.
-/// Call on an identity snapshot, outside wallet manager guards.
-/// `Ok(None)` means no eligible key; `Err` means eligible keys are unavailable.
-pub(super) trait AvailableSigningKey {
-    fn available_signing_key(
-        &self,
-        signer: &impl Signer<IdentityPublicKey>,
-        purpose: Purpose,
-        security_levels: &[SecurityLevel],
-        key_types: &[KeyType],
-        allow_disabled: bool,
-    ) -> Result<Option<&IdentityPublicKey>, dash_sdk::Error>;
+/// The security levels a contract create accepts: HIGH or stronger short of MASTER, as
+/// consensus does (`DataContractCreateTransition::security_level_requirement`).
+pub(super) const CONTRACT_CREATE_SIGNING_LEVELS: [SecurityLevel; 2] =
+    [SecurityLevel::CRITICAL, SecurityLevel::HIGH];
+
+/// The security levels a contract update accepts: CRITICAL only, as consensus does
+/// (`DataContractUpdateTransition::security_level_requirement`).
+pub(super) const CONTRACT_UPDATE_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::CRITICAL];
+
+/// The security levels [`master_signing_key`] accepts.
+pub(super) const MASTER_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::MASTER];
+
+/// The key that signs a contract create or update: an AUTHENTICATION ECDSA key at one of
+/// `security_levels`, [`CONTRACT_CREATE_SIGNING_LEVELS`] or [`CONTRACT_UPDATE_SIGNING_LEVELS`].
+/// These are not batches, so a contract-bound key cannot sign them.
+pub(super) fn contract_signing_key<'a>(
+    identity: &'a Identity,
+    signer: &impl Signer<IdentityPublicKey>,
+    security_levels: &[SecurityLevel],
+) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
+    usable_signing_key(
+        identity,
+        signer,
+        Purpose::AUTHENTICATION,
+        security_levels,
+        &WALLET_SIGNING_KEY_TYPES,
+        SigningScope::NonBatch,
+    )
 }
 
-impl AvailableSigningKey for Identity {
-    fn available_signing_key(
-        &self,
-        signer: &impl Signer<IdentityPublicKey>,
-        purpose: Purpose,
-        security_levels: &[SecurityLevel],
-        key_types: &[KeyType],
-        allow_disabled: bool,
-    ) -> Result<Option<&IdentityPublicKey>, dash_sdk::Error> {
-        let eligible = self.public_keys().values().filter(|key| {
-            key.purpose() == purpose
-                && security_levels.contains(&key.security_level())
-                && key_types.contains(&key.key_type())
-                && (allow_disabled || !key.is_disabled())
-        });
-        first_available(eligible, signer)
-    }
+/// The MASTER key that authorizes an identity update. Platform refuses a disabled signing key.
+pub(super) fn master_signing_key<'a>(
+    identity: &'a Identity,
+    signer: &impl Signer<IdentityPublicKey>,
+) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
+    usable_signing_key(
+        identity,
+        signer,
+        Purpose::AUTHENTICATION,
+        &MASTER_SIGNING_LEVELS,
+        &WALLET_SIGNING_KEY_TYPES,
+        SigningScope::NonBatch,
+    )
 }
 
-/// Respect explicit keys; automatic withdrawals exhaust TRANSFER before OWNER.
-pub(super) fn credit_signing_key<'a>(
+/// The security levels a credit transfer or withdrawal accepts, whatever the key's purpose.
+const CREDIT_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::CRITICAL];
+
+/// The key that signs a credit transfer or withdrawal: a CRITICAL TRANSFER key, or a CRITICAL
+/// OWNER key when `allow_owner`, which only a withdrawal to the identity's payout address sets.
+/// An explicit key is never substituted; it is checked by the rules automatic selection
+/// applies, and refused with Platform's typed error. Automatic withdrawals exhaust TRANSFER
+/// keys before OWNER. Among keys of one purpose the automatic choice follows
+/// [`usable_signing_key`]: a key of a type DIP-11 defines (`ECDSA_SECP256K1`, `BLS12_381`)
+/// before an `ECDSA_HASH160` one, then the lowest key id; an identity holding only HASH160
+/// keys still signs with one.
+pub(crate) fn credit_signing_key<'a>(
     identity: &'a Identity,
     explicit: Option<&'a IdentityPublicKey>,
     signer: &impl Signer<IdentityPublicKey>,
     allow_owner: bool,
 ) -> Result<&'a IdentityPublicKey, dash_sdk::Error> {
-    if let Some(key) = explicit {
-        return require_available(key, signer);
-    }
-    let mut unavailable = None;
-    for purpose in [Purpose::TRANSFER]
+    let purposes: Vec<Purpose> = [Purpose::TRANSFER]
         .into_iter()
         .chain(allow_owner.then_some(Purpose::OWNER))
-    {
-        match identity.available_signing_key(
+        .collect();
+    if let Some(key) = explicit {
+        check_signing_key(
+            key,
+            signer,
+            &purposes,
+            &CREDIT_SIGNING_LEVELS,
+            &PLATFORM_SIGNING_KEY_TYPES,
+            SigningScope::NonBatch,
+        )?;
+        return Ok(key);
+    }
+    let mut unavailable = None;
+    for purpose in purposes {
+        match usable_signing_key(
+            identity,
             signer,
             purpose,
-            &SecurityLevel::full_range(),
-            &KeyType::all_key_types(),
-            true,
+            &CREDIT_SIGNING_LEVELS,
+            &PLATFORM_SIGNING_KEY_TYPES,
+            SigningScope::NonBatch,
         ) {
             Ok(Some(key)) => return Ok(key),
             Ok(None) => {}
@@ -116,14 +151,20 @@ pub(super) fn credit_signing_key<'a>(
 
 #[cfg(test)]
 pub(super) mod tests {
+    use super::super::key_selection::tests::{refused_purposes, signature_refusal_of};
     use super::*;
+    use crate::{PlatformWallet, PlatformWalletError};
     use async_trait::async_trait;
     use dpp::address_funds::AddressWitness;
+    use dpp::consensus::signature::SignatureError;
+    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::KeyType;
     use dpp::platform_value::BinaryData;
     use dpp::prelude::Identifier;
     use dpp::version::PlatformVersion;
+    use std::sync::Arc;
 
     /// Test signer that can sign with the keys `F` accepts; selection must never sign.
     pub(crate) struct KeyFilter<F: Fn(&IdentityPublicKey) -> bool>(pub F);
@@ -221,15 +262,15 @@ pub(super) mod tests {
         ineligible.set_purpose(Purpose::ENCRYPTION);
         identity.add_public_key(ineligible);
         let select = |identity: &Identity, ids: &[u32]| {
-            identity
-                .available_signing_key(
-                    &available(ids),
-                    Purpose::AUTHENTICATION,
-                    &[SecurityLevel::HIGH],
-                    &[KeyType::ECDSA_HASH160],
-                    false,
-                )
-                .map(|key| key.map(|key| key.id()))
+            usable_signing_key(
+                identity,
+                &available(ids),
+                Purpose::AUTHENTICATION,
+                &[SecurityLevel::HIGH],
+                &[KeyType::ECDSA_HASH160],
+                SigningScope::NonBatch,
+            )
+            .map(|key| key.map(|key| key.id()))
         };
         assert_eq!(select(&identity, &[2, 3]).unwrap(), Some(2));
         assert_eq!(select(&identity, &[1, 2]).unwrap(), Some(1));
@@ -248,8 +289,14 @@ pub(super) mod tests {
         key.set_disabled_at(1);
         let select = |purpose, level, key_type| {
             let signer = available(&[1, 2]);
-            let key =
-                identity.available_signing_key(&signer, purpose, &[level], &[key_type], false);
+            let key = usable_signing_key(
+                &identity,
+                &signer,
+                purpose,
+                &[level],
+                &[key_type],
+                SigningScope::NonBatch,
+            );
             key.unwrap().map(|k| k.id())
         };
         assert_eq!(
@@ -267,7 +314,110 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn should_exhaust_transfer_keys_including_disabled_before_owner_fallback() {
+    fn should_sign_credit_operations_only_with_a_critical_key() {
+        let mut identity = identity(
+            Purpose::TRANSFER,
+            SecurityLevel::HIGH,
+            KeyType::ECDSA_HASH160,
+        );
+        let mut critical = identity.public_keys().get(&2).unwrap().clone();
+        critical.set_id(3);
+        critical.set_security_level(SecurityLevel::CRITICAL);
+        identity.add_public_key(critical);
+        let mut owner = identity.public_keys().get(&2).unwrap().clone();
+        owner.set_id(4);
+        owner.set_purpose(Purpose::OWNER);
+        identity.add_public_key(owner);
+        let signer = available(&[1, 2, 3, 4]);
+        assert_eq!(
+            credit_signing_key(&identity, None, &signer, true)
+                .unwrap()
+                .id(),
+            3,
+            "the HIGH TRANSFER keys 1 and 2 are skipped"
+        );
+        for id in [1, 4] {
+            let refusal =
+                credit_signing_key(&identity, identity.public_keys().get(&id), &signer, true);
+            assert!(
+                matches!(
+                    refusal.as_ref().err().and_then(signature_refusal_of),
+                    Some(SignatureError::InvalidSignaturePublicKeySecurityLevelError(
+                        _
+                    ))
+                ),
+                "credit transitions take only a CRITICAL key: {refusal:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_pick_only_a_credit_key_of_a_type_platform_verifies() {
+        let mut identity = identity(
+            Purpose::TRANSFER,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_HASH160,
+        );
+        for (id, key_type) in [
+            (1, KeyType::BIP13_SCRIPT_HASH),
+            (2, KeyType::EDDSA_25519_HASH160),
+        ] {
+            identity
+                .public_keys_mut()
+                .get_mut(&id)
+                .unwrap()
+                .set_key_type(key_type);
+        }
+        let mut verifiable = identity.public_keys().get(&2).unwrap().clone();
+        verifiable.set_id(3);
+        verifiable.set_key_type(KeyType::ECDSA_HASH160);
+        identity.add_public_key(verifiable);
+        assert_eq!(
+            credit_signing_key(&identity, None, &available(&[1, 2, 3]), false)
+                .unwrap()
+                .id(),
+            3,
+            "Drive cannot verify a signature by keys 1 and 2"
+        );
+    }
+
+    #[test]
+    fn should_prefer_a_dip11_transfer_key_over_a_hash160_one() {
+        let transfer_key = |id: u32, key_type: KeyType| -> IdentityPublicKey {
+            IdentityPublicKeyV0 {
+                id,
+                purpose: Purpose::TRANSFER,
+                security_level: SecurityLevel::CRITICAL,
+                key_type,
+                data: vec![id as u8; key_type.default_size()].into(),
+                ..Default::default()
+            }
+            .into()
+        };
+        let mut regular = Identity::default_versioned(PlatformVersion::latest()).unwrap();
+        regular.add_public_key(transfer_key(3, KeyType::ECDSA_HASH160));
+        regular.add_public_key(transfer_key(4, KeyType::ECDSA_SECP256K1));
+        assert_eq!(
+            credit_signing_key(&regular, None, &available(&[3, 4]), false)
+                .unwrap()
+                .id(),
+            4,
+            "the raw public key DIP-11 defines signs before the lower-id HASH160 key"
+        );
+
+        let mut hash160_only = Identity::default_versioned(PlatformVersion::latest()).unwrap();
+        hash160_only.add_public_key(transfer_key(3, KeyType::ECDSA_HASH160));
+        assert_eq!(
+            credit_signing_key(&hash160_only, None, &available(&[3]), false)
+                .unwrap()
+                .id(),
+            3,
+            "an identity holding only HASH160 keys still signs with one"
+        );
+    }
+
+    #[test]
+    fn should_skip_disabled_transfer_keys_before_owner_fallback() {
         let mut identity = identity(
             Purpose::TRANSFER,
             SecurityLevel::CRITICAL,
@@ -285,10 +435,107 @@ pub(super) mod tests {
         let select = |ids: &[u32], allow_owner| {
             credit_signing_key(&identity, None, &available(ids), allow_owner).map(|k| k.id())
         };
-        assert_eq!(select(&[0, 1], true).unwrap(), 1);
-        assert_eq!(select(&[0, 2], true).unwrap(), 2);
+        assert_eq!(
+            select(&[0, 1, 2], true).unwrap(),
+            2,
+            "Platform refuses a disabled signing key, so key 1 is never chosen"
+        );
+        assert_eq!(
+            select(&[0, 1], true).unwrap(),
+            0,
+            "only the disabled TRANSFER key is available, so OWNER signs"
+        );
         assert_eq!(select(&[0], true).unwrap(), 0);
-        assert_unavailable(select(&[0], false).unwrap_err());
+        assert_unavailable(select(&[1], false).unwrap_err());
+    }
+
+    #[test]
+    fn should_sign_a_contract_transition_only_with_a_key_free_of_contract_bounds() {
+        use super::super::key_selection::tests::{bound_key, identity as identity_of, key};
+        use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+
+        let identity = identity_of(vec![
+            bound_key(
+                1,
+                SecurityLevel::CRITICAL,
+                Some(ContractBounds::SingleContract {
+                    id: Identifier::from([0x0C; 32]),
+                }),
+            ),
+            key(2, SecurityLevel::CRITICAL).with_limits(Some(1_000), None),
+            key(3, SecurityLevel::CRITICAL),
+        ]);
+        let chosen = contract_signing_key(
+            &identity,
+            &KeyFilter(|_| true),
+            &CONTRACT_UPDATE_SIGNING_LEVELS,
+        )
+        .unwrap();
+        assert_eq!(
+            chosen.map(|key| key.id()),
+            Some(3),
+            "Platform refuses a contract-bound key outside a batch, and an unlimited key is \
+             taken before a budgeted one"
+        );
+    }
+
+    #[test]
+    fn should_create_a_contract_with_the_high_key_and_update_it_only_with_a_critical_one() {
+        use super::super::key_selection::tests::{identity as identity_of, key};
+
+        let pick = |keys: Vec<IdentityPublicKey>, levels: &[SecurityLevel]| {
+            contract_signing_key(&identity_of(keys), &KeyFilter(|_| true), levels)
+                .unwrap()
+                .map(|key| key.id())
+        };
+        let layout = || {
+            vec![
+                key(0, SecurityLevel::MASTER),
+                key(1, SecurityLevel::CRITICAL),
+                key(2, SecurityLevel::HIGH),
+            ]
+        };
+        assert_eq!(
+            pick(layout(), &CONTRACT_CREATE_SIGNING_LEVELS),
+            Some(2),
+            "consensus accepts a HIGH key for a contract create"
+        );
+        assert_eq!(pick(layout(), &CONTRACT_UPDATE_SIGNING_LEVELS), Some(1));
+        let without_critical = || vec![key(0, SecurityLevel::MASTER), key(2, SecurityLevel::HIGH)];
+        assert_eq!(
+            pick(without_critical(), &CONTRACT_UPDATE_SIGNING_LEVELS),
+            None,
+            "a contract update requires a CRITICAL key"
+        );
+        assert_eq!(
+            pick(without_critical(), &CONTRACT_CREATE_SIGNING_LEVELS),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn should_skip_a_disabled_master_key() {
+        let mut identity = identity(
+            Purpose::AUTHENTICATION,
+            SecurityLevel::MASTER,
+            KeyType::ECDSA_SECP256K1,
+        );
+        identity
+            .public_keys_mut()
+            .get_mut(&1)
+            .unwrap()
+            .set_disabled_at(1);
+        let select = |identity: &Identity, ids: &[u32]| {
+            master_signing_key(identity, &available(ids)).map(|key| key.map(|key| key.id()))
+        };
+        assert_eq!(select(&identity, &[1, 2]).unwrap(), Some(2));
+        assert_unavailable(select(&identity, &[1]).unwrap_err());
+        identity.public_keys_mut().retain(|id, _| *id == 1);
+        assert_eq!(
+            select(&identity, &[1]).unwrap(),
+            None,
+            "a disabled key is not eligible at all"
+        );
     }
 
     #[test]
@@ -334,6 +581,74 @@ pub(super) mod tests {
         );
     }
 
+    #[test]
+    fn should_refuse_an_explicit_credit_key_platform_would_refuse() {
+        let mut identity = identity(
+            Purpose::TRANSFER,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_HASH160,
+        );
+        let mut owner = identity.public_keys().get(&2).unwrap().clone();
+        owner.set_id(3);
+        owner.set_purpose(Purpose::OWNER);
+        let mut authentication = owner.clone();
+        identity.add_public_key(owner);
+        let mut script_hash = authentication.clone();
+        authentication.set_id(4);
+        authentication.set_purpose(Purpose::AUTHENTICATION);
+        identity.add_public_key(authentication);
+        script_hash.set_id(5);
+        script_hash.set_purpose(Purpose::TRANSFER);
+        script_hash.set_key_type(KeyType::BIP13_SCRIPT_HASH);
+        identity.add_public_key(script_hash);
+        identity
+            .public_keys_mut()
+            .get_mut(&1)
+            .unwrap()
+            .set_disabled_at(1);
+        let explicit = |id: u32, allow_owner| {
+            credit_signing_key(
+                &identity,
+                identity.public_keys().get(&id),
+                &available(&[1, 2, 3]),
+                allow_owner,
+            )
+            .map(|key| key.id())
+        };
+        assert!(
+            matches!(
+                explicit(1, true)
+                    .as_ref()
+                    .err()
+                    .and_then(signature_refusal_of),
+                Some(SignatureError::PublicKeyIsDisabledError(_))
+            ),
+            "Platform refuses a disabled signing key"
+        );
+        assert_eq!(
+            explicit(3, false).as_ref().err().and_then(refused_purposes),
+            Some(vec![Purpose::TRANSFER]),
+            "a credit transfer takes only a TRANSFER key"
+        );
+        assert_eq!(
+            explicit(4, true).as_ref().err().and_then(refused_purposes),
+            Some(vec![Purpose::TRANSFER, Purpose::OWNER]),
+            "a withdrawal names both purposes it takes"
+        );
+        assert!(
+            matches!(
+                explicit(5, false)
+                    .as_ref()
+                    .err()
+                    .and_then(signature_refusal_of),
+                Some(SignatureError::InvalidIdentityPublicKeyTypeError(_))
+            ),
+            "Platform cannot verify an identity signature by a script hash"
+        );
+        assert_eq!(explicit(3, true).unwrap(), 3, "a withdrawal may take OWNER");
+        assert_eq!(explicit(2, false).unwrap(), 2);
+    }
+
     #[tokio::test]
     async fn should_surface_unavailable_signer_from_credit_operations() {
         let wallet = wallet_with_signing_keys().await;
@@ -362,6 +677,55 @@ pub(super) mod tests {
             );
             assert_unavailable(withdraw.await.unwrap_err());
         }
+    }
+
+    #[tokio::test]
+    async fn should_not_sign_a_withdrawal_to_an_address_with_an_owner_key() {
+        use dashcore::{Address as DashAddress, Network};
+
+        let wallet = wallet_with_signing_keys().await;
+        let identity = identity(
+            Purpose::OWNER,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_HASH160,
+        );
+        let to_address = Some(DashAddress::dummy(Network::Testnet, 1));
+        let automatic = wallet
+            .identity()
+            .withdraw_credits_with_signer(
+                &identity,
+                to_address.clone(),
+                1,
+                None,
+                available(&[1, 2]),
+                None,
+            )
+            .await;
+        assert!(
+            matches!(
+                automatic,
+                Err(dash_sdk::Error::Protocol(
+                    ProtocolError::DesiredKeyWithTypePurposeSecurityLevelMissing(_)
+                ))
+            ),
+            "only an OWNER key is held, and it cannot sign this withdrawal: {automatic:?}"
+        );
+        let explicit = wallet
+            .identity()
+            .withdraw_credits_with_signer(
+                &identity,
+                to_address,
+                1,
+                identity.public_keys().get(&1),
+                available(&[1, 2]),
+                None,
+            )
+            .await;
+        assert_eq!(
+            explicit.as_ref().err().and_then(refused_purposes),
+            Some(vec![Purpose::TRANSFER]),
+            "Platform refuses an OWNER key for a withdrawal to a chosen address: {explicit:?}"
+        );
     }
 
     /// Records every changeset, so a test can read what reached the store.
@@ -415,10 +779,12 @@ pub(super) mod tests {
         }
     }
 
-    pub(crate) async fn wallet_with_signing_keys() -> std::sync::Arc<crate::PlatformWallet> {
+    pub(crate) async fn wallet_with_signing_keys() -> Arc<PlatformWallet> {
+        use crate::wallet::persister::NoPlatformPersistence;
+
         wallet_with_signing_keys_on(
             dash_sdk::SdkBuilder::new_mock().build().unwrap(),
-            std::sync::Arc::new(crate::wallet::persister::NoPlatformPersistence),
+            Arc::new(NoPlatformPersistence),
         )
         .await
     }
@@ -427,15 +793,50 @@ pub(super) mod tests {
     /// that sets mock expectations first or reads what was persisted.
     pub(crate) async fn wallet_with_signing_keys_on<P>(
         sdk: dash_sdk::Sdk,
-        persistence: std::sync::Arc<P>,
-    ) -> std::sync::Arc<crate::PlatformWallet>
+        persistence: Arc<P>,
+    ) -> Arc<PlatformWallet>
+    where
+        P: crate::changeset::PlatformWalletPersistence + 'static,
+    {
+        wallet_with_identity_in(
+            sdk,
+            persistence,
+            identity(
+                Purpose::AUTHENTICATION,
+                SecurityLevel::CRITICAL,
+                KeyType::ECDSA_SECP256K1,
+            ),
+        )
+        .await
+    }
+
+    /// A mock-SDK wallet that owns `identity`.
+    pub(crate) async fn wallet_with_identity(identity: Identity) -> Arc<PlatformWallet> {
+        wallet_with_identity_on(dash_sdk::SdkBuilder::new_mock().build().unwrap(), identity).await
+    }
+
+    /// A wallet on `sdk` that owns `identity`.
+    pub(crate) async fn wallet_with_identity_on(
+        sdk: dash_sdk::Sdk,
+        identity: Identity,
+    ) -> Arc<PlatformWallet> {
+        use crate::wallet::persister::NoPlatformPersistence;
+
+        wallet_with_identity_in(sdk, Arc::new(NoPlatformPersistence), identity).await
+    }
+
+    /// A wallet on `sdk` and `persistence` that owns `identity`.
+    async fn wallet_with_identity_in<P>(
+        sdk: dash_sdk::Sdk,
+        persistence: Arc<P>,
+        identity: Identity,
+    ) -> Arc<PlatformWallet>
     where
         P: crate::changeset::PlatformWalletPersistence + 'static,
     {
         use crate::events::{EventHandler, PlatformEventHandler};
         use crate::PlatformWalletManager;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
-        use std::sync::Arc;
 
         struct Events;
         impl EventHandler for Events {}
@@ -455,17 +856,115 @@ pub(super) mod tests {
             .unwrap()
             .identity_manager
             .add_identity(
-                identity(
-                    Purpose::AUTHENTICATION,
-                    SecurityLevel::CRITICAL,
-                    KeyType::ECDSA_SECP256K1,
-                ),
+                identity,
                 0,
                 wallet.wallet_id(),
                 &wallet.identity().persister,
             )
             .unwrap();
         wallet
+    }
+
+    /// A wallet identity holding only HIGH AUTHENTICATION keys: none can sign a contract
+    /// create or an identity update.
+    async fn wallet_without_critical_or_master_keys() -> (Arc<PlatformWallet>, Identifier) {
+        let identity = identity(
+            Purpose::AUTHENTICATION,
+            SecurityLevel::HIGH,
+            KeyType::ECDSA_SECP256K1,
+        );
+        let identity_id = identity.id();
+        (wallet_with_identity(identity).await, identity_id)
+    }
+
+    pub(crate) fn assert_no_usable_key(
+        error: PlatformWalletError,
+        identity: Identifier,
+        level: SecurityLevel,
+    ) {
+        assert!(
+            matches!(
+                &error,
+                PlatformWalletError::NoUsableSigningKey {
+                    identity_id,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_levels,
+                    key_types,
+                    ..
+                } if *identity_id == identity
+                    && security_levels == &[level]
+                    && key_types == &WALLET_SIGNING_KEY_TYPES
+            ),
+            "{error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_report_no_usable_contract_key_as_a_typed_error() {
+        let (wallet, identity_id) = wallet_without_critical_or_master_keys().await;
+        let error = wallet
+            .identity()
+            .update_data_contract_with_signer(
+                &identity_id,
+                &Identifier::from([0x0C; 32]),
+                "{}",
+                None,
+                None,
+                None,
+                None,
+                None,
+                &KeyFilter(|_| true),
+            )
+            .await
+            .unwrap_err();
+        assert_no_usable_key(error, identity_id, SecurityLevel::CRITICAL);
+
+        let identity = identity(
+            Purpose::AUTHENTICATION,
+            SecurityLevel::MEDIUM,
+            KeyType::ECDSA_SECP256K1,
+        );
+        let identity_id = identity.id();
+        let wallet = wallet_with_identity(identity).await;
+        let error = wallet
+            .identity()
+            .create_data_contract_with_signer(
+                &identity_id,
+                "{}",
+                None,
+                None,
+                None,
+                None,
+                None,
+                &KeyFilter(|_| true),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                PlatformWalletError::NoUsableSigningKey { security_levels, .. }
+                    if security_levels == &[SecurityLevel::CRITICAL, SecurityLevel::HIGH]
+            ),
+            "a contract create accepts HIGH or stronger: {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_report_no_usable_master_key_as_a_typed_error() {
+        let (wallet, identity_id) = wallet_without_critical_or_master_keys().await;
+        let error = wallet
+            .identity()
+            .update_identity_with_external_signer(
+                &identity_id,
+                vec![],
+                vec![],
+                &KeyFilter(|_| true),
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert_no_usable_key(error, identity_id, SecurityLevel::MASTER);
     }
 
     #[tokio::test]
