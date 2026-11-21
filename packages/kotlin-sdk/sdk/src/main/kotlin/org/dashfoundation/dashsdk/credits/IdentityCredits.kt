@@ -406,6 +406,8 @@ class IdentityCredits internal constructor(
      * minimum (native `ErrorInvalidParameter`), an identity Platform does not
      * know
      * ([DashSdkError.NotFound][org.dashfoundation.dashsdk.errors.DashSdkError.NotFound]),
+     * a lookup Platform could not answer
+     * ([IdentityLookupFailed][org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityLookupFailed]),
      * and a store that does not keep identity recipients.
      *
      * [onAssetLockBuilt] receives the outpoint of the lock this call built,
@@ -500,7 +502,9 @@ class IdentityCredits internal constructor(
      *
      * The assignment is permanent. Rust looks the identity up on Platform
      * first: one Platform does not know is
-     * [DashSdkError.NotFound][org.dashfoundation.dashsdk.errors.DashSdkError.NotFound]
+     * [DashSdkError.NotFound][org.dashfoundation.dashsdk.errors.DashSdkError.NotFound],
+     * a lookup Platform could not answer is
+     * [IdentityLookupFailed][org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityLookupFailed],
      * and nothing is assigned. A lock already recording another identity is
      * [AssetLockRecipientMismatch][org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.AssetLockRecipientMismatch];
      * the same identity again is a no-op, which also retries a failed store.

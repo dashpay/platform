@@ -194,7 +194,7 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * Version 17 (asset-lock sidecars, dashpay/platform#5924): adds the nullable
  * `asset_locks.operationId` (16 bytes), `asset_locks.shieldedRecipientRaw43`
  * (43 bytes) and `asset_locks.identityRecipientId` (32 bytes) columns that the
- * SQLite store keeps since its V019, V020 and V022 migrations and Swift keeps on
+ * SQLite store keeps since its V019, V020 and V023 migrations and Swift keeps on
  * `PersistentAssetLock`, the unique `(walletId, operationId)` index, and the
  * three `asset_locks_*_immutable` triggers ([createAssetLockSidecarTriggers]).
  * NULL for every pre-existing row, which reads back as a lock built without a
@@ -785,7 +785,7 @@ abstract class DashDatabase : RoomDatabase() {
          * `identityRecipientId` aborts. The same triggers the SQLite store
          * creates in `V019__asset_lock_operation_id`,
          * `V020__asset_lock_shielded_recipient` and
-         * `V022__asset_lock_identity_recipient`
+         * `V023__asset_lock_identity_recipient`
          * (packages/rs-platform-wallet-storage/migrations). The handler
          * refuses a different value before it gets here; these stop any
          * other writer. Room does not describe triggers in its schema, so

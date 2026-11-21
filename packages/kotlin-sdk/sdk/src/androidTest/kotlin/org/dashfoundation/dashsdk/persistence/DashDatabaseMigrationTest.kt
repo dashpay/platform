@@ -746,7 +746,7 @@ class DashDatabaseMigrationTest {
      * v16 → v17 adds the three nullable asset-lock sidecar columns, the
      * unique `(walletId, operationId)` index and the immutability triggers.
      * A pre-existing row reads back with no sidecar; a sidecar can then be
-     * set once, and changing it aborts, as the SQLite store's V019, V020 and V022
+     * set once, and changing it aborts, as the SQLite store's V019, V020 and V023
      * triggers make it.
      */
     @Test
