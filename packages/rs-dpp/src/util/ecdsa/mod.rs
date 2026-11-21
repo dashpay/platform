@@ -12,8 +12,10 @@
 use dashcore::crypto::ecdsa::{EcdsaError, EcdsaPublicKey, EcdsaSignature};
 use dashcore::{sign_message, signer};
 
+mod random_secret_key;
 mod verify_hash_signature;
 
+pub use random_secret_key::random_secret_key;
 pub use verify_hash_signature::verify_hash_signature;
 
 /// [`signer::verify_data_signature`], refusing a high-S signature with the error of a signature

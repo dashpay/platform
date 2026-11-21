@@ -19,6 +19,8 @@ dash-sdk = { path = "../rs-sdk", default-features = false, features = [
   "core_key_wallet",
 ] }
 platform-encryption = { path = "../rs-platform-encryption" }
+# Core does not expose the ECDH primitives used at this binding boundary (dashpay/base-sdk#137).
+secp256k1 = { workspace = true }
 tokio = { version = "1.40", features = ["rt-multi-thread"] }
 async-trait = "0.1"
 zeroize = "1.8"

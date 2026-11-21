@@ -3,6 +3,8 @@
 use crate::platform::encrypted_for::encrypt_property_for;
 use crate::platform::{DataContract, Document, Fetch, Identity};
 use crate::{Error, Sdk};
+use dpp::dashcore::key::rand::rngs::StdRng;
+use dpp::dashcore::key::rand::{Rng, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::document::{DocumentV0, DocumentV0Getters, INITIAL_REVISION};
@@ -12,9 +14,7 @@ use dpp::moderation_charter::{
     RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
 };
 use dpp::platform_value::{Bytes32, Identifier, Value};
-use dpp::secp256k1::rand::rngs::StdRng;
-use dpp::secp256k1::rand::{Rng, SeedableRng};
-use dpp::secp256k1::SecretKey;
+use secp256k1::SecretKey;
 use std::collections::BTreeMap;
 
 /// The property of both request types that carries the message, declared `encryptedFor` the
@@ -255,9 +255,9 @@ mod tests {
     use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
     use dpp::moderation_charter::MODERATION_CHARTERS_CONTRACT_ID;
     use dpp::platform_value::BinaryData;
-    use dpp::secp256k1::PublicKey;
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::version::PlatformVersion;
+    use secp256k1::PublicKey;
 
     fn key_pair(scalar: u8) -> (SecretKey, PublicKey) {
         let secret_key = SecretKey::from_secret_bytes([scalar; 32]).expect("a valid scalar");

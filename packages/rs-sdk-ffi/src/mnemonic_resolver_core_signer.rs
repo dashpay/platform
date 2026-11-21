@@ -64,7 +64,6 @@ use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::identity::{Identity, KeyID};
 use dash_sdk::dpp::platform_value::BinaryData;
 use dash_sdk::dpp::prelude::Identifier;
-use dash_sdk::dpp::secp256k1;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::platform::dashpay::{
     seal_private_contact_request, PrivateContactRequest, PrivateContactRequestSender,

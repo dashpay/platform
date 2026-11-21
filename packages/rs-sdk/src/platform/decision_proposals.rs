@@ -35,6 +35,8 @@ use crate::platform::documents::page::DocumentsPage;
 use crate::platform::{DataContract, Document, Fetch, FetchMany, Identifier};
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
+use dpp::dashcore::key::rand::rngs::StdRng;
+use dpp::dashcore::key::rand::{Rng, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::decision_proposal::{
@@ -46,8 +48,6 @@ use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::TimestampMillis;
-use dpp::secp256k1::rand::rngs::StdRng;
-use dpp::secp256k1::rand::{Rng, SeedableRng};
 use dpp::version::feature_initial_protocol_versions::DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION;
 use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
 use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePollPurpose;

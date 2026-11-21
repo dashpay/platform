@@ -1485,9 +1485,8 @@ mod tests {
                 let xprv = wallet
                     .derive_extended_private_key(&path)
                     .expect("identity key");
-                let secret =
-                    dpp::secp256k1::SecretKey::from_secret_bytes(*xprv.private_key.to_bytes())
-                        .expect("secret key");
+                let secret = secp256k1::SecretKey::from_secret_bytes(*xprv.private_key.to_bytes())
+                    .expect("secret key");
                 IdentityPublicKey::V0(IdentityPublicKeyV0 {
                     id: key_id,
                     purpose,
@@ -1496,7 +1495,7 @@ mod tests {
                     key_type: KeyType::ECDSA_SECP256K1,
                     read_only: false,
                     data: BinaryData::new(
-                        dpp::secp256k1::PublicKey::from_secret_key(&secret)
+                        secp256k1::PublicKey::from_secret_key(&secret)
                             .serialize()
                             .to_vec(),
                     ),
