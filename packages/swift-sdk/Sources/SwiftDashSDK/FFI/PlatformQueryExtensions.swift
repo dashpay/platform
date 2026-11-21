@@ -342,6 +342,25 @@ extension SDK {
         return json
     }
 
+    /// Process DashSDKResult and extract a JSON object; an empty dictionary
+    /// when the FFI returns no data.
+    private func processJSONObjectResult(_ result: DashSDKResult) throws -> [String: Any] {
+        if let error = result.error {
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
+            dash_sdk_error_free(error)
+            throw sdkError
+        }
+
+        guard let dataPtr = result.data else {
+            return [:]
+        }
+
+        let jsonString: String = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
+        dash_sdk_string_free(dataPtr)
+
+        return try Self.parseJSONObject(jsonString)
+    }
+
     /// Process DashSDKResult and extract string
     private func processStringResult(_ result: DashSDKResult) throws -> String {
         try Self.consumeStringResult(result)
@@ -1640,14 +1659,24 @@ extension SDK {
 
     // MARK: - Voting & Contested Resources Queries
 
-    /// Get contested resources
+    /// Get contested resources: the values of the first index property not
+    /// fixed by `startIndexValues` (and, when given, followed by
+    /// `endIndexValues`). For DPNS usernames pass `startIndexValues: ["dash"]`
+    /// to list the contested labels; with no start values only the parent
+    /// level (`dash`) is listed.
+    ///
+    /// Index values use the FFI convention: a `"0x"`-prefixed value is hex
+    /// bytes, anything else is text. Each returned resource carries `id` (its
+    /// own index value) and `index_values` (the path to pass to
+    /// ``getContestedResourceVoteState(dataContractId:documentTypeName:indexName:indexValues:resultType:allowIncludeLockedAndAbstainingVoteTally:startAtIdentifierInfo:count:orderAscending:)``).
     public func getContestedResources(
         documentTypeName: String,
         dataContractId: String,
         indexName: String,
         resultType: String,
         allowIncludeLockedAndAbstainingVoteTally: Bool,
-        startAtValue: String?,
+        startIndexValues: [String]? = nil,
+        endIndexValues: [String]? = nil,
         limit: UInt32?,
         offset: UInt32?,
         orderAscending: Bool
@@ -1656,20 +1685,39 @@ extension SDK {
             throw SDKError.invalidState("SDK not initialized")
         }
 
+        let startIndexValuesJson = try startIndexValues.map { try Self.indexValuesJson($0) }
+        let endIndexValuesJson = try endIndexValues.map { try Self.indexValuesJson($0) }
+
         let result = dash_sdk_contested_resource_get_resources(
             handle,
             dataContractId,
             documentTypeName,
             indexName,
-            startAtValue,
-            nil, // end_index_values_json
+            startIndexValuesJson,
+            endIndexValuesJson,
             limit ?? 100,
             orderAscending
         )
         return try processJSONArrayResult(result)
     }
 
-    /// Get contested resource vote state
+    /// Encode index values as the JSON string array the contested-resource
+    /// FFI queries read.
+    private static func indexValuesJson(_ values: [String]) throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: values)
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw SDKError.serializationError("Failed to encode index values")
+        }
+        return json
+    }
+
+    /// Get contested resource vote state.
+    ///
+    /// `resultType` names the FFI result type: `"documents"`, `"vote_tally"`
+    /// or `"documents_and_vote_tally"`. The result is the FFI's JSON object
+    /// (`contenders`, and with a tally `abstain_vote_tally`,
+    /// `lock_vote_tally` and `winner_info`), or an empty dictionary when the
+    /// poll has no data.
     public func getContestedResourceVoteState(
         dataContractId: String,
         documentTypeName: String,
@@ -1680,22 +1728,24 @@ extension SDK {
         startAtIdentifierInfo: String?,
         count: UInt32?,
         orderAscending: Bool
-    ) async throws -> [[String: Any]] {
+    ) async throws -> [String: Any] {
         guard let handle = handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
 
-        // Convert result type to integer
-        let resultTypeInt: UInt8 = switch resultType {
-        case "contenders": 0
-        case "abstainers": 1
-        case "locked": 2
-        default: 0
+        // Map the result type name to the FFI discriminant.
+        let resultTypeInt: UInt8
+        switch resultType {
+        case "documents": resultTypeInt = 0
+        case "vote_tally": resultTypeInt = 1
+        case "documents_and_vote_tally": resultTypeInt = 2
+        default:
+            throw SDKError.invalidParameter(
+                "resultType must be documents, vote_tally or documents_and_vote_tally, got \(resultType)"
+            )
         }
 
-        // Create index values JSON array
-        let indexValuesData = try JSONSerialization.data(withJSONObject: indexValues ?? [])
-        let indexValuesJson = String(data: indexValuesData, encoding: .utf8) ?? "[]"
+        let indexValuesJson = try Self.indexValuesJson(indexValues ?? [])
 
         let result = dash_sdk_contested_resource_get_vote_state(
             handle,
@@ -1707,7 +1757,7 @@ extension SDK {
             allowIncludeLockedAndAbstainingVoteTally,
             count ?? 100
         )
-        return try processJSONArrayResult(result)
+        return try processJSONObjectResult(result)
     }
 
     /// Get contested resource voters for identity
@@ -1725,9 +1775,7 @@ extension SDK {
             throw SDKError.invalidState("SDK not initialized")
         }
 
-        // Create index values JSON array
-        let indexValuesData = try JSONSerialization.data(withJSONObject: indexValues ?? [])
-        let indexValuesJson = String(data: indexValuesData, encoding: .utf8) ?? "[]"
+        let indexValuesJson = try Self.indexValuesJson(indexValues ?? [])
 
         let result = dash_sdk_contested_resource_get_voters_for_identity(
             handle,

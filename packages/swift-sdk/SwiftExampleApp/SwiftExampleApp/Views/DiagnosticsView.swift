@@ -55,7 +55,8 @@ struct DiagnosticsView: View {
         static let testPrefundedSpecializedBalanceId = "AzaU7zqCT7X1kxh8yWxkT9PxAgNqWDu4Gz13emwcRyAT"
 
         // Contested resources test data
-        static let testContestedIndexValues = ["dash", "alice"]
+        // Normalized label: Platform indexes "alice" as "a11ce".
+        static let testContestedIndexValues = ["dash", "a11ce"]
     }
 
     var body: some View {
@@ -282,7 +283,7 @@ struct DiagnosticsView: View {
                         indexName: "parentNameAndLabel",
                         resultType: "documents",
                         allowIncludeLockedAndAbstainingVoteTally: false,
-                        startAtValue: nil,
+                        startIndexValues: [DPNSVotePoll.parentDomain],
                         limit: 5,
                         offset: 0,
                         orderAscending: true
@@ -295,7 +296,7 @@ struct DiagnosticsView: View {
                         documentTypeName: "domain",
                         indexName: "parentNameAndLabel",
                         indexValues: TestData.testContestedIndexValues,
-                        resultType: "contenders",
+                        resultType: "documents_and_vote_tally",
                         allowIncludeLockedAndAbstainingVoteTally: false,
                         startAtIdentifierInfo: nil,
                         count: 5,

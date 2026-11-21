@@ -42,10 +42,56 @@ pub(crate) fn parse_index_value(value_str: String) -> Result<Value, String> {
     }
 }
 
+/// Render a platform [`Value`] as an index-value string, the inverse of
+/// [`parse_index_value`], so a value the read path returns can be passed back
+/// into a query or a vote unchanged.
+///
+/// * [`Value::Text`] is returned verbatim.
+/// * Byte values ([`Value::Bytes`], the fixed-size byte variants and
+///   [`Value::Identifier`]) become `"0x"` followed by lowercase hex.
+/// * Any other kind uses its plain string representation. Contested indexes
+///   hold text or bytes, so this is for display only and does not parse back
+///   to the same kind.
+///
+/// A text value that itself starts with `"0x"` parses back as bytes; that is
+/// the limit of the `"0x"` convention in [`parse_index_value`].
+pub(crate) fn render_index_value(value: &Value) -> String {
+    match value {
+        Value::Text(text) => text.clone(),
+        other => match other.as_bytes_slice() {
+            Ok(bytes) => format!("0x{}", hex::encode(bytes)),
+            Err(_) => other.non_qualified_string_representation(),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::parse_index_value;
+    use super::{parse_index_value, render_index_value};
     use dash_sdk::dpp::platform_value::Value;
+
+    #[test]
+    fn should_render_text_label_verbatim_and_parse_it_back() {
+        // "a11ce0" holds '0', which is outside the base58 alphabet.
+        let value = Value::Text("a11ce0".to_string());
+        let rendered = render_index_value(&value);
+        assert_eq!(rendered, "a11ce0");
+        assert_eq!(parse_index_value(rendered).unwrap(), value);
+    }
+
+    #[test]
+    fn should_render_bytes_as_0x_hex_and_parse_them_back() {
+        let value = Value::Bytes(vec![0x00, 0xab, 0xcd]);
+        let rendered = render_index_value(&value);
+        assert_eq!(rendered, "0x00abcd");
+        assert_eq!(parse_index_value(rendered).unwrap(), value);
+    }
+
+    #[test]
+    fn should_render_identifier_as_0x_hex() {
+        let value = Value::Identifier([7u8; 32]);
+        assert_eq!(render_index_value(&value), format!("0x{}", "07".repeat(32)));
+    }
 
     #[test]
     fn even_length_all_hex_label_without_prefix_is_text() {

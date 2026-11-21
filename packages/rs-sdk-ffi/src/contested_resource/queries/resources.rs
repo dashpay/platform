@@ -1,9 +1,11 @@
+use crate::contested_resource::{parse_index_value, render_index_value};
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use dash_sdk::platform::FetchMany;
 use dash_sdk::query_types::ContestedResource;
+use serde_json::json;
 use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches contested resources
@@ -22,7 +24,11 @@ use std::ffi::{c_char, c_void, CStr, CString};
 /// * `order_ascending` - Whether to order results in ascending order
 ///
 /// # Returns
-/// * JSON array of contested resources or null if not found
+/// * JSON array of contested resources or null if not found. Each element is
+///   `{"id", "contract_id", "document_type_name", "index_name", "index_values"}`
+///   where `id` is the resource's index value (text verbatim, bytes as
+///   `"0x"` hex) and `index_values` is the array
+///   `start_index_values + [id] + end_index_values` in the same encoding.
 /// * Error message if operation fails
 ///
 /// # Safety
@@ -167,7 +173,7 @@ fn get_contested_resources(
 
             start_values_array
                 .into_iter()
-                .map(crate::contested_resource::parse_index_value)
+                .map(parse_index_value)
                 .collect::<Result<Vec<Value>, String>>()?
         };
 
@@ -185,7 +191,7 @@ fn get_contested_resources(
 
             end_values_array
                 .into_iter()
-                .map(crate::contested_resource::parse_index_value)
+                .map(parse_index_value)
                 .collect::<Result<Vec<Value>, String>>()?
         };
 
@@ -193,8 +199,8 @@ fn get_contested_resources(
             contract_id,
             document_type_name: document_type_name_str.to_string(),
             index_name: index_name_str.to_string(),
-            start_index_values,
-            end_index_values,
+            start_index_values: start_index_values.clone(),
+            end_index_values: end_index_values.clone(),
             start_at_value: None,
             // Match vectors: treat count=0 as no limit (null)
             limit: if count > 0 { Some(count as u16) } else { None },
@@ -207,24 +213,56 @@ fn get_contested_resources(
                     return Ok(None);
                 }
 
-                let resources_json: Vec<String> = contested_resources.0
+                let contract_id_str = bs58::encode(contract_id.as_bytes()).into_string();
+                let resources_json: Vec<serde_json::Value> = contested_resources
+                    .0
                     .iter()
                     .map(|resource| {
-                        format!(
-                            r#"{{"id":"{}","contract_id":"{}","document_type_name":"{}","index_name":"{}","index_values":"{}"}}"#,
-                            bs58::encode(resource.0.to_identifier_bytes().unwrap_or_else(|_| vec![0u8; 32])).into_string(),
-                            bs58::encode(contract_id.as_bytes()).into_string(),
+                        contested_resource_json(
+                            &resource.0,
+                            &contract_id_str,
                             document_type_name_str,
                             index_name_str,
-                            "[]"
+                            &start_index_values,
+                            &end_index_values,
                         )
                     })
                     .collect();
 
-                Ok(Some(format!("[{}]", resources_json.join(","))))
+                Ok(Some(serde_json::Value::Array(resources_json).to_string()))
             }
             Err(e) => Err(format!("Failed to fetch contested resources: {}", e)),
         }
+    })
+}
+
+/// One contested resource as JSON.
+///
+/// `id` is the resource's own index value (for DPNS listed under
+/// `["dash"]`, the normalized label such as `"a11ce"`) and `index_values` is
+/// the index path `start_index_values + [id] + end_index_values`. Every value
+/// is rendered with [`render_index_value`], so a path that covers every index
+/// property can be passed unchanged to the vote state and voters queries.
+fn contested_resource_json(
+    resource_value: &Value,
+    contract_id: &str,
+    document_type_name: &str,
+    index_name: &str,
+    start_index_values: &[Value],
+    end_index_values: &[Value],
+) -> serde_json::Value {
+    let index_values: Vec<String> = start_index_values
+        .iter()
+        .chain(std::iter::once(resource_value))
+        .chain(end_index_values)
+        .map(render_index_value)
+        .collect();
+    json!({
+        "id": render_index_value(resource_value),
+        "contract_id": contract_id,
+        "document_type_name": document_type_name,
+        "index_name": index_name,
+        "index_values": index_values,
     })
 }
 
@@ -267,5 +305,41 @@ mod tests {
             assert!(!result.error.is_null());
             crate::test_utils::test_utils::destroy_mock_sdk_handle(handle);
         }
+    }
+
+    #[test]
+    fn should_render_a_text_label_as_its_own_id_and_full_index_path() {
+        let json = contested_resource_json(
+            &Value::Text("a11ce0".to_string()),
+            "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
+            "domain",
+            "parentNameAndLabel",
+            &[Value::Text("dash".to_string())],
+            &[],
+        );
+        assert_eq!(
+            json,
+            json!({
+                "id": "a11ce0",
+                "contract_id": "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
+                "document_type_name": "domain",
+                "index_name": "parentNameAndLabel",
+                "index_values": ["dash", "a11ce0"],
+            })
+        );
+    }
+
+    #[test]
+    fn should_render_a_bytes_value_as_0x_hex_between_start_and_end_values() {
+        let json = contested_resource_json(
+            &Value::Bytes(vec![0x01, 0xff]),
+            "contract",
+            "type",
+            "index",
+            &[Value::Text("a".to_string())],
+            &[Value::Bytes(vec![0x0a])],
+        );
+        assert_eq!(json["id"], json!("0x01ff"));
+        assert_eq!(json["index_values"], json!(["a", "0x01ff", "0x0a"]));
     }
 }

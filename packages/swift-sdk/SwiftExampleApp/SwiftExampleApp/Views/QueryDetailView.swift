@@ -442,19 +442,17 @@ struct QueryDetailView: View {
 
         // Contested DPNS Queries
         case "getContestedDpnsNames":
-            let startName = queryInputs["startName"]
             let limitStr = queryInputs["limit"] ?? ""
             let limit = limitStr.isEmpty ? 100 : (UInt32(limitStr) ?? 100)
 
-            // Query contested resources for DPNS contract
-            let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec" // DPNS contract ID
+            // List the contested labels under the parent domain "dash".
             let result = try await sdk.getContestedResources(
-                documentTypeName: "domain",
-                dataContractId: dpnsContractId,
-                indexName: "parentNameAndLabel",
-                resultType: "contenders",
+                documentTypeName: DPNSVotePoll.documentTypeName,
+                dataContractId: DPNSVotePoll.contractId,
+                indexName: DPNSVotePoll.indexName,
+                resultType: "documents",
                 allowIncludeLockedAndAbstainingVoteTally: true,
-                startAtValue: startName,
+                startIndexValues: [DPNSVotePoll.parentDomain],
                 limit: limit,
                 offset: 0,
                 orderAscending: true
@@ -466,15 +464,14 @@ struct QueryDetailView: View {
             guard !name.isEmpty else {
                 throw SDKError.internalError("DPNS name is required")
             }
-
-            let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
+            let label = try normalizedDpnsLabel(name, sdk: sdk)
 
             let result = try await sdk.getContestedResourceVoteState(
-                dataContractId: dpnsContractId,
-                documentTypeName: "domain",
-                indexName: "parentNameAndLabel",
-                indexValues: ["dash", name],
-                resultType: "contenders",
+                dataContractId: DPNSVotePoll.contractId,
+                documentTypeName: DPNSVotePoll.documentTypeName,
+                indexName: DPNSVotePoll.indexName,
+                indexValues: DPNSVotePoll.indexValues(normalizedLabel: label),
+                resultType: "documents_and_vote_tally",
                 allowIncludeLockedAndAbstainingVoteTally: true,
                 startAtIdentifierInfo: nil,
                 count: 100,
@@ -492,12 +489,12 @@ struct QueryDetailView: View {
                 throw SDKError.internalError("Identity ID is required")
             }
 
-            let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
+            let label = try normalizedDpnsLabel(name, sdk: sdk)
             let result = try await sdk.getContestedResourceVotersForIdentity(
-                dataContractId: dpnsContractId,
-                documentTypeName: "domain",
-                indexName: "parentNameAndLabel",
-                indexValues: ["dash", name],
+                dataContractId: DPNSVotePoll.contractId,
+                documentTypeName: DPNSVotePoll.documentTypeName,
+                indexName: DPNSVotePoll.indexName,
+                indexValues: DPNSVotePoll.indexValues(normalizedLabel: label),
                 contestantId: identityId,
                 startAtIdentifierInfo: nil,
                 count: 100,
@@ -580,7 +577,8 @@ struct QueryDetailView: View {
             let indexName = queryInputs["indexName"] ?? ""
             let resultType = queryInputs["resultType"] ?? "documents"
             let allowIncludeLockedAndAbstainingVoteTally = queryInputs["allowIncludeLockedAndAbstainingVoteTally"] == "true"
-            let startAtValue = queryInputs["startAtValue"]
+            let startIndexValues = try parseIndexValues(queryInputs["startIndexValues"])
+            let endIndexValues = try parseIndexValues(queryInputs["endIndexValues"])
             let limitStr = queryInputs["limit"] ?? ""
             let offsetStr = queryInputs["offset"] ?? ""
             let limit = limitStr.isEmpty ? nil : UInt32(limitStr)
@@ -592,7 +590,8 @@ struct QueryDetailView: View {
                 indexName: indexName,
                 resultType: resultType,
                 allowIncludeLockedAndAbstainingVoteTally: allowIncludeLockedAndAbstainingVoteTally,
-                startAtValue: startAtValue,
+                startIndexValues: startIndexValues,
+                endIndexValues: endIndexValues,
                 limit: limit,
                 offset: offset,
                 orderAscending: orderAscending
@@ -602,7 +601,9 @@ struct QueryDetailView: View {
             let dataContractId = queryInputs["dataContractId"] ?? ""
             let documentTypeName = queryInputs["documentTypeName"] ?? ""
             let indexName = queryInputs["indexName"] ?? ""
-            let resultType = queryInputs["resultType"] ?? "contenders"
+            let indexValues = try parseIndexValues(queryInputs["indexValues"])
+            let resultTypeInput = (queryInputs["resultType"] ?? "").trimmingCharacters(in: .whitespaces)
+            let resultType = resultTypeInput.isEmpty ? "documents_and_vote_tally" : resultTypeInput
             let allowIncludeLockedAndAbstainingVoteTally = queryInputs["allowIncludeLockedAndAbstainingVoteTally"] == "true"
             let startAtIdentifierInfo = queryInputs["startAtIdentifierInfo"]
             let countStr = queryInputs["count"] ?? ""
@@ -612,6 +613,7 @@ struct QueryDetailView: View {
                 dataContractId: dataContractId,
                 documentTypeName: documentTypeName,
                 indexName: indexName,
+                indexValues: indexValues,
                 resultType: resultType,
                 allowIncludeLockedAndAbstainingVoteTally: allowIncludeLockedAndAbstainingVoteTally,
                 startAtIdentifierInfo: startAtIdentifierInfo,
@@ -623,6 +625,7 @@ struct QueryDetailView: View {
             let dataContractId = queryInputs["dataContractId"] ?? ""
             let documentTypeName = queryInputs["documentTypeName"] ?? ""
             let indexName = queryInputs["indexName"] ?? ""
+            let indexValues = try parseIndexValues(queryInputs["indexValues"])
             let contestantId = queryInputs["contestantId"] ?? ""
             let startAtIdentifierInfo = queryInputs["startAtIdentifierInfo"]
             let countStr = queryInputs["count"] ?? ""
@@ -632,6 +635,7 @@ struct QueryDetailView: View {
                 dataContractId: dataContractId,
                 documentTypeName: documentTypeName,
                 indexName: indexName,
+                indexValues: indexValues,
                 contestantId: contestantId,
                 startAtIdentifierInfo: startAtIdentifierInfo,
                 count: count,
@@ -874,6 +878,36 @@ struct QueryDetailView: View {
         return String(describing: result)
     }
 
+    /// Parse an index-values input: a JSON string array when it starts with
+    /// "[", otherwise comma-separated values, trimmed. Values pass through
+    /// unchanged (the FFI reads a "0x" prefix as bytes). Empty input is nil.
+    private func parseIndexValues(_ input: String?) throws -> [String]? {
+        let trimmed = (input ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return nil }
+        if trimmed.hasPrefix("[") {
+            guard let data = trimmed.data(using: .utf8),
+                  let values = try? JSONSerialization.jsonObject(with: data) as? [String] else {
+                throw SDKError.invalidParameter("Index values must be a JSON array of strings")
+            }
+            return values
+        }
+        return trimmed
+            .split(separator: ",", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+
+    /// The normalized DPNS label for a typed name: an optional trailing
+    /// ".dash" is dropped, then the label is normalized by the SDK
+    /// ("Alice" becomes "a11ce").
+    private func normalizedDpnsLabel(_ name: String, sdk: SDK) throws -> String {
+        var label = name.trimmingCharacters(in: .whitespaces)
+        let suffix = "." + DPNSVotePoll.parentDomain
+        if let range = label.range(of: suffix, options: [.caseInsensitive, .anchored, .backwards]) {
+            label.removeSubrange(range)
+        }
+        return try sdk.dpnsNormalizeLabel(label)
+    }
+
     private func inputFields(for queryName: String) -> [QueryInput] {
         switch queryName {
         // Identity Queries
@@ -1002,18 +1036,17 @@ struct QueryDetailView: View {
         // Contested DPNS Queries
         case "getContestedDpnsNames":
             return [
-                QueryInput(name: "startName", label: "Start Name", required: false, placeholder: "Start from this name"),
                 QueryInput(name: "limit", label: "Limit", required: false, placeholder: "Default: 100")
             ]
 
         case "getContestedDpnsNameVoteState":
             return [
-                QueryInput(name: "name", label: "DPNS Name", required: true, placeholder: "e.g., alice")
+                QueryInput(name: "name", label: "DPNS Name", required: true, placeholder: "e.g., alice or alice.dash")
             ]
 
         case "getContestedDpnsNameVotersForIdentity":
             return [
-                QueryInput(name: "name", label: "DPNS Name", required: true, placeholder: "e.g., alice"),
+                QueryInput(name: "name", label: "DPNS Name", required: true, placeholder: "e.g., alice or alice.dash"),
                 QueryInput(name: "identityId", label: "Identity ID", required: true, placeholder: "Base58 identity ID")
             ]
 
@@ -1037,9 +1070,10 @@ struct QueryDetailView: View {
                 QueryInput(name: "documentTypeName", label: "Document Type Name", required: true),
                 QueryInput(name: "dataContractId", label: "Data Contract ID", required: true),
                 QueryInput(name: "indexName", label: "Index Name", required: true),
-                QueryInput(name: "resultType", label: "Result Type", required: true, placeholder: "documents, vote_tally, or document_with_vote_tally"),
+                QueryInput(name: "resultType", label: "Result Type", required: true, placeholder: "documents, vote_tally, or documents_and_vote_tally"),
                 QueryInput(name: "allowIncludeLockedAndAbstainingVoteTally", label: "Include Locked and Abstaining", required: false, placeholder: "true/false"),
-                QueryInput(name: "startAtValue", label: "Start At Value (hex bytes)", required: false),
+                QueryInput(name: "startIndexValues", label: "Start Index Values", required: false, placeholder: "e.g., dash or [\"dash\"]"),
+                QueryInput(name: "endIndexValues", label: "End Index Values", required: false, placeholder: "Values after the listed property"),
                 QueryInput(name: "limit", label: "Limit", required: false),
                 QueryInput(name: "offset", label: "Offset", required: false),
                 QueryInput(name: "orderAscending", label: "Order Ascending", required: false, placeholder: "true/false")
@@ -1050,7 +1084,8 @@ struct QueryDetailView: View {
                 QueryInput(name: "dataContractId", label: "Data Contract ID", required: true),
                 QueryInput(name: "documentTypeName", label: "Document Type Name", required: true),
                 QueryInput(name: "indexName", label: "Index Name", required: true),
-                QueryInput(name: "resultType", label: "Result Type", required: true, placeholder: "contenders, abstainers, or locked"),
+                QueryInput(name: "indexValues", label: "Index Values", required: true, placeholder: "e.g., dash, a11ce or [\"dash\",\"a11ce\"]"),
+                QueryInput(name: "resultType", label: "Result Type", required: false, placeholder: "Default: documents_and_vote_tally (or documents, vote_tally)"),
                 QueryInput(name: "allowIncludeLockedAndAbstainingVoteTally", label: "Include Locked and Abstaining", required: false, placeholder: "true/false"),
                 QueryInput(name: "startAtIdentifierInfo", label: "Start At Identifier Info (JSON)", required: false),
                 QueryInput(name: "count", label: "Count", required: false),
@@ -1062,6 +1097,7 @@ struct QueryDetailView: View {
                 QueryInput(name: "dataContractId", label: "Data Contract ID", required: true),
                 QueryInput(name: "documentTypeName", label: "Document Type Name", required: true),
                 QueryInput(name: "indexName", label: "Index Name", required: true),
+                QueryInput(name: "indexValues", label: "Index Values", required: true, placeholder: "e.g., dash, a11ce or [\"dash\",\"a11ce\"]"),
                 QueryInput(name: "contestantId", label: "Contestant ID", required: true),
                 QueryInput(name: "startAtIdentifierInfo", label: "Start At Identifier Info (JSON)", required: false),
                 QueryInput(name: "count", label: "Count", required: false),
