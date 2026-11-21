@@ -2032,6 +2032,47 @@ class PlatformWalletManager(
         }
     }
 
+    // ── Identity shielded accounts ─────────────────────────────────────
+
+    /**
+     * Prepare the dedicated shielded account of the wallet-owned identity
+     * [identityId] on [walletId] and return the account's default 43-byte raw
+     * Orchard address. Port of Swift's
+     * `PlatformWalletManager.prepareShieldedIdentityAddress(walletId:identityId:resolver:)`
+     * (`PlatformWalletManagerShieldedSync.swift`). Publishes nothing and
+     * moves no funds.
+     *
+     * Rust proves the identity's slot with the seed this manager's mnemonic
+     * resolver supplies, binds the identity's account next to the wallet's
+     * bound accounts and records the preparation for this session. A contact
+     * request sent afterwards carries the sender's per-contact shielded
+     * address only once this preparation stands. Requires a prior
+     * [bindShielded] of [walletId]. Repeated calls are idempotent. Only
+     * meaningful on a shielded build ([Sdk.hasShielded]); the native entry
+     * point is absent otherwise and this throws.
+     *
+     * Throws [DashSdkError.NotFound] when the wallet holds no identity
+     * [identityId], [DashSdkError.PlatformWallet.ShieldedRecoveryCorrupted] or
+     * [DashSdkError.PlatformWallet.ShieldedRecoveryKeysRequired] when the bind
+     * meets unusable persisted shielded state, and
+     * [DashSdkError.PlatformWallet.WalletOperation] for every other failure
+     * (an unbound wallet, a seed that does not derive the identity's key),
+     * with the wallet's reason in the message.
+     */
+    suspend fun prepareShieldedIdentityAddress(
+        walletId: ByteArray,
+        identityId: ByteArray,
+    ): ByteArray = teardownGate.op {
+        mapNativeErrors {
+            FundingNative.prepareShieldedIdentityAddress(
+                managerHandle,
+                walletId,
+                mnemonicResolver.nativeHandle,
+                identityId,
+            )
+        }
+    }
+
     // ── Shielded outgoing spends (types 16/17/19) ──────────────────────
     //
     // Manager-handle FFI calls like the funding submits above; each signs

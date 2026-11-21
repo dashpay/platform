@@ -280,6 +280,109 @@ extension PlatformWalletManager {
         }
     }
 
+    /// Prepare the dedicated shielded account of the wallet-owned identity
+    /// `identityId` on `walletId` and return the account's default 43-byte
+    /// raw Orchard address. Publishes nothing and moves no funds.
+    ///
+    /// Rust proves the identity's slot with the seed `resolver` supplies,
+    /// binds the identity's account next to the wallet's bound accounts,
+    /// persists its viewing key and records the preparation for this
+    /// session. A contact request sent afterwards carries the sender's
+    /// per-contact shielded address only once this preparation stands.
+    /// Repeated calls are idempotent.
+    ///
+    /// **Prerequisite**: [`bindShielded(walletId:resolver:accounts:)`] on
+    /// this manager. The resolver fires on every call; the mnemonic and
+    /// derived seed live in zeroized Rust-side buffers and are scrubbed
+    /// before the native call returns.
+    ///
+    /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
+    /// flight, as `bindShielded` does: the preparation is a bind. From the
+    /// native call it throws `identityNotFound` when the wallet holds no
+    /// identity `identityId`, `shieldedRecoveryCorrupted` or
+    /// `shieldedRecoveryKeysRequired` when the bind meets unusable persisted
+    /// shielded state, and `walletOperation` for every other failure (an
+    /// unbound wallet, a seed that does not derive the identity's key), with
+    /// the wallet's reason in the message.
+    public func prepareShieldedIdentityAddress(
+        walletId: Data,
+        identityId: Data,
+        resolver: MnemonicResolver
+    ) async throws -> Data {
+        try ensureShieldedLifecycleAllowed("prepareShieldedIdentityAddress")
+        try ensureNoShieldedStopInFlight(before: "preparing an identity shielded account")
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "identityId must be exactly 32 bytes"
+            )
+        }
+        guard let resolverHandle = resolver.handle else {
+            throw PlatformWalletError.invalidParameter(
+                "MnemonicResolver has no handle"
+            )
+        }
+        // Counted as the other native manager operations are, so a teardown
+        // waits for this call to return before it frees the manager.
+        try admitNativeOp("prepareShieldedIdentityAddress")
+        defer { finishNativeOp() }
+        let handle = self.handle
+        do {
+            let address = try await Task.detached(priority: .userInitiated) { () -> Data in
+                // Guaranteed keepalive of the resolver across the FFI call,
+                // whose vtable callback fires during it: same rationale as
+                // `shieldedTransfer`.
+                try withExtendedLifetime(resolver) {
+                    var bytes = [UInt8](repeating: 0, count: 43)
+                    try walletId.withUnsafeBytes { widRaw in
+                        guard let widPtr = widRaw.baseAddress?
+                            .assumingMemoryBound(to: UInt8.self)
+                        else {
+                            throw PlatformWalletError.invalidParameter(
+                                "walletId baseAddress is nil"
+                            )
+                        }
+                        try identityId.withUnsafeBytes { idRaw in
+                            guard let idPtr = idRaw.baseAddress?
+                                .assumingMemoryBound(to: UInt8.self)
+                            else {
+                                throw PlatformWalletError.invalidParameter(
+                                    "identityId baseAddress is nil"
+                                )
+                            }
+                            try bytes.withUnsafeMutableBufferPointer { outBuf in
+                                guard let outPtr = outBuf.baseAddress else {
+                                    throw PlatformWalletError.invalidParameter(
+                                        "prepareShieldedIdentityAddress out buffer baseAddress is nil"
+                                    )
+                                }
+                                try platform_wallet_manager_prepare_shielded_identity_address(
+                                    handle,
+                                    widPtr,
+                                    resolverHandle,
+                                    idPtr,
+                                    outPtr
+                                ).check()
+                            }
+                        }
+                    }
+                    return Data(bytes)
+                }
+            }.value
+            // The preparation can add an account to the bound set, so a local
+            // balance snapshot read across it is obsolete, as after a bind.
+            shieldedLocalBalanceBindGeneration.bump()
+            return address
+        } catch {
+            shieldedLocalBalanceGeneration.bump()
+            throw error
+        }
+    }
+
     /// Configure the network-scoped shielded coordinator. Opens
     /// the per-network commitment-tree SQLite file at `dbPath`
     /// and installs a single shared handle every subsequent

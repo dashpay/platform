@@ -1259,3 +1259,42 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         let _ = take_pwffi_error(env, result);
     })
 }
+
+/// Prepare the dedicated shielded account of a wallet-owned identity and
+/// return its default 43-byte raw Orchard address. Bridges
+/// `platform_wallet_manager_prepare_shielded_identity_address`; publishes
+/// nothing and moves no funds. Throws on failure and returns null.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_prepareShieldedIdentityAddress(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    resolver_handle: jlong,
+    identity_id: JByteArray,
+) -> jni::sys::jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return ptr::null_mut();
+        };
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return ptr::null_mut();
+        };
+        let mut address = [0u8; 43];
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_prepare_shielded_identity_address(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                resolver_handle as *mut MnemonicResolverHandle,
+                id.as_ptr(),
+                address.as_mut_ptr(),
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        env.byte_array_from_slice(&address)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}

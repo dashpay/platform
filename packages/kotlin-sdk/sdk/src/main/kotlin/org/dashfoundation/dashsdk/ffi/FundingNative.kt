@@ -205,6 +205,21 @@ internal object FundingNative {
         signerAddressHandle: Long,
     ): ByteArray
 
+    // ── Identity shielded accounts ────────────────────────────────────
+
+    /**
+     * Prepare the dedicated shielded account of a wallet-owned identity
+     * (bridges `platform_wallet_manager_prepare_shielded_identity_address`)
+     * and return its default 43-byte raw Orchard address. Publishes nothing
+     * and moves no funds. Requires a prior shielded bind of [walletId].
+     */
+    external fun prepareShieldedIdentityAddress(
+        managerHandle: Long,
+        walletId: ByteArray,
+        resolverHandle: Long,
+        identityId: ByteArray,
+    ): ByteArray
+
     // ── Shielded outgoing spends (types 16/17/19) ─────────────────────
     //
     // Manager-handle calls like the funding submits above; each signs with
