@@ -1793,18 +1793,19 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
             platform_version,
             provider,
         )?;
-        Ok((Some(outcome), metadata, proof))
+        Ok((Some(outcome), metadata.clone(), proof.clone()))
     }
 }
 
 /// Verifies the proof of a wait's response for a state transition the caller has decoded, as
-/// [`FromProof`] does for [`StateTransitionProofOutcome`].
-fn verify_state_transition_proof_outcome(
+/// [`FromProof`] does for [`StateTransitionProofOutcome`]. The proof and its metadata are lent
+/// from `response`, so a caller that does not keep them copies nothing.
+fn verify_state_transition_proof_outcome<'r>(
     state_transition: &StateTransition,
-    response: &platform::WaitForStateTransitionResultResponse,
+    response: &'r platform::WaitForStateTransitionResultResponse,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
-) -> Result<(StateTransitionProofOutcome, ResponseMetadata, Proof), Error> {
+) -> Result<(StateTransitionProofOutcome, &'r ResponseMetadata, &'r Proof), Error> {
     let proof = response.proof().or(Err(Error::NoProofInResult))?;
     let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
@@ -1843,7 +1844,7 @@ fn verify_state_transition_proof_outcome(
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-    Ok((outcome, mtd.clone(), proof.clone()))
+    Ok((outcome, mtd, proof))
 }
 
 impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfo {

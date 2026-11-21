@@ -26,6 +26,7 @@ use dpp::state_transition::StateTransition;
 use dpp::util::hash::hash_single;
 use drive::drive::Drive;
 use drive::util::grove_operations::GroveDBToUse;
+use drive::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -134,6 +135,9 @@ pub struct PendingStateTransitionExecutionProof {
 pub enum RegistrationRefused {
     /// [`MAX_REGISTERED_STATE_TRANSITIONS`] registrations are held already.
     TooManyRegistered,
+    /// The lease's release arrived first, or the lease is no newer than a release the node has
+    /// forgotten (its issuer's low-water mark), so the node holds nothing for it.
+    LeaseReleased,
 }
 
 #[derive(Debug, Default)]
@@ -244,9 +248,14 @@ impl StateTransitionExecutionProofs {
     /// transition with this hash, for as long as the registration `lease` is held. Several
     /// clients can wait for the same transition, each with its own lease.
     ///
-    /// Taking a lease that is held already, or one that was released already, changes nothing:
-    /// a registration that arrives after its own release is not taken. A lease is held until it
-    /// is released or expires, also once its transition is proved, so that its release finds it.
+    /// Each lease is sent in one registration only. A caller that does not learn whether its
+    /// registration arrived releases the lease and takes a new one for any further attempt: an
+    /// ordinary release forgets the lease, so registering it again would take it again. Taking
+    /// a lease that is held already changes nothing. A lease whose release arrived first, or
+    /// that is no newer than its issuer's low-water mark, is refused with
+    /// [`RegistrationRefused::LeaseReleased`], so a caller still waiting learns that the node
+    /// holds nothing for it. A lease is held until it is released or expires, also once its
+    /// transition is proved, so that its release finds it.
     pub fn register(
         &self,
         hash: StateTransitionHash,
@@ -254,7 +263,7 @@ impl StateTransitionExecutionProofs {
     ) -> Result<(), RegistrationRefused> {
         let mut inner = self.inner();
         if inner.released.contains_key(&lease) || inner.below_low_water_mark(&lease) {
-            return Ok(());
+            return Err(RegistrationRefused::LeaseReleased);
         }
         if inner
             .registered
@@ -574,6 +583,21 @@ impl<C> Platform<C> {
                 }
             };
 
+        // A client refuses a GroveDB proof envelope older than its verifier's floor, and with it
+        // the whole response, so a side it cannot read is not made. Across a protocol upgrade
+        // that changes the envelope no pair is kept, and the wait answers with a proof of the
+        // current state instead.
+        if let Err(error) =
+            require_supported_grovedb_proof_envelope(&grovedb_proof, "execution proof")
+        {
+            tracing::debug!(
+                state_transition_hash = hex::encode(hash),
+                ?error,
+                "a registered state transition's proof has an envelope clients refuse"
+            );
+            return None;
+        }
+
         let (_, proof) = self
             .response_proof_v0(platform_state, grovedb_proof, GroveDBToUse::Current)
             .inspect_err(|error| {
@@ -689,9 +713,10 @@ mod tests {
 
         // The wait was cancelled while its registration was on its way
         proofs.unregister(&[1; 32], &A);
-        proofs
-            .register([1; 32], A)
-            .expect("expected the late registration to be accepted");
+        assert_eq!(
+            proofs.register([1; 32], A),
+            Err(RegistrationRefused::LeaseReleased)
+        );
 
         assert!(!proofs.is_registered(&[1; 32]));
         assert_eq!(proofs.inner().registrations, 0);
@@ -726,12 +751,14 @@ mod tests {
         assert_eq!(proofs.inner().registrations, 0);
 
         // The forgotten release's late registration is still not taken, nor is a remembered one's
-        proofs
-            .register([1; 32], issued(2, first))
-            .expect("expected an answer");
-        proofs
-            .register([1; 32], issued(2, first + 5))
-            .expect("expected an answer");
+        assert_eq!(
+            proofs.register([1; 32], issued(2, first)),
+            Err(RegistrationRefused::LeaseReleased)
+        );
+        assert_eq!(
+            proofs.register([1; 32], issued(2, first + 5)),
+            Err(RegistrationRefused::LeaseReleased)
+        );
         assert!(!proofs.has_registered());
 
         // A fresh lease of the same issuer, and one of another issuer, are taken
@@ -744,6 +771,26 @@ mod tests {
         );
         assert_eq!(proofs.register([2; 32], issued(3, 0)), Ok(()));
         assert_eq!(proofs.inner().registrations, 2);
+    }
+
+    #[test]
+    fn should_tell_a_registration_below_its_issuers_low_water_mark_that_it_was_not_taken() {
+        let proofs = StateTransitionExecutionProofs::new(10);
+
+        // A wait's registration is still on its way while later waits of the same issuer are
+        // cancelled before theirs arrive, until a release is forgotten and raises the mark
+        let in_flight = issued(2, 5);
+        for sequence in 10..=10 + MAX_REMEMBERED_RELEASES as u64 {
+            proofs.unregister(&[1; 32], &issued(2, sequence));
+        }
+
+        // Its registration is refused rather than acknowledged, so the wait knows it holds
+        // nothing and goes on without a pair
+        assert_eq!(
+            proofs.register([1; 32], in_flight),
+            Err(RegistrationRefused::LeaseReleased)
+        );
+        assert!(!proofs.has_registered());
     }
 
     #[test]

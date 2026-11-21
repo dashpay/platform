@@ -1,6 +1,6 @@
 use crate::clients::drive_client::DriveChannel;
 use crate::error::DapiError;
-use crate::server::grpc::{GRPC_REQUEST_TIME_SAFETY_MARGIN, parse_grpc_timeout};
+use crate::server::grpc::IngressDeadline;
 use crate::services::platform_service::error_mapping::decode_consensus_error;
 use crate::services::platform_service::{PlatformServiceImpl, TenderdashStatus};
 use crate::services::streaming_service::FilterType;
@@ -44,13 +44,12 @@ impl PlatformServiceImpl {
         &self,
         request: Request<WaitForStateTransitionResultRequest>,
     ) -> Result<Response<WaitForStateTransitionResultResponse>, DapiError> {
-        // The ingress layer ends the call at the client's grpc-timeout, less a margin. The wait
-        // ends no later than that, and its optional calls take their time from what is left.
-        let call_deadline = request
-            .metadata()
-            .get("grpc-timeout")
-            .and_then(|value| value.to_str().ok())
-            .and_then(parse_grpc_timeout);
+        // The ingress layer cuts the call off at this instant. The wait ends no later, and its
+        // optional calls take their time from what is left.
+        let ingress_deadline = request
+            .extensions()
+            .get::<IngressDeadline>()
+            .map(|deadline| deadline.0);
         let inner = request.into_inner();
         let v0 = match inner.version {
             Some(wait_for_state_transition_result_request::Version::V0(v0)) => v0,
@@ -88,11 +87,7 @@ impl PlatformServiceImpl {
 
         let span = tracing::trace_span!("wait_for_state_transition_result", tx = %hash_hex);
 
-        let deadline = wait_deadline(
-            Instant::now(),
-            Duration::from_millis(self.config.dapi.state_transition_wait_timeout),
-            call_deadline,
-        );
+        let wait_timeout = Duration::from_millis(self.config.dapi.state_transition_wait_timeout);
 
         async move {
             trace!("waitForStateTransitionResult called for hash: {}", hash_hex);
@@ -119,6 +114,7 @@ impl PlatformServiceImpl {
             match self.tenderdash_client.tx(hash_base64).await {
                 Ok(tx) => {
                     debug!(tx = hash_hex, "Transaction already exists, returning it");
+                    let deadline = wait_deadline(Instant::now(), wait_timeout, ingress_deadline);
                     return self
                         .build_response_from_existing_tx(tx, options, deadline)
                         .await;
@@ -128,8 +124,9 @@ impl PlatformServiceImpl {
                 }
             };
 
-            // Wait for transaction event until the deadline, which counted from the start of the
-            // call, so the optional registration below spends this wait's time, not more.
+            // The wait's own timeout starts once the lookup is done, as it always has. The
+            // optional registration below spends this wait's time, not more.
+            let deadline = wait_deadline(Instant::now(), wait_timeout, ingress_deadline);
             let timeout_duration = deadline.saturating_duration_since(Instant::now());
 
             // The transition is not in a block yet, so Drive can still prove the state before
@@ -472,10 +469,12 @@ impl PlatformServiceImpl {
                     %status,
                     "Drive did not register the state transition for an execution proof"
                 );
-                // Drive answered that it did not take it: there is nothing to release
+                // Drive answered that it did not take it: it is full, the request is malformed,
+                // or the lease counts as released. There is nothing to release, and releasing
+                // anyway would only make Drive remember the lease.
                 if matches!(
                     status.code(),
-                    Code::ResourceExhausted | Code::InvalidArgument
+                    Code::ResourceExhausted | Code::InvalidArgument | Code::FailedPrecondition
                 ) {
                     registration.armed = false;
                 }
@@ -571,13 +570,15 @@ struct WaitOptions {
 /// goes on as it does without them, with the rest of its own deadline.
 const EXECUTION_PROOF_CALL_TIMEOUT: Duration = Duration::from_secs(1);
 
-/// When a wait ends: after the configured wait timeout, or earlier when the client's
-/// grpc-timeout, less the margin the ingress layer keeps, ends the call first.
-fn wait_deadline(now: Instant, wait_timeout: Duration, grpc_timeout: Option<Duration>) -> Instant {
-    let call = grpc_timeout
-        .map(|timeout| timeout.saturating_sub(GRPC_REQUEST_TIME_SAFETY_MARGIN))
-        .unwrap_or(wait_timeout);
-    now + wait_timeout.min(call)
+/// When a wait that starts `now` ends: after the configured wait timeout, or at the ingress
+/// layer's deadline when that comes first.
+fn wait_deadline(
+    now: Instant,
+    wait_timeout: Duration,
+    ingress_deadline: Option<Instant>,
+) -> Instant {
+    let own = now + wait_timeout;
+    ingress_deadline.map_or(own, |ingress| ingress.min(own))
 }
 
 /// The least time worth giving an optional call to Drive; with less left it is not made.
@@ -749,7 +750,7 @@ mod tests {
         use dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result as WaitResult;
         use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
         use dapi_grpc::tonic::transport::Server;
-        use dapi_grpc::tonic::{Request, Response, Status};
+        use dapi_grpc::tonic::{Code, Request, Response, Status};
         use dpp::util::hash::hash_single;
         use std::future::pending;
         use std::sync::{Arc, Mutex};
@@ -773,7 +774,8 @@ mod tests {
         #[derive(Clone, Copy)]
         enum Registration {
             Take,
-            Refuse,
+            /// Refuse it with this code
+            Refuse(Code),
             /// Take it, and never answer
             Stall,
         }
@@ -841,7 +843,7 @@ mod tests {
                 self.record(Call::Register(request.state_transition_hash, request.lease));
                 match self.registration {
                     Registration::Take => {}
-                    Registration::Refuse => return Err(Status::resource_exhausted("full")),
+                    Registration::Refuse(code) => return Err(Status::new(code, "refused")),
                     Registration::Stall => pending::<()>().await,
                 }
                 Ok(Response::new(
@@ -1082,17 +1084,20 @@ mod tests {
 
         #[tokio::test]
         async fn should_have_no_registration_to_release_when_drive_refuses_it() {
-            let fixture = Fixture::new(Registration::Refuse);
+            // Drive is full, or counts the lease as released already
+            for code in [Code::ResourceExhausted, Code::FailedPrecondition] {
+                let fixture = Fixture::new(Registration::Refuse(code));
 
-            let registration = fixture
-                .service
-                .register_state_transition_execution_proof(&[9; 32], far_deadline())
-                .await
-                .expect("expected time to register");
-            drop(registration);
-            tokio::time::sleep(Duration::from_millis(50)).await;
+                let registration = fixture
+                    .service
+                    .register_state_transition_execution_proof(&[9; 32], far_deadline())
+                    .await
+                    .expect("expected time to register");
+                drop(registration);
+                tokio::time::sleep(Duration::from_millis(50)).await;
 
-            assert_eq!(fixture.calls().len(), 1);
+                assert_eq!(fixture.calls().len(), 1, "{code:?}");
+            }
         }
 
         #[tokio::test]
@@ -1250,33 +1255,149 @@ mod tests {
         }
     }
 
+    mod event_wait {
+        use crate::clients::{TenderdashClient, TransactionEvent, TransactionResult};
+        use crate::services::platform_service::PlatformServiceImpl;
+        use crate::services::streaming_service::StreamingEvent;
+        use axum::routing::post;
+        use axum::{Json, Router};
+        use dapi_grpc::platform::v0::WaitForStateTransitionResultRequest;
+        use dapi_grpc::platform::v0::wait_for_state_transition_result_request::{
+            Version, WaitForStateTransitionResultRequestV0,
+        };
+        use dapi_grpc::tonic::Request;
+        use serde_json::{Value, json};
+        use std::sync::Arc;
+        use std::time::Duration;
+        use tokio::net::TcpListener;
+        use tokio::task::JoinHandle;
+
+        /// How long the Tenderdash stand-in takes to answer that it does not hold a transaction.
+        const LOOKUP_TIME: Duration = Duration::from_millis(800);
+        /// The wait's own timeout.
+        const WAIT_TIMEOUT: Duration = Duration::from_millis(1_000);
+
+        /// A Tenderdash stand-in that answers every call, after [`LOOKUP_TIME`], that it holds
+        /// no such transaction.
+        struct SlowLookupTenderdash {
+            url: String,
+            server: JoinHandle<()>,
+        }
+
+        impl Drop for SlowLookupTenderdash {
+            fn drop(&mut self) {
+                self.server.abort();
+            }
+        }
+
+        impl SlowLookupTenderdash {
+            async fn start() -> Self {
+                let listener = TcpListener::bind("127.0.0.1:0")
+                    .await
+                    .expect("slow lookup Tenderdash listener");
+                let address = listener
+                    .local_addr()
+                    .expect("slow lookup Tenderdash address");
+                let router = Router::new().route(
+                    "/",
+                    post(|Json(call): Json<Value>| async move {
+                        tokio::time::sleep(LOOKUP_TIME).await;
+                        Json(json!({
+                            "jsonrpc": "2.0",
+                            "id": call["id"],
+                            "error": { "code": -32603, "message": "Internal error", "data": "tx not found" },
+                        }))
+                    }),
+                );
+                let server = tokio::spawn(async move {
+                    axum::serve(listener, router)
+                        .await
+                        .expect("slow lookup Tenderdash serves");
+                });
+                Self {
+                    url: format!("http://{address}"),
+                    server,
+                }
+            }
+
+            /// A service whose Tenderdash lookups come here, and whose events the test delivers.
+            fn service(&self) -> PlatformServiceImpl {
+                let mut service = PlatformServiceImpl::without_backends();
+                let tenderdash = TenderdashClient::with_test_base_url(self.url.clone());
+                service.websocket_client = tenderdash.websocket_client();
+                service.websocket_client.set_connected_for_test();
+                service.tenderdash_client = Arc::new(tenderdash);
+                let mut config = (*service.config).clone();
+                config.dapi.state_transition_wait_timeout = WAIT_TIMEOUT.as_millis() as u64;
+                service.config = Arc::new(config);
+                service
+            }
+        }
+
+        #[tokio::test]
+        async fn should_give_the_event_the_whole_wait_timeout_after_a_slow_lookup() {
+            let tenderdash = SlowLookupTenderdash::start().await;
+            let service = tenderdash.service();
+            let hash = [3u8; 32];
+            // A wait that does not ask for the state before the block
+            let request = Request::new(WaitForStateTransitionResultRequest {
+                version: Some(Version::V0(WaitForStateTransitionResultRequestV0 {
+                    state_transition_hash: hash.to_vec(),
+                    prove: false,
+                    request_user_balance: false,
+                    prove_state_before_block: false,
+                })),
+            });
+
+            // The event comes half a second after the lookup answered: within the wait's own
+            // timeout counted from there, and past it counted from the start of the call
+            let deliver_event = async {
+                tokio::time::sleep(LOOKUP_TIME + WAIT_TIMEOUT / 2).await;
+                service
+                    .subscriber_manager
+                    .notify(StreamingEvent::PlatformTx {
+                        event: TransactionEvent {
+                            hash: hex::encode_upper(hash),
+                            height: 5,
+                            result: TransactionResult::Success,
+                            tx: None,
+                        },
+                    })
+                    .await;
+            };
+            let (answer, ()) = tokio::join!(
+                service.wait_for_state_transition_result_impl(request),
+                deliver_event
+            );
+
+            answer.expect("expected the event to end the wait");
+        }
+    }
+
     mod deadline {
         use super::super::wait_deadline;
-        use crate::server::grpc::GRPC_REQUEST_TIME_SAFETY_MARGIN;
         use std::time::Duration;
         use tokio::time::Instant;
 
-        #[test]
-        fn should_end_a_wait_at_its_own_timeout_without_a_shorter_call_deadline() {
-            let now = Instant::now();
-            let wait = Duration::from_secs(30);
+        const WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 
-            assert_eq!(wait_deadline(now, wait, None), now + wait);
+        #[test]
+        fn should_end_a_wait_at_its_own_timeout_without_an_earlier_ingress_deadline() {
+            let now = Instant::now();
+
+            assert_eq!(wait_deadline(now, WAIT_TIMEOUT, None), now + WAIT_TIMEOUT);
             assert_eq!(
-                wait_deadline(now, wait, Some(Duration::from_secs(60))),
-                now + wait
+                wait_deadline(now, WAIT_TIMEOUT, Some(now + Duration::from_secs(60))),
+                now + WAIT_TIMEOUT
             );
         }
 
         #[test]
-        fn should_end_a_wait_before_the_ingress_layer_ends_the_call() {
+        fn should_end_a_wait_when_the_ingress_layer_cuts_the_call_off() {
             let now = Instant::now();
-            let grpc_timeout = Duration::from_secs(5);
+            let ingress = now + Duration::from_secs(5);
 
-            assert_eq!(
-                wait_deadline(now, Duration::from_secs(30), Some(grpc_timeout)),
-                now + grpc_timeout - GRPC_REQUEST_TIME_SAFETY_MARGIN
-            );
+            assert_eq!(wait_deadline(now, WAIT_TIMEOUT, Some(ingress)), ingress);
         }
     }
 

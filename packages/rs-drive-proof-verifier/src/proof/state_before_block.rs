@@ -144,13 +144,15 @@ where
         error: e.to_string(),
     })?;
 
-    // Decoded once, for the response's own proof and for the state before the block
+    // Decoded once, for the response's own proof and for the state before the block. The
+    // response's proof is lent, not copied: only its metadata is kept.
     let (outcome, metadata, _) = verify_state_transition_proof_outcome(
         &state_transition,
         &response,
         platform_version,
         provider,
     )?;
+    let metadata = metadata.clone();
 
     let state_before_block = match before {
         None => StateBeforeBlockVerification::NotInResponse,
@@ -198,9 +200,11 @@ fn verify_state_before_block(
 
     // The same refusal as for the response's own proof: a producer version this build does not
     // have is refused unless it is newer than the newest one, which is read with the newest
-    // tables. The proof of the state before the block needs no producer's tables: its balance
-    // and revision queries are built with the caller's rules, and a layout this build does not
-    // know fails against the signed root rather than authenticating other data.
+    // tables. The proof of the state before the block needs no producer's tables: it reads an
+    // identity's balance and revision at paths no protocol version has moved. That is what
+    // makes it sound, not the signed root alone: the balance query accepts an absence proof,
+    // so a balance moved elsewhere would prove absent at its old path under a genuine root.
+    // Moving either path needs a client that reads the new one first.
     proof_query_platform_version(&metadata)?;
 
     let Some((root_hash, state)) = Drive::verify_state_transition_prior_state_with_proof(

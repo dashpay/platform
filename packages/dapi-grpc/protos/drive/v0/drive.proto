@@ -15,7 +15,9 @@ service DriveInternal {
   // waiting. A lease is sent in one registration only: a caller that does not
   // learn whether its registration arrived releases the lease and, to register
   // again, takes a new one. RESOURCE_EXHAUSTED when Drive already holds as many
-  // registrations as it keeps.
+  // registrations as it keeps. FAILED_PRECONDITION when the lease's release
+  // arrived first, or the lease is no newer than releases Drive has forgotten:
+  // Drive holds nothing for it.
   rpc registerStateTransitionExecutionProof(RegisterStateTransitionExecutionProofRequest)
       returns (RegisterStateTransitionExecutionProofResponse);
   // Undoes one registration of a state transition. A proof Drive already made
@@ -43,10 +45,9 @@ message RegisterStateTransitionExecutionProofRequest {
   bytes state_transition_hash = 1;
   // 16 bytes the caller picks for one wait: 8 bytes naming the caller, the
   // same in all its leases, then a big-endian 8-byte number it increases for
-  // every lease. Registering with a lease that is held, or whose release
-  // arrived first, changes nothing. A lease registered again after its
-  // release is taken again and held until it expires, so a caller never
-  // reuses one.
+  // every lease. Registering with a lease that is held changes nothing. A
+  // lease registered again after an ordinary release is taken again and held
+  // until it expires, so a caller never reuses one.
   bytes lease = 2;
 }
 

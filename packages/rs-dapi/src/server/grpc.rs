@@ -1,6 +1,7 @@
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
+use tokio::time::Instant;
 use tracing::{info, trace};
 
 use crate::error::DAPIResult;
@@ -21,7 +22,7 @@ const UNARY_TIMEOUT_SECS: u64 = 15;
 /// Timeouts for streaming requests - sync with envoy config if changed there
 const STREAMING_TIMEOUT_SECS: u64 = 600;
 /// Safety margin to ensure we respond before client-side gRPC deadlines fire
-pub(crate) const GRPC_REQUEST_TIME_SAFETY_MARGIN: Duration = Duration::from_millis(50);
+const GRPC_REQUEST_TIME_SAFETY_MARGIN: Duration = Duration::from_millis(50);
 
 impl DapiServer {
     /// Start the unified gRPC server that exposes both Platform and Core services.
@@ -91,6 +92,13 @@ impl DapiServer {
         Ok(())
     }
 }
+
+/// When the ingress layer ends a call: the instant its timer started plus the call's timeout.
+/// The layer puts it in the request's extensions, so a handler can end optional work before the
+/// call is cut off: the timer starts when the request's headers arrive, before its message is
+/// read, so it ends earlier than the handler could tell from the `grpc-timeout` header.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct IngressDeadline(pub(crate) Instant);
 
 /// Middleware layer to apply different timeouts based on gRPC method type.
 ///
@@ -169,7 +177,7 @@ where
         self.inner.poll_ready(cx).map_err(Into::into)
     }
 
-    fn call(&mut self, req: Request<ReqBody>) -> Self::Future {
+    fn call(&mut self, mut req: Request<ReqBody>) -> Self::Future {
         let path = req.uri().path().to_owned();
         let default_timeout = self.config.timeout_for_method(&path);
         let timeout_from_header = parse_grpc_timeout_header(req.headers());
@@ -194,6 +202,9 @@ where
         }
         let timeout_duration = effective_timeout;
         let timeout_secs = timeout_duration.as_secs_f64();
+        // The timer below starts now
+        req.extensions_mut()
+            .insert(IngressDeadline(Instant::now() + timeout_duration));
         let fut = tower::timeout::Timeout::new(self.inner.clone(), timeout_duration).call(req);
 
         Box::pin(async move {
@@ -215,11 +226,8 @@ where
 
 /// Parse inbound grpc-timeout header into Duration (RFC 8681 style units)
 fn parse_grpc_timeout_header(headers: &HeaderMap) -> Option<Duration> {
-    parse_grpc_timeout(headers.get("grpc-timeout")?.to_str().ok()?)
-}
-
-/// Parse a grpc-timeout value into Duration (RFC 8681 style units)
-pub(crate) fn parse_grpc_timeout(as_str: &str) -> Option<Duration> {
+    let value = headers.get("grpc-timeout")?;
+    let as_str = value.to_str().ok()?;
     if as_str.is_empty() {
         return None;
     }
@@ -240,6 +248,7 @@ pub(crate) fn parse_grpc_timeout(as_str: &str) -> Option<Duration> {
 mod tests {
     use super::*;
     use std::future::Future;
+    use std::sync::{Arc, Mutex};
     use std::task::{Context, Poll};
 
     #[derive(Clone)]
@@ -261,6 +270,54 @@ mod tests {
                 Ok(Response::new(()))
             })
         }
+    }
+
+    /// Records the ingress deadline the layer hands the service behind it.
+    #[derive(Clone, Default)]
+    struct DeadlineRecorder(Arc<Mutex<Option<Instant>>>);
+
+    impl Service<Request<()>> for DeadlineRecorder {
+        type Response = Response<()>;
+        type Error = Box<dyn std::error::Error + Send + Sync>;
+        type Future =
+            Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn call(&mut self, req: Request<()>) -> Self::Future {
+            *self.0.lock().unwrap() = req
+                .extensions()
+                .get::<IngressDeadline>()
+                .map(|deadline| deadline.0);
+            Box::pin(async { Ok(Response::new(())) })
+        }
+    }
+
+    #[tokio::test]
+    async fn should_hand_the_service_the_instant_the_call_is_cut_off() {
+        let timeout_layer = TimeoutLayer::new(Duration::from_secs(15), Duration::from_secs(600));
+        let recorder = DeadlineRecorder::default();
+        let mut service = timeout_layer.layer(recorder.clone());
+        let request = Request::builder()
+            .uri("/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult")
+            .header("grpc-timeout", "5S")
+            .body(())
+            .unwrap();
+
+        let called_at = Instant::now();
+        service.call(request).await.expect("expected an answer");
+        let answered_at = Instant::now();
+
+        let deadline = recorder
+            .0
+            .lock()
+            .unwrap()
+            .expect("expected the layer to hand its deadline on");
+        let timeout = Duration::from_secs(5) - GRPC_REQUEST_TIME_SAFETY_MARGIN;
+        assert!(deadline >= called_at + timeout);
+        assert!(deadline <= answered_at + timeout);
     }
 
     #[tokio::test]

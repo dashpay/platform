@@ -1272,6 +1272,9 @@ fn register_state_transition_execution_proof(
             RegistrationRefused::TooManyRegistered => Status::resource_exhausted(
                 "too many state transitions are registered for an execution proof",
             ),
+            RegistrationRefused::LeaseReleased => Status::failed_precondition(
+                "the registration lease was released already; register with a new lease",
+            ),
         })?;
 
     Ok(RegisterStateTransitionExecutionProofResponse {})
@@ -1521,6 +1524,17 @@ mod tests {
 
             unregister(&proofs, vec![0; 32], vec![0; 16]).expect("expected to unregister");
             register(&proofs, vec![255; 32], vec![255; 16]).expect("expected a freed slot");
+        }
+
+        #[test]
+        fn should_answer_a_registration_after_its_release_with_failed_precondition() {
+            let proofs = StateTransitionExecutionProofs::default();
+            unregister(&proofs, vec![1; 32], vec![1; 16]).expect("expected to unregister");
+
+            let status = register(&proofs, vec![1; 32], vec![1; 16]).unwrap_err();
+
+            assert_eq!(status.code(), Code::FailedPrecondition);
+            assert!(!proofs.has_registered());
         }
 
         #[test]

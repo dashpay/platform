@@ -1327,6 +1327,7 @@ mod tests {
         use dpp::state_transition::StateTransition;
         use dpp::util::hash::hash_single;
         use drive::drive::Drive;
+        use drive::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
         use rand::rngs::StdRng;
         use rand::SeedableRng;
         use simple_signer::signer::SimpleSigner;
@@ -1704,6 +1705,45 @@ mod tests {
 
             let pending = platform.prove_registered_state_transitions_before_block(&[raw]);
 
+            assert!(pending.is_empty());
+        }
+
+        #[tokio::test]
+        async fn should_not_prove_a_registered_state_transition_whose_proof_clients_cannot_read() {
+            let mut platform = platform();
+            let alice = sender(&mut platform, 230);
+            let bob = sender(&mut platform, 231);
+            let app = FullAbciApplication::new(&platform.platform);
+            let proofs = &platform.state_transition_execution_proofs;
+
+            finalize_real_block(&platform, &app, 1, FIRST_BLOCK_TIME_MS, None)
+                .expect("the first block must finalize");
+
+            let registered = transfer(&alice, bob.identity.id(), 1).await;
+            proofs
+                .register(hash_single(&registered), LEASE)
+                .expect("expected to register");
+
+            // The block before ran at protocol version 11, whose GroveDB proofs have an envelope
+            // clients refuse, and the network upgrades in the next block
+            let old_version = PlatformVersion::get(11).expect("expected protocol version 11");
+            let state_transition = StateTransition::deserialize_from_bytes_untrusted(&registered)
+                .expect("expected to deserialize the transfer");
+            let old_proof = platform
+                .drive
+                .prove_state_transition(&state_transition, None, old_version)
+                .expect("expected to prove")
+                .into_data()
+                .expect("expected a proof");
+            assert!(require_supported_grovedb_proof_envelope(&old_proof, "proof").is_err());
+
+            let mut platform_state = (**platform.state.load()).clone();
+            platform_state.set_current_protocol_version_in_consensus(11);
+            platform.state.store(Arc::new(platform_state));
+
+            let pending = platform.prove_registered_state_transitions_before_block(&[registered]);
+
+            // No side a client would refuse is made, so no pair is kept for it
             assert!(pending.is_empty());
         }
 
