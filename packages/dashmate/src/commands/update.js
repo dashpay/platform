@@ -35,6 +35,10 @@ export default class UpdateCommand extends ConfigBaseCommand {
       default: OUTPUT_FORMATS.PLAIN,
       options: Object.values(OUTPUT_FORMATS),
     }),
+    'skip-image-cleanup': Flags.boolean({
+      description: 'keep unused historical Dash Docker images after updating',
+      default: false,
+    }),
     'skip-certificate-check': Flags.boolean({
       description: 'do not act on the gateway certificate check. It still runs and still reports,'
         + ' but nothing is prompted, obtained or blocked. Also DASHMATE_SKIP_CERTIFICATE_CHECK',
@@ -68,6 +72,7 @@ export default class UpdateCommand extends ConfigBaseCommand {
     gatewayCertificateTask,
     dockerCompose,
     renewalRecordRepository,
+    dockerImageCleanup,
   ) {
     const {
       format,
@@ -95,6 +100,15 @@ export default class UpdateCommand extends ConfigBaseCommand {
     // settles: the event loop simply drains and the process exits 0 with
     // nothing done. Failing closed here turns that silence into an exit code.
     process.exitCode = 1;
+
+    let imageCleanupSnapshot;
+    if (!flags['skip-image-cleanup']) {
+      try {
+        imageCleanupSnapshot = await dockerImageCleanup.prepare(config);
+      } catch (error) {
+        process.stderr.write(`Docker image cleanup skipped: ${error.message}\n`);
+      }
+    }
 
     // Both handlers are attached the moment the pull is created, so the minutes
     // the certificate task may spend at a prompt are not a window in which an
@@ -258,6 +272,18 @@ export default class UpdateCommand extends ConfigBaseCommand {
 
     if (unresolved) {
       throw new MuteOneLineError(unresolved);
+    }
+
+    // Per-image pull failures are reported as rows rather than exceptions.
+    // Never clean up after a partial update, even when the command exits zero.
+    if (imageCleanupSnapshot && this.pullResult?.ok && this.pullResult.failed === 0) {
+      try {
+        const { deleted, skipped } = await dockerImageCleanup.cleanup(imageCleanupSnapshot);
+        process.stderr.write(`Docker image cleanup: removed ${deleted.length} old image(s),`
+          + ` skipped ${skipped.length} in-use or conflicting image(s).\n`);
+      } catch (error) {
+        process.stderr.write(`Docker image cleanup warning: ${error.message}\n`);
+      }
     }
 
     process.exitCode = 0;

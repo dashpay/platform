@@ -18,6 +18,8 @@ describe('Update command', () => {
   let homeDir;
   let stderr;
   let exitCode;
+  let dockerImageCleanup;
+  let imageCleanupSnapshot;
 
   /**
    * @param {Object} verdict
@@ -70,6 +72,7 @@ describe('Update command', () => {
       gatewayCertificateTask,
       dockerCompose,
       new RenewalRecordRepository(homeDir),
+      dockerImageCleanup,
     );
   }
 
@@ -95,6 +98,11 @@ describe('Update command', () => {
     };
     mockDocker = { pull: this.sinon.stub().callsFake((image, cb) => cb(false, mockDockerStream)) };
     dockerCompose = { isServiceRunning: this.sinon.stub().resolves(false) };
+    imageCleanupSnapshot = {};
+    dockerImageCleanup = {
+      prepare: this.sinon.stub().resolves(imageCleanupSnapshot),
+      cleanup: this.sinon.stub().resolves({ deleted: [], skipped: [] }),
+    };
 
     stderr = '';
     this.sinon.stub(process.stderr, 'write').callsFake((chunk) => {
@@ -114,6 +122,53 @@ describe('Update command', () => {
 
     expect(mockGetServicesList).to.have.been.calledOnceWithExactly(config);
     expect(mockDocker.pull).to.have.been.calledOnceWith(mockServicesList[0].image);
+    expect(dockerImageCleanup.prepare).to.have.been.calledOnceWithExactly(config);
+    expect(dockerImageCleanup.prepare).to.have.been.calledBefore(mockDocker.pull);
+    expect(dockerImageCleanup.cleanup).to.have.been.calledOnceWithExactly(imageCleanupSnapshot);
+  });
+
+  it('should allow image cleanup to be disabled without inspecting Docker', async () => {
+    await runUpdate({ flags: { 'skip-image-cleanup': true } });
+
+    expect(dockerImageCleanup.prepare).not.to.have.been.called();
+    expect(dockerImageCleanup.cleanup).not.to.have.been.called();
+    expect(mockDocker.pull).to.have.been.calledOnce();
+  });
+
+  it('should still pull when preparing cleanup fails', async () => {
+    dockerImageCleanup.prepare.rejects(new Error('cannot inspect images'));
+
+    await runUpdate();
+
+    expect(mockDocker.pull).to.have.been.calledOnce();
+    expect(dockerImageCleanup.cleanup).not.to.have.been.called();
+    expect(stderr).to.contain('Docker image cleanup skipped: cannot inspect images');
+    expect(process.exitCode).to.equal(0);
+  });
+
+  it('should warn without failing the update when cleanup fails', async () => {
+    dockerImageCleanup.cleanup.rejects(new Error('cannot delete image'));
+
+    await runUpdate();
+
+    expect(stderr).to.contain('Docker image cleanup warning: cannot delete image');
+    expect(process.exitCode).to.equal(0);
+  });
+
+  it('should keep cleanup diagnostics out of JSON stdout', async function it() {
+    let stdout = '';
+    this.sinon.stub(process.stdout, 'write').callsFake((chunk) => {
+      stdout += chunk;
+      return true;
+    });
+    dockerImageCleanup.cleanup.resolves({ deleted: ['old-image'], skipped: [] });
+
+    await runUpdate();
+
+    expect(JSON.parse(stdout)).to.deep.equal([
+      { name: 'fake', title: 'FAKE', image: 'fake', updated: 'up to date' },
+    ]);
+    expect(stderr).to.contain('removed 1 old image(s)');
   });
 
   it('should update other services if one of them fails', async function it() {
@@ -131,6 +186,7 @@ describe('Update command', () => {
     expect(mockGetServicesList).to.have.been.calledOnceWithExactly(config);
     expect(mockDocker.pull.firstCall.firstArg).to.equal(mockServicesList[0].image);
     expect(mockDocker.pull.secondCall.firstArg).to.equal(mockServicesList[1].image);
+    expect(dockerImageCleanup.cleanup).not.to.have.been.called();
   });
 
   describe('the pull is never left unobserved', () => {
@@ -162,6 +218,7 @@ describe('Update command', () => {
 
       await expect(runUpdate({ updateNode: () => Promise.reject(rejection) }))
         .to.be.rejectedWith(rejection);
+      expect(dockerImageCleanup.cleanup).not.to.have.been.called();
     });
 
     // The certificate guidance is still worth printing, but it is not what the
@@ -329,6 +386,7 @@ describe('Update command', () => {
       await runUnresolved();
 
       expect(mockDocker.pull).to.have.been.calledOnce();
+      expect(dockerImageCleanup.cleanup).not.to.have.been.called();
     });
 
     it('should exit non-zero through a muted error', async () => {
@@ -413,6 +471,7 @@ describe('Update command', () => {
         'format',
         'non-interactive',
         'skip-certificate-check',
+        'skip-image-cleanup',
         'verbose',
       ]);
     });
