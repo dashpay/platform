@@ -77,14 +77,6 @@ fn is_synced_to_tip(progress: &SyncProgress) -> bool {
         })
 }
 
-/// The raw entries of `list`.
-fn masternode_list_entries(list: &MasternodeList) -> Vec<MasternodeListEntry> {
-    list.masternodes
-        .values()
-        .map(|qualified| qualified.masternode_list_entry.clone())
-        .collect()
-}
-
 /// A list dash-spv does not vouch for is unavailable to callers.
 fn masternode_list_unavailable(reason: MasternodeListNotCurrentError) -> PlatformWalletError {
     tracing::debug!("SPV masternode list refused as not current: {reason}");
@@ -863,19 +855,6 @@ impl SpvRuntime {
         Some(MasternodeListSummary::all_from_list(&list))
     }
 
-    /// The current-tip deterministic masternode list's raw entries, for the
-    /// paths that need what [`MasternodeListSummary`] leaves out: a
-    /// version-3 entry's whole extended address map and the entry version.
-    /// `None` when the list isn't available; read the same way as
-    /// [`Self::masternode_list_summaries`].
-    pub(crate) async fn masternode_list_entries(&self) -> Option<Vec<MasternodeListEntry>> {
-        let list = {
-            let client_guard = self.client.read().await;
-            client_guard.as_ref()?.latest_masternode_list().await?
-        };
-        Some(masternode_list_entries(&list))
-    }
-
     /// [`Self::masternode_list_summaries`], but only while the list follows
     /// the chain, as [`Self::current_masternode_list`] reads it. The plain
     /// read also returns a list restored from disk while sync is still
@@ -921,11 +900,18 @@ impl SpvRuntime {
         ))
     }
 
-    /// [`Self::masternode_list_entries`], but only while the list follows
-    /// the chain, as [`Self::current_masternode_list_summaries`].
+    /// The current masternode list's raw entries, for the paths that need
+    /// what [`MasternodeListSummary`] leaves out: a version-3 entry's whole
+    /// extended address map and the entry version. `None` while the list does
+    /// not follow the chain, as [`Self::current_masternode_list_summaries`].
     pub(crate) async fn current_masternode_list_entries(&self) -> Option<Vec<MasternodeListEntry>> {
         let list = self.current_spv_masternode_list().await.ok()?;
-        Some(masternode_list_entries(&list))
+        Some(
+            list.masternodes
+                .values()
+                .map(|qualified| qualified.masternode_list_entry.clone())
+                .collect(),
+        )
     }
 
     /// dash-spv's newest masternode list, only while it follows the chain.
