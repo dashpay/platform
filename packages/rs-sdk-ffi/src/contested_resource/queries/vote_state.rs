@@ -37,6 +37,10 @@ use std::ffi::{c_char, c_void, CStr, CString};
 ///   whatever the limit. The FFI does not page: it serializes the rows the
 ///   query returns.
 ///
+/// Result type 0 (DOCUMENTS) does not read a finalized poll's stored record:
+/// for a contest that ended, use a tally-bearing result type (1 or 2), where
+/// the contenders' document bytes may be unavailable.
+///
 /// # Returns
 /// * A JSON object, or no data when Platform has no contenders on record:
 ///   `{"abstain_vote_tally":N,"lock_vote_tally":N,"winner_info":…,"block_info":{…},

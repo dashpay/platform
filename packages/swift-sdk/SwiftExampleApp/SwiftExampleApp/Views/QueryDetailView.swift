@@ -454,30 +454,26 @@ struct QueryDetailView: View {
             guard !name.isEmpty else {
                 throw SDKError.internalError("DPNS name is required")
             }
-            return try await sdk.dpnsGetContestedVoteState(name: name.trimmingCharacters(in: .whitespaces))
+            // 0 reads every contender (the SDK pages them)
+            return try await sdk.dpnsGetContestedVoteState(
+                name: name.trimmingCharacters(in: .whitespaces), limit: 0)
 
         case "getContestedDpnsNameVotersForIdentity":
             let name = queryInputs["name"] ?? ""
             let identityId = queryInputs["identityId"] ?? ""
             guard !name.isEmpty else {
-                throw SDKError.internalError("DPNS label is required")
+                throw SDKError.internalError("DPNS name is required")
             }
             guard !identityId.isEmpty else {
                 throw SDKError.internalError("Identity ID is required")
             }
 
-            let label = try sdk.dpnsNormalizeLabel(name.trimmingCharacters(in: .whitespaces))
-            let result = try await sdk.getContestedResourceVotersForIdentity(
-                dataContractId: DPNSVotePoll.contractId,
-                documentTypeName: DPNSVotePoll.documentTypeName,
-                indexName: DPNSVotePoll.indexName,
-                indexValues: DPNSVotePoll.indexValues(normalizedLabel: label),
-                contestantId: identityId,
-                startAtIdentifierInfo: nil,
-                count: 100,
-                orderAscending: true
+            // 0 reads every voter (the SDK pages them)
+            return try await sdk.dpnsGetContestedVotersForIdentity(
+                name: name.trimmingCharacters(in: .whitespaces),
+                contestantId: identityId.trimmingCharacters(in: .whitespaces),
+                limit: 0
             )
-            return result
 
         case "getContestedDpnsNameIdentityVotes":
             let identityId = queryInputs["identityId"] ?? ""
@@ -1016,7 +1012,7 @@ struct QueryDetailView: View {
 
         case "getContestedDpnsNameVotersForIdentity":
             return [
-                QueryInput(name: "name", label: "DPNS Label", required: true, placeholder: "e.g., alice"),
+                QueryInput(name: "name", label: "DPNS Name", required: true, placeholder: "e.g., alice or alice.dash"),
                 QueryInput(name: "identityId", label: "Identity ID", required: true, placeholder: "Base58 identity ID")
             ]
 
@@ -1054,7 +1050,7 @@ struct QueryDetailView: View {
                 QueryInput(name: "indexValues", label: "Index Values", required: true, placeholder: "e.g., dash, a11ce or [\"dash\",\"a11ce\"]"),
                 QueryInput(name: "resultType", label: "Result Type", required: false, placeholder: "Default: documents_and_vote_tally (or documents, vote_tally)"),
                 QueryInput(name: "allowIncludeLockedAndAbstainingVoteTally", label: "Include Locked and Abstaining", required: false, placeholder: "true/false"),
-                QueryInput(name: "count", label: "Count", required: false)
+                QueryInput(name: "count", label: "Request Limit", required: false, placeholder: "Single request; finished polls return all contenders")
             ]
 
         case "getContestedResourceVotersForIdentity":

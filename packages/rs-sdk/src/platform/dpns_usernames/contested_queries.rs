@@ -20,7 +20,9 @@ use drive::query::vote_poll_vote_state_query::{
 };
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive::query::VotePollsByEndDateDriveQuery;
-use drive_proof_verifier::types::{Contenders, ContestedResource, VotePollsGroupedByTimestamp};
+use drive_proof_verifier::types::{
+    Contenders, ContestedResource, VotePollsGroupedByTimestamp, Voter, Voters,
+};
 use futures::{stream, StreamExt};
 use std::collections::BTreeMap;
 
@@ -129,8 +131,9 @@ impl Sdk {
     /// # Arguments
     ///
     /// * `name` - The username to check: a label or a full name, in any case (e.g. "alice",
-    ///   "Alice.DASH", or the normalized "a11ce"). It is normalized with
-    ///   [`normalize_dpns_label`] to the index value of the contest.
+    ///   "Alice.DASH", or the normalized "a11ce"). A `.dash` suffix, matched in any case, is
+    ///   stripped and the rest normalized (homograph-safe, lowercase) to the contest's index
+    ///   value, so all three address the same contest.
     /// * `limit` - Maximum number of contenders to return; `None` returns every contender, and
     ///   `Some(0)` returns an empty state without a request
     ///
@@ -160,21 +163,29 @@ impl Sdk {
 
     /// Get voters who voted for a specific identity for a contested DPNS username
     ///
+    /// Reads the voters in identity order, in pages of up to 100 (the most Drive answers to one
+    /// query) that each start after the last voter read, until `limit` voters are read or none
+    /// are left.
+    ///
     /// # Arguments
     ///
-    /// * `label` - The username label (e.g., "alice")
+    /// * `name` - The username: a label or a full name, in any case (e.g. "alice",
+    ///   "Alice.DASH", or the normalized "a11ce"). A `.dash` suffix, matched in any case, is
+    ///   stripped and the rest normalized (homograph-safe, lowercase) to the contest's index
+    ///   value, so all three address the same contest.
     /// * `contestant_id` - The identity ID of the contestant
-    /// * `limit` - Maximum number of voters to return
+    /// * `limit` - Maximum number of voters to return; `None` returns every voter, and
+    ///   `Some(0)` returns no voter without a request
     ///
     /// # Returns
     ///
-    /// Returns the list of masternode voters who voted for this contestant
+    /// Returns the masternode voters who voted for this contestant
     pub async fn get_contested_dpns_voters_for_identity(
         &self,
-        label: &str,
+        name: &str,
         contestant_id: Identifier,
         limit: Option<u32>,
-    ) -> Result<(), Error> {
+    ) -> Result<Voters, Error> {
         let dpns_contract_id = self.get_dpns_contract_id()?;
 
         let vote_poll = ContestedDocumentResourceVotePoll {
@@ -183,21 +194,49 @@ impl Sdk {
             index_name: "parentNameAndLabel".to_string(),
             index_values: vec![
                 Value::Text(DPNS_PARENT_DOMAIN.to_string()),
-                Value::Text(label.to_string()),
+                Value::Text(normalize_dpns_label(name)),
             ],
         };
 
-        let _query = ContestedDocumentVotePollVotesDriveQuery {
-            vote_poll,
-            contestant_id,
-            start_at: None,
-            limit: limit.map(|l| l as u16),
-            offset: None,
-            order_ascending: true,
-        };
+        let mut voters = Voters::default();
+        let mut start_at = None;
+        loop {
+            let page_limit = match limit {
+                Some(limit) => {
+                    let left = (limit as usize).saturating_sub(voters.0.len());
+                    if left == 0 {
+                        break;
+                    }
+                    left.min(DEFAULT_QUERY_LIMIT as usize) as u16
+                }
+                None => DEFAULT_QUERY_LIMIT,
+            };
+            let page = Voter::fetch_many(
+                self,
+                ContestedDocumentVotePollVotesDriveQuery {
+                    vote_poll: vote_poll.clone(),
+                    contestant_id,
+                    start_at,
+                    limit: Some(page_limit),
+                    offset: None,
+                    order_ascending: true,
+                },
+            )
+            .await?;
+            let read = page.0.len();
+            let last = page.0.last().map(|voter| voter.0);
+            voters.0.extend(page.0);
 
-        // ContestedResourceVoters isn't available, so we'll skip this for now
-        Ok(())
+            // A short page is the last one
+            match last {
+                Some(last) if read >= page_limit as usize => {
+                    start_at = Some((last.to_buffer(), false));
+                }
+                _ => break,
+            }
+        }
+
+        Ok(voters)
     }
 
     /// Get all contested DPNS usernames that an identity has voted on
@@ -1070,6 +1109,121 @@ mod tests {
             .expect("expected the page of the normalized label to answer");
 
         assert_eq!(state.contenders.len(), 10);
+    }
+
+    /// The page of voters for `contestant` in the contest for `label` after `start_after`,
+    /// built here rather than with the code under test
+    async fn expect_voters_page(
+        sdk: &mut Sdk,
+        label: &str,
+        contestant: Identifier,
+        start_after: Option<Identifier>,
+        limit: u16,
+        page: &[Identifier],
+    ) {
+        let query = ContestedDocumentVotePollVotesDriveQuery {
+            vote_poll: ContestedDocumentResourceVotePoll {
+                contract_id: sdk
+                    .get_dpns_contract_id()
+                    .expect("expected the dpns contract id"),
+                document_type_name: "domain".to_string(),
+                index_name: "parentNameAndLabel".to_string(),
+                index_values: vec![
+                    Value::Text("dash".to_string()),
+                    Value::Text(label.to_string()),
+                ],
+            },
+            contestant_id: contestant,
+            start_at: start_after.map(|id| (id.to_buffer(), false)),
+            limit: Some(limit),
+            offset: None,
+            order_ascending: true,
+        };
+        let page = Voters::from_iter(page.iter().copied().map(Voter));
+        sdk.mock()
+            .expect_fetch_many::<usize, Voter, _, Voters>(query, Some(page))
+            .await
+            .expect("expected to register the page of voters");
+    }
+
+    /// Every voter is read across pages of 100, and a full name addresses the contest of its
+    /// normalized label
+    #[tokio::test]
+    async fn should_read_every_voter_of_a_full_name_across_pages() {
+        let contestant = contender(999);
+        let mut sdk = mock_sdk();
+        expect_voters_page(
+            &mut sdk,
+            "a11ce",
+            contestant,
+            None,
+            100,
+            &contenders(0, 100),
+        )
+        .await;
+        expect_voters_page(
+            &mut sdk,
+            "a11ce",
+            contestant,
+            Some(contender(99)),
+            100,
+            &contenders(100, 130),
+        )
+        .await;
+
+        let voters = sdk
+            .get_contested_dpns_voters_for_identity("Alice.DASH", contestant, None)
+            .await
+            .expect("expected both pages to answer");
+
+        assert_eq!(
+            voters.0.iter().map(|voter| voter.0).collect::<Vec<_>>(),
+            contenders(0, 130)
+        );
+    }
+
+    #[tokio::test]
+    async fn should_read_a_voters_limit_over_100_in_pages_of_at_most_100() {
+        let contestant = contender(999);
+        let mut sdk = mock_sdk();
+        expect_voters_page(
+            &mut sdk,
+            "a11ce",
+            contestant,
+            None,
+            100,
+            &contenders(0, 100),
+        )
+        .await;
+        expect_voters_page(
+            &mut sdk,
+            "a11ce",
+            contestant,
+            Some(contender(99)),
+            20,
+            &contenders(100, 120),
+        )
+        .await;
+
+        let voters = sdk
+            .get_contested_dpns_voters_for_identity("a11ce", contestant, Some(120))
+            .await
+            .expect("expected both pages to answer");
+
+        assert_eq!(voters.0.len(), 120);
+    }
+
+    #[tokio::test]
+    async fn should_read_no_voters_for_a_zero_limit_without_asking() {
+        // No expectation is registered, so any request would fail.
+        let sdk = mock_sdk();
+
+        let voters = sdk
+            .get_contested_dpns_voters_for_identity("alice", contender(1), Some(0))
+            .await
+            .expect("expected a zero limit to answer without a request");
+
+        assert!(voters.0.is_empty());
     }
 
     /// One page of vote polls by end date, all of them the DPNS contests for `labels`

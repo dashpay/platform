@@ -342,25 +342,6 @@ extension SDK {
         return json
     }
 
-    /// Process DashSDKResult and extract a JSON object; an empty dictionary
-    /// when the FFI returns no data.
-    private func processJSONObjectResult(_ result: DashSDKResult) throws -> [String: Any] {
-        if let error = result.error {
-            let sdkError = SDKError.fromDashSDKError(error.pointee)
-            dash_sdk_error_free(error)
-            throw sdkError
-        }
-
-        guard let dataPtr = result.data else {
-            return [:]
-        }
-
-        let jsonString: String = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
-        dash_sdk_string_free(dataPtr)
-
-        return try Self.parseJSONObject(jsonString)
-    }
-
     /// Process DashSDKResult and extract string
     private func processStringResult(_ result: DashSDKResult) throws -> String {
         try Self.consumeStringResult(result)
@@ -1516,6 +1497,27 @@ extension SDK {
         return try Self.parseJSONObject(json)
     }
 
+    /// Get the masternodes that voted for `contestantId` (base58) in the
+    /// contest for a DPNS username. `name` is a label or a full name in any
+    /// case ("alice", "Alice.DASH"); the SDK normalizes it and reads the
+    /// voters in pages. `limit` 0 returns every voter. Each element is
+    /// `["voter_id": base58]`.
+    ///
+    /// `nonisolated`: the query blocks on the network inside Rust, so it runs
+    /// on the shared Platform query queue (see ``performBlockingQuery(_:)``)
+    /// instead of on the caller's actor.
+    public nonisolated func dpnsGetContestedVotersForIdentity(
+        name: String,
+        contestantId: String,
+        limit: UInt32 = 0
+    ) async throws -> sending [[String: Any]] {
+        let json = try await performBlockingQuery { handle in
+            try Self.consumeStringResult(
+                dash_sdk_dpns_get_contested_voters_for_identity(handle, name, contestantId, limit))
+        }
+        return try Self.parseJSONArray(json)
+    }
+
     /// Get the contested DPNS usernames: the normalized labels with a contest
     /// on record, in ascending order. The SDK reads them in pages until
     /// `limit` labels are read or none are left.
@@ -1687,24 +1689,26 @@ extension SDK {
         offset: UInt32?,
         orderAscending: Bool
     ) async throws -> [[String: Any]] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
-        }
-
         let startIndexValuesJson = try startIndexValues.map { try Self.indexValuesJson($0) }
         let endIndexValuesJson = try endIndexValues.map { try Self.indexValuesJson($0) }
 
-        let result = dash_sdk_contested_resource_get_resources(
-            handle,
-            dataContractId,
-            documentTypeName,
-            indexName,
-            startIndexValuesJson,
-            endIndexValuesJson,
-            limit ?? 100,
-            orderAscending
-        )
-        return try processJSONArrayResult(result)
+        let json = try await performBlockingQuery { handle in
+            try Self.consumeOptionalStringResult(
+                dash_sdk_contested_resource_get_resources(
+                    handle,
+                    dataContractId,
+                    documentTypeName,
+                    indexName,
+                    startIndexValuesJson,
+                    endIndexValuesJson,
+                    limit ?? 100,
+                    orderAscending
+                ))
+        }
+        guard let json else {
+            return []
+        }
+        return try Self.parseJSONArray(json)
     }
 
     /// Encode index values as the JSON string array the contested-resource
@@ -1724,6 +1728,14 @@ extension SDK {
     /// (`contenders`, and with a tally `abstain_vote_tally`,
     /// `lock_vote_tally` and `winner_info`), or an empty dictionary when the
     /// poll has no data.
+    ///
+    /// `count` is the limit of a single request (nil sends 100); a finished
+    /// poll answers with every contender of its record whatever the limit.
+    /// `startAtIdentifierInfo` and `orderAscending` are currently not
+    /// forwarded to the query. `"documents"` mode does not read a finalized
+    /// poll's stored record: for a contest that ended use a tally-bearing
+    /// mode (`"vote_tally"` or `"documents_and_vote_tally"`), where the
+    /// contenders' document bytes may be unavailable.
     public func getContestedResourceVoteState(
         dataContractId: String,
         documentTypeName: String,
@@ -1735,10 +1747,6 @@ extension SDK {
         count: UInt32?,
         orderAscending: Bool
     ) async throws -> [String: Any] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
-        }
-
         // Map the result type name to the FFI discriminant.
         let resultTypeInt: UInt8
         switch resultType {
@@ -1753,17 +1761,23 @@ extension SDK {
 
         let indexValuesJson = try Self.indexValuesJson(indexValues ?? [])
 
-        let result = dash_sdk_contested_resource_get_vote_state(
-            handle,
-            dataContractId,
-            documentTypeName,
-            indexName,
-            indexValuesJson,
-            resultTypeInt,
-            allowIncludeLockedAndAbstainingVoteTally,
-            count ?? 100
-        )
-        return try processJSONObjectResult(result)
+        let json = try await performBlockingQuery { handle in
+            try Self.consumeOptionalStringResult(
+                dash_sdk_contested_resource_get_vote_state(
+                    handle,
+                    dataContractId,
+                    documentTypeName,
+                    indexName,
+                    indexValuesJson,
+                    resultTypeInt,
+                    allowIncludeLockedAndAbstainingVoteTally,
+                    count ?? 100
+                ))
+        }
+        guard let json else {
+            return [:]
+        }
+        return try Self.parseJSONObject(json)
     }
 
     /// Get contested resource voters for identity
@@ -1777,23 +1791,25 @@ extension SDK {
         count: UInt32?,
         orderAscending: Bool
     ) async throws -> [[String: Any]] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
-        }
-
         let indexValuesJson = try Self.indexValuesJson(indexValues ?? [])
 
-        let result = dash_sdk_contested_resource_get_voters_for_identity(
-            handle,
-            dataContractId,
-            documentTypeName,
-            indexName,
-            indexValuesJson,
-            contestantId,
-            count ?? 100,
-            orderAscending
-        )
-        return try processJSONArrayResult(result)
+        let json = try await performBlockingQuery { handle in
+            try Self.consumeOptionalStringResult(
+                dash_sdk_contested_resource_get_voters_for_identity(
+                    handle,
+                    dataContractId,
+                    documentTypeName,
+                    indexName,
+                    indexValuesJson,
+                    contestantId,
+                    count ?? 100,
+                    orderAscending
+                ))
+        }
+        guard let json else {
+            return []
+        }
+        return try Self.parseJSONArray(json)
     }
 
     /// Get contested resource identity votes. Each vote carries `vote_poll_id`,
@@ -2666,6 +2682,16 @@ extension SDK {
         dash_sdk_string_free(dataPtr)
 
         return string
+    }
+
+    /// ``consumeStringResult(_:)`` for a query that answers "nothing" with no
+    /// data and no error: that case is `nil`. Takes ownership of `result` on
+    /// every path.
+    fileprivate nonisolated static func consumeOptionalStringResult(_ result: DashSDKResult) throws -> String? {
+        if result.error == nil && result.data == nil {
+            return nil
+        }
+        return try consumeStringResult(result)
     }
 
     /// Parse a JSON object payload returned by a query.
