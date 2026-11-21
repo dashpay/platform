@@ -100,7 +100,7 @@ sealed interface WalletSyncEvent {
     ) : WalletSyncEvent
 
     /**
-     * One wallet's shielded sync result (`on_shielded_sync_completed_fn`,
+     * One wallet's shielded sync result (`on_shielded_sync_outcomes_fn`,
      * per entry).
      */
     data class ShieldedResult(

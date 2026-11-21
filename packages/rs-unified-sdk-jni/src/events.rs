@@ -33,7 +33,7 @@ use platform_wallet_ffi::event_handler::{
     DpnsSyncWalletResultFFI, EventHandlerCallbacks, EventHandlerCallbacksExtension,
 };
 use platform_wallet_ffi::platform_address_sync::PlatformAddressSyncWalletResultFFI;
-use platform_wallet_ffi::shielded_types::ShieldedSyncWalletResultFFI;
+use platform_wallet_ffi::shielded_types::ShieldedSyncWalletOutcomeFFI;
 use std::ffi::{c_void, CStr};
 use std::os::raw::c_char;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -256,16 +256,17 @@ unsafe extern "C" fn tramp_dpns_marketplace_sync_completed(
     });
 }
 
-// ── on_shielded_sync_completed ────────────────────────────────────────
+// ── on_shielded_sync_outcomes ─────────────────────────────────────────
 
-unsafe extern "C" fn tramp_shielded_sync_completed(
+unsafe extern "C" fn tramp_shielded_sync_outcomes(
     context: *mut c_void,
-    results: *const ShieldedSyncWalletResultFFI,
+    outcomes: *const ShieldedSyncWalletOutcomeFFI,
     count: usize,
     sync_unix_seconds: u64,
 ) {
     with_bridge(context, |env, bridge| {
-        for r in slice_or_empty(results, count) {
+        for outcome in slice_or_empty(outcomes, count) {
+            let r = &outcome.result;
             env.with_local_frame(16, |env| -> Result<(), jni::errors::Error> {
                 let wid = id32(env, &r.wallet_id)?;
                 let err = cstr_opt(env, r.error_message)?;
@@ -283,7 +284,7 @@ unsafe extern "C" fn tramp_shielded_sync_completed(
                         JValue::Int(r.newly_spent as i32),
                         JValue::Long(r.balance as i64),
                         (&err).into(),
-                        JValue::Int(r.error_code as i32),
+                        JValue::Int(outcome.error_code as i32),
                     ],
                 )?;
                 Ok(())
@@ -346,17 +347,18 @@ unsafe extern "C" fn tramp_shielded_tree_progress(
 
 /// Build the full event vtable pointing at `context` (a boxed
 /// [`KotlinEventCtx`]). Every slot is wired: the two ABI-simple event /
-/// error slots, plus the platform-address + shielded completion / progress
+/// error slots, plus the platform-address completion and shielded progress
 /// slots that marshal their payload arrays into per-entry flat calls on the
-/// Kotlin bridge. DPNS completion lives in [`build_event_extension`] so the
-/// legacy by-value vtable never grows.
+/// Kotlin bridge. DPNS and shielded completion live in
+/// [`build_event_extension`]: the legacy by-value vtable never grows, and its
+/// shielded result carries no result code.
 pub(crate) fn build_event_vtable(context: *mut c_void) -> EventHandlerCallbacks {
     EventHandlerCallbacks {
         context,
         on_wallet_event_fn: Some(tramp_wallet_event),
         on_error_fn: Some(tramp_error),
         on_platform_address_sync_completed_fn: Some(tramp_platform_address_sync_completed),
-        on_shielded_sync_completed_fn: Some(tramp_shielded_sync_completed),
+        on_shielded_sync_completed_fn: None,
         on_shielded_sync_progress_fn: Some(tramp_shielded_sync_progress),
         on_shielded_tree_progress_fn: Some(tramp_shielded_tree_progress),
         release_fn: Some(release_event_ctx),
@@ -369,6 +371,7 @@ pub(crate) fn build_event_vtable(context: *mut c_void) -> EventHandlerCallbacks 
 pub(crate) fn build_event_extension() -> EventHandlerCallbacksExtension {
     EventHandlerCallbacksExtension {
         on_dpns_marketplace_sync_completed_fn: Some(tramp_dpns_marketplace_sync_completed),
+        on_shielded_sync_outcomes_fn: Some(tramp_shielded_sync_outcomes),
         ..EventHandlerCallbacksExtension::default()
     }
 }

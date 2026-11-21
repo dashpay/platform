@@ -29,7 +29,7 @@ public struct ShieldedIdentityCreateUnconfirmedError: LocalizedError {
 /// Per-wallet outcome from a completed shielded sync pass.
 ///
 /// Mirrors the Rust-side
-/// [`ShieldedSyncWalletResultFFI`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-platform-wallet-ffi/src/shielded_types.rs)
+/// [`ShieldedSyncWalletOutcomeFFI`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-platform-wallet-ffi/src/shielded_types.rs)
 /// with three states:
 ///
 /// - `success == true`: sync succeeded; the numeric counters are
@@ -68,7 +68,8 @@ public struct ShieldedWalletSyncResult: Sendable {
         return PlatformWalletError(code: errorCode, message: errorMessage)
     }
 
-    init(ffi: ShieldedSyncWalletResultFFI) {
+    init(ffi outcome: ShieldedSyncWalletOutcomeFFI) {
+        let ffi = outcome.result
         var walletId = ffi.wallet_id
         self.walletId = withUnsafeBytes(of: &walletId) { Data($0) }
         self.success = ffi.success
@@ -79,7 +80,7 @@ public struct ShieldedWalletSyncResult: Sendable {
         self.newlySpent = ffi.newly_spent
         self.balance = ffi.balance
         self.errorMessage = ffi.error_message.map { String(cString: $0) }
-        self.errorCode = PlatformWalletResultCode(ffi: ffi.error_code)
+        self.errorCode = PlatformWalletResultCode(ffi: outcome.error_code)
     }
 }
 
@@ -1614,10 +1615,10 @@ extension PlatformWalletManager {
     }
 }
 
-/// C trampoline matching `EventHandlerCallbacks.on_shielded_sync_completed_fn`.
+/// C trampoline matching `EventHandlerCallbacksExtension.on_shielded_sync_outcomes_fn`.
 func shieldedSyncCompletedCallback(
     context: UnsafeMutableRawPointer?,
-    resultsPtr: UnsafePointer<ShieldedSyncWalletResultFFI>?,
+    resultsPtr: UnsafePointer<ShieldedSyncWalletOutcomeFFI>?,
     count: UInt,
     syncUnixSeconds: UInt64
 ) {

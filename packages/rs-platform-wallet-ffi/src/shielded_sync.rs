@@ -49,7 +49,6 @@ impl ShieldedSyncWalletResultFFI {
             newly_spent,
             balance,
             error_message: std::ptr::null(),
-            error_code: PlatformWalletFFIResultCode::Success,
         })
     }
 }

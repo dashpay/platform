@@ -457,8 +457,8 @@ final class ErrorHandlingTests: XCTestCase {
     func testShouldTypeShieldedSyncCallbackResultFromItsErrorCode() {
         let detail = "Shielded commitment tree has 3 leaves, but a sufficiently fresh sync reports only 2"
         detail.withCString { cString in
-            var ffi = ShieldedSyncWalletResultFFI()
-            ffi.error_message = cString
+            var ffi = ShieldedSyncWalletOutcomeFFI()
+            ffi.result.error_message = cString
             ffi.error_code = PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_TREE_INCONSISTENT
             let result = ShieldedWalletSyncResult(ffi: ffi)
             XCTAssertEqual(result.errorCode, .errorShieldedTreeInconsistent)
@@ -467,8 +467,8 @@ final class ErrorHandlingTests: XCTestCase {
             }
             XCTAssertEqual(message, detail)
 
-            var ok = ShieldedSyncWalletResultFFI()
-            ok.success = true
+            var ok = ShieldedSyncWalletOutcomeFFI()
+            ok.result.success = true
             ok.error_code = PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS
             XCTAssertNil(ShieldedWalletSyncResult(ffi: ok).error)
         }

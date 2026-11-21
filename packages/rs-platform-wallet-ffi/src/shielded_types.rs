@@ -101,7 +101,11 @@ pub struct ShieldedShieldPreflightFFI {
 ///   so the pass passed it over; `success` is false and
 ///   `error_message` is NULL.
 /// - both flags `false` and `error_message != NULL`: the sync
-///   itself failed; `error_code` classifies the failure.
+///   itself failed.
+///
+/// The layout is frozen: legacy hosts index the
+/// `on_shielded_sync_completed_fn` array with its element size.
+/// [`ShieldedSyncWalletOutcomeFFI`] adds the failure's result code.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct ShieldedSyncWalletResultFFI {
@@ -130,11 +134,6 @@ pub struct ShieldedSyncWalletResultFFI {
     /// NUL-terminated UTF-8 error message; valid until the callback
     /// returns. NULL on success and skipped wallets.
     pub error_message: *const c_char,
-    /// `Success` on success and skipped wallets. On failure,
-    /// `ErrorShieldedTreeInconsistent` means only
-    /// `platform_wallet_manager_shielded_rebuild_tree` repairs it;
-    /// any other failure is `ErrorWalletOperation`.
-    pub error_code: PlatformWalletFFIResultCode,
 }
 
 impl Default for ShieldedSyncWalletResultFFI {
@@ -149,9 +148,22 @@ impl Default for ShieldedSyncWalletResultFFI {
             newly_spent: 0,
             balance: 0,
             error_message: std::ptr::null(),
-            error_code: PlatformWalletFFIResultCode::Success,
         }
     }
+}
+
+/// Per-wallet outcome delivered through
+/// `EventHandlerCallbacksExtension::on_shielded_sync_outcomes_fn`: the
+/// legacy result plus Rust's classification of a failure.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ShieldedSyncWalletOutcomeFFI {
+    pub result: ShieldedSyncWalletResultFFI,
+    /// `Success` on success and skipped wallets. On failure,
+    /// `ErrorShieldedTreeInconsistent` means only
+    /// `platform_wallet_manager_shielded_rebuild_tree` repairs it;
+    /// any other failure is `ErrorWalletOperation`.
+    pub error_code: PlatformWalletFFIResultCode,
 }
 
 // Constructors only used by the feature-gated event-handler dispatch.
@@ -168,15 +180,10 @@ impl ShieldedSyncWalletResultFFI {
         }
     }
 
-    pub(crate) fn err(
-        wallet_id: [u8; 32],
-        error_code: PlatformWalletFFIResultCode,
-        error_ptr: *const c_char,
-    ) -> Self {
+    pub(crate) fn err(wallet_id: [u8; 32], error_ptr: *const c_char) -> Self {
         Self {
             wallet_id,
             error_message: error_ptr,
-            error_code,
             ..Self::default()
         }
     }

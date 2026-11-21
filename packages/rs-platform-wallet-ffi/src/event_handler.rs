@@ -5,7 +5,7 @@ use crate::error::PlatformWalletFFIResultCode;
 use crate::platform_address_sync::{
     PlatformAddressSyncMetricsFFI, PlatformAddressSyncWalletResultFFI,
 };
-use crate::shielded_types::ShieldedSyncWalletResultFFI;
+use crate::shielded_types::{ShieldedSyncWalletOutcomeFFI, ShieldedSyncWalletResultFFI};
 use platform_wallet::events::{EventHandler, PlatformEventHandler, WalletEvent};
 use platform_wallet::manager::dpns_sync::{DpnsSyncPassSummary, WalletDpnsSyncOutcome};
 #[cfg(feature = "shielded")]
@@ -53,6 +53,13 @@ pub type DpnsMarketplaceSyncCompletedFn = unsafe extern "C" fn(
     sync_unix_seconds: u64,
 );
 
+pub type ShieldedSyncOutcomesFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    results: *const ShieldedSyncWalletOutcomeFFI,
+    count: usize,
+    sync_unix_seconds: u64,
+);
+
 /// Size/version-tagged event extension. It shares the legacy event
 /// vtable's context and destructor; only callback pointers are copied.
 /// This avoids growing [`EventHandlerCallbacks`] and over-reading callers
@@ -74,6 +81,18 @@ pub struct EventHandlerCallbacksExtension {
             sync_unix_seconds: u64,
         ),
     >,
+    /// Typed successor of `EventHandlerCallbacks::on_shielded_sync_completed_fn`:
+    /// each element adds the failure's result code. When set, Rust calls it
+    /// instead of the legacy slot. Fires only when the `shielded` feature is
+    /// enabled in the FFI.
+    pub on_shielded_sync_outcomes_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            results: *const ShieldedSyncWalletOutcomeFFI,
+            count: usize,
+            sync_unix_seconds: u64,
+        ),
+    >,
 }
 
 impl Default for EventHandlerCallbacksExtension {
@@ -83,8 +102,20 @@ impl Default for EventHandlerCallbacksExtension {
             version: PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION,
             reserved: 0,
             on_dpns_marketplace_sync_completed_fn: None,
+            on_shielded_sync_outcomes_fn: None,
         }
     }
+}
+
+/// The [`EventHandlerCallbacksExtension`] slots negotiated at manager creation.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct EventExtensionCallbacks {
+    pub(crate) dpns_sync_completed: Option<DpnsMarketplaceSyncCompletedFn>,
+    #[cfg_attr(
+        not(any(feature = "shielded", test)),
+        expect(dead_code, reason = "shielded sync events need the `shielded` feature")
+    )]
+    pub(crate) shielded_sync_outcomes: Option<ShieldedSyncOutcomesFn>,
 }
 
 /// C callback vtable for event handling.
@@ -192,17 +223,14 @@ unsafe impl Sync for EventHandlerCallbacks {}
 /// Wrapper that implements `PlatformEventHandler` via FFI callbacks.
 pub(crate) struct FFIEventHandler {
     callbacks: EventHandlerCallbacks,
-    dpns_sync_callback: Option<DpnsMarketplaceSyncCompletedFn>,
+    extensions: EventExtensionCallbacks,
 }
 
 impl FFIEventHandler {
-    pub fn new(
-        callbacks: EventHandlerCallbacks,
-        dpns_sync_callback: Option<DpnsMarketplaceSyncCompletedFn>,
-    ) -> Self {
+    pub fn new(callbacks: EventHandlerCallbacks, extensions: EventExtensionCallbacks) -> Self {
         Self {
             callbacks,
-            dpns_sync_callback,
+            extensions,
         }
     }
 }
@@ -255,7 +283,7 @@ impl EventHandler for FFIEventHandler {
 
 impl PlatformEventHandler for FFIEventHandler {
     fn on_dpns_marketplace_sync_completed(&self, summary: &DpnsSyncPassSummary) {
-        let Some(callback) = self.dpns_sync_callback else {
+        let Some(callback) = self.extensions.dpns_sync_completed else {
             return;
         };
         if summary.wallet_results.is_empty() {
@@ -378,24 +406,14 @@ impl PlatformEventHandler for FFIEventHandler {
 
     #[cfg(feature = "shielded")]
     fn on_shielded_sync_completed(&self, summary: &ShieldedSyncPassSummary) {
-        let Some(cb) = self.callbacks.on_shielded_sync_completed_fn else {
-            return;
-        };
-
-        if summary.wallet_results.is_empty() {
-            unsafe {
-                cb(
-                    self.callbacks.context,
-                    std::ptr::null(),
-                    0,
-                    summary.sync_unix_seconds,
-                );
-            }
+        let typed = self.extensions.shielded_sync_outcomes;
+        let legacy = self.callbacks.on_shielded_sync_completed_fn;
+        if typed.is_none() && legacy.is_none() {
             return;
         }
 
         let mut owned_errors = Vec::new();
-        let mut results = Vec::with_capacity(summary.wallet_results.len());
+        let mut outcomes = Vec::with_capacity(summary.wallet_results.len());
         for (&wallet_id, outcome) in &summary.wallet_results {
             // Conversion can reject a wallet-wide sum even when each account
             // balance was valid. Report it through the existing error outcome
@@ -428,8 +446,11 @@ impl PlatformEventHandler for FFIEventHandler {
                     .to_string(),
                 )),
             };
-            match result {
-                Ok(result) => results.push(result),
+            outcomes.push(match result {
+                Ok(result) => ShieldedSyncWalletOutcomeFFI {
+                    result,
+                    error_code: PlatformWalletFFIResultCode::Success,
+                },
                 Err((error_code, error)) => {
                     let error_message = std::ffi::CString::new(error).ok();
                     let error_ptr = error_message
@@ -438,20 +459,42 @@ impl PlatformEventHandler for FFIEventHandler {
                     if let Some(error_message) = error_message {
                         owned_errors.push(error_message);
                     }
-                    results.push(ShieldedSyncWalletResultFFI::err(
-                        wallet_id, error_code, error_ptr,
-                    ));
+                    ShieldedSyncWalletOutcomeFFI {
+                        result: ShieldedSyncWalletResultFFI::err(wallet_id, error_ptr),
+                        error_code,
+                    }
                 }
-            }
+            });
         }
 
-        unsafe {
-            cb(
-                self.callbacks.context,
-                results.as_ptr(),
-                results.len(),
-                summary.sync_unix_seconds,
-            );
+        // An empty pass is reported with a NULL array, never a dangling one.
+        fn array_ptr<T>(items: &[T]) -> *const T {
+            if items.is_empty() {
+                std::ptr::null()
+            } else {
+                items.as_ptr()
+            }
+        }
+        if let Some(cb) = typed {
+            unsafe {
+                cb(
+                    self.callbacks.context,
+                    array_ptr(&outcomes),
+                    outcomes.len(),
+                    summary.sync_unix_seconds,
+                );
+            }
+        } else if let Some(cb) = legacy {
+            let results: Vec<ShieldedSyncWalletResultFFI> =
+                outcomes.iter().map(|outcome| outcome.result).collect();
+            unsafe {
+                cb(
+                    self.callbacks.context,
+                    array_ptr(&results),
+                    results.len(),
+                    summary.sync_unix_seconds,
+                );
+            }
         }
     }
 
@@ -479,6 +522,43 @@ impl PlatformEventHandler for FFIEventHandler {
 #[cfg(test)]
 mod release_tests {
     use super::*;
+
+    /// A host compiled against an older header indexes the legacy
+    /// completion array with the original element stride; every field it
+    /// reads must stay where that header put it.
+    #[test]
+    fn should_keep_the_legacy_shielded_result_layout() {
+        #[repr(C)]
+        struct PublishedShieldedSyncWalletResultFFI {
+            wallet_id: [u8; 32],
+            success: bool,
+            skipped: bool,
+            cooldown_skip: bool,
+            new_notes: u32,
+            total_scanned: u64,
+            newly_spent: u32,
+            balance: u64,
+            error_message: *const c_char,
+        }
+        type Published = PublishedShieldedSyncWalletResultFFI;
+        type Current = ShieldedSyncWalletResultFFI;
+        assert_eq!(
+            std::mem::size_of::<Current>(),
+            std::mem::size_of::<Published>()
+        );
+        assert_eq!(
+            std::mem::align_of::<Current>(),
+            std::mem::align_of::<Published>()
+        );
+        assert_eq!(
+            std::mem::offset_of!(Current, balance),
+            std::mem::offset_of!(Published, balance)
+        );
+        assert_eq!(
+            std::mem::offset_of!(Current, error_message),
+            std::mem::offset_of!(Published, error_message)
+        );
+    }
 
     #[cfg(feature = "shielded")]
     #[test]
@@ -520,7 +600,7 @@ mod release_tests {
                 on_shielded_tree_progress_fn: None,
                 release_fn: None,
             },
-            None,
+            EventExtensionCallbacks::default(),
         );
         handler.on_shielded_sync_completed(&ShieldedSyncPassSummary {
             wallet_results: BTreeMap::from([
@@ -566,6 +646,7 @@ mod release_tests {
 
     /// Background sync is the path hosts actually run, so an inconsistent
     /// tree must reach them as a result code, not only as message text.
+    /// A host registering both slots gets each pass once, typed.
     #[cfg(feature = "shielded")]
     #[test]
     fn should_report_typed_error_codes_through_the_shielded_sync_callback() {
@@ -576,15 +657,16 @@ mod release_tests {
         type Received = Vec<([u8; 32], PlatformWalletFFIResultCode, Option<String>)>;
         unsafe extern "C" fn capture(
             context: *mut c_void,
-            results: *const ShieldedSyncWalletResultFFI,
+            outcomes: *const ShieldedSyncWalletOutcomeFFI,
             count: usize,
             _: u64,
         ) {
             let received = &mut *(context as *mut Received);
-            for result in std::slice::from_raw_parts(results, count) {
+            for outcome in std::slice::from_raw_parts(outcomes, count) {
+                let result = &outcome.result;
                 received.push((
                     result.wallet_id,
-                    result.error_code,
+                    outcome.error_code,
                     (!result.error_message.is_null()).then(|| {
                         CStr::from_ptr(result.error_message)
                             .to_string_lossy()
@@ -593,6 +675,16 @@ mod release_tests {
                 ));
             }
         }
+        // Recorded so the equality below fails if the legacy slot also fires.
+        unsafe extern "C" fn legacy(
+            context: *mut c_void,
+            _: *const ShieldedSyncWalletResultFFI,
+            _: usize,
+            _: u64,
+        ) {
+            let received = &mut *(context as *mut Received);
+            received.push(([0; 32], PlatformWalletFFIResultCode::Success, None));
+        }
         let mut received = Received::new();
         let handler = FFIEventHandler::new(
             EventHandlerCallbacks {
@@ -600,12 +692,15 @@ mod release_tests {
                 on_wallet_event_fn: None,
                 on_error_fn: None,
                 on_platform_address_sync_completed_fn: None,
-                on_shielded_sync_completed_fn: Some(capture),
+                on_shielded_sync_completed_fn: Some(legacy),
                 on_shielded_sync_progress_fn: None,
                 on_shielded_tree_progress_fn: None,
                 release_fn: None,
             },
-            None,
+            EventExtensionCallbacks {
+                shielded_sync_outcomes: Some(capture),
+                ..EventExtensionCallbacks::default()
+            },
         );
         handler.on_shielded_sync_completed(&ShieldedSyncPassSummary {
             wallet_results: BTreeMap::from([
@@ -679,7 +774,7 @@ mod release_tests {
                 on_shielded_tree_progress_fn: None,
                 release_fn: Some(count_release),
             },
-            None,
+            EventExtensionCallbacks::default(),
         ));
         let straggler = Arc::clone(&handler);
 

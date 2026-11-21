@@ -97,7 +97,7 @@ abstract class NativeWalletEventBridge {
     }
 
     /**
-     * `on_shielded_sync_completed_fn`, once per wallet result — descriptor
+     * `on_shielded_sync_outcomes_fn`, once per wallet result — descriptor
      * `([BZZZIJIJLjava/lang/String;I)V`.
      *
      * @param walletId 32-byte wallet id.
@@ -129,7 +129,7 @@ abstract class NativeWalletEventBridge {
     }
 
     /**
-     * `on_shielded_sync_completed_fn` pass boundary — descriptor `(JI)V`.
+     * `on_shielded_sync_outcomes_fn` pass boundary — descriptor `(JI)V`.
      * Fires once after all per-wallet [onShieldedSyncCompleted] calls.
      */
     open fun onShieldedSyncPassCompleted(syncUnixSeconds: Long, walletCount: Int) {
