@@ -74,7 +74,10 @@ extension PlatformWalletManager {
 
     public func coreWalletState(for walletId: Data) -> CoreWalletStateSnapshot? {
         guard isConfigured, handle != NULL_HANDLE, walletId.count == 32 else { return nil }
-        var out = CoreWalletStateFFI()
+        var out = CoreWalletStateFFI(
+            synced_height: 0,
+            last_processed_height: 0
+        )
         let res = walletId.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
             platform_wallet_core_wallet_state(handle, raw.baseAddress?.assumingMemoryBound(to: UInt8.self), &out)
         }
@@ -218,7 +221,10 @@ extension PlatformWalletManager {
     ) -> AccountMetadataSnapshot? {
         guard isConfigured, handle != NULL_HANDLE, walletId.count == 32 else { return nil }
         var spec = makeAccountSpec(from: balance)
-        var out = AccountMetadataFFI()
+        var out = AccountMetadataFFI(
+            total_transactions: 0,
+            total_utxos: 0
+        )
         let res = walletId.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
             platform_wallet_account_metadata(
                 handle,
