@@ -2530,6 +2530,10 @@ class PlatformWalletPersistenceHandler(
         noteData: ByteArray,
     ): Int = guarded {
         stage(walletId) { db ->
+            // A re-save never clears a spent flag (see
+            // `ShieldedChangeSet::notes_saved`): a sync pass can deliver a
+            // note unspent after a concurrent send's round marked it spent.
+            val alreadySpent = db.shieldedDao().getNoteByNullifier(nullifier)?.isSpent == true
             db.shieldedDao().upsertNote(
                 ShieldedNoteEntity(
                     nullifier = nullifier,
@@ -2538,7 +2542,7 @@ class PlatformWalletPersistenceHandler(
                     position = position,
                     cmx = cmx,
                     blockHeight = blockHeight,
-                    isSpent = isSpent.toInt() != 0,
+                    isSpent = alreadySpent || isSpent.toInt() != 0,
                     value = value,
                     noteData = noteData,
                     lastUpdated = now(),
