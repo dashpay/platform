@@ -167,6 +167,12 @@ impl Sdk {
     /// query) that each start after the last voter read, until `limit` voters are read or none
     /// are left.
     ///
+    /// Live contests only: the voters are read from the contest's live voting tree, which
+    /// finalization deletes once it moves the votes into the contest's stored record. When no
+    /// voter is read, the contest's vote state is read too, and a contest that has a winner is
+    /// an [`Error::InvalidRequest`] rather than an empty list, so an ended contest never reads
+    /// as one nobody voted in.
+    ///
     /// # Arguments
     ///
     /// * `name` - The username: a label or a full name, in any case (e.g. "alice",
@@ -179,7 +185,8 @@ impl Sdk {
     ///
     /// # Returns
     ///
-    /// Returns the masternode voters who voted for this contestant
+    /// Returns the masternode voters who voted for this contestant in a live contest, or
+    /// [`Error::InvalidRequest`] when the contest has ended
     pub async fn get_contested_dpns_voters_for_identity(
         &self,
         name: &str,
@@ -233,6 +240,19 @@ impl Sdk {
                     start_at = Some((last.to_buffer(), false));
                 }
                 _ => break,
+            }
+        }
+
+        // Finalization deletes the live votes, so no voter can also mean the contest ended
+        if voters.0.is_empty() && limit != Some(0) {
+            let state = self
+                .fetch_contested_resource_vote_state(&vote_poll, Some(1))
+                .await?;
+            if state.winner.is_some() {
+                return Err(Error::InvalidRequest(format!(
+                    "the contest for {name} has ended: its voters are only in the contest's \
+                     finalized record, not in the live votes"
+                )));
             }
         }
 
@@ -708,8 +728,10 @@ mod vote_polls_by_end_date_paging_tests {
 mod tests {
     use super::*;
     use crate::SdkBuilder;
+    use dpp::block::block_info::BlockInfo;
     use dpp::version::PlatformVersion;
     use dpp::voting::contender_structs::ContenderWithSerializedDocumentV0;
+    use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
     use drive_proof_verifier::types::ContestedResources;
 
     fn mock_sdk() -> Sdk {
@@ -983,6 +1005,18 @@ mod tests {
         limit: u16,
         page: &[Identifier],
     ) {
+        expect_vote_state_page_with_winner(sdk, label, start_after, limit, page, None).await;
+    }
+
+    /// [`expect_vote_state_page`] of a contest whose page names `winner`
+    async fn expect_vote_state_page_with_winner(
+        sdk: &mut Sdk,
+        label: &str,
+        start_after: Option<Identifier>,
+        limit: u16,
+        page: &[Identifier],
+        winner: Option<(ContestedDocumentVotePollWinnerInfo, BlockInfo)>,
+    ) {
         let query = ContestedDocumentVotePollDriveQuery {
             vote_poll: ContestedDocumentResourceVotePoll {
                 contract_id: sdk
@@ -1003,7 +1037,7 @@ mod tests {
         };
         let first = start_after.is_none();
         let page = Contenders {
-            winner: None,
+            winner,
             contenders: page
                 .iter()
                 .map(|&identity_id| {
@@ -1211,6 +1245,53 @@ mod tests {
             .expect("expected both pages to answer");
 
         assert_eq!(voters.0.len(), 120);
+    }
+
+    /// A contender nobody voted for in a live contest has no voters, which is not an error
+    #[tokio::test]
+    async fn should_read_no_voters_for_an_open_contender_without_votes() {
+        let contestant = contender(999);
+        let mut sdk = mock_sdk();
+        expect_voters_page(&mut sdk, "a11ce", contestant, None, 100, &[]).await;
+        expect_vote_state_page(&mut sdk, "a11ce", None, 1, &[contestant]).await;
+
+        let voters = sdk
+            .get_contested_dpns_voters_for_identity("a11ce", contestant, None)
+            .await
+            .expect("expected an open contest without votes to answer");
+
+        assert!(voters.0.is_empty());
+    }
+
+    /// Finalization moves the voters into the contest's stored record and deletes the live
+    /// votes: an ended contest is refused rather than read as one nobody voted in
+    #[tokio::test]
+    async fn should_refuse_the_voters_of_a_finalized_contest() {
+        let contestant = contender(999);
+        let mut sdk = mock_sdk();
+        expect_voters_page(&mut sdk, "a11ce", contestant, None, 100, &[]).await;
+        expect_vote_state_page_with_winner(
+            &mut sdk,
+            "a11ce",
+            None,
+            1,
+            &[contestant],
+            Some((
+                ContestedDocumentVotePollWinnerInfo::WonByIdentity(contestant),
+                BlockInfo::default(),
+            )),
+        )
+        .await;
+
+        let error = sdk
+            .get_contested_dpns_voters_for_identity("a11ce", contestant, None)
+            .await
+            .expect_err("expected an ended contest to be refused");
+
+        assert!(
+            matches!(&error, Error::InvalidRequest(reason) if reason.contains("has ended")),
+            "expected an invalid request saying the contest ended, got {error:?}"
+        );
     }
 
     #[tokio::test]

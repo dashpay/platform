@@ -260,10 +260,14 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_contested_vote_state(
 /// SDK normalizes it to the contest's index value. `limit` is the most voters
 /// returned; 0 returns every voter (the SDK reads them in pages).
 ///
+/// Live contests only: finalization moves the votes into the contest's stored
+/// record and deletes the live ones this reads. A contest that has ended is an
+/// `InvalidParameter` error saying so, never an empty list.
+///
 /// # Returns
 /// A JSON array `[{"voter_id": base58}]` in voter id order, the shape of
 /// `dash_sdk_contested_resource_get_voters_for_identity`; `[]` when nobody
-/// voted for the contestant.
+/// voted for the contestant in a live contest.
 ///
 /// # Safety
 /// - `sdk_handle` must be a valid pointer to an initialized `SDKHandle`.
@@ -354,10 +358,7 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_contested_voters_for_identity(
                 )),
             }
         }
-        Err(e) => DashSDKResult::error(DashSDKError::new(
-            DashSDKErrorCode::InternalError,
-            format!("SDK error: {}", e),
-        )),
+        Err(e) => DashSDKResult::error(FFIError::from(e).into()),
     }
 }
 

@@ -1503,6 +1503,10 @@ extension SDK {
     /// voters in pages. `limit` 0 returns every voter. Each element is
     /// `["voter_id": base58]`.
     ///
+    /// Live contests only: finalization moves the votes into the contest's
+    /// stored record and deletes the live ones this reads, so a contest that
+    /// has ended throws ``SDKError`` saying so instead of returning `[]`.
+    ///
     /// `nonisolated`: the query blocks on the network inside Rust, so it runs
     /// on the shared Platform query queue (see ``performBlockingQuery(_:)``)
     /// instead of on the caller's actor.
@@ -1676,17 +1680,14 @@ extension SDK {
     /// Index values use the FFI convention: a `"0x"`-prefixed value is hex
     /// bytes, anything else is text. Each returned resource carries `id` (its
     /// own index value) and `index_values` (the path to pass to
-    /// ``getContestedResourceVoteState(dataContractId:documentTypeName:indexName:indexValues:resultType:allowIncludeLockedAndAbstainingVoteTally:startAtIdentifierInfo:count:orderAscending:)``).
+    /// ``getContestedResourceVoteState(dataContractId:documentTypeName:indexName:indexValues:resultType:allowIncludeLockedAndAbstainingVoteTally:count:)``).
     public func getContestedResources(
         documentTypeName: String,
         dataContractId: String,
         indexName: String,
-        resultType: String,
-        allowIncludeLockedAndAbstainingVoteTally: Bool,
         startIndexValues: [String]? = nil,
         endIndexValues: [String]? = nil,
         limit: UInt32?,
-        offset: UInt32?,
         orderAscending: Bool
     ) async throws -> [[String: Any]] {
         let startIndexValuesJson = try startIndexValues.map { try Self.indexValuesJson($0) }
@@ -1731,11 +1732,10 @@ extension SDK {
     ///
     /// `count` is the limit of a single request (nil sends 100); a finished
     /// poll answers with every contender of its record whatever the limit.
-    /// `startAtIdentifierInfo` and `orderAscending` are currently not
-    /// forwarded to the query. `"documents"` mode does not read a finalized
-    /// poll's stored record: for a contest that ended use a tally-bearing
-    /// mode (`"vote_tally"` or `"documents_and_vote_tally"`), where the
-    /// contenders' document bytes may be unavailable.
+    /// `"documents"` mode does not read a finalized poll's stored record: for
+    /// a contest that ended use a tally-bearing mode (`"vote_tally"` or
+    /// `"documents_and_vote_tally"`), where the contenders' document bytes
+    /// may be unavailable.
     public func getContestedResourceVoteState(
         dataContractId: String,
         documentTypeName: String,
@@ -1743,9 +1743,7 @@ extension SDK {
         indexValues: [String]? = nil,
         resultType: String,
         allowIncludeLockedAndAbstainingVoteTally: Bool,
-        startAtIdentifierInfo: String?,
-        count: UInt32?,
-        orderAscending: Bool
+        count: UInt32?
     ) async throws -> [String: Any] {
         // Map the result type name to the FFI discriminant.
         let resultTypeInt: UInt8
@@ -1787,7 +1785,6 @@ extension SDK {
         indexName: String,
         indexValues: [String]? = nil,
         contestantId: String,
-        startAtIdentifierInfo: String?,
         count: UInt32?,
         orderAscending: Bool
     ) async throws -> [[String: Any]] {

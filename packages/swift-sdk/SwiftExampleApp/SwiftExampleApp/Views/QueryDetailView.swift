@@ -553,18 +553,13 @@ struct QueryDetailView: View {
             let limitStr = queryInputs["limit"] ?? ""
             let limit = limitStr.isEmpty ? nil : UInt32(limitStr)
             let orderAscending = queryInputs["orderAscending"] == "true"
-            // The wrapper ignores the result type, the locked and abstaining
-            // flag and the offset; fixed values are passed.
             return try await sdk.getContestedResources(
                 documentTypeName: documentTypeName,
                 dataContractId: dataContractId,
                 indexName: indexName,
-                resultType: "documents",
-                allowIncludeLockedAndAbstainingVoteTally: false,
                 startIndexValues: startIndexValues,
                 endIndexValues: endIndexValues,
                 limit: limit,
-                offset: nil,
                 orderAscending: orderAscending
             )
 
@@ -578,7 +573,6 @@ struct QueryDetailView: View {
             let allowIncludeLockedAndAbstainingVoteTally = queryInputs["allowIncludeLockedAndAbstainingVoteTally"] == "true"
             let countStr = queryInputs["count"] ?? ""
             let count = countStr.isEmpty ? nil : UInt32(countStr)
-            // The wrapper ignores a start position and an order, so the form offers neither.
             return try await sdk.getContestedResourceVoteState(
                 dataContractId: dataContractId,
                 documentTypeName: documentTypeName,
@@ -586,9 +580,7 @@ struct QueryDetailView: View {
                 indexValues: indexValues,
                 resultType: resultType,
                 allowIncludeLockedAndAbstainingVoteTally: allowIncludeLockedAndAbstainingVoteTally,
-                startAtIdentifierInfo: nil,
-                count: count,
-                orderAscending: false
+                count: count
             )
 
         case "getContestedResourceVotersForIdentity":
@@ -606,7 +598,6 @@ struct QueryDetailView: View {
                 indexName: indexName,
                 indexValues: indexValues,
                 contestantId: contestantId,
-                startAtIdentifierInfo: nil,
                 count: count,
                 orderAscending: orderAscending
             )
