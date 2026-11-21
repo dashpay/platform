@@ -873,6 +873,17 @@ pub unsafe extern "C" fn platform_wallet_manager_get_wallet(
 /// the host objects stay alive until that worker exits, at which point
 /// Rust releases them. Nothing dangles, nothing needs a retry, nothing
 /// needs a deliberate leak on the host side.
+///
+/// For shielded prefetches, `Success` means no new prefetch can start and
+/// pending ones are cancelled; a prefetch callback that is already running
+/// may still finish. It does not drain foreground operations or other SDK
+/// users. A borrowed SDK callback context must remain valid until all work
+/// that can use it has finished, including any workers that outlive their
+/// shutdown budget.
+///
+/// Persistence and event callback contexts have a separate ownership
+/// contract: their vtables carry a `release_fn`, and Rust releases them when
+/// their last owner drops.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_destroy(
     handle: Handle,
