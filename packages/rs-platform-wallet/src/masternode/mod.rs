@@ -23,8 +23,8 @@ pub use key_candidates::{
 pub use list::{find_in_summaries, MasternodeListQuery, MasternodeListSummary};
 pub use locator::{
     locate_in_summaries, parse_locator_input, parse_secret_for_role, verify_masternode_key,
-    verify_masternode_key_text, KeyVerification, LocateOptions, LocatorMatchKind,
-    LocatorParseError, LocatorSecret, MasternodeKeyReference, MasternodeKeyRole,
+    verify_masternode_key_id, verify_masternode_key_text, KeyVerification, LocateOptions,
+    LocatorMatchKind, LocatorParseError, LocatorSecret, MasternodeKeyReference, MasternodeKeyRole,
     MasternodeLocateError, MasternodeLocateMatch, MasternodeLocateResult, MasternodeLocator,
     MasternodeLocatorInput, ParsedLocatorInput, PlatformLookup,
 };

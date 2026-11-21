@@ -925,37 +925,58 @@ pub fn parse_secret_for_role(
     wanted.ok_or(LocatorParseError::InvalidSecret)
 }
 
+/// The 20-byte id `reference` holds for `role`: hash160 for the secp256k1
+/// roles, the node id for `PlatformNode`. `None` for `Operator`, whose
+/// reference is the whole BLS key.
+fn reference_key_id(
+    reference: &MasternodeKeyReference,
+    role: MasternodeKeyRole,
+) -> Option<[u8; 20]> {
+    match role {
+        MasternodeKeyRole::Owner => reference.owner_key_hash,
+        MasternodeKeyRole::Voting => reference.voting_key_id,
+        MasternodeKeyRole::OwnerPayout => reference.payout_key_hash,
+        MasternodeKeyRole::OperatorPayout => reference.operator_payout_key_hash,
+        MasternodeKeyRole::PlatformNode => reference.platform_node_id,
+        MasternodeKeyRole::Operator => None,
+    }
+}
+
+/// `expected` against `actual`; no expected value is never a pass.
+fn compare<T: PartialEq>(expected: Option<T>, actual: Option<T>) -> KeyVerification {
+    match (expected, actual) {
+        (Some(e), Some(a)) if e == a => KeyVerification::Matches,
+        (Some(_), Some(_)) => KeyVerification::DoesNotMatch,
+        (Some(_), None) => KeyVerification::DoesNotMatch,
+        (None, _) => KeyVerification::Unverifiable,
+    }
+}
+
+/// Compare a key's 20-byte id against `reference` for `role`, without its
+/// secret: hash160 of the public key for the secp256k1 roles, the
+/// Tenderdash node id for `PlatformNode`. `Operator` has no 20-byte id and
+/// is always `Unverifiable`.
+pub fn verify_masternode_key_id(
+    reference: &MasternodeKeyReference,
+    role: MasternodeKeyRole,
+    key_id: &[u8; 20],
+) -> KeyVerification {
+    compare(reference_key_id(reference, role), Some(*key_id))
+}
+
 /// Derive-and-compare `secret` against `reference` for `role`.
 pub fn verify_masternode_key(
     reference: &MasternodeKeyReference,
     role: MasternodeKeyRole,
     secret: &LocatorSecret,
 ) -> KeyVerification {
-    fn compare<T: PartialEq>(expected: Option<T>, actual: Option<T>) -> KeyVerification {
-        match (expected, actual) {
-            (Some(e), Some(a)) if e == a => KeyVerification::Matches,
-            (Some(_), Some(_)) => KeyVerification::DoesNotMatch,
-            (Some(_), None) => KeyVerification::DoesNotMatch,
-            (None, _) => KeyVerification::Unverifiable,
-        }
-    }
-
     match (role, secret) {
-        (MasternodeKeyRole::Owner, LocatorSecret::Ecdsa { secret, compressed }) => {
-            compare(reference.owner_key_hash, ecdsa_key_id(secret, *compressed))
-        }
-        (MasternodeKeyRole::Voting, LocatorSecret::Ecdsa { secret, compressed }) => {
-            compare(reference.voting_key_id, ecdsa_key_id(secret, *compressed))
-        }
-        (MasternodeKeyRole::OwnerPayout, LocatorSecret::Ecdsa { secret, compressed }) => {
-            compare(reference.payout_key_hash, ecdsa_key_id(secret, *compressed))
-        }
-        (MasternodeKeyRole::OperatorPayout, LocatorSecret::Ecdsa { secret, compressed }) => {
-            compare(
-                reference.operator_payout_key_hash,
-                ecdsa_key_id(secret, *compressed),
-            )
-        }
+        // Compared as `verify_masternode_key_id` does; a secret that derives
+        // no id never matches.
+        (role, LocatorSecret::Ecdsa { secret, compressed }) if role.is_ecdsa() => compare(
+            reference_key_id(reference, role),
+            ecdsa_key_id(secret, *compressed),
+        ),
         (MasternodeKeyRole::Operator, LocatorSecret::Bls(secret)) => {
             match (reference.operator_public_key, bls_public_keys(secret)) {
                 (Some(expected), Some((basic, legacy))) => {
@@ -970,7 +991,7 @@ pub fn verify_masternode_key(
             }
         }
         (MasternodeKeyRole::PlatformNode, LocatorSecret::Ed25519(seed)) => {
-            compare(reference.platform_node_id, Some(ed25519_node_id(seed)))
+            verify_masternode_key_id(reference, role, &ed25519_node_id(seed))
         }
         // Curve mismatch: the caller parsed with `parse_secret_for_role`, so
         // this only happens on misuse; it is simply not a match.
@@ -1541,6 +1562,89 @@ mod tests {
             verify_masternode_key_text(&reference, MasternodeKeyRole::Operator, &owner, net)
                 .unwrap_err(),
             LocatorParseError::InvalidSecret
+        );
+    }
+
+    /// Every role with a 20-byte id gets the same verdict from the key's id
+    /// as from its secret: a match, a mismatch, and an unknown reference.
+    #[test]
+    fn should_verify_a_key_id_as_its_secret_for_every_hash_role() {
+        let ecdsa = |secret: [u8; 32]| LocatorSecret::Ecdsa {
+            secret: Zeroizing::new(secret),
+            compressed: true,
+        };
+        let other_secret = [0x22u8; 32];
+        let node_seed = [0x42u8; 32];
+        let cases = [
+            (MasternodeKeyRole::Owner, ecdsa(SECP_SECRET), secp_key_id()),
+            (MasternodeKeyRole::Voting, ecdsa(SECP_SECRET), secp_key_id()),
+            (
+                MasternodeKeyRole::Voting,
+                ecdsa(other_secret),
+                ecdsa_key_id(&other_secret, true).unwrap(),
+            ),
+            (
+                MasternodeKeyRole::OwnerPayout,
+                ecdsa(SECP_SECRET),
+                secp_key_id(),
+            ),
+            (
+                MasternodeKeyRole::OperatorPayout,
+                ecdsa(SECP_SECRET),
+                secp_key_id(),
+            ),
+            (
+                MasternodeKeyRole::PlatformNode,
+                LocatorSecret::Ed25519(Zeroizing::new(node_seed)),
+                ed25519_node_id(&node_seed),
+            ),
+        ];
+        let every_id_set_to = |id: [u8; 20]| MasternodeKeyReference {
+            owner_key_hash: Some(id),
+            voting_key_id: Some(id),
+            operator_public_key: None,
+            platform_node_id: Some(id),
+            payout_key_hash: Some(id),
+            operator_payout_key_hash: Some(id),
+        };
+        for (role, secret, key_id) in cases {
+            for (reference, expected) in [
+                (every_id_set_to(key_id), KeyVerification::Matches),
+                (every_id_set_to([0xEEu8; 20]), KeyVerification::DoesNotMatch),
+                (
+                    MasternodeKeyReference::default(),
+                    KeyVerification::Unverifiable,
+                ),
+            ] {
+                assert_eq!(
+                    verify_masternode_key_id(&reference, role, &key_id),
+                    expected,
+                    "{role:?} by key id"
+                );
+                assert_eq!(
+                    verify_masternode_key(&reference, role, &secret),
+                    expected,
+                    "{role:?} by secret"
+                );
+            }
+        }
+    }
+
+    /// An operator key is a 48-byte BLS key with no 20-byte id, so no id
+    /// verifies it, even one cut from the known key.
+    #[test]
+    fn should_leave_the_operator_role_unverifiable_by_key_id() {
+        let operator_public_key = bls_public_keys(&[0x33u8; 32]).unwrap().0;
+        let reference = MasternodeKeyReference {
+            operator_public_key: Some(operator_public_key),
+            ..Default::default()
+        };
+        let mut key_id = [0u8; 20];
+        key_id.copy_from_slice(&operator_public_key[..20]);
+
+        assert_eq!(
+            verify_masternode_key_id(&reference, MasternodeKeyRole::Operator, &key_id),
+            KeyVerification::Unverifiable
         );
     }
 
