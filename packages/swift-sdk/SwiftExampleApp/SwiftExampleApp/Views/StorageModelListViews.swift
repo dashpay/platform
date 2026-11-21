@@ -1559,7 +1559,6 @@ struct CoreAddressStorageListView: View {
                 Text(record.poolTypeName)
                 Text("• #\(record.addressIndex)")
                 if record.isUsed { Text("• used") }
-                if record.balance > 0 { Text("• \(record.balance)") }
             }
             .font(.caption2)
             .foregroundColor(.secondary)

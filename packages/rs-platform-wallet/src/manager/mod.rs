@@ -11,6 +11,7 @@ pub mod identity_sync;
 mod load;
 #[cfg(test)]
 pub(crate) use load::pool_validations_on_this_thread;
+pub use load::{restore_account_address_pools, AddressPoolRestoreStats};
 mod persistence_load;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]

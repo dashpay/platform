@@ -807,14 +807,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             if window.key_source.can_derive() {
                 let want = window
                     .pool
-                    .gap_limit
+                    .gap_limit()
                     .saturating_mul(HISTORICAL_SEED_GAP_MULTIPLE);
-                let have = window.pool.highest_generated.map_or(0, |i| i + 1);
+                let have = window.pool.highest_generated().map_or(0, |i| i + 1);
                 if have < want {
-                    if let Err(e) =
-                        window
-                            .pool
-                            .generate_addresses(want - have, &window.key_source, true)
+                    if let Err(e) = window
+                        .pool
+                        .generate_addresses(want - have, &window.key_source)
                     {
                         incomplete_scan = true;
                         tracing::warn!(
@@ -829,16 +828,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             loop {
                 let highest_matched = window
                     .pool
-                    .addresses
+                    .addresses()
                     .values()
-                    .filter(|info| observed_scripts.contains(&info.script_pubkey))
+                    .filter(|info| observed_scripts.contains(&info.address.script_pubkey()))
                     .map(|info| info.index)
                     .max();
                 let Some(highest_matched) = highest_matched else {
                     break;
                 };
-                let target = highest_matched.saturating_add(window.pool.gap_limit);
-                let generated_through = match window.pool.highest_generated {
+                let target = highest_matched.saturating_add(window.pool.gap_limit());
+                let generated_through = match window.pool.highest_generated() {
                     Some(index) if index >= target => break,
                     Some(index) => index,
                     None => break,
@@ -856,11 +855,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     );
                     break;
                 }
-                if let Err(e) = window.pool.generate_addresses(
-                    target - generated_through,
-                    &window.key_source,
-                    true,
-                ) {
+                if let Err(e) = window
+                    .pool
+                    .generate_addresses(target - generated_through, &window.key_source)
+                {
                     incomplete_scan = true;
                     tracing::warn!(
                         error = %e,
@@ -871,9 +869,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     break;
                 }
             }
-            for address_info in window.pool.addresses.values() {
+            for address_info in window.pool.addresses().values() {
                 address_matches
-                    .entry(address_info.script_pubkey.clone())
+                    .entry(address_info.address.script_pubkey())
                     .or_insert((window.owner, window.contact));
             }
         }
@@ -1416,7 +1414,7 @@ fn mark_contact_addresses_paid_on_chain(
     let mut marked = false;
     loop {
         let candidate = external_account
-            .next_address(Some(contact_xpub), true)
+            .next_address(Some(contact_xpub))
             .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
         let script = candidate.script_pubkey();
         let paid = match &paid_scripts {
@@ -1478,7 +1476,7 @@ fn reserve_contact_payment_address(
     let (contact_xpub, external_account) =
         contact_external_account(wm, wallet_id, None, from_identity_id, to_contact_id)?;
     let payment_address = external_account
-        .next_address(Some(&contact_xpub), true)
+        .next_address(Some(&contact_xpub))
         .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
     // `next_address`/`next_unused` only *selects* (and, when the
@@ -2707,7 +2705,7 @@ mod tests {
                 .address_pools()
                 .first()
                 .expect("receival account has a pool")
-                .addresses
+                .addresses()
                 .values()
                 .next()
                 .expect("pool has at least one derived address")
@@ -2721,7 +2719,7 @@ mod tests {
                 outpoint,
                 txout: dashcore::TxOut {
                     value: value_duffs,
-                    script_pubkey: address_info.script_pubkey.clone(),
+                    script_pubkey: address_info.address.script_pubkey(),
                 },
                 address: address_info.address.clone(),
                 height: 100,
@@ -2767,7 +2765,8 @@ mod tests {
             account_xpub,
             is_watch_only: true,
         };
-        let managed = ManagedCoreFundsAccount::from_account(&account);
+        let managed =
+            ManagedCoreFundsAccount::from_account(&account).expect("managed external account");
 
         wallet
             .add_account(account_type, Some(account_xpub))
@@ -2793,7 +2792,7 @@ mod tests {
             .address_pools()
             .first()
             .expect("external account has a pool")
-            .addresses
+            .addresses()
             .values()
             .take(2)
             .map(|info| info.address.clone())
@@ -2820,7 +2819,7 @@ mod tests {
             .address_pools()
             .first()
             .expect("standard external pool")
-            .addresses
+            .addresses()
             .values()
             .next()
             .expect("at least one standard address")
@@ -9876,14 +9875,14 @@ mod tests {
                 .expect("external account");
             let pools = account.managed_account_type().address_pools();
             let pool = *pools.first().expect("pool");
-            let materialized_max = pool.addresses.keys().copied().max().unwrap_or(0);
-            let target = materialized_max + pool.gap_limit + 1;
+            let materialized_max = pool.addresses().keys().copied().max().unwrap_or(0);
+            let target = materialized_max + pool.gap_limit() + 1;
             let mut scan = pool.clone();
             let key_source = key_wallet::KeySource::Public(test_receiving_xpub(&owner, &contact));
-            scan.generate_addresses(target + 1, &key_source, true)
+            scan.generate_addresses(target + 1, &key_source)
                 .expect("derive past the hole");
             (
-                scan.addresses
+                scan.addresses()
                     .get(&target)
                     .expect("target derived")
                     .address
@@ -10346,17 +10345,17 @@ mod tests {
                 .address_pools();
             let pool = (*pools.first().expect("pool")).clone();
             let near_index = pool
-                .highest_generated
+                .highest_generated()
                 .expect("resident pool has a generated window");
-            let far_index = near_index + pool.gap_limit;
+            let far_index = near_index + pool.gap_limit();
             let mut extended = pool;
             let key_source = KeySource::Public(test_receiving_xpub(&owner, &contact));
             extended
-                .generate_addresses(extended.gap_limit + 1, &key_source, true)
+                .generate_addresses(extended.gap_limit() + 1, &key_source)
                 .expect("extend clone past the resident window");
             (
-                extended.addresses[&near_index].address.clone(),
-                extended.addresses[&far_index].address.clone(),
+                extended.addresses()[&near_index].address.clone(),
+                extended.addresses()[&far_index].address.clone(),
                 far_index,
             )
         };
@@ -12022,7 +12021,14 @@ mod tests {
         let pools = info.core_wallet.accounts.dashpay_external_accounts[&key]
             .managed_account_type()
             .address_pools();
-        assert_eq!(pools[0].used_indices.len(), 3);
+        assert_eq!(
+            pools[0]
+                .addresses()
+                .values()
+                .filter(|info| info.is_used())
+                .count(),
+            3
+        );
     }
 
     #[tokio::test]
@@ -12721,13 +12727,14 @@ mod tests {
             .expect("external account present");
         let pools = account.managed_account_type().address_pools();
         let pool = pools.first().expect("external pool");
-        assert!(
-            pool.used_indices.is_empty(),
-            "a failed build must not leave any address consumed, found {:?}",
-            pool.used_indices
+        assert_eq!(
+            pool.highest_used(),
+            None,
+            "a failed build must not leave any address consumed"
         );
         assert_eq!(
-            pool.highest_used, None,
+            pool.highest_used(),
+            None,
             "no on-chain use happened, so the pool's used high-water must stay unset"
         );
     }
@@ -12854,10 +12861,10 @@ mod tests {
                 .expect("external account present");
             let pools = account.managed_account_type().address_pools();
             let pool = pools.first().expect("external pool");
-            assert!(
-                pool.used_indices.is_empty(),
-                "a rejected broadcast must not leave any address consumed, found {:?}",
-                pool.used_indices
+            assert_eq!(
+                pool.highest_used(),
+                None,
+                "a rejected broadcast must not leave any address consumed"
             );
         }
 
@@ -13575,7 +13582,7 @@ mod tests {
             .address_pools()
             .first()
             .expect("BIP-44 account has an address pool")
-            .addresses
+            .addresses()
             .values()
             .next()
             .expect("pool has at least one derived address")
@@ -13588,7 +13595,7 @@ mod tests {
                 outpoint,
                 txout: dashcore::TxOut {
                     value: value_duffs,
-                    script_pubkey: address_info.script_pubkey.clone(),
+                    script_pubkey: address_info.address.script_pubkey(),
                 },
                 address: address_info.address.clone(),
                 height: 100,
@@ -13839,9 +13846,10 @@ mod tests {
         let mut used: Vec<u32> = pools
             .first()
             .expect("external pool")
-            .used_indices
-            .iter()
-            .copied()
+            .addresses()
+            .values()
+            .filter(|info| info.is_used())
+            .map(|info| info.index)
             .collect();
         used.sort_unstable();
         used
@@ -14728,29 +14736,28 @@ mod tests {
                 .persister
                 .flushes
                 .load(std::sync::atomic::Ordering::SeqCst);
-            let reserved = self
-                .persister
-                .stores
-                .lock()
-                .unwrap()
-                .iter()
-                .rev()
-                .flat_map(|(_, changeset)| changeset.account_address_pools.iter())
-                .find(|entry| {
-                    matches!(
-                        entry.account_type,
-                        key_wallet::account::AccountType::DashpayExternalAccount { .. }
-                    )
-                })
-                .is_some_and(|entry| {
-                    entry.addresses.iter().any(|info| {
-                        matches!(info.state, AddressState::Reserved { .. })
-                            && transaction
-                                .output
-                                .iter()
-                                .any(|output| output.script_pubkey == info.script_pubkey)
+            let reserved =
+                self.persister
+                    .stores
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .rev()
+                    .flat_map(|(_, changeset)| changeset.account_address_pools.iter())
+                    .find(|entry| {
+                        matches!(
+                            entry.account_type,
+                            key_wallet::account::AccountType::DashpayExternalAccount { .. }
+                        )
                     })
-                });
+                    .is_some_and(|entry| {
+                        entry.addresses.iter().any(|info| {
+                            matches!(info.state, AddressState::Reserved { .. })
+                                && transaction.output.iter().any(|output| {
+                                    output.script_pubkey == info.address.script_pubkey()
+                                })
+                        })
+                    });
             *self.seen.lock().unwrap() = Some((flushes, reserved));
             Ok(transaction.txid())
         }
@@ -15182,10 +15189,9 @@ mod tests {
                 )
             })
             .is_some_and(|entry| {
-                entry
-                    .addresses
-                    .iter()
-                    .any(|info| info.script_pubkey == address.script_pubkey() && info.is_used())
+                entry.addresses.iter().any(|info| {
+                    info.address.script_pubkey() == address.script_pubkey() && info.is_used()
+                })
             });
         assert!(stored_used, "the observed payment's used flag reaches disk");
         let next = iw
@@ -15264,10 +15270,9 @@ mod tests {
                 )
             })
             .is_some_and(|entry| {
-                entry
-                    .addresses
-                    .iter()
-                    .any(|info| info.script_pubkey == address.script_pubkey() && info.is_used())
+                entry.addresses.iter().any(|info| {
+                    info.address.script_pubkey() == address.script_pubkey() && info.is_used()
+                })
             });
         assert!(stored_used, "the observed payment's used flag reaches disk");
         let next = iw
@@ -15474,10 +15479,9 @@ mod tests {
             .iter()
             .flat_map(|(_, changeset)| changeset.account_address_pools.iter())
             .any(|entry| {
-                entry
-                    .addresses
-                    .iter()
-                    .any(|info| info.script_pubkey == paid.script_pubkey() && info.is_used())
+                entry.addresses.iter().any(|info| {
+                    info.address.script_pubkey() == paid.script_pubkey() && info.is_used()
+                })
             });
         assert!(stored_used, "the address found paid reaches disk");
         iw.dashpay().abandon_prepared_payment(prepared).await;
@@ -15770,10 +15774,9 @@ mod tests {
             .iter()
             .flat_map(|(_, changeset)| changeset.account_address_pools.iter())
             .any(|entry| {
-                entry
-                    .addresses
-                    .iter()
-                    .any(|info| info.script_pubkey == paid.script_pubkey() && info.is_used())
+                entry.addresses.iter().any(|info| {
+                    info.address.script_pubkey() == paid.script_pubkey() && info.is_used()
+                })
             });
         assert!(stored_used, "the address found paid reaches disk");
     }

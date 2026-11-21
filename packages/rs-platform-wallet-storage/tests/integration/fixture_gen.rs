@@ -22,6 +22,7 @@
 //! world-writable, or the persister refuses it as an insecure parent.
 
 use crate::common;
+use crate::sqlite_legacy_state_migration::snapshot_bytes;
 
 use std::path::{Path, PathBuf};
 
@@ -76,10 +77,10 @@ fn first_external_info(byte: u8) -> key_wallet::AddressInfo {
             continue;
         }
         for pool in managed.managed_account_type().address_pools() {
-            if pool.pool_type != AddressPoolType::External || pool.addresses.is_empty() {
+            if pool.pool_type() != AddressPoolType::External || pool.addresses().is_empty() {
                 continue;
             }
-            let mut infos: Vec<_> = pool.addresses.values().cloned().collect();
+            let mut infos: Vec<_> = pool.addresses().values().cloned().collect();
             infos.sort_by_key(|a| a.index);
             return infos.first().cloned().unwrap();
         }
@@ -145,10 +146,10 @@ fn identity_entry() -> IdentityEntry {
 ///
 /// Raw SQL against the V001-V006 schema: the branch's writers target tables
 /// that do not exist yet at this point in history (`wallets`,
-/// `core_address_pool`), so they cannot be used. The blob encoders CAN --
-/// `key-wallet` is pinned to the same revision on both sides and
-/// `AccountRegistrationEntry` is unchanged, so these bytes are exactly what a
-/// `v4.2-dev` build would have written.
+/// `core_address_pool`), so they cannot be used. `AccountRegistrationEntry`
+/// is unchanged, so its blob is what a `v4.2-dev` build would have written.
+/// The pool snapshot is encoded in the published `v4.2-dev` layout through
+/// `snapshot_bytes`, with synthetic per-address counters.
 fn seed_base_shaped_rows(conn: &rusqlite::Connection) {
     use rusqlite::params;
 
@@ -190,15 +191,14 @@ fn seed_base_shaped_rows(conn: &rusqlite::Connection) {
         params![wallet.as_slice(), registration_blob],
     )
     .expect("insert account_registrations");
-    // Real public pool state from the published writer's bincode-serde codec.
+    // Real public pool state in the published writer's `AddressInfo` layout.
     let mut info = first_external_info(FIXTURE_WALLET);
     info.state = key_wallet::managed_account::address_pool::AddressState::Used;
-    let snapshot = platform_wallet::changeset::AccountAddressPoolEntry {
+    let snapshot = snapshot_bytes(&platform_wallet::changeset::AccountAddressPoolEntry {
         account_type: registration.account_type,
         pool_type: key_wallet::managed_account::address_pool::AddressPoolType::External,
         addresses: vec![info.clone()],
-    };
-    let snapshot = bincode::serde::encode_to_vec(snapshot, bincode::config::standard()).unwrap();
+    });
     conn.execute(
         "INSERT INTO account_address_pools \
              (wallet_id, account_type, account_index, pool_type, snapshot_blob) \
