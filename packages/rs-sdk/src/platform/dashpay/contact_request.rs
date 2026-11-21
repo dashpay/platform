@@ -61,7 +61,8 @@ where
 pub enum RecipientIdentity {
     /// Recipient identity ID - the full identity will be fetched from the platform
     Identifier(Identifier),
-    /// Complete recipient identity - no fetch required
+    /// Complete recipient identity - no fetch required. Its keys are checked as
+    /// given, so it must be current: a key disabled since it was read passes.
     Identity(Identity),
 }
 
@@ -89,7 +90,8 @@ impl From<Identity> for RecipientIdentity {
 
 /// Input for creating a contact request document
 pub struct ContactRequestInput {
-    /// The identity sending the contact request (owner)
+    /// The identity sending the contact request (owner). Its keys are checked
+    /// as given, so it must be current: a key disabled since it was read passes.
     pub sender_identity: Identity,
     /// The recipient - can be either an Identifier (will be fetched) or a complete Identity
     pub recipient: RecipientIdentity,
@@ -200,6 +202,9 @@ pub fn recipient_key_purpose_is_valid(purpose: Purpose) -> bool {
 /// accepts, and is valid, i.e. not disabled. Encrypting the payment xpub to a
 /// disabled key would hand it to whoever holds the revoked private half.
 ///
+/// The checks are only as current as the identities passed in: the caller
+/// supplies the sender, and the recipient too unless it is fetched here.
+///
 /// The single owner of these checks. Received documents are not judged here: a
 /// `contactRequest` is immutable, and one naming a key disabled since it was
 /// sent stays usable (DIP-11).
@@ -292,7 +297,7 @@ impl Sdk {
     /// - The DashPay contract cannot be fetched
     /// - The contactRequest document type is not found
     /// - The sender or recipient doesn't have the required encryption keys, or either key is
-    ///   disabled
+    ///   disabled in the identity as supplied or fetched
     /// - ECDH encryption fails
     /// - The shared secret, private key, or extended public key cannot be retrieved
     pub async fn create_contact_request<F, Fut, G, Gut, H, Hut>(

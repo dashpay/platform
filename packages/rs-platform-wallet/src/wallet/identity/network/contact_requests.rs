@@ -788,8 +788,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// All parameters that can be resolved internally are resolved
     /// automatically:
     /// - **identity_index**: looked up from the local `ManagedIdentity`
-    /// - **sender_key_index**: first `ECDSA_SECP256K1` `Purpose::ENCRYPTION`
-    ///   key on the sender
+    /// - **sender_key_index**: first enabled `ECDSA_SECP256K1`
+    ///   `Purpose::ENCRYPTION` key on the sender, refreshed from Platform
+    ///   first, so a key disabled on another device is not used; a failed
+    ///   refresh refuses the send
     /// - **recipient_key_index**: first `ECDSA_SECP256K1` `Purpose::DECRYPTION`
     ///   key on the recipient, falling back to the first ENCRYPTION key when
     ///   the recipient has no DECRYPTION key (mobile cohort) — see
@@ -1747,7 +1749,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
     /// Steps 1 to 4c of a contact request send, shared by the document send
     /// ([`Self::send_contact_request_with_external_signer`]) and the private one
-    /// (`send_private_contact_request`): the sender's identity, encryption key
+    /// (`send_private_contact_request`): the sender's identity as refreshed
+    /// from Platform ([`IdentityWallet::refresh_identity`]), encryption key
     /// and its path, the recipient's identity and key, our receiving xpub for
     /// the pair, the DIP-15 masked account reference (its version bumped past
     /// the previous request to the recipient, public or private) and the
@@ -1767,8 +1770,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     where
         C: ContactCryptoProvider + Sync,
     {
-        // 1. Retrieve the sender identity and its HD index from the
-        //    local manager.
+        // 1. Refresh the sender identity, then read it and its HD index from
+        //    the local manager. A cache behind the chain can still show an
+        //    encryption key another device disabled, and the request would
+        //    hand the payment xpub to whoever holds it; a failed refresh stops
+        //    the send before anything is derived. Holds no wallet-manager lock
+        //    across its fetch.
+        self.refresh_identity(sender_identity_id).await?;
         let (sender_identity, identity_index) = {
             let wm = self.wallet_manager.read().await;
             let info = wm
@@ -2463,9 +2471,9 @@ pub(super) fn tear_down_stale_external_accounts(
 /// current `incoming_request.account_reference`.
 ///
 /// Only a **registered** account (`has_external == true`) can be stale — a
-/// missing account is handled by the ordinary build-candidate collection.
-/// A permanently-broken channel is left alone (the sweep never rebuilds
-/// broken contacts; they heal on a superseding request). The staleness test
+/// missing account is handled by the ordinary build-candidate collection,
+/// which queues a broken contact's missing account once per launch.
+/// A registered account of a broken channel is left alone. The staleness test
 /// is `external_account_reference != Some(incoming_request.account_reference)`:
 /// a mismatch (or a `None` marker from a cold restart on a host that did not
 /// carry it — the in-tree hosts persist it on the established rows, so a
@@ -3174,7 +3182,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     }
 
     /// Collect missing receiving accounts and recoverable external accounts.
-    /// Broken outbound channels remain eligible for receiving recovery.
+    /// Broken outbound channels remain eligible for receiving recovery, and
+    /// their missing external account is collected once per launch
+    /// (`DashPayState::broken_channel_requeued`).
     /// Runs under the caller's write guard without awaiting or re-locking.
     pub(super) fn collect_account_build_candidates(
         info: &crate::wallet::platform_wallet::PlatformWalletInfo,
@@ -3222,7 +3232,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .dashpay_external_accounts
                 .contains_key(&key);
             // A broken outbound channel must not prevent receiving recovery.
-            let external = if has_external || contact.payment_channel_broken {
+            // Its stored request is queued again once per launch: the drain
+            // may accept it now (a key disabled since it was sent, which an
+            // earlier version refused) and then clears the flag.
+            let external = if has_external
+                || (contact.payment_channel_broken
+                    && managed.dashpay().broken_channel_requeued(contact_id))
+            {
                 None
             } else {
                 let incoming = &contact.incoming_request;
@@ -3359,6 +3375,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 managed.dashpay_pending_contact_crypto_mut(),
                 entry.clone(),
             );
+        }
+        if candidate.external.is_some()
+            && managed
+                .dashpay()
+                .established_contacts()
+                .get(&candidate.contact_id)
+                .is_some_and(|contact| contact.payment_channel_broken)
+        {
+            managed.note_broken_channel_requeued(candidate.contact_id);
         }
 
         // Persist the add-delta so the queue survives a restart. Best-effort:
@@ -4560,8 +4585,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// - Clearing `payment_channel_broken` heals a channel that a prior
     ///   permanent-fault marked broken but that a successful re-register (via
     ///   the drain or a user re-accept) proves is usable again — otherwise the
-    ///   UI reports "broken" and blocks sending forever, since the sweep skips
-    ///   broken contacts and never re-registers them (F12).
+    ///   UI reports "broken" and blocks sending, since a broken channel is
+    ///   only queued again once per launch (F12).
     ///
     /// Idempotent (skips the persist when nothing changed). Takes its own
     /// write guard; the caller must hold no wallet-manager guard.
@@ -6437,7 +6462,8 @@ mod sweep_tests {
         assert_eq!(external.our_decryption_key_index, 2);
     }
 
-    /// A broken outbound channel still permits recovery of our receiving account.
+    /// A broken outbound channel still permits recovery of our receiving
+    /// account, and its external account is collected once per launch.
     #[test]
     fn should_recover_missing_receiving_account_for_broken_payment_channel() {
         let our = 1u8;
@@ -6456,15 +6482,27 @@ mod sweep_tests {
 
         let candidates =
             DashPayView::<SpvBroadcaster>::collect_account_build_candidates(&info, &our_id);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].contact_id, contact_id);
+        assert!(
+            candidates[0].external.is_some(),
+            "the stored request of a broken channel is checked again once per launch"
+        );
+
+        info.identity_manager
+            .managed_identity_mut(&our_id)
+            .unwrap()
+            .note_broken_channel_requeued(contact_id);
+        let candidates =
+            DashPayView::<SpvBroadcaster>::collect_account_build_candidates(&info, &our_id);
         assert_eq!(
             candidates.len(),
             1,
             "receiving recovery must remain available"
         );
-        assert_eq!(candidates[0].contact_id, contact_id);
         assert!(
             candidates[0].external.is_none(),
-            "broken external channels must not be retried"
+            "a broken channel already queued this launch must not be retried"
         );
     }
 
@@ -8039,6 +8077,9 @@ mod receiving_restore_tests {
                 ..
             }
         );
+        // The mock answers no contact identity fetch, so this external
+        // operation stays queued through the drain below.
+        let rechecks_broken_channel = channel_broken && !has_external;
         {
             let mut wm = iw.wallet_manager.write().await;
             let (core_wallet, info) = wm
@@ -8120,7 +8161,11 @@ mod receiving_restore_tests {
                 usize::from(matches!(state, RestoreState::SentOnly))
             );
             let queue = &managed.dashpay().pending_contact_crypto;
-            assert_eq!(queue.len(), 1, "recovery must queue receiving only");
+            assert_eq!(
+                queue.len(),
+                1 + usize::from(rechecks_broken_channel),
+                "recovery must queue receiving, and a broken channel's stored request"
+            );
             assert!(matches!(
                 queue[0].op,
                 PendingContactCryptoOp::RegisterReceiving
@@ -8139,8 +8184,8 @@ mod receiving_restore_tests {
                 .collect();
             assert_eq!(
                 queued.len(),
-                1,
-                "the receiving operation must reach persistence"
+                1 + usize::from(rechecks_broken_channel),
+                "the queued operations must reach persistence"
             );
             assert!(matches!(
                 queued[0].op,
@@ -8184,7 +8229,10 @@ mod receiving_restore_tests {
             .identity_manager
             .managed_identity(&owner)
             .expect("owner");
-        assert!(managed.dashpay().pending_contact_crypto.is_empty());
+        assert_eq!(
+            managed.dashpay().pending_contact_crypto.len(),
+            usize::from(rechecks_broken_channel)
+        );
         if let Some(contact) = managed.dashpay().established_contacts().get(&contact) {
             assert_eq!(contact.payment_channel_broken, channel_broken);
         }

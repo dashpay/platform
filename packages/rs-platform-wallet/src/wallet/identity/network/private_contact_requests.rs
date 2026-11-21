@@ -4321,6 +4321,163 @@ mod tests {
         assert!(matches!(claimed, Ok(Some(_))), "{:?}", claimed.err());
     }
 
+    /// Another device disabled Bob's encryption key 1 on Platform and added key
+    /// 3, and Bob's cache is still behind: the request is keyed from the
+    /// identity as Platform holds it, never from the disabled key, whose holder
+    /// could otherwise read the payment xpub.
+    #[tokio::test]
+    async fn should_key_a_request_from_the_senders_identity_on_platform() {
+        use dpp::identity::accessors::IdentitySettersV0;
+        const REPLACEMENT_KEY_ID: KeyID = 3;
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let cached_bob = identity(BOB_PHRASE, BOB);
+        let mut bob = cached_bob.clone();
+        let mut disabled = bob.public_keys()[&ENCRYPTION_KEY_ID].clone();
+        disabled.set_disabled_at(1_700_000_000_000);
+        bob.add_public_key(disabled);
+        bob.add_public_key(IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: REPLACEMENT_KEY_ID,
+            purpose: Purpose::ENCRYPTION,
+            security_level: SecurityLevel::MEDIUM,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(
+                PublicKey::from_secret_key(&identity_secret_key(BOB_PHRASE, REPLACEMENT_KEY_ID))
+                    .serialize()
+                    .to_vec(),
+            ),
+            disabled_at: None,
+        }));
+        bob.set_revision(1);
+        let (_manager, bob_wallet) = wallet(BOB_PHRASE, &cached_bob, &[&alice, &bob], vec![]).await;
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+
+        let prepared = bob_wallet
+            .identity()
+            .dashpay()
+            .prepare_contact_request(
+                &bob.id(),
+                &alice.id(),
+                AutoAcceptProofSource::None,
+                &bob_crypto,
+            )
+            .await
+            .expect("prepared");
+
+        assert_eq!(prepared.sender_key_index, REPLACEMENT_KEY_ID);
+        assert_eq!(prepared.sender_identity.public_keys(), bob.public_keys());
+    }
+
+    /// A sender whose identity Platform does not answer for is refused before
+    /// anything is derived: a cache that may be behind is never keyed from.
+    #[tokio::test]
+    async fn should_refuse_a_request_when_the_senders_identity_cannot_be_refreshed() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let (_manager, bob_wallet) = wallet(BOB_PHRASE, &bob, &[&alice], vec![]).await;
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+
+        let refused = bob_wallet
+            .identity()
+            .dashpay()
+            .prepare_contact_request(
+                &bob.id(),
+                &alice.id(),
+                AutoAcceptProofSource::None,
+                &bob_crypto,
+            )
+            .await;
+
+        assert!(
+            matches!(
+                &refused,
+                Err(PlatformWalletError::InvalidIdentityData(text))
+                    if text.contains("Failed to fetch identity")
+            ),
+            "{:?}",
+            refused.err()
+        );
+    }
+
+    /// An earlier version marked the channel broken because Alice disabled the
+    /// key her stored request names, and dropped its queued build. The sweep
+    /// queues the stored request again and the drain builds the account and
+    /// clears the flag, with no new request from Alice.
+    #[tokio::test]
+    async fn should_recover_a_channel_broken_over_a_since_disabled_key() {
+        use crate::broadcaster::SpvBroadcaster;
+        use dpp::identity::accessors::IdentitySettersV0;
+        let (_entry, received) = alice_to_bob([0x55; 43]).await;
+        let bob = identity(BOB_PHRASE, BOB);
+        let mut alice = identity(ALICE_PHRASE, ALICE);
+        let mut disabled = alice.public_keys()[&received.sender_key_index].clone();
+        disabled.set_disabled_at(1_700_000_000_000);
+        alice.add_public_key(disabled);
+        alice.set_revision(1);
+        let (_manager, bob_wallet) = wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![]).await;
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let iw = bob_wallet.identity();
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let managed = wm
+                .get_wallet_info_mut(&bob_wallet.wallet_id())
+                .expect("wallet info")
+                .identity_manager
+                .managed_identity_mut(&bob.id())
+                .expect("Bob");
+            let outgoing = ContactRequest::new(
+                bob.id(),
+                alice.id(),
+                ENCRYPTION_KEY_ID,
+                DECRYPTION_KEY_ID,
+                0,
+                vec![1; 96],
+                0,
+                0,
+            );
+            let mut established = EstablishedContact::new(alice.id(), outgoing, received);
+            established.payment_channel_broken = true;
+            managed.apply_established_contact(established);
+            assert!(managed.dashpay().pending_contact_crypto.is_empty());
+        }
+
+        let candidates = {
+            let wm = iw.wallet_manager.read().await;
+            let info = wm
+                .get_wallet_info(&bob_wallet.wallet_id())
+                .expect("wallet info");
+            DashPayView::<SpvBroadcaster>::collect_account_build_candidates(info, &bob.id())
+        };
+        for candidate in candidates {
+            iw.dashpay()
+                .build_contact_accounts(&bob.id(), candidate)
+                .await;
+        }
+        iw.dashpay()
+            .drain_pending_contact_crypto_until(&bob_crypto, None)
+            .await;
+
+        let wm = iw.wallet_manager.read().await;
+        let info = wm
+            .get_wallet_info(&bob_wallet.wallet_id())
+            .expect("wallet info");
+        assert!(info
+            .core_wallet
+            .accounts
+            .dashpay_external_accounts
+            .contains_key(&DashpayAccountKey {
+                index: 0,
+                user_identity_id: bob.id().to_buffer(),
+                friend_identity_id: alice.id().to_buffer(),
+            }));
+        let managed = info
+            .identity_manager
+            .managed_identity(&bob.id())
+            .expect("Bob");
+        assert!(!managed.dashpay().established_contacts()[&alice.id()].payment_channel_broken);
+    }
+
     /// The store's end as the pass's highest proved total: with chunks of two,
     /// the first page proves five entries at H, and the full second page, from
     /// a node a block behind, proves only four and its own end. The public
