@@ -1,10 +1,15 @@
 //! The member rules of generation 2: an update keeps the members every object of the type
 //! already has, in their order and with their requiredness, and adds members only after them.
 //! Each case parses the old and the new type under full validation, as a contract update does,
-//! and runs the update through the dispatcher.
+//! runs the update through the dispatcher and then, as contract `validate_update` 2 does where
+//! the protocol version selects it, judges what the new type gains
+//! (`first_unmeetable_gained_requirement`).
 
+use crate::consensus::basic::data_contract::DataContractInvalidRequiredFieldsUpdateError;
 use crate::consensus::codes::ErrorWithCode;
 use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::schema::DefinitionsRoot;
 use crate::data_contract::document_type::DocumentType;
 use crate::validation::SimpleConsensusValidationResult;
 use platform_value::{platform_value, Identifier, Value};
@@ -116,13 +121,17 @@ fn definitions(members: Value) -> Option<Value> {
     }))
 }
 
+fn definitions_map(defs: &Option<Value>) -> Option<BTreeMap<String, Value>> {
+    defs.clone().map(|defs| {
+        defs.into_btree_string_map()
+            .expect("expected the definitions to be a map")
+    })
+}
+
 fn parse(schema: &Value, defs: &Option<Value>, platform_version: &PlatformVersion) -> DocumentType {
     let config = DataContractConfig::default_for_version(platform_version)
         .expect("expected a default config");
-    let defs: Option<BTreeMap<String, Value>> = defs.clone().map(|defs| {
-        defs.into_btree_string_map()
-            .expect("expected the definitions to be a map")
-    });
+    let defs = definitions_map(defs);
     DocumentType::try_from_schema(
         Identifier::new([1; 32]),
         1,
@@ -164,10 +173,30 @@ fn run(cases: &[Case], platform_version: &PlatformVersion) {
     for case in cases {
         let old = parse(&case.old, &case.old_defs, platform_version);
         let new = parse(&case.new, &case.new_defs, platform_version);
-        let result = old
+        let mut result = old
             .as_ref()
             .validate_update(new.as_ref(), 2, platform_version)
             .unwrap_or_else(|error| panic!("{}: validate_update errored: {error}", case.name));
+        let judges_gains = platform_version
+            .dpp
+            .contract_versions
+            .methods
+            .validate_gained_requirements
+            .is_some();
+        if result.is_valid() && judges_gains {
+            let new_defs = definitions_map(&case.new_defs);
+            if let Some(details) = new.as_ref().first_unmeetable_gained_requirement(
+                Some(old.as_ref()),
+                &DefinitionsRoot::new(new_defs.as_ref()),
+                2,
+                platform_version,
+            ) {
+                result = SimpleConsensusValidationResult::new_with_error(
+                    DataContractInvalidRequiredFieldsUpdateError::new(new.name().clone(), details)
+                        .into(),
+                );
+            }
+        }
         assert_verdict(case.name, &result, case.expected);
     }
 }
@@ -1472,6 +1501,345 @@ fn should_refuse_an_existing_member_gaining_or_losing_required_since() {
             new_defs: definitions(platform_value!({ "y": since(0), "z": integer(1) })),
             expected: layout,
         },
+    ];
+    run(&cases, PlatformVersion::latest());
+}
+
+/// A type that requires an object's member only through a dotted name in its own `required`
+/// accepts no document, since the validator reads the dotted name as a property named with a dot.
+/// Moving the requirement into the object's own `required` repairs it: the member was already
+/// parsed as required, so nothing about how documents are stored changes.
+#[test]
+fn should_let_a_dotted_name_only_requirement_move_into_its_objects_required() {
+    let cases = vec![case(
+        "a dotted name moved into its object's own required",
+        document_type_schema(with_meta(meta_yz()), platform_value!(["a", "meta.y"])),
+        document_type_schema(
+            with_meta(object(
+                platform_value!({ "y": boolean(0), "z": integer(1) }),
+                1,
+                Some(platform_value!(["y"])),
+            )),
+            platform_value!(["a"]),
+        ),
+        Expected::Accepted,
+    )];
+    run(&cases, PlatformVersion::latest());
+}
+
+/// What an object an update adds to a type can not hold: a `required` name that is no member of
+/// the object, when it is written inline; and a dotted name in an entry the update writes, at any
+/// depth, beside a `$ref` it keeps. A `required` written on a schema that is no object is not
+/// read as naming members.
+#[test]
+fn should_refuse_required_lists_no_document_could_meet() {
+    let overlay = |entries: Value| {
+        document_type_schema(
+            platform_value!({
+                "a": string(0, 10),
+                "meta": meta_ref(Some(("properties", entries))),
+            }),
+            platform_value!(["a"]),
+        )
+    };
+    let definition = || {
+        definitions(platform_value!({ "r": object(platform_value!({ "b": boolean(0) }), 0, None) }))
+    };
+    let cases = vec![
+        case(
+            "an object the update adds requiring a name that is not one of its members",
+            document_type_schema(
+                platform_value!({ "a": string(0, 10) }),
+                platform_value!(["a"]),
+            ),
+            document_type_schema(
+                with_meta(object(
+                    platform_value!({ "y": boolean(0) }),
+                    1,
+                    Some(platform_value!(["w"])),
+                )),
+                platform_value!(["a"]),
+            ),
+            Expected::Refused(10276, "'w'"),
+        ),
+        case(
+            "an object the update adds holding a scalar member with a meaningless required",
+            document_type_schema(
+                platform_value!({ "a": string(0, 10) }),
+                platform_value!(["a"]),
+            ),
+            document_type_schema(
+                with_meta(object(
+                    platform_value!({ "s": with(string(0, 10), "required", platform_value!(["x"])) }),
+                    1,
+                    None,
+                )),
+                platform_value!(["a"]),
+            ),
+            Expected::Accepted,
+        ),
+        Case {
+            name: "a dotted name inside an entry kept beside a $ref",
+            old: overlay(platform_value!({
+                "r": object(platform_value!({ "b": boolean(0) }), 0, None),
+            })),
+            new: overlay(platform_value!({
+                "r": object(
+                    platform_value!({
+                        "b": boolean(0),
+                        "s": object(
+                            platform_value!({ "c": boolean(0) }),
+                            1,
+                            Some(platform_value!(["c.z"])),
+                        ),
+                    }),
+                    0,
+                    None,
+                ),
+            })),
+            old_defs: definition(),
+            new_defs: definition(),
+            expected: Expected::Refused(10276, "c.z"),
+        },
+        Case {
+            name: "a dotted name beside the $ref of an object the update adds, written with \
+                   another type the parse does not read",
+            old: document_type_schema(
+                platform_value!({ "a": string(0, 10) }),
+                platform_value!(["a"]),
+            ),
+            new: document_type_schema(
+                with_meta(platform_value!({
+                    "$ref": "#/$defs/m",
+                    "type": "string",
+                    "required": ["y.z"],
+                    "position": 1,
+                })),
+                platform_value!(["a"]),
+            ),
+            old_defs: definitions(platform_value!({ "y": boolean(0) })),
+            new_defs: definitions(platform_value!({ "y": boolean(0) })),
+            expected: Expected::Refused(10276, "y.z"),
+        },
+    ];
+    run(&cases, PlatformVersion::latest());
+}
+
+/// Changing the version an existing member is required from changes its value, which the schema
+/// compatibility check refuses (10246), as it refuses changing any keyword of an existing member.
+#[test]
+fn should_refuse_changing_the_version_an_existing_member_is_required_from() {
+    let since = |version: u32| with(boolean(0), "requiredSince", Value::U32(version));
+    let meta = |y: Value| {
+        document_type_schema(
+            with_meta(object(
+                platform_value!({ "y": y, "z": integer(1) }),
+                1,
+                Some(platform_value!(["y"])),
+            )),
+            platform_value!(["a"]),
+        )
+    };
+    let cases = vec![case(
+        "an existing member's requiredSince raised",
+        meta(since(1)),
+        meta(since(2)),
+        Expected::Refused(10246, "requiredSince"),
+    )];
+    run(&cases, PlatformVersion::latest());
+}
+
+/// A scalar's `properties` are not members, and neither are the `required` lists of the
+/// objects written in them: neither the parse nor the validator reads them.
+#[test]
+fn should_not_read_the_properties_written_on_a_scalar_an_update_adds() {
+    let cases = vec![case(
+        "a scalar added with a stray properties map holding an object with an unknown required",
+        document_type_schema(
+            platform_value!({ "a": string(0, 10) }),
+            platform_value!(["a"]),
+        ),
+        document_type_schema(
+            with_meta(object(
+                platform_value!({
+                    "s": with(
+                        string(0, 10),
+                        "properties",
+                        platform_value!({
+                            "o": object(
+                                platform_value!({ "k": boolean(0) }),
+                                0,
+                                Some(platform_value!(["zzz"])),
+                            ),
+                        }),
+                    ),
+                }),
+                1,
+                None,
+            )),
+            platform_value!(["a"]),
+        ),
+        Expected::Accepted,
+    )];
+    run(&cases, PlatformVersion::latest());
+}
+
+/// An object an update adds may not require more members than its `maxProperties` lets it
+/// hold, as an object the type already has may not.
+#[test]
+fn should_hold_an_object_an_update_adds_to_its_max_properties() {
+    let cases = vec![case(
+        "an object added requiring two members with maxProperties 1",
+        document_type_schema(
+            platform_value!({ "a": string(0, 10) }),
+            platform_value!(["a"]),
+        ),
+        document_type_schema(
+            with_meta(with(
+                object(
+                    platform_value!({ "y": boolean(0), "z": integer(1) }),
+                    1,
+                    Some(platform_value!(["y", "z"])),
+                ),
+                "maxProperties",
+                Value::U32(1),
+            )),
+            platform_value!(["a"]),
+        ),
+        Expected::Refused(10276, "maxProperties"),
+    )];
+    run(&cases, PlatformVersion::latest());
+}
+
+/// What an update gains in a type it has is judged with the object as the type parses it: the
+/// list beside a `$ref` the update adds names only members of the definition the `$ref` points
+/// at, without restating them, the definition's own lists are held as the object's, and an
+/// object a definition gains through a `$ref` the type keeps is held as any object the update
+/// adds. An entry an update writes beside a `$ref` the type keeps may not tighten a member
+/// documents stored before hold, and the type's own list may not grow past its `maxProperties`.
+#[test]
+fn should_hold_every_list_of_what_an_update_gains_in_a_type_it_has() {
+    let plain = || {
+        document_type_schema(
+            platform_value!({ "a": string(0, 10) }),
+            platform_value!(["a"]),
+        )
+    };
+    let referencing = |beside: Option<Value>| {
+        document_type_schema(
+            platform_value!({
+                "a": string(0, 10),
+                "meta": meta_ref(beside.map(|names| ("required", names))),
+            }),
+            platform_value!(["a"]),
+        )
+    };
+    let defs_y = || definitions(platform_value!({ "y": boolean(0) }));
+    let capped = |properties: Value, names: Value| {
+        with(
+            document_type_schema(properties, names),
+            "maxProperties",
+            Value::U64(2),
+        )
+    };
+    let cases = vec![
+        Case {
+            name: "a $ref the update adds requiring a name its definition does not have",
+            old: plain(),
+            new: referencing(Some(platform_value!(["typo"]))),
+            old_defs: defs_y(),
+            new_defs: defs_y(),
+            expected: Expected::Refused(10276, "'typo'"),
+        },
+        Case {
+            name: "a $ref the update adds requiring a member of its definition",
+            old: plain(),
+            new: referencing(Some(platform_value!(["y"]))),
+            old_defs: defs_y(),
+            new_defs: defs_y(),
+            expected: Expected::Accepted,
+        },
+        Case {
+            name: "a $ref the update adds to a definition requiring a name it does not have",
+            old: plain(),
+            new: referencing(None),
+            old_defs: None,
+            new_defs: Some(platform_value!({
+                "m": {
+                    "type": "object",
+                    "properties": { "y": boolean(0) },
+                    "required": ["missing"],
+                    "additionalProperties": false,
+                },
+            })),
+            expected: Expected::Refused(10276, "'missing'"),
+        },
+        Case {
+            name: "an object a definition gains through a $ref the type keeps, requiring a name \
+                   it does not have",
+            old: referencing(None),
+            new: referencing(None),
+            old_defs: defs_y(),
+            new_defs: definitions(platform_value!({
+                "y": boolean(0),
+                "o": object(platform_value!({ "k": boolean(0) }), 1, Some(platform_value!(["zzz"]))),
+            })),
+            expected: Expected::Refused(10276, "'zzz'"),
+        },
+        Case {
+            name: "an entry written beside a kept $ref for a member documents stored before hold",
+            old: document_type_schema(
+                platform_value!({
+                    "a": string(0, 10),
+                    "meta": meta_ref(Some((
+                        "properties",
+                        platform_value!({ "w": { "type": "boolean" } }),
+                    ))),
+                }),
+                platform_value!(["a"]),
+            ),
+            new: document_type_schema(
+                platform_value!({
+                    "a": string(0, 10),
+                    "meta": meta_ref(Some((
+                        "properties",
+                        platform_value!({
+                            "w": { "type": "boolean" },
+                            "o": {
+                                "type": "object",
+                                "properties": { "k": { "type": "boolean", "position": 0 } },
+                                "required": ["zzz"],
+                                "additionalProperties": false,
+                            },
+                        }),
+                    ))),
+                }),
+                platform_value!(["a"]),
+            ),
+            old_defs: definitions(platform_value!({
+                "o": object(platform_value!({ "k": boolean(0) }), 0, None),
+            })),
+            new_defs: definitions(platform_value!({
+                "o": object(platform_value!({ "k": boolean(0) }), 0, None),
+            })),
+            expected: Expected::Refused(10276, "documents stored before hold"),
+        },
+        case(
+            "the type's own required growing past its maxProperties",
+            capped(
+                platform_value!({ "a": string(0, 10), "b": string(1, 10) }),
+                platform_value!(["a", "b"]),
+            ),
+            capped(
+                platform_value!({
+                    "a": string(0, 10),
+                    "b": string(1, 10),
+                    "c": with(string(2, 10), "requiredSince", Value::U32(2)),
+                }),
+                platform_value!(["a", "b", "c"]),
+            ),
+            Expected::Refused(10276, "maxProperties"),
+        ),
     ];
     run(&cases, PlatformVersion::latest());
 }

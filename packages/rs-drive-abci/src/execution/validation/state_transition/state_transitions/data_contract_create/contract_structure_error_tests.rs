@@ -447,6 +447,91 @@ async fn should_keep_registering_a_summed_transient_property_at_protocol_version
     );
 }
 
+/// A document type whose object requires a name the object does not have, so no document of
+/// the type could be stored.
+fn unmeetable_required_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "properties": {
+            "meta": {
+                "type": "object",
+                "position": 0,
+                "properties": { "y": { "type": "boolean", "position": 0 } },
+                "required": ["w"],
+                "additionalProperties": false,
+            },
+        },
+        "additionalProperties": false,
+    })
+}
+
+/// Every object of a contract being registered is one it gains, held as an update holds the
+/// objects it adds: from protocol version 15 a `required` list no document could meet is
+/// refused on the parsed contract registration would store, so `check_tx` refuses the
+/// transition with the error the block charges the owner for, bumping its nonce.
+#[tokio::test]
+async fn should_refuse_a_new_contract_whose_required_list_no_document_could_meet() {
+    let outcome = register_contract_with_schema(
+        unmeetable_required_schema(),
+        PlatformVersion::latest().protocol_version,
+    )
+    .await
+    .outcome;
+
+    assert_matches!(
+        outcome.check_tx.as_deref(),
+        Ok([ConsensusError::BasicError(
+            BasicError::DataContractInvalidRequiredFieldsUpdateError(error)
+        )]) if error.details().contains("'w'"),
+        "check_tx: {:?}",
+        outcome.check_tx
+    );
+    assert_matches!(
+        &outcome.block,
+        StateTransitionExecutionResult::PaidConsensusError {
+            error: ConsensusError::BasicError(
+                BasicError::DataContractInvalidRequiredFieldsUpdateError(error)
+            ),
+            ..
+        } if error.details().contains("'w'"),
+        "block: {:?}",
+        outcome.block
+    );
+    assert_eq!(
+        outcome
+            .nonce_after
+            .map(|nonce| nonce & IDENTITY_NONCE_VALUE_FILTER),
+        Some(1),
+        "the rejection bumps the nonce"
+    );
+    assert!(
+        outcome.balance_after < outcome.balance_before,
+        "the rejection is charged: {:?} -> {:?}",
+        outcome.balance_before,
+        outcome.balance_after
+    );
+}
+
+#[tokio::test]
+async fn should_keep_registering_a_required_list_no_document_could_meet_at_protocol_version_14() {
+    let outcome = register_contract_with_schema(unmeetable_required_schema(), 14)
+        .await
+        .outcome;
+
+    assert_matches!(
+        outcome.check_tx.as_deref(),
+        Ok([]),
+        "check_tx: {:?}",
+        outcome.check_tx
+    );
+    assert_matches!(
+        &outcome.block,
+        StateTransitionExecutionResult::SuccessfulExecution { .. },
+        "block: {:?}",
+        outcome.block
+    );
+}
+
 /// The document meta-schema refuses the name. `check_tx` parses a contract without full
 /// validation, so the meta-schema does not run there, and the block refuses the transition with
 /// the meta-schema's error, charging the owner and bumping its nonce.

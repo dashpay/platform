@@ -317,9 +317,9 @@ mod tests {
     /// zero-fraction float `position` used to panic in `insert_values_nested` during block
     /// execution (`ValidationMode::Validator`), which would shut the node down. Driving the exact
     /// bytes a validator processes through `process_raw_state_transitions` must now complete and
-    /// return a deterministic result without panicking: from protocol version 15, which checks
-    /// an object's member positions at registration, the create is refused as a paid consensus
-    /// error.
+    /// return a deterministic result without panicking: from protocol version 15, whose
+    /// registration holds an object's members to integer positions, the create's basic structure
+    /// refuses it.
     #[tokio::test]
     async fn nested_float_position_does_not_halt_block_execution() {
         let platform_version = PlatformVersion::latest();
@@ -448,16 +448,15 @@ mod tests {
 
         // The float `0.0` is an integer to the meta-schema, but from protocol version 15
         // registration requires an object's member positions to be integer values, so the
-        // create is refused deterministically. The point of the test is that block
-        // execution completed without the node-killing panic the old `.expect()` raised.
+        // create's basic structure refuses it deterministically. The point of the test is that
+        // block execution completed without the node-killing panic the old `.expect()` raised.
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError {
-                error: ConsensusError::BasicError(BasicError::ContractError(
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::BasicError(BasicError::ContractError(
                     DataContractError::InvalidContractStructure(message)
                 )),
-                ..
-            }] if message.contains("needs a position")
+            )] if message.contains("needs a position")
         );
 
         platform

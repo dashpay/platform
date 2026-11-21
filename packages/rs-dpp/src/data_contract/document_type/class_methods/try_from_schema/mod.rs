@@ -317,46 +317,6 @@ fn enter_ref(
     Ok(())
 }
 
-/// Checks the `position`s of the members of an object's `properties` map `properties`: each is
-/// an integer from 0, and together they follow one another from the lowest, with no gap and
-/// none taken twice, as a document type's own positions follow one another from 0. Parser
-/// generation 4 runs it under full validation; an object may start above 0, as DPNS `records`
-/// does. Reading the positions never panics on adversarial schema input.
-fn validate_member_positions(
-    object_name: &str,
-    properties: &[(Value, Value)],
-) -> Result<(), DataContractError> {
-    let mut positions = Vec::with_capacity(properties.len());
-    for (_, member) in properties {
-        let Ok(position) = member.get_integer::<u64>(property_names::POSITION) else {
-            return Err(DataContractError::InvalidContractStructure(format!(
-                "every member of the object '{object_name}' needs a position, an integer from 0"
-            )));
-        };
-        positions.push(position);
-    }
-    positions.sort_unstable();
-    let Some(&first) = positions.first() else {
-        return Ok(());
-    };
-    for (index, position) in positions.iter().enumerate() {
-        let expected = first.checked_add(index as u64);
-        if Some(*position) != expected {
-            return Err(DataContractError::InvalidContractStructure(format!(
-                "the members of the object '{object_name}' must take positions one after \
-                 another from the lowest, {first}: {}",
-                match expected {
-                    Some(expected) if *position > expected => {
-                        format!("position {expected} is missing")
-                    }
-                    _ => format!("position {position} is taken twice"),
-                }
-            )));
-        }
-    }
-    Ok(())
-}
-
 // TODO: This is quite big
 /// `ref_path` holds the `$ref` targets resolved on the path from the root to
 /// this property; it is left as it was found on success.
@@ -370,7 +330,6 @@ fn insert_values_nested(
     property_value: &Value,
     root_schema: &Value,
     ref_path: &mut Vec<*const Value>,
-    check_member_positions: bool,
     config: &DataContractConfig,
     platform_version: &PlatformVersion,
 ) -> Result<(), DataContractError> {
@@ -417,14 +376,10 @@ fn insert_values_nested(
                 // the encoder writes an object's members in it, at every protocol version, and
                 // every stored document was written in it. Sorting them by `position` would read
                 // any stored document whose object lists its members out of position order
-                // differently, so no generation sorts them, and a `position` read here must
-                // never panic. Generation 4 checks the positions under full validation
-                // (`validate_member_positions`), and from protocol version 15 a contract's
-                // registration, and an update for the objects it adds, also require the map to
-                // list the members in position order, so for such objects the two orders agree.
-                if check_member_positions {
-                    validate_member_positions(&property_key, properties)?;
-                }
+                // differently, so no generation sorts them, and none reads `position` here. From
+                // protocol version 15 the objects a contract gains list their members at
+                // consecutive positions in map order (`MemberPositionOrder`, run at registration
+                // and on update), so for them the two orders agree.
 
                 // Create a new set with the prefix removed from the keys: an entry for
                 // a member of this object is the object's name, one separator byte, then
@@ -472,7 +427,6 @@ fn insert_values_nested(
                         object_property_value,
                         root_schema,
                         ref_path,
-                        check_member_positions,
                         config,
                         platform_version,
                     )?;
@@ -9297,7 +9251,7 @@ mod tests {
         .expect("schema should convert");
 
         let error = DocumentType::try_from_schema(
-            Identifier::random(),
+            Identifier::new([1; 32]),
             1,
             config.version(),
             "msg",

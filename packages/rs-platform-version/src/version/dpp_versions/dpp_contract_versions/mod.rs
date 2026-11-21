@@ -63,6 +63,13 @@ pub struct DataContractMethodVersions {
     /// nothing there, so the shipped contract create and update and batch transformers that call
     /// it are inert.
     pub validate_no_transient_summed_property: OptionalFeatureVersion,
+    /// `DataContract::validate_gained_requirements`: refuses a contract that gains an object
+    /// (in a type it has, in a type an update adds, or anywhere in a contract being registered)
+    /// with a `required` list no document could meet, or a type whose parsed requiredness
+    /// differs from what its lists name. Contract registration and update run it on the
+    /// contract they would store. `None` on versions that predate the rule: the method refuses
+    /// nothing there, so the shipped contract create state validation that calls it is inert.
+    pub validate_gained_requirements: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
