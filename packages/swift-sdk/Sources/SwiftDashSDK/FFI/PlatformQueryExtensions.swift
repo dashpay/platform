@@ -1502,60 +1502,41 @@ extension SDK {
 
     /// Get the vote state for a contested DPNS username. `name` is a label or
     /// a full name in any case ("alice", "Alice.DASH"); the SDK normalizes it.
-    @MainActor
-    public func dpnsGetContestedVoteState(name: String, limit: UInt32 = 100) async throws -> [String: Any] {
-        guard let handle = self.handle else {
-            throw SDKError.invalidState("SDK not initialized")
+    ///
+    /// `nonisolated`: the query blocks on the network inside Rust, so it runs
+    /// on the shared Platform query queue (see ``performBlockingQuery(_:)``)
+    /// instead of on the caller's actor.
+    public nonisolated func dpnsGetContestedVoteState(
+        name: String,
+        limit: UInt32 = 100
+    ) async throws -> sending [String: Any] {
+        let json = try await performBlockingQuery { handle in
+            try Self.consumeStringResult(dash_sdk_dpns_get_contested_vote_state(handle, name, limit))
         }
-        let result = name.withCString { namePtr in
-            dash_sdk_dpns_get_contested_vote_state(handle, namePtr, limit)
-        }
-
-        // Check for error
-        if let error = result.error {
-            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
-            dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMessage)
-        }
-
-        // Parse the JSON result
-        guard let dataPtr = result.data else {
-            throw SDKError.notFound("No data returned")
-        }
-
-        let jsonString = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
-        dash_sdk_string_free(dataPtr.assumingMemoryBound(to: CChar.self))
-
-        guard let jsonData = jsonString.data(using: .utf8),
-              let voteState = try? JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any] else {
-            throw SDKError.serializationError("Failed to parse vote state JSON")
-        }
-
-        return voteState
+        return try Self.parseJSONObject(json)
     }
 
     /// Get the contested DPNS usernames: the normalized labels with a contest
     /// on record, in ascending order. The SDK reads them in pages until
     /// `limit` labels are read or none are left.
     ///
+    /// `nonisolated`: the paged reads block on the network inside Rust, so
+    /// they run on the shared Platform query queue (see
+    /// ``performBlockingQuery(_:)``) instead of on the caller's actor.
+    ///
     /// - Parameters:
     ///   - limit: Maximum number of labels; 0 returns every label.
     ///   - startAfter: A normalized label to list after (exclusive), or `nil`
     ///     to start from the first label.
-    @MainActor
-    public func dpnsGetAllContestedUsernames(limit: UInt32, startAfter: String?) async throws -> [String] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
+    public nonisolated func dpnsGetAllContestedUsernames(limit: UInt32, startAfter: String?) async throws -> [String] {
+        try await performBlockingQuery { handle in
+            let json = try Self.consumeStringResult(
+                dash_sdk_dpns_get_all_contested_usernames(handle, limit, startAfter))
+            guard let labels = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String] else {
+                throw SDKError.serializationError("Failed to parse contested usernames JSON")
+            }
+            return labels
         }
-        let result = withOptionalCString(startAfter) { startAfterPtr in
-            dash_sdk_dpns_get_all_contested_usernames(handle, limit, startAfterPtr)
-        }
-        let jsonString = try processStringResult(result)
-        guard let data = jsonString.data(using: .utf8),
-              let labels = try? JSONSerialization.jsonObject(with: data) as? [String] else {
-            throw SDKError.serializationError("Failed to parse contested usernames JSON")
-        }
-        return labels
     }
 
     /// Get contested DPNS usernames that are not yet resolved

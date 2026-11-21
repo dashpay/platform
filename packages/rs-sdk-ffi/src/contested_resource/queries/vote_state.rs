@@ -1,4 +1,5 @@
 use crate::contested_resource::contender_document::json_members;
+use crate::contested_resource::request_limit;
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -29,7 +30,12 @@ use std::ffi::{c_char, c_void, CStr, CString};
 ///   text (matches the cast-vote write path).
 /// * `result_type` - Result type (0=DOCUMENTS, 1=VOTE_TALLY, 2=DOCUMENTS_AND_VOTE_TALLY)
 /// * `allow_include_locked_and_abstaining_vote_tally` - Whether to include locked and abstaining votes
-/// * `count` - Maximum number of contenders to return; 0 means no limit
+/// * `count` - The Drive request limit for this single request: at most
+///   `count` contenders are asked for. 0 sends no limit, so the node applies
+///   its default page size. A value above `u16::MAX` is refused with
+///   `InvalidParameter`. A finished poll's stored record is returned whole
+///   whatever the limit. The FFI does not page: it serializes the rows the
+///   query returns.
 ///
 /// # Returns
 /// * A JSON object, or no data when Platform has no contenders on record:
@@ -39,9 +45,8 @@ use std::ffi::{c_char, c_void, CStr, CString};
 ///     returned that tally. A tally that was not read is left out, never
 ///     written as 0.
 ///   - `winner_info` and `block_info` only once the poll has finished.
-///   - `contenders` for every result type, at most `count` of them when
-///     `count > 0` (a finished poll's record holds every contender whatever
-///     the limit). `identity_id` is the verified contender key: an identity
+///   - `contenders` for every result type, as the query returned them.
+///     `identity_id` is the verified contender key: an identity
 ///     id for identity-keyed contests such as DPNS. `vote_count` only when
 ///     the contender's tally was read (result types 1 and 2). `document`
 ///     only for result types 0 and 2, with `label` and `created_at` when the
@@ -67,6 +72,10 @@ pub unsafe extern "C" fn dash_sdk_contested_resource_get_vote_state(
     allow_include_locked_and_abstaining_vote_tally: bool,
     count: u32,
 ) -> DashSDKResult {
+    let limit = match request_limit(count) {
+        Ok(limit) => limit,
+        Err(error) => return DashSDKResult::error(error),
+    };
     match get_contested_resource_vote_state(
         sdk_handle,
         contract_id,
@@ -75,7 +84,7 @@ pub unsafe extern "C" fn dash_sdk_contested_resource_get_vote_state(
         index_values_json,
         result_type,
         allow_include_locked_and_abstaining_vote_tally,
-        count,
+        limit,
     ) {
         Ok(Some(json)) => {
             let c_str = match CString::new(json) {
@@ -122,7 +131,7 @@ fn get_contested_resource_vote_state(
     index_values_json: *const c_char,
     result_type: u8,
     allow_include_locked_and_abstaining_vote_tally: bool,
-    count: u32,
+    limit: Option<u16>,
 ) -> Result<Option<String>, String> {
     if sdk_handle.is_null() {
         return Err("SDK handle is null".to_string());
@@ -209,8 +218,7 @@ fn get_contested_resource_vote_state(
         let query = ContestedDocumentVotePollDriveQuery {
             vote_poll,
             result_type,
-            // Match rs-sdk vectors: treat count=0 as no limit (null)
-            limit: if count > 0 { Some(count as u16) } else { None },
+            limit,
             start_at: None,
             allow_include_locked_and_abstaining_vote_tally,
             offset: None,
@@ -253,7 +261,6 @@ fn get_contested_resource_vote_state(
                     &contenders,
                     result_type,
                     document_type,
-                    count,
                     sdk.version(),
                 )))
             }
@@ -268,15 +275,12 @@ fn get_contested_resource_vote_state(
 /// The vote-state JSON object for `contenders` (see
 /// [`dash_sdk_contested_resource_get_vote_state`] for its shape): each tally
 /// only when Platform returned it, the winner once the poll has finished, and
-/// at most `count` contenders when `count > 0`. A finished poll's record holds
-/// every contender whatever the query's limit, so the cap is applied here.
-/// Contenders are decoded against `document_type` only for a result type with
-/// documents.
+/// every contender the query returned. Contenders are decoded against
+/// `document_type` only for a result type with documents.
 fn vote_state_json(
     contenders: &Contenders,
     result_type: ContestedDocumentVotePollDriveQueryResultType,
     document_type: Option<DocumentTypeRef>,
-    count: u32,
     platform_version: &PlatformVersion,
 ) -> String {
     let mut result_json_parts = Vec::new();
@@ -302,15 +306,9 @@ fn vote_state_json(
             winner_json, block_info.height, block_info.core_height, block_info.time_ms
         ));
     }
-    let shown = if count > 0 {
-        count as usize
-    } else {
-        usize::MAX
-    };
     let contenders_json: Vec<String> = contenders
         .contenders
         .iter()
-        .take(shown)
         .map(|(id, contender)| {
             let request = result_type
                 .has_documents()
@@ -361,7 +359,6 @@ mod tests {
         requester_document, serialized_contender, CREATED_AT_MS,
     };
     use crate::test_utils::test_utils::create_mock_sdk_handle;
-    use dash_sdk::dpp::block::block_info::BlockInfo;
     use dash_sdk::dpp::document::DocumentV0Getters;
     use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dash_sdk::dpp::version::PlatformVersion;
@@ -448,7 +445,6 @@ mod tests {
             &contenders,
             ContestedDocumentVotePollDriveQueryResultType::VoteTally,
             None,
-            0,
             PlatformVersion::latest(),
         ));
 
@@ -478,7 +474,6 @@ mod tests {
             &contenders,
             ContestedDocumentVotePollDriveQueryResultType::Documents,
             None,
-            0,
             PlatformVersion::latest(),
         ));
 
@@ -488,48 +483,6 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert!(rows[0].get("vote_count").is_none());
         assert!(rows[0]["document"].is_null());
-    }
-
-    #[test]
-    fn should_emit_at_most_count_contenders_and_keep_the_winner_and_tallies() {
-        let winner = Identifier::from([1u8; 32]);
-        let contenders = Contenders {
-            winner: Some((
-                ContestedDocumentVotePollWinnerInfo::WonByIdentity(winner),
-                BlockInfo::default(),
-            )),
-            contenders: BTreeMap::from([
-                tally_contender(1, Some(9)),
-                tally_contender(2, Some(4)),
-                tally_contender(3, Some(1)),
-            ]),
-            abstain_vote_tally: Some(2),
-            lock_vote_tally: Some(0),
-        };
-
-        let capped = parse(&vote_state_json(
-            &contenders,
-            ContestedDocumentVotePollDriveQueryResultType::VoteTally,
-            None,
-            2,
-            PlatformVersion::latest(),
-        ));
-        let uncapped = parse(&vote_state_json(
-            &contenders,
-            ContestedDocumentVotePollDriveQueryResultType::VoteTally,
-            None,
-            0,
-            PlatformVersion::latest(),
-        ));
-
-        assert_eq!(capped["contenders"].as_array().map(Vec::len), Some(2));
-        assert_eq!(uncapped["contenders"].as_array().map(Vec::len), Some(3));
-        assert_eq!(
-            capped["winner_info"]["identity_id"],
-            bs58::encode(winner.as_bytes()).into_string()
-        );
-        assert_eq!(capped["abstain_vote_tally"], 2);
-        assert_eq!(capped["lock_vote_tally"], 0);
     }
 
     #[test]

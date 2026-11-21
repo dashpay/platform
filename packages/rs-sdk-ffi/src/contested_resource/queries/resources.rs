@@ -1,4 +1,4 @@
-use crate::contested_resource::{parse_index_value, render_index_value};
+use crate::contested_resource::{parse_index_value, render_index_value, request_limit};
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::platform_value::Value;
@@ -20,7 +20,9 @@ use std::ffi::{c_char, c_void, CStr, CString};
 ///   taken verbatim as text (matches the cast-vote write path).
 /// * `end_index_values_json` - JSON array of end index values, parsed with the
 ///   same `"0x"`-prefix-means-bytes convention.
-/// * `count` - Maximum number of resources to return
+/// * `count` - Maximum number of resources to return; 0 sends no limit (the
+///   node's default page). A value above `u16::MAX` is refused with
+///   `InvalidParameter`.
 /// * `order_ascending` - Whether to order results in ascending order
 ///
 /// # Returns
@@ -55,6 +57,10 @@ pub unsafe extern "C" fn dash_sdk_contested_resource_get_resources(
     count: u32,
     order_ascending: bool,
 ) -> DashSDKResult {
+    let limit = match request_limit(count) {
+        Ok(limit) => limit,
+        Err(error) => return DashSDKResult::error(error),
+    };
     match get_contested_resources(
         sdk_handle,
         contract_id,
@@ -62,7 +68,7 @@ pub unsafe extern "C" fn dash_sdk_contested_resource_get_resources(
         index_name,
         start_index_values_json,
         end_index_values_json,
-        count,
+        limit,
         order_ascending,
     ) {
         Ok(Some(json)) => {
@@ -109,7 +115,7 @@ fn get_contested_resources(
     index_name: *const c_char,
     start_index_values_json: *const c_char,
     end_index_values_json: *const c_char,
-    count: u32,
+    limit: Option<u16>,
     order_ascending: bool,
 ) -> Result<Option<String>, String> {
     if sdk_handle.is_null() {
@@ -206,8 +212,7 @@ fn get_contested_resources(
             start_index_values: start_index_values.clone(),
             end_index_values: end_index_values.clone(),
             start_at_value: None,
-            // Match vectors: treat count=0 as no limit (null)
-            limit: if count > 0 { Some(count as u16) } else { None },
+            limit,
             order_ascending,
         };
 

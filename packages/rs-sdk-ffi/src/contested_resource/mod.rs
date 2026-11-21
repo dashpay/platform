@@ -7,6 +7,7 @@ mod transitions;
 pub use queries::*;
 pub use transitions::*;
 
+use crate::{DashSDKError, DashSDKErrorCode};
 use dash_sdk::dpp::platform_value::Value;
 
 /// Decode a single JSON index-value string into a platform [`Value`] using an
@@ -42,6 +43,22 @@ pub(crate) fn parse_index_value(value_str: String) -> Result<Value, String> {
     }
 }
 
+/// The Drive request limit for a contested-resource query's `count`: `None`
+/// for 0 (no limit is sent, so the node applies its default page size),
+/// otherwise `count` itself. Drive limits are `u16`, so a `count` above
+/// `u16::MAX` is refused with `InvalidParameter` rather than wrapped.
+pub(crate) fn request_limit(count: u32) -> Result<Option<u16>, DashSDKError> {
+    if count == 0 {
+        return Ok(None);
+    }
+    u16::try_from(count).map(Some).map_err(|_| {
+        DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            format!("count {} exceeds the maximum of {}", count, u16::MAX),
+        )
+    })
+}
+
 /// Render a platform [`Value`] as an index-value string, the inverse of
 /// [`parse_index_value`], so a value the read path returns can be passed back
 /// into a query or a vote unchanged.
@@ -67,8 +84,27 @@ pub(crate) fn render_index_value(value: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_index_value, render_index_value};
+    use super::{parse_index_value, render_index_value, request_limit};
+    use crate::{dash_sdk_error_free, DashSDKErrorCode};
     use dash_sdk::dpp::platform_value::Value;
+
+    #[test]
+    fn should_send_no_limit_for_count_zero_and_the_count_up_to_u16_max() {
+        assert_eq!(request_limit(0).ok(), Some(None));
+        assert_eq!(request_limit(1).ok(), Some(Some(1)));
+        assert_eq!(
+            request_limit(u32::from(u16::MAX)).ok(),
+            Some(Some(u16::MAX))
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_count_above_u16_max_instead_of_wrapping() {
+        let error = request_limit(u32::from(u16::MAX) + 1).expect_err("count above u16::MAX");
+        assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+        // SAFETY: the error was allocated by `DashSDKError::new` and is freed once.
+        unsafe { dash_sdk_error_free(Box::into_raw(Box::new(error))) };
+    }
 
     #[test]
     fn should_render_text_label_verbatim_and_parse_it_back() {
