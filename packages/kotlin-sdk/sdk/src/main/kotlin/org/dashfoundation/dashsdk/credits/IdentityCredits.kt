@@ -1,6 +1,7 @@
 package org.dashfoundation.dashsdk.credits
 
 import org.dashfoundation.dashsdk.wallet.op
+import org.dashfoundation.dashsdk.wallet.opReturningCompletedResult
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -19,10 +20,19 @@ internal fun interface ResumeTopUpNativeCall {
     ): Long
 }
 
+internal fun interface AddressTopUpNativeCall {
+    fun call(
+        walletHandle: Long,
+        identityId: ByteArray,
+        inputsBlob: ByteArray,
+        signerHandle: Long,
+    ): Long
+}
+
 /**
  * One Platform-address funding input for an identity top-up — port of the
  * `IdentityAddressInput` tuple the Swift `TopUpIdentityView` packs. Encodes
- * to the flat blob [CreditsNative.topUpFromAddresses] consumes.
+ * to the flat blob [CreditsNative.topUpIdentityFromAddresses] consumes.
  *
  * @property addressType 0 = P2PKH, 1 = P2SH.
  * @property hash the 20-byte address hash.
@@ -81,6 +91,11 @@ class IdentityCredits internal constructor(
     private val gate: org.dashfoundation.dashsdk.wallet.TeardownGate? = null,
     private val resumeTopUpNative: ResumeTopUpNativeCall =
         ResumeTopUpNativeCall(CreditsNative::topUpIdentityWithExistingAssetLock),
+    private val addressTopUpNative: AddressTopUpNativeCall =
+        AddressTopUpNativeCall(CreditsNative::topUpIdentityFromAddresses),
+    @Suppress("DEPRECATION")
+    private val managedAddressTopUpNative: AddressTopUpNativeCall =
+        AddressTopUpNativeCall(CreditsNative::topUpFromAddresses),
 ) {
 
     /**
@@ -212,17 +227,58 @@ class IdentityCredits internal constructor(
     }
 
     /**
-     * Top up [identityId] (32 bytes) from Platform-address [inputs],
-     * signed via [signerHandle]. Returns the post-transition balance.
+     * Top up [identityId] (32 bytes) from Platform-address [inputs], whoever
+     * owns the identity (one of the wallet's or someone else's), signed via
+     * [signerHandle]. Rust fetches the identity from Platform, never adds it
+     * to the wallet, and updates the balance of an identity the wallet
+     * manages, so the caller does not decide whether it is its own. Returns
+     * the identity's post-transition balance.
+     *
+     * Cancellation: a top-up that completed natively still returns its
+     * balance to a cancelled caller (see `TeardownGate.opReturningCompletedResult`).
      */
+    suspend fun topUpIdentityFromAddresses(
+        walletHandle: Long,
+        identityId: ByteArray,
+        inputs: List<FundingInput>,
+        signerHandle: Long,
+    ): Long = gate.opReturningCompletedResult {
+        mapNativeErrors {
+            addressTopUpNative.call(
+                walletHandle,
+                identityId,
+                FundingInput.encode(inputs),
+                signerHandle,
+            )
+        }
+    }
+
+    /**
+     * Top up [identityId] (32 bytes), an identity the wallet manages, from
+     * Platform-address [inputs], signed via [signerHandle]. Returns the
+     * post-transition balance.
+     *
+     * **Deprecated:** use [topUpIdentityFromAddresses], which tops up any
+     * identity and updates a managed one's balance the same way; this one
+     * differs only in refusing an identity the wallet does not manage
+     * (`IdentityNotFound`) before Platform is asked, and in reporting
+     * Platform not showing the wallet's identity yet as the retryable
+     * `IdentityBalanceUnavailable`.
+     *
+     * Cancellation: as for [topUpIdentityFromAddresses].
+     */
+    @Deprecated(
+        "Use topUpIdentityFromAddresses, which tops up any identity.",
+        ReplaceWith("topUpIdentityFromAddresses(walletHandle, identityId, inputs, signerHandle)"),
+    )
     suspend fun topUpFromAddresses(
         walletHandle: Long,
         identityId: ByteArray,
         inputs: List<FundingInput>,
         signerHandle: Long,
-    ): Long = gate.op {
+    ): Long = gate.opReturningCompletedResult {
         mapNativeErrors {
-            CreditsNative.topUpFromAddresses(
+            managedAddressTopUpNative.call(
                 walletHandle,
                 identityId,
                 FundingInput.encode(inputs),

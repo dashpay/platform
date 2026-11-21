@@ -779,9 +779,10 @@ pub enum PlatformWalletFFIResultCode {
     /// failure of the lookup, not Platform's answer that the identity does not
     /// exist, which is [`Self::ErrorIdentityNotFound`] (7)). Nothing was
     /// signed, reserved or broadcast, so the operation may be retried as it
-    /// is; a host need not treat it as possibly delivered. Returned by both
-    /// identity top-ups from Platform addresses: the external one (identity
-    /// lookup) and the managed one (balance read before signing).
+    /// is; a host need not treat it as possibly delivered. Returned by every
+    /// identity top-up from Platform addresses (the identity lookup before
+    /// signing): the top-up of any identity and the deprecated external and
+    /// managed ones.
     ErrorIdentityLookupFailed = 80,
 
     /// The named thing does not exist.
