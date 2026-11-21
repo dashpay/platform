@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -207,6 +208,7 @@ class AppState(
         network: Network,
         dapiAddresses: String?,
         quorumUrl: String?,
+        saveNetwork: Boolean = false,
     ) {
         _isLoading.value = true
         try {
@@ -253,39 +255,66 @@ class AppState(
                     recordAppliedDevnet(devnet)
                 }
             }
-            refreshQuorumSource()
-            // Eagerly learn the network's protocol version (iOS
-            // `refreshProtocolVersion(for:)` parity): reset first so a
-            // network switch never carries the previous network's
-            // version, then refresh off the UI path. Non-fatal — the
-            // SDK still ratchets from response metadata if this fails.
-            _platformProtocolVersion.value = null
-            scope.launch {
-                try {
-                    val version = newSdk.system.refreshProtocolVersion()
-                    // Drop a stale result if the SDK was swapped again
-                    // while the refresh was in flight.
-                    if (version != null && _sdk.value === newSdk) {
-                        _platformProtocolVersion.value = version
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.w(
-                        "AppState",
-                        "protocol version refresh failed (non-fatal): ${e.message}",
-                    )
+            _errorMessage.value = null
+            try {
+                afterPublish(newSdk)
+            } finally {
+                // Runs even when the caller is cancelled: once the new SDK
+                // is published, the old one is closed and the network saved.
+                withContext(NonCancellable) {
+                    if (saveNetwork) saveNetworkChoice(network)
+                    // Suspending close: awaits queries already in flight
+                    // against the old instance (they run under
+                    // Sdk.queryGate), so the native handle is never freed
+                    // mid-JNI-call. New queries against the old instance
+                    // fail fast once this begins.
+                    old?.closeSuspending()
                 }
             }
-            // Suspending close: awaits queries already in flight against
-            // the old instance (they run under Sdk.queryGate), so the
-            // native handle is never freed mid-JNI-call. New queries
-            // against the old instance fail fast once this begins.
-            old?.closeSuspending()
-            _errorMessage.value = null
         } catch (e: Exception) {
             _errorMessage.value = e.message ?: "Failed to initialize SDK"
             throw e
         } finally {
             _isLoading.value = false
+        }
+    }
+
+    /** Work on a just-published SDK that may be cancelled. */
+    private suspend fun afterPublish(newSdk: Sdk) {
+        refreshQuorumSource()
+        // Eagerly learn the network's protocol version (iOS
+        // `refreshProtocolVersion(for:)` parity): reset first so a
+        // network switch never carries the previous network's
+        // version, then refresh off the UI path. Non-fatal — the
+        // SDK still ratchets from response metadata if this fails.
+        _platformProtocolVersion.value = null
+        scope.launch {
+            try {
+                val version = newSdk.system.refreshProtocolVersion()
+                // Drop a stale result if the SDK was swapped again
+                // while the refresh was in flight.
+                if (version != null && _sdk.value === newSdk) {
+                    _platformProtocolVersion.value = version
+                }
+            } catch (e: Exception) {
+                android.util.Log.w(
+                    "AppState",
+                    "protocol version refresh failed (non-fatal): ${e.message}",
+                )
+            }
+        }
+    }
+
+    /**
+     * Save [network] as the network to start on. A failed save only shows
+     * in [errorMessage]: the switch itself already happened.
+     */
+    private suspend fun saveNetworkChoice(network: Network) {
+        try {
+            dataStore.edit { it[KEY_NETWORK] = network.networkName }
+        } catch (e: Exception) {
+            _errorMessage.value =
+                "Switched to ${network.displayName}, but could not save it: ${e.message}"
         }
     }
 
@@ -303,18 +332,9 @@ class AppState(
     ) {
         sdkLock.withLock {
             if (network == _currentNetwork.value && _sdk.value != null) return
-            // Publishing the SDK also makes its network the current one.
-            // Saving the pick can still fail; then only the next launch
-            // starts on the old network.
-            buildAndPublishSdk(network, dapiAddresses, quorumUrl)
-            try {
-                dataStore.edit { it[KEY_NETWORK] = network.networkName }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _errorMessage.value =
-                    "Switched to ${network.displayName}, but could not save it: ${e.message}"
-            }
+            // Publishing the SDK also makes its network the current one and
+            // saves it, even if this call is cancelled after publishing.
+            buildAndPublishSdk(network, dapiAddresses, quorumUrl, saveNetwork = true)
         }
     }
 
