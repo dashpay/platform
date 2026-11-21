@@ -188,9 +188,20 @@ class Addresses internal constructor(private val sdk: Sdk) {
 class Voting internal constructor(private val sdk: Sdk) {
 
     /**
-     * Contested resources for a contract/document-type/index. [resultType]
-     * is the rs-sdk-ffi u8 enum discriminant; the index-value JSON bounds and
-     * [orderAscending] mirror the iOS catalog. Returns JSON, or null.
+     * Contested resources for a contract/document-type/index. The index-value
+     * JSON bounds ([startIndexValuesJson], [endIndexValuesJson], each a JSON
+     * array of strings) and [orderAscending] mirror the iOS catalog. Returns
+     * JSON, or null.
+     *
+     * Index values are strings the FFI reads in this order: a value starting
+     * with a backslash (`\`) is text with that one backslash removed; else a
+     * `0x`-prefixed value is hex bytes; else the value is text. Encode text
+     * with [ContestedIndexValue.text] (a DPNS label normalized to `0xf0rd`
+     * must be sent as `\0xf0rd`) and bytes with [ContestedIndexValue.bytes].
+     *
+     * Each returned resource carries `id` and `index_values`, already encoded
+     * this way (see [ContestedIndexValue] for when they can be passed back
+     * unchanged).
      */
     suspend fun contestedResources(
         contractId: String,
@@ -219,6 +230,12 @@ class Voting internal constructor(private val sdk: Sdk) {
      * Vote state (contenders + tallies) for a contested resource.
      * [indexValuesJson] is a JSON array of the index path values;
      * [resultType] is the u8 enum discriminant. Returns JSON, or null.
+     *
+     * Index values are strings the FFI reads in this order: a value starting
+     * with a backslash (`\`) is text with that one backslash removed; else a
+     * `0x`-prefixed value is hex bytes; else the value is text. Encode text
+     * with [ContestedIndexValue.text] (a DPNS label normalized to `0xf0rd`
+     * must be sent as `\0xf0rd`) and bytes with [ContestedIndexValue.bytes].
      */
     suspend fun contestedResourceVoteState(
         contractId: String,
@@ -243,7 +260,16 @@ class Voting internal constructor(private val sdk: Sdk) {
         }
     }
 
-    /** Voters who voted for a specific contestant, as JSON, or null. */
+    /**
+     * Voters who voted for a specific contestant, as JSON, or null.
+     * [indexValuesJson] is a JSON array of the index path values.
+     *
+     * Index values are strings the FFI reads in this order: a value starting
+     * with a backslash (`\`) is text with that one backslash removed; else a
+     * `0x`-prefixed value is hex bytes; else the value is text. Encode text
+     * with [ContestedIndexValue.text] (a DPNS label normalized to `0xf0rd`
+     * must be sent as `\0xf0rd`) and bytes with [ContestedIndexValue.bytes].
+     */
     suspend fun contestedResourceVotersForIdentity(
         contractId: String,
         documentTypeName: String,
@@ -477,6 +503,17 @@ class Dpns internal constructor(private val sdk: Sdk) {
     /** Check label availability; returns the JSON availability object. */
     suspend fun checkAvailability(label: String): String? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.dpnsCheckAvailability(sdk.handle, label) }
+    }
+
+    /**
+     * Homograph-normalize a DPNS label (`oxford` -> `0xf0rd`), the form
+     * Platform indexes names and contests under. Computed by Rust
+     * (`dash_sdk_dpns_normalize_username`); no network call.
+     */
+    fun normalizeLabel(label: String): String = mapNativeErrors {
+        checkNotNull(QueriesNative.dpnsNormalizeUsername(label)) {
+            "DPNS label normalization returned no value"
+        }
     }
 
     /** Usernames owned by an identity (JSON array). */
