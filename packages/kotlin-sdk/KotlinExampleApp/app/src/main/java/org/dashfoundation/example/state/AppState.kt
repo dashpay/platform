@@ -246,7 +246,10 @@ class AppState(
                     throw e
                 }
                 _sdk.value.also {
+                    // The SDK, its network and its devnet settings change
+                    // together, before any work that can be cancelled.
                     _sdk.value = newSdk
+                    _currentNetwork.value = network
                     recordAppliedDevnet(devnet)
                 }
             }
@@ -300,11 +303,10 @@ class AppState(
     ) {
         sdkLock.withLock {
             if (network == _currentNetwork.value && _sdk.value != null) return
+            // Publishing the SDK also makes its network the current one.
+            // Saving the pick can still fail; then only the next launch
+            // starts on the old network.
             buildAndPublishSdk(network, dapiAddresses, quorumUrl)
-            // The new SDK is published, so the network it serves is now the
-            // current one. Saving the pick can still fail; then only the next
-            // launch starts on the old network.
-            _currentNetwork.value = network
             try {
                 dataStore.edit { it[KEY_NETWORK] = network.networkName }
             } catch (e: CancellationException) {
