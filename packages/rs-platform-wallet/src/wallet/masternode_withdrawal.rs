@@ -40,7 +40,7 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::signer::Signer as IdentitySigner;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
-use dpp::prelude::{Identifier, IdentityNonce};
+use dpp::prelude::Identifier;
 use dpp::ProtocolError;
 use key_wallet::account::AccountType;
 use key_wallet::bip32::{ChildNumber, DerivationPath};
@@ -610,18 +610,18 @@ async fn withdraw_with_identity_signer(
 }
 
 /// A masternode withdrawal ready to sign: the owner identity, the key that
-/// signs for it, where it pays, and the identity nonce it takes.
+/// signs for it, and where it pays.
 struct UnsignedWithdrawal {
     identity: Identity,
     key: IdentityPublicKey,
     output_script: Option<CoreScript>,
-    nonce: IdentityNonce,
     amount_credits: u64,
 }
 
 /// Check `request`, fetch the owner identity (id = display-order
-/// proTxHash), select its key that `selector` can sign with
-/// ([`select_withdrawal_key`]) and take a nonce. Nothing is signed or sent.
+/// proTxHash) and select its key that `selector` can sign with
+/// ([`select_withdrawal_key`]). Nothing is signed or sent, and no nonce is
+/// taken.
 /// An explicit destination must be for the SDK's network; a transfer-key
 /// withdrawal without one pays the selected key's P2PKH address.
 async fn prepare_withdrawal(
@@ -664,28 +664,28 @@ async fn prepare_withdrawal(
         }
         (_, destination) => destination.clone(),
     };
-    let nonce = sdk
-        .get_identity_nonce(identity_id, true, None)
-        .await
-        .map_err(refused_before_sending)?;
 
     Ok(UnsignedWithdrawal {
         identity,
         key,
         output_script: destination.map(|address| CoreScript::new(address.script_pubkey())),
-        nonce,
         amount_credits: request.amount_credits,
     })
 }
 
 impl UnsignedWithdrawal {
-    /// Sign with `signer`. Nothing has left the wallet yet, so every error
-    /// is definitive and retryable.
+    /// Take the identity nonce and sign with `signer`. The nonce is taken
+    /// only here, so a key source that fails earlier uses none. Nothing has
+    /// left the wallet yet, so every error is definitive and retryable.
     async fn sign(
         &self,
         sdk: &dash_sdk::Sdk,
         signer: &dyn IdentitySigner<IdentityPublicKey>,
     ) -> Result<StateTransition, PlatformWalletError> {
+        let nonce = sdk
+            .get_identity_nonce(self.identity.id(), true, None)
+            .await
+            .map_err(refused_before_sending)?;
         IdentityCreditWithdrawalTransition::try_from_identity(
             &self.identity,
             self.output_script.clone(),
@@ -696,7 +696,7 @@ impl UnsignedWithdrawal {
             SignerRef(signer),
             Some(&self.key),
             PreferredKeyPurposeForSigningWithdrawal::TransferPreferred,
-            self.nonce,
+            nonce,
             sdk.version(),
             None,
         )
