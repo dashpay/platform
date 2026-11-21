@@ -72,7 +72,8 @@ final class AddressPoolBulkFetchTests: XCTestCase {
     private func entry(
         _ address: String,
         index: Int,
-        isUsed: Bool = false
+        isUsed: Bool = false,
+        balance: UInt64 = 0
     ) -> PlatformWalletPersistenceHandler.CoreAddressEntrySnapshot {
         .init(
             address: address,
@@ -81,6 +82,7 @@ final class AddressPoolBulkFetchTests: XCTestCase {
             poolTypeTag: 0,
             addressIndex: UInt32(index),
             isUsed: isUsed,
+            balance: balance,
             derivationPath: "m/44'/1'/0'/0/\(index)"
         )
     }

@@ -632,6 +632,7 @@ class PlatformWalletPersistenceHandler(
         addressPoolTypeTag: Byte,
         addressIndex: Int,
         isUsed: Boolean,
+        balance: Long,
         addressBase58: String,
         derivationPath: String,
     ): Int = guarded {
@@ -702,8 +703,9 @@ class PlatformWalletPersistenceHandler(
                         existing != null && existing.balance == 0L && existing.nonce == 0 -> false
                         else -> existing?.isUsed ?: false
                     },
-                    // Balance is BLAST-driven only; keep what it last wrote.
-                    balance = existing?.balance ?: 0L,
+                    // Preserve any later BLAST-driven balance; only seed on first sight.
+                    balance = if ((existing?.balance ?: 0L) == 0L && balance != 0L) balance
+                    else existing?.balance ?: balance,
                     accountId = account.id,
                     walletId = walletId,
                     lastUpdated = now(),
@@ -720,6 +722,7 @@ class PlatformWalletPersistenceHandler(
                     addressIndex = addressIndex,
                     derivationPath = derivationPath,
                     isUsed = isUsed,
+                    balance = balance,
                     accountId = account.id,
                     lastUpdated = now(),
                 ),
@@ -3441,6 +3444,7 @@ class PlatformWalletPersistenceHandler(
                             poolTypeTag = poolTypeTag.toByte(),
                             addressIndex = row.addressIndex,
                             isUsed = row.isUsed,
+                            balance = row.balance,
                             addressBase58 = row.address,
                             derivationPath = row.derivationPath,
                         )
