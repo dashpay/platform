@@ -2462,6 +2462,77 @@ mod tests {
         runtime.stop().await.unwrap();
     }
 
+    /// A list the engine already holds (as one restored from disk) while
+    /// sync catches up is refused by every gated read, the provider key
+    /// candidates included, although the plain reads hand it out: otherwise
+    /// a key a node still uses comes back as unused.
+    #[test]
+    fn should_refuse_a_list_restored_from_disk_while_sync_catches_up() {
+        use crate::masternode::live_provider_key_candidates_blocking;
+        use crate::test_support::sync_test_platform_wallet;
+        use crate::wallet::provider_key_at_index::ProviderKeyKind;
+        use dashcore::sml::masternode_list::MasternodeList;
+        use dashcore::BlockHash;
+
+        const RESTORED_HEIGHT: u32 = 1_000;
+        let wallet = sync_test_platform_wallet();
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let (runtime, _storage) = rt.block_on(offline_runtime());
+        rt.block_on(run_offline(&runtime));
+        rt.block_on(async {
+            let client = runtime.client.read().await;
+            let engine =
+                dash_spv::test_utils::masternode_list_engine(client.as_ref().unwrap()).unwrap();
+            engine.write().await.masternode_lists.insert(
+                RESTORED_HEIGHT,
+                MasternodeList::empty(BlockHash::all_zeros(), RESTORED_HEIGHT),
+            );
+        });
+
+        assert_eq!(
+            rt.block_on(runtime.masternode_list_summaries()),
+            Some(vec![]),
+            "the plain read sees the restored list"
+        );
+        assert_eq!(runtime.masternode_list_summaries_blocking(), Some(vec![]));
+
+        let read = rt.block_on(runtime.current_masternode_list());
+        assert!(
+            matches!(read, Err(PlatformWalletError::MasternodeListUnavailable)),
+            "expected MasternodeListUnavailable, got {read:?}"
+        );
+        assert_eq!(
+            rt.block_on(runtime.current_masternode_list_summaries()),
+            None
+        );
+        assert!(rt
+            .block_on(runtime.current_masternode_list_entries())
+            .is_none());
+        let blocking = runtime.current_masternode_list_summaries_blocking();
+        assert!(
+            matches!(
+                blocking,
+                Err(PlatformWalletError::MasternodeListUnavailable)
+            ),
+            "expected MasternodeListUnavailable, got {blocking:?}"
+        );
+        for kind in [ProviderKeyKind::Operator, ProviderKeyKind::Voting] {
+            let candidates = live_provider_key_candidates_blocking(&wallet, &runtime, kind, 3);
+            assert!(
+                matches!(
+                    candidates,
+                    Err(PlatformWalletError::MasternodeListUnavailable)
+                ),
+                "{kind:?}: expected MasternodeListUnavailable, got {candidates:?}"
+            );
+        }
+
+        rt.block_on(runtime.stop()).unwrap();
+    }
+
     /// The public list read is gated like the crate-private ones: a runtime
     /// that does not follow the chain has no current list to hand out.
     #[tokio::test]
