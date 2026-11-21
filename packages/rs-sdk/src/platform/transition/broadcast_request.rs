@@ -87,6 +87,8 @@ impl BroadcastRequestForStateTransition for StateTransition {
                 prove: true,
                 // A proof of an owned, fee-paying transition carries the owner's balance itself.
                 request_user_balance: false,
+                // The SDK does not read the state before the block yet.
+                prove_state_before_block: false,
             })),
         })
     }

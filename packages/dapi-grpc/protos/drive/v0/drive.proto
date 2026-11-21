@@ -6,6 +6,32 @@ import "platform/v0/platform.proto";
 
 service DriveInternal {
   rpc getProofs(GetProofsRequest) returns (GetProofsResponse);
+  // Asks Drive to prove the keys of a state transition before and after the
+  // block that executes it. The proof of the state before a block can only be
+  // made before that block is committed, so this has to arrive before the
+  // transition's block is finalized. Only credit transfers, top-ups and credit
+  // withdrawals of an identity are proved. Each registration holds a lease the
+  // caller releases with unregisterStateTransitionExecutionProof when it stops
+  // waiting. A lease is sent in one registration only: a caller that does not
+  // learn whether its registration arrived releases the lease and, to register
+  // again, takes a new one. RESOURCE_EXHAUSTED when Drive already holds as many
+  // registrations as it keeps. FAILED_PRECONDITION when the lease's release
+  // arrived first, or the lease is no newer than releases Drive has forgotten:
+  // Drive holds nothing for it. Drive remembers releases that come first within
+  // bounds: up to 1,024 releases, and a low-water mark for each of up to 64
+  // callers, each for 64 blocks. A registration that arrives after Drive has
+  // forgotten its release is taken, and held until it expires.
+  rpc registerStateTransitionExecutionProof(RegisterStateTransitionExecutionProofRequest)
+      returns (RegisterStateTransitionExecutionProofResponse);
+  // Undoes one registration of a state transition. A proof Drive already made
+  // for it is kept.
+  rpc unregisterStateTransitionExecutionProof(UnregisterStateTransitionExecutionProofRequest)
+      returns (UnregisterStateTransitionExecutionProofResponse);
+  // The proofs Drive made for a registered state transition. Both are absent
+  // when Drive has none: the transition was not registered in time, its block
+  // is not finalized yet, or the proofs are older than Drive keeps them.
+  rpc getStateTransitionExecutionProof(GetStateTransitionExecutionProofRequest)
+      returns (GetStateTransitionExecutionProofResponse);
 }
 
 message GetProofsRequest {
@@ -15,4 +41,46 @@ message GetProofsRequest {
 message GetProofsResponse {
   org.dash.platform.dapi.v0.Proof proof = 1; // Cryptographic proof for the requested data
   org.dash.platform.dapi.v0.ResponseMetadata metadata = 2;  // Metadata about the blockchain state
+}
+
+message RegisterStateTransitionExecutionProofRequest {
+  // The hash of the state transition's bytes, its transaction hash in a block.
+  bytes state_transition_hash = 1;
+  // 16 bytes the caller picks for one wait: 8 bytes naming the caller, the
+  // same in all its leases, then a big-endian 8-byte number it increases for
+  // every lease. Registering with a lease that is held changes nothing. A
+  // lease registered again after an ordinary release is taken again and held
+  // until it expires, so a caller never reuses one.
+  bytes lease = 2;
+}
+
+message RegisterStateTransitionExecutionProofResponse {}
+
+message UnregisterStateTransitionExecutionProofRequest {
+  // The hash of the state transition's bytes, its transaction hash in a block.
+  bytes state_transition_hash = 1;
+  // The lease the registration was taken with. Releasing it ends only that
+  // registration. A release that arrives before its registration makes Drive
+  // refuse that registration, and releasing again is allowed.
+  bytes lease = 2;
+}
+
+message UnregisterStateTransitionExecutionProofResponse {}
+
+message GetStateTransitionExecutionProofRequest {
+  // The hash of the state transition's bytes, its transaction hash in a block.
+  bytes state_transition_hash = 1;
+}
+
+message GetStateTransitionExecutionProofResponse {
+  // A proof of the state transition's keys, with the block whose state it is of.
+  message StateAtBlock {
+    org.dash.platform.dapi.v0.Proof proof = 1;
+    org.dash.platform.dapi.v0.ResponseMetadata metadata = 2;
+  }
+
+  // The state the block before the state transition's block left.
+  StateAtBlock before = 1;
+  // The state the state transition's block left.
+  StateAtBlock after = 2;
 }

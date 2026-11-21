@@ -30,6 +30,7 @@ use crate::version::drive_versions::drive_verify_method_versions::{
 pub const DRIVE_VERIFY_METHOD_VERSIONS_V3: DriveVerifyMethodVersions = DriveVerifyMethodVersions {
     state_transition: DriveVerifyStateTransitionMethodVersions {
         verify_state_transition_was_executed_with_proof: 1,
+        verify_state_transition_prior_state_with_proof: 0,
     },
     composite_document: DriveVerifyCompositeDocumentMethodVersions {
         verify_composite_documents_proof: 1,
