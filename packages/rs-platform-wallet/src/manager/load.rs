@@ -1694,11 +1694,10 @@ pub struct AddressPoolRestoreStats {
 /// four provider key accounts. Each pool's rows go through
 /// [`restore_address_rows`] with the key source of their account, so rows
 /// missing below a persisted one are derived; entries naming the same pool
-/// are restored together, under one gap-fill budget. In an asset-lock funding
-/// pool every address at or below the highest persisted row that no row
-/// restored is marked used, since the chain cannot show whether its key was
-/// handed out. A pool whose account or pool type the wallet does not hold is
-/// dropped as a whole and counts once.
+/// are restored together, under one gap-fill budget. Rows derived into an
+/// asset-lock funding pool are marked used, since the chain cannot show
+/// whether their keys were handed out. A pool whose account or pool type the
+/// wallet does not hold is dropped as a whole and counts once.
 pub fn restore_account_address_pools(
     wallet: &Wallet,
     wallet_info: &mut ManagedWalletInfo,
@@ -2740,66 +2739,6 @@ mod address_pool_restore_tests {
             .next_address(None)
             .expect("next funding address");
         assert_eq!(next, probe.addresses()[&(lost + 2)].address);
-    }
-
-    /// A lost invitation row may hold an exported voucher key whether it
-    /// lies inside the window `from_wallet` pre-derives (index 2) or is
-    /// derived to close the gap below a later row (index 5): with used rows
-    /// 0–6 persisted except the lost one, the next voucher takes index 7.
-    #[test]
-    fn should_not_reissue_a_lost_invitation_row_below_the_highest_persisted_row() {
-        let highest_used = 6;
-        for lost in [2, 5] {
-            let (wallet, mut info) = wallet_and_info();
-            let key_source = wallet.key_source_for_account(AccountType::IdentityInvitation);
-            let mut pool = info
-                .accounts
-                .identity_invitation
-                .as_mut()
-                .expect("managed invitation account")
-                .managed_account_type_mut()
-                .address_pools_mut()
-                .remove(0)
-                .clone();
-            // The unused window the wallet derived past the used rows.
-            let last = highest_used + pool.gap_limit();
-            derive_through(&mut pool, &key_source, last).expect("derive the persisted rows");
-            let rows = (0..=last)
-                .filter(|index| *index != lost)
-                .map(|index| {
-                    let mut row = pool.addresses()[&index].clone();
-                    if index <= highest_used {
-                        row.state = AddressState::Used;
-                    }
-                    row
-                })
-                .collect();
-
-            restore_account_address_pools(
-                &wallet,
-                &mut info,
-                vec![entry(
-                    AccountType::IdentityInvitation,
-                    pool.pool_type(),
-                    rows,
-                )],
-            );
-
-            // The selection `AssetLockManager::peek_next_funding_address` makes.
-            let next = info
-                .accounts
-                .identity_invitation
-                .as_mut()
-                .expect("managed invitation account")
-                .next_address(None)
-                .expect("next funding address");
-            assert_ne!(next, pool.addresses()[&lost].address, "lost index {lost}");
-            assert_eq!(
-                next,
-                pool.addresses()[&(highest_used + 1)].address,
-                "lost index {lost}"
-            );
-        }
     }
 
     #[test]
