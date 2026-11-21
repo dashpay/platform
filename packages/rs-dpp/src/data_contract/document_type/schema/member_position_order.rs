@@ -18,7 +18,8 @@ use super::last_value;
 use crate::data_contract::document_type::property_names::{POSITION, PROPERTIES, REF, TYPE};
 use crate::util::json_schema::resolve_uri;
 use platform_value::{Value, ValueMapHelper};
-use std::cell::RefCell;
+use platform_version::version::PlatformVersion;
+use std::cell::{OnceCell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Why an object's members are refused by their order.
@@ -33,32 +34,76 @@ pub enum MemberPositionOrderError {
 }
 
 /// Judges the objects of a contract's schemas by their members' order, with the `$defs` the
-/// registration or update writes, which the `$ref`s it gains point into.
-pub struct MemberPositionOrder {
-    /// `{ "$defs": <definitions> }`, the root a `$ref` into `$defs` is resolved against, as the
-    /// parse resolves it.
-    root: Value,
-    /// The detail of the refusal, if any, of each schema a `$ref` judged so far points at, by
-    /// the schema's address in `root`: the parse reads `/` and `.` in a pointer alike, so one
-    /// schema is reached by many spellings, and each is walked once.
-    judged_references: RefCell<BTreeMap<*const Value, Option<String>>>,
+/// contract stores and the `$defs` the registration or update writes, which the `$ref`s it keeps
+/// and gains point into.
+pub struct MemberPositionOrder<'a> {
+    old_definitions: Option<&'a BTreeMap<String, Value>>,
+    new_definitions: Option<&'a BTreeMap<String, Value>>,
+    /// How deep the walk goes, through members and `$ref`s together: the schema depth the parse
+    /// admits, which counts a schema at least as deep. A pair of schemas cut off there is judged
+    /// as accepted, and the answer is kept, so the walk stays linear: the parse refuses a type
+    /// nested that deep, and a definition no type reads is judged again when a type gains a
+    /// `$ref` to it.
+    max_depth: usize,
+    /// `{ "$defs": <definitions> }` for each side, the root a `$ref` is resolved against as the
+    /// parse resolves it, built the first time a `$ref` is resolved.
+    old_root: OnceCell<Value>,
+    new_root: OnceCell<Value>,
+    /// The refusal, if any, of each pair of schemas a `$ref` judged so far points at (the stored
+    /// one, null for a `$ref` the contract gains, and the new one), by their addresses: the parse
+    /// reads `/` and `.` in a pointer alike, so one schema is reached by many spellings, and each
+    /// pair is walked once. A pair a kept `$ref` reaches is keyed with the document type schemas
+    /// its pointers resolve in too. A pair being walked holds `None`, which ends a cycle.
+    judged_references: RefCell<BTreeMap<JudgedPair, Option<MemberPositionOrderError>>>,
 }
 
-impl MemberPositionOrder {
-    /// With the `$defs` of the contract as the registration or update writes them.
-    pub fn new(definitions: Option<&BTreeMap<String, Value>>) -> Self {
-        let definitions = definitions
-            .into_iter()
-            .flatten()
-            .map(|(name, definition)| (Value::Text(name.clone()), definition.clone()))
-            .collect();
+/// The addresses of a stored and a new schema a `$ref` points at, and of the stored and new
+/// document type schemas a kept pointer outside `$defs` resolves in (null for a `$ref` the
+/// contract gains, whose pointers all lead into `$defs`).
+type JudgedPair = [*const Value; 4];
+
+/// The stored and the new schema of the document type being walked, where the parse resolves a
+/// `$ref` that does not point into `$defs` (it resolves against the type's schema with the
+/// contract's `$defs` added). Neither while the `$defs` are walked on their own.
+#[derive(Clone, Copy, Default)]
+struct TypeSchemas<'v> {
+    old: Option<&'v Value>,
+    new: Option<&'v Value>,
+}
+
+impl<'a> MemberPositionOrder<'a> {
+    /// With the `$defs` the contract stores (`None` at registration) and those the registration
+    /// or update writes.
+    pub fn new(
+        old_definitions: Option<&'a BTreeMap<String, Value>>,
+        new_definitions: Option<&'a BTreeMap<String, Value>>,
+        platform_version: &PlatformVersion,
+    ) -> Self {
         Self {
-            root: Value::Map(vec![(
-                Value::Text("$defs".to_string()),
-                Value::Map(definitions),
-            )]),
+            old_definitions,
+            new_definitions,
+            max_depth: platform_version
+                .dpp
+                .contract_versions
+                .document_type_versions
+                .schema
+                .max_depth as usize,
+            old_root: OnceCell::new(),
+            new_root: OnceCell::new(),
             judged_references: RefCell::new(BTreeMap::new()),
         }
+    }
+
+    /// The first object of a contract being registered, in its document schemas or its `$defs`,
+    /// whose members' order is refused: every object is one the contract gains.
+    pub fn first_error_of_registration<'s>(
+        &self,
+        document_schemas: impl IntoIterator<Item = &'s Value>,
+    ) -> Option<MemberPositionOrderError> {
+        document_schemas
+            .into_iter()
+            .find_map(|schema| self.first_error_of_document_type(None, schema))
+            .or_else(|| self.first_error_of_definitions().map(|(_, error)| error))
     }
 
     /// The first object of the document type schema `new_schema` whose members' order is
@@ -71,58 +116,66 @@ impl MemberPositionOrder {
         new_schema: &Value,
     ) -> Option<MemberPositionOrderError> {
         let old_properties = old_schema.and_then(inline_members);
+        let types = TypeSchemas {
+            old: old_schema,
+            new: Some(new_schema),
+        };
         inline_members(new_schema)?
             .iter()
             .find_map(|(name, property)| {
                 let name = name.as_text()?;
                 let old_property =
                     old_properties.and_then(|properties| last_value(properties, name));
-                self.first_error(old_property, property, name, true)
+                self.first_error(old_property, property, name, types, 0)
             })
     }
 
-    /// The first `$defs` definition, of those this was made with, whose members' order is
-    /// refused, against the same definition of `old_definitions` (the contract's stored `$defs`,
-    /// `None` at registration), with its name.
-    pub fn first_error_of_definitions(
-        &self,
-        old_definitions: Option<&BTreeMap<String, Value>>,
-    ) -> Option<(String, MemberPositionOrderError)> {
-        let definitions = self
-            .root
-            .as_map()
-            .and_then(|root| root.get_optional_key("$defs"))
-            .and_then(Value::as_map)?;
-        definitions.iter().find_map(|(name, definition)| {
-            let name = name.as_text()?;
-            let old_definition = old_definitions.and_then(|old| old.get(name));
-            self.first_error(old_definition, definition, &format!("$defs.{name}"), true)
-                .map(|error| (name.to_string(), error))
+    /// The first `$defs` definition the registration or update writes whose members' order is
+    /// refused, against the same definition the contract stores, with its name.
+    pub fn first_error_of_definitions(&self) -> Option<(String, MemberPositionOrderError)> {
+        self.new_definitions?.iter().find_map(|(name, definition)| {
+            let old_definition = self
+                .old_definitions
+                .and_then(|definitions| definitions.get(name));
+            self.first_error(
+                old_definition,
+                definition,
+                &format!("$defs.{name}"),
+                TypeSchemas::default(),
+                0,
+            )
+            .map(|error| (name.clone(), error))
         })
     }
 
-    /// The first object of the property schema `new`, or of the objects inside it at any depth,
-    /// whose members' order is refused; `old` is the same property as the contract stores it,
-    /// `None` when the contract gains it, and `path` names it. A `$ref` the contract gains is
-    /// judged when `judge_references` is set; the `properties` written beside a `$ref` are not
-    /// read for storage, so they are not walked.
+    /// The first object of the property schema `new`, or of the objects inside it or reached
+    /// through its `$ref`s, at any depth, whose members' order is refused; `old` is the same
+    /// property as the contract stores it, `None` when the contract gains it, and `path` names
+    /// it. The `properties` written beside a `$ref` are not read for storage, so they are not
+    /// walked.
     fn first_error(
         &self,
         old: Option<&Value>,
         new: &Value,
         path: &str,
-        judge_references: bool,
+        types: TypeSchemas,
+        depth: usize,
     ) -> Option<MemberPositionOrderError> {
+        if depth > self.max_depth {
+            return None;
+        }
         let new_schema = new.as_map()?;
         if let Some(reference) = new_schema.get_optional_key(REF) {
-            let kept = old
+            let reference = reference.as_text()?;
+            let old_reference = old
                 .and_then(Value::as_map)
                 .and_then(|old| old.get_optional_key(REF))
-                == Some(reference);
-            if !judge_references || kept {
-                return None;
-            }
-            return self.gained_reference_error(reference.as_text()?, path);
+                .and_then(Value::as_text);
+            return if old_reference == Some(reference) {
+                self.kept_reference_error(reference, path, types, depth)
+            } else {
+                self.gained_reference_error(reference, path, depth)
+            };
         }
         if !is_object(new_schema) {
             return None;
@@ -145,50 +198,146 @@ impl MemberPositionOrder {
                 old_member,
                 member,
                 &format!("{path}.{name}"),
-                judge_references,
+                types,
+                depth + 1,
             )
         })
     }
 
     /// Why a `$ref` the contract gains at `path` is refused: it does not point into `$defs`, or
-    /// the schema it points at holds an object not listed at consecutive positions. That
-    /// schema's own `$ref`s are judged where they are written. One the parse could not resolve
-    /// is left to it.
+    /// the schema it points at, or one reached from it, holds an object not listed at consecutive
+    /// positions. One that points at nothing is left to the parse, which refuses it.
     fn gained_reference_error(
         &self,
         reference: &str,
         path: &str,
+        depth: usize,
     ) -> Option<MemberPositionOrderError> {
-        if !reference.starts_with("#/$defs/") {
-            return Some(MemberPositionOrderError::ListedOutOfPositionOrder(format!(
-                "'{path}' takes its schema from '{reference}': from protocol version 15 a `$ref` \
-                 a contract gains points into its `$defs`"
-            )));
-        }
-        let target = resolve_uri(&self.root, reference).ok()?;
-        let address = target as *const Value;
-        let cached = self.judged_references.borrow().get(&address).cloned();
-        let detail = match cached {
-            Some(detail) => detail,
-            None => {
-                let detail = self
-                    .first_error(None, target, reference, false)
-                    .map(|error| match error {
-                        MemberPositionOrderError::ListedOutOfPositionOrder(detail)
-                        | MemberPositionOrderError::AddedBeforeExistingMembers(detail) => detail,
-                    });
-                self.judged_references
-                    .borrow_mut()
-                    .insert(address, detail.clone());
-                detail
-            }
+        let refused = |detail: String| {
+            Some(MemberPositionOrderError::ListedOutOfPositionOrder(format!(
+                "'{path}' takes its schema from '{reference}': {detail}"
+            )))
         };
-        detail.map(|detail| {
+        if !reference.starts_with("#/$defs/") {
+            return refused(
+                "from protocol version 15 a `$ref` a contract gains points into its `$defs`"
+                    .to_string(),
+            );
+        }
+        let target = self.resolve(reference, &self.new_root, self.new_definitions)?;
+        self.judged_through_reference(None, target, reference, TypeSchemas::default(), depth)
+            .map(|error| through_reference(error, path, reference))
+    }
+
+    /// Why a `$ref` the contract keeps at `path` is refused: the object it points at, as the
+    /// update writes it, does not keep the rule of an object the contract has against the one
+    /// it pointed at. A pointer into `$defs` is resolved in each side's `$defs`, any other in
+    /// each side's document type schema, as the parse resolves it. One that points at nothing on
+    /// either side is left as it is.
+    fn kept_reference_error(
+        &self,
+        reference: &str,
+        path: &str,
+        types: TypeSchemas,
+        depth: usize,
+    ) -> Option<MemberPositionOrderError> {
+        let (old_target, new_target) = if points_into_definitions(reference) {
+            (
+                self.resolve(reference, &self.old_root, self.old_definitions)?,
+                self.resolve(reference, &self.new_root, self.new_definitions)?,
+            )
+        } else {
+            (
+                resolve_uri(types.old?, reference).ok()?,
+                resolve_uri(types.new?, reference).ok()?,
+            )
+        };
+        self.judged_through_reference(Some(old_target), new_target, reference, types, depth)
+            .map(|error| through_reference(error, path, reference))
+    }
+
+    /// [`Self::first_error`] for the schemas a `$ref` points at, walked once per pair.
+    fn judged_through_reference(
+        &self,
+        old: Option<&Value>,
+        new: &Value,
+        reference: &str,
+        types: TypeSchemas,
+        depth: usize,
+    ) -> Option<MemberPositionOrderError> {
+        let address = |value: Option<&Value>| value.map_or(std::ptr::null(), std::ptr::from_ref);
+        // Below a `$ref` the contract gains, every `$ref` is gained and points into `$defs`, so
+        // its answer does not depend on the document type
+        let types = if old.is_some() {
+            types
+        } else {
+            TypeSchemas::default()
+        };
+        let key = [
+            address(old),
+            std::ptr::from_ref(new),
+            address(types.old),
+            address(types.new),
+        ];
+        if let Some(judged) = self.judged_references.borrow().get(&key) {
+            return judged.clone();
+        }
+        self.judged_references.borrow_mut().insert(key, None);
+        let error = self.first_error(old, new, reference, types, depth + 1);
+        self.judged_references
+            .borrow_mut()
+            .insert(key, error.clone());
+        error
+    }
+
+    /// The schema `reference` points at, among `definitions`, resolved as the parse resolves it.
+    fn resolve<'r>(
+        &self,
+        reference: &str,
+        root: &'r OnceCell<Value>,
+        definitions: Option<&BTreeMap<String, Value>>,
+    ) -> Option<&'r Value> {
+        let root = root.get_or_init(|| {
+            let definitions = definitions
+                .into_iter()
+                .flatten()
+                .map(|(name, definition)| (Value::Text(name.clone()), definition.clone()))
+                .collect();
+            Value::Map(vec![(
+                Value::Text("$defs".to_string()),
+                Value::Map(definitions),
+            )])
+        });
+        resolve_uri(root, reference).ok()
+    }
+}
+
+/// Whether the parse finds `reference` in the contract's `$defs`: its path's first segment, which
+/// ends at a `/` or a `.`, is `$defs`.
+fn points_into_definitions(reference: &str) -> bool {
+    reference
+        .strip_prefix("#/")
+        .and_then(|path| path.split(['/', '.']).next())
+        == Some("$defs")
+}
+
+/// `error`, found in the schema `reference` points at, as the refusal of the `$ref` at `path`.
+fn through_reference(
+    error: MemberPositionOrderError,
+    path: &str,
+    reference: &str,
+) -> MemberPositionOrderError {
+    match error {
+        MemberPositionOrderError::ListedOutOfPositionOrder(detail) => {
             MemberPositionOrderError::ListedOutOfPositionOrder(format!(
-                "'{path}' takes its members from '{reference}', which does not list them at \
-                 consecutive positions: {detail}"
+                "'{path}' takes its members from '{reference}': {detail}"
             ))
-        })
+        }
+        MemberPositionOrderError::AddedBeforeExistingMembers(detail) => {
+            MemberPositionOrderError::AddedBeforeExistingMembers(format!(
+                "'{path}' takes its members from '{reference}': {detail}"
+            ))
+        }
     }
 }
 
@@ -273,6 +422,8 @@ fn not_at_consecutive_positions(
 /// `None` when the members of `new_members` that `old_members` holds keep their order, and every
 /// other one is listed after them at the next free position: one above the highest
 /// position of the old members (0 when they have none), then one above each added before it.
+/// When a stored position reads as no integer, the first member added takes any position and
+/// the others follow it; when the highest is the last integer, none can be added.
 fn not_kept_or_appended(
     old_members: &[(Value, Value)],
     new_members: &[(Value, Value)],
@@ -290,11 +441,22 @@ fn not_kept_or_appended(
         .filter_map(|(name, _)| name.as_text())
         .collect();
     let mut kept_in_old_order = old_order.iter().filter(|name| new_names.contains(*name));
-    let mut next_position = old_members
+    // The next free position is one above the highest stored one (none when the highest is the
+    // last integer). A stored position may read as no integer (a float past every integer,
+    // which registration before protocol version 15 accepted): the members are stored in map
+    // order whatever their positions, so the first member added to such an object takes any
+    // position, and the members added after it follow it
+    let stored_positions: Option<Vec<u64>> = old_members
         .iter()
-        .filter_map(|(_, member)| stored_position(member))
-        .max()
-        .map_or(Some(0), |highest| highest.checked_add(1));
+        .map(|(_, member)| stored_position(member))
+        .collect();
+    let mut any_position = stored_positions.is_none();
+    let mut next_position = stored_positions.and_then(|positions| {
+        positions
+            .into_iter()
+            .max()
+            .map_or(Some(0), |highest| highest.checked_add(1))
+    });
     let mut first_added: Option<&str> = None;
     for (name, member) in new_members {
         let Some(name) = name.as_text() else {
@@ -317,15 +479,26 @@ fn not_kept_or_appended(
             continue;
         }
         first_added.get_or_insert(name);
-        let member_position = position(member);
-        if member_position.is_none() || member_position != next_position {
+        let Some(member_position) = position(member) else {
             return refused(format!(
-                "the member '{name}' an update adds to the object '{path}' must take the next \
-                 free position{}",
-                next_position.map_or_else(String::new, |next| format!(", {next}"))
+                "the member '{name}' an update adds to the object '{path}' needs a position, an \
+                 integer from 0"
             ));
+        };
+        if !any_position && next_position != Some(member_position) {
+            return refused(match next_position {
+                Some(next) => format!(
+                    "the member '{name}' an update adds to the object '{path}' must take the \
+                     next free position, {next}"
+                ),
+                None => format!(
+                    "the member '{name}' an update adds to the object '{path}' has no next free \
+                     position"
+                ),
+            });
         }
-        next_position = next_position.and_then(|next| next.checked_add(1));
+        any_position = false;
+        next_position = member_position.checked_add(1);
     }
     None
 }
@@ -380,7 +553,7 @@ mod tests {
 
     #[test]
     fn should_hold_an_object_the_contract_gains_to_consecutive_positions_at_every_depth() {
-        let judge = MemberPositionOrder::new(None);
+        let judge = MemberPositionOrder::new(None, None, PlatformVersion::latest());
         for (case, meta) in [
             ("from 0", object(vec![("a", member(0)), ("b", member(1))])),
             (
@@ -447,7 +620,7 @@ mod tests {
     /// its next free position.
     #[test]
     fn should_let_an_existing_object_gain_members_at_its_next_free_positions() {
-        let judge = MemberPositionOrder::new(None);
+        let judge = MemberPositionOrder::new(None, None, PlatformVersion::latest());
         let stored = type_with_meta(object(vec![
             ("slug", member(2)),
             ("title", member(0)),
@@ -533,7 +706,8 @@ mod tests {
     }
 
     /// A `$ref` the contract gains points into `$defs`, at a schema whose objects list their
-    /// members at consecutive positions; one it keeps is not judged again.
+    /// members at consecutive positions; one it keeps is judged against the schema it pointed
+    /// at, here the same one, out of position order as it was stored.
     #[test]
     fn should_hold_a_gained_ref_to_a_definition_listed_at_consecutive_positions() {
         let definitions = BTreeMap::from([
@@ -553,7 +727,11 @@ mod tests {
                 )]),
             ),
         ]);
-        let judge = MemberPositionOrder::new(Some(&definitions));
+        let judge = MemberPositionOrder::new(
+            Some(&definitions),
+            Some(&definitions),
+            PlatformVersion::latest(),
+        );
         let referencing = |reference: &str| {
             platform_value!({
                 "type": "object",
@@ -597,15 +775,18 @@ mod tests {
             object(vec![("b", member(1)), ("a", member(0))]),
         )]);
         assert!(matches!(
-            MemberPositionOrder::new(Some(&reordered)).first_error_of_definitions(Some(&stored)),
+            MemberPositionOrder::new(Some(&stored), Some(&reordered), PlatformVersion::latest())
+                .first_error_of_definitions(),
             Some((name, MemberPositionOrderError::AddedBeforeExistingMembers(_))) if name == "m"
         ));
         assert!(matches!(
-            MemberPositionOrder::new(Some(&reordered)).first_error_of_definitions(None),
+            MemberPositionOrder::new(None, Some(&reordered), PlatformVersion::latest())
+                .first_error_of_definitions(),
             Some((name, MemberPositionOrderError::ListedOutOfPositionOrder(_))) if name == "m"
         ));
         assert_eq!(
-            MemberPositionOrder::new(Some(&stored)).first_error_of_definitions(Some(&stored)),
+            MemberPositionOrder::new(Some(&stored), Some(&stored), PlatformVersion::latest())
+                .first_error_of_definitions(),
             None
         );
     }
@@ -626,8 +807,12 @@ mod tests {
             ("y", member(1)),
         ]);
         assert_eq!(
-            MemberPositionOrder::new(Some(&definitions))
-                .first_error_of_document_type(None, &type_with_meta(meta)),
+            MemberPositionOrder::new(
+                Some(&definitions),
+                Some(&definitions),
+                PlatformVersion::latest()
+            )
+            .first_error_of_document_type(None, &type_with_meta(meta)),
             None
         );
     }
@@ -644,7 +829,11 @@ mod tests {
                 "additionalProperties": false,
             }),
         )]);
-        let judge = MemberPositionOrder::new(Some(&definitions));
+        let judge = MemberPositionOrder::new(
+            Some(&definitions),
+            Some(&definitions),
+            PlatformVersion::latest(),
+        );
         for reference in [
             "#/$defs/a/properties/b",
             "#/$defs/a.properties/b",
@@ -681,7 +870,8 @@ mod tests {
             "additionalProperties": false,
         });
         assert_eq!(
-            MemberPositionOrder::new(None).first_error_of_document_type(None, &schema),
+            MemberPositionOrder::new(None, None, PlatformVersion::latest())
+                .first_error_of_document_type(None, &schema),
             None
         );
     }
@@ -690,7 +880,7 @@ mod tests {
     /// the next free position of its object is found.
     #[test]
     fn should_count_an_integral_float_position_stored_earlier() {
-        let judge = MemberPositionOrder::new(None);
+        let judge = MemberPositionOrder::new(None, None, PlatformVersion::latest());
         let float_member = platform_value!({ "type": "string", "maxLength": 10, "position": 1.0 });
         let stored = type_with_meta(object(vec![("a", member(0)), ("b", float_member.clone())]));
         let with_c = |position: u64| {
@@ -709,5 +899,127 @@ mod tests {
             Some(MemberPositionOrderError::AddedBeforeExistingMembers(details))
                 if details.contains("next free position, 2")
         ));
+    }
+
+    /// A `$ref` a contract gains is judged with every `$ref` the schema it points at holds, and
+    /// those with theirs, once each, a cycle ending the walk; one that points at nothing is left
+    /// to the parse, which refuses it.
+    #[test]
+    fn should_judge_every_ref_a_gained_ref_reaches() {
+        let definitions = BTreeMap::from([
+            (
+                "outer".to_string(),
+                object(vec![(
+                    "x",
+                    platform_value!({ "$ref": "#/$defs/legacy", "position": 0 }),
+                )]),
+            ),
+            (
+                "legacy".to_string(),
+                object(vec![("b", member(1)), ("a", member(0))]),
+            ),
+            (
+                "loop".to_string(),
+                object(vec![(
+                    "self",
+                    platform_value!({ "$ref": "#/$defs/loop", "position": 0 }),
+                )]),
+            ),
+        ]);
+        let judge = MemberPositionOrder::new(
+            Some(&definitions),
+            Some(&definitions),
+            PlatformVersion::latest(),
+        );
+        let referencing = |reference: &str| {
+            platform_value!({
+                "type": "object",
+                "properties": { "p": { "$ref": reference, "position": 0 } },
+                "additionalProperties": false,
+            })
+        };
+        listed_out_of_position_order(
+            judge.first_error_of_document_type(None, &referencing("#/$defs/outer")),
+            "#/$defs/legacy",
+        );
+        assert_eq!(
+            judge.first_error_of_document_type(None, &referencing("#/$defs/loop")),
+            None
+        );
+        assert_eq!(
+            judge.first_error_of_document_type(None, &referencing("#/$defs/missing")),
+            None,
+            "a $ref that points at nothing is left to the parse"
+        );
+    }
+
+    /// A `$ref` a contract keeps is judged through the schema it points at: the object there,
+    /// as the update writes it, keeps the order of the one the contract stores and gains members
+    /// only at its next free position.
+    #[test]
+    fn should_hold_the_object_a_kept_ref_points_at_to_its_member_order() {
+        let stored = BTreeMap::from([(
+            "m".to_string(),
+            object(vec![("b", member(1)), ("a", member(0))]),
+        )]);
+        let with =
+            |members: Vec<(&str, Value)>| BTreeMap::from([("m".to_string(), object(members))]);
+        let schema = platform_value!({
+            "type": "object",
+            "properties": { "p": { "$ref": "#/$defs/m", "position": 0 } },
+            "additionalProperties": false,
+        });
+        let judged = |updated: &BTreeMap<String, Value>| {
+            MemberPositionOrder::new(Some(&stored), Some(updated), PlatformVersion::latest())
+                .first_error_of_document_type(Some(&schema), &schema)
+        };
+        assert_eq!(judged(&stored), None, "unchanged");
+        assert_eq!(
+            judged(&with(vec![
+                ("b", member(1)),
+                ("a", member(0)),
+                ("c", member(2))
+            ])),
+            None,
+            "a member at the next free position"
+        );
+        for (case, members) in [
+            ("reordered", vec![("a", member(0)), ("b", member(1))]),
+            (
+                "a member below the next free position",
+                vec![("b", member(1)), ("a", member(0)), ("c", member(5))],
+            ),
+        ] {
+            assert!(
+                matches!(
+                    judged(&with(members)),
+                    Some(MemberPositionOrderError::AddedBeforeExistingMembers(details))
+                        if details.contains("'#/$defs/m'")
+                ),
+                "{case}"
+            );
+        }
+    }
+
+    /// An object whose highest stored position is the last integer has no next free position:
+    /// no member can be added to it. One whose stored position reads as no integer (a float past
+    /// every integer) takes a first added member at any position, and the next ones after it.
+    #[test]
+    fn should_find_no_next_free_position_past_the_last_integer() {
+        let judge = MemberPositionOrder::new(None, None, PlatformVersion::latest());
+        let unreadable = platform_value!({
+            "type": "string",
+            "maxLength": 10,
+            "position": 18446744073709551616.0,
+        });
+        for (case, last, accepted) in [
+            ("the last integer", member(u64::MAX), false),
+            ("a float past every integer", unreadable, true),
+        ] {
+            let stored = type_with_meta(object(vec![("a", last.clone())]));
+            let updated = type_with_meta(object(vec![("a", last), ("b", member(0))]));
+            let error = judge.first_error_of_document_type(Some(&stored), &updated);
+            assert_eq!(error.is_none(), accepted, "{case}: {error:?}");
+        }
     }
 }

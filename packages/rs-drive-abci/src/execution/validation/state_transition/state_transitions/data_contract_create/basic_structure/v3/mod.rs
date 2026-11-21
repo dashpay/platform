@@ -40,18 +40,9 @@ impl DataContractCreateStateTransitionBasicStructureValidationV3 for DataContrac
             return Ok(v2_result);
         }
 
-        // Nothing is stored yet, so every object is one the contract gains
         let data_contract = self.data_contract();
-        let judge = MemberPositionOrder::new(data_contract.schema_defs());
-        let error = data_contract
-            .document_schemas()
-            .values()
-            .find_map(|schema| judge.first_error_of_document_type(None, schema))
-            .or_else(|| {
-                judge
-                    .first_error_of_definitions(None)
-                    .map(|(_, error)| error)
-            });
+        let error = MemberPositionOrder::new(None, data_contract.schema_defs(), platform_version)
+            .first_error_of_registration(data_contract.document_schemas().values());
         if let Some(
             MemberPositionOrderError::ListedOutOfPositionOrder(details)
             | MemberPositionOrderError::AddedBeforeExistingMembers(details),

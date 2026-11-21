@@ -1572,6 +1572,26 @@ fn should_refuse_required_lists_no_document_could_meet() {
             new_defs: definition(),
             expected: Expected::Refused(10276, "c.z"),
         },
+        Case {
+            name: "a dotted name beside the $ref of an object the update adds, written with \
+                   another type the parse does not read",
+            old: document_type_schema(
+                platform_value!({ "a": string(0, 10) }),
+                platform_value!(["a"]),
+            ),
+            new: document_type_schema(
+                with_meta(platform_value!({
+                    "$ref": "#/$defs/m",
+                    "type": "string",
+                    "required": ["y.z"],
+                    "position": 1,
+                })),
+                platform_value!(["a"]),
+            ),
+            old_defs: definitions(platform_value!({ "y": boolean(0) })),
+            new_defs: definitions(platform_value!({ "y": boolean(0) })),
+            expected: Expected::Refused(10276, "y.z"),
+        },
     ];
     run(&cases, PlatformVersion::latest());
 }
@@ -1596,6 +1616,68 @@ fn should_refuse_changing_the_version_an_existing_member_is_required_from() {
         meta(since(1)),
         meta(since(2)),
         Expected::Refused(10246, "requiredSince"),
+    )];
+    run(&cases, PlatformVersion::latest());
+}
+
+/// A scalar's `properties` are not members, and neither are the `required` lists of the
+/// objects written in them: neither the parse nor the validator reads them.
+#[test]
+fn should_not_read_the_properties_written_on_a_scalar_an_update_adds() {
+    let cases = vec![case(
+        "a scalar added with a stray properties map holding an object with an unknown required",
+        document_type_schema(
+            platform_value!({ "a": string(0, 10) }),
+            platform_value!(["a"]),
+        ),
+        document_type_schema(
+            with_meta(object(
+                platform_value!({
+                    "s": with(
+                        string(0, 10),
+                        "properties",
+                        platform_value!({
+                            "o": object(
+                                platform_value!({ "k": boolean(0) }),
+                                0,
+                                Some(platform_value!(["zzz"])),
+                            ),
+                        }),
+                    ),
+                }),
+                1,
+                None,
+            )),
+            platform_value!(["a"]),
+        ),
+        Expected::Accepted,
+    )];
+    run(&cases, PlatformVersion::latest());
+}
+
+/// An object an update adds may not require more members than its `maxProperties` lets it
+/// hold, as an object the type already has may not.
+#[test]
+fn should_hold_an_object_an_update_adds_to_its_max_properties() {
+    let cases = vec![case(
+        "an object added requiring two members with maxProperties 1",
+        document_type_schema(
+            platform_value!({ "a": string(0, 10) }),
+            platform_value!(["a"]),
+        ),
+        document_type_schema(
+            with_meta(with(
+                object(
+                    platform_value!({ "y": boolean(0), "z": integer(1) }),
+                    1,
+                    Some(platform_value!(["y", "z"])),
+                ),
+                "maxProperties",
+                Value::U32(1),
+            )),
+            platform_value!(["a"]),
+        ),
+        Expected::Refused(10276, "maxProperties"),
     )];
     run(&cases, PlatformVersion::latest());
 }

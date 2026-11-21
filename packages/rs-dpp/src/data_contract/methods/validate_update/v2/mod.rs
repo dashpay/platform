@@ -29,9 +29,10 @@ impl DataContract {
     /// The rule is about an update that submits schemas. A token configuration update submits
     /// none and stores the stored schemas and `$defs` as they are, so it does not come here.
     ///
-    /// Once generation 1 accepts the update, the objects the contract gains list their members
-    /// at consecutive positions in map order, as at registration, and an object the contract has
-    /// keeps its members' order and gains new ones at its next free positions
+    /// Once generation 1 accepts the update, the `required` lists of a document type it adds keep
+    /// the rules of those of an object an update adds; the objects the contract gains list their
+    /// members at consecutive positions in map order, as at registration, and an object the
+    /// contract has keeps its members' order and gains new ones at its next free positions
     /// ([`MemberPositionOrder`]).
     ///
     /// Delegating to generation 1 is safe because that generation is shipped and therefore
@@ -55,7 +56,33 @@ impl DataContract {
             return Ok(result);
         }
 
-        Ok(self.validate_update_member_position_order(new_data_contract))
+        let result = self.validate_update_required_lists_of_added_types(new_data_contract);
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        Ok(self.validate_update_member_position_order(new_data_contract, platform_version))
+    }
+
+    /// Refuses the update when a document type it adds has a `required` list naming a dotted
+    /// name, or the list of an object written inline naming a name that is not one of its
+    /// members or more names than its `maxProperties`, as an object it adds to a type the
+    /// contract has may not (`validate_required_lists_of_added_type`).
+    fn validate_update_required_lists_of_added_types(
+        &self,
+        new_data_contract: &DataContract,
+    ) -> SimpleConsensusValidationResult {
+        new_data_contract
+            .document_types()
+            .iter()
+            .filter(|(name, _)| !self.document_types().contains_key(*name))
+            .map(|(_, document_type)| {
+                document_type
+                    .as_ref()
+                    .validate_required_lists_of_added_type()
+            })
+            .find(|result| !result.is_valid())
+            .unwrap_or_default()
     }
 
     /// Refuses the update when an object of a document type's schema, or of the `$defs`, that
@@ -70,6 +97,7 @@ impl DataContract {
     fn validate_update_member_position_order(
         &self,
         new_data_contract: &DataContract,
+        platform_version: &PlatformVersion,
     ) -> SimpleConsensusValidationResult {
         let refusal = |error: MemberPositionOrderError, document_type_name: Option<&str>| {
             let error = match (error, document_type_name) {
@@ -102,7 +130,11 @@ impl DataContract {
             SimpleConsensusValidationResult::new_with_error(error)
         };
 
-        let judge = MemberPositionOrder::new(new_data_contract.schema_defs());
+        let judge = MemberPositionOrder::new(
+            self.schema_defs(),
+            new_data_contract.schema_defs(),
+            platform_version,
+        );
         for (name, new_document_type) in new_data_contract.document_types() {
             let old_schema = self
                 .document_types()
@@ -114,7 +146,7 @@ impl DataContract {
                 return refusal(error, Some(name));
             }
         }
-        if let Some((_, error)) = judge.first_error_of_definitions(self.schema_defs()) {
+        if let Some((_, error)) = judge.first_error_of_definitions() {
             return refusal(error, None);
         }
 
@@ -984,7 +1016,8 @@ mod tests {
     }
 
     /// An object an existing object gains is held to consecutive positions, as one a type gains
-    /// is; a reordered definition a type references is refused through that type.
+    /// is; a definition a type references, reordered or gaining a member at another position than
+    /// its next free one, is refused through that type.
     #[test]
     fn should_hold_an_object_an_existing_object_gains_and_a_referenced_definition() {
         let stored = platform_value!({
@@ -1059,21 +1092,258 @@ mod tests {
             "properties": { "p": { "$ref": "#/$defs/m", "position": 0 } },
             "additionalProperties": false,
         });
-        let (stored_contract, updated) = stored_and_updated(
-            referencing.clone(),
-            Some(definition(vec![("a", 0), ("b", 1)])),
-            referencing,
-            Some(definition(vec![("b", 1), ("a", 0)])),
-            platform_version,
+        for (case, new_definition) in [
+            ("reordered", definition(vec![("b", 1), ("a", 0)])),
+            (
+                "gaining a member at another position",
+                definition(vec![("a", 0), ("b", 1), ("c", 5)]),
+            ),
+        ] {
+            let (stored_contract, updated) = stored_and_updated(
+                referencing.clone(),
+                Some(definition(vec![("a", 0), ("b", 1)])),
+                referencing.clone(),
+                Some(new_definition),
+                platform_version,
+            );
+            let result = stored_contract
+                .validate_update(&updated, &BlockInfo::default(), platform_version)
+                .expect("expected the update to be judged");
+            assert!(
+                matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::StateError(
+                        StateError::DocumentTypeUpdateError(_)
+                    )]
+                ),
+                "{case}: {:?}",
+                result.errors
+            );
+        }
+    }
+
+    fn string_at(position: u64) -> Value {
+        platform_value!({ "type": "string", "maxLength": 10, "position": position })
+    }
+
+    fn object_of(members: Vec<(&str, Value)>) -> Value {
+        let members = members
+            .into_iter()
+            .map(|(name, member)| (text(name), member))
+            .collect();
+        platform_value!({
+            "type": "object",
+            "properties": Value::Map(members),
+            "additionalProperties": false,
+        })
+    }
+
+    fn with_position(mut schema: Value, position: u64) -> Value {
+        schema
+            .insert("position".to_string(), Value::U64(position))
+            .expect("expected a map");
+        schema
+    }
+
+    fn type_with(properties: Vec<(&str, Value)>) -> Value {
+        let mut schema = object_of(properties);
+        schema
+            .insert("required".to_string(), Value::Array(vec![]))
+            .expect("expected a map");
+        schema
+    }
+
+    /// An object a type takes through a `$ref` it keeps is held to the rule of an object the
+    /// contract has (a member it gains takes its next free position) wherever it sits: beneath a
+    /// schema the definitions walk does not enter (the `properties` written on a scalar), or in
+    /// the type's own schema, which a pointer a contract registered before protocol version 15
+    /// may name. Protocol version 14 does not judge positions.
+    #[test]
+    fn should_hold_the_object_a_kept_ref_points_at_to_its_next_free_position() {
+        let scalar_holding = |inner: Value| {
+            platform_value!({
+                "type": "string",
+                "maxLength": 5,
+                "properties": { "inner": with_position(inner, 0) },
+            })
+        };
+        let stored_inner = object_of(vec![("a", string_at(0))]);
+        let new_inner = object_of(vec![("a", string_at(0)), ("c", string_at(5))]);
+        let in_definitions = |inner: Value| {
+            (
+                type_with(vec![(
+                    "p",
+                    platform_value!({ "$ref": "#/$defs/s/properties/inner", "position": 0 }),
+                )]),
+                Some(BTreeMap::from([("s".to_string(), scalar_holding(inner))])),
+            )
+        };
+        let in_the_type = |inner: Value| {
+            (
+                type_with(vec![
+                    ("s", with_position(scalar_holding(inner), 0)),
+                    (
+                        "p",
+                        platform_value!({
+                            "$ref": "#/properties/s/properties/inner",
+                            "position": 1,
+                        }),
+                    ),
+                ]),
+                None,
+            )
+        };
+        for (case, (stored_schema, stored_definitions), (new_schema, new_definitions)) in [
+            (
+                "a pointer into $defs",
+                in_definitions(stored_inner.clone()),
+                in_definitions(new_inner.clone()),
+            ),
+            (
+                "a pointer into the type's schema",
+                in_the_type(stored_inner.clone()),
+                in_the_type(new_inner.clone()),
+            ),
+        ] {
+            for platform_version in [
+                PlatformVersion::get(14).expect("expected protocol version 14"),
+                PlatformVersion::latest(),
+            ] {
+                let (stored, updated) = stored_and_updated(
+                    stored_schema.clone(),
+                    stored_definitions.clone(),
+                    new_schema.clone(),
+                    new_definitions.clone(),
+                    platform_version,
+                );
+                let result = stored
+                    .validate_update(&updated, &BlockInfo::default(), platform_version)
+                    .expect("expected the update to be judged");
+                if platform_version.protocol_version < 15 {
+                    assert!(result.is_valid(), "{case}: {:?}", result.errors);
+                    continue;
+                }
+                assert!(
+                    matches!(
+                        result.errors.as_slice(),
+                        [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                            if e.additional_message().contains("next free position, 1")
+                    ),
+                    "{case}: {:?}",
+                    result.errors
+                );
+            }
+        }
+    }
+
+    /// The `required` lists of a document type an update adds are held as an object an update
+    /// adds to a type is: they name only members their object has, and no more than its
+    /// `maxProperties` lets it hold.
+    #[test]
+    fn should_hold_the_required_lists_of_a_document_type_an_update_adds() {
+        let platform_version = PlatformVersion::latest();
+        let stored = type_with(vec![("q", string_at(0))]);
+        for (case, meta, fragment) in [
+            (
+                "an inline object requiring a name it does not have",
+                platform_value!({
+                    "type": "object",
+                    "position": 0,
+                    "properties": { "y": { "type": "boolean", "position": 0 } },
+                    "required": ["w"],
+                    "additionalProperties": false,
+                }),
+                "'w'",
+            ),
+            (
+                "an inline object requiring more members than its maxProperties",
+                platform_value!({
+                    "type": "object",
+                    "position": 0,
+                    "properties": {
+                        "y": { "type": "boolean", "position": 0 },
+                        "z": { "type": "boolean", "position": 1 },
+                    },
+                    "required": ["y", "z"],
+                    "maxProperties": 1,
+                    "additionalProperties": false,
+                }),
+                "maxProperties",
+            ),
+        ] {
+            let (stored_contract, mut updated) =
+                stored_and_updated(stored.clone(), None, stored.clone(), None, platform_version);
+            updated
+                .set_document_schema(
+                    "added",
+                    type_with(vec![("meta", meta)]),
+                    false,
+                    &mut Vec::new(),
+                    platform_version,
+                )
+                .expect("expected the new type to be set");
+            let result = stored_contract
+                .validate_update(&updated, &BlockInfo::default(), platform_version)
+                .expect("expected the update to be judged");
+            assert!(
+                matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::DataContractInvalidRequiredFieldsUpdateError(e)
+                    )] if e.details().contains(fragment)
+                ),
+                "{case}: {:?}",
+                result.errors
+            );
+        }
+    }
+
+    /// A position a contract stored before protocol version 15 that no integer reads (a float
+    /// such as 2^64) leaves the object's next free position unknown. The object keeps the rule
+    /// of an object stored earlier: its members keep their order and the members an update adds
+    /// come after them and follow one another, whatever position the first one takes.
+    #[test]
+    fn should_keep_an_object_whose_stored_position_no_integer_reads_updatable() {
+        let unreadable = platform_value!({
+            "type": "string",
+            "maxLength": 10,
+            "position": 18446744073709551616.0_f64,
+        });
+        let stored = type_with(vec![(
+            "meta",
+            with_position(
+                object_of(vec![("a", unreadable.clone()), ("b", string_at(3))]),
+                0,
+            ),
+        )]);
+        let with_added = |added: Vec<(&str, Value)>| {
+            let mut members = vec![("a", unreadable.clone()), ("b", string_at(3))];
+            members.extend(added);
+            type_with(vec![("meta", with_position(object_of(members), 0))])
+        };
+        for (case, updated) in [
+            ("a member at 7", with_added(vec![("c", string_at(7))])),
+            (
+                "two members at 7 and 8",
+                with_added(vec![("c", string_at(7)), ("d", string_at(8))]),
+            ),
+        ] {
+            let result = judge(stored.clone(), updated);
+            assert!(result.is_valid(), "{case}: {:?}", result.errors);
+        }
+        let result = judge(
+            stored,
+            with_added(vec![("c", string_at(7)), ("d", string_at(9))]),
         );
-        let result = stored_contract
-            .validate_update(&updated, &BlockInfo::default(), platform_version)
-            .expect("expected the update to be judged");
-        assert_matches!(
-            result.errors.as_slice(),
-            [ConsensusError::StateError(
-                StateError::DocumentTypeUpdateError(_)
-            )]
+        assert!(
+            matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(_)
+                )]
+            ),
+            "added members leaving a gap: {:?}",
+            result.errors
         );
     }
 }

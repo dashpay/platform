@@ -92,6 +92,28 @@ impl DocumentTypeRef<'_> {
         }
     }
 
+    /// The `required` lists of a document type the update adds, which no stored document holds,
+    /// keep the rules of the lists of an object an update adds to a type it has: no list names a
+    /// dotted name, the type's own included, and the list of an object written inline names
+    /// only its members, and no more of them than its `maxProperties`. The type's own list may
+    /// also name system properties, and is not checked against its properties here.
+    pub(crate) fn validate_required_lists_of_added_type(&self) -> SimpleConsensusValidationResult {
+        match first_required_list_change(
+            &IndexMap::new(),
+            self.properties(),
+            &Value::Null,
+            self.schema(),
+            None,
+            self.required_fields(),
+        ) {
+            Some(details) => SimpleConsensusValidationResult::new_with_error(
+                DataContractInvalidRequiredFieldsUpdateError::new(self.name().clone(), details)
+                    .into(),
+            ),
+            None => SimpleConsensusValidationResult::new(),
+        }
+    }
+
     /// Every member an object keeps stays required or optional as it was, and keeps whether it
     /// is required at every contract version or from one (`always_required`), which decides
     /// whether it is stored with a presence byte; every member an
@@ -479,12 +501,16 @@ fn first_required_list_change(
 }
 
 /// The first dotted name in an entry of `new_schema`'s `properties`, as written, that
-/// `old_schema`'s does not have, at any depth below the entries both have.
+/// `old_schema`'s does not have, at any depth below the entries both have, a schema written
+/// inline with another type than `object` holding none.
 fn first_dotted_name_in_entries_added(
     old_schema: &Value,
     new_schema: &Value,
     path: Option<&str>,
 ) -> Option<String> {
+    if is_inline_scalar(new_schema) {
+        return None;
+    }
     let old_entries = properties_as_written(old_schema);
     properties_as_written(new_schema)
         .into_iter()
@@ -549,17 +575,28 @@ fn holding_object_refusal(schema: &Value, path: &str) -> Option<String> {
     None
 }
 
-/// The first `required` name in the object the update adds at `path`, whose schema is `schema`,
-/// or in an object written inside it (beside a `$ref` too), that no document could meet: a
-/// dotted name, which the validator reads as a property named with a dot, and, when
-/// `inline_members_known`, a name an object written inline does not list among its members. An
-/// entry written beside a `$ref` restates members its definition supplies, so its names are not
-/// checked against the entry's own `properties`.
+/// The first `required` list in the object the update adds at `path`, whose schema is `schema`,
+/// or in an object written inside it (beside a `$ref` too), that no document could meet: one
+/// naming a dotted name, which the validator reads as a property named with a dot, or more
+/// names than the object's `maxProperties` lets it hold, and, when `inline_members_known`, one
+/// naming a name an object written inline does not list among its members. An entry written
+/// beside a `$ref` restates members its definition supplies, so its names are not checked
+/// against the entry's own `properties`. A schema written inline with another type than
+/// `object` holds no members: the validator reads neither the `required` nor the `properties`
+/// written on it, and what the parser collects from them names no member it parses, so the walk
+/// stops there.
 fn first_unmet_name_in_added_object(
     schema: &Value,
     path: &str,
     inline_members_known: bool,
 ) -> Option<String> {
+    if is_inline_scalar(schema) {
+        return None;
+    }
+    let declared_type = schema
+        .as_map()
+        .and_then(|schema| schema.get_optional_key(TYPE))
+        .and_then(Value::as_text);
     let names = required_names(schema);
     if let Some(dotted) = names.iter().find(|name| name.contains('.')) {
         return Some(format!(
@@ -568,12 +605,16 @@ fn first_unmet_name_in_added_object(
              name as a property named with a dot, which no document can hold"
         ));
     }
-    let is_inline_object = !has_ref(schema)
-        && schema
-            .as_map()
-            .and_then(|schema| schema.get_optional_key(TYPE))
-            .and_then(Value::as_text)
-            == Some("object");
+    if let Some(max_properties) = max_properties(schema) {
+        if names.len() as u64 > max_properties {
+            return Some(format!(
+                "the required of '{path}' names {} members, more than the {max_properties} its \
+                 object may hold (maxProperties), so no document could hold the object",
+                names.len()
+            ));
+        }
+    }
+    let is_inline_object = !has_ref(schema) && declared_type == Some("object");
     if inline_members_known && is_inline_object {
         let members = inline_member_schemas(schema);
         if let Some(unknown) = names.iter().find(|name| !members.contains_key(*name)) {
@@ -587,8 +628,9 @@ fn first_unmet_name_in_added_object(
         .as_map()
         .and_then(|schema| schema.get_optional_key(PROPERTIES))
         .and_then(Value::as_map)?;
-    // The members written beside a `$ref` restate the definition's
-    let inline_members_known = inline_members_known && !has_ref(schema);
+    // Only an object written inline lists its members; those written beside a `$ref` restate
+    // the definition's
+    let inline_members_known = inline_members_known && is_inline_object;
     members.iter().find_map(|(name, member)| {
         first_unmet_name_in_added_object(
             member,
@@ -623,6 +665,17 @@ fn inline_member_schemas(schema: &Value) -> BTreeMap<&str, &Value> {
         }
     }
     members
+}
+
+/// Whether `schema` declares a type other than `object` without a `$ref`: the parser reads the
+/// schema a `$ref` points at, whatever `type` is written beside it.
+fn is_inline_scalar(schema: &Value) -> bool {
+    !has_ref(schema)
+        && schema
+            .as_map()
+            .and_then(|schema| schema.get_optional_key(TYPE))
+            .and_then(Value::as_text)
+            .is_some_and(|declared_type| declared_type != "object")
 }
 
 fn has_ref(schema: &Value) -> bool {

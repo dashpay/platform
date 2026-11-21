@@ -1783,17 +1783,19 @@ fn should_keep_every_deployed_contract_updatable_under_the_member_order_rule() {
     let mut unregistrable = BTreeSet::new();
     for case in written_cases().into_iter().chain(corpus_cases()) {
         let defs = case.schema_defs().unwrap();
-        let judge = MemberPositionOrder::new(defs.as_ref());
         let schema = Value::from(case.schema.clone());
+        let judge =
+            MemberPositionOrder::new(defs.as_ref(), defs.as_ref(), PlatformVersion::latest());
         if judge
             .first_error_of_document_type(Some(&schema), &schema)
             .is_some()
-            || judge.first_error_of_definitions(defs.as_ref()).is_some()
+            || judge.first_error_of_definitions().is_some()
         {
             unupdatable.push(case.origin.clone());
         }
-        if judge.first_error_of_document_type(None, &schema).is_some()
-            || judge.first_error_of_definitions(None).is_some()
+        if MemberPositionOrder::new(None, defs.as_ref(), PlatformVersion::latest())
+            .first_error_of_registration([&schema])
+            .is_some()
         {
             unregistrable.insert(case.contract_id.to_string(Encoding::Base58));
         }
