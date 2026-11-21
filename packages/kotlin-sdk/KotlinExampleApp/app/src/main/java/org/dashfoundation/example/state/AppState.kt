@@ -171,21 +171,41 @@ class AppState(
     /** Drops a quorum-source read that a later refresh superseded. */
     private val quorumSourceReads = LatestRead()
 
+    /**
+     * The network this session starts on in place of the saved one, set by
+     * [leaveSavedNetwork] so the way out works even when saving fails.
+     * Cleared by the next successful [switchNetwork].
+     */
+    private var sessionNetworkOverride: Network? = null
+
+    /**
+     * The devnet settings the last successful devnet build used, as saved;
+     * the launch SDK is built from these, never from edits not applied.
+     */
+    private var savedAppliedDevnet: AppliedDevnet? = null
+
     /** Restore persisted preferences; called once from bootstrap. */
     suspend fun restorePreferences() {
         val prefs = dataStore.data.first()
         prefs[KEY_NETWORK]?.let { name ->
             Network.fromNetworkName(name)?.let { _currentNetwork.value = it }
         }
+        sessionNetworkOverride?.let { _currentNetwork.value = it }
         _useDockerSetup.value = prefs[KEY_DOCKER] ?: false
         _useLocalhostCore.value = prefs[KEY_USE_LOCAL_CORE] ?: false
         _localCorePeers.value = prefs[KEY_LOCAL_CORE_PEERS] ?: ""
         _devnetName.value = prefs[KEY_DEVNET_NAME] ?: ""
         _devnetQuorumUrl.value = prefs[KEY_DEVNET_QUORUM_URL] ?: ""
+        savedAppliedDevnet = prefs[KEY_APPLIED_DEVNET_QUORUM_URL]
+            ?.takeIf { it.isNotBlank() }
+            ?.let { AppliedDevnet(prefs[KEY_APPLIED_DEVNET_NAME]?.takeIf(String::isNotBlank), it) }
         // A saved Devnet choice whose settings are missing or refused could
         // never build an SDK: start on the default network instead. Other
         // launch failures offer the same way out (AppRoot).
-        if (_currentNetwork.value == Network.DEVNET && !devnetSettingsResolve()) {
+        if (_currentNetwork.value == Network.DEVNET &&
+            savedAppliedDevnet == null &&
+            !devnetSettingsResolve()
+        ) {
             _currentNetwork.value = Network.DEFAULT
         }
         prefs[KEY_QUORUM_MODE]?.let { QuorumMode.fromRawValue(it) }?.let { _quorumMode.value = it }
@@ -201,7 +221,11 @@ class AppState(
         dapiAddresses: String? = null,
         quorumUrl: String? = null,
     ) {
-        sdkLock.withLock { buildAndPublishSdk(network, dapiAddresses, quorumUrl) }
+        sdkLock.withLock {
+            // At launch, a devnet starts from the settings it last applied.
+            val applied = savedAppliedDevnet.takeIf { quorumUrl.isNullOrBlank() }
+            buildAndPublishSdk(network, dapiAddresses, quorumUrl, devnetSnapshot = applied)
+        }
     }
 
     private suspend fun buildAndPublishSdk(
@@ -209,6 +233,7 @@ class AppState(
         dapiAddresses: String?,
         quorumUrl: String?,
         saveNetwork: Boolean = false,
+        devnetSnapshot: AppliedDevnet? = null,
     ) {
         _isLoading.value = true
         try {
@@ -219,10 +244,7 @@ class AppState(
             // the SDK: an edit made during the build waits for the next Apply.
             val explicitQuorumUrl = quorumUrl?.takeIf { it.isNotBlank() }
             val devnet = if (network == Network.DEVNET) {
-                val name = devnetNameOrNull()
-                val url = resolveDevnetQuorumUrl(name, explicitQuorumUrl ?: _devnetQuorumUrl.value)
-                    ?: throw IllegalStateException(DEVNET_SETTINGS_MISSING)
-                AppliedDevnet(name, url)
+                devnetSnapshot ?: devnetSettingsSnapshot(explicitQuorumUrl)
             } else {
                 null
             }
@@ -266,6 +288,7 @@ class AppState(
                 // is published, the old one is closed and the network saved.
                 withContext(NonCancellable) {
                     if (saveNetwork) saveNetworkChoice(network)
+                    if (devnet != null) saveAppliedDevnet(devnet)
                     // Suspending close: awaits queries already in flight
                     // against the old instance (they run under
                     // Sdk.queryGate), so the native handle is never freed
@@ -311,6 +334,33 @@ class AppState(
     }
 
     /**
+     * The devnet name and quorum URL from the settings fields, read
+     * together; [explicitQuorumUrl] replaces the URL field when set.
+     */
+    private fun devnetSettingsSnapshot(explicitQuorumUrl: String?): AppliedDevnet {
+        val name = devnetNameOrNull()
+        val url = resolveDevnetQuorumUrl(name, explicitQuorumUrl ?: _devnetQuorumUrl.value)
+            ?: throw IllegalStateException(DEVNET_SETTINGS_MISSING)
+        return AppliedDevnet(name, url)
+    }
+
+    /**
+     * Save [devnet] as the settings the next launch builds its devnet SDK
+     * from. A failed save is logged: this session already runs on them.
+     */
+    private suspend fun saveAppliedDevnet(devnet: AppliedDevnet) {
+        savedAppliedDevnet = devnet
+        try {
+            dataStore.edit {
+                it[KEY_APPLIED_DEVNET_NAME] = devnet.name.orEmpty()
+                it[KEY_APPLIED_DEVNET_QUORUM_URL] = devnet.quorumUrl
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("AppState", "could not save the applied devnet settings: ${e.message}")
+        }
+    }
+
+    /**
      * Save [network] as the network to start on. A failed save only shows
      * in [errorMessage]: the switch itself already happened.
      */
@@ -340,6 +390,7 @@ class AppState(
             // Publishing the SDK also makes its network the current one and
             // saves it, even if this call is cancelled after publishing.
             buildAndPublishSdk(network, dapiAddresses, quorumUrl, saveNetwork = true)
+            sessionNetworkOverride = null
         }
     }
 
@@ -358,15 +409,26 @@ class AppState(
 
     /**
      * Leave a saved network the app cannot start on — the launch error
-     * screen's way out. Saves [Network.DEFAULT] as the network; wallets and
-     * every other setting, the devnet ones included, stay as they are.
+     * screen's way out. This session starts on [Network.DEFAULT], which is
+     * also saved; wallets and every other setting, the devnet ones
+     * included, stay as they are.
+     *
+     * @return null, or a message saying the choice could not be saved (the
+     *   session still starts on [Network.DEFAULT])
      */
-    suspend fun leaveSavedNetwork() {
+    suspend fun leaveSavedNetwork(): String? =
         sdkLock.withLock {
-            dataStore.edit { it[KEY_NETWORK] = Network.DEFAULT.networkName }
+            sessionNetworkOverride = Network.DEFAULT
             _currentNetwork.value = Network.DEFAULT
+            try {
+                dataStore.edit { it[KEY_NETWORK] = Network.DEFAULT.networkName }
+                null
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                "Started on ${Network.DEFAULT.displayName} for now, but could not save it: ${e.message}"
+            }
         }
-    }
 
     /**
      * Pick the quorum source — port of the Swift `AppState.quorumMode`
@@ -578,6 +640,11 @@ class AppState(
         _rebindTick.value += 1
     }
 
+    /** Show [message] as the app's error. */
+    fun showError(message: String) {
+        _errorMessage.value = message
+    }
+
     fun clearError() {
         _errorMessage.value = null
     }
@@ -611,5 +678,10 @@ class AppState(
         private val KEY_QUORUM_MODE = stringPreferencesKey("quorumMode")
         private val KEY_DEVNET_NAME = stringPreferencesKey("platformDevnetName")
         private val KEY_DEVNET_QUORUM_URL = stringPreferencesKey("platformQuorumURL")
+
+        // The devnet settings the last successful devnet build used (no iOS
+        // counterpart: iOS rebuilds from the fields on launch).
+        private val KEY_APPLIED_DEVNET_NAME = stringPreferencesKey("appliedDevnetName")
+        private val KEY_APPLIED_DEVNET_QUORUM_URL = stringPreferencesKey("appliedDevnetQuorumURL")
     }
 }

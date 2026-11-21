@@ -105,8 +105,9 @@ fun AppRoot() {
                 OutlinedButton(
                     onClick = {
                         scope.launch {
-                            container.appState.leaveSavedNetwork()
+                            val notSaved = container.appState.leaveSavedNetwork()
                             container.bootstrap()
+                            notSaved?.let(container.appState::showError)
                         }
                     },
                     modifier = Modifier.testTag("bootstrap.useDefaultNetwork"),

@@ -1516,10 +1516,16 @@ mod devnet_quorum_base_url_tests {
     use crate::dash_sdk_error_free;
     use std::ffi::CString;
 
-    /// The devnet URL from `dash_sdk_devnet_quorum_base_url`, or its error message.
-    fn devnet_quorum_base_url(name: &str) -> Result<String, String> {
+    /// The devnet URL from `dash_sdk_devnet_quorum_base_url`, or its error
+    /// code and message.
+    fn devnet_quorum_base_url(name: &str) -> Result<String, (DashSDKErrorCode, String)> {
         let name = CString::new(name).expect("test names have no NUL");
-        let result = unsafe { dash_sdk_devnet_quorum_base_url(name.as_ptr()) };
+        call(name.as_ptr())
+    }
+
+    /// Call the C entry point on a raw pointer, freeing what it returns.
+    fn call(name: *const std::os::raw::c_char) -> Result<String, (DashSDKErrorCode, String)> {
+        let result = unsafe { dash_sdk_devnet_quorum_base_url(name) };
         if result.error.is_null() {
             let url = unsafe { CStr::from_ptr(result.data as *const std::os::raw::c_char) }
                 .to_string_lossy()
@@ -1527,11 +1533,12 @@ mod devnet_quorum_base_url_tests {
             unsafe { crate::dash_sdk_string_free(result.data as *mut std::os::raw::c_char) };
             Ok(url)
         } else {
+            let code = unsafe { (*result.error).code };
             let message = unsafe { CStr::from_ptr((*result.error).message) }
                 .to_string_lossy()
                 .into_owned();
             unsafe { dash_sdk_error_free(result.error) };
-            Err(message)
+            Err((code, message))
         }
     }
 
@@ -1553,18 +1560,30 @@ mod devnet_quorum_base_url_tests {
             "-palmatum",
             "palm.atum",
             "a/b",
+            "\u{FF4D}\u{FF41}\u{FF49}\u{FF4E}\u{FF4E}\u{FF45}\u{FF54}",
         ] {
-            assert!(
-                devnet_quorum_base_url(name).is_err(),
-                "{name:?} must be refused"
+            assert_eq!(
+                devnet_quorum_base_url(name).map_err(|(code, _)| code),
+                Err(DashSDKErrorCode::InvalidParameter),
+                "{name:?} must be refused as an invalid parameter"
             );
         }
     }
 
     #[test]
     fn should_refuse_a_null_devnet_name() {
-        let result = unsafe { dash_sdk_devnet_quorum_base_url(std::ptr::null()) };
-        assert!(!result.error.is_null());
-        unsafe { dash_sdk_error_free(result.error) };
+        assert_eq!(
+            call(std::ptr::null()).map_err(|(code, _)| code),
+            Err(DashSDKErrorCode::InvalidParameter)
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_devnet_name_that_is_not_utf8() {
+        let bytes: &[u8] = b"palm\xFFatum\0";
+        assert_eq!(
+            call(bytes.as_ptr().cast()).map_err(|(code, _)| code),
+            Err(DashSDKErrorCode::InvalidParameter)
+        );
     }
 }

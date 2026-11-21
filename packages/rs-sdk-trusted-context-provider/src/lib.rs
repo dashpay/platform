@@ -48,15 +48,19 @@ pub fn get_quorum_base_url(
         Network::Testnet => Ok("https://quorums.testnet.networks.dash.org".to_string()),
         Network::Devnet => {
             if let Some(name) = devnet_name {
-                // Validate devnet name format: must be alphanumeric with hyphens allowed
+                // Validate devnet name format: ASCII letters, digits and hyphens.
+                // Unicode letters are refused: URL and IDNA parsers fold some
+                // of them (fullwidth Latin) to ASCII, which would let a name
+                // pass the reserved check below and still reach, say, the
+                // mainnet quorum host.
                 if name.is_empty() {
                     return Err(TrustedContextProviderError::InvalidDevnetName(
                         "Devnet name cannot be empty".to_string(),
                     ));
                 }
-                if !name.chars().all(|c| c.is_alphanumeric() || c == '-') {
+                if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
                     return Err(TrustedContextProviderError::InvalidDevnetName(
-                        "Devnet name must contain only alphanumeric characters and hyphens"
+                        "Devnet name must contain only ASCII letters, digits and hyphens"
                             .to_string(),
                     ));
                 }
@@ -89,5 +93,32 @@ pub fn get_quorum_base_url(
         Network::Regtest => Err(TrustedContextProviderError::UnsupportedNetwork(
             "Regtest network is not supported by trusted context provider".to_string(),
         )),
+    }
+}
+
+#[cfg(test)]
+mod quorum_base_url_tests {
+    use super::*;
+
+    #[test]
+    fn should_refuse_a_devnet_name_that_folds_to_a_reserved_name() {
+        // Fullwidth "mainnet": alphanumeric in Unicode, and IDNA maps it to
+        // "mainnet", so it must not pass as a devnet name.
+        let fullwidth_mainnet = "\u{FF4D}\u{FF41}\u{FF49}\u{FF4E}\u{FF4E}\u{FF45}\u{FF54}";
+        for name in [fullwidth_mainnet, "d\u{E9}vnet", "palmat\u{FF55}m"] {
+            assert!(
+                matches!(
+                    get_quorum_base_url(Network::Devnet, Some(name)),
+                    Err(TrustedContextProviderError::InvalidDevnetName(_))
+                ),
+                "{name:?} must be refused"
+            );
+        }
+        assert_eq!(
+            get_quorum_base_url(Network::Devnet, Some("palmatum-2"))
+                .ok()
+                .as_deref(),
+            Some("https://quorums.palmatum-2.networks.dash.org")
+        );
     }
 }

@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.preferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import java.io.File
 import java.io.IOException
@@ -262,6 +263,57 @@ class AppStateDevnetSettingsTest {
             assertEquals("Could not save the setting: disk full", appState.errorMessage.value)
         } finally {
             job.cancelAndJoin()
+        }
+    }
+
+    @Test
+    fun shouldLeaveASavedNetworkForThisSessionWhenSavingFails() = runTest {
+        val job = SupervisorJob()
+        val scope = CoroutineScope(job + StandardTestDispatcher(testScheduler))
+        val savedDevnet = preferencesOf(
+            stringPreferencesKey("currentNetwork") to Network.DEVNET.networkName,
+            stringPreferencesKey("platformDevnetName") to "palmatum",
+        )
+        val readOnly = object : DataStore<Preferences> {
+            override val data = flowOf(savedDevnet)
+            override suspend fun updateData(
+                transform: suspend (t: Preferences) -> Preferences,
+            ): Preferences = throw IOException("read-only")
+        }
+        val appState = AppState(readOnly, scope, ::fakeDevnetQuorumBaseUrl)
+        try {
+            appState.restorePreferences()
+            assertEquals(Network.DEVNET, appState.currentNetwork.value)
+
+            val notSaved = appState.leaveSavedNetwork()
+            assertTrue(notSaved.orEmpty().contains("read-only"))
+            // Bootstrap restores the preferences again: the saved Devnet
+            // must not come back this session.
+            appState.restorePreferences()
+            assertEquals(Network.DEFAULT, appState.currentNetwork.value)
+            assertEquals("palmatum", appState.devnetName.value)
+        } finally {
+            job.cancelAndJoin()
+        }
+    }
+
+    @Test
+    fun shouldStartOnTheLastAppliedDevnetEvenWhenTheFieldsHoldARefusedEdit() = runTest {
+        val session = newSession(File(temporaryFolder.root, "app.preferences_pb"))
+        try {
+            session.dataStore.edit {
+                it[stringPreferencesKey("currentNetwork")] = Network.DEVNET.networkName
+                // An edit that was never applied, and would be refused.
+                it[stringPreferencesKey("platformDevnetName")] = "mainnet"
+                it[stringPreferencesKey("appliedDevnetName")] = "palmatum"
+                it[stringPreferencesKey("appliedDevnetQuorumURL")] = PALMATUM_URL
+            }
+            advanceUntilIdle()
+            session.appState.restorePreferences()
+            assertEquals(Network.DEVNET, session.appState.currentNetwork.value)
+            assertEquals("mainnet", session.appState.devnetName.value)
+        } finally {
+            session.close()
         }
     }
 

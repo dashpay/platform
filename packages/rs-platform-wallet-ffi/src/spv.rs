@@ -554,6 +554,18 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
             config.peers.push(addr);
         }
     }
+    // Peers must be `IP:port`; others (such as hostnames) are skipped. With
+    // none left, a client restricted to them would never find a peer, so
+    // refuse the start instead of running one that cannot sync.
+    if restrict_to_configured_peers && config.peers.is_empty() {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!(
+                "no usable SPV peer: restrict_to_configured_peers needs at least one IP:port \
+                 address, got {peer_list:?}"
+            ),
+        );
+    }
     if let Some(name) = devnet_name_str.as_deref() {
         let mut devnet = DevnetConfig::new(name);
         if llmq_devnet_size > 0 {
@@ -621,6 +633,45 @@ where
             "manager was destroyed while SPV was starting",
         ),
         Err(error) => error.into(),
+    }
+}
+
+#[cfg(test)]
+mod spv_start_peer_tests {
+    use super::*;
+    use crate::handle::NULL_HANDLE;
+    use std::ffi::CString;
+
+    #[test]
+    fn should_refuse_a_restricted_start_with_no_usable_peer() {
+        let data_dir = CString::new("/nonexistent").expect("no NUL");
+        let hostname = CString::new("seed.example.org:19999").expect("no NUL");
+        let peers = [hostname.as_ptr()];
+        // Checked before the handle is looked up, so no manager is needed.
+        let mut result = unsafe {
+            platform_wallet_manager_spv_start(
+                NULL_HANDLE,
+                data_dir.as_ptr(),
+                FFINetwork::Testnet,
+                std::ptr::null(),
+                peers.as_ptr(),
+                peers.len(),
+                true,
+                0,
+                std::ptr::null(),
+                0,
+                0,
+            )
+        };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        let message = unsafe { CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert!(message.contains("seed.example.org:19999"), "{message}");
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
     }
 }
 
