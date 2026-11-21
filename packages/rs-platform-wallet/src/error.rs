@@ -7,12 +7,13 @@ use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIde
 use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
-use dpp::identity::Purpose;
 use dpp::prelude::{AddressNonce, CoreBlockHeight};
 use key_wallet::account::StandardAccountType;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::Network;
+
+use crate::wallet::masternode_withdrawal::MasternodeWithdrawalKey;
 
 pub use dash_sdk::platform::transition::asset_lock_submission::{
     as_asset_lock_proof_cl_height_too_low, as_state_transition_max_size_exceeded,
@@ -893,18 +894,28 @@ pub enum PlatformWalletError {
     #[error("the masternode list is not available yet")]
     MasternodeListUnavailable,
 
-    /// A masternode withdrawal's key is not one the owner identity holds,
-    /// enabled, for the withdrawal's purpose: not the node's current owner
-    /// or payout key. Nothing was broadcast. FFI maps it to the
-    /// invalid-parameter code, as the key is caller input.
+    /// The masternode owner identity has a current `key`, but the signing
+    /// key is not it. Nothing was sent. FFI maps it to the invalid-parameter
+    /// code, as the key is caller input.
     #[error(
-        "this key is not the current {purpose} key of masternode identity {identity_id}; \
-         nothing was sent. Use the node's current owner or payout key (it may have been \
-         rotated)"
+        "this key is not the current {key} of masternode identity {identity_id}; nothing was \
+         sent. Use the node's current {key}: it may have changed"
     )]
     MasternodeWithdrawalKeyMismatch {
         identity_id: Identifier,
-        purpose: Purpose,
+        key: MasternodeWithdrawalKey,
+    },
+
+    /// The masternode owner identity has no current `key` at all, so no key
+    /// of that kind can withdraw. Nothing was sent. FFI maps it to the
+    /// invalid-parameter code.
+    #[error(
+        "masternode identity {identity_id} has no current {key}; nothing was sent. {}",
+        absent_withdrawal_key_advice(.key)
+    )]
+    MasternodeWithdrawalKeyAbsent {
+        identity_id: Identifier,
+        key: MasternodeWithdrawalKey,
     },
 
     #[error(
@@ -1259,6 +1270,17 @@ pub enum PlatformWalletError {
 
     #[error("Shielded sub-wallet not bound: call bind_shielded first")]
     ShieldedNotBound,
+}
+
+/// What to do when the owner identity has no current `key`.
+fn absent_withdrawal_key_advice(key: &MasternodeWithdrawalKey) -> &'static str {
+    match key {
+        MasternodeWithdrawalKey::Transfer => {
+            "Withdraw with the owner key: a node has a payout key only while it pays out to a \
+             single standard address"
+        }
+        MasternodeWithdrawalKey::Owner => "Withdraw with the payout key",
+    }
 }
 
 /// The SDK's invitation errors map onto the variants the wallet used before

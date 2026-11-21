@@ -308,10 +308,7 @@ impl PlatformWallet {
             )
         };
 
-        let address = Address::new(
-            self.network(),
-            Payload::PubkeyHash(PubkeyHash::from_byte_array(*key_hash160)),
-        );
+        let address = p2pkh_address(key_hash160, self.network());
         let manager = self.wallet_manager().read().await;
         let wallet = manager
             .get_wallet(&self.wallet_id())
@@ -445,6 +442,14 @@ fn private_key_bytes_at(
         )));
     }
     Ok(secret_bytes)
+}
+
+/// The P2PKH address paying `hash` on `network`.
+pub(crate) fn p2pkh_address(hash: &[u8; 20], network: Network) -> Address {
+    Address::new(
+        network,
+        Payload::PubkeyHash(PubkeyHash::from_byte_array(*hash)),
+    )
 }
 
 /// `bytes` as a secp256k1 secret key. Over just-derived bytes this cannot
