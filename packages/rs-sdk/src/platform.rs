@@ -45,7 +45,9 @@ pub mod yes_no_vote_polls;
 pub use dapi_grpc::platform::v0 as proto;
 #[cfg(feature = "mocks")]
 pub use dash_context_provider::MockContextProvider;
-pub use dash_context_provider::{ContextProvider, QuorumKeyFuture, QuorumKeySource};
+pub use dash_context_provider::{
+    ContextProvider, ContextProviderMode, QuorumKeyFuture, QuorumKeySource,
+};
 pub use documents::chained_document_query::ChainedDocumentQuery;
 pub use documents::composite_document_query::{
     CompositeBinding, CompositeBindingSource, CompositeSubQuery, CompositeSubQueryKind,

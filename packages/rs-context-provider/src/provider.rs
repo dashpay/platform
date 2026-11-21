@@ -230,6 +230,14 @@ pub trait ContextProvider: Send + Sync {
         None
     }
 
+    /// The mode last set with [`set_quorum_mode`](Self::set_quorum_mode), on
+    /// a provider that switches between sources at run time. Unlike
+    /// [`quorum_source`](Self::quorum_source) it never asks a source whether
+    /// it is ready, so it does not block. The default, `None`, has no mode.
+    fn quorum_mode(&self) -> Option<ContextProviderMode> {
+        None
+    }
+
     /// Change which source later quorum lookups use, on a provider that
     /// switches between sources at run time.
     ///
@@ -312,6 +320,10 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
 
     fn quorum_source(&self) -> Option<QuorumKeySource> {
         self.as_ref().quorum_source()
+    }
+
+    fn quorum_mode(&self) -> Option<ContextProviderMode> {
+        self.as_ref().quorum_mode()
     }
 
     fn set_quorum_mode(&self, mode: ContextProviderMode) -> Result<(), ContextProviderError> {
@@ -398,6 +410,11 @@ where
     fn quorum_source(&self) -> Option<QuorumKeySource> {
         let lock = self.lock().expect("lock poisoned");
         lock.quorum_source()
+    }
+
+    fn quorum_mode(&self) -> Option<ContextProviderMode> {
+        let lock = self.lock().expect("lock poisoned");
+        lock.quorum_mode()
     }
 
     fn set_quorum_mode(&self, mode: ContextProviderMode) -> Result<(), ContextProviderError> {

@@ -298,6 +298,10 @@ impl ContextProvider for AdaptiveContextProvider {
         })
     }
 
+    fn quorum_mode(&self) -> Option<ContextProviderMode> {
+        Some(self.mode())
+    }
+
     fn set_quorum_mode(&self, mode: ContextProviderMode) -> Result<(), ContextProviderError> {
         self.mode.store(mode as u8, Ordering::Release);
         Ok(())

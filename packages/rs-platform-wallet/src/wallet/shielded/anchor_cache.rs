@@ -33,9 +33,13 @@
 //! anchor for up to the TTL, where a fresh fetch would retry the node's luck.
 //!
 //! A third guard ties the set to how it was verified: it is dropped when the
-//! SDK's context provider is replaced or starts reporting another quorum
-//! source, so a spend never reuses evidence that an earlier verification
-//! policy accepted.
+//! SDK's context provider is replaced or its quorum mode is changed, so a
+//! spend never reuses evidence that an earlier verification policy accepted.
+//!
+//! An anchor pruned after the cached fetch can still be selected, where a
+//! fresh fetch would already omit it. Platform then rejects the spend after
+//! proving. That failure invalidates the cache; the notes stay reserved until
+//! sync resolves the spend.
 //!
 //! The spend path also refetches when the cached set covers none of the
 //! wallet's checkpoints, and drops the cache after any failed spend. The
@@ -47,7 +51,7 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError, Weak};
 use std::time::{Duration, Instant, SystemTime};
 
 use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
-use dash_sdk::platform::{ContextProvider, QuorumKeySource};
+use dash_sdk::platform::{ContextProvider, ContextProviderMode};
 
 /// How long a fetched recorded-anchor set may be reused by the spend path.
 ///
@@ -64,19 +68,20 @@ pub struct RecordedAnchorCache {
     state: Mutex<CacheState>,
 }
 
-/// What verifies the SDK's proofs: the installed context provider and the
-/// quorum source it reports, which an adaptive provider changes in place.
+/// What verifies the SDK's proofs: the installed context provider and its
+/// quorum mode, which an adaptive provider changes in place. Reading it never
+/// blocks.
 #[derive(Debug)]
 struct ProofPolicy {
     provider: Weak<dyn ContextProvider>,
-    quorum_source: Option<QuorumKeySource>,
+    quorum_mode: Option<ContextProviderMode>,
 }
 
 impl ProofPolicy {
     fn of(sdk: &dash_sdk::Sdk) -> Self {
         let provider = sdk.context_provider_arc();
         Self {
-            quorum_source: provider.quorum_source(),
+            quorum_mode: provider.quorum_mode(),
             provider: Arc::downgrade(&provider),
         }
     }
@@ -84,7 +89,7 @@ impl ProofPolicy {
 
 impl PartialEq for ProofPolicy {
     fn eq(&self, other: &Self) -> bool {
-        self.provider.ptr_eq(&other.provider) && self.quorum_source == other.quorum_source
+        self.provider.ptr_eq(&other.provider) && self.quorum_mode == other.quorum_mode
     }
 }
 
@@ -165,11 +170,12 @@ impl RecordedAnchorCache {
         Self::with_ttl(RECORDED_ANCHOR_CACHE_TTL)
     }
 
-    /// An empty cache with a custom TTL. A zero TTL disables reuse: every
-    /// spend fetches the set, as it did before this cache existed.
+    /// An empty cache with a shorter TTL, capped at
+    /// [`RECORDED_ANCHOR_CACHE_TTL`]. A zero TTL disables reuse: every spend
+    /// fetches the set, as it did before this cache existed.
     pub fn with_ttl(ttl: Duration) -> Self {
         Self {
-            ttl,
+            ttl: ttl.min(RECORDED_ANCHOR_CACHE_TTL),
             sdk: OnceLock::new(),
             state: Mutex::new(CacheState::default()),
         }
@@ -268,6 +274,7 @@ mod tests {
     use dash_sdk::dpp::prelude::{DataContract, Identifier};
     use dash_sdk::dpp::version::PlatformVersion;
     use dash_sdk::error::ContextProviderError;
+    use dash_sdk::platform::QuorumKeySource;
     use std::sync::atomic::Ordering;
 
     fn set(bytes: &[u8]) -> Arc<HashSet<[u8; 32]>> {
@@ -320,9 +327,13 @@ mod tests {
         }
 
         fn quorum_source(&self) -> Option<QuorumKeySource> {
+            panic!("the cache must not probe source readiness")
+        }
+
+        fn quorum_mode(&self) -> Option<ContextProviderMode> {
             Some(match self.0.load(Ordering::SeqCst) {
-                0 => QuorumKeySource::Trusted,
-                _ => QuorumKeySource::Spv,
+                0 => ContextProviderMode::Auto,
+                _ => ContextProviderMode::Spv,
             })
         }
     }
@@ -337,7 +348,7 @@ mod tests {
     }
 
     #[test]
-    fn should_drop_a_set_verified_before_the_provider_switched_quorum_source() {
+    fn should_drop_a_set_verified_before_the_provider_switched_quorum_mode() {
         let provider = Arc::new(SwitchingProvider::default());
         let sdk = sdk_with(Arc::clone(&provider));
         let cache = RecordedAnchorCache::new();
@@ -379,6 +390,13 @@ mod tests {
         cache.observe_policy(&sdk);
         cache.insert(set(&[1]), sent, 10, 100);
 
+        assert!(cache.get(10).is_none());
+    }
+
+    #[test]
+    fn should_cap_a_custom_ttl_at_the_default() {
+        let cache = RecordedAnchorCache::with_ttl(Duration::from_secs(3600));
+        cache.insert(set(&[1]), FetchStamp::ago(Duration::from_secs(31)), 10, 100);
         assert!(cache.get(10).is_none());
     }
 
