@@ -4,14 +4,17 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import java.io.File
+import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -21,6 +24,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
@@ -236,6 +240,28 @@ class AppStateDevnetSettingsTest {
             assertFalse(session.appState.isLoading.value)
         } finally {
             session.close()
+        }
+    }
+
+    @Test
+    fun shouldReportAFailedDevnetSettingWriteWithoutCrashing() = runTest {
+        val job = SupervisorJob()
+        val scope = CoroutineScope(job + StandardTestDispatcher(testScheduler))
+        val failing = object : DataStore<Preferences> {
+            override val data = flowOf(emptyPreferences())
+            override suspend fun updateData(
+                transform: suspend (t: Preferences) -> Preferences,
+            ): Preferences = throw IOException("disk full")
+        }
+        val appState = AppState(failing, scope, ::fakeDevnetQuorumBaseUrl)
+        try {
+            appState.setDevnetName("palmatum")
+            advanceUntilIdle()
+            assertTrue(job.isActive)
+            assertEquals("palmatum", appState.devnetName.value)
+            assertEquals("Could not save the setting: disk full", appState.errorMessage.value)
+        } finally {
+            job.cancelAndJoin()
         }
     }
 

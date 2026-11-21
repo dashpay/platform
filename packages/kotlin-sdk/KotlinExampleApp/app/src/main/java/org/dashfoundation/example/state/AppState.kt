@@ -1,6 +1,7 @@
 package org.dashfoundation.example.state
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -401,27 +402,44 @@ class AppState(
 
     fun setUseDockerSetup(enabled: Boolean) {
         _useDockerSetup.value = enabled
-        scope.launch { dataStore.edit { it[KEY_DOCKER] = enabled } }
+        savePreference { it[KEY_DOCKER] = enabled }
     }
 
     fun setUseLocalhostCore(enabled: Boolean) {
         _useLocalhostCore.value = enabled
-        scope.launch { dataStore.edit { it[KEY_USE_LOCAL_CORE] = enabled } }
+        savePreference { it[KEY_USE_LOCAL_CORE] = enabled }
     }
 
     fun setLocalCorePeers(peers: String) {
         _localCorePeers.value = peers
-        scope.launch { dataStore.edit { it[KEY_LOCAL_CORE_PEERS] = peers } }
+        savePreference { it[KEY_LOCAL_CORE_PEERS] = peers }
     }
 
     fun setDevnetName(name: String) {
         _devnetName.value = name
-        scope.launch { dataStore.edit { it[KEY_DEVNET_NAME] = name } }
+        savePreference { it[KEY_DEVNET_NAME] = name }
     }
 
     fun setDevnetQuorumUrl(url: String) {
         _devnetQuorumUrl.value = url
-        scope.launch { dataStore.edit { it[KEY_DEVNET_QUORUM_URL] = url } }
+        savePreference { it[KEY_DEVNET_QUORUM_URL] = url }
+    }
+
+    /**
+     * Save a setting off the caller's path. A failed write shows in
+     * [errorMessage]; the app scope has no exception handler, so letting it
+     * escape would end the process.
+     */
+    private fun savePreference(update: (MutablePreferences) -> Unit) {
+        scope.launch {
+            try {
+                dataStore.edit { update(it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _errorMessage.value = "Could not save the setting: ${e.message}"
+            }
+        }
     }
 
     /**
