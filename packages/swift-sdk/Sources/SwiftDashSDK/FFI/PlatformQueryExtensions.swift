@@ -1665,10 +1665,17 @@ extension SDK {
     /// to list the contested labels; with no start values only the parent
     /// level (`dash`) is listed.
     ///
-    /// Index values use the FFI convention: a `"0x"`-prefixed value is hex
-    /// bytes, anything else is text. Each returned resource carries `id` (its
-    /// own index value) and `index_values` (the path to pass to
-    /// ``getContestedResourceVoteState(dataContractId:documentTypeName:indexName:indexValues:resultType:allowIncludeLockedAndAbstainingVoteTally:startAtIdentifierInfo:count:orderAscending:)``).
+    /// Index values are strings the FFI reads in this order: a value starting
+    /// with a backslash (`\`) is text with that one backslash removed; else a
+    /// `"0x"`-prefixed value is hex bytes; else the value is text. Encode text
+    /// with ``ContestedIndexValue/text(_:)`` (a DPNS label normalized to
+    /// `0xf0rd` must be sent as `\0xf0rd`) and bytes with
+    /// ``ContestedIndexValue/bytes(_:)``.
+    ///
+    /// Each returned resource carries `id` (its own index value) and
+    /// `index_values` (the path to pass to
+    /// ``getContestedResourceVoteState(dataContractId:documentTypeName:indexName:indexValues:resultType:allowIncludeLockedAndAbstainingVoteTally:startAtIdentifierInfo:count:orderAscending:)``),
+    /// both already encoded this way, so they may be passed back unchanged.
     public func getContestedResources(
         documentTypeName: String,
         dataContractId: String,
@@ -1718,6 +1725,13 @@ extension SDK {
     /// (`contenders`, and with a tally `abstain_vote_tally`,
     /// `lock_vote_tally` and `winner_info`), or an empty dictionary when the
     /// poll has no data.
+    ///
+    /// Index values are strings the FFI reads in this order: a value starting
+    /// with a backslash (`\`) is text with that one backslash removed; else a
+    /// `"0x"`-prefixed value is hex bytes; else the value is text. Encode text
+    /// with ``ContestedIndexValue/text(_:)`` (a DPNS label normalized to
+    /// `0xf0rd` must be sent as `\0xf0rd`) and bytes with
+    /// ``ContestedIndexValue/bytes(_:)``.
     public func getContestedResourceVoteState(
         dataContractId: String,
         documentTypeName: String,
@@ -1760,7 +1774,14 @@ extension SDK {
         return try processJSONObjectResult(result)
     }
 
-    /// Get contested resource voters for identity
+    /// Get contested resource voters for identity.
+    ///
+    /// Index values are strings the FFI reads in this order: a value starting
+    /// with a backslash (`\`) is text with that one backslash removed; else a
+    /// `"0x"`-prefixed value is hex bytes; else the value is text. Encode text
+    /// with ``ContestedIndexValue/text(_:)`` (a DPNS label normalized to
+    /// `0xf0rd` must be sent as `\0xf0rd`) and bytes with
+    /// ``ContestedIndexValue/bytes(_:)``.
     public func getContestedResourceVotersForIdentity(
         dataContractId: String,
         documentTypeName: String,
@@ -1837,7 +1858,12 @@ extension SDK {
     ///   - documentTypeName: Contested document type (e.g. `"domain"`).
     ///   - indexName: Contested index name (e.g. `"parentNameAndLabel"`).
     ///   - indexValues: Index values identifying the contested resource
-    ///     (e.g. `["dash", "alice"]`).
+    ///     (e.g. `["dash", "a11ce"]`). A value starting with a backslash (`\`)
+    ///     is text with that one backslash removed; else a `"0x"`-prefixed
+    ///     value is hex bytes; else the value is text. Encode text with
+    ///     ``ContestedIndexValue/text(_:)`` (a DPNS label normalized to
+    ///     `0xf0rd` must be sent as `\0xf0rd`), or use
+    ///     ``DPNSVotePoll/indexValues(normalizedLabel:)`` for a DPNS contest.
     ///   - choice: TowardsIdentity / Abstain / Lock.
     ///   - proTxHash: The masternode's 32-byte pro_tx_hash in **WIRE order** — the
     ///     orientation `Txid` stores, which is what a parsed ProRegTx yields

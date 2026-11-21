@@ -1,4 +1,4 @@
-use crate::contested_resource::{parse_index_value, render_index_value};
+use crate::contested_resource::{parse_index_values_json, render_index_value};
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::platform_value::Value;
@@ -156,10 +156,9 @@ fn get_contested_resources(
 
         let contract_id = dash_sdk::platform::Identifier::new(contract_id);
 
-        // Parse start index values via the shared explicit-tag helper: a
-        // `"0x"`-prefixed value is hex-decoded to `Value::Bytes`, anything else
-        // is verbatim `Value::Text`. Shared with the cast-vote write path so
-        // read and write stay in lockstep.
+        // Parse start index values via the shared explicit-tag helper (see
+        // `parse_index_value`). Shared with the cast-vote write path so read
+        // and write stay in lockstep.
         let start_index_values = if start_index_values_json.is_null() {
             Vec::new()
         } else {
@@ -168,13 +167,8 @@ fn get_contested_resources(
                     .to_str()
                     .map_err(|e| format!("Invalid UTF-8 in start index values: {}", e))?
             };
-            let start_values_array: Vec<String> = serde_json::from_str(start_values_str)
-                .map_err(|e| format!("Failed to parse start index values JSON: {}", e))?;
-
-            start_values_array
-                .into_iter()
-                .map(parse_index_value)
-                .collect::<Result<Vec<Value>, String>>()?
+            parse_index_values_json(start_values_str)
+                .map_err(|e| format!("Start index values: {}", e))?
         };
 
         // Parse end index values via the same shared explicit-tag helper.
@@ -186,13 +180,8 @@ fn get_contested_resources(
                     .to_str()
                     .map_err(|e| format!("Invalid UTF-8 in end index values: {}", e))?
             };
-            let end_values_array: Vec<String> = serde_json::from_str(end_values_str)
-                .map_err(|e| format!("Failed to parse end index values JSON: {}", e))?;
-
-            end_values_array
-                .into_iter()
-                .map(parse_index_value)
-                .collect::<Result<Vec<Value>, String>>()?
+            parse_index_values_json(end_values_str)
+                .map_err(|e| format!("End index values: {}", e))?
         };
 
         let query = VotePollsByDocumentTypeQuery {
@@ -326,6 +315,30 @@ mod tests {
                 "index_name": "parentNameAndLabel",
                 "index_values": ["dash", "a11ce0"],
             })
+        );
+    }
+
+    #[test]
+    fn should_pass_a_label_starting_with_0x_back_into_vote_state_and_cast_vote_as_text() {
+        // DPNS normalizes "oxford" to "0xf0rd". The listed path is fed back
+        // through `parse_index_values_json`, the parser the vote state,
+        // voters and cast vote FFIs use.
+        let json = contested_resource_json(
+            &Value::Text("0xf0rd".to_string()),
+            "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
+            "domain",
+            "parentNameAndLabel",
+            &[Value::Text("dash".to_string())],
+            &[],
+        );
+        assert_eq!(json["id"], json!("\\0xf0rd"));
+        assert_eq!(json["index_values"], json!(["dash", "\\0xf0rd"]));
+        assert_eq!(
+            parse_index_values_json(&json["index_values"].to_string()).unwrap(),
+            vec![
+                Value::Text("dash".to_string()),
+                Value::Text("0xf0rd".to_string()),
+            ]
         );
     }
 

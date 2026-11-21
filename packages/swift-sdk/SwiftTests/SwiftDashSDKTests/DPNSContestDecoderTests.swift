@@ -377,4 +377,38 @@ final class DPNSContestDecoderTests: XCTestCase {
       DPNSVotePoll.indexValues(normalizedLabel: "alice"),
       ["dash", "alice"])
   }
+
+  func testIndexValuesSendALabelStartingWith0xAsText() {
+    // `oxford` normalizes to `0xf0rd`; sent raw, the FFI would read it as
+    // hex bytes. One leading backslash marks it as text.
+    XCTAssertEqual(
+      DPNSVotePoll.indexValues(normalizedLabel: "0xf0rd"),
+      ["dash", "\\0xf0rd"])
+  }
+
+  // MARK: - Contested index value encoding
+
+  func testTextPrefixesABackslashToAValueStartingWith0x() {
+    XCTAssertEqual(ContestedIndexValue.text("0xf0rd"), "\\0xf0rd")
+    XCTAssertEqual(ContestedIndexValue.text("0x"), "\\0x")
+  }
+
+  func testTextPrefixesABackslashToAValueStartingWithABackslash() {
+    XCTAssertEqual(ContestedIndexValue.text("\\a11ce"), "\\\\a11ce")
+    XCTAssertEqual(ContestedIndexValue.text("\\0xf0rd"), "\\\\0xf0rd")
+  }
+
+  func testTextLeavesOtherValuesUnchanged() {
+    XCTAssertEqual(ContestedIndexValue.text("a11ce"), "a11ce")
+    XCTAssertEqual(ContestedIndexValue.text("dash"), "dash")
+    XCTAssertEqual(ContestedIndexValue.text(""), "")
+    // Only the exact lowercase `0x` prefix is hex to the FFI.
+    XCTAssertEqual(ContestedIndexValue.text("0Xf0rd"), "0Xf0rd")
+    XCTAssertEqual(ContestedIndexValue.text("a\\b"), "a\\b")
+  }
+
+  func testBytesAreLowercaseHexWith0xPrefix() {
+    XCTAssertEqual(ContestedIndexValue.bytes(Data([0xFA, 0xCE, 0x00, 0x01])), "0xface0001")
+    XCTAssertEqual(ContestedIndexValue.bytes(Data()), "0x")
+  }
 }

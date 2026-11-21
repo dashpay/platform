@@ -1,3 +1,4 @@
+use crate::contested_resource::parse_index_values_json;
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::platform_value::Value;
@@ -177,16 +178,9 @@ fn get_contested_resource_voters_for_identity(
         let contestant_id = dash_sdk::platform::Identifier::new(contestant_id);
 
         // Parse index values
-        let index_values_array: Vec<String> = serde_json::from_str(index_values_str)
-            .map_err(|e| format!("Failed to parse index values JSON: {}", e))?;
-
-        // Explicit type tag: a `"0x"`-prefixed value is hex-decoded to
-        // `Value::Bytes`, anything else is verbatim `Value::Text`. Shared with
-        // the cast-vote write path so read and write stay in lockstep.
-        let index_values: Vec<Value> = index_values_array
-            .into_iter()
-            .map(crate::contested_resource::parse_index_value)
-            .collect::<Result<Vec<Value>, String>>()?;
+        // Explicit type tags (see `parse_index_value`), shared with the
+        // cast-vote write path so read and write stay in lockstep.
+        let index_values: Vec<Value> = parse_index_values_json(index_values_str)?;
 
         let vote_poll = ContestedDocumentResourceVotePoll {
             contract_id,

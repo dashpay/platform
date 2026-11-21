@@ -48,11 +48,15 @@ struct ContestDetailView: View {
 
     /// DPNS contest poll shape — the same `(contract, document type,
     /// index, index values)` tuple the read path uses. The contested
-    /// label lives at the second index value (`["dash", label]`).
+    /// label lives at the second index value (`["dash", label]`), encoded
+    /// by `DPNSVotePoll.indexValues` so a label such as `0xf0rd` is sent
+    /// as text, not hex.
     private static let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
     private static let dpnsDocumentType = "domain"
     private static let dpnsIndexName = "parentNameAndLabel"
-    private var dpnsIndexValues: [String] { ["dash", contestName] }
+    private var dpnsIndexValues: [String] {
+        DPNSVotePoll.indexValues(normalizedLabel: contestName)
+    }
 
     /// Current identity's 32-byte id, parsed from the base58 input
     /// parameter once. `nil` if the caller passed an unparseable id.

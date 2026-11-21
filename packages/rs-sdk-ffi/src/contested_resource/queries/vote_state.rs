@@ -1,4 +1,5 @@
 use crate::contested_resource::contender_document::json_members;
+use crate::contested_resource::parse_index_values_json;
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -165,16 +166,9 @@ fn get_contested_resource_vote_state(
         let contract_id = dash_sdk::platform::Identifier::new(contract_id);
 
         // Parse index values
-        let index_values_array: Vec<String> = serde_json::from_str(index_values_str)
-            .map_err(|e| format!("Failed to parse index values JSON: {}", e))?;
-
-        // Explicit type tag: a `"0x"`-prefixed value is hex-decoded to
-        // `Value::Bytes`, anything else is verbatim `Value::Text`. Shared with
-        // the cast-vote write path so read and write stay in lockstep.
-        let index_values: Vec<Value> = index_values_array
-            .into_iter()
-            .map(crate::contested_resource::parse_index_value)
-            .collect::<Result<Vec<Value>, String>>()?;
+        // Explicit type tags (see `parse_index_value`), shared with the
+        // cast-vote write path so read and write stay in lockstep.
+        let index_values: Vec<Value> = parse_index_values_json(index_values_str)?;
 
         let result_type = match result_type {
             0 => dash_sdk::drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::Documents,
