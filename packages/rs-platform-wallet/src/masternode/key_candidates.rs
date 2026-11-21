@@ -39,9 +39,9 @@ pub struct ProviderKeyCandidate {
 /// operation a host asks for.
 ///
 /// Fails with [`PlatformWalletError::MasternodeListUnavailable`] while the
-/// list is not available: without it a key's usage is unknown, not
+/// list does not follow the chain: without it a key's usage is unknown, not
 /// "unused", and an operator key already on the list is refused by
-/// consensus.
+/// consensus. A list restored from disk while sync catches up does not count.
 ///
 /// Blocking, and panics on an async runtime worker, like
 /// [`provider_key_candidates`]: the list is read with `blocking_read` too.
@@ -51,9 +51,7 @@ pub fn live_provider_key_candidates_blocking(
     kind: ProviderKeyKind,
     count: u32,
 ) -> Result<Vec<ProviderKeyCandidate>, PlatformWalletError> {
-    let summaries = spv
-        .masternode_list_summaries_blocking()
-        .ok_or(PlatformWalletError::MasternodeListUnavailable)?;
+    let summaries = spv.current_masternode_list_summaries_blocking()?;
     provider_key_candidates(wallet, &summaries, kind, count)
 }
 

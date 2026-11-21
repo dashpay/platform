@@ -18,7 +18,8 @@ use dashcore::{PubkeyHash, QuorumHash, Transaction};
 
 use dash_spv::network::PeerNetworkManager;
 use dash_spv::{
-    BroadcastResult, ClientConfig, DashSpvClient, EventHandler, SyncProgress, SyncState,
+    BroadcastResult, ClientConfig, DashSpvClient, EventHandler, MasternodeListNotCurrentError,
+    SyncProgress, SyncState,
 };
 
 use key_wallet_manager::WalletManager;
@@ -74,6 +75,20 @@ fn is_synced_to_tip(progress: &SyncProgress) -> bool {
                     .saturating_add(MASTERNODE_LIST_TIP_LAG)
                     >= masternodes.block_header_tip_height()
         })
+}
+
+/// The raw entries of `list`.
+fn masternode_list_entries(list: &MasternodeList) -> Vec<MasternodeListEntry> {
+    list.masternodes
+        .values()
+        .map(|qualified| qualified.masternode_list_entry.clone())
+        .collect()
+}
+
+/// A list dash-spv does not vouch for is unavailable to callers.
+fn masternode_list_unavailable(reason: MasternodeListNotCurrentError) -> PlatformWalletError {
+    tracing::debug!("SPV masternode list refused as not current: {reason}");
+    PlatformWalletError::MasternodeListUnavailable
 }
 
 /// A quorum public key from the SPV masternode state, see
@@ -858,18 +873,14 @@ impl SpvRuntime {
             let client_guard = self.client.read().await;
             client_guard.as_ref()?.latest_masternode_list().await?
         };
-        Some(
-            list.masternodes
-                .values()
-                .map(|qualified| qualified.masternode_list_entry.clone())
-                .collect(),
-        )
+        Some(masternode_list_entries(&list))
     }
 
     /// [`Self::masternode_list_summaries`], but only while the list follows
-    /// the chain ([`Self::is_ready`]). The plain read also returns a list
-    /// restored from disk while sync is still catching up, and a transaction
-    /// that restates an entry's fields must not copy them from such a list.
+    /// the chain, as [`Self::current_masternode_list`] reads it. The plain
+    /// read also returns a list restored from disk while sync is still
+    /// catching up, and a transaction that restates an entry's fields must
+    /// not copy them from such a list.
     pub(crate) async fn current_masternode_list_summaries(
         &self,
     ) -> Option<Vec<MasternodeListSummary>> {
@@ -879,47 +890,54 @@ impl SpvRuntime {
             .map(|list| list.summaries)
     }
 
-    /// The masternode list with its height, only while it follows the chain
-    /// ([`Self::is_ready`]). Fails with
-    /// [`PlatformWalletError::MasternodeListUnavailable`] otherwise, or when
-    /// SPV restarted during the read.
+    /// Blocking twin of [`Self::current_masternode_list_summaries`] for FFI
+    /// threads (`blocking_read`; never call from the async runtime). Fails
+    /// with [`PlatformWalletError::MasternodeListUnavailable`] while the list
+    /// does not follow the chain.
+    pub(crate) fn current_masternode_list_summaries_blocking(
+        &self,
+    ) -> Result<Vec<MasternodeListSummary>, PlatformWalletError> {
+        let list = {
+            let client_guard = self.client.blocking_read();
+            let client = client_guard
+                .as_ref()
+                .ok_or(PlatformWalletError::MasternodeListUnavailable)?;
+            client
+                .current_masternode_list_blocking()
+                .map_err(masternode_list_unavailable)?
+        };
+        Ok(MasternodeListSummary::all_from_list(&list))
+    }
+
+    /// The masternode list with its height, only while dash-spv reports it
+    /// following the chain ([`DashSpvClient::current_masternode_list`]).
+    /// Fails with [`PlatformWalletError::MasternodeListUnavailable`]
+    /// otherwise.
     pub async fn current_masternode_list(
         &self,
     ) -> Result<CurrentMasternodeList, PlatformWalletError> {
-        // TODO: read the list from dash-spv once it returns it only while following the chain (rust-dashcore follow-up).
-        self.while_following_the_chain(async {
-            let list = {
-                let client_guard = self.client.read().await;
-                client_guard.as_ref()?.latest_masternode_list().await?
-            };
-            Some(CurrentMasternodeList::from_list(&list))
-        })
-        .await
-        .ok_or(PlatformWalletError::MasternodeListUnavailable)
+        Ok(CurrentMasternodeList::from_list(
+            &self.current_spv_masternode_list().await?,
+        ))
     }
 
     /// [`Self::masternode_list_entries`], but only while the list follows
     /// the chain, as [`Self::current_masternode_list_summaries`].
     pub(crate) async fn current_masternode_list_entries(&self) -> Option<Vec<MasternodeListEntry>> {
-        self.while_following_the_chain(self.masternode_list_entries())
-            .await
+        let list = self.current_spv_masternode_list().await.ok()?;
+        Some(masternode_list_entries(&list))
     }
 
-    /// `read`, but only from the client [`Self::is_ready`] vouched for.
-    /// Readiness and `read` take the client separately, so a host that stops
-    /// and restarts SPV between them would hand `read` a new client that is
-    /// still catching up. [`Self::run_session`] changes on every start; a
-    /// value read across a restart is dropped.
-    async fn while_following_the_chain<T>(
-        &self,
-        read: impl Future<Output = Option<T>>,
-    ) -> Option<T> {
-        let session = self.run_session();
-        if !self.is_ready().await {
-            return None;
-        }
-        let value = read.await?;
-        (self.run_session() == session).then_some(value)
+    /// dash-spv's newest masternode list, only while it follows the chain.
+    async fn current_spv_masternode_list(&self) -> Result<MasternodeList, PlatformWalletError> {
+        let client_guard = self.client.read().await;
+        let client = client_guard
+            .as_ref()
+            .ok_or(PlatformWalletError::MasternodeListUnavailable)?;
+        client
+            .current_masternode_list()
+            .await
+            .map_err(masternode_list_unavailable)
     }
 
     /// The coinbase payload of the newest block a masternode list diff
@@ -2413,22 +2431,52 @@ mod tests {
         );
     }
 
-    /// A runtime that does not follow the chain hands out nothing through
-    /// the gated read, whatever the read itself would return. An unstarted
-    /// client is the simplest such runtime.
-    #[tokio::test]
-    async fn should_drop_a_gated_read_while_the_runtime_does_not_follow_the_chain() {
-        let wallet_manager = Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
-            Network::Testnet,
-        )));
-        let runtime = SpvRuntime::new(wallet_manager, Arc::new(PlatformEventManager::new(vec![])));
+    /// A runtime that does not follow the chain hands out no current list
+    /// through any gated read. An unstarted client is the simplest such
+    /// runtime.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn should_have_no_current_masternode_list_entries_or_summaries_while_not_running() {
+        let runtime = unstarted_runtime();
 
-        let read = runtime
-            .while_following_the_chain(async { Some("a list restored from disk") })
-            .await;
-
-        assert_eq!(read, None);
         assert_eq!(runtime.current_masternode_list_summaries().await, None);
+        assert!(runtime.current_masternode_list_entries().await.is_none());
+        let blocking =
+            tokio::task::block_in_place(|| runtime.current_masternode_list_summaries_blocking());
+        assert!(
+            matches!(
+                blocking,
+                Err(PlatformWalletError::MasternodeListUnavailable)
+            ),
+            "expected MasternodeListUnavailable, got {blocking:?}"
+        );
+    }
+
+    /// A running client still catching up holds no current list: dash-spv
+    /// refuses it until header and masternode sync reach the tip, and every
+    /// gated read reports it unavailable.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn should_have_no_current_masternode_list_while_sync_catches_up() {
+        let (runtime, _storage) = offline_runtime().await;
+        run_offline(&runtime).await;
+        assert!(runtime.is_running());
+
+        let read = runtime.current_masternode_list().await;
+        assert!(
+            matches!(read, Err(PlatformWalletError::MasternodeListUnavailable)),
+            "expected MasternodeListUnavailable, got {read:?}"
+        );
+        assert!(runtime.current_masternode_list_entries().await.is_none());
+        let blocking =
+            tokio::task::block_in_place(|| runtime.current_masternode_list_summaries_blocking());
+        assert!(
+            matches!(
+                blocking,
+                Err(PlatformWalletError::MasternodeListUnavailable)
+            ),
+            "expected MasternodeListUnavailable, got {blocking:?}"
+        );
+
+        runtime.stop().await.unwrap();
     }
 
     /// The public list read is gated like the crate-private ones: a runtime
