@@ -177,7 +177,7 @@ fun BannedAddressesScreen(navController: NavHostController) {
     }
 }
 
-private data class BannedAddressEntry(
+internal data class BannedAddressEntry(
     val address: String,
     val banned: Boolean,
     val banCount: Long,
@@ -189,7 +189,7 @@ private data class BannedAddressEntry(
  * Parse the ban-info JSON array. Tolerates absent fields so a schema tweak on
  * the Rust side degrades to a partial render rather than an empty list.
  */
-private fun parseBanInfo(json: String): List<BannedAddressEntry> = runCatching {
+internal fun parseBanInfo(json: String): List<BannedAddressEntry> = runCatching {
     val array = JSONArray(json)
     (0 until array.length()).map { i ->
         val obj = array.getJSONObject(i)

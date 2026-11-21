@@ -10,7 +10,9 @@ import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
 import org.dashfoundation.dashsdk.wallet.op
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.util.concurrent.atomic.AtomicLong
@@ -618,16 +620,59 @@ class Sdk private constructor(
             } catch (_: Exception) {
                 return null
             }
+            val deadlineNanos = System.nanoTime() + MASTERNODES_DEADLINE_MS * 1_000_000
             val body = try {
                 val connection = url.openConnection() as HttpURLConnection
-                connection.connectTimeout = 5_000
-                connection.readTimeout = 5_000
-                connection.requestMethod = "GET"
-                connection.inputStream.use { it.readBytes().decodeToString() }
+                try {
+                    connection.connectTimeout = 5_000
+                    connection.readTimeout = 5_000
+                    connection.requestMethod = "GET"
+                    connection.inputStream.use {
+                        readBounded(it, MASTERNODES_MAX_BYTES, deadlineNanos)
+                    }
+                } finally {
+                    connection.disconnect()
+                }
             } catch (_: Exception) {
                 return null
-            }
+            } ?: return null
             return parseActiveMasternodes(body, defaultDapiPort)
+        }
+
+        /**
+         * Largest `/masternodes` body read, far above a mainnet-sized list.
+         * The endpoint may be a user-entered devnet URL, so a larger body is
+         * refused rather than buffered.
+         */
+        private const val MASTERNODES_MAX_BYTES = 16 * 1024 * 1024
+
+        /**
+         * Overall time allowed for a `/masternodes` lookup. The read timeout
+         * bounds each read only, so a server trickling bytes would otherwise
+         * keep the lookup open indefinitely.
+         */
+        private const val MASTERNODES_DEADLINE_MS = 15_000L
+
+        /**
+         * [input] as UTF-8, or null once it passes [maxBytes] or a read
+         * returns after [deadlineNanos] (on the [System.nanoTime] clock).
+         * A read in progress is bounded by the connection's read timeout.
+         */
+        internal fun readBounded(
+            input: InputStream,
+            maxBytes: Int,
+            deadlineNanos: Long,
+            nanoTime: () -> Long = System::nanoTime,
+        ): String? {
+            val out = ByteArrayOutputStream()
+            val buffer = ByteArray(8 * 1024)
+            while (true) {
+                if (nanoTime() - deadlineNanos > 0) return null
+                val read = input.read(buffer)
+                if (read < 0) return out.toByteArray().decodeToString()
+                if (out.size() + read > maxBytes) return null
+                out.write(buffer, 0, read)
+            }
         }
 
         /**
@@ -677,6 +722,21 @@ class Sdk private constructor(
         fun hasShielded(): Boolean {
             initialize()
             return SdkNative.hasShielded()
+        }
+
+        /**
+         * The quorum service base URL of the devnet named [devnetName],
+         * `https://quorums.<name>.networks.dash.org`, as the Rust trusted
+         * context provider resolves it.
+         *
+         * @throws org.dashfoundation.dashsdk.errors.DashSdkError for a name
+         *   the provider refuses: empty, characters other than letters,
+         *   digits and hyphens, a leading or trailing hyphen, or a reserved
+         *   network name such as `mainnet`
+         */
+        fun devnetQuorumBaseUrl(devnetName: String): String {
+            initialize()
+            return mapNativeErrors { SdkNative.devnetQuorumBaseUrl(devnetName) }
         }
 
         /** Native SDK version string. */

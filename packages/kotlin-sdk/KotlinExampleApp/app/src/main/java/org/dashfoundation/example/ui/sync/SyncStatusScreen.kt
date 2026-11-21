@@ -157,10 +157,14 @@ fun SyncStatusScreen() {
                                         ).apply { mkdirs() }
                                         // ← CoreSpvLauncher.start: devnet needs
                                         // its name (SPV user agent) and takes
-                                        // its peers from the quorum service.
+                                        // its peers from the quorum service,
+                                        // both from the settings the current
+                                        // SDK was built with, not the fields
+                                        // being edited.
                                         val devnetName = appState.spvDevnetName(network)
                                         if (network == Network.DEVNET && devnetName == null) {
-                                            error = "Set the devnet name in Settings to start SPV on devnet."
+                                            error = "Set the devnet name in Settings and press " +
+                                                "Apply Devnet Settings to start SPV on devnet."
                                             return@launch
                                         }
                                         val peers = appState.spvPeerOverride(network)

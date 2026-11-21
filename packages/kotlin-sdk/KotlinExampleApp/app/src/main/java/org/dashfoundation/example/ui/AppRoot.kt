@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -15,10 +16,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CancellationException
+import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.example.di.AppContainer.BootstrapState
 import org.dashfoundation.example.di.LocalAppContainer
 
@@ -34,6 +37,7 @@ import org.dashfoundation.example.di.LocalAppContainer
 fun AppRoot() {
     val container = LocalAppContainer.current
     val bootstrap by container.bootstrapState.collectAsStateWithLifecycle()
+    val network by container.appState.currentNetwork.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
@@ -92,6 +96,23 @@ fun AppRoot() {
             )
             Button(onClick = { scope.launch { container.bootstrap() } }) {
                 Text("Retry")
+            }
+            // A saved network the app cannot start on (a devnet whose
+            // quorum service is down or misnamed) would fail every Retry
+            // with Settings out of reach: offer the default network.
+            // Wallets and settings are kept.
+            if (network != Network.DEFAULT) {
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            container.appState.leaveSavedNetwork()
+                            container.bootstrap()
+                        }
+                    },
+                    modifier = Modifier.testTag("bootstrap.useDefaultNetwork"),
+                ) {
+                    Text("Start on ${Network.DEFAULT.displayName} instead")
+                }
             }
         }
     }

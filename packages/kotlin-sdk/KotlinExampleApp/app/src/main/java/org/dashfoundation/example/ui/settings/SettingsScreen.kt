@@ -93,6 +93,9 @@ fun SettingsScreen(navController: NavHostController) {
                     selected = network,
                     optionLabel = { it.displayName },
                     testTag = "settings.networkPicker",
+                    // A switch waits for an SDK build already running (a
+                    // devnet Apply); picking during it would queue a second.
+                    enabled = !isLoading,
                 ) { selected ->
                     // Ignore selection while a registration is in flight — the
                     // note below explains why (1:1 with the iOS disabled gate).
@@ -154,6 +157,8 @@ fun SettingsScreen(navController: NavHostController) {
                         modifier = Modifier.fillMaxWidth().testTag("settings.devnetName"),
                         singleLine = true,
                     )
+                    val devnetQuorumUrlNotHttps = devnetQuorumUrl.isNotBlank() &&
+                        !devnetQuorumUrl.trim().startsWith("https://", ignoreCase = true)
                     androidx.compose.material3.OutlinedTextField(
                         value = devnetQuorumUrl,
                         onValueChange = { appState.setDevnetQuorumUrl(it) },
@@ -166,6 +171,12 @@ fun SettingsScreen(navController: NavHostController) {
                                     "https://quorums.<name>.networks.dash.org"
                                 },
                             )
+                        },
+                        isError = devnetQuorumUrlNotHttps,
+                        supportingText = if (devnetQuorumUrlNotHttps) {
+                            { Text(AppState.DEVNET_QUORUM_URL_NOT_HTTPS) }
+                        } else {
+                            null
                         },
                         modifier = Modifier.fillMaxWidth().testTag("settings.devnetQuorumUrl"),
                         singleLine = true,
@@ -184,7 +195,7 @@ fun SettingsScreen(navController: NavHostController) {
                             onClick = {
                                 scope.launch {
                                     try {
-                                        appState.initializeSdk(Network.DEVNET)
+                                        appState.applyDevnetSettings()
                                     } catch (e: CancellationException) {
                                         throw e
                                     } catch (_: Exception) {

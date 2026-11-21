@@ -31,6 +31,12 @@ import org.dashfoundation.dashsdk.config.SdkConfig
 class AppState(
     private val dataStore: DataStore<Preferences>,
     private val scope: CoroutineScope,
+    /**
+     * Resolves a devnet name to its quorum service URL, refusing names the
+     * Rust trusted context provider refuses. Tests pass a stand-in so they
+     * load no native code.
+     */
+    private val devnetQuorumBaseUrl: (String) -> String = Sdk::devnetQuorumBaseUrl,
 ) {
     private val _sdk = MutableStateFlow<Sdk?>(null)
     val sdk: StateFlow<Sdk?> = _sdk.asStateFlow()
@@ -88,6 +94,26 @@ class AppState(
      */
     private val _devnetQuorumUrl = MutableStateFlow("")
     val devnetQuorumUrl: StateFlow<String> = _devnetQuorumUrl.asStateFlow()
+
+    /** The devnet settings an SDK was built from, kept with that SDK. */
+    data class AppliedDevnet(val name: String?, val quorumUrl: String)
+
+    /**
+     * The devnet settings the current SDK was built from; null off devnet.
+     * The Settings fields change [devnetName] and [devnetQuorumUrl] as the
+     * user types, but SPV starts from this snapshot, so it never joins a
+     * devnet other than the one the SDK and wallet manager were built for.
+     */
+    private val _appliedDevnet = MutableStateFlow<AppliedDevnet?>(null)
+    val appliedDevnet: StateFlow<AppliedDevnet?> = _appliedDevnet.asStateFlow()
+
+    /**
+     * Held while an SDK is built and published and the network choice that
+     * goes with it is saved, so a devnet Apply and a network switch never
+     * interleave: the last one to take the lock decides both the SDK and
+     * [currentNetwork].
+     */
+    private val sdkLock = Mutex()
 
     /**
      * Bumped when wallet-scoped services must rebind without a network
@@ -154,10 +180,10 @@ class AppState(
         _localCorePeers.value = prefs[KEY_LOCAL_CORE_PEERS] ?: ""
         _devnetName.value = prefs[KEY_DEVNET_NAME] ?: ""
         _devnetQuorumUrl.value = prefs[KEY_DEVNET_QUORUM_URL] ?: ""
-        // A saved Devnet choice without devnet settings could never build an
-        // SDK, and bootstrap would fail on every launch with no way to reach
-        // Settings: start on the default network instead.
-        if (_currentNetwork.value == Network.DEVNET && resolvedDevnetQuorumUrl() == null) {
+        // A saved Devnet choice whose settings are missing or refused could
+        // never build an SDK: start on the default network instead. Other
+        // launch failures offer the same way out (AppRoot).
+        if (_currentNetwork.value == Network.DEVNET && !devnetSettingsResolve()) {
             _currentNetwork.value = Network.DEFAULT
         }
         prefs[KEY_QUORUM_MODE]?.let { QuorumMode.fromRawValue(it) }?.let { _quorumMode.value = it }
@@ -172,6 +198,14 @@ class AppState(
         network: Network = _currentNetwork.value,
         dapiAddresses: String? = null,
         quorumUrl: String? = null,
+    ) {
+        sdkLock.withLock { buildAndPublishSdk(network, dapiAddresses, quorumUrl) }
+    }
+
+    private suspend fun buildAndPublishSdk(
+        network: Network,
+        dapiAddresses: String?,
+        quorumUrl: String?,
     ) {
         _isLoading.value = true
         try {
@@ -205,7 +239,16 @@ class AppState(
                     newSdk.closeSuspending()
                     throw e
                 }
-                _sdk.value.also { _sdk.value = newSdk }
+                _sdk.value.also {
+                    _sdk.value = newSdk
+                    recordAppliedDevnet(
+                        if (network == Network.DEVNET && effectiveQuorumUrl != null) {
+                            AppliedDevnet(devnetNameOrNull(), effectiveQuorumUrl)
+                        } else {
+                            null
+                        },
+                    )
+                }
             }
             refreshQuorumSource()
             // Eagerly learn the network's protocol version (iOS
@@ -255,10 +298,37 @@ class AppState(
         dapiAddresses: String? = null,
         quorumUrl: String? = null,
     ) {
-        if (network == _currentNetwork.value && _sdk.value != null) return
-        initializeSdk(network, dapiAddresses, quorumUrl)
-        dataStore.edit { it[KEY_NETWORK] = network.networkName }
-        _currentNetwork.value = network
+        sdkLock.withLock {
+            if (network == _currentNetwork.value && _sdk.value != null) return
+            buildAndPublishSdk(network, dapiAddresses, quorumUrl)
+            dataStore.edit { it[KEY_NETWORK] = network.networkName }
+            _currentNetwork.value = network
+        }
+    }
+
+    /**
+     * Rebuild the devnet SDK from the edited devnet settings — the Settings
+     * "Apply Devnet Settings" button. Does nothing once the app has left
+     * devnet, so an Apply that waited behind a network switch never
+     * publishes a devnet SDK under another network.
+     */
+    suspend fun applyDevnetSettings() {
+        sdkLock.withLock {
+            if (_currentNetwork.value != Network.DEVNET) return
+            buildAndPublishSdk(Network.DEVNET, null, null)
+        }
+    }
+
+    /**
+     * Leave a saved network the app cannot start on — the launch error
+     * screen's way out. Saves [Network.DEFAULT] as the network; wallets and
+     * every other setting, the devnet ones included, stay as they are.
+     */
+    suspend fun leaveSavedNetwork() {
+        sdkLock.withLock {
+            dataStore.edit { it[KEY_NETWORK] = Network.DEFAULT.networkName }
+            _currentNetwork.value = Network.DEFAULT
+        }
     }
 
     /**
@@ -346,20 +416,51 @@ class AppState(
     }
 
     /**
-     * The devnet quorum service URL: [devnetQuorumUrl] when set, else
-     * `https://quorums.<devnetName>.networks.dash.org`, the default the Rust
-     * trusted context provider uses for a named devnet. Null when neither
-     * is set.
+     * The devnet quorum service URL: [devnetQuorumUrl] when set, else the
+     * URL the Rust trusted context provider gives [devnetName]. Null when
+     * neither is set.
+     *
+     * @throws IllegalArgumentException when [devnetQuorumUrl] is not https
+     *   (the app allows no cleartext traffic) or the provider refuses the
+     *   name, such as a reserved network name like `mainnet`
      */
     fun resolvedDevnetQuorumUrl(): String? {
-        _devnetQuorumUrl.value.trim().takeIf { it.isNotEmpty() }?.let { return it }
+        _devnetQuorumUrl.value.trim().takeIf { it.isNotEmpty() }?.let { url ->
+            require(url.startsWith("https://", ignoreCase = true)) { DEVNET_QUORUM_URL_NOT_HTTPS }
+            return url
+        }
         val name = devnetNameOrNull() ?: return null
-        return "https://quorums.$name.networks.dash.org"
+        return try {
+            devnetQuorumBaseUrl(name)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw IllegalArgumentException(e.message ?: "Devnet name '$name' was refused", e)
+        }
     }
 
-    /** The devnet name SPV needs on [network]; null off devnet or when unset. */
+    private fun devnetSettingsResolve(): Boolean =
+        try {
+            resolvedDevnetQuorumUrl() != null
+        } catch (_: IllegalArgumentException) {
+            false
+        }
+
+    /**
+     * Keep [applied] as the settings the published SDK was built from.
+     * Called when an SDK is published; tests call it in place of a native
+     * SDK build.
+     */
+    internal fun recordAppliedDevnet(applied: AppliedDevnet?) {
+        _appliedDevnet.value = applied
+    }
+
+    /**
+     * The devnet name SPV needs on [network], from the applied settings;
+     * null off devnet or when the applied settings have no name.
+     */
     fun spvDevnetName(network: Network): String? =
-        if (network == Network.DEVNET) devnetNameOrNull() else null
+        if (network == Network.DEVNET) _appliedDevnet.value?.name else null
 
     private fun devnetNameOrNull(): String? =
         _devnetName.value.trim().takeIf { it.isNotEmpty() }
@@ -368,12 +469,23 @@ class AppState(
      * The SPV peer override for [network] — port of
      * `CoreSpvLauncher.peerOverride(network:)`: [localCorePeers] verbatim
      * when [useLocalhostCore] is on; on devnet otherwise the active
-     * masternodes' Core P2P addresses from `{quorumUrl}/masternodes` (each
-     * reports its own port, so none is guessed); else empty (the FFI falls
-     * back to the network's built-in seed nodes). The devnet lookup blocks
-     * on HTTP, so it runs on [Dispatchers.IO].
+     * masternodes' Core P2P addresses from the applied settings'
+     * `{quorumUrl}/masternodes` (each reports its own port, so none is
+     * guessed); else empty (the FFI falls back to the network's built-in
+     * seed nodes). The devnet lookup ([discover]) blocks on HTTP, so it
+     * runs on [Dispatchers.IO].
+     *
+     * @throws IllegalStateException on devnet when no devnet SDK is
+     *   applied, when the lookup finds no active masternode (a devnet has
+     *   no seed nodes, so SPV would run with no peers), or when the devnet
+     *   SDK was rebuilt during the lookup
      */
-    suspend fun spvPeerOverride(network: Network = _currentNetwork.value): List<String> {
+    suspend fun spvPeerOverride(
+        network: Network = _currentNetwork.value,
+        discover: (quorumUrl: String) -> List<String>? = { quorumUrl ->
+            Sdk.discoverActiveMasternodes(quorumUrl, DEVNET_DAPI_PORT)?.map { it.spvPeer }
+        },
+    ): List<String> {
         if (_useLocalhostCore.value) {
             return _localCorePeers.value
                 .split(",")
@@ -381,12 +493,16 @@ class AppState(
                 .filter { it.isNotEmpty() }
         }
         if (network != Network.DEVNET) return emptyList()
-        val quorumUrl = resolvedDevnetQuorumUrl() ?: return emptyList()
-        return withContext(Dispatchers.IO) {
-            Sdk.discoverActiveMasternodes(quorumUrl, DEVNET_DAPI_PORT)
-                ?.map { it.spvPeer }
-                .orEmpty()
+        val applied = _appliedDevnet.value ?: throw IllegalStateException(DEVNET_NOT_APPLIED)
+        val peers = withContext(Dispatchers.IO) { discover(applied.quorumUrl) }
+        check(_appliedDevnet.value === applied) { DEVNET_CHANGED_DURING_LOOKUP }
+        if (peers.isNullOrEmpty()) {
+            throw IllegalStateException(
+                "No active masternodes found at ${applied.quorumUrl.trimEnd('/')}/masternodes. " +
+                    "Check the devnet settings, or set custom SPV peers.",
+            )
         }
+        return peers
     }
 
     /** Devnet config changed without a network switch — force rebinds. */
@@ -402,6 +518,18 @@ class AppState(
         /** Shown when Devnet is picked before its name or quorum URL is set. */
         const val DEVNET_SETTINGS_MISSING =
             "Devnet needs a devnet name or a quorum URL. Enter them under Devnet, then pick Devnet again."
+
+        /** Shown when the devnet quorum URL is not https. */
+        const val DEVNET_QUORUM_URL_NOT_HTTPS =
+            "The devnet quorum URL must start with https://; the app allows no cleartext traffic."
+
+        /** Shown when SPV is started on devnet before a devnet SDK was built. */
+        const val DEVNET_NOT_APPLIED =
+            "No devnet settings are applied yet. Pick Devnet or press Apply Devnet Settings first."
+
+        /** Shown when the devnet SDK was rebuilt while SPV peers were looked up. */
+        const val DEVNET_CHANGED_DURING_LOOKUP =
+            "The devnet settings changed while SPV peers were looked up. Press Start again."
 
         /** DAPI port for nodes that report no `platformHTTPPort` (non-mainnet). */
         private const val DEVNET_DAPI_PORT = 1443

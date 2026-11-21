@@ -18,7 +18,9 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.Network
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
@@ -33,6 +35,10 @@ import org.junit.rules.TemporaryFolder
 @OptIn(ExperimentalCoroutinesApi::class)
 class AppStateDevnetSettingsTest {
 
+    private companion object {
+        const val PALMATUM_URL = "https://quorums.palmatum.networks.dash.org"
+    }
+
     @get:Rule
     val temporaryFolder = TemporaryFolder()
 
@@ -41,7 +47,7 @@ class AppStateDevnetSettingsTest {
         val file = File(temporaryFolder.root, "app.preferences_pb")
         val first = newSession(file)
         first.appState.setDevnetName("palmatum")
-        first.appState.setDevnetQuorumUrl("http://10.0.2.2:8080")
+        first.appState.setDevnetQuorumUrl("https://10.0.2.2:8443")
         advanceUntilIdle()
         first.close()
 
@@ -49,10 +55,10 @@ class AppStateDevnetSettingsTest {
         try {
             val prefs = relaunched.dataStore.data.first()
             assertEquals("palmatum", prefs[stringPreferencesKey("platformDevnetName")])
-            assertEquals("http://10.0.2.2:8080", prefs[stringPreferencesKey("platformQuorumURL")])
+            assertEquals("https://10.0.2.2:8443", prefs[stringPreferencesKey("platformQuorumURL")])
             relaunched.appState.restorePreferences()
             assertEquals("palmatum", relaunched.appState.devnetName.value)
-            assertEquals("http://10.0.2.2:8080", relaunched.appState.devnetQuorumUrl.value)
+            assertEquals("https://10.0.2.2:8443", relaunched.appState.devnetQuorumUrl.value)
         } finally {
             relaunched.close()
         }
@@ -71,25 +77,150 @@ class AppStateDevnetSettingsTest {
                 appState.resolvedDevnetQuorumUrl(),
             )
 
-            appState.setDevnetQuorumUrl("http://10.0.2.2:8080")
-            assertEquals("http://10.0.2.2:8080", appState.resolvedDevnetQuorumUrl())
+            appState.setDevnetQuorumUrl("https://10.0.2.2:8443")
+            assertEquals("https://10.0.2.2:8443", appState.resolvedDevnetQuorumUrl())
         } finally {
             session.close()
         }
     }
 
     @Test
-    fun shouldPassTheDevnetNameToSpvOnlyOnDevnet() = runTest {
+    fun shouldStartSpvFromTheAppliedDevnetNotTheEditedSettings() = runTest {
         val session = newSession(File(temporaryFolder.root, "app.preferences_pb"))
         try {
             val appState = session.appState
-            assertNull(appState.spvDevnetName(Network.DEVNET))
             appState.setDevnetName("palmatum")
+            assertNull(appState.spvDevnetName(Network.DEVNET))
+
+            appState.recordAppliedDevnet(AppState.AppliedDevnet("palmatum", PALMATUM_URL))
+            appState.setDevnetName("other")
+            appState.setDevnetQuorumUrl("https://quorums.other.example")
             assertEquals("palmatum", appState.spvDevnetName(Network.DEVNET))
             assertNull(appState.spvDevnetName(Network.TESTNET))
+
+            var lookedUp: String? = null
+            val peers = appState.spvPeerOverride(Network.DEVNET) { url ->
+                lookedUp = url
+                listOf("34.1.2.3:20001")
+            }
+            assertEquals(PALMATUM_URL, lookedUp)
+            assertEquals(listOf("34.1.2.3:20001"), peers)
         } finally {
             session.close()
         }
+    }
+
+    @Test
+    fun shouldRefuseToStartDevnetSpvWithoutPeers() = runTest {
+        val session = newSession(File(temporaryFolder.root, "app.preferences_pb"))
+        try {
+            val appState = session.appState
+            val notApplied = failureOf { appState.spvPeerOverride(Network.DEVNET) { emptyList() } }
+            assertEquals(AppState.DEVNET_NOT_APPLIED, notApplied.message)
+
+            appState.recordAppliedDevnet(AppState.AppliedDevnet("palmatum", PALMATUM_URL))
+            for (found in listOf(null, emptyList<String>())) {
+                val noPeers = failureOf { appState.spvPeerOverride(Network.DEVNET) { found } }
+                assertEquals(IllegalStateException::class.java, noPeers.javaClass)
+            }
+        } finally {
+            session.close()
+        }
+    }
+
+    @Test
+    fun shouldDropPeersFoundForADevnetThatWasReplacedDuringTheLookup() = runTest {
+        val session = newSession(File(temporaryFolder.root, "app.preferences_pb"))
+        try {
+            val appState = session.appState
+            appState.recordAppliedDevnet(AppState.AppliedDevnet("palmatum", PALMATUM_URL))
+            val replaced = failureOf {
+                appState.spvPeerOverride(Network.DEVNET) {
+                    appState.recordAppliedDevnet(
+                        AppState.AppliedDevnet("other", "https://quorums.other.example"),
+                    )
+                    listOf("34.1.2.3:20001")
+                }
+            }
+            assertEquals(AppState.DEVNET_CHANGED_DURING_LOOKUP, replaced.message)
+        } finally {
+            session.close()
+        }
+    }
+
+    @Test
+    fun shouldRefuseAReservedDevnetNameAndANonHttpsQuorumUrl() = runTest {
+        val session = newSession(File(temporaryFolder.root, "app.preferences_pb"))
+        try {
+            val appState = session.appState
+            appState.setDevnetName("mainnet")
+            assertThrows(IllegalArgumentException::class.java) { appState.resolvedDevnetQuorumUrl() }
+
+            // A saved Devnet whose name is refused starts on the default network.
+            session.dataStore.edit {
+                it[stringPreferencesKey("currentNetwork")] = Network.DEVNET.networkName
+            }
+            advanceUntilIdle()
+            appState.restorePreferences()
+            assertEquals(Network.DEFAULT, appState.currentNetwork.value)
+
+            appState.setDevnetName("palmatum")
+            appState.setDevnetQuorumUrl("http://10.0.2.2:8080")
+            val cleartext = assertThrows(IllegalArgumentException::class.java) {
+                appState.resolvedDevnetQuorumUrl()
+            }
+            assertEquals(AppState.DEVNET_QUORUM_URL_NOT_HTTPS, cleartext.message)
+        } finally {
+            session.close()
+        }
+    }
+
+    @Test
+    fun shouldLeaveASavedNetworkAndKeepTheDevnetSettings() = runTest {
+        val session = newSession(File(temporaryFolder.root, "app.preferences_pb"))
+        try {
+            val appState = session.appState
+            appState.setDevnetName("palmatum")
+            session.dataStore.edit {
+                it[stringPreferencesKey("currentNetwork")] = Network.DEVNET.networkName
+            }
+            advanceUntilIdle()
+            appState.restorePreferences()
+            assertEquals(Network.DEVNET, appState.currentNetwork.value)
+
+            appState.leaveSavedNetwork()
+            assertEquals(Network.DEFAULT, appState.currentNetwork.value)
+            val prefs = session.dataStore.data.first()
+            assertEquals(Network.DEFAULT.networkName, prefs[stringPreferencesKey("currentNetwork")])
+            assertEquals("palmatum", prefs[stringPreferencesKey("platformDevnetName")])
+        } finally {
+            session.close()
+        }
+    }
+
+    @Test
+    fun shouldNotApplyDevnetSettingsOnceTheAppLeftDevnet() = runTest {
+        val session = newSession(File(temporaryFolder.root, "app.preferences_pb"))
+        try {
+            session.appState.setDevnetName("palmatum")
+            session.appState.applyDevnetSettings()
+            assertNull(session.appState.sdk.value)
+            assertNull(session.appState.appliedDevnet.value)
+            assertFalse(session.appState.isLoading.value)
+        } finally {
+            session.close()
+        }
+    }
+
+    /** The exception [block] throws; fails the test when it returns. */
+    private suspend fun failureOf(block: suspend () -> Unit): Exception {
+        try {
+            block()
+        } catch (e: Exception) {
+            return e
+        }
+        fail("expected a failure")
+        error("unreachable")
     }
 
     @Test
@@ -133,7 +264,13 @@ class AppStateDevnetSettingsTest {
         val job = SupervisorJob()
         val scope = CoroutineScope(job + StandardTestDispatcher(testScheduler))
         val dataStore = PreferenceDataStoreFactory.create(scope = scope, produceFile = { file })
-        return Session(AppState(dataStore, scope), dataStore, job)
+        return Session(AppState(dataStore, scope, ::fakeDevnetQuorumBaseUrl), dataStore, job)
+    }
+
+    /** Stands in for the Rust resolver: refuses `mainnet`, as it does. */
+    private fun fakeDevnetQuorumBaseUrl(name: String): String {
+        check(name != "mainnet") { "Devnet name 'mainnet' is reserved" }
+        return "https://quorums.$name.networks.dash.org"
     }
 
     private class Session(
