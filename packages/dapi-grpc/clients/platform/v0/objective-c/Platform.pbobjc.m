@@ -16142,6 +16142,7 @@ void WaitForStateTransitionResultRequest_ClearVersionOneOfCase(WaitForStateTrans
 @dynamic stateTransitionHash;
 @dynamic prove;
 @dynamic requestUserBalance;
+@dynamic proveStateBeforeBlock;
 
 typedef struct WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0__storage_ {
   uint32_t _has_storage_[1];
@@ -16178,6 +16179,15 @@ typedef struct WaitForStateTransitionResultRequest_WaitForStateTransitionResultR
         .number = WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0_FieldNumber_RequestUserBalance,
         .hasIndex = 3,
         .offset = 4,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "proveStateBeforeBlock",
+        .dataTypeSpecific.clazz = Nil,
+        .number = WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0_FieldNumber_ProveStateBeforeBlock,
+        .hasIndex = 5,
+        .offset = 6,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
       },

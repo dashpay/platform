@@ -9,10 +9,11 @@ service DriveInternal {
   // Asks Drive to prove the keys of a state transition before and after the
   // block that executes it. The proof of the state before a block can only be
   // made before that block is committed, so this has to arrive before the
-  // transition's block is finalized. Each registration is undone by one
-  // unregisterStateTransitionExecutionProof when its caller stops waiting.
-  // RESOURCE_EXHAUSTED when Drive already holds as many registrations as it
-  // keeps.
+  // transition's block is finalized. Only credit transfers, top-ups and credit
+  // withdrawals of an identity are proved. Each registration holds a lease the
+  // caller releases with unregisterStateTransitionExecutionProof when it stops
+  // waiting. RESOURCE_EXHAUSTED when Drive already holds as many registrations
+  // as it keeps.
   rpc registerStateTransitionExecutionProof(RegisterStateTransitionExecutionProofRequest)
       returns (RegisterStateTransitionExecutionProofResponse);
   // Undoes one registration of a state transition. A proof Drive already made
@@ -38,6 +39,9 @@ message GetProofsResponse {
 message RegisterStateTransitionExecutionProofRequest {
   // The hash of the state transition's bytes, its transaction hash in a block.
   bytes state_transition_hash = 1;
+  // 16 bytes the caller picks, unique to its wait. Registering with a lease
+  // that is held, or that was already released, changes nothing.
+  bytes lease = 2;
 }
 
 message RegisterStateTransitionExecutionProofResponse {}
@@ -45,6 +49,9 @@ message RegisterStateTransitionExecutionProofResponse {}
 message UnregisterStateTransitionExecutionProofRequest {
   // The hash of the state transition's bytes, its transaction hash in a block.
   bytes state_transition_hash = 1;
+  // The lease the registration was taken with. Releasing it ends only that
+  // registration, and releasing it before or again is allowed.
+  bytes lease = 2;
 }
 
 message UnregisterStateTransitionExecutionProofResponse {}

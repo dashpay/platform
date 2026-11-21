@@ -1321,6 +1321,8 @@ mod tests {
         use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable, Signable};
         use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
         use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+        use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+        use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
         use dpp::state_transition::proof_result::StateTransitionProofResult;
         use dpp::state_transition::StateTransition;
         use dpp::util::hash::hash_single;
@@ -1333,6 +1335,15 @@ mod tests {
         const FIRST_BLOCK_TIME_MS: u64 = 1_700_000_000_000;
         const SECOND_BLOCK_TIME_MS: u64 = 1_700_000_003_000;
         const TRANSFER_AMOUNT: u64 = 500_000;
+
+        /// The registration lease of a test's waiting client.
+        const LEASE: [u8; 16] = [7; 16];
+
+        fn lease_of(index: u64) -> [u8; 16] {
+            let mut lease = [0; 16];
+            lease[..8].copy_from_slice(&index.to_be_bytes());
+            lease
+        }
 
         struct Sender {
             identity: Identity,
@@ -1563,10 +1574,10 @@ mod tests {
             let registered_hash = hash_single(&registered);
             let never_in_a_block = [9u8; 32];
             proofs
-                .register(registered_hash)
+                .register(registered_hash, LEASE)
                 .expect("expected to register");
             proofs
-                .register(never_in_a_block)
+                .register(never_in_a_block, LEASE)
                 .expect("expected to register");
 
             let root_before_block = committed_root(&platform);
@@ -1635,7 +1646,7 @@ mod tests {
             for nonce in 1..=(MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK as u64 + 1) {
                 let raw = transfer(&alice, bob.identity.id(), nonce).await;
                 proofs
-                    .register(hash_single(&raw))
+                    .register(hash_single(&raw), lease_of(nonce))
                     .expect("expected to register");
                 transfers.push(raw);
             }
@@ -1666,6 +1677,37 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn should_not_prove_a_registered_state_transition_whose_state_before_is_not_read() {
+            let platform = platform();
+            let app = FullAbciApplication::new(&platform.platform);
+            let proofs = &platform.state_transition_execution_proofs;
+
+            finalize_real_block(&platform, &app, 1, FIRST_BLOCK_TIME_MS, None)
+                .expect("the first block must finalize");
+
+            // An identity update proves the identity's whole key set, whose size has no bound,
+            // and a client cannot read the state before it anyway
+            let identity_update: StateTransition =
+                IdentityUpdateTransition::V0(IdentityUpdateTransitionV0 {
+                    identity_id: Identifier::from([5; 32]),
+                    revision: 1,
+                    nonce: 1,
+                    ..Default::default()
+                })
+                .into();
+            let raw = identity_update
+                .serialize_to_bytes()
+                .expect("expected to serialize");
+            proofs
+                .register(hash_single(&raw), LEASE)
+                .expect("expected to register");
+
+            let pending = platform.prove_registered_state_transitions_before_block(&[raw]);
+
+            assert!(pending.is_empty());
+        }
+
+        #[tokio::test]
         async fn should_not_prove_a_registered_state_transition_of_the_first_block() {
             let mut platform = platform();
             let alice = sender(&mut platform, 210);
@@ -1676,7 +1718,7 @@ mod tests {
             let registered = transfer(&alice, bob.identity.id(), 1).await;
             let registered_hash = hash_single(&registered);
             proofs
-                .register(registered_hash)
+                .register(registered_hash, LEASE)
                 .expect("expected to register");
 
             // No block is committed before the first one, so no signed state exists to prove

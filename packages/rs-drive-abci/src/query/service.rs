@@ -6,7 +6,8 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::state_transition_execution_proofs::{
-    ProofOfStateAtBlock, RegistrationRefused, StateTransitionExecutionProofs, StateTransitionHash,
+    ProofOfStateAtBlock, RegistrationLease, RegistrationRefused, StateTransitionExecutionProofs,
+    StateTransitionHash,
 };
 use crate::query::QueryValidationResult;
 use crate::rpc::core::DefaultCoreRPC;
@@ -1263,24 +1264,28 @@ fn register_state_transition_execution_proof(
     request: &RegisterStateTransitionExecutionProofRequest,
 ) -> Result<RegisterStateTransitionExecutionProofResponse, Status> {
     let hash = state_transition_hash(&request.state_transition_hash)?;
+    let lease = registration_lease(&request.lease)?;
 
-    proofs.register(hash).map_err(|refused| match refused {
-        RegistrationRefused::TooManyRegistered => Status::resource_exhausted(
-            "too many state transitions are registered for an execution proof",
-        ),
-    })?;
+    proofs
+        .register(hash, lease)
+        .map_err(|refused| match refused {
+            RegistrationRefused::TooManyRegistered => Status::resource_exhausted(
+                "too many state transitions are registered for an execution proof",
+            ),
+        })?;
 
     Ok(RegisterStateTransitionExecutionProofResponse {})
 }
 
-/// Undoes one registration of a state transition for an execution proof.
+/// Releases one registration of a state transition for an execution proof.
 fn unregister_state_transition_execution_proof(
     proofs: &StateTransitionExecutionProofs,
     request: &UnregisterStateTransitionExecutionProofRequest,
 ) -> Result<UnregisterStateTransitionExecutionProofResponse, Status> {
     let hash = state_transition_hash(&request.state_transition_hash)?;
+    let lease = registration_lease(&request.lease)?;
 
-    proofs.unregister(&hash);
+    proofs.unregister(&hash, &lease);
 
     Ok(UnregisterStateTransitionExecutionProofResponse {})
 }
@@ -1311,6 +1316,13 @@ fn state_transition_hash(bytes: &[u8]) -> Result<StateTransitionHash, Status> {
             "state_transition_hash must be 32 bytes, got {}",
             bytes.len()
         ))
+    })
+}
+
+/// The lease a registration is held by, which is 16 bytes.
+fn registration_lease(bytes: &[u8]) -> Result<RegistrationLease, Status> {
+    bytes.try_into().map_err(|_| {
+        Status::invalid_argument(format!("lease must be 16 bytes, got {}", bytes.len()))
     })
 }
 
@@ -1438,11 +1450,16 @@ mod tests {
         };
         use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 
-        fn register(proofs: &StateTransitionExecutionProofs, hash: Vec<u8>) -> Result<(), Status> {
+        fn register(
+            proofs: &StateTransitionExecutionProofs,
+            hash: Vec<u8>,
+            lease: Vec<u8>,
+        ) -> Result<(), Status> {
             register_state_transition_execution_proof(
                 proofs,
                 &RegisterStateTransitionExecutionProofRequest {
                     state_transition_hash: hash,
+                    lease,
                 },
             )
             .map(|_| ())
@@ -1451,11 +1468,13 @@ mod tests {
         fn unregister(
             proofs: &StateTransitionExecutionProofs,
             hash: Vec<u8>,
+            lease: Vec<u8>,
         ) -> Result<(), Status> {
             unregister_state_transition_execution_proof(
                 proofs,
                 &UnregisterStateTransitionExecutionProofRequest {
                     state_transition_hash: hash,
+                    lease,
                 },
             )
             .map(|_| ())
@@ -1492,14 +1511,16 @@ mod tests {
             for index in 0..MAX_REGISTERED_STATE_TRANSITIONS {
                 let mut hash = vec![0; 32];
                 hash[..8].copy_from_slice(&(index as u64).to_be_bytes());
-                register(&proofs, hash).expect("expected to register");
+                let mut lease = vec![0; 16];
+                lease[..8].copy_from_slice(&(index as u64).to_be_bytes());
+                register(&proofs, hash, lease).expect("expected to register");
             }
 
-            let status = register(&proofs, vec![255; 32]).unwrap_err();
+            let status = register(&proofs, vec![255; 32], vec![255; 16]).unwrap_err();
             assert_eq!(status.code(), Code::ResourceExhausted);
 
-            unregister(&proofs, vec![0; 32]).expect("expected to unregister");
-            register(&proofs, vec![255; 32]).expect("expected a freed slot");
+            unregister(&proofs, vec![0; 32], vec![0; 16]).expect("expected to unregister");
+            register(&proofs, vec![255; 32], vec![255; 16]).expect("expected a freed slot");
         }
 
         #[test]
@@ -1528,12 +1549,14 @@ mod tests {
         }
 
         #[test]
-        fn should_refuse_a_hash_that_is_not_32_bytes_in_every_call() {
+        fn should_refuse_a_hash_that_is_not_32_bytes_or_a_lease_that_is_not_16() {
             let proofs = StateTransitionExecutionProofs::default();
 
             for status in [
-                register(&proofs, vec![1; 31]).unwrap_err(),
-                unregister(&proofs, vec![1; 33]).unwrap_err(),
+                register(&proofs, vec![1; 31], vec![1; 16]).unwrap_err(),
+                register(&proofs, vec![1; 32], vec![1; 15]).unwrap_err(),
+                unregister(&proofs, vec![1; 33], vec![1; 16]).unwrap_err(),
+                unregister(&proofs, vec![1; 32], vec![]).unwrap_err(),
                 get(&proofs, vec![]).unwrap_err(),
             ] {
                 assert_eq!(status.code(), Code::InvalidArgument);

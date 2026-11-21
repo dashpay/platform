@@ -60,6 +60,11 @@ export class RegisterStateTransitionExecutionProofRequest extends jspb.Message {
   getStateTransitionHash_asB64(): string;
   setStateTransitionHash(value: Uint8Array | string): void;
 
+  getLease(): Uint8Array | string;
+  getLease_asU8(): Uint8Array;
+  getLease_asB64(): string;
+  setLease(value: Uint8Array | string): void;
+
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): RegisterStateTransitionExecutionProofRequest.AsObject;
   static toObject(includeInstance: boolean, msg: RegisterStateTransitionExecutionProofRequest): RegisterStateTransitionExecutionProofRequest.AsObject;
@@ -73,6 +78,7 @@ export class RegisterStateTransitionExecutionProofRequest extends jspb.Message {
 export namespace RegisterStateTransitionExecutionProofRequest {
   export type AsObject = {
     stateTransitionHash: Uint8Array | string,
+    lease: Uint8Array | string,
   }
 }
 
@@ -98,6 +104,11 @@ export class UnregisterStateTransitionExecutionProofRequest extends jspb.Message
   getStateTransitionHash_asB64(): string;
   setStateTransitionHash(value: Uint8Array | string): void;
 
+  getLease(): Uint8Array | string;
+  getLease_asU8(): Uint8Array;
+  getLease_asB64(): string;
+  setLease(value: Uint8Array | string): void;
+
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): UnregisterStateTransitionExecutionProofRequest.AsObject;
   static toObject(includeInstance: boolean, msg: UnregisterStateTransitionExecutionProofRequest): UnregisterStateTransitionExecutionProofRequest.AsObject;
@@ -111,6 +122,7 @@ export class UnregisterStateTransitionExecutionProofRequest extends jspb.Message
 export namespace UnregisterStateTransitionExecutionProofRequest {
   export type AsObject = {
     stateTransitionHash: Uint8Array | string,
+    lease: Uint8Array | string,
   }
 }
 

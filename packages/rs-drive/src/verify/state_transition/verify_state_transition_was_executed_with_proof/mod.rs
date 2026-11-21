@@ -138,39 +138,6 @@ impl Drive {
         }
     }
 
-    /// Whether a valid proof for this state transition binds the execution of this specific
-    /// transition ([`StateTransitionProofOutcome::ExecutionProved`]), or only authenticates the
-    /// state of the keys the transition affects at the proof's block
-    /// ([`StateTransitionProofOutcome::AffectedState`]).
-    ///
-    /// A proof of the second kind is checked against no outcome of the transition, so the same
-    /// verifier reads the state of those keys at any block, the block before the transition's
-    /// included. A proof of the first kind is checked against what the transition leaves, and
-    /// only verifies at a block that holds it.
-    pub fn state_transition_proof_binds_execution(
-        state_transition: &StateTransition,
-        known_contracts_provider_fn: &ContractLookupFn,
-        platform_version: &PlatformVersion,
-    ) -> Result<bool, Error> {
-        match platform_version
-            .drive
-            .methods
-            .verify
-            .state_transition
-            .verify_state_transition_was_executed_with_proof
-        {
-            0 | 1 => Drive::state_transition_proof_binds_execution_v0(
-                state_transition,
-                known_contracts_provider_fn,
-            ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "state_transition_proof_binds_execution".to_string(),
-                known_versions: vec![0, 1],
-                received: version,
-            })),
-        }
-    }
-
     /// The producer's document history storage layout, restricted to supported layouts.
     fn proof_document_history_layout(
         query_platform_version: &PlatformVersion,

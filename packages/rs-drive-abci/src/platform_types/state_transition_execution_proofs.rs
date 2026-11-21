@@ -24,32 +24,47 @@ use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
 use dpp::util::hash::hash_single;
+use drive::drive::Drive;
 use drive::util::grove_operations::GroveDBToUse;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-/// How many transitions can be registered at once. A registration past this is refused.
+/// How many registrations can be held at once, one per waiting client. A registration past
+/// this is refused.
 ///
-/// It matches the number of waits one rs-dapi holds at once, so the waits of the rs-dapi in
-/// front of this node can register a transition each.
+/// It matches the number of waits one rs-dapi holds at once, so every wait of the rs-dapi in
+/// front of this node can hold one.
 pub const MAX_REGISTERED_STATE_TRANSITIONS: usize = 1024;
 
-/// How many blocks a registration waits for its transition when nothing unregisters it, as
-/// when the client that registered it stopped without saying so. A transition that no block
-/// held by then is forgotten.
+/// How many blocks a registration lives when nothing releases it, as when the client that took
+/// it stopped without saying so. Each registration expires on its own.
 pub const REGISTRATION_LIFETIME_BLOCKS: u64 = 64;
-
-/// How many registered transitions of one block are proved. Each costs two proofs while the
-/// block is finalized, so this bounds what registrations add to finalizing a block. The
-/// registered transitions of a block past this are not proved, in block order.
-pub const MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK: usize = 32;
 
 /// How many blocks a proof is kept for after the block it is of.
 pub const PROOF_RETENTION_BLOCKS: u64 = 64;
 
+/// How many registered transitions of one block are proved. Each costs two proofs while the
+/// block is finalized, so this bounds what registrations add to finalizing a block, together
+/// with proving only the kinds whose proof is a small fixed set of keys. The registered
+/// transitions of a block past this are not proved, in block order.
+pub const MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK: usize = 32;
+
+/// How many bytes of proofs are kept at once. A pair that would go past this is not kept, and
+/// its client gets a proof of current state instead.
+pub const MAX_RETAINED_PROOF_BYTES: usize = 16 * 1024 * 1024;
+
+/// How many released registrations are remembered at once, so that a registration that arrives
+/// after its own release is not taken. Past this a late registration is taken and expires after
+/// [`REGISTRATION_LIFETIME_BLOCKS`].
+const MAX_REMEMBERED_RELEASES: usize = 4 * MAX_REGISTERED_STATE_TRANSITIONS;
+
 /// The hash a state transition is registered and fetched by: the hash of its bytes, which is
 /// also its transaction hash in a block.
 pub type StateTransitionHash = [u8; 32];
+
+/// What one waiting client's registration is known by. The client picks it, unique to the wait,
+/// so taking and releasing it are idempotent, and a release only ever ends its own registration.
+pub type RegistrationLease = [u8; 16];
 
 /// A proof of a state transition's keys, with the block whose state it is of. The metadata
 /// and the signature in the proof are that block's, as in any proved query response.
@@ -70,6 +85,22 @@ pub struct StateTransitionExecutionProof {
     pub after: ProofOfStateAtBlock,
 }
 
+impl StateTransitionExecutionProof {
+    /// The bytes the pair holds, as counted against [`MAX_RETAINED_PROOF_BYTES`].
+    fn retained_bytes(&self) -> usize {
+        [&self.before, &self.after]
+            .iter()
+            .map(|side| {
+                side.proof.grovedb_proof.len()
+                    + side.proof.quorum_hash.len()
+                    + side.proof.signature.len()
+                    + side.proof.block_id_hash.len()
+                    + side.metadata.chain_id.len()
+            })
+            .sum()
+    }
+}
+
 /// The proof of the state before a block, made before the block is committed and waiting for
 /// the proof of the state after it.
 #[derive(Debug)]
@@ -82,26 +113,35 @@ pub struct PendingStateTransitionExecutionProof {
 /// Why a state transition could not be registered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RegistrationRefused {
-    /// [`MAX_REGISTERED_STATE_TRANSITIONS`] transitions are registered already.
+    /// [`MAX_REGISTERED_STATE_TRANSITIONS`] registrations are held already.
     TooManyRegistered,
-}
-
-/// A registered state transition: how many registrations wait for it, and the height of the
-/// last committed block when it was first registered.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Registration {
-    waiting: u32,
-    registered_at: u64,
 }
 
 #[derive(Debug, Default)]
 struct Inner {
-    /// The registered transitions.
-    registered: HashMap<StateTransitionHash, Registration>,
+    /// The registered transitions: the registrations waiting for each, with the height of the
+    /// last committed block when each was taken.
+    registered: HashMap<StateTransitionHash, HashMap<RegistrationLease, u64>>,
+    /// How many registrations `registered` holds.
+    registrations: usize,
+    /// Registrations released, or ended by a proof of their transition, with the height of the
+    /// last committed block then.
+    released: HashMap<RegistrationLease, u64>,
     /// The proofs made, with the height of the block each transition was executed in.
     proved: HashMap<StateTransitionHash, (u64, Arc<StateTransitionExecutionProof>)>,
-    /// The height of the last block this node committed while running.
+    /// The bytes `proved` holds.
+    proved_bytes: usize,
+    /// The height of the last block committed.
     last_committed_height: u64,
+}
+
+impl Inner {
+    fn remember_release(&mut self, lease: RegistrationLease) {
+        if self.released.len() < MAX_REMEMBERED_RELEASES {
+            let released_at = self.last_committed_height;
+            self.released.insert(lease, released_at);
+        }
+    }
 }
 
 /// The state transitions a node was asked to prove, and the proofs it has made of them.
@@ -111,6 +151,17 @@ pub struct StateTransitionExecutionProofs {
 }
 
 impl StateTransitionExecutionProofs {
+    /// The registry of a node whose last committed block is at `last_committed_height`, so that
+    /// registrations taken before the next block count their lifetime from there.
+    pub fn new(last_committed_height: u64) -> Self {
+        Self {
+            inner: Mutex::new(Inner {
+                last_committed_height,
+                ..Default::default()
+            }),
+        }
+    }
+
     /// A panic while the lock is held leaves the maps as they were between two operations, each
     /// of which leaves them consistent, so a poisoned lock is still safe to use.
     fn inner(&self) -> MutexGuard<'_, Inner> {
@@ -118,45 +169,61 @@ impl StateTransitionExecutionProofs {
     }
 
     /// Asks the node to prove the state before and after the block that executes the state
-    /// transition with this hash. Each registration is undone by one [`Self::unregister`], so
-    /// several clients can wait for the same transition. Registering a transition already
-    /// proved changes nothing.
-    pub fn register(&self, hash: StateTransitionHash) -> Result<(), RegistrationRefused> {
+    /// transition with this hash, for as long as the registration `lease` is held. Several
+    /// clients can wait for the same transition, each with its own lease.
+    ///
+    /// Taking a lease that is held already, or one that was released already, changes nothing:
+    /// a registration that arrives after its own release is not taken. Registering a transition
+    /// already proved changes nothing either.
+    pub fn register(
+        &self,
+        hash: StateTransitionHash,
+        lease: RegistrationLease,
+    ) -> Result<(), RegistrationRefused> {
         let mut inner = self.inner();
-        if inner.proved.contains_key(&hash) {
+        if inner.released.contains_key(&lease) || inner.proved.contains_key(&hash) {
             return Ok(());
         }
-        if let Some(registration) = inner.registered.get_mut(&hash) {
-            registration.waiting = registration.waiting.saturating_add(1);
+        if inner
+            .registered
+            .get(&hash)
+            .is_some_and(|leases| leases.contains_key(&lease))
+        {
             return Ok(());
         }
-        if inner.registered.len() >= MAX_REGISTERED_STATE_TRANSITIONS {
+        if inner.registrations >= MAX_REGISTERED_STATE_TRANSITIONS {
             return Err(RegistrationRefused::TooManyRegistered);
         }
-        let registered_at = inner.last_committed_height;
-        inner.registered.insert(
-            hash,
-            Registration {
-                waiting: 1,
-                registered_at,
-            },
-        );
+        let taken_at = inner.last_committed_height;
+        inner
+            .registered
+            .entry(hash)
+            .or_default()
+            .insert(lease, taken_at);
+        inner.registrations += 1;
         Ok(())
     }
 
-    /// Undoes one registration of the state transition with this hash, when the client that
-    /// made it stops waiting. The transition stays registered while another registration of it
-    /// waits. Unregistering a transition that is not registered changes nothing, and a proof
-    /// already made is kept.
-    pub fn unregister(&self, hash: &StateTransitionHash) {
+    /// Releases the registration `lease` of the state transition with this hash, when the
+    /// client that took it stops waiting. The transition stays registered while another
+    /// registration of it is held. Releasing a lease again changes nothing, and a proof already
+    /// made is kept.
+    pub fn unregister(&self, hash: &StateTransitionHash, lease: &RegistrationLease) {
         let mut inner = self.inner();
-        let Some(registration) = inner.registered.get_mut(hash) else {
-            return;
+        let removed = match inner.registered.get_mut(hash) {
+            Some(leases) => {
+                let removed = leases.remove(lease).is_some();
+                if leases.is_empty() {
+                    inner.registered.remove(hash);
+                }
+                removed
+            }
+            None => false,
         };
-        registration.waiting = registration.waiting.saturating_sub(1);
-        if registration.waiting == 0 {
-            inner.registered.remove(hash);
+        if removed {
+            inner.registrations -= 1;
         }
+        inner.remember_release(*lease);
     }
 
     /// Whether the state transition with this hash is waiting for its block.
@@ -178,8 +245,9 @@ impl StateTransitionExecutionProofs {
             .map(|(_, proof)| Arc::clone(proof))
     }
 
-    /// Keeps the proof of a state transition executed in the block at `height`. The transition
-    /// is no longer waiting.
+    /// Keeps the proof of a state transition executed in the block at `height`, unless keeping
+    /// it would go past [`MAX_RETAINED_PROOF_BYTES`]. Either way the transition is no longer
+    /// waiting: its block has passed.
     pub(crate) fn store(
         &self,
         hash: StateTransitionHash,
@@ -187,21 +255,54 @@ impl StateTransitionExecutionProofs {
         proof: StateTransitionExecutionProof,
     ) {
         let mut inner = self.inner();
-        inner.registered.remove(&hash);
-        inner.proved.insert(hash, (height, Arc::new(proof)));
+        if let Some(leases) = inner.registered.remove(&hash) {
+            inner.registrations -= leases.len();
+            for lease in leases.into_keys() {
+                inner.remember_release(lease);
+            }
+        }
+        let bytes = proof.retained_bytes();
+        if inner.proved_bytes.saturating_add(bytes) > MAX_RETAINED_PROOF_BYTES {
+            tracing::warn!(
+                state_transition_hash = hex::encode(hash),
+                bytes,
+                retained = inner.proved_bytes,
+                "the proofs kept already fill their budget; this pair is not kept"
+            );
+            return;
+        }
+        inner.proved_bytes += bytes;
+        if let Some((_, replaced)) = inner.proved.insert(hash, (height, Arc::new(proof))) {
+            inner.proved_bytes -= replaced.retained_bytes();
+        }
     }
 
-    /// Records that the block at `height` is committed, and forgets the registrations and the
-    /// proofs that have outlived their bounds.
+    /// Records that the block at `height` is committed, and forgets the registrations, the
+    /// releases and the proofs that have outlived their bounds.
     fn block_committed(&self, height: u64) {
         let mut inner = self.inner();
         inner.last_committed_height = height;
-        inner.registered.retain(|_, registration| {
-            height.saturating_sub(registration.registered_at) <= REGISTRATION_LIFETIME_BLOCKS
+        let live = |at: &u64| height.saturating_sub(*at) <= REGISTRATION_LIFETIME_BLOCKS;
+
+        let mut expired = 0;
+        inner.registered.retain(|_, leases| {
+            let held = leases.len();
+            leases.retain(|_, taken_at| live(taken_at));
+            expired += held - leases.len();
+            !leases.is_empty()
         });
-        inner.proved.retain(|_, (proved_at, _)| {
-            height.saturating_sub(*proved_at) <= PROOF_RETENTION_BLOCKS
+        inner.registrations -= expired;
+        inner.released.retain(|_, released_at| live(released_at));
+
+        let mut freed = 0;
+        inner.proved.retain(|_, (proved_at, proof)| {
+            let kept = height.saturating_sub(*proved_at) <= PROOF_RETENTION_BLOCKS;
+            if !kept {
+                freed += proof.retained_bytes();
+            }
+            kept
         });
+        inner.proved_bytes -= freed;
     }
 }
 
@@ -214,9 +315,11 @@ impl<C> Platform<C> {
     /// previous block's, so each proof is of the state the previous block left and carries that
     /// block's signature.
     ///
-    /// At most [`MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK`] transitions are proved, in block
-    /// order. A transition past that, or one that cannot be proved, is skipped and stays
-    /// registered until its client unregisters it.
+    /// Only the kinds whose state before them a client can read are proved
+    /// (`Drive::state_transition_prior_state_is_readable`), and at most
+    /// [`MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK`] of them, in block order. A transition skipped
+    /// for either reason, or one that cannot be proved, stays registered until its client
+    /// releases it.
     pub(crate) fn prove_registered_state_transitions_before_block(
         &self,
         raw_state_transitions: &[Vec<u8>],
@@ -231,37 +334,65 @@ impl<C> Platform<C> {
             return Vec::new();
         }
 
-        let registered = raw_state_transitions
+        let platform_version = match platform_state.current_platform_version() {
+            Ok(platform_version) => platform_version,
+            Err(error) => {
+                tracing::warn!(
+                    ?error,
+                    "no platform version to prove the registered state transitions with"
+                );
+                return Vec::new();
+            }
+        };
+
+        // Only the kinds whose state before them a client can read are proved: their proofs
+        // are a small fixed set of keys, so each costs a bounded amount of work
+        let provable = raw_state_transitions
             .iter()
             .map(|raw_state_transition| (hash_single(raw_state_transition), raw_state_transition))
             .filter(|(hash, _)| self.state_transition_execution_proofs.is_registered(hash))
+            .filter_map(|(hash, raw_state_transition)| {
+                match StateTransition::deserialize_from_bytes_untrusted(raw_state_transition) {
+                    Ok(state_transition) => Some((hash, state_transition)),
+                    Err(error) => {
+                        tracing::warn!(
+                            state_transition_hash = hex::encode(hash),
+                            ?error,
+                            "cannot decode a registered state transition to prove it"
+                        );
+                        None
+                    }
+                }
+            })
+            .filter(|(hash, state_transition)| {
+                let readable = Drive::state_transition_prior_state_is_readable(
+                    state_transition,
+                    platform_version,
+                )
+                .unwrap_or(false);
+                if !readable {
+                    tracing::debug!(
+                        state_transition_hash = hex::encode(hash),
+                        "a registered state transition of a kind whose state before it is not read is not proved"
+                    );
+                }
+                readable
+            })
             .collect::<Vec<_>>();
 
-        if registered.len() > MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK {
+        if provable.len() > MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK {
             tracing::warn!(
-                registered = registered.len(),
+                registered = provable.len(),
                 proved = MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK,
                 "more registered state transitions in the block than are proved in one block; \
                  the ones past the limit are not proved"
             );
         }
 
-        registered
+        provable
             .into_iter()
             .take(MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK)
-            .filter_map(|(hash, raw_state_transition)| {
-                let state_transition =
-                    match StateTransition::deserialize_from_bytes_untrusted(raw_state_transition) {
-                        Ok(state_transition) => state_transition,
-                        Err(error) => {
-                            tracing::warn!(
-                                state_transition_hash = hex::encode(hash),
-                                ?error,
-                                "cannot decode a registered state transition to prove it"
-                            );
-                            return None;
-                        }
-                    };
+            .filter_map(|(hash, state_transition)| {
                 let before = self.prove_state_at_last_committed_block(
                     &state_transition,
                     &hash,
@@ -387,9 +518,19 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
 
+    const A: RegistrationLease = [1; 16];
+    const B: RegistrationLease = [2; 16];
+
     fn proof_at(height: u64) -> StateTransitionExecutionProof {
+        proof_of_size(height, 0)
+    }
+
+    fn proof_of_size(height: u64, grovedb_proof_bytes: usize) -> StateTransitionExecutionProof {
         let side = |height| ProofOfStateAtBlock {
-            proof: Proof::default(),
+            proof: Proof {
+                grovedb_proof: vec![0; grovedb_proof_bytes],
+                ..Default::default()
+            },
             metadata: ResponseMetadata {
                 height,
                 ..Default::default()
@@ -401,116 +542,188 @@ mod tests {
         }
     }
 
+    fn hash_of(index: usize) -> StateTransitionHash {
+        let mut hash = [0; 32];
+        hash[..8].copy_from_slice(&(index as u64).to_be_bytes());
+        hash
+    }
+
+    fn lease_of(index: usize) -> RegistrationLease {
+        let mut lease = [0; 16];
+        lease[..8].copy_from_slice(&(index as u64).to_be_bytes());
+        lease
+    }
+
     #[test]
     fn should_keep_a_registered_transition_until_it_is_proved() {
         let proofs = StateTransitionExecutionProofs::default();
         assert!(!proofs.has_registered());
 
-        proofs.register([1; 32]).expect("expected to register");
+        proofs.register([1; 32], A).expect("expected to register");
         assert!(proofs.is_registered(&[1; 32]));
-        assert!(proofs.has_registered());
         assert_eq!(proofs.get(&[1; 32]), None);
 
         proofs.store([1; 32], 5, proof_at(5));
         proofs.block_committed(5);
 
-        assert!(!proofs.is_registered(&[1; 32]));
         assert!(!proofs.has_registered());
         assert_eq!(proofs.get(&[1; 32]).as_deref(), Some(&proof_at(5)));
+        assert_eq!(proofs.inner().registrations, 0);
     }
 
     #[test]
-    fn should_keep_a_transition_registered_while_one_of_its_registrations_waits() {
+    fn should_keep_a_transition_registered_while_another_lease_holds_it() {
         let proofs = StateTransitionExecutionProofs::default();
 
-        proofs.register([1; 32]).expect("expected to register");
-        proofs.register([1; 32]).expect("expected to register");
-        assert_eq!(proofs.inner().registered.len(), 1);
+        proofs.register([1; 32], A).expect("expected to register");
+        proofs.register([1; 32], B).expect("expected to register");
+        assert_eq!(proofs.inner().registrations, 2);
 
-        proofs.unregister(&[1; 32]);
+        proofs.unregister(&[1; 32], &A);
         assert!(proofs.is_registered(&[1; 32]));
 
-        proofs.unregister(&[1; 32]);
+        proofs.unregister(&[1; 32], &B);
         assert!(!proofs.is_registered(&[1; 32]));
-
-        // One more changes nothing
-        proofs.unregister(&[1; 32]);
-        assert!(!proofs.has_registered());
+        assert_eq!(proofs.inner().registrations, 0);
     }
 
     #[test]
-    fn should_not_register_a_proved_transition_and_keep_its_proof_when_unregistered() {
+    fn should_take_and_release_a_lease_once() {
         let proofs = StateTransitionExecutionProofs::default();
 
-        proofs.register([1; 32]).expect("expected to register");
+        proofs.register([1; 32], A).expect("expected to register");
+        proofs.register([1; 32], A).expect("expected to register");
+        assert_eq!(proofs.inner().registrations, 1);
+
+        proofs.unregister(&[1; 32], &A);
+        proofs.unregister(&[1; 32], &A);
+        assert_eq!(proofs.inner().registrations, 0);
+    }
+
+    #[test]
+    fn should_not_take_a_registration_that_arrives_after_its_release() {
+        let proofs = StateTransitionExecutionProofs::default();
+
+        // The wait was cancelled while its registration was on its way
+        proofs.unregister(&[1; 32], &A);
+        proofs
+            .register([1; 32], A)
+            .expect("expected the late registration to be accepted");
+
+        assert!(!proofs.is_registered(&[1; 32]));
+        assert_eq!(proofs.inner().registrations, 0);
+    }
+
+    #[test]
+    fn should_end_only_its_own_registration_on_a_stale_release() {
+        let proofs = StateTransitionExecutionProofs::default();
+
+        proofs.register([1; 32], A).expect("expected to register");
+        proofs.unregister(&[1; 32], &A);
+        // Another wait for the same transition registers after the first one ended
+        proofs.register([1; 32], B).expect("expected to register");
+
+        // The first wait's release arrives again
+        proofs.unregister(&[1; 32], &A);
+
+        assert!(proofs.is_registered(&[1; 32]));
+    }
+
+    #[test]
+    fn should_not_register_a_proved_transition_and_keep_its_proof_when_released() {
+        let proofs = StateTransitionExecutionProofs::default();
+
+        proofs.register([1; 32], A).expect("expected to register");
         proofs.store([1; 32], 5, proof_at(5));
 
-        proofs.register([1; 32]).expect("expected to register");
+        proofs.register([1; 32], B).expect("expected to register");
         assert!(!proofs.is_registered(&[1; 32]));
 
-        proofs.unregister(&[1; 32]);
+        proofs.unregister(&[1; 32], &A);
         assert_eq!(proofs.get(&[1; 32]).as_deref(), Some(&proof_at(5)));
     }
 
     #[test]
-    fn should_free_a_slot_when_a_transition_is_unregistered() {
+    fn should_refuse_a_registration_past_the_limit_until_one_is_released() {
         let proofs = StateTransitionExecutionProofs::default();
 
         for index in 0..MAX_REGISTERED_STATE_TRANSITIONS {
-            let mut hash = [0; 32];
-            hash[..8].copy_from_slice(&(index as u64).to_be_bytes());
-            proofs.register(hash).expect("expected to register");
+            proofs
+                .register(hash_of(index), lease_of(index))
+                .expect("expected to register");
         }
         assert_eq!(
-            proofs.register([255; 32]),
+            proofs.register([255; 32], [255; 16]),
+            Err(RegistrationRefused::TooManyRegistered)
+        );
+        // A second lease on a registered transition is a registration too
+        assert_eq!(
+            proofs.register(hash_of(0), [255; 16]),
             Err(RegistrationRefused::TooManyRegistered)
         );
 
-        proofs.unregister(&[0; 32]);
+        proofs.unregister(&hash_of(0), &lease_of(0));
 
-        assert_eq!(proofs.register([255; 32]), Ok(()));
+        assert_eq!(proofs.register([255; 32], [255; 16]), Ok(()));
     }
 
     #[test]
-    fn should_refuse_a_registration_past_the_limit() {
-        let proofs = StateTransitionExecutionProofs::default();
-
-        for index in 0..MAX_REGISTERED_STATE_TRANSITIONS {
-            let mut hash = [0; 32];
-            hash[..8].copy_from_slice(&(index as u64).to_be_bytes());
-            proofs.register(hash).expect("expected to register");
-        }
-
-        assert_eq!(
-            proofs.register([255; 32]),
-            Err(RegistrationRefused::TooManyRegistered)
-        );
-        // One that is registered already is not a new registration
-        assert_eq!(proofs.register([0; 32]), Ok(()));
-    }
-
-    #[test]
-    fn should_forget_a_registration_no_block_held_in_time() {
-        let proofs = StateTransitionExecutionProofs::default();
-        proofs.block_committed(10);
-        proofs.register([1; 32]).expect("expected to register");
-
-        proofs.block_committed(10 + REGISTRATION_LIFETIME_BLOCKS);
-        assert!(proofs.is_registered(&[1; 32]));
+    fn should_expire_each_registration_on_its_own() {
+        let proofs = StateTransitionExecutionProofs::new(10);
+        proofs.register([1; 32], A).expect("expected to register");
+        proofs.block_committed(20);
+        proofs.register([1; 32], B).expect("expected to register");
 
         proofs.block_committed(10 + REGISTRATION_LIFETIME_BLOCKS + 1);
+        assert!(proofs.is_registered(&[1; 32]));
+        assert_eq!(proofs.inner().registrations, 1);
+
+        proofs.block_committed(20 + REGISTRATION_LIFETIME_BLOCKS + 1);
         assert!(!proofs.is_registered(&[1; 32]));
+        assert_eq!(proofs.inner().registrations, 0);
+    }
+
+    #[test]
+    fn should_count_a_registration_lifetime_from_the_height_the_node_restarted_at() {
+        // A node reopened at height 100 takes a registration before block 101
+        let proofs = StateTransitionExecutionProofs::new(100);
+        proofs.register([1; 32], A).expect("expected to register");
+
+        // Block 101 does not hold the transition; it is still waiting for block 102
+        proofs.block_committed(101);
+
+        assert!(proofs.is_registered(&[1; 32]));
     }
 
     #[test]
     fn should_forget_a_proof_past_its_retention() {
         let proofs = StateTransitionExecutionProofs::default();
-        proofs.store([1; 32], 10, proof_at(10));
+        proofs.store([1; 32], 10, proof_of_size(10, 100));
+        assert_eq!(proofs.inner().proved_bytes, 200);
 
         proofs.block_committed(10 + PROOF_RETENTION_BLOCKS);
         assert!(proofs.get(&[1; 32]).is_some());
 
         proofs.block_committed(10 + PROOF_RETENTION_BLOCKS + 1);
         assert_eq!(proofs.get(&[1; 32]), None);
+        assert_eq!(proofs.inner().proved_bytes, 0);
+    }
+
+    #[test]
+    fn should_not_keep_a_pair_past_the_byte_budget() {
+        let proofs = StateTransitionExecutionProofs::default();
+        let half = MAX_RETAINED_PROOF_BYTES / 4;
+
+        // Two pairs of two sides of a quarter each fill the budget
+        proofs.store([1; 32], 10, proof_of_size(10, half));
+        proofs.store([2; 32], 10, proof_of_size(10, half));
+        proofs.register([3; 32], A).expect("expected to register");
+        proofs.store([3; 32], 10, proof_of_size(10, 1));
+
+        assert!(proofs.get(&[1; 32]).is_some());
+        assert!(proofs.get(&[2; 32]).is_some());
+        assert_eq!(proofs.get(&[3; 32]), None);
+        // Its block has passed, so it is not waiting any more either
+        assert!(!proofs.is_registered(&[3; 32]));
     }
 }

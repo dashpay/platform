@@ -2700,6 +2700,15 @@ message WaitForStateTransitionResultRequest {
     // identity updates and key limit updates, contract moderation) carries
     // the owner's balance itself.
     bool request_user_balance = 3;
+    // Flag to request, with `prove`, a proof of the transition's keys at the
+    // block before the one that executed it (`state_before_block` in the
+    // response). The node can only make it when it is asked before that block
+    // is finalized, and only for credit transfers, top-ups and credit
+    // withdrawals of an identity. When the node has it, the response's `proof`
+    // and `metadata` are of the block that executed the transition, which can
+    // be behind the node's latest block; without this flag they stay of the
+    // node's latest block.
+    bool prove_state_before_block = 4;
   }
   oneof version { WaitForStateTransitionResultRequestV0 v0 = 1; }
 }
@@ -2722,12 +2731,13 @@ message WaitForStateTransitionResultResponse {
       SuccessWithOwnerBalance success_with_owner_balance = 4;
     }
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
-    // The state of the proof's keys at the block before the one that executed
-    // the state transition. Present when the node had been asked for the
-    // transition's proof before its block was finalized: `proof` and `metadata`
-    // are then of the block that executed the transition, so the two proofs
-    // show what that block changed. Absent otherwise, and `proof` is then of
-    // whatever block the node had reached when it answered.
+    // The state of the proof's keys at the block before the one the node
+    // reports executed the state transition. Present only when the request set
+    // `prove_state_before_block` and the node made the proof: `proof` and
+    // `metadata` are then of the block that executed the transition, so the two
+    // proofs show what that block changed. Neither proof covers the
+    // transition's inclusion in that block. Absent otherwise, and `proof` is
+    // then of whatever block the node had reached when it answered.
     StateBeforeBlock state_before_block = 5;
   }
   // A proof of a state transition's keys at the block before the one that

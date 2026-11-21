@@ -58709,6 +58709,7 @@ $root.org = (function() {
                              * @property {Uint8Array|null} [stateTransitionHash] WaitForStateTransitionResultRequestV0 stateTransitionHash
                              * @property {boolean|null} [prove] WaitForStateTransitionResultRequestV0 prove
                              * @property {boolean|null} [requestUserBalance] WaitForStateTransitionResultRequestV0 requestUserBalance
+                             * @property {boolean|null} [proveStateBeforeBlock] WaitForStateTransitionResultRequestV0 proveStateBeforeBlock
                              */
 
                             /**
@@ -58751,6 +58752,14 @@ $root.org = (function() {
                             WaitForStateTransitionResultRequestV0.prototype.requestUserBalance = false;
 
                             /**
+                             * WaitForStateTransitionResultRequestV0 proveStateBeforeBlock.
+                             * @member {boolean} proveStateBeforeBlock
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest.WaitForStateTransitionResultRequestV0
+                             * @instance
+                             */
+                            WaitForStateTransitionResultRequestV0.prototype.proveStateBeforeBlock = false;
+
+                            /**
                              * Creates a new WaitForStateTransitionResultRequestV0 instance using the specified properties.
                              * @function create
                              * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest.WaitForStateTransitionResultRequestV0
@@ -58780,6 +58789,8 @@ $root.org = (function() {
                                     writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
                                 if (message.requestUserBalance != null && Object.hasOwnProperty.call(message, "requestUserBalance"))
                                     writer.uint32(/* id 3, wireType 0 =*/24).bool(message.requestUserBalance);
+                                if (message.proveStateBeforeBlock != null && Object.hasOwnProperty.call(message, "proveStateBeforeBlock"))
+                                    writer.uint32(/* id 4, wireType 0 =*/32).bool(message.proveStateBeforeBlock);
                                 return writer;
                             };
 
@@ -58822,6 +58833,9 @@ $root.org = (function() {
                                         break;
                                     case 3:
                                         message.requestUserBalance = reader.bool();
+                                        break;
+                                    case 4:
+                                        message.proveStateBeforeBlock = reader.bool();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -58867,6 +58881,9 @@ $root.org = (function() {
                                 if (message.requestUserBalance != null && message.hasOwnProperty("requestUserBalance"))
                                     if (typeof message.requestUserBalance !== "boolean")
                                         return "requestUserBalance: boolean expected";
+                                if (message.proveStateBeforeBlock != null && message.hasOwnProperty("proveStateBeforeBlock"))
+                                    if (typeof message.proveStateBeforeBlock !== "boolean")
+                                        return "proveStateBeforeBlock: boolean expected";
                                 return null;
                             };
 
@@ -58891,6 +58908,8 @@ $root.org = (function() {
                                     message.prove = Boolean(object.prove);
                                 if (object.requestUserBalance != null)
                                     message.requestUserBalance = Boolean(object.requestUserBalance);
+                                if (object.proveStateBeforeBlock != null)
+                                    message.proveStateBeforeBlock = Boolean(object.proveStateBeforeBlock);
                                 return message;
                             };
 
@@ -58917,6 +58936,7 @@ $root.org = (function() {
                                     }
                                     object.prove = false;
                                     object.requestUserBalance = false;
+                                    object.proveStateBeforeBlock = false;
                                 }
                                 if (message.stateTransitionHash != null && message.hasOwnProperty("stateTransitionHash"))
                                     object.stateTransitionHash = options.bytes === String ? $util.base64.encode(message.stateTransitionHash, 0, message.stateTransitionHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.stateTransitionHash) : message.stateTransitionHash;
@@ -58924,6 +58944,8 @@ $root.org = (function() {
                                     object.prove = message.prove;
                                 if (message.requestUserBalance != null && message.hasOwnProperty("requestUserBalance"))
                                     object.requestUserBalance = message.requestUserBalance;
+                                if (message.proveStateBeforeBlock != null && message.hasOwnProperty("proveStateBeforeBlock"))
+                                    object.proveStateBeforeBlock = message.proveStateBeforeBlock;
                                 return object;
                             };
 

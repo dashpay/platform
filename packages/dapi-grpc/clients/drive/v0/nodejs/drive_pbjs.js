@@ -644,6 +644,7 @@ $root.org = (function() {
                          * @memberof org.dash.platform.drive.v0
                          * @interface IRegisterStateTransitionExecutionProofRequest
                          * @property {Uint8Array|null} [stateTransitionHash] RegisterStateTransitionExecutionProofRequest stateTransitionHash
+                         * @property {Uint8Array|null} [lease] RegisterStateTransitionExecutionProofRequest lease
                          */
 
                         /**
@@ -668,6 +669,14 @@ $root.org = (function() {
                          * @instance
                          */
                         RegisterStateTransitionExecutionProofRequest.prototype.stateTransitionHash = $util.newBuffer([]);
+
+                        /**
+                         * RegisterStateTransitionExecutionProofRequest lease.
+                         * @member {Uint8Array} lease
+                         * @memberof org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest
+                         * @instance
+                         */
+                        RegisterStateTransitionExecutionProofRequest.prototype.lease = $util.newBuffer([]);
 
                         /**
                          * Creates a new RegisterStateTransitionExecutionProofRequest instance using the specified properties.
@@ -695,6 +704,8 @@ $root.org = (function() {
                                 writer = $Writer.create();
                             if (message.stateTransitionHash != null && Object.hasOwnProperty.call(message, "stateTransitionHash"))
                                 writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.stateTransitionHash);
+                            if (message.lease != null && Object.hasOwnProperty.call(message, "lease"))
+                                writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.lease);
                             return writer;
                         };
 
@@ -731,6 +742,9 @@ $root.org = (function() {
                                 switch (tag >>> 3) {
                                 case 1:
                                     message.stateTransitionHash = reader.bytes();
+                                    break;
+                                case 2:
+                                    message.lease = reader.bytes();
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -770,6 +784,9 @@ $root.org = (function() {
                             if (message.stateTransitionHash != null && message.hasOwnProperty("stateTransitionHash"))
                                 if (!(message.stateTransitionHash && typeof message.stateTransitionHash.length === "number" || $util.isString(message.stateTransitionHash)))
                                     return "stateTransitionHash: buffer expected";
+                            if (message.lease != null && message.hasOwnProperty("lease"))
+                                if (!(message.lease && typeof message.lease.length === "number" || $util.isString(message.lease)))
+                                    return "lease: buffer expected";
                             return null;
                         };
 
@@ -790,6 +807,11 @@ $root.org = (function() {
                                     $util.base64.decode(object.stateTransitionHash, message.stateTransitionHash = $util.newBuffer($util.base64.length(object.stateTransitionHash)), 0);
                                 else if (object.stateTransitionHash.length >= 0)
                                     message.stateTransitionHash = object.stateTransitionHash;
+                            if (object.lease != null)
+                                if (typeof object.lease === "string")
+                                    $util.base64.decode(object.lease, message.lease = $util.newBuffer($util.base64.length(object.lease)), 0);
+                                else if (object.lease.length >= 0)
+                                    message.lease = object.lease;
                             return message;
                         };
 
@@ -806,7 +828,7 @@ $root.org = (function() {
                             if (!options)
                                 options = {};
                             var object = {};
-                            if (options.defaults)
+                            if (options.defaults) {
                                 if (options.bytes === String)
                                     object.stateTransitionHash = "";
                                 else {
@@ -814,8 +836,18 @@ $root.org = (function() {
                                     if (options.bytes !== Array)
                                         object.stateTransitionHash = $util.newBuffer(object.stateTransitionHash);
                                 }
+                                if (options.bytes === String)
+                                    object.lease = "";
+                                else {
+                                    object.lease = [];
+                                    if (options.bytes !== Array)
+                                        object.lease = $util.newBuffer(object.lease);
+                                }
+                            }
                             if (message.stateTransitionHash != null && message.hasOwnProperty("stateTransitionHash"))
                                 object.stateTransitionHash = options.bytes === String ? $util.base64.encode(message.stateTransitionHash, 0, message.stateTransitionHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.stateTransitionHash) : message.stateTransitionHash;
+                            if (message.lease != null && message.hasOwnProperty("lease"))
+                                object.lease = options.bytes === String ? $util.base64.encode(message.lease, 0, message.lease.length) : options.bytes === Array ? Array.prototype.slice.call(message.lease) : message.lease;
                             return object;
                         };
 
@@ -1000,6 +1032,7 @@ $root.org = (function() {
                          * @memberof org.dash.platform.drive.v0
                          * @interface IUnregisterStateTransitionExecutionProofRequest
                          * @property {Uint8Array|null} [stateTransitionHash] UnregisterStateTransitionExecutionProofRequest stateTransitionHash
+                         * @property {Uint8Array|null} [lease] UnregisterStateTransitionExecutionProofRequest lease
                          */
 
                         /**
@@ -1024,6 +1057,14 @@ $root.org = (function() {
                          * @instance
                          */
                         UnregisterStateTransitionExecutionProofRequest.prototype.stateTransitionHash = $util.newBuffer([]);
+
+                        /**
+                         * UnregisterStateTransitionExecutionProofRequest lease.
+                         * @member {Uint8Array} lease
+                         * @memberof org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest
+                         * @instance
+                         */
+                        UnregisterStateTransitionExecutionProofRequest.prototype.lease = $util.newBuffer([]);
 
                         /**
                          * Creates a new UnregisterStateTransitionExecutionProofRequest instance using the specified properties.
@@ -1051,6 +1092,8 @@ $root.org = (function() {
                                 writer = $Writer.create();
                             if (message.stateTransitionHash != null && Object.hasOwnProperty.call(message, "stateTransitionHash"))
                                 writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.stateTransitionHash);
+                            if (message.lease != null && Object.hasOwnProperty.call(message, "lease"))
+                                writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.lease);
                             return writer;
                         };
 
@@ -1087,6 +1130,9 @@ $root.org = (function() {
                                 switch (tag >>> 3) {
                                 case 1:
                                     message.stateTransitionHash = reader.bytes();
+                                    break;
+                                case 2:
+                                    message.lease = reader.bytes();
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -1126,6 +1172,9 @@ $root.org = (function() {
                             if (message.stateTransitionHash != null && message.hasOwnProperty("stateTransitionHash"))
                                 if (!(message.stateTransitionHash && typeof message.stateTransitionHash.length === "number" || $util.isString(message.stateTransitionHash)))
                                     return "stateTransitionHash: buffer expected";
+                            if (message.lease != null && message.hasOwnProperty("lease"))
+                                if (!(message.lease && typeof message.lease.length === "number" || $util.isString(message.lease)))
+                                    return "lease: buffer expected";
                             return null;
                         };
 
@@ -1146,6 +1195,11 @@ $root.org = (function() {
                                     $util.base64.decode(object.stateTransitionHash, message.stateTransitionHash = $util.newBuffer($util.base64.length(object.stateTransitionHash)), 0);
                                 else if (object.stateTransitionHash.length >= 0)
                                     message.stateTransitionHash = object.stateTransitionHash;
+                            if (object.lease != null)
+                                if (typeof object.lease === "string")
+                                    $util.base64.decode(object.lease, message.lease = $util.newBuffer($util.base64.length(object.lease)), 0);
+                                else if (object.lease.length >= 0)
+                                    message.lease = object.lease;
                             return message;
                         };
 
@@ -1162,7 +1216,7 @@ $root.org = (function() {
                             if (!options)
                                 options = {};
                             var object = {};
-                            if (options.defaults)
+                            if (options.defaults) {
                                 if (options.bytes === String)
                                     object.stateTransitionHash = "";
                                 else {
@@ -1170,8 +1224,18 @@ $root.org = (function() {
                                     if (options.bytes !== Array)
                                         object.stateTransitionHash = $util.newBuffer(object.stateTransitionHash);
                                 }
+                                if (options.bytes === String)
+                                    object.lease = "";
+                                else {
+                                    object.lease = [];
+                                    if (options.bytes !== Array)
+                                        object.lease = $util.newBuffer(object.lease);
+                                }
+                            }
                             if (message.stateTransitionHash != null && message.hasOwnProperty("stateTransitionHash"))
                                 object.stateTransitionHash = options.bytes === String ? $util.base64.encode(message.stateTransitionHash, 0, message.stateTransitionHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.stateTransitionHash) : message.stateTransitionHash;
+                            if (message.lease != null && message.hasOwnProperty("lease"))
+                                object.lease = options.bytes === String ? $util.base64.encode(message.lease, 0, message.lease.length) : options.bytes === Array ? Array.prototype.slice.call(message.lease) : message.lease;
                             return object;
                         };
 
@@ -60664,6 +60728,7 @@ $root.org = (function() {
                              * @property {Uint8Array|null} [stateTransitionHash] WaitForStateTransitionResultRequestV0 stateTransitionHash
                              * @property {boolean|null} [prove] WaitForStateTransitionResultRequestV0 prove
                              * @property {boolean|null} [requestUserBalance] WaitForStateTransitionResultRequestV0 requestUserBalance
+                             * @property {boolean|null} [proveStateBeforeBlock] WaitForStateTransitionResultRequestV0 proveStateBeforeBlock
                              */
 
                             /**
@@ -60706,6 +60771,14 @@ $root.org = (function() {
                             WaitForStateTransitionResultRequestV0.prototype.requestUserBalance = false;
 
                             /**
+                             * WaitForStateTransitionResultRequestV0 proveStateBeforeBlock.
+                             * @member {boolean} proveStateBeforeBlock
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest.WaitForStateTransitionResultRequestV0
+                             * @instance
+                             */
+                            WaitForStateTransitionResultRequestV0.prototype.proveStateBeforeBlock = false;
+
+                            /**
                              * Creates a new WaitForStateTransitionResultRequestV0 instance using the specified properties.
                              * @function create
                              * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest.WaitForStateTransitionResultRequestV0
@@ -60735,6 +60808,8 @@ $root.org = (function() {
                                     writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
                                 if (message.requestUserBalance != null && Object.hasOwnProperty.call(message, "requestUserBalance"))
                                     writer.uint32(/* id 3, wireType 0 =*/24).bool(message.requestUserBalance);
+                                if (message.proveStateBeforeBlock != null && Object.hasOwnProperty.call(message, "proveStateBeforeBlock"))
+                                    writer.uint32(/* id 4, wireType 0 =*/32).bool(message.proveStateBeforeBlock);
                                 return writer;
                             };
 
@@ -60777,6 +60852,9 @@ $root.org = (function() {
                                         break;
                                     case 3:
                                         message.requestUserBalance = reader.bool();
+                                        break;
+                                    case 4:
+                                        message.proveStateBeforeBlock = reader.bool();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -60822,6 +60900,9 @@ $root.org = (function() {
                                 if (message.requestUserBalance != null && message.hasOwnProperty("requestUserBalance"))
                                     if (typeof message.requestUserBalance !== "boolean")
                                         return "requestUserBalance: boolean expected";
+                                if (message.proveStateBeforeBlock != null && message.hasOwnProperty("proveStateBeforeBlock"))
+                                    if (typeof message.proveStateBeforeBlock !== "boolean")
+                                        return "proveStateBeforeBlock: boolean expected";
                                 return null;
                             };
 
@@ -60846,6 +60927,8 @@ $root.org = (function() {
                                     message.prove = Boolean(object.prove);
                                 if (object.requestUserBalance != null)
                                     message.requestUserBalance = Boolean(object.requestUserBalance);
+                                if (object.proveStateBeforeBlock != null)
+                                    message.proveStateBeforeBlock = Boolean(object.proveStateBeforeBlock);
                                 return message;
                             };
 
@@ -60872,6 +60955,7 @@ $root.org = (function() {
                                     }
                                     object.prove = false;
                                     object.requestUserBalance = false;
+                                    object.proveStateBeforeBlock = false;
                                 }
                                 if (message.stateTransitionHash != null && message.hasOwnProperty("stateTransitionHash"))
                                     object.stateTransitionHash = options.bytes === String ? $util.base64.encode(message.stateTransitionHash, 0, message.stateTransitionHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.stateTransitionHash) : message.stateTransitionHash;
@@ -60879,6 +60963,8 @@ $root.org = (function() {
                                     object.prove = message.prove;
                                 if (message.requestUserBalance != null && message.hasOwnProperty("requestUserBalance"))
                                     object.requestUserBalance = message.requestUserBalance;
+                                if (message.proveStateBeforeBlock != null && message.hasOwnProperty("proveStateBeforeBlock"))
+                                    object.proveStateBeforeBlock = message.proveStateBeforeBlock;
                                 return object;
                             };
 

@@ -7475,6 +7475,9 @@ export namespace WaitForStateTransitionResultRequest {
     getRequestUserBalance(): boolean;
     setRequestUserBalance(value: boolean): void;
 
+    getProveStateBeforeBlock(): boolean;
+    setProveStateBeforeBlock(value: boolean): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): WaitForStateTransitionResultRequestV0.AsObject;
     static toObject(includeInstance: boolean, msg: WaitForStateTransitionResultRequestV0): WaitForStateTransitionResultRequestV0.AsObject;
@@ -7490,6 +7493,7 @@ export namespace WaitForStateTransitionResultRequest {
       stateTransitionHash: Uint8Array | string,
       prove: boolean,
       requestUserBalance: boolean,
+      proveStateBeforeBlock: boolean,
     }
   }
 

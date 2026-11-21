@@ -222,6 +222,11 @@ pub struct DriveVerifySingleDocumentMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifyStateTransitionMethodVersions {
     pub verify_state_transition_was_executed_with_proof: FeatureVersion,
+    /// Version of `verify_state_transition_prior_state_with_proof` and
+    /// `state_transition_prior_state_is_readable`: client-side reading of the state a state
+    /// transition's keys held before it executed. Not consensus; nothing in block execution
+    /// reads it.
+    pub verify_state_transition_prior_state_with_proof: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

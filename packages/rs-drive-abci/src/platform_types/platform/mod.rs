@@ -293,7 +293,7 @@ impl<C> Platform<C> {
             config,
             core_rpc,
             check_tx_proof_verifier: CheckTxProofVerifier::default(),
-            state_transition_execution_proofs: StateTransitionExecutionProofs::default(),
+            state_transition_execution_proofs: StateTransitionExecutionProofs::new(height),
         };
 
         Ok(platform)
@@ -332,7 +332,7 @@ impl<C> Platform<C> {
             config,
             core_rpc,
             check_tx_proof_verifier: CheckTxProofVerifier::default(),
-            state_transition_execution_proofs: StateTransitionExecutionProofs::default(),
+            state_transition_execution_proofs: StateTransitionExecutionProofs::new(height),
         })
     }
 }

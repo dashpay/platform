@@ -63903,7 +63903,8 @@ proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest.WaitForState
   var f, obj = {
     stateTransitionHash: msg.getStateTransitionHash_asB64(),
     prove: jspb.Message.getBooleanFieldWithDefault(msg, 2, false),
-    requestUserBalance: jspb.Message.getBooleanFieldWithDefault(msg, 3, false)
+    requestUserBalance: jspb.Message.getBooleanFieldWithDefault(msg, 3, false),
+    proveStateBeforeBlock: jspb.Message.getBooleanFieldWithDefault(msg, 4, false)
   };
 
   if (includeInstance) {
@@ -63952,6 +63953,10 @@ proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest.WaitForState
       var value = /** @type {boolean} */ (reader.readBool());
       msg.setRequestUserBalance(value);
       break;
+    case 4:
+      var value = /** @type {boolean} */ (reader.readBool());
+      msg.setProveStateBeforeBlock(value);
+      break;
     default:
       reader.skipField();
       break;
@@ -63999,6 +64004,13 @@ proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest.WaitForState
   if (f) {
     writer.writeBool(
       3,
+      f
+    );
+  }
+  f = message.getProveStateBeforeBlock();
+  if (f) {
+    writer.writeBool(
+      4,
       f
     );
   }
@@ -64080,6 +64092,24 @@ proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest.WaitForState
  */
 proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest.WaitForStateTransitionResultRequestV0.prototype.setRequestUserBalance = function(value) {
   return jspb.Message.setProto3BooleanField(this, 3, value);
+};
+
+
+/**
+ * optional bool prove_state_before_block = 4;
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest.WaitForStateTransitionResultRequestV0.prototype.getProveStateBeforeBlock = function() {
+  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 4, false));
+};
+
+
+/**
+ * @param {boolean} value
+ * @return {!proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest.WaitForStateTransitionResultRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest.WaitForStateTransitionResultRequestV0.prototype.setProveStateBeforeBlock = function(value) {
+  return jspb.Message.setProto3BooleanField(this, 4, value);
 };
 
 

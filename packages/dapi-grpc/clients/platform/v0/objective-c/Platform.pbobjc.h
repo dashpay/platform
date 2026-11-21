@@ -7907,6 +7907,7 @@ typedef GPB_ENUM(WaitForStateTransitionResultRequest_WaitForStateTransitionResul
   WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0_FieldNumber_StateTransitionHash = 1,
   WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0_FieldNumber_Prove = 2,
   WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0_FieldNumber_RequestUserBalance = 3,
+  WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0_FieldNumber_ProveStateBeforeBlock = 4,
 };
 
 GPB_FINAL @interface WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0 : GPBMessage
@@ -7926,6 +7927,18 @@ GPB_FINAL @interface WaitForStateTransitionResultRequest_WaitForStateTransitionR
  * the owner's balance itself.
  **/
 @property(nonatomic, readwrite) BOOL requestUserBalance;
+
+/**
+ * Flag to request, with `prove`, a proof of the transition's keys at the
+ * block before the one that executed it (`state_before_block` in the
+ * response). The node can only make it when it is asked before that block
+ * is finalized, and only for credit transfers, top-ups and credit
+ * withdrawals of an identity. When the node has it, the response's `proof`
+ * and `metadata` are of the block that executed the transition, which can
+ * be behind the node's latest block; without this flag they stay of the
+ * node's latest block.
+ **/
+@property(nonatomic, readwrite) BOOL proveStateBeforeBlock;
 
 @end
 
@@ -8011,12 +8024,13 @@ GPB_FINAL @interface WaitForStateTransitionResultResponse_WaitForStateTransition
 @property(nonatomic, readwrite) BOOL hasMetadata;
 
 /**
- * The state of the proof's keys at the block before the one that executed
- * the state transition. Present when the node had been asked for the
- * transition's proof before its block was finalized: `proof` and `metadata`
- * are then of the block that executed the transition, so the two proofs
- * show what that block changed. Absent otherwise, and `proof` is then of
- * whatever block the node had reached when it answered.
+ * The state of the proof's keys at the block before the one the node
+ * reports executed the state transition. Present only when the request set
+ * `prove_state_before_block` and the node made the proof: `proof` and
+ * `metadata` are then of the block that executed the transition, so the two
+ * proofs show what that block changed. Neither proof covers the
+ * transition's inclusion in that block. Absent otherwise, and `proof` is
+ * then of whatever block the node had reached when it answered.
  **/
 @property(nonatomic, readwrite, strong, null_resettable) WaitForStateTransitionResultResponse_StateBeforeBlock *stateBeforeBlock;
 /** Test to see if @c stateBeforeBlock has been set. */

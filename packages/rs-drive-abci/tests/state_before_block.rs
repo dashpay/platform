@@ -39,15 +39,17 @@ struct Fixture {
     before: (Proof, ResponseMetadata),
     after: (Proof, ResponseMetadata),
     sender_balance: u64,
-    recipient_balance: u64,
+    /// `None` when the recipient does not exist before the transfer's block
+    recipient_balance: Option<u64>,
+    recipient_balance_after: u64,
 }
 
-fn metadata_at(height: u64) -> ResponseMetadata {
+fn metadata_at(height: u64, protocol_version: u32) -> ResponseMetadata {
     ResponseMetadata {
         height,
         core_chain_locked_height: 1,
         time_ms: 1_700_000_000_000 + height * 3_000,
-        protocol_version: PlatformVersion::latest().protocol_version,
+        protocol_version,
         chain_id: "dash-testnet-51".into(),
         ..Default::default()
     }
@@ -57,8 +59,8 @@ fn signed_proof_at(
     drive: &Drive,
     transition: &StateTransition,
     height: u64,
+    platform_version: &PlatformVersion,
 ) -> (Proof, ResponseMetadata) {
-    let platform_version = PlatformVersion::latest();
     let bytes = drive
         .prove_state_transition(transition, None, platform_version)
         .unwrap()
@@ -69,18 +71,21 @@ fn signed_proof_at(
         .root_hash(None, &platform_version.drive.grove_version)
         .unwrap()
         .unwrap();
-    let metadata = metadata_at(height);
+    let metadata = metadata_at(height, platform_version.protocol_version);
 
     (signed(bytes, &metadata, root), metadata)
 }
 
 fn fixture() -> Fixture {
+    fixture_with(true, PlatformVersion::latest().protocol_version)
+}
+
+/// A transfer whose recipient exists before its block or is created in it, with the proof of
+/// the state before the block made and signed at `before_protocol_version`.
+fn fixture_with(recipient_exists_before: bool, before_protocol_version: u32) -> Fixture {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-
-    let sender = Identity::random_identity(3, Some(1), platform_version).unwrap();
-    let recipient = Identity::random_identity(3, Some(2), platform_version).unwrap();
-    for identity in [&sender, &recipient] {
+    let add = |identity: &Identity| {
         drive
             .add_new_identity(
                 identity.clone(),
@@ -90,7 +95,14 @@ fn fixture() -> Fixture {
                 None,
                 platform_version,
             )
-            .unwrap();
+            .unwrap()
+    };
+
+    let sender = Identity::random_identity(3, Some(1), platform_version).unwrap();
+    let recipient = Identity::random_identity(3, Some(2), platform_version).unwrap();
+    add(&sender);
+    if recipient_exists_before {
+        add(&recipient);
     }
 
     let transition: StateTransition =
@@ -104,9 +116,18 @@ fn fixture() -> Fixture {
         .into();
 
     // The state the block before the transfer's left
-    let before = signed_proof_at(&drive, &transition, BLOCK_HEIGHT - 1);
+    let before = signed_proof_at(
+        &drive,
+        &transition,
+        BLOCK_HEIGHT - 1,
+        PlatformVersion::get(before_protocol_version).unwrap(),
+    );
 
-    // What the transfer's block does to the two balances
+    // What the transfer's block does to the two balances, creating the recipient first when it
+    // did not exist before
+    if !recipient_exists_before {
+        add(&recipient);
+    }
     drive
         .remove_from_identity_balance(
             sender.id().to_buffer(),
@@ -129,7 +150,7 @@ fn fixture() -> Fixture {
         .unwrap();
 
     // The state the transfer's block left
-    let after = signed_proof_at(&drive, &transition, BLOCK_HEIGHT);
+    let after = signed_proof_at(&drive, &transition, BLOCK_HEIGHT, platform_version);
 
     Fixture {
         request: BroadcastStateTransitionRequest {
@@ -138,7 +159,8 @@ fn fixture() -> Fixture {
         before,
         after,
         sender_balance: sender.balance(),
-        recipient_balance: recipient.balance(),
+        recipient_balance: recipient_exists_before.then(|| recipient.balance()),
+        recipient_balance_after: recipient.balance() + TRANSFER_AMOUNT,
     }
 }
 
@@ -172,11 +194,32 @@ fn verify(
     .map_err(Box::new)
 }
 
-fn balances(result: &StateTransitionProofResult) -> (u64, u64) {
+/// The sender's and the recipient's balances a transfer's proof holds, `None` for one that does
+/// not exist.
+type TransferBalances = (Option<u64>, Option<u64>);
+
+/// The balances a transfer's proof holds.
+fn balances(result: &StateTransitionProofResult) -> TransferBalances {
     let StateTransitionProofResult::VerifiedBalanceTransfer(sender, recipient) = result else {
         panic!("expected the balances of a credit transfer, got {result:?}");
     };
-    (sender.balance.unwrap(), recipient.balance.unwrap())
+    (sender.balance, recipient.balance)
+}
+
+/// Verifies the fixture's pair and returns the balances before and after the block.
+fn verified_balances(fixture: Fixture) -> (TransferBalances, TransferBalances) {
+    let verified = verify(
+        fixture.request,
+        response(fixture.after, Some(fixture.before)),
+    )
+    .expect("expected both proofs to verify");
+    let StateBeforeBlockVerification::Verified(before) = &verified.state_before_block else {
+        panic!(
+            "expected the state before the block, got {:?}",
+            verified.state_before_block
+        );
+    };
+    (balances(&before.state), balances(verified.outcome.result()))
 }
 
 #[test]
@@ -203,15 +246,45 @@ fn should_verify_the_state_before_and_after_the_block_of_a_credit_transfer() {
     // And the two states differ by what the block did
     assert_eq!(
         balances(&before.state),
-        (fixture.sender_balance, fixture.recipient_balance)
+        (Some(fixture.sender_balance), fixture.recipient_balance)
     );
     assert_eq!(
         balances(verified.outcome.result()),
         (
-            fixture.sender_balance - TRANSFER_AMOUNT,
-            fixture.recipient_balance + TRANSFER_AMOUNT
+            Some(fixture.sender_balance - TRANSFER_AMOUNT),
+            Some(fixture.recipient_balance_after)
         )
     );
+}
+
+#[test]
+fn should_verify_a_recipient_created_in_the_block_as_absent_before_it() {
+    let fixture = fixture_with(false, PlatformVersion::latest().protocol_version);
+    let sender_balance = fixture.sender_balance;
+    let recipient_balance_after = fixture.recipient_balance_after;
+
+    let (before, after) = verified_balances(fixture);
+
+    assert_eq!(before, (Some(sender_balance), None));
+    assert_eq!(
+        after,
+        (
+            Some(sender_balance - TRANSFER_AMOUNT),
+            Some(recipient_balance_after)
+        )
+    );
+}
+
+#[test]
+fn should_verify_a_state_before_the_block_signed_at_an_older_protocol_version() {
+    // The network upgraded between the two blocks
+    let fixture = fixture_with(true, 13);
+    let sender_balance = fixture.sender_balance;
+    let recipient_balance = fixture.recipient_balance;
+
+    let (before, _) = verified_balances(fixture);
+
+    assert_eq!(before, (Some(sender_balance), recipient_balance));
 }
 
 #[test]
@@ -228,8 +301,8 @@ fn should_verify_a_response_without_a_state_before_the_block() {
     assert_eq!(
         balances(verified.outcome.result()),
         (
-            fixture.sender_balance - TRANSFER_AMOUNT,
-            fixture.recipient_balance + TRANSFER_AMOUNT
+            Some(fixture.sender_balance - TRANSFER_AMOUNT),
+            Some(fixture.recipient_balance_after)
         )
     );
 }

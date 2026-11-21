@@ -219,6 +219,7 @@ fn case(drive: &Drive, transition: &StateTransition) -> serde_json::Value {
                     .to_vec(),
                 prove: true,
                 request_user_balance: false,
+                prove_state_before_block: false,
             },
         )),
     };
