@@ -186,7 +186,9 @@ impl Sdk {
     /// # Returns
     ///
     /// Returns the masternode voters who voted for this contestant in a live contest, or
-    /// [`Error::InvalidRequest`] when the contest has ended
+    /// [`Error::InvalidRequest`] when the contest has ended. An empty list means no live voter
+    /// entries were found: the contest or the contestant may not exist, so it does not show a
+    /// live contestant with no votes
     pub async fn get_contested_dpns_voters_for_identity(
         &self,
         name: &str,

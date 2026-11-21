@@ -10,6 +10,11 @@ use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches voters for a contested resource identity
 ///
+/// Reads the live votes only. After a contest ends its live votes are removed
+/// and the result is empty, so an empty result does not mean nobody voted. For
+/// a DPNS username, `dash_sdk_dpns_get_contested_voters_for_identity` reports a
+/// contest that ended as an error instead.
+///
 /// # Parameters
 /// * `sdk_handle` - Handle to the SDK instance
 /// * `contract_id` - Base58-encoded contract identifier

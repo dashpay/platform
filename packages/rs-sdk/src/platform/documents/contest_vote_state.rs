@@ -25,7 +25,9 @@ impl Sdk {
     /// an empty state without a request. A contest that ended answers its first page with
     /// every contender of its record, whatever the page asks for: no further page is read, and
     /// its contenders are cut to `limit` here, the first in id order kept; its winner and its
-    /// abstain and lock tallies are returned whole.
+    /// abstain and lock tallies are returned whole. A contest that ends between pages answers
+    /// the next page empty, so an empty page after the first is read once more without a
+    /// start: if that names a winner, its record is returned in place of the live pages.
     pub async fn fetch_contested_resource_vote_state(
         &self,
         vote_poll: &ContestedDocumentResourceVotePoll,
@@ -58,6 +60,29 @@ impl Sdk {
                 },
             )
             .await?;
+            // A page with a start selects only the keys after it, and the record of a contest
+            // that ended lives at the first key: a contest that ended between requests answers
+            // its next page empty. Read it again without a start, where a record that ended
+            // comes whole whatever the limit, and take its record over the live pages
+            if start_at.is_some() && page.contenders.is_empty() && page.winner.is_none() {
+                let record = ContenderWithSerializedDocument::fetch_many(
+                    self,
+                    ContestedDocumentVotePollDriveQuery {
+                        vote_poll: vote_poll.clone(),
+                        result_type:
+                            ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
+                        allow_include_locked_and_abstaining_vote_tally: true,
+                        start_at: None,
+                        limit: Some(1),
+                        offset: None,
+                    },
+                )
+                .await?;
+                if record.winner.is_some() {
+                    state = Some(record);
+                }
+                break;
+            }
             let page_len = page.contenders.len();
             let last = page.contenders.keys().last().copied();
             // A page naming a winner is the record of a contest that ended, which is whole
@@ -204,5 +229,101 @@ mod tests {
             assert_eq!(state.abstain_vote_tally, Some(6));
             assert_eq!(state.lock_vote_tally, Some(2));
         }
+    }
+
+    /// A contest that ends between pages answers the next page, which starts after the last
+    /// contender read, empty: the record lives at the first key. The pager reads the contest
+    /// again without a start and returns the record, with its winner, instead of the live
+    /// contenders read before.
+    #[tokio::test]
+    async fn should_return_the_record_of_a_contest_that_ended_between_pages() {
+        let mut sdk = SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .expect("a mock sdk");
+        let vote_poll = ContestedDocumentResourceVotePoll {
+            contract_id: Identifier::new([7; 32]),
+            document_type_name: "domain".to_string(),
+            index_name: "parentNameAndLabel".to_string(),
+            index_values: vec![
+                Value::Text("dash".to_string()),
+                Value::Text("quantum".to_string()),
+            ],
+        };
+        let contender = |n: u8, vote_tally: u32| {
+            let identity_id = Identifier::new([n; 32]);
+            (
+                identity_id,
+                ContenderWithSerializedDocument::V0(ContenderWithSerializedDocumentV0 {
+                    identity_id,
+                    serialized_document: None,
+                    vote_tally: Some(vote_tally),
+                }),
+            )
+        };
+        let query =
+            |start_at: Option<([u8; 32], bool)>, limit: u16| ContestedDocumentVotePollDriveQuery {
+                vote_poll: vote_poll.clone(),
+                result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
+                allow_include_locked_and_abstaining_vote_tally: true,
+                start_at,
+                limit: Some(limit),
+                offset: None,
+            };
+
+        // A full first page of a live contest, so the pager asks for the next one
+        let live: BTreeMap<_, _> = (1..=DEFAULT_QUERY_LIMIT as u8)
+            .map(|n| contender(n, 1))
+            .collect();
+        let last = Identifier::new([DEFAULT_QUERY_LIMIT as u8; 32]);
+        sdk.mock()
+            .expect_fetch_many::<_, ContenderWithSerializedDocument, _, Contenders>(
+                query(None, DEFAULT_QUERY_LIMIT),
+                Some(Contenders {
+                    winner: None,
+                    contenders: live,
+                    abstain_vote_tally: Some(1),
+                    lock_vote_tally: Some(0),
+                }),
+            )
+            .await
+            .expect("registers the first page");
+        // The contest ended: the page after the last contender read is empty
+        sdk.mock()
+            .expect_fetch_many::<_, ContenderWithSerializedDocument, _, Contenders>(
+                query(Some((last.to_buffer(), false)), DEFAULT_QUERY_LIMIT),
+                Some(Contenders::default()),
+            )
+            .await
+            .expect("registers the empty page");
+        // Read without a start, the contest answers with its record
+        let winner = Some((
+            ContestedDocumentVotePollWinnerInfo::WonByIdentity(Identifier::new([2; 32])),
+            BlockInfo::default(),
+        ));
+        sdk.mock()
+            .expect_fetch_many::<_, ContenderWithSerializedDocument, _, Contenders>(
+                query(None, 1),
+                Some(Contenders {
+                    winner,
+                    contenders: BTreeMap::from([contender(1, 4), contender(2, 9)]),
+                    abstain_vote_tally: Some(6),
+                    lock_vote_tally: Some(2),
+                }),
+            )
+            .await
+            .expect("registers the record");
+
+        let state = sdk
+            .fetch_contested_resource_vote_state(&vote_poll, None)
+            .await
+            .expect("reads");
+        assert_eq!(state.winner, winner);
+        assert_eq!(
+            state.contenders.keys().copied().collect::<Vec<_>>(),
+            vec![Identifier::new([1; 32]), Identifier::new([2; 32])]
+        );
+        assert_eq!(state.abstain_vote_tally, Some(6));
+        assert_eq!(state.lock_vote_tally, Some(2));
     }
 }

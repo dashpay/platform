@@ -266,8 +266,9 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_contested_vote_state(
 ///
 /// # Returns
 /// A JSON array `[{"voter_id": base58}]` in voter id order, the shape of
-/// `dash_sdk_contested_resource_get_voters_for_identity`; `[]` when nobody
-/// voted for the contestant in a live contest.
+/// `dash_sdk_contested_resource_get_voters_for_identity`; `[]` when no live
+/// voter entries were found. The contest or the contestant may not exist, so
+/// `[]` does not show a live contestant with no votes.
 ///
 /// # Safety
 /// - `sdk_handle` must be a valid pointer to an initialized `SDKHandle`.

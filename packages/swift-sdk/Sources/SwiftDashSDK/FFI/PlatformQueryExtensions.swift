@@ -1483,6 +1483,7 @@ extension SDK {
 
     /// Get the vote state for a contested DPNS username. `name` is a label or
     /// a full name in any case ("alice", "Alice.DASH"); the SDK normalizes it.
+    /// A name holding a NUL is refused with ``SDKError/invalidParameter(_:)``.
     ///
     /// `nonisolated`: the query blocks on the network inside Rust, so it runs
     /// on the shared Platform query queue (see ``performBlockingQuery(_:)``)
@@ -1492,7 +1493,12 @@ extension SDK {
         limit: UInt32 = 100
     ) async throws -> sending [String: Any] {
         let json = try await performBlockingQuery { handle in
-            try Self.consumeStringResult(dash_sdk_dpns_get_contested_vote_state(handle, name, limit))
+            try withDecisionProposalCString(
+                name, field: "name", invalid: SDKError.invalidParameter
+            ) { namePtr in
+                try Self.consumeStringResult(
+                    dash_sdk_dpns_get_contested_vote_state(handle, namePtr, limit))
+            }
         }
         return try Self.parseJSONObject(json)
     }
@@ -1506,6 +1512,10 @@ extension SDK {
     /// Live contests only: finalization moves the votes into the contest's
     /// stored record and deletes the live ones this reads, so a contest that
     /// has ended throws ``SDKError`` saying so instead of returning `[]`.
+    /// `[]` means no live voter entries were found; the contest or the
+    /// contestant may not exist, so it does not show a live contestant with
+    /// no votes. A string holding a NUL is refused with
+    /// ``SDKError/invalidParameter(_:)``.
     ///
     /// `nonisolated`: the query blocks on the network inside Rust, so it runs
     /// on the shared Platform query queue (see ``performBlockingQuery(_:)``)
@@ -1516,8 +1526,17 @@ extension SDK {
         limit: UInt32 = 0
     ) async throws -> sending [[String: Any]] {
         let json = try await performBlockingQuery { handle in
-            try Self.consumeStringResult(
-                dash_sdk_dpns_get_contested_voters_for_identity(handle, name, contestantId, limit))
+            try withDecisionProposalCString(
+                name, field: "name", invalid: SDKError.invalidParameter
+            ) { namePtr in
+                try withDecisionProposalCString(
+                    contestantId, field: "contestantId", invalid: SDKError.invalidParameter
+                ) { contestantIdPtr in
+                    try Self.consumeStringResult(
+                        dash_sdk_dpns_get_contested_voters_for_identity(
+                            handle, namePtr, contestantIdPtr, limit))
+                }
+            }
         }
         return try Self.parseJSONArray(json)
     }
@@ -1533,11 +1552,16 @@ extension SDK {
     /// - Parameters:
     ///   - limit: Maximum number of labels; 0 returns every label.
     ///   - startAfter: A normalized label to list after (exclusive), or `nil`
-    ///     to start from the first label.
+    ///     to start from the first label. A label holding a NUL is refused
+    ///     with ``SDKError/invalidParameter(_:)``.
     public nonisolated func dpnsGetAllContestedUsernames(limit: UInt32, startAfter: String?) async throws -> [String] {
         try await performBlockingQuery { handle in
-            let json = try Self.consumeStringResult(
-                dash_sdk_dpns_get_all_contested_usernames(handle, limit, startAfter))
+            let json = try withDecisionProposalCString(
+                startAfter, field: "startAfter", invalid: SDKError.invalidParameter
+            ) { startAfterPtr in
+                try Self.consumeStringResult(
+                    dash_sdk_dpns_get_all_contested_usernames(handle, limit, startAfterPtr))
+            }
             guard let labels = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String] else {
                 throw SDKError.serializationError("Failed to parse contested usernames JSON")
             }
@@ -1778,7 +1802,13 @@ extension SDK {
         return try Self.parseJSONObject(json)
     }
 
-    /// Get contested resource voters for identity
+    /// Get contested resource voters for identity.
+    ///
+    /// Reads the live votes only. After a contest ends its live votes are
+    /// removed and this returns `[]`, so an empty result does not mean
+    /// nobody voted. For a DPNS username use
+    /// ``dpnsGetContestedVotersForIdentity(name:contestantId:limit:)``,
+    /// which reports a contest that ended.
     public func getContestedResourceVotersForIdentity(
         dataContractId: String,
         documentTypeName: String,
