@@ -26,7 +26,7 @@ use key_wallet_manager::WalletManager;
 use crate::broadcaster::BroadcastError;
 use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
-use crate::masternode::list::MasternodeListSummary;
+use crate::masternode::list::{CurrentMasternodeList, MasternodeListSummary};
 use crate::spv::peers::{classify_peers, PeerTracker, SpvPeerInfo};
 use crate::wallet::asset_lock::sync::locate::HeaderLookup;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
@@ -874,8 +874,24 @@ impl SpvRuntime {
     pub(crate) async fn current_masternode_list_summaries(
         &self,
     ) -> Option<Vec<MasternodeListSummary>> {
-        self.while_following_the_chain(self.masternode_list_summaries())
+        self.current_masternode_list()
             .await
+            .map(|list| list.summaries)
+    }
+
+    /// The masternode list with its height, only while it follows the chain
+    /// ([`Self::is_ready`]). `None` otherwise, or when SPV restarted during
+    /// the read.
+    pub async fn current_masternode_list(&self) -> Option<CurrentMasternodeList> {
+        // TODO: switch to dash-spv's current-list read (rust-dashcore S1: masternode-list freshness).
+        self.while_following_the_chain(async {
+            let list = {
+                let client_guard = self.client.read().await;
+                client_guard.as_ref()?.latest_masternode_list().await?
+            };
+            Some(CurrentMasternodeList::from_list(&list))
+        })
+        .await
     }
 
     /// [`Self::masternode_list_entries`], but only while the list follows
@@ -2405,6 +2421,13 @@ mod tests {
 
         assert_eq!(read, None);
         assert_eq!(runtime.current_masternode_list_summaries().await, None);
+    }
+
+    /// The public list read is gated like the crate-private ones: a runtime
+    /// that does not follow the chain has no current list to hand out.
+    #[tokio::test]
+    async fn should_have_no_current_masternode_list_while_not_following_the_chain() {
+        assert_eq!(unstarted_runtime().current_masternode_list().await, None);
     }
 
     /// dash-spv raises `NotConnected` from its zero-peer check before the
