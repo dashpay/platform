@@ -207,21 +207,6 @@ pub enum SecretStoreError {
         expected: u32,
     },
 
-    /// A vault ancestor was writable without the sticky bit or owned by
-    /// neither the current user nor root. Either condition can allow another
-    /// local user to replace the vault despite its own `0600` mode.
-    ///
-    /// Names the offending ancestor, not the vault's own parent: the walk runs
-    /// to `/`, and telling a user that one of nine components is at fault is
-    /// not a remediation.
-    #[error("{}", crate::parent_permissions::insecure_ancestor_message("vault", .ancestor, .reason))]
-    InsecureParentDir {
-        /// The ancestor that was refused (not secret).
-        ancestor: PathBuf,
-        /// Which of the two conditions fired; they need different remediations.
-        reason: crate::parent_permissions::InsecureAncestor,
-    },
-
     /// A secret offered for storage exceeded the per-secret write cap
     /// ([`MAX_SECRET_LEN`](crate::secrets::MAX_SECRET_LEN)). Rejected at
     /// the write boundary so an oversized entry never inflates the shared
@@ -336,7 +321,6 @@ impl SecretStoreError {
             | Self::HostPageSizeExceedsBudget { .. }
             | Self::InsecurePermissions { .. }
             | Self::InsecureOwnership { .. }
-            | Self::InsecureParentDir { .. }
             | Self::SecretTooLarge { .. }
             | Self::VaultTooLarge { .. }
             | Self::Decrypt
@@ -369,7 +353,6 @@ impl SecretStoreError {
             Self::HostPageSizeExceedsBudget { .. } => "host_page_size_exceeds_budget",
             Self::InsecurePermissions { .. } => "insecure_permissions",
             Self::InsecureOwnership { .. } => "insecure_ownership",
-            Self::InsecureParentDir { .. } => "insecure_parent_dir",
             Self::SecretTooLarge { .. } => "secret_too_large",
             Self::AlreadyLocked => "already_locked",
             Self::VaultTooLarge { .. } => "vault_too_large",
@@ -504,7 +487,6 @@ impl From<SecretStoreError> for KeyringError {
             | E::MalformedVault
             | E::InsecurePermissions { .. }
             | E::InsecureOwnership { .. }
-            | E::InsecureParentDir { .. }
             | E::SecretTooLarge { .. }
             | E::PassphraseTooLong { .. }
             | E::VaultTooLarge { .. }
@@ -553,12 +535,6 @@ mod tests {
                 path: "/vault".into(),
                 found: 1001,
                 expected: 1000,
-            },
-            SecretStoreError::InsecureParentDir {
-                ancestor: "/parent".into(),
-                reason: crate::parent_permissions::InsecureAncestor::WritableWithoutSticky {
-                    mode: 0o777,
-                },
             },
             SecretStoreError::SecretTooLarge {
                 found: 100,
@@ -621,35 +597,6 @@ mod tests {
         .to_string();
         assert!(file.contains("0644"));
         assert!(file.contains("chmod 600"));
-
-        let parent = SecretStoreError::InsecureParentDir {
-            ancestor: "/parent".into(),
-            reason: crate::parent_permissions::InsecureAncestor::WritableWithoutSticky {
-                mode: 0o777,
-            },
-        }
-        .to_string();
-        // The offender's own path, not the vault's parent: without it the user
-        // is told a chain has a bad link and left to find which.
-        assert!(parent.contains("/parent"));
-        assert!(parent.contains("0777"));
-        assert!(parent.contains("chmod go-w /parent"));
-
-        // An ownership rejection must NOT hand out `chmod`: the mode is very
-        // likely unremarkable and changing it would not help.
-        let owned = SecretStoreError::InsecureParentDir {
-            ancestor: "/parent".into(),
-            reason: crate::parent_permissions::InsecureAncestor::UntrustedOwner {
-                uid: 999,
-                current_uid: 1000,
-            },
-        }
-        .to_string();
-        assert!(owned.contains("chown 1000 /parent"));
-        assert!(
-            !owned.contains("chmod"),
-            "an ownership rejection must not suggest chmod: {owned}"
-        );
 
         assert!(SecretStoreError::InvalidLabel
             .to_string()
@@ -891,13 +838,6 @@ mod tests {
                 path: "/vault".into(),
                 found: 1,
                 expected: 2,
-            },
-            E::InsecureParentDir {
-                ancestor: "/parent".into(),
-                reason: crate::parent_permissions::InsecureAncestor::UntrustedOwner {
-                    uid: 0,
-                    current_uid: 1,
-                },
             },
             E::SecretTooLarge { found: 1, max: 0 },
             E::AlreadyLocked,
