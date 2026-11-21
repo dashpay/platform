@@ -60,6 +60,13 @@ async fn assert_refused_by_one_node_without_a_ban(status: Status) {
         !client.address_list().is_banned(&refusing_node),
         "{message}: the refusing node must not be banned"
     );
+    assert!(
+        client
+            .address_list()
+            .get_live_addresses()
+            .contains(&refusing_node),
+        "{message}: the refusing node must stay reachable"
+    );
 }
 
 #[tokio::test]
