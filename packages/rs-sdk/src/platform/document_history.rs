@@ -340,7 +340,7 @@ mod tests {
         ] {
             let raw: GetDocumentHistoryRequest = GetDocumentHistoryRequestV1 {
                 limit,
-                ..match raw_v1(Some(filter.clone()), true).version {
+                ..match raw_v1(Some(filter), true).version {
                     Some(Version::V1(v1)) => v1,
                     _ => unreachable!(),
                 }
