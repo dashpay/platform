@@ -698,4 +698,46 @@ mod tests {
         );
         assert_eq!(current.key_reference(&[3u8; 32]), None);
     }
+
+    /// The list keys entries by the reversed proTxHash; `key_reference`
+    /// takes the wire order the entry carries, never the display order.
+    #[test]
+    fn should_find_a_key_reference_by_the_wire_order_pro_tx_hash() {
+        let mut wire = [0u8; 32];
+        for (byte, value) in wire.iter_mut().zip(1u8..) {
+            *byte = value;
+        }
+        let mut display = wire;
+        display.reverse();
+        let entry = MasternodeListEntry {
+            pro_reg_tx_hash: ProTxHash::from_byte_array(wire),
+            ..masternode_entry(9)
+        };
+        let list = MasternodeList::build(
+            [entry]
+                .into_iter()
+                .map(|entry| {
+                    (
+                        ProTxHash::from_byte_array(display),
+                        std::sync::Arc::new(entry.into()),
+                    )
+                })
+                .collect::<dashcore::sml::masternode_list::MasternodeMap>(),
+            std::collections::BTreeMap::new(),
+            BlockHash::from_byte_array([3u8; 32]),
+            7,
+        )
+        .build();
+        let current = CurrentMasternodeList::from_list(&list);
+
+        assert_eq!(
+            current.key_reference(&wire),
+            Some(MasternodeKeyReference {
+                voting_key_id: Some([9u8; 20]),
+                operator_public_key: Some([9u8; 48]),
+                ..Default::default()
+            })
+        );
+        assert_eq!(current.key_reference(&display), None);
+    }
 }
