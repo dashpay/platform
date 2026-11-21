@@ -886,7 +886,9 @@ pub enum KeyVerification {
     Matches = 0,
     DoesNotMatch = 1,
     /// The reference for this role isn't known (e.g. owner / payout of a
-    /// node whose registration details haven't been fetched) — not a pass.
+    /// node whose registration details haven't been fetched), or the role
+    /// cannot be checked this way (an operator key by its 20-byte id) — not a
+    /// pass.
     Unverifiable = 2,
 }
 
@@ -1646,6 +1648,92 @@ mod tests {
             verify_masternode_key_id(&reference, MasternodeKeyRole::Operator, &key_id),
             KeyVerification::Unverifiable
         );
+    }
+
+    /// `reference` with `role`'s 20-byte field set to `own` and every other
+    /// 20-byte field set to `rest`.
+    fn reference_with_role_field(
+        role: MasternodeKeyRole,
+        own: Option<[u8; 20]>,
+        rest: Option<[u8; 20]>,
+    ) -> MasternodeKeyReference {
+        let field = |field_role| if field_role == role { own } else { rest };
+        MasternodeKeyReference {
+            owner_key_hash: field(MasternodeKeyRole::Owner),
+            voting_key_id: field(MasternodeKeyRole::Voting),
+            operator_public_key: None,
+            platform_node_id: field(MasternodeKeyRole::PlatformNode),
+            payout_key_hash: field(MasternodeKeyRole::OwnerPayout),
+            operator_payout_key_hash: field(MasternodeKeyRole::OperatorPayout),
+        }
+    }
+
+    /// Each role reads only its own reference field: the id matches through
+    /// that field alone, and an unknown field is never covered by the others.
+    #[test]
+    fn should_verify_a_key_id_against_its_own_role_field_only() {
+        let key_id = [0x5Au8; 20];
+        let other = [0xA5u8; 20];
+        for role in [
+            MasternodeKeyRole::Owner,
+            MasternodeKeyRole::Voting,
+            MasternodeKeyRole::OwnerPayout,
+            MasternodeKeyRole::OperatorPayout,
+            MasternodeKeyRole::PlatformNode,
+        ] {
+            for (own, rest, expected) in [
+                (Some(key_id), Some(other), KeyVerification::Matches),
+                (Some(other), Some(key_id), KeyVerification::DoesNotMatch),
+                (None, Some(key_id), KeyVerification::Unverifiable),
+            ] {
+                assert_eq!(
+                    verify_masternode_key_id(
+                        &reference_with_role_field(role, own, rest),
+                        role,
+                        &key_id
+                    ),
+                    expected,
+                    "{role:?} with own field {own:?}"
+                );
+            }
+        }
+    }
+
+    /// A secp256k1 secret outside the curve order derives no id: it never
+    /// matches a known reference and stays unverifiable against an unknown one.
+    #[test]
+    fn should_never_match_an_ecdsa_secret_that_derives_no_key_id() {
+        let invalid = [0xFFu8; 32];
+        assert_eq!(ecdsa_key_id(&invalid, true), None);
+        let secret = LocatorSecret::Ecdsa {
+            secret: Zeroizing::new(invalid),
+            compressed: true,
+        };
+        for role in [
+            MasternodeKeyRole::Owner,
+            MasternodeKeyRole::Voting,
+            MasternodeKeyRole::OwnerPayout,
+            MasternodeKeyRole::OperatorPayout,
+        ] {
+            assert_eq!(
+                verify_masternode_key(
+                    &reference_with_role_field(role, Some(secp_key_id()), None),
+                    role,
+                    &secret
+                ),
+                KeyVerification::DoesNotMatch,
+                "{role:?} with a known reference"
+            );
+            assert_eq!(
+                verify_masternode_key(
+                    &reference_with_role_field(role, None, Some(secp_key_id())),
+                    role,
+                    &secret
+                ),
+                KeyVerification::Unverifiable,
+                "{role:?} with an unknown reference"
+            );
+        }
     }
 
     #[test]
