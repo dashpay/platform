@@ -19,12 +19,15 @@
 //! 1. [`PlatformWallet::masternode_withdrawal_keys`] (sync, no network)
 //!    answers which of the two keys this wallet holds — seedless, from
 //!    the account xpubs / address pools — and the payout address.
-//! 2. [`PlatformWallet::masternode_withdraw`] (async) fetches the
-//!    identity, picks the matching identity key, refuses to broadcast if
-//!    the identity doesn't carry it, and signs through a
-//!    [`key_wallet::signer::Signer`] (on iOS the mnemonic-resolver-backed
-//!    signer — the seed never becomes resident).
+//! 2. [`PlatformWalletManager::masternode_withdraw_with`] (async) fetches
+//!    the identity, picks its enabled identity key the chosen key source can
+//!    sign with, refuses to broadcast if there is none, and signs with the
+//!    wallet's key (resident, or derived from a [`MasterKeyProvider`]'s
+//!    master key) or a host-held signer. [`PlatformWallet::masternode_withdraw`]
+//!    does the same through a [`key_wallet::signer::Signer`] (on iOS the
+//!    mnemonic-resolver-backed signer — the seed never becomes resident).
 
+use std::convert::Infallible;
 use std::fmt;
 
 use async_trait::async_trait;
@@ -35,7 +38,7 @@ use dpp::address_funds::AddressWitness;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer as IdentitySigner;
-use dpp::identity::{Identity, IdentityPublicKey, KeyType};
+use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
 use dpp::ProtocolError;
@@ -57,13 +60,15 @@ use dpp::state_transition::identity_credit_withdrawal_transition::{
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::withdrawal::Pooling;
+use zeroize::Zeroize;
 
 use crate::broadcast_outcome::{broadcast_tracking_delivery, BroadcastDelivery};
+use crate::changeset::PlatformWalletPersistence;
 use crate::error::{PlatformWalletError, SIGNER_KEY_UNAVAILABLE_PREFIX};
+use crate::manager::PlatformWalletManager;
 use crate::wallet::core::is_signable_funding_account;
-use crate::wallet::identity::network::{
-    select_owner_withdrawal_key, select_transfer_withdrawal_key,
-};
+use crate::wallet::core_address_key::{p2pkh_address, CoreAddressKeyError, MasterKeyProvider};
+use crate::wallet::identity::network::{AvailableSigningKey, SignerRef};
 use crate::wallet::identity::WithdrawalOutcome;
 use crate::wallet::platform_wallet::PlatformWallet;
 use crate::wallet::provider_key_at_index::ProviderKeyKind;
@@ -79,6 +84,15 @@ pub enum MasternodeWithdrawalKey {
     Transfer,
 }
 
+impl fmt::Display for MasternodeWithdrawalKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Owner => "owner key",
+            Self::Transfer => "payout key",
+        })
+    }
+}
+
 /// Which masternode-withdrawal signing keys this wallet holds, plus the
 /// node's registered payout address. Produced by
 /// [`PlatformWallet::masternode_withdrawal_keys`]; consumed by the UI (to
@@ -91,7 +105,9 @@ pub struct MasternodeWithdrawalKeys {
     pub owner_key: Option<(u32, DerivationPath)>,
     /// `Some(path)` when the registered payout script is a P2PKH to one of
     /// this wallet's funding-account addresses — the identity's `TRANSFER`
-    /// key is then wallet-derivable at that path.
+    /// key is then wallet-derivable at that path — or else the caller's
+    /// `payout_path_hint`, which is unverified until a withdrawal derives
+    /// the key there.
     pub transfer_key: Option<DerivationPath>,
     /// The registered payout address (base58 for this wallet's network),
     /// or `None` when the node has no payout script on record or it isn't
@@ -103,13 +119,15 @@ pub struct MasternodeWithdrawalKeys {
 }
 
 impl MasternodeWithdrawalKeys {
-    /// True when at least one wallet-held key can sign a withdrawal.
+    /// True when a key can sign a withdrawal: a wallet-held key, or the
+    /// payout key at the caller's unverified path hint.
     pub fn can_withdraw(&self) -> bool {
         self.owner_key.is_some() || self.transfer_key.is_some()
     }
 
-    /// True when the destination may differ from the payout address —
-    /// i.e. the transfer key is in this wallet.
+    /// True when the destination may differ from the payout address: the
+    /// transfer key is in this wallet, or at the caller's unverified path
+    /// hint.
     pub fn can_choose_destination(&self) -> bool {
         self.transfer_key.is_some()
     }
@@ -154,6 +172,13 @@ impl PlatformWallet {
     /// window) still resolves. Without a hint — or if the hint doesn't match —
     /// the pool depth (at least [`PROVIDER_KEY_WINDOW`]) is scanned.
     ///
+    /// `payout_path_hint` is where the caller knows the P2PKH payout key
+    /// sits, for a payout address the funding pools never generated (such as
+    /// a shallow restored pool). It is used only when the pool lookup misses
+    /// and is reported as `transfer_key` UNVERIFIED: a withdrawal refuses it,
+    /// before any signature is emitted, unless the key derived there hashes
+    /// to the payout key hash.
+    ///
     /// Blocking (takes the wallet-manager read lock) — call from a plain
     /// thread, not from inside the async runtime.
     pub fn masternode_withdrawal_keys(
@@ -161,6 +186,7 @@ impl PlatformWallet {
         owner_key_hash: Option<&[u8; 20]>,
         payout_script: Option<&[u8]>,
         owner_key_index_hint: Option<u32>,
+        payout_path_hint: Option<&DerivationPath>,
     ) -> Result<MasternodeWithdrawalKeys, PlatformWalletError> {
         let network = self.network();
 
@@ -219,6 +245,8 @@ impl PlatformWallet {
 
             (owner_scan_max, transfer_key)
         };
+        let transfer_key =
+            transfer_key.or_else(|| payout_key_hash160.and(payout_path_hint.cloned()));
 
         // Owner key: verify the caller's hint first, then derive-and-compare
         // over the pool depth. Seedless — `derive_provider_key_at_index`
@@ -287,7 +315,8 @@ impl PlatformWallet {
     /// remaining credit balance as proven by Platform, with the proving block.
     ///
     /// Guards (all fail WITHOUT broadcasting):
-    /// - owner path with a destination, or a key the wallet doesn't hold;
+    /// - owner path with a destination, a destination for another network,
+    ///   or a key the wallet doesn't hold;
     /// - the identity is missing, or doesn't carry the expected
     ///   `OWNER` / `TRANSFER` key for the wallet's hash160.
     ///
@@ -307,16 +336,38 @@ impl PlatformWallet {
         keys: &MasternodeWithdrawalKeys,
         signer: &S,
     ) -> Result<WithdrawalOutcome, PlatformWalletError> {
-        // Resolve (path, expected hash160, destination) per signing key.
-        let (path, expected_hash160, destination) = match request.signing_key {
+        let (path, key_hash160, destination) = self.withdrawal_key_choice(&request, keys)?;
+        if !signer.supports(SignerMethod::Digest) {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "signer backend cannot sign digests: it advertises {:?}, but an identity \
+                 credit withdrawal requires {:?}",
+                signer.supported_methods(),
+                SignerMethod::Digest,
+            )));
+        }
+        let identity_signer = DerivedKeyIdentitySigner {
+            signer,
+            path,
+            expected_key_hash160: key_hash160,
+        };
+        let request = MasternodeWithdrawalRequest {
+            destination,
+            ..request
+        };
+        withdraw_with_identity_signer(self.sdk(), &request, &identity_signer).await
+    }
+
+    /// The wallet key that signs `request`: its path at `keys`, the hash160
+    /// its public key must have, and the destination (a transfer-key
+    /// withdrawal defaults to the registered payout address).
+    fn withdrawal_key_choice(
+        &self,
+        request: &MasternodeWithdrawalRequest,
+        keys: &MasternodeWithdrawalKeys,
+    ) -> Result<(DerivationPath, [u8; 20], Option<DashAddress>), PlatformWalletError> {
+        refuse_owner_destination(request)?;
+        match request.signing_key {
             MasternodeWithdrawalKey::Owner => {
-                if request.destination.is_some() {
-                    return Err(PlatformWalletError::InvalidParameter(
-                        "an owner-key withdrawal pays the registered payout address; a \
-                         destination cannot be chosen"
-                            .to_string(),
-                    ));
-                }
                 let owner_hash = request.owner_key_hash.ok_or_else(|| {
                     PlatformWalletError::InvalidParameter(
                         "masternode has no owner key hash on record".to_string(),
@@ -327,7 +378,7 @@ impl PlatformWallet {
                         "this wallet does not hold the masternode's owner key".to_string(),
                     )
                 })?;
-                (path, owner_hash, None)
+                Ok((path, owner_hash, None))
             }
             MasternodeWithdrawalKey::Transfer => {
                 let path = keys.transfer_key.clone().ok_or_else(|| {
@@ -341,9 +392,10 @@ impl PlatformWallet {
                         "masternode payout script is not a P2PKH address".to_string(),
                     )
                 })?;
-                // Default destination = the registered payout address; an
-                // explicit one must be for this wallet's network.
-                let destination = match request.destination {
+                // Default destination = the registered payout address. An
+                // explicit one is checked against the network with the
+                // request ([`prepare_withdrawal`]).
+                let destination = match request.destination.clone() {
                     Some(address) => address,
                     None => {
                         let payout = keys.payout_address.as_deref().ok_or_else(|| {
@@ -366,129 +418,376 @@ impl PlatformWallet {
                             })?
                     }
                 };
-                (path, payout_hash, Some(destination))
+                Ok((path, payout_hash, Some(destination)))
             }
-        };
-
-        execute_masternode_withdrawal(
-            self.sdk(),
-            request.pro_tx_hash,
-            request.amount_credits,
-            request.signing_key,
-            expected_hash160,
-            path,
-            destination,
-            signer,
-        )
-        .await
+        }
     }
 }
 
-/// The network half of a masternode withdrawal, shared by the wallet path
-/// ([`PlatformWallet::masternode_withdraw`], key resolved by derivation) and
-/// the tracked path (`PlatformWalletManager::tracked_masternode_withdraw`,
-/// key supplied by the host): fetch the owner identity (id = display-order
-/// proTxHash), select the OWNER / TRANSFER identity key matching
-/// `expected_hash160`, sign with `signer` at `path` through
-/// [`DerivedKeyIdentitySigner`] (which re-checks the derived key against
-/// `expected_hash160` before emitting a signature), broadcast, and wait for
-/// the proved balance. Error semantics: a failure before the broadcast, or a
-/// broadcast refused before anything was sent, stays retryable; every other
-/// outcome short of a proved result is
+/// Where a masternode withdrawal's signing key comes from.
+pub enum MasternodeKeySource<'a, K: MasterKeyProvider> {
+    /// This wallet's key at the path `keys` resolved for the request's
+    /// signing key, derived from the resident keys or from the master key
+    /// `master_key` supplies. The derived key must hash to the key `keys`
+    /// names, so a wrong payout path hint or another wallet's master key is
+    /// refused before anything is signed.
+    Wallet {
+        wallet: &'a PlatformWallet,
+        keys: &'a MasternodeWithdrawalKeys,
+        master_key: &'a K,
+    },
+    /// A host-held key. It signs for the owner identity's enabled key of the
+    /// request's purpose that it reports it can sign with; with none, the
+    /// withdrawal is refused before anything is broadcast. Build it with
+    /// [`MasternodeKeySource::host`].
+    Host {
+        signer: &'a dyn IdentitySigner<IdentityPublicKey>,
+    },
+}
+
+/// Names the source, and the wallet for [`MasternodeKeySource::Wallet`];
+/// never a key, the signer or the provider.
+impl<K: MasterKeyProvider> fmt::Debug for MasternodeKeySource<'_, K> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Wallet { wallet, .. } => f
+                .debug_struct("Wallet")
+                .field("wallet_id", &hex::encode(wallet.wallet_id()))
+                .finish_non_exhaustive(),
+            Self::Host { .. } => f.debug_struct("Host").finish_non_exhaustive(),
+        }
+    }
+}
+
+impl<'a> MasternodeKeySource<'a, Infallible> {
+    /// A [`Self::Host`] source, which needs no master key provider.
+    pub fn host(signer: &'a dyn IdentitySigner<IdentityPublicKey>) -> Self {
+        Self::Host { signer }
+    }
+}
+
+/// Why [`PlatformWalletManager::masternode_withdraw_with`] failed.
+#[derive(Debug, thiserror::Error)]
+pub enum MasternodeWithdrawalError<E> {
+    /// The withdrawal was refused or failed.
+    #[error(transparent)]
+    Wallet(#[from] PlatformWalletError),
+    /// The master key provider failed to supply the master key.
+    #[error("the key source failed: {0}")]
+    KeySource(#[source] E),
+}
+
+impl<E> From<CoreAddressKeyError<E>> for MasternodeWithdrawalError<E> {
+    fn from(error: CoreAddressKeyError<E>) -> Self {
+        match error {
+            CoreAddressKeyError::Wallet(error) => Self::Wallet(error),
+            CoreAddressKeyError::KeySource(error) => Self::KeySource(error),
+        }
+    }
+}
+
+impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
+    /// Submit `request` signed with the key `source` names, and return the
+    /// identity's remaining balance as proven by Platform. Both sources go
+    /// through the same checks; see [`PlatformWallet::masternode_withdraw`]
+    /// for what is refused before broadcasting and when an outcome is
+    /// unconfirmed.
+    pub async fn masternode_withdraw_with<K: MasterKeyProvider>(
+        &self,
+        request: MasternodeWithdrawalRequest,
+        source: MasternodeKeySource<'_, K>,
+    ) -> Result<WithdrawalOutcome, MasternodeWithdrawalError<K::Error>> {
+        match source {
+            MasternodeKeySource::Host { signer } => {
+                Ok(withdraw_with_identity_signer(self.sdk(), &request, signer).await?)
+            }
+            MasternodeKeySource::Wallet {
+                wallet,
+                keys,
+                master_key,
+            } => {
+                let (path, key_hash160, destination) =
+                    wallet.withdrawal_key_choice(&request, keys)?;
+                let request = MasternodeWithdrawalRequest {
+                    destination,
+                    ..request
+                };
+                // The identity is read before the key is derived, so a key it
+                // does not hold costs no master-key request, and the derived
+                // key is dropped once it has signed.
+                let unsigned =
+                    prepare_withdrawal(self.sdk(), &request, &KeyHashSelector(key_hash160)).await?;
+                let state_transition = {
+                    let secret = wallet
+                        .private_key_for_hash160(&path, &key_hash160, master_key)
+                        .await?;
+                    unsigned.sign_with_secret(self.sdk(), &secret, path).await?
+                };
+                Ok(unsigned.broadcast(self.sdk(), &state_transition).await?)
+            }
+        }
+    }
+}
+
+/// An owner-key withdrawal pays the registered payout address; Platform
+/// rejects one that carries an output script.
+fn refuse_owner_destination(
+    request: &MasternodeWithdrawalRequest,
+) -> Result<(), PlatformWalletError> {
+    if request.signing_key == MasternodeWithdrawalKey::Owner && request.destination.is_some() {
+        return Err(PlatformWalletError::InvalidParameter(
+            "an owner-key withdrawal pays the registered payout address; a destination cannot \
+             be chosen"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// The owner identity's enabled `ECDSA_HASH160` key for `signing_key`
+/// (OWNER or TRANSFER purpose) that `signer` can sign with. Refuses, so
+/// nothing is signed or broadcast, with
+/// [`PlatformWalletError::MasternodeWithdrawalKeyAbsent`] when the identity
+/// has no such key, or [`PlatformWalletError::MasternodeWithdrawalKeyMismatch`]
+/// when `signer` can sign with none of them.
+fn select_withdrawal_key<'a>(
+    identity: &'a Identity,
+    signing_key: MasternodeWithdrawalKey,
+    signer: &dyn IdentitySigner<IdentityPublicKey>,
+) -> Result<&'a IdentityPublicKey, PlatformWalletError> {
+    let purpose = match signing_key {
+        MasternodeWithdrawalKey::Owner => Purpose::OWNER,
+        MasternodeWithdrawalKey::Transfer => Purpose::TRANSFER,
+    };
+    match identity.available_signing_key(
+        &SignerRef(signer),
+        purpose,
+        &SecurityLevel::full_range(),
+        &[KeyType::ECDSA_HASH160],
+        false,
+    ) {
+        Ok(Some(key)) => Ok(key),
+        Ok(None) => Err(PlatformWalletError::MasternodeWithdrawalKeyAbsent {
+            identity_id: identity.id(),
+            key: signing_key,
+        }),
+        Err(_) => Err(PlatformWalletError::MasternodeWithdrawalKeyMismatch {
+            identity_id: identity.id(),
+            key: signing_key,
+        }),
+    }
+}
+
+/// [`withdraw_with_identity_signer`] with one secp256k1 `secret`: it signs
+/// only for the identity key its public key hashes to. `path` names the key
+/// in errors.
+pub(crate) async fn withdraw_with_secret(
+    sdk: &dash_sdk::Sdk,
+    request: &MasternodeWithdrawalRequest,
+    secret: &[u8; 32],
+    path: DerivationPath,
+) -> Result<WithdrawalOutcome, PlatformWalletError> {
+    let key_hash160 = RawSecretCoreSigner::from_bytes(secret)?.public_key_hash160();
+    let unsigned = prepare_withdrawal(sdk, request, &KeyHashSelector(key_hash160)).await?;
+    let state_transition = unsigned.sign_with_secret(sdk, secret, path).await?;
+    unsigned.broadcast(sdk, &state_transition).await
+}
+
+/// Every masternode withdrawal: [`prepare_withdrawal`], sign, broadcast, and
+/// wait for the proved balance. Error semantics: a failure before the
+/// broadcast, or a broadcast refused before anything was sent, stays
+/// retryable; every other outcome short of a proved result is
 /// [`PlatformWalletError::MasternodeWithdrawalUnconfirmed`]
 /// ([`settle_masternode_withdrawal`]).
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn execute_masternode_withdrawal<S: CoreSigner + ?Sized + Sync>(
+async fn withdraw_with_identity_signer(
     sdk: &dash_sdk::Sdk,
-    pro_tx_hash: [u8; 32],
-    amount_credits: u64,
-    signing_key: MasternodeWithdrawalKey,
-    expected_hash160: [u8; 20],
-    path: DerivationPath,
-    destination: Option<DashAddress>,
-    signer: &S,
+    request: &MasternodeWithdrawalRequest,
+    signer: &dyn IdentitySigner<IdentityPublicKey>,
 ) -> Result<WithdrawalOutcome, PlatformWalletError> {
-    if amount_credits == 0 {
+    let unsigned = prepare_withdrawal(sdk, request, signer).await?;
+    let state_transition = unsigned.sign(sdk, signer).await?;
+    unsigned.broadcast(sdk, &state_transition).await
+}
+
+/// A masternode withdrawal ready to sign: the owner identity, the key that
+/// signs for it, and where it pays.
+struct UnsignedWithdrawal {
+    identity: Identity,
+    key: IdentityPublicKey,
+    output_script: Option<CoreScript>,
+    amount_credits: u64,
+}
+
+/// Check `request`, fetch the owner identity (id = display-order
+/// proTxHash) and select its key that `selector` can sign with
+/// ([`select_withdrawal_key`]). Nothing is signed or sent, and no nonce is
+/// taken.
+/// An explicit destination must be for the SDK's network; a transfer-key
+/// withdrawal without one pays the selected key's P2PKH address.
+async fn prepare_withdrawal(
+    sdk: &dash_sdk::Sdk,
+    request: &MasternodeWithdrawalRequest,
+    selector: &dyn IdentitySigner<IdentityPublicKey>,
+) -> Result<UnsignedWithdrawal, PlatformWalletError> {
+    if request.amount_credits == 0 {
         return Err(PlatformWalletError::InvalidParameter(
             "masternode withdrawal amount must be greater than zero".to_string(),
         ));
     }
-    if !signer.supports(SignerMethod::Digest) {
-        return Err(PlatformWalletError::InvalidParameter(format!(
-            "signer backend cannot sign digests: it advertises {:?}, but an identity \
-             credit withdrawal requires {:?}",
-            signer.supported_methods(),
-            SignerMethod::Digest,
-        )));
+    refuse_owner_destination(request)?;
+    if let Some(destination) = &request.destination {
+        if !destination.as_unchecked().is_valid_for_network(sdk.network) {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "the destination {destination} is not an address on {}",
+                sdk.network
+            )));
+        }
     }
 
     // Owner identity id = display-order proTxHash.
-    let mut id_bytes = pro_tx_hash;
+    let mut id_bytes = request.pro_tx_hash;
     id_bytes.reverse();
     let identity_id = Identifier::from(id_bytes);
 
     let identity = Identity::fetch(sdk, identity_id)
         .await?
         .ok_or(PlatformWalletError::IdentityNotFound(identity_id))?;
-
-    let identity_key = match signing_key {
-        MasternodeWithdrawalKey::Owner => {
-            select_owner_withdrawal_key(identity.public_keys().values(), &expected_hash160)
+    let key = select_withdrawal_key(&identity, request.signing_key, selector)?.clone();
+    let destination = match (request.signing_key, &request.destination) {
+        (MasternodeWithdrawalKey::Transfer, None) => {
+            let hash = <[u8; 20]>::try_from(key.data().as_slice()).map_err(|_| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "the TRANSFER key of masternode identity {identity_id} is not a key hash"
+                ))
+            })?;
+            Some(p2pkh_address(&hash, sdk.network))
         }
-        MasternodeWithdrawalKey::Transfer => {
-            select_transfer_withdrawal_key(identity.public_keys().values(), &expected_hash160)
-        }
-    }
-    .cloned()
-    .ok_or_else(|| {
-        PlatformWalletError::InvalidIdentityData(format!(
-            "the masternode identity {identity_id} has no {} key matching this wallet's key \
-             (hash160 {}); not broadcasting",
-            match signing_key {
-                MasternodeWithdrawalKey::Owner => "OWNER",
-                MasternodeWithdrawalKey::Transfer => "TRANSFER",
-            },
-            hex::encode(expected_hash160),
-        ))
-    })?;
-
-    let identity_signer = DerivedKeyIdentitySigner {
-        signer,
-        path,
-        expected_key_hash160: expected_hash160,
+        (_, destination) => destination.clone(),
     };
 
-    let definitive = |e: dash_sdk::Error| {
-        crate::error::preserve_signer_key_unavailable_or(e, |e| {
-            PlatformWalletError::InvalidIdentityData(format!("masternode withdrawal failed: {e}"))
-        })
-    };
+    Ok(UnsignedWithdrawal {
+        identity,
+        key,
+        output_script: destination.map(|address| CoreScript::new(address.script_pubkey())),
+        amount_credits: request.amount_credits,
+    })
+}
 
-    // Build + sign locally. Nothing has left the wallet yet, so every
-    // error here is definitive and retryable.
-    let nonce = sdk
-        .get_identity_nonce(identity_id, true, None)
+impl UnsignedWithdrawal {
+    /// Take the identity nonce and sign with `signer`. The nonce is taken
+    /// only here, so a key source that fails earlier uses none. Nothing has
+    /// left the wallet yet, so every error is definitive and retryable.
+    async fn sign(
+        &self,
+        sdk: &dash_sdk::Sdk,
+        signer: &dyn IdentitySigner<IdentityPublicKey>,
+    ) -> Result<StateTransition, PlatformWalletError> {
+        let nonce = sdk
+            .get_identity_nonce(self.identity.id(), true, None)
+            .await
+            .map_err(refused_before_sending)?;
+        IdentityCreditWithdrawalTransition::try_from_identity(
+            &self.identity,
+            self.output_script.clone(),
+            self.amount_credits,
+            Pooling::Never,
+            MIN_CORE_FEE_PER_BYTE,
+            0,
+            SignerRef(signer),
+            Some(&self.key),
+            PreferredKeyPurposeForSigningWithdrawal::TransferPreferred,
+            nonce,
+            sdk.version(),
+            None,
+        )
         .await
-        .map_err(definitive)?;
-    let output_script = destination.map(|address| CoreScript::new(address.script_pubkey()));
-    let state_transition = IdentityCreditWithdrawalTransition::try_from_identity(
-        &identity,
-        output_script,
-        amount_credits,
-        Pooling::Never,
-        MIN_CORE_FEE_PER_BYTE,
-        0,
-        identity_signer,
-        Some(&identity_key),
-        PreferredKeyPurposeForSigningWithdrawal::TransferPreferred,
-        nonce,
-        sdk.version(),
-        None,
-    )
-    .await
-    .map_err(|e| definitive(dash_sdk::Error::Protocol(e)))?;
+        .map_err(|e| refused_before_sending(dash_sdk::Error::Protocol(e)))
+    }
 
-    broadcast_masternode_withdrawal(sdk, &state_transition, identity_id, amount_credits).await
+    /// Sign with the secp256k1 `secret`; the signer holding its copy is
+    /// dropped on return. `path` names the key in errors.
+    async fn sign_with_secret(
+        &self,
+        sdk: &dash_sdk::Sdk,
+        secret: &[u8; 32],
+        path: DerivationPath,
+    ) -> Result<StateTransition, PlatformWalletError> {
+        let core_signer = RawSecretCoreSigner::from_bytes(secret)?;
+        let signer = DerivedKeyIdentitySigner {
+            signer: &core_signer,
+            path,
+            expected_key_hash160: core_signer.public_key_hash160(),
+        };
+        self.sign(sdk, &signer).await
+    }
+
+    /// Broadcast the signed `state_transition` and wait for its result
+    /// ([`broadcast_masternode_withdrawal`]).
+    async fn broadcast(
+        &self,
+        sdk: &dash_sdk::Sdk,
+        state_transition: &StateTransition,
+    ) -> Result<WithdrawalOutcome, PlatformWalletError> {
+        broadcast_masternode_withdrawal(
+            sdk,
+            state_transition,
+            self.identity.id(),
+            self.amount_credits,
+        )
+        .await
+    }
+}
+
+/// A failure before the withdrawal left the wallet, keeping the signer's
+/// key-unavailable marker.
+fn refused_before_sending(error: dash_sdk::Error) -> PlatformWalletError {
+    crate::error::preserve_signer_key_unavailable_or(error, |e| {
+        PlatformWalletError::InvalidIdentityData(format!("masternode withdrawal failed: {e}"))
+    })
+}
+
+/// Selects the identity key that hashes to its hash160 before that key is
+/// derived; it holds no key and never signs.
+#[derive(Debug)]
+struct KeyHashSelector([u8; 20]);
+
+#[async_trait]
+impl IdentitySigner<IdentityPublicKey> for KeyHashSelector {
+    async fn sign(
+        &self,
+        _identity_public_key: &IdentityPublicKey,
+        _data: &[u8],
+    ) -> Result<BinaryData, ProtocolError> {
+        Err(ProtocolError::Generic(
+            "a masternode withdrawal key selector holds no key".to_string(),
+        ))
+    }
+
+    async fn sign_create_witness(
+        &self,
+        _key: &IdentityPublicKey,
+        _data: &[u8],
+    ) -> Result<AddressWitness, ProtocolError> {
+        Err(ProtocolError::Generic(
+            "a masternode withdrawal key selector holds no key".to_string(),
+        ))
+    }
+
+    fn can_sign_with(&self, identity_public_key: &IdentityPublicKey) -> bool {
+        key_hashes_to(identity_public_key, &self.0)
+    }
+}
+
+/// Whether `key` is the secp256k1 key whose hash160 is `hash160`: its
+/// `ECDSA_HASH160` data, or the hash of its `ECDSA_SECP256K1` data.
+fn key_hashes_to(key: &IdentityPublicKey, hash160: &[u8; 20]) -> bool {
+    match key.key_type() {
+        KeyType::ECDSA_HASH160 => key.data().as_slice() == hash160.as_slice(),
+        KeyType::ECDSA_SECP256K1 => {
+            hash160::Hash::hash(key.data().as_slice()).to_byte_array() == *hash160
+        }
+        _ => false,
+    }
 }
 
 /// Broadcast the signed masternode withdrawal `state_transition`, keeping
@@ -611,6 +910,12 @@ impl RawSecretCoreSigner {
     }
 }
 
+impl Drop for RawSecretCoreSigner {
+    fn drop(&mut self) {
+        self.secret.zeroize();
+    }
+}
+
 impl fmt::Debug for RawSecretCoreSigner {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RawSecretCoreSigner")
@@ -696,14 +1001,7 @@ impl<'a, S: ?Sized> fmt::Debug for DerivedKeyIdentitySigner<'a, S> {
 
 impl<'a, S: ?Sized> DerivedKeyIdentitySigner<'a, S> {
     fn matches(&self, key: &IdentityPublicKey) -> bool {
-        match key.key_type() {
-            KeyType::ECDSA_HASH160 => key.data().as_slice() == self.expected_key_hash160.as_slice(),
-            KeyType::ECDSA_SECP256K1 => {
-                hash160::Hash::hash(key.data().as_slice()).to_byte_array()
-                    == self.expected_key_hash160
-            }
-            _ => false,
-        }
+        key_hashes_to(key, &self.expected_key_hash160)
     }
 }
 
@@ -792,19 +1090,35 @@ where
 mod tests {
     use super::*;
     use crate::broadcast_outcome::test_sdks::{sdk_refusing_connections, sdk_without_addresses};
+    use crate::masternode::key_reference::test_support::{identity_with, key};
+    use crate::masternode::locator::ecdsa_key_id;
+    use crate::test_support::{
+        mnemonic_wallet_manager, platform_wallet_in, test_platform_wallet_manager,
+        TEST_PLATFORM_WALLET_MNEMONIC,
+    };
+    use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
     use crate::BlockTime;
     use dash_sdk::dapi_client::transport::TransportError;
     use dash_sdk::dapi_client::DapiClientError;
     use dash_sdk::dapi_grpc::tonic::{Code, Status};
     use dash_sdk::error::StateTransitionBroadcastError;
+    use dash_sdk::query_types::IdentityNonceFetcher;
+    use dashcore::address::Payload;
     use dashcore::crypto::ecdsa::{EcdsaPublicKey as PublicKey, EcdsaSecretKey as SecretKey};
+    use dashcore::PubkeyHash;
     use dpp::consensus::basic::{BasicError, UnsupportedFeatureError};
     use dpp::consensus::ConsensusError;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::{PartialIdentity, Purpose, SecurityLevel};
     use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
+    use key_wallet::bip32::ExtendedPrivKey;
+    use key_wallet::Mnemonic;
+    use key_wallet_manager::WalletManager;
     use std::cell::Cell;
     use std::str::FromStr;
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    use std::sync::Arc;
+    use tokio::runtime::Runtime;
 
     /// The identity the withdrawal tests withdraw from, and the amount.
     const WITHDRAWN_FROM: [u8; 32] = [0x31; 32];
@@ -1174,5 +1488,689 @@ mod tests {
         };
         assert!(transfer.can_withdraw());
         assert!(transfer.can_choose_destination());
+    }
+
+    // --- key sources -------------------------------------------------------
+
+    #[derive(Debug, thiserror::Error)]
+    #[error("the keychain is locked")]
+    struct KeychainLocked;
+
+    /// Supplies `master` (or fails without one), counts its calls, and on each
+    /// call records whether `manager` could be write-locked, i.e. whether the
+    /// caller held no wallet-manager guard across the call.
+    struct TestMasterKey {
+        master: Option<ExtendedPrivKey>,
+        manager: Option<Arc<tokio::sync::RwLock<WalletManager<PlatformWalletInfo>>>>,
+        calls: AtomicU32,
+        manager_was_free: AtomicBool,
+    }
+
+    impl TestMasterKey {
+        fn new(master: Option<ExtendedPrivKey>) -> Self {
+            Self {
+                master,
+                manager: None,
+                calls: AtomicU32::new(0),
+                manager_was_free: AtomicBool::new(false),
+            }
+        }
+
+        fn calls(&self) -> u32 {
+            self.calls.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl MasterKeyProvider for TestMasterKey {
+        type Error = KeychainLocked;
+
+        async fn master_key(
+            &self,
+            _wallet_id: &WalletId,
+        ) -> Result<ExtendedPrivKey, KeychainLocked> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if let Some(manager) = &self.manager {
+                self.manager_was_free
+                    .store(manager.try_write().is_ok(), Ordering::SeqCst);
+            }
+            self.master.clone().ok_or(KeychainLocked)
+        }
+    }
+
+    fn test_master() -> ExtendedPrivKey {
+        let seed = Mnemonic::from_phrase(TEST_PLATFORM_WALLET_MNEMONIC)
+            .unwrap()
+            .to_seed("");
+        ExtendedPrivKey::new_master(Network::Testnet, seed.as_ref()).unwrap()
+    }
+
+    /// Receive key `index` of the test wallet's BIP-44 account 0: its path,
+    /// its P2PKH script and the pubkey hash in it.
+    fn receive_key(index: u32) -> (DerivationPath, Vec<u8>, [u8; 20]) {
+        let path = DerivationPath::from_str(&format!("m/44'/1'/0'/0/{index}")).unwrap();
+        let public = test_master()
+            .derive_priv(&path)
+            .unwrap()
+            .private_key
+            .public_key();
+        let hash: [u8; 20] = hash160::Hash::hash(&public.to_compressed()).to_byte_array();
+        (path, p2pkh(&hash).script_pubkey().to_bytes(), hash)
+    }
+
+    fn p2pkh(hash: &[u8; 20]) -> DashAddress {
+        p2pkh_address(hash, Network::Testnet)
+    }
+
+    fn hash_of(secret: &[u8; 32]) -> [u8; 20] {
+        ecdsa_key_id(secret, true).unwrap()
+    }
+
+    fn transfer_request() -> MasternodeWithdrawalRequest {
+        MasternodeWithdrawalRequest {
+            pro_tx_hash: WITHDRAWN_FROM,
+            owner_key_hash: None,
+            amount_credits: WITHDRAWN,
+            signing_key: MasternodeWithdrawalKey::Transfer,
+            destination: None,
+        }
+    }
+
+    /// A wallet with resident keys signs with them; the provider is not asked.
+    #[test]
+    fn should_derive_a_resident_wallet_key_without_the_master_key_provider() {
+        let runtime = Runtime::new().unwrap();
+        let (wallet_manager, wallet_id, _, _) =
+            runtime.block_on(mnemonic_wallet_manager(TEST_PLATFORM_WALLET_MNEMONIC));
+        let wallet = runtime.block_on(platform_wallet_in(wallet_manager, wallet_id));
+        let (path, script, hash) = receive_key(0);
+        let keys = wallet
+            .masternode_withdrawal_keys(None, Some(&script), None, None)
+            .unwrap();
+        assert_eq!(keys.transfer_key, Some(path.clone()));
+        let provider = TestMasterKey::new(None);
+
+        let secret = runtime
+            .block_on(wallet.private_key_for_hash160(&path, &hash, &provider))
+            .unwrap();
+
+        assert_eq!(hash_of(&secret), hash);
+        assert_eq!(provider.calls(), 0);
+    }
+
+    /// A wallet without resident keys asks the provider once, and holds no
+    /// wallet-manager guard while it runs: a provider may block on a prompt.
+    #[test]
+    fn should_ask_the_provider_once_with_no_wallet_manager_guard_held() {
+        let runtime = Runtime::new().unwrap();
+        let (manager, wallet_id) = runtime.block_on(test_platform_wallet_manager());
+        let wallet = runtime.block_on(manager.get_wallet(&wallet_id)).unwrap();
+        let (path, _, hash) = receive_key(0);
+        let provider = TestMasterKey {
+            manager: Some(Arc::clone(wallet.wallet_manager())),
+            ..TestMasterKey::new(Some(test_master()))
+        };
+
+        let secret = runtime
+            .block_on(wallet.private_key_for_hash160(&path, &hash, &provider))
+            .unwrap();
+
+        assert_eq!(hash_of(&secret), hash);
+        assert_eq!(provider.calls(), 1);
+        assert!(provider.manager_was_free.load(Ordering::SeqCst));
+    }
+
+    /// The provider's failure is the key source's, and stops the withdrawal
+    /// before anything is signed.
+    #[test]
+    fn should_report_a_failed_master_key_provider_as_the_key_source() {
+        let runtime = Runtime::new().unwrap();
+        let (manager, wallet_id) = runtime.block_on(test_platform_wallet_manager());
+        let wallet = runtime.block_on(manager.get_wallet(&wallet_id)).unwrap();
+        let (_, script, hash) = receive_key(0);
+        let keys = wallet
+            .masternode_withdrawal_keys(None, Some(&script), None, None)
+            .unwrap();
+        runtime.block_on(expect_owner_identity(
+            &manager,
+            vec![enabled_transfer_key(hash)],
+        ));
+        let provider = TestMasterKey::new(None);
+
+        let result = runtime.block_on(manager.masternode_withdraw_with(
+            transfer_request(),
+            MasternodeKeySource::Wallet {
+                wallet: &wallet,
+                keys: &keys,
+                master_key: &provider,
+            },
+        ));
+
+        assert!(
+            matches!(
+                result,
+                Err(MasternodeWithdrawalError::KeySource(KeychainLocked))
+            ),
+            "{result:?}"
+        );
+    }
+
+    /// Another wallet's master key derives a valid key at the same path, but
+    /// not this wallet's: refused before anything is signed.
+    #[test]
+    fn should_refuse_the_master_key_of_another_wallet() {
+        let runtime = Runtime::new().unwrap();
+        let (manager, wallet_id) = runtime.block_on(test_platform_wallet_manager());
+        let wallet = runtime.block_on(manager.get_wallet(&wallet_id)).unwrap();
+        let (_, script, hash) = receive_key(0);
+        let keys = wallet
+            .masternode_withdrawal_keys(None, Some(&script), None, None)
+            .unwrap();
+        runtime.block_on(expect_owner_identity(
+            &manager,
+            vec![enabled_transfer_key(hash)],
+        ));
+        let other = ExtendedPrivKey::new_master(Network::Testnet, &[7u8; 64]).unwrap();
+        let provider = TestMasterKey::new(Some(other));
+
+        let result = runtime.block_on(manager.masternode_withdraw_with(
+            transfer_request(),
+            MasternodeKeySource::Wallet {
+                wallet: &wallet,
+                keys: &keys,
+                master_key: &provider,
+            },
+        ));
+
+        assert!(
+            matches!(
+                result,
+                Err(MasternodeWithdrawalError::Wallet(
+                    PlatformWalletError::KeyDerivation(_)
+                ))
+            ),
+            "{result:?}"
+        );
+    }
+
+    /// A payout key the funding pools never generated resolves from the
+    /// caller's path hint, and signs once the derived key proves it.
+    #[test]
+    fn should_resolve_a_payout_key_outside_the_pools_from_its_path_hint() {
+        let runtime = Runtime::new().unwrap();
+        let (manager, wallet_id) = runtime.block_on(test_platform_wallet_manager());
+        let wallet = runtime.block_on(manager.get_wallet(&wallet_id)).unwrap();
+        let (path, script, hash) = receive_key(400);
+
+        let unhinted = wallet
+            .masternode_withdrawal_keys(None, Some(&script), None, None)
+            .unwrap();
+        let hinted = wallet
+            .masternode_withdrawal_keys(None, Some(&script), None, Some(&path))
+            .unwrap();
+        assert_eq!(unhinted.transfer_key, None);
+        assert_eq!(hinted.transfer_key, Some(path.clone()));
+        assert_eq!(hinted.payout_key_hash160, Some(hash));
+
+        let provider = TestMasterKey::new(Some(test_master()));
+        let secret = runtime
+            .block_on(wallet.private_key_for_hash160(&path, &hash, &provider))
+            .unwrap();
+        assert_eq!(hash_of(&secret), hash);
+    }
+
+    /// A hint naming another key is reported as the transfer key, but the key
+    /// derived there does not prove the payout hash: refused before anything
+    /// is signed.
+    #[test]
+    fn should_refuse_a_payout_path_hint_that_names_another_key() {
+        let runtime = Runtime::new().unwrap();
+        let (manager, wallet_id) = runtime.block_on(test_platform_wallet_manager());
+        let wallet = runtime.block_on(manager.get_wallet(&wallet_id)).unwrap();
+        let (_, script, hash) = receive_key(400);
+        let (wrong_path, _, _) = receive_key(401);
+        let keys = wallet
+            .masternode_withdrawal_keys(None, Some(&script), None, Some(&wrong_path))
+            .unwrap();
+        runtime.block_on(expect_owner_identity(
+            &manager,
+            vec![enabled_transfer_key(hash)],
+        ));
+        let provider = TestMasterKey::new(Some(test_master()));
+
+        let result = runtime.block_on(manager.masternode_withdraw_with(
+            transfer_request(),
+            MasternodeKeySource::Wallet {
+                wallet: &wallet,
+                keys: &keys,
+                master_key: &provider,
+            },
+        ));
+
+        assert!(
+            matches!(
+                result,
+                Err(MasternodeWithdrawalError::Wallet(
+                    PlatformWalletError::KeyDerivation(_)
+                ))
+            ),
+            "{result:?}"
+        );
+    }
+
+    /// The owner key pays the registered payout address only, whatever signs.
+    #[test]
+    fn should_refuse_an_owner_withdrawal_with_a_destination_from_a_host_signer() {
+        let runtime = Runtime::new().unwrap();
+        let (manager, _) = runtime.block_on(test_platform_wallet_manager());
+        let (signer, hash, _) = fixture();
+        let adapter = DerivedKeyIdentitySigner {
+            signer: &signer,
+            path: DerivationPath::from_str("m/9'/1'/3'/2'/0").unwrap(),
+            expected_key_hash160: hash,
+        };
+        let request = MasternodeWithdrawalRequest {
+            owner_key_hash: Some(hash),
+            signing_key: MasternodeWithdrawalKey::Owner,
+            destination: Some(p2pkh(&hash)),
+            ..transfer_request()
+        };
+
+        let result = runtime.block_on(
+            manager.masternode_withdraw_with(request, MasternodeKeySource::host(&adapter)),
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(MasternodeWithdrawalError::Wallet(
+                    PlatformWalletError::InvalidParameter(_)
+                ))
+            ),
+            "{result:?}"
+        );
+    }
+
+    /// Only an enabled key of the role's purpose that the signer can sign
+    /// with is selected; otherwise nothing is signed.
+    #[test]
+    fn should_select_only_an_enabled_key_the_signer_can_sign_with() {
+        let (signer, hash, _) = fixture();
+        let adapter = DerivedKeyIdentitySigner {
+            signer: &signer,
+            path: DerivationPath::from_str("m/9'/1'/3'/2'/0").unwrap(),
+            expected_key_hash160: hash,
+        };
+        let id = Identifier::from(WITHDRAWN_FROM);
+        let selected = |keys, signing_key| {
+            select_withdrawal_key(&identity_with(id, keys), signing_key, &adapter)
+                .map(|key| key.id())
+        };
+        let transfer = |key_id, data, disabled| {
+            key(
+                key_id,
+                Purpose::TRANSFER,
+                KeyType::ECDSA_HASH160,
+                data,
+                disabled,
+            )
+        };
+
+        // The signer's key, disabled, and an enabled one it cannot sign.
+        assert!(matches!(
+            selected(
+                vec![transfer(0, hash, true), transfer(1, [0xEE; 20], false)],
+                MasternodeWithdrawalKey::Transfer
+            ),
+            Err(PlatformWalletError::MasternodeWithdrawalKeyMismatch {
+                key: MasternodeWithdrawalKey::Transfer,
+                ..
+            })
+        ));
+        // The signer's key, enabled, after a disabled copy.
+        assert_eq!(
+            selected(
+                vec![transfer(0, hash, true), transfer(1, hash, false)],
+                MasternodeWithdrawalKey::Transfer
+            )
+            .ok(),
+            Some(1)
+        );
+        // An owner withdrawal needs the OWNER key, not a TRANSFER one.
+        assert!(matches!(
+            selected(
+                vec![transfer(0, hash, false)],
+                MasternodeWithdrawalKey::Owner
+            ),
+            Err(PlatformWalletError::MasternodeWithdrawalKeyAbsent {
+                key: MasternodeWithdrawalKey::Owner,
+                ..
+            })
+        ));
+        // No enabled TRANSFER key at all: the identity has no payout key,
+        // which is not the signer's fault.
+        assert!(matches!(
+            selected(
+                vec![transfer(0, hash, true)],
+                MasternodeWithdrawalKey::Transfer
+            ),
+            Err(PlatformWalletError::MasternodeWithdrawalKeyAbsent {
+                key: MasternodeWithdrawalKey::Transfer,
+                ..
+            })
+        ));
+        assert_eq!(
+            selected(
+                vec![
+                    transfer(0, [0xEE; 20], false),
+                    key(1, Purpose::OWNER, KeyType::ECDSA_HASH160, hash, false),
+                ],
+                MasternodeWithdrawalKey::Owner
+            )
+            .ok(),
+            Some(1)
+        );
+    }
+
+    /// A masternode identity key is an `ECDSA_HASH160` key: a full secp256k1
+    /// key of the role's purpose is not selected, even one the signer holds.
+    #[test]
+    fn should_not_select_a_full_public_key_the_signer_can_sign_with() {
+        let (signer, hash, _) = fixture();
+        let adapter = DerivedKeyIdentitySigner {
+            signer: &signer,
+            path: DerivationPath::from_str("m/9'/1'/3'/2'/0").unwrap(),
+            expected_key_hash160: hash,
+        };
+        let full_key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::OWNER,
+            security_level: SecurityLevel::CRITICAL,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: true,
+            data: BinaryData::new(signer.secret.public_key().to_compressed().to_vec()),
+            disabled_at: None,
+        }
+        .into();
+        assert!(adapter.can_sign_with(&full_key));
+
+        let identity = identity_with(Identifier::from(WITHDRAWN_FROM), vec![full_key]);
+
+        let selected = select_withdrawal_key(&identity, MasternodeWithdrawalKey::Owner, &adapter);
+
+        assert!(
+            matches!(
+                selected,
+                Err(PlatformWalletError::MasternodeWithdrawalKeyAbsent { .. })
+            ),
+            "{selected:?}"
+        );
+    }
+
+    /// Removes the wallet from its manager while it supplies the master key.
+    struct RemovingMasterKey {
+        manager: Arc<tokio::sync::RwLock<WalletManager<PlatformWalletInfo>>>,
+    }
+
+    #[async_trait]
+    impl MasterKeyProvider for RemovingMasterKey {
+        type Error = KeychainLocked;
+
+        async fn master_key(
+            &self,
+            wallet_id: &WalletId,
+        ) -> Result<ExtendedPrivKey, KeychainLocked> {
+            let _ = self.manager.write().await.remove_wallet(wallet_id);
+            Ok(test_master())
+        }
+    }
+
+    /// A wallet removed while the provider ran is reported missing; no key is
+    /// derived for it.
+    #[test]
+    fn should_report_a_wallet_removed_while_the_provider_ran_as_missing() {
+        let runtime = Runtime::new().unwrap();
+        let (manager, wallet_id) = runtime.block_on(test_platform_wallet_manager());
+        let wallet = runtime.block_on(manager.get_wallet(&wallet_id)).unwrap();
+        let (path, _, hash) = receive_key(0);
+        let provider = RemovingMasterKey {
+            manager: Arc::clone(wallet.wallet_manager()),
+        };
+
+        let result = runtime.block_on(wallet.private_key_for_hash160(&path, &hash, &provider));
+
+        assert!(
+            matches!(
+                result,
+                Err(CoreAddressKeyError::Wallet(
+                    PlatformWalletError::WalletNotFound(_)
+                ))
+            ),
+            "{:?}",
+            result.err()
+        );
+    }
+
+    /// The owner identity of [`WITHDRAWN_FROM`] (display order).
+    fn owner_identity_id() -> Identifier {
+        let mut display = WITHDRAWN_FROM;
+        display.reverse();
+        Identifier::from(display)
+    }
+
+    /// `manager`'s mock Platform answers with the owner identity holding
+    /// `keys`, and with its nonce.
+    async fn expect_owner_identity<P: PlatformWalletPersistence + 'static>(
+        manager: &PlatformWalletManager<P>,
+        keys: Vec<IdentityPublicKey>,
+    ) {
+        let id = owner_identity_id();
+        let mut sdk = dash_sdk::Sdk::clone(manager.sdk());
+        sdk.mock()
+            .expect_fetch(id, Some(identity_with(id, keys)))
+            .await
+            .unwrap()
+            .expect_fetch(id, Some(IdentityNonceFetcher(5)))
+            .await
+            .unwrap();
+    }
+
+    fn enabled_transfer_key(hash: [u8; 20]) -> IdentityPublicKey {
+        key(0, Purpose::TRANSFER, KeyType::ECDSA_HASH160, hash, false)
+    }
+
+    /// The identity is read before the master key is asked for: a key the
+    /// identity does not hold costs the user no keychain prompt.
+    #[test]
+    fn should_not_ask_for_the_master_key_when_the_identity_does_not_hold_the_key() {
+        let runtime = Runtime::new().unwrap();
+        let (manager, wallet_id) = runtime.block_on(test_platform_wallet_manager());
+        let wallet = runtime.block_on(manager.get_wallet(&wallet_id)).unwrap();
+        let (_, script, _) = receive_key(0);
+        let keys = wallet
+            .masternode_withdrawal_keys(None, Some(&script), None, None)
+            .unwrap();
+        runtime.block_on(expect_owner_identity(
+            &manager,
+            vec![enabled_transfer_key([0xEE; 20])],
+        ));
+        let provider = TestMasterKey::new(Some(test_master()));
+
+        let result = runtime.block_on(manager.masternode_withdraw_with(
+            transfer_request(),
+            MasternodeKeySource::Wallet {
+                wallet: &wallet,
+                keys: &keys,
+                master_key: &provider,
+            },
+        ));
+
+        assert!(
+            matches!(
+                result,
+                Err(MasternodeWithdrawalError::Wallet(
+                    PlatformWalletError::MasternodeWithdrawalKeyMismatch { .. }
+                ))
+            ),
+            "{result:?}"
+        );
+        assert_eq!(provider.calls(), 0);
+    }
+
+    /// An explicit destination for another network is refused before
+    /// anything is fetched or signed, whichever source holds the key.
+    #[test]
+    fn should_refuse_a_destination_for_another_network_with_either_key_source() {
+        let runtime = Runtime::new().unwrap();
+        let (manager, wallet_id) = runtime.block_on(test_platform_wallet_manager());
+        let wallet = runtime.block_on(manager.get_wallet(&wallet_id)).unwrap();
+        let (_, script, _) = receive_key(0);
+        let keys = wallet
+            .masternode_withdrawal_keys(None, Some(&script), None, None)
+            .unwrap();
+        let provider = TestMasterKey::new(Some(test_master()));
+        let (signer, hash, _) = fixture();
+        let adapter = DerivedKeyIdentitySigner {
+            signer: &signer,
+            path: DerivationPath::from_str("m/44'/1'/0'/0/0").unwrap(),
+            expected_key_hash160: hash,
+        };
+        let request = || MasternodeWithdrawalRequest {
+            destination: Some(DashAddress::new(
+                Network::Mainnet,
+                Payload::PubkeyHash(PubkeyHash::from_byte_array([0xAB; 20])),
+            )),
+            ..transfer_request()
+        };
+
+        let from_wallet = runtime.block_on(manager.masternode_withdraw_with(
+            request(),
+            MasternodeKeySource::Wallet {
+                wallet: &wallet,
+                keys: &keys,
+                master_key: &provider,
+            },
+        ));
+        let from_host = runtime.block_on(
+            manager.masternode_withdraw_with(request(), MasternodeKeySource::host(&adapter)),
+        );
+
+        assert!(
+            matches!(
+                from_wallet,
+                Err(MasternodeWithdrawalError::Wallet(
+                    PlatformWalletError::InvalidParameter(_)
+                ))
+            ),
+            "{from_wallet:?}"
+        );
+        assert!(
+            matches!(
+                from_host,
+                Err(MasternodeWithdrawalError::Wallet(
+                    PlatformWalletError::InvalidParameter(_)
+                ))
+            ),
+            "{from_host:?}"
+        );
+        assert_eq!(provider.calls(), 0);
+    }
+
+    /// The refusals name the key the way the rest of the API does, and the
+    /// absent payout key says which key can withdraw instead.
+    #[test]
+    fn should_name_the_owner_and_payout_keys_in_the_refusals() {
+        let identity_id = Identifier::from(WITHDRAWN_FROM);
+        let mismatch = PlatformWalletError::MasternodeWithdrawalKeyMismatch {
+            identity_id,
+            key: MasternodeWithdrawalKey::Transfer,
+        }
+        .to_string();
+        let absent = PlatformWalletError::MasternodeWithdrawalKeyAbsent {
+            identity_id,
+            key: MasternodeWithdrawalKey::Transfer,
+        }
+        .to_string();
+
+        assert!(
+            mismatch.contains("not the current payout key"),
+            "{mismatch}"
+        );
+        assert!(absent.contains("has no current payout key"), "{absent}");
+        assert!(absent.contains("Withdraw with the owner key"), "{absent}");
+        for message in [mismatch, absent] {
+            assert!(!message.contains("TRANSFER"), "{message}");
+        }
+    }
+
+    /// A key source's `Debug` names the source and wallet, never a key.
+    #[test]
+    fn should_debug_a_key_source_without_its_keys() {
+        let runtime = Runtime::new().unwrap();
+        let (manager, wallet_id) = runtime.block_on(test_platform_wallet_manager());
+        let wallet = runtime.block_on(manager.get_wallet(&wallet_id)).unwrap();
+        let keys = wallet
+            .masternode_withdrawal_keys(None, None, None, None)
+            .unwrap();
+        let provider = TestMasterKey::new(Some(test_master()));
+        let (signer, hash, _) = fixture();
+        let adapter = DerivedKeyIdentitySigner {
+            signer: &signer,
+            path: DerivationPath::from_str("m/9'/1'/3'/2'/0").unwrap(),
+            expected_key_hash160: hash,
+        };
+
+        let from_wallet = format!(
+            "{:?}",
+            MasternodeKeySource::Wallet {
+                wallet: &wallet,
+                keys: &keys,
+                master_key: &provider,
+            }
+        );
+        let from_host = format!("{:?}", MasternodeKeySource::host(&adapter));
+
+        assert_eq!(
+            from_wallet,
+            format!("Wallet {{ wallet_id: {:?}, .. }}", hex::encode(wallet_id))
+        );
+        assert_eq!(from_host, "Host { .. }");
+    }
+
+    fn assert_send<T: Send>(_: &T) {}
+
+    /// Hosts run a withdrawal on a multi-threaded runtime (`tokio::spawn`), so
+    /// its future is `Send` for either key source.
+    #[test]
+    fn should_withdraw_through_a_send_future_with_either_key_source() {
+        let runtime = Runtime::new().unwrap();
+        let (manager, wallet_id) = runtime.block_on(test_platform_wallet_manager());
+        let wallet = runtime.block_on(manager.get_wallet(&wallet_id)).unwrap();
+        let (_, script, _) = receive_key(0);
+        let keys = wallet
+            .masternode_withdrawal_keys(None, Some(&script), None, None)
+            .unwrap();
+        let provider = TestMasterKey::new(None);
+        let (signer, hash, _) = fixture();
+        let adapter = DerivedKeyIdentitySigner {
+            signer: &signer,
+            path: DerivationPath::from_str("m/9'/1'/3'/2'/0").unwrap(),
+            expected_key_hash160: hash,
+        };
+
+        let from_wallet = manager.masternode_withdraw_with(
+            transfer_request(),
+            MasternodeKeySource::Wallet {
+                wallet: &wallet,
+                keys: &keys,
+                master_key: &provider,
+            },
+        );
+        let from_host = manager
+            .masternode_withdraw_with(transfer_request(), MasternodeKeySource::host(&adapter));
+
+        assert_send(&from_wallet);
+        assert_send(&from_host);
     }
 }

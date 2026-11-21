@@ -53,7 +53,8 @@ use crate::error::PlatformWalletError;
 use crate::manager::PlatformWalletManager;
 use crate::wallet::identity::WithdrawalOutcome;
 use crate::wallet::masternode_withdrawal::{
-    execute_masternode_withdrawal, MasternodeWithdrawalKey, RawSecretCoreSigner,
+    provider_owner_key_path, withdraw_with_secret, MasternodeWithdrawalKey,
+    MasternodeWithdrawalRequest,
 };
 use crate::wallet::outpoint_locks::{
     named_collateral, persist_outpoint_locks, track_masternode_collaterals,
@@ -1043,9 +1044,11 @@ impl TrackedMasternodes {
     /// host-supplied key: the owner key (`role == Owner`; pays the
     /// registered payout address, no destination allowed) or the
     /// payout-address key (`role == OwnerPayout`; destination optional,
-    /// defaults to the payout address itself). The key is used for this
-    /// call only — nothing is retained. Returns the identity's new
-    /// balance in credits with the block that proved it.
+    /// defaults to the payout address itself). The key must be the live
+    /// identity's enabled OWNER / TRANSFER key; anything else is refused
+    /// before broadcasting. The key is used for this call only — nothing is
+    /// retained. Returns the identity's new balance in credits with the
+    /// block that proved it.
     pub async fn withdraw(
         &self,
         pro_tx_hash: &[u8; 32],
@@ -1054,46 +1057,22 @@ impl TrackedMasternodes {
         secret: &[u8; 32],
         destination: Option<String>,
     ) -> Result<WithdrawalOutcome, PlatformWalletError> {
-        let tracked = self
-            .get(pro_tx_hash)
-            .ok_or_else(|| not_tracked(pro_tx_hash))?;
-        let reference = tracked.key_reference();
+        if self.get(pro_tx_hash).is_none() {
+            return Err(not_tracked(pro_tx_hash));
+        }
         let network = self.network;
-
-        let signer = RawSecretCoreSigner::from_bytes(secret)?;
-        let key_hash = signer.public_key_hash160();
-
-        let (signing_key, expected, destination) = match role {
-            MasternodeKeyRole::Owner => {
-                if destination.is_some() {
-                    return Err(PlatformWalletError::InvalidParameter(
-                        "an owner-key withdrawal pays the registered payout address; a \
-                         destination cannot be chosen"
-                            .to_string(),
-                    ));
-                }
-                let expected = reference.owner_key_hash.ok_or_else(|| {
-                    PlatformWalletError::InvalidParameter(
-                        "the masternode's owner key isn't known yet — refresh the node first"
-                            .to_string(),
-                    )
-                })?;
-                (MasternodeWithdrawalKey::Owner, expected, None)
+        let signing_key = match role {
+            MasternodeKeyRole::Owner => MasternodeWithdrawalKey::Owner,
+            MasternodeKeyRole::OwnerPayout => MasternodeWithdrawalKey::Transfer,
+            _ => {
+                return Err(PlatformWalletError::InvalidParameter(
+                    "a withdrawal signs with the owner key or the payout-address key".to_string(),
+                ));
             }
-            MasternodeKeyRole::OwnerPayout => {
-                let expected = reference.payout_key_hash.ok_or_else(|| {
-                    PlatformWalletError::InvalidParameter(
-                        "the masternode's payout address isn't known yet — refresh the node first"
-                            .to_string(),
-                    )
-                })?;
-                // Default destination: the payout address itself.
-                let destination_text = match destination {
-                    Some(text) => text,
-                    None => p2pkh_address(&expected, network),
-                };
-                let destination = destination_text
-                    .parse::<DashAddress<dashcore::address::NetworkUnchecked>>()
+        };
+        let destination = destination
+            .map(|text| {
+                text.parse::<DashAddress<dashcore::address::NetworkUnchecked>>()
                     .map_err(|e| {
                         PlatformWalletError::InvalidParameter(format!(
                             "destination is not a valid Dash address: {e}"
@@ -1104,48 +1083,21 @@ impl TrackedMasternodes {
                         PlatformWalletError::InvalidParameter(format!(
                             "destination is for another network: {e}"
                         ))
-                    })?;
-                (
-                    MasternodeWithdrawalKey::Transfer,
-                    expected,
-                    Some(destination),
-                )
-            }
-            _ => {
-                return Err(PlatformWalletError::InvalidParameter(
-                    "a withdrawal signs with the owner key or the payout-address key".to_string(),
-                ));
-            }
-        };
-
-        // Refuse a mismatched key BEFORE any network work — same
-        // derive-and-compare the identity signer re-checks later.
-        if key_hash != expected {
-            return Err(PlatformWalletError::InvalidParameter(format!(
-                "this key does not match the masternode's {} (hash160 {} vs {})",
-                match role {
-                    MasternodeKeyRole::Owner => "owner key",
-                    _ => "payout address key",
-                },
-                hex::encode(key_hash),
-                hex::encode(expected),
-            )));
-        }
-
-        // The signer ignores the path; pass the DIP-3 owner base so logs
-        // stay meaningful.
-        let path = crate::wallet::masternode_withdrawal::provider_owner_key_path(network, 0)?;
-        execute_masternode_withdrawal(
-            self.sdk.as_ref(),
-            *pro_tx_hash,
+                    })
+            })
+            .transpose()?;
+        let request = MasternodeWithdrawalRequest {
+            pro_tx_hash: *pro_tx_hash,
+            owner_key_hash: None,
             amount_credits,
             signing_key,
-            expected,
-            path,
             destination,
-            &signer,
-        )
-        .await
+        };
+
+        // The secret's signer ignores the path; pass the DIP-3 owner base so
+        // logs stay meaningful.
+        let path = provider_owner_key_path(network, 0)?;
+        withdraw_with_secret(self.sdk.as_ref(), &request, secret, path).await
     }
 }
 
@@ -1177,17 +1129,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     pub fn tracked_masternode(&self, pro_tx_hash: &[u8; 32]) -> Option<TrackedMasternode> {
         self.tracked_masternodes_service().get(pro_tx_hash)
     }
-}
-
-/// Base58 P2PKH address for `hash` on `network`.
-fn p2pkh_address(hash: &[u8; 20], network: Network) -> String {
-    use dashcore::address::Payload;
-    use dashcore::PubkeyHash;
-    DashAddress::new(
-        network,
-        Payload::PubkeyHash(PubkeyHash::from_byte_array(*hash)),
-    )
-    .to_string()
 }
 
 /// The registration details of the transaction DAPI returned for
