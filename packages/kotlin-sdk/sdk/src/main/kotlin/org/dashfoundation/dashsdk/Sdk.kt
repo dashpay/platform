@@ -10,9 +10,15 @@ import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
 import org.dashfoundation.dashsdk.wallet.op
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URI
+import java.net.URL
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -618,16 +624,97 @@ class Sdk private constructor(
             } catch (_: Exception) {
                 return null
             }
-            val body = try {
-                val connection = url.openConnection() as HttpURLConnection
-                connection.connectTimeout = 5_000
-                connection.readTimeout = 5_000
-                connection.requestMethod = "GET"
-                connection.inputStream.use { it.readBytes().decodeToString() }
-            } catch (_: Exception) {
-                return null
-            }
+            val body = fetchBounded(url) ?: return null
             return parseActiveMasternodes(body, defaultDapiPort)
+        }
+
+        /**
+         * GET [url] and return the body as UTF-8, or null on any failure, a
+         * body over [maxBytes], or a request not finished [deadlineMs] after
+         * it started (headers included).
+         */
+        internal fun fetchBounded(
+            url: URL,
+            deadlineMs: Long = MASTERNODES_DEADLINE_MS,
+            maxBytes: Int = MASTERNODES_MAX_BYTES,
+        ): String? {
+            val deadlineNanos = System.nanoTime() + deadlineMs * 1_000_000
+            return try {
+                val connection = url.openConnection() as HttpURLConnection
+                try {
+                    connection.connectTimeout = 5_000
+                    connection.readTimeout = 5_000
+                    connection.requestMethod = "GET"
+                    // The read timeout bounds each read only, and opening
+                    // the stream waits for the response headers before the
+                    // body loop checks its deadline: disconnecting at the
+                    // deadline ends a request stuck anywhere in between.
+                    withDeadline(deadlineMs, abort = connection::disconnect) {
+                        connection.inputStream.use { readBounded(it, maxBytes, deadlineNanos) }
+                    }
+                } finally {
+                    connection.disconnect()
+                }
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+        /**
+         * Largest `/masternodes` body read, far above a mainnet-sized list.
+         * The endpoint may be a user-entered devnet URL, so a larger body is
+         * refused rather than buffered.
+         */
+        private const val MASTERNODES_MAX_BYTES = 16 * 1024 * 1024
+
+        /**
+         * Overall time allowed for a `/masternodes` lookup. The read timeout
+         * bounds each read only, so a server trickling bytes would otherwise
+         * keep the lookup open indefinitely.
+         */
+        private const val MASTERNODES_DEADLINE_MS = 15_000L
+
+        /** Runs the deadlines of [withDeadline]; a daemon, so it never keeps the process up. */
+        private val deadlineTimer: ScheduledExecutorService by lazy {
+            Executors.newSingleThreadScheduledExecutor { task ->
+                Thread(task, "dash-sdk-deadline").apply { isDaemon = true }
+            }
+        }
+
+        /**
+         * Run [block], calling [abort] from another thread if it is still
+         * running after [timeoutMs]. [abort] must make [block] fail fast,
+         * such as by disconnecting the connection it reads from.
+         */
+        internal fun <T> withDeadline(timeoutMs: Long, abort: () -> Unit, block: () -> T): T {
+            val watchdog = deadlineTimer.schedule({ abort() }, timeoutMs, TimeUnit.MILLISECONDS)
+            try {
+                return block()
+            } finally {
+                watchdog.cancel(false)
+            }
+        }
+
+        /**
+         * [input] as UTF-8, or null once it passes [maxBytes] or a read
+         * returns after [deadlineNanos] (on the [System.nanoTime] clock).
+         * A read in progress is bounded by the connection's read timeout.
+         */
+        internal fun readBounded(
+            input: InputStream,
+            maxBytes: Int,
+            deadlineNanos: Long,
+            nanoTime: () -> Long = System::nanoTime,
+        ): String? {
+            val out = ByteArrayOutputStream()
+            val buffer = ByteArray(8 * 1024)
+            while (true) {
+                if (nanoTime() - deadlineNanos > 0) return null
+                val read = input.read(buffer)
+                if (read < 0) return out.toByteArray().decodeToString()
+                if (out.size() + read > maxBytes) return null
+                out.write(buffer, 0, read)
+            }
         }
 
         /**
@@ -677,6 +764,21 @@ class Sdk private constructor(
         fun hasShielded(): Boolean {
             initialize()
             return SdkNative.hasShielded()
+        }
+
+        /**
+         * The quorum service base URL of the devnet named [devnetName],
+         * `https://quorums.<name>.networks.dash.org`, as the Rust trusted
+         * context provider resolves it.
+         *
+         * @throws org.dashfoundation.dashsdk.errors.DashSdkError for a name
+         *   the provider refuses: empty, characters other than letters,
+         *   digits and hyphens, a leading or trailing hyphen, or a reserved
+         *   network name such as `mainnet`
+         */
+        fun devnetQuorumBaseUrl(devnetName: String): String {
+            initialize()
+            return mapNativeErrors { SdkNative.devnetQuorumBaseUrl(devnetName) }
         }
 
         /** Native SDK version string. */

@@ -3,7 +3,14 @@ package org.dashfoundation.dashsdk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayInputStream
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.URI
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
 
 /**
  * Mirrors the decoding tolerance of `SDK.discoverActiveMasternodes` in
@@ -21,6 +28,64 @@ class MasternodeDiscoveryTest {
                 String::class.java,
             ),
         )
+    }
+
+    @Test
+    fun shouldReadABodyWithinTheSizeAndTimeBounds() {
+        val body = "{\"success\": true, \"data\": []}"
+        assertEquals(
+            body,
+            Sdk.readBounded(ByteArrayInputStream(body.toByteArray()), body.length, Long.MAX_VALUE),
+        )
+    }
+
+    @Test
+    fun shouldRefuseABodyLargerThanTheCap() {
+        val body = ByteArray(20_000) { 'a'.code.toByte() }
+        assertNull(Sdk.readBounded(ByteArrayInputStream(body), 19_999, Long.MAX_VALUE))
+    }
+
+    @Test
+    fun shouldGiveUpOnAServerThatTricklesItsHeadersPastTheDeadline() {
+        // Bind and connect to the same IPv4 loopback address: a server on
+        // ::1 would refuse the client and pass the test without a deadline.
+        ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { server ->
+            val accepted = AtomicBoolean(false)
+            val trickler = thread(isDaemon = true) {
+                try {
+                    server.accept().use { socket ->
+                        accepted.set(true)
+                        val out = socket.getOutputStream()
+                        out.write("HTTP/1.1 200 OK\r\n".toByteArray())
+                        // One header byte every 200 ms: each read finishes
+                        // well inside the read timeout, the headers never end.
+                        while (true) {
+                            out.write('x'.code)
+                            out.flush()
+                            Thread.sleep(200)
+                        }
+                    }
+                } catch (_: Exception) {
+                    // The client disconnected.
+                }
+            }
+            val url = URI("http://127.0.0.1:${server.localPort}/masternodes").toURL()
+            val started = System.nanoTime()
+            assertNull(Sdk.fetchBounded(url, deadlineMs = 1_000))
+            val elapsedMs = (System.nanoTime() - started) / 1_000_000
+            assertTrue("took $elapsedMs ms", elapsedMs < 4_000)
+            assertTrue("the client never connected", accepted.get())
+            trickler.interrupt()
+        }
+    }
+
+    @Test
+    fun shouldStopReadingOnceTheDeadlinePasses() {
+        val body = ByteArray(20_000) { 'a'.code.toByte() }
+        var now = 0L
+        // Each clock read advances one second; the deadline is two seconds in.
+        val clock = { now.also { now += 1_000_000_000L } }
+        assertNull(Sdk.readBounded(ByteArrayInputStream(body), Int.MAX_VALUE, 2_000_000_000L, clock))
     }
 
     @Test

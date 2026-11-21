@@ -32,6 +32,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.services.PlatformBalanceSyncService.PlatformSyncState
 import org.dashfoundation.dashsdk.wallet.SpvSubProgress
@@ -148,17 +149,40 @@ fun SyncStatusScreen() {
                                     if (isRunning) {
                                         currentManager.stopSpv()
                                     } else {
+                                        // The manager is network-locked and is
+                                        // replaced only after a new SDK is
+                                        // published: never start the old one
+                                        // with the new network's settings.
+                                        val spvNetwork = currentManager.network
+                                        if (spvNetwork != network) {
+                                            error = "The wallet manager is still switching " +
+                                                "to ${network.displayName}. Try again in a moment."
+                                            return@launch
+                                        }
                                         // ← CoreContentView.startSync():
                                         // Documents/SPV/<network> + peer override.
                                         val dataDir = File(
                                             context.filesDir,
-                                            "spv/${network.networkName}",
+                                            "spv/${spvNetwork.networkName}",
                                         ).apply { mkdirs() }
-                                        val peers = appState.spvPeerOverride()
+                                        // ← CoreSpvLauncher.start: devnet needs
+                                        // its name (SPV user agent) and takes
+                                        // its peers from the quorum service,
+                                        // both from the settings the current
+                                        // SDK was built with, not the fields
+                                        // being edited.
+                                        val devnetName = appState.spvDevnetName(spvNetwork)
+                                        if (spvNetwork == Network.DEVNET && devnetName == null) {
+                                            error = "Set the devnet name in Settings and press " +
+                                                "Apply Devnet Settings to start SPV on devnet."
+                                            return@launch
+                                        }
+                                        val peers = appState.spvPeerOverride(spvNetwork)
                                         currentManager.startSpv(
                                             dataDir = dataDir.absolutePath,
                                             peers = peers,
                                             restrictToConfiguredPeers = peers.isNotEmpty(),
+                                            devnetName = devnetName,
                                         )
                                     }
                                 } catch (e: Exception) {

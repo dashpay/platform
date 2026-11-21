@@ -51,6 +51,18 @@ class FfiSmokeTest {
     }
 
     @Test
+    fun devnetQuorumBaseUrlResolvesANameAndRefusesAReservedOne() {
+        NativeLoader.ensureLoaded()
+        assertEquals(
+            "https://quorums.palmatum.networks.dash.org",
+            SdkNative.devnetQuorumBaseUrl("palmatum"),
+        )
+        assertThrows(DashSDKException::class.java) {
+            SdkNative.devnetQuorumBaseUrl("mainnet")
+        }
+    }
+
+    @Test
     fun sdkHandleRoundTrip() {
         NativeLoader.ensureLoaded()
         // Testnet, default DAPI address list, trusted quorum defaults.
