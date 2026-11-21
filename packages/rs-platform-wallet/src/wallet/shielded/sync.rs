@@ -720,7 +720,13 @@ where
         "SDK stream consumed"
     );
 
-    if appended > 0 {
+    let new_tree_size = store
+        .tree_size()
+        .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+    // Checkpoint even when this pass appended nothing: leaves kept from a
+    // pass whose checkpoint failed have no witness until one covers them.
+    // An existing id is a no-op (see below).
+    if new_tree_size > 0 {
         // Checkpoint at the tree's true post-append leaf count. The
         // tree only ever grows, so this id is strictly monotonic
         // and collision-free across consecutive syncs — unlike
@@ -732,9 +738,7 @@ where
         // checkpoint while later appends extend the tree past it,
         // so the depth-0 witness then reflects a state Platform
         // never recorded.
-        let new_tree_size = store
-            .tree_size()
-            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+        //
         // Hard-fail rather than saturate at u32::MAX: a saturated id
         // would reintroduce shardtree's silent-dedup (every checkpoint
         // past the ceiling pins to the same id) — the exact corruption
@@ -789,8 +793,8 @@ where
                 continue;
             }
             let nullifier = d.note.nullifier(&views.full_viewing_key);
-            let known_spent = store
-                .note_spent_status(*id, &nullifier.to_bytes())
+            let known = store
+                .find_note(*id, &nullifier.to_bytes())
                 .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
             let value = d.note.value().inner();
             debug!(
@@ -806,23 +810,26 @@ where
             // never a pass-wide max. The activity deriver clusters
             // incoming and outgoing events by this height, so a bundle's
             // change note and its OVK-recovered send must carry the same
-            // value or the bundle splits across two clusters.
+            // value or the bundle splits across two clusters. A rescan
+            // keeps a known receipt's first height: re-stamping would move
+            // it into a later cluster, whose new receipts the deriver then
+            // skips as already recorded.
             let shielded_note = super::store::ShieldedNote {
                 note_data,
                 position: d.position,
                 cmx: d.cmx,
                 nullifier: nullifier.to_bytes(),
-                block_height: d.block_height,
+                block_height: known.as_ref().map_or(d.block_height, |n| n.block_height),
                 // Rebuild rescans receipts; a known spend must never become
                 // selectable while its spending action is being re-scanned.
-                is_spent: known_spent.unwrap_or(false),
+                is_spent: known.as_ref().is_some_and(|n| n.is_spent),
                 value,
             };
             store
                 .save_note(*id, &shielded_note)
                 .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
             changeset.record_note(*id, shielded_note);
-            if known_spent.is_none() {
+            if known.is_none() {
                 *per_subwallet_new_notes.entry(*id).or_default() += 1;
             }
         }

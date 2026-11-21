@@ -501,18 +501,17 @@ pub trait ShieldedStore: Send + Sync + 'static {
     /// Return all notes (spent and unspent) for `id`.
     fn get_all_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error>;
 
-    /// Look up one receipt's spent status; `None` means the nullifier is unknown.
+    /// Look up one receipt by nullifier; `None` means the nullifier is unknown.
     /// Stores with a nullifier index should override this compatibility fallback.
-    fn note_spent_status(
+    fn find_note(
         &self,
         id: SubwalletId,
         nullifier: &[u8; 32],
-    ) -> Result<Option<bool>, Self::Error> {
+    ) -> Result<Option<ShieldedNote>, Self::Error> {
         Ok(self
             .get_all_notes(id)?
-            .iter()
-            .find(|note| &note.nullifier == nullifier)
-            .map(|note| note.is_spent))
+            .into_iter()
+            .find(|note| &note.nullifier == nullifier))
     }
 
     /// Mark `id`'s note with `nullifier` as spent. Returns `true`
@@ -1072,11 +1071,10 @@ impl SubwalletState {
             .try_fold(0u64, |total, note| total.checked_add(note.value))
     }
 
-    pub(super) fn note_spent_status(&self, nullifier: &[u8; 32]) -> Option<bool> {
+    pub(super) fn find_note(&self, nullifier: &[u8; 32]) -> Option<&ShieldedNote> {
         self.nullifier_index
             .get(nullifier)
             .and_then(|index| self.notes.get(*index))
-            .map(|note| note.is_spent)
     }
 
     pub(super) fn all_notes(&self) -> Vec<ShieldedNote> {
@@ -1420,15 +1418,16 @@ impl ShieldedStore for InMemoryShieldedStore {
             .unwrap_or_default())
     }
 
-    fn note_spent_status(
+    fn find_note(
         &self,
         id: SubwalletId,
         nullifier: &[u8; 32],
-    ) -> Result<Option<bool>, Self::Error> {
+    ) -> Result<Option<ShieldedNote>, Self::Error> {
         Ok(self
             .subwallets
             .get(&id)
-            .and_then(|state| state.note_spent_status(nullifier)))
+            .and_then(|state| state.find_note(nullifier))
+            .cloned())
     }
 
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {

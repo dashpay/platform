@@ -986,15 +986,16 @@ impl ShieldedStore for FileBackedShieldedStore {
             .unwrap_or_default())
     }
 
-    fn note_spent_status(
+    fn find_note(
         &self,
         id: SubwalletId,
         nullifier: &[u8; 32],
-    ) -> Result<Option<bool>, Self::Error> {
+    ) -> Result<Option<ShieldedNote>, Self::Error> {
         Ok(self
             .subwallets
             .get(&id)
-            .and_then(|state| state.note_spent_status(nullifier)))
+            .and_then(|state| state.find_note(nullifier))
+            .cloned())
     }
 
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {

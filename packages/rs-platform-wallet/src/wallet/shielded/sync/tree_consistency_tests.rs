@@ -25,7 +25,10 @@ use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
 use crate::wallet::shielded::balance::ShieldedBalanceSource;
 use crate::wallet::shielded::keys::OrchardKeySet;
 use crate::wallet::shielded::store::{ShieldedNote, ShieldedStore, SubwalletId};
-use crate::wallet::shielded::{FileBackedShieldedStore, NetworkShieldedCoordinator};
+use crate::wallet::shielded::{
+    derive_activity_from_scan_data, FileBackedShieldedStore, NetworkShieldedCoordinator,
+    ScanDeriveInput,
+};
 
 fn owned_note(keys: &OrchardKeySet, position: u64) -> (ShieldedNote, ShieldedEncryptedNote) {
     let mut rho_bytes = [0; 32];
@@ -330,17 +333,17 @@ fn should_lookup_only_the_discovered_nullifier_spent_status() {
     let keys = OrchardKeySet::from_seed(&[42; 32], Network::Testnet, 0).unwrap();
     let id = SubwalletId::new([42; 32], 0);
     let (note, _) = owned_note(&keys, 0);
-    assert_eq!(store.note_spent_status(id, &note.nullifier).unwrap(), None);
+    let spent_status = |store: &FileBackedShieldedStore| {
+        store
+            .find_note(id, &note.nullifier)
+            .unwrap()
+            .map(|n| n.is_spent)
+    };
+    assert_eq!(spent_status(&store), None);
     store.save_note(id, &note).unwrap();
-    assert_eq!(
-        store.note_spent_status(id, &note.nullifier).unwrap(),
-        Some(false)
-    );
+    assert_eq!(spent_status(&store), Some(false));
     store.mark_spent(id, &note.nullifier).unwrap();
-    assert_eq!(
-        store.note_spent_status(id, &note.nullifier).unwrap(),
-        Some(true)
-    );
+    assert_eq!(spent_status(&store), Some(true));
 }
 
 #[tokio::test]
@@ -516,5 +519,124 @@ async fn should_attribute_a_failed_pass_to_the_wallets_it_snapshotted() {
         ),
         "the failure belongs to the wallets the pass ran for, got {:?}",
         summary.wallet_results
+    );
+}
+
+#[tokio::test]
+async fn should_keep_known_receipt_discovery_height_when_rescanning() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store =
+        FileBackedShieldedStore::open_path(dir.path().join("tree.sqlite"), 100).unwrap();
+    let keys = OrchardKeySet::from_seed(&[42; 32], Network::Testnet, 0).unwrap();
+    let id = SubwalletId::new([42; 32], 0);
+    let (mut known, known_wire) = owned_note(&keys, 0);
+    known.block_height = 7;
+    let (fresh, fresh_wire) = owned_note(&keys, 1);
+    // The known receipt already has an activity row; the tree is empty and
+    // the cursor at zero, as after a rebuild.
+    store.save_note(id, &known).unwrap();
+    let store = Arc::new(RwLock::new(store));
+
+    // SDK mock responses are proven at height 0.
+    let result = sync_notes_across(
+        &sdk_with_notes(vec![known_wire, fresh_wire]).await,
+        &store,
+        &[(id, keys.viewing_keys())],
+        None,
+        None,
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+
+    let heights = |notes: &[ShieldedNote]| -> BTreeMap<[u8; 32], u64> {
+        notes.iter().map(|n| (n.cmx, n.block_height)).collect()
+    };
+    let expected = BTreeMap::from([(known.cmx, 7), (fresh.cmx, 0)]);
+    assert_eq!(
+        heights(&result.changeset.notes_saved[&id]),
+        expected,
+        "the persisted changeset must keep the known receipt's height"
+    );
+    let notes = store.read().await.get_all_notes(id).unwrap();
+    assert_eq!(heights(&notes), expected);
+    let derived = derive_activity_from_scan_data(
+        &ScanDeriveInput {
+            notes,
+            outgoing: Vec::new(),
+            own_addresses: Vec::new(),
+        },
+        &BTreeMap::from([(known.cmx, [1; 32])]),
+    );
+    assert_eq!(
+        derived
+            .new_entries
+            .iter()
+            .map(|entry| entry.note_cmxs.clone())
+            .collect::<Vec<_>>(),
+        vec![vec![fresh.cmx]],
+        "the new receipt must get its own history entry"
+    );
+}
+
+#[tokio::test]
+async fn should_checkpoint_leaves_kept_from_a_pass_whose_checkpoint_failed() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("tree.sqlite");
+    let store = Arc::new(RwLock::new(
+        FileBackedShieldedStore::open_path(&path, 100).unwrap(),
+    ));
+    let keys = OrchardKeySet::from_seed(&[42; 32], Network::Testnet, 0).unwrap();
+    let id = SubwalletId::new([42; 32], 0);
+    let (note, wire) = owned_note(&keys, 0);
+    let sdk = sdk_with_notes(vec![wire]).await;
+    let conn = Connection::open(&path).unwrap();
+    conn.execute_batch(
+        "CREATE TRIGGER reject_checkpoint BEFORE INSERT ON commitment_tree_checkpoints
+        BEGIN SELECT RAISE(FAIL, 'injected checkpoint failure'); END;",
+    )
+    .unwrap();
+    let subwallets = [(id, keys.viewing_keys())];
+
+    let failed = sync_notes_across(
+        &sdk,
+        &store,
+        &subwallets,
+        None,
+        None,
+        &CancellationToken::new(),
+    )
+    .await;
+    assert!(
+        matches!(
+            failed,
+            Err(PlatformWalletError::ShieldedTreeUpdateFailed(_))
+        ),
+        "the injected checkpoint failure must surface: {failed:?}"
+    );
+    assert_eq!(
+        store.read().await.tree_size().unwrap(),
+        1,
+        "appended leaves outlive the failed checkpoint"
+    );
+    conn.execute_batch("DROP TRIGGER reject_checkpoint;")
+        .unwrap();
+
+    sync_notes_across(
+        &sdk,
+        &store,
+        &subwallets,
+        None,
+        None,
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+
+    let store = store.read().await;
+    assert_eq!(store.get_unspent_notes(id).unwrap().len(), 1);
+    assert!(
+        store.witness_at_depth(note.position, 0).unwrap().is_some(),
+        "the retried pass must checkpoint the tree so the note can be spent"
     );
 }
