@@ -79,7 +79,7 @@ use key_wallet::account::derivation::AccountDerivation;
 use key_wallet::account::{AccountType, BLSAccount, EdDSAAccount};
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey};
 use key_wallet::managed_account::address_pool::{AddressPoolType, DEFAULT_PROVIDER_KEY_WINDOW};
-use key_wallet::wallet::managed_wallet_info::{ManagedWalletInfo, ProviderKeyRole};
+use key_wallet::wallet::managed_wallet_info::ProviderKeyRole;
 use zeroize::Zeroizing;
 
 use super::platform_wallet::PlatformWallet;
@@ -798,7 +798,8 @@ impl PlatformWallet {
     /// and derivation path; `None` when the wallet does not hold it.
     ///
     /// Seedless: delegates to key-wallet's
-    /// [`ManagedWalletInfo::find_provider_key`], which checks the key at
+    /// [`ManagedWalletInfo::find_provider_key`](key_wallet::wallet::managed_wallet_info::ManagedWalletInfo::find_provider_key),
+    /// which checks the key at
     /// `index_hint` first, then the provider pool's entries, then every index
     /// below [`DEFAULT_PROVIDER_KEY_WINDOW`]. A key at or past that index and
     /// outside the pool is found only through its hint, which is verified,
