@@ -171,7 +171,9 @@ impl Sdk {
     /// finalization deletes once it moves the votes into the contest's stored record. When no
     /// voter is read, the contest's vote state is read too, and a contest that has a winner is
     /// an [`Error::InvalidRequest`] rather than an empty list, so an ended contest never reads
-    /// as one nobody voted in.
+    /// as one nobody voted in. That vote state is read no older than the empty page of
+    /// voters; when the nodes keep answering it from an older block, the error is a stale
+    /// node one, and the call can be made again.
     ///
     /// # Arguments
     ///
@@ -210,6 +212,7 @@ impl Sdk {
         let mut voters = Voters::default();
         let mut start_at = None;
         let mut last_page_empty = false;
+        let mut last_page_height = 0;
         loop {
             let page_limit = match limit {
                 Some(limit) => {
@@ -221,7 +224,7 @@ impl Sdk {
                 }
                 None => DEFAULT_QUERY_LIMIT,
             };
-            let page = Voter::fetch_many(
+            let (page, metadata) = Voter::fetch_many_with_metadata(
                 self,
                 ContestedDocumentVotePollVotesDriveQuery {
                     vote_poll: vote_poll.clone(),
@@ -231,11 +234,13 @@ impl Sdk {
                     offset: None,
                     order_ascending: true,
                 },
+                None,
             )
             .await?;
             let read = page.0.len();
             let last = page.0.last().map(|voter| voter.0);
             last_page_empty = read == 0;
+            last_page_height = metadata.height;
             voters.0.extend(page.0);
 
             // A short page is the last one
@@ -248,10 +253,11 @@ impl Sdk {
         }
 
         // Finalization deletes the live votes, so no voter, or an empty page after earlier
-        // ones, can also mean the contest ended
+        // ones, can also mean the contest ended. The contest's state is read no older than
+        // that empty page: an older read showing it open would not say it still was
         if (voters.0.is_empty() || last_page_empty) && limit != Some(0) {
             let state = self
-                .fetch_contested_resource_vote_state(&vote_poll, Some(1))
+                .fetch_contested_resource_vote_state_record_since(&vote_poll, last_page_height)
                 .await?;
             if state.winner.is_some() {
                 return Err(Error::InvalidRequest(format!(
@@ -732,6 +738,7 @@ mod vote_polls_by_end_date_paging_tests {
 #[cfg(all(test, feature = "mocks"))]
 mod tests {
     use super::*;
+    use crate::error::StaleNodeError;
     use crate::SdkBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::version::PlatformVersion;
@@ -1287,6 +1294,70 @@ mod tests {
             )),
         )
         .await;
+
+        let error = sdk
+            .get_contested_dpns_voters_for_identity("a11ce", contestant, None)
+            .await
+            .expect_err("expected an ended contest to be refused");
+
+        assert!(
+            matches!(&error, Error::InvalidRequest(reason) if reason.contains("has ended")),
+            "expected an invalid request saying the contest ended, got {error:?}"
+        );
+    }
+
+    /// The votes are gone at block 11, and the contest's state is only answered from block
+    /// 10, where it still shows open: that read cannot say the contest is open at block 11
+    #[tokio::test]
+    async fn should_refuse_an_open_vote_state_older_than_the_empty_voters_page() {
+        let contestant = contender(999);
+        let mut sdk = mock_sdk();
+        expect_voters_page(&mut sdk, "a11ce", contestant, None, 100, &[]).await;
+        expect_vote_state_page(&mut sdk, "a11ce", None, 1, &[contestant]).await;
+        sdk.mock()
+            .set_response_height_of::<Voters>(11)
+            .set_response_height_of::<Contenders>(10);
+
+        let error = sdk
+            .get_contested_dpns_voters_for_identity("a11ce", contestant, None)
+            .await
+            .expect_err("expected the older vote state to be refused");
+
+        assert!(
+            matches!(
+                &error,
+                Error::StaleNode(StaleNodeError::Height {
+                    expected_height: 11,
+                    received_height: 10,
+                    ..
+                })
+            ),
+            "expected a stale node error, got {error:?}"
+        );
+    }
+
+    /// A contest that ended stays ended, so a record naming a winner is taken from an older
+    /// block than the empty page of voters
+    #[tokio::test]
+    async fn should_refuse_the_voters_of_a_contest_an_older_block_shows_finalized() {
+        let contestant = contender(999);
+        let mut sdk = mock_sdk();
+        expect_voters_page(&mut sdk, "a11ce", contestant, None, 100, &[]).await;
+        expect_vote_state_page_with_winner(
+            &mut sdk,
+            "a11ce",
+            None,
+            1,
+            &[contestant],
+            Some((
+                ContestedDocumentVotePollWinnerInfo::WonByIdentity(contestant),
+                BlockInfo::default(),
+            )),
+        )
+        .await;
+        sdk.mock()
+            .set_response_height_of::<Voters>(11)
+            .set_response_height_of::<Contenders>(10);
 
         let error = sdk
             .get_contested_dpns_voters_for_identity("a11ce", contestant, None)
