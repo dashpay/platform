@@ -547,11 +547,13 @@ impl NetworkShieldedCoordinator {
             .await
             .tree_size()
             .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+        self.anchor_cache.observe_policy(&self.sdk);
         if self.anchor_cache.get(tree_size).is_some() {
             return Ok(());
         }
         let fetch_started = FetchStamp::now();
         let (recorded, height) = fetch_recorded_anchor_set(&self.sdk).await?;
+        self.anchor_cache.observe_policy(&self.sdk);
         self.anchor_cache
             .insert(Arc::new(recorded), fetch_started, tree_size, height);
         Ok(())
@@ -1855,6 +1857,7 @@ impl NetworkShieldedCoordinator {
             Ok((dash_sdk::query_types::ShieldedAnchors(anchors), metadata)) => {
                 let recorded: HashSet<[u8; 32]> = anchors.into_iter().collect();
                 if let Some(tree_size) = tree_size {
+                    self.anchor_cache.observe_policy(&self.sdk);
                     self.anchor_cache.insert(
                         Arc::new(recorded.clone()),
                         fetch_started,

@@ -3340,7 +3340,9 @@ async fn extract_spends_and_cached_anchor<S: ShieldedStore>(
         return extract_spends_and_recorded_anchor(sdk, store, notes).await;
     };
     select_spends_with_anchor_cache(store, anchor_cache, notes, || async {
-        Ok(fetch_recorded_anchor_set(sdk).await?)
+        let fetched = fetch_recorded_anchor_set(sdk).await?;
+        anchor_cache.observe_policy(sdk);
+        Ok(fetched)
     })
     .await
 }

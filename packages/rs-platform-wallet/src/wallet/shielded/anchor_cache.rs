@@ -32,6 +32,11 @@
 //! the newest checkpoint; the cache then keeps that older, still recorded
 //! anchor for up to the TTL, where a fresh fetch would retry the node's luck.
 //!
+//! A third guard ties the set to how it was verified: it is dropped when the
+//! SDK's context provider is replaced or starts reporting another quorum
+//! source, so a spend never reuses evidence that an earlier verification
+//! policy accepted.
+//!
 //! The spend path also refetches when the cached set covers none of the
 //! wallet's checkpoints, and drops the cache after any failed spend. The
 //! stranded-reservation release pass never reads the cache (its fund-safety
@@ -43,6 +48,7 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError, Weak};
 use std::time::{Duration, Instant, SystemTime};
 
 use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
+use dash_sdk::platform::ContextProvider;
 
 /// How long a fetched recorded-anchor set may be reused by the spend path.
 ///
@@ -70,9 +76,35 @@ impl Drop for PrefetchGuard<'_> {
     }
 }
 
+/// What verifies the SDK's proofs: the installed context provider and the
+/// quorum source it reports, which an adaptive provider changes in place.
+#[derive(Debug)]
+struct ProofPolicy {
+    provider: Weak<dyn ContextProvider>,
+    quorum_source: Option<u8>,
+}
+
+impl ProofPolicy {
+    fn of(sdk: &dash_sdk::Sdk) -> Self {
+        let provider = sdk.context_provider_arc();
+        Self {
+            quorum_source: provider.quorum_source().map(|source| source as u8),
+            provider: Arc::downgrade(&provider),
+        }
+    }
+}
+
+impl PartialEq for ProofPolicy {
+    fn eq(&self, other: &Self) -> bool {
+        self.provider.ptr_eq(&other.provider) && self.quorum_source == other.quorum_source
+    }
+}
+
 #[derive(Debug, Default)]
 struct CacheState {
     entry: Option<CachedAnchorSet>,
+    /// The policy [`RecordedAnchorCache::observe_policy`] last saw.
+    policy: Option<ProofPolicy>,
     /// When [`RecordedAnchorCache::invalidate`] last ran. Requests sent
     /// before it may carry the set it meant to discard, so they are dropped.
     invalidated_at: Option<Instant>,
@@ -158,7 +190,28 @@ impl RecordedAnchorCache {
 
     pub(crate) fn for_sdk(&self, sdk: &Arc<dash_sdk::Sdk>) -> Option<&Self> {
         let owner = self.sdk.get_or_init(|| Arc::downgrade(sdk));
-        owner.ptr_eq(&Arc::downgrade(sdk)).then_some(self)
+        if !owner.ptr_eq(&Arc::downgrade(sdk)) {
+            return None;
+        }
+        self.observe_policy(sdk);
+        Some(self)
+    }
+
+    /// Drop the cached set, and any fetch already sent, if `sdk` no longer
+    /// verifies proofs the way it did when last observed. Every reader calls
+    /// this before [`get`](Self::get) and every fetch before
+    /// [`insert`](Self::insert), so a set verified under an earlier policy is
+    /// neither reused nor stored.
+    pub(crate) fn observe_policy(&self, sdk: &dash_sdk::Sdk) {
+        let policy = ProofPolicy::of(sdk);
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        if state.policy.as_ref() == Some(&policy) {
+            return;
+        }
+        if state.policy.replace(policy).is_some() {
+            state.entry = None;
+            state.invalidated_at = Some(Instant::now());
+        }
     }
 
     /// The cached set, if one is younger than the TTL and was fetched while
@@ -233,6 +286,11 @@ pub(crate) async fn fetch_recorded_anchor_set(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dash_sdk::dpp::data_contract::TokenConfiguration;
+    use dash_sdk::dpp::prelude::{DataContract, Identifier};
+    use dash_sdk::dpp::version::PlatformVersion;
+    use dash_sdk::error::ContextProviderError;
+    use dash_sdk::platform::QuorumKeySource;
 
     fn set(bytes: &[u8]) -> Arc<HashSet<[u8; 32]>> {
         Arc::new(bytes.iter().map(|b| [*b; 32]).collect())
@@ -249,6 +307,101 @@ mod tests {
         assert_eq!(cache.for_sdk(&first).unwrap().get(10).unwrap().1, 100);
         drop(first);
         assert!(cache.for_sdk(&other).is_none());
+    }
+
+    #[derive(Default)]
+    struct SwitchingProvider(std::sync::atomic::AtomicU8);
+
+    impl ContextProvider for SwitchingProvider {
+        fn get_data_contract(
+            &self,
+            _: &Identifier,
+            _: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _: u32,
+            _: [u8; 32],
+            _: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Ok([0; 48])
+        }
+
+        fn get_platform_activation_height(&self) -> Result<u32, ContextProviderError> {
+            Ok(0)
+        }
+
+        fn quorum_source(&self) -> Option<QuorumKeySource> {
+            Some(match self.0.load(Ordering::SeqCst) {
+                0 => QuorumKeySource::Trusted,
+                _ => QuorumKeySource::Spv,
+            })
+        }
+    }
+
+    fn sdk_with(provider: Arc<SwitchingProvider>) -> Arc<dash_sdk::Sdk> {
+        Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_context_provider_arc(provider)
+                .build()
+                .unwrap(),
+        )
+    }
+
+    #[test]
+    fn should_drop_a_set_verified_before_the_provider_switched_quorum_source() {
+        let provider = Arc::new(SwitchingProvider::default());
+        let sdk = sdk_with(Arc::clone(&provider));
+        let cache = RecordedAnchorCache::new();
+        cache
+            .for_sdk(&sdk)
+            .unwrap()
+            .insert(set(&[1]), FetchStamp::now(), 10, 100);
+        assert!(cache.for_sdk(&sdk).unwrap().get(10).is_some());
+
+        provider.0.store(1, Ordering::SeqCst);
+
+        assert!(cache.for_sdk(&sdk).unwrap().get(10).is_none());
+    }
+
+    #[test]
+    fn should_drop_a_set_verified_by_a_replaced_context_provider() {
+        let sdk = sdk_with(Arc::new(SwitchingProvider::default()));
+        let cache = RecordedAnchorCache::new();
+        cache
+            .for_sdk(&sdk)
+            .unwrap()
+            .insert(set(&[1]), FetchStamp::now(), 10, 100);
+
+        sdk.set_context_provider(SwitchingProvider::default())
+            .unwrap();
+
+        assert!(cache.for_sdk(&sdk).unwrap().get(10).is_none());
+    }
+
+    #[test]
+    fn should_not_store_a_fetch_that_spanned_a_policy_change() {
+        let provider = Arc::new(SwitchingProvider::default());
+        let sdk = sdk_with(Arc::clone(&provider));
+        let cache = RecordedAnchorCache::new();
+        let cache = cache.for_sdk(&sdk).unwrap();
+        let sent = FetchStamp::now();
+
+        provider.0.store(1, Ordering::SeqCst);
+        cache.observe_policy(&sdk);
+        cache.insert(set(&[1]), sent, 10, 100);
+
+        assert!(cache.get(10).is_none());
     }
 
     #[test]
