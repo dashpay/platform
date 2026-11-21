@@ -207,7 +207,6 @@ private fun AddressRow(address: CoreAddressEntity) {
         val detail = buildList {
             add("#${address.addressIndex}")
             if (address.isUsed) add("used")
-            if (address.balance > 0) add(formatDuffs(address.balance))
         }.joinToString(" • ")
         Text(
             detail,
