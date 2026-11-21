@@ -93,10 +93,14 @@ impl DapiServer {
     }
 }
 
-/// When the ingress layer ends a call: the instant its timer started plus the call's timeout.
-/// The layer puts it in the request's extensions, so a handler can end optional work before the
-/// call is cut off: the timer starts when the request's headers arrive, before its message is
-/// read, so it ends earlier than the handler could tell from the `grpc-timeout` header.
+/// When a handler's optional work must be done so that its answer leaves before the call is cut
+/// off: the earlier of this layer's own timer and the client's `grpc-timeout` less the safety
+/// margin, both counted from when the request's headers arrived, before its message is read.
+/// When the margin does not fit in the client's timeout there is no time for optional work, and
+/// it is the instant the headers arrived: tonic still enforces the header on its own.
+///
+/// The layer puts it in the request's extensions. It is not when the call ends: the layer and
+/// tonic end it with their own transport status, which clients retry.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct IngressDeadline(pub(crate) Instant);
 
@@ -105,13 +109,13 @@ pub(crate) struct IngressDeadline(pub(crate) Instant);
 /// Streaming methods (subscriptions) get longer timeouts to support long-lived connections,
 /// while unary methods get shorter timeouts to prevent resource exhaustion.
 #[derive(Clone)]
-struct TimeoutLayer {
+pub(crate) struct TimeoutLayer {
     unary_timeout: Duration,
     streaming_timeout: Duration,
 }
 
 impl TimeoutLayer {
-    fn new(unary_timeout: Duration, streaming_timeout: Duration) -> Self {
+    pub(crate) fn new(unary_timeout: Duration, streaming_timeout: Duration) -> Self {
         Self {
             unary_timeout,
             streaming_timeout,
@@ -155,7 +159,7 @@ impl<S> Layer<S> for TimeoutLayer {
 
 /// Service wrapper that applies per-method timeouts.
 #[derive(Clone)]
-struct TimeoutService<S> {
+pub(crate) struct TimeoutService<S> {
     inner: S,
     config: TimeoutLayer,
 }
@@ -203,8 +207,13 @@ where
         let timeout_duration = effective_timeout;
         let timeout_secs = timeout_duration.as_secs_f64();
         // The timer below starts now
+        let optional_work_time = timeout_from_header.map_or(timeout_duration, |header| {
+            header
+                .saturating_sub(GRPC_REQUEST_TIME_SAFETY_MARGIN)
+                .min(timeout_duration)
+        });
         req.extensions_mut()
-            .insert(IngressDeadline(Instant::now() + timeout_duration));
+            .insert(IngressDeadline(Instant::now() + optional_work_time));
         let fut = tower::timeout::Timeout::new(self.inner.clone(), timeout_duration).call(req);
 
         Box::pin(async move {
@@ -318,6 +327,31 @@ mod tests {
         let timeout = Duration::from_secs(5) - GRPC_REQUEST_TIME_SAFETY_MARGIN;
         assert!(deadline >= called_at + timeout);
         assert!(deadline <= answered_at + timeout);
+    }
+
+    #[tokio::test]
+    async fn should_leave_no_time_for_optional_work_when_the_margin_does_not_fit_the_client_deadline()
+     {
+        let timeout_layer = TimeoutLayer::new(Duration::from_secs(15), Duration::from_secs(600));
+        let recorder = DeadlineRecorder::default();
+        let mut service = timeout_layer.layer(recorder.clone());
+        // 40 ms: less than the margin, so the layer falls back to its own 600 s timer, while
+        // tonic still ends the call after 40 ms
+        let request = Request::builder()
+            .uri("/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult")
+            .header("grpc-timeout", "40m")
+            .body(())
+            .unwrap();
+
+        service.call(request).await.expect("expected an answer");
+        let answered_at = Instant::now();
+
+        let deadline = recorder
+            .0
+            .lock()
+            .unwrap()
+            .expect("expected the layer to hand its deadline on");
+        assert!(deadline <= answered_at);
     }
 
     #[tokio::test]

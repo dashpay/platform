@@ -12,9 +12,11 @@ use dapi_grpc::platform::v0::{
     BroadcastStateTransitionRequest, Proof, ResponseMetadata, WaitForStateTransitionResultResponse,
 };
 use dpp::block::block_info::BlockInfo;
+use dpp::bls::SecretKey;
 use dpp::dashcore::Network;
+use dpp::data_contract::TokenConfiguration;
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::prelude::Identity;
+use dpp::prelude::{CoreBlockHeight, DataContract, Identifier, Identity};
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
@@ -24,10 +26,11 @@ use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use drive_proof_verifier::{
-    verify_state_transition_result_around_block, StateBeforeBlockVerification,
-    StateTransitionResultAroundBlock,
+    verify_state_transition_result_around_block, ContextProvider, ContextProviderError,
+    StateBeforeBlockVerification, StateTransitionResultAroundBlock,
 };
-use signed_response::{signed, Provider};
+use signed_response::{signed_by_quorum, Provider};
+use std::sync::Arc;
 
 const TRANSFER_AMOUNT: u64 = 500_000;
 const BLOCK_HEIGHT: u64 = 10;
@@ -44,10 +47,90 @@ struct Fixture {
     recipient_balance_after: u64,
 }
 
-fn metadata_at(height: u64, protocol_version: u32) -> ResponseMetadata {
+/// A quorum that signs a block of a fixture: its hash, its key, and the Core height the block
+/// is chain locked at, which a client looks the quorum's key up with.
+struct SigningQuorum {
+    hash: [u8; 32],
+    secret: [u8; 32],
+    core_chain_locked_height: u32,
+}
+
+/// The quorum `signed_response::Provider` knows.
+const TEST_QUORUM: SigningQuorum = SigningQuorum {
+    hash: [2; 32],
+    secret: [1; 32],
+    core_chain_locked_height: 1,
+};
+
+/// The quorum of the block before a rotation, and the one of the block after it, each chain
+/// locked at its own Core height.
+const BEFORE_ROTATION: SigningQuorum = SigningQuorum {
+    hash: [4; 32],
+    secret: [4; 32],
+    core_chain_locked_height: 100,
+};
+const AFTER_ROTATION: SigningQuorum = SigningQuorum {
+    hash: [5; 32],
+    secret: [5; 32],
+    core_chain_locked_height: 108,
+};
+
+impl SigningQuorum {
+    fn secret_key(&self) -> SecretKey {
+        SecretKey::from_be_bytes(&self.secret).unwrap()
+    }
+}
+
+/// Knows no contracts or tokens, and answers the key of each quorum of a rotation only for the
+/// Core height its block is chain locked at, as a provider that follows rotations does.
+struct RotationProvider;
+impl ContextProvider for RotationProvider {
+    fn get_data_contract(
+        &self,
+        _: &Identifier,
+        _: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        Ok(None)
+    }
+    fn get_token_configuration(
+        &self,
+        _: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        Ok(None)
+    }
+    fn get_quorum_public_key(
+        &self,
+        kind: u32,
+        hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) -> Result<[u8; 48], ContextProviderError> {
+        assert_eq!(kind, 106);
+        [&BEFORE_ROTATION, &AFTER_ROTATION]
+            .into_iter()
+            .find(|quorum| {
+                quorum.hash == hash && quorum.core_chain_locked_height == core_chain_locked_height
+            })
+            .map(|quorum| quorum.secret_key().public_key().to_bytes())
+            .ok_or_else(|| {
+                ContextProviderError::InvalidQuorum(format!(
+                    "no quorum {} at Core height {core_chain_locked_height}",
+                    hex::encode(hash)
+                ))
+            })
+    }
+    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+        Ok(1)
+    }
+}
+
+fn metadata_at(
+    height: u64,
+    protocol_version: u32,
+    core_chain_locked_height: u32,
+) -> ResponseMetadata {
     ResponseMetadata {
         height,
-        core_chain_locked_height: 1,
+        core_chain_locked_height,
         time_ms: 1_700_000_000_000 + height * 3_000,
         protocol_version,
         chain_id: "dash-testnet-51".into(),
@@ -60,6 +143,7 @@ fn signed_proof_at(
     transition: &StateTransition,
     height: u64,
     platform_version: &PlatformVersion,
+    quorum: &SigningQuorum,
 ) -> (Proof, ResponseMetadata) {
     let bytes = drive
         .prove_state_transition(transition, None, platform_version)
@@ -71,9 +155,16 @@ fn signed_proof_at(
         .root_hash(None, &platform_version.drive.grove_version)
         .unwrap()
         .unwrap();
-    let metadata = metadata_at(height, platform_version.protocol_version);
+    let metadata = metadata_at(
+        height,
+        platform_version.protocol_version,
+        quorum.core_chain_locked_height,
+    );
 
-    (signed(bytes, &metadata, root), metadata)
+    (
+        signed_by_quorum(bytes, &metadata, root, quorum.hash, &quorum.secret_key()),
+        metadata,
+    )
 }
 
 fn fixture() -> Fixture {
@@ -83,6 +174,20 @@ fn fixture() -> Fixture {
 /// A transfer whose recipient exists before its block or is created in it, with the proof of
 /// the state before the block made and signed at `before_protocol_version`.
 fn fixture_with(recipient_exists_before: bool, before_protocol_version: u32) -> Fixture {
+    fixture_signed_by(
+        recipient_exists_before,
+        before_protocol_version,
+        [&TEST_QUORUM, &TEST_QUORUM],
+    )
+}
+
+/// The same, with the block before the transfer's signed by the first quorum and the
+/// transfer's block by the second.
+fn fixture_signed_by(
+    recipient_exists_before: bool,
+    before_protocol_version: u32,
+    [before_quorum, after_quorum]: [&SigningQuorum; 2],
+) -> Fixture {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
     let add = |identity: &Identity| {
@@ -121,6 +226,7 @@ fn fixture_with(recipient_exists_before: bool, before_protocol_version: u32) -> 
         &transition,
         BLOCK_HEIGHT - 1,
         PlatformVersion::get(before_protocol_version).unwrap(),
+        before_quorum,
     );
 
     // What the transfer's block does to the two balances, creating the recipient first when it
@@ -150,7 +256,13 @@ fn fixture_with(recipient_exists_before: bool, before_protocol_version: u32) -> 
         .unwrap();
 
     // The state the transfer's block left
-    let after = signed_proof_at(&drive, &transition, BLOCK_HEIGHT, platform_version);
+    let after = signed_proof_at(
+        &drive,
+        &transition,
+        BLOCK_HEIGHT,
+        platform_version,
+        after_quorum,
+    );
 
     Fixture {
         request: BroadcastStateTransitionRequest {
@@ -180,7 +292,8 @@ fn response(
     }
 }
 
-fn verify(
+fn verify_with(
+    provider: &dyn ContextProvider,
     request: BroadcastStateTransitionRequest,
     response: WaitForStateTransitionResultResponse,
 ) -> Result<StateTransitionResultAroundBlock, Box<drive_proof_verifier::Error>> {
@@ -189,9 +302,16 @@ fn verify(
         response,
         Network::Testnet,
         PlatformVersion::latest(),
-        &Provider,
+        provider,
     )
     .map_err(Box::new)
+}
+
+fn verify(
+    request: BroadcastStateTransitionRequest,
+    response: WaitForStateTransitionResultResponse,
+) -> Result<StateTransitionResultAroundBlock, Box<drive_proof_verifier::Error>> {
+    verify_with(&Provider, request, response)
 }
 
 /// The sender's and the recipient's balances a transfer's proof holds, `None` for one that does
@@ -344,6 +464,50 @@ fn should_refuse_a_state_before_the_block_signed_for_another_height() {
     let error = verify(fixture.request, response(fixture.after, Some(mislabelled)))
         .expect_err("expected the state before the block to be refused");
 
+    assert!(
+        matches!(
+            *error,
+            drive_proof_verifier::Error::InvalidSignature { .. }
+                | drive_proof_verifier::Error::SignatureVerificationError { .. }
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn should_verify_each_side_of_a_pair_against_its_own_quorum_across_a_rotation() {
+    let fixture = fixture_signed_by(
+        true,
+        PlatformVersion::latest().protocol_version,
+        [&BEFORE_ROTATION, &AFTER_ROTATION],
+    );
+
+    let verified = verify_with(
+        &RotationProvider,
+        fixture.request.clone(),
+        response(fixture.after.clone(), Some(fixture.before.clone())),
+    )
+    .expect("expected each side to verify against its own quorum");
+    assert!(matches!(
+        verified.state_before_block,
+        StateBeforeBlockVerification::Verified(_)
+    ));
+
+    // The state before the block carrying the signature of the block after it: the quorum it
+    // names did not sign it
+    let substituted = (
+        Proof {
+            signature: fixture.after.0.signature.clone(),
+            ..fixture.before.0.clone()
+        },
+        fixture.before.1.clone(),
+    );
+    let error = verify_with(
+        &RotationProvider,
+        fixture.request,
+        response(fixture.after, Some(substituted)),
+    )
+    .expect_err("expected the state before the block to be refused");
     assert!(
         matches!(
             *error,

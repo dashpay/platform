@@ -44,8 +44,9 @@ impl PlatformServiceImpl {
         &self,
         request: Request<WaitForStateTransitionResultRequest>,
     ) -> Result<Response<WaitForStateTransitionResultResponse>, DapiError> {
-        // The ingress layer cuts the call off at this instant. The wait ends no later, and its
-        // optional calls take their time from what is left.
+        // Optional calls to Drive end by this instant, so that the answer leaves before the
+        // ingress layer cuts the call off. The wait itself keeps its own timeout: a call cut
+        // off there ends with the transport's DEADLINE_EXCEEDED, which clients retry.
         let ingress_deadline = request
             .extensions()
             .get::<IngressDeadline>()
@@ -114,9 +115,10 @@ impl PlatformServiceImpl {
             match self.tenderdash_client.tx(hash_base64).await {
                 Ok(tx) => {
                     debug!(tx = hash_hex, "Transaction already exists, returning it");
-                    let deadline = wait_deadline(Instant::now(), wait_timeout, ingress_deadline);
+                    let work_deadline =
+                        optional_work_deadline(Instant::now() + wait_timeout, ingress_deadline);
                     return self
-                        .build_response_from_existing_tx(tx, options, deadline)
+                        .build_response_from_existing_tx(tx, options, work_deadline)
                         .await;
                 }
                 Err(error) => {
@@ -125,17 +127,22 @@ impl PlatformServiceImpl {
             };
 
             // The wait's own timeout starts once the lookup is done, as it always has. The
-            // optional registration below spends this wait's time, not more.
-            let deadline = wait_deadline(Instant::now(), wait_timeout, ingress_deadline);
-            let timeout_duration = deadline.saturating_duration_since(Instant::now());
+            // optional registration below spends this wait's time, not more, and the optional
+            // calls also end before the ingress layer cuts the call off.
+            let deadline = Instant::now() + wait_timeout;
+            let work_deadline = optional_work_deadline(deadline, ingress_deadline);
+            let timeout_duration = wait_timeout;
 
             // The transition is not in a block yet, so Drive can still prove the state before
             // its block: that proof can only be made before the block is committed. The
             // registration lasts as long as this wait: dropping it, whichever way the wait
             // ends, a client hanging up included, releases it.
             let _execution_proof_registration = if options.prove_state_before_block {
-                self.register_state_transition_execution_proof(&state_transition_hash, deadline)
-                    .await
+                self.register_state_transition_execution_proof(
+                    &state_transition_hash,
+                    work_deadline,
+                )
+                .await
             } else {
                 None
             };
@@ -156,7 +163,7 @@ impl PlatformServiceImpl {
                                 .build_response_from_event(
                                     event,
                                     options,
-                                    deadline,
+                                    work_deadline,
                                 )
                                 .await;
                         }
@@ -570,15 +577,10 @@ struct WaitOptions {
 /// goes on as it does without them, with the rest of its own deadline.
 const EXECUTION_PROOF_CALL_TIMEOUT: Duration = Duration::from_secs(1);
 
-/// When a wait that starts `now` ends: after the configured wait timeout, or at the ingress
-/// layer's deadline when that comes first.
-fn wait_deadline(
-    now: Instant,
-    wait_timeout: Duration,
-    ingress_deadline: Option<Instant>,
-) -> Instant {
-    let own = now + wait_timeout;
-    ingress_deadline.map_or(own, |ingress| ingress.min(own))
+/// When a wait's optional calls to Drive must be done: by the wait's own deadline, or by the
+/// ingress layer's [`IngressDeadline`] when that comes first.
+fn optional_work_deadline(wait_deadline: Instant, ingress_deadline: Option<Instant>) -> Instant {
+    ingress_deadline.map_or(wait_deadline, |ingress| ingress.min(wait_deadline))
 }
 
 /// The least time worth giving an optional call to Drive; with less left it is not made.
@@ -1230,6 +1232,29 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn should_make_no_pair_lookup_when_no_time_is_left_for_it() {
+            let fixture = Fixture::serving(RecordingDrive {
+                calls: Default::default(),
+                registration: Registration::Take,
+                execution_proof: pair(9, 10),
+                stall_execution_proof: true,
+            });
+            let tx = b"a transition";
+
+            // The client's deadline leaves no time for optional work, as with a grpc-timeout
+            // shorter than the ingress layer's margin
+            let response = fixture
+                .fill_success_result_before(tx, true, 10, Some(Instant::now()))
+                .await;
+
+            assert_eq!(
+                response.result,
+                Some(WaitResult::Proof(proof_of(CURRENT_HEIGHT)))
+            );
+            assert_eq!(fixture.calls(), vec![Call::GetProofs(tx.to_vec())]);
+        }
+
+        #[tokio::test]
         async fn should_give_a_registration_only_part_of_what_is_left_of_the_wait() {
             let fixture = Fixture::new(Registration::Stall);
 
@@ -1257,41 +1282,48 @@ mod tests {
 
     mod event_wait {
         use crate::clients::{TenderdashClient, TransactionEvent, TransactionResult};
+        use crate::server::grpc::TimeoutLayer;
         use crate::services::platform_service::PlatformServiceImpl;
+        use crate::services::platform_service::protobuf_request_errors::channel;
         use crate::services::streaming_service::StreamingEvent;
         use axum::routing::post;
         use axum::{Json, Router};
         use dapi_grpc::platform::v0::WaitForStateTransitionResultRequest;
+        use dapi_grpc::platform::v0::platform_client::PlatformClient;
+        use dapi_grpc::platform::v0::platform_server::PlatformServer;
         use dapi_grpc::platform::v0::wait_for_state_transition_result_request::{
             Version, WaitForStateTransitionResultRequestV0,
         };
-        use dapi_grpc::tonic::Request;
+        use dapi_grpc::tonic::transport::Server;
+        use dapi_grpc::tonic::{Code, Request};
         use serde_json::{Value, json};
         use std::sync::Arc;
         use std::time::Duration;
         use tokio::net::TcpListener;
         use tokio::task::JoinHandle;
+        use tokio_stream::StreamExt;
 
-        /// How long the Tenderdash stand-in takes to answer that it does not hold a transaction.
+        /// How long the slow Tenderdash stand-in takes to answer that it does not hold a
+        /// transaction.
         const LOOKUP_TIME: Duration = Duration::from_millis(800);
         /// The wait's own timeout.
         const WAIT_TIMEOUT: Duration = Duration::from_millis(1_000);
 
-        /// A Tenderdash stand-in that answers every call, after [`LOOKUP_TIME`], that it holds
-        /// no such transaction.
-        struct SlowLookupTenderdash {
+        /// A Tenderdash stand-in that answers every call, after a while, that it holds no such
+        /// transaction.
+        struct NotFoundTenderdash {
             url: String,
             server: JoinHandle<()>,
         }
 
-        impl Drop for SlowLookupTenderdash {
+        impl Drop for NotFoundTenderdash {
             fn drop(&mut self) {
                 self.server.abort();
             }
         }
 
-        impl SlowLookupTenderdash {
-            async fn start() -> Self {
+        impl NotFoundTenderdash {
+            async fn start(lookup_time: Duration) -> Self {
                 let listener = TcpListener::bind("127.0.0.1:0")
                     .await
                     .expect("slow lookup Tenderdash listener");
@@ -1300,8 +1332,8 @@ mod tests {
                     .expect("slow lookup Tenderdash address");
                 let router = Router::new().route(
                     "/",
-                    post(|Json(call): Json<Value>| async move {
-                        tokio::time::sleep(LOOKUP_TIME).await;
+                    post(move |Json(call): Json<Value>| async move {
+                        tokio::time::sleep(lookup_time).await;
                         Json(json!({
                             "jsonrpc": "2.0",
                             "id": call["id"],
@@ -1320,34 +1352,71 @@ mod tests {
                 }
             }
 
-            /// A service whose Tenderdash lookups come here, and whose events the test delivers.
-            fn service(&self) -> PlatformServiceImpl {
+            /// A service whose Tenderdash lookups come here, whose events the test delivers, and
+            /// whose waits last `wait_timeout`.
+            fn service(&self, wait_timeout: Duration) -> PlatformServiceImpl {
                 let mut service = PlatformServiceImpl::without_backends();
                 let tenderdash = TenderdashClient::with_test_base_url(self.url.clone());
                 service.websocket_client = tenderdash.websocket_client();
                 service.websocket_client.set_connected_for_test();
                 service.tenderdash_client = Arc::new(tenderdash);
                 let mut config = (*service.config).clone();
-                config.dapi.state_transition_wait_timeout = WAIT_TIMEOUT.as_millis() as u64;
+                config.dapi.state_transition_wait_timeout = wait_timeout.as_millis() as u64;
                 service.config = Arc::new(config);
                 service
             }
         }
 
-        #[tokio::test]
-        async fn should_give_the_event_the_whole_wait_timeout_after_a_slow_lookup() {
-            let tenderdash = SlowLookupTenderdash::start().await;
-            let service = tenderdash.service();
-            let hash = [3u8; 32];
-            // A wait that does not ask for the state before the block
-            let request = Request::new(WaitForStateTransitionResultRequest {
+        /// A wait for the transition with this hash that does not ask for the state before the
+        /// block.
+        fn unflagged_wait(hash: [u8; 32]) -> WaitForStateTransitionResultRequest {
+            WaitForStateTransitionResultRequest {
                 version: Some(Version::V0(WaitForStateTransitionResultRequestV0 {
                     state_transition_hash: hash.to_vec(),
                     prove: false,
                     request_user_balance: false,
                     prove_state_before_block: false,
                 })),
+            }
+        }
+
+        #[tokio::test]
+        async fn should_end_a_wait_cut_off_by_the_client_deadline_with_deadline_exceeded() {
+            let tenderdash = NotFoundTenderdash::start(Duration::ZERO).await;
+            // The wait's own timeout is far longer than the client's deadline
+            let service = tenderdash.service(Duration::from_secs(30));
+            let (client_io, server_io) = tokio::io::duplex(64 * 1024);
+            let server = tokio::spawn(async move {
+                let incoming = tokio_stream::iter([Ok::<_, std::io::Error>(server_io)])
+                    .chain(tokio_stream::pending());
+                Server::builder()
+                    .layer(TimeoutLayer::new(
+                        Duration::from_secs(15),
+                        Duration::from_secs(600),
+                    ))
+                    .add_service(PlatformServer::new(service))
+                    .serve_with_incoming(incoming)
+                    .await
+                    .expect("serve the platform service");
             });
+            let mut client = PlatformClient::new(channel(client_io, "http://dapi.in-memory"));
+            let mut request = Request::new(unflagged_wait([4; 32]));
+            request.set_timeout(Duration::from_millis(300));
+
+            let answer = client.wait_for_state_transition_result(request).await;
+            server.abort();
+
+            // The transport's status, which clients retry, not an answer of the wait's own
+            let status = answer.expect_err("expected the call to be cut off");
+            assert_eq!(status.code(), Code::DeadlineExceeded, "{status:?}");
+        }
+
+        #[tokio::test]
+        async fn should_give_the_event_the_whole_wait_timeout_after_a_slow_lookup() {
+            let tenderdash = NotFoundTenderdash::start(LOOKUP_TIME).await;
+            let service = tenderdash.service(WAIT_TIMEOUT);
+            let hash = [3u8; 32];
+            let request = Request::new(unflagged_wait(hash));
 
             // The event comes half a second after the lookup answered: within the wait's own
             // timeout counted from there, and past it counted from the start of the call
@@ -1375,29 +1444,30 @@ mod tests {
     }
 
     mod deadline {
-        use super::super::wait_deadline;
+        use super::super::optional_work_deadline;
         use std::time::Duration;
         use tokio::time::Instant;
 
-        const WAIT_TIMEOUT: Duration = Duration::from_secs(30);
-
         #[test]
-        fn should_end_a_wait_at_its_own_timeout_without_an_earlier_ingress_deadline() {
-            let now = Instant::now();
+        fn should_end_optional_work_by_the_wait_deadline_without_an_earlier_ingress_deadline() {
+            let wait_deadline = Instant::now() + Duration::from_secs(30);
 
-            assert_eq!(wait_deadline(now, WAIT_TIMEOUT, None), now + WAIT_TIMEOUT);
+            assert_eq!(optional_work_deadline(wait_deadline, None), wait_deadline);
             assert_eq!(
-                wait_deadline(now, WAIT_TIMEOUT, Some(now + Duration::from_secs(60))),
-                now + WAIT_TIMEOUT
+                optional_work_deadline(wait_deadline, Some(wait_deadline + Duration::from_secs(1))),
+                wait_deadline
             );
         }
 
         #[test]
-        fn should_end_a_wait_when_the_ingress_layer_cuts_the_call_off() {
-            let now = Instant::now();
-            let ingress = now + Duration::from_secs(5);
+        fn should_end_optional_work_by_the_ingress_deadline_when_it_comes_first() {
+            let wait_deadline = Instant::now() + Duration::from_secs(30);
+            let ingress = wait_deadline - Duration::from_secs(25);
 
-            assert_eq!(wait_deadline(now, WAIT_TIMEOUT, Some(ingress)), ingress);
+            assert_eq!(
+                optional_work_deadline(wait_deadline, Some(ingress)),
+                ingress
+            );
         }
     }
 

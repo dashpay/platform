@@ -359,6 +359,20 @@ impl StateTransitionExecutionProofs {
         }
     }
 
+    /// Records that the block at `height` is committed and keeps the pairs `proved` of the
+    /// transitions it executed. What has outlived its bounds is forgotten first, so the bytes
+    /// of pairs that expire at this block make room for this block's own.
+    pub(crate) fn commit_block(
+        &self,
+        height: u64,
+        proved: Vec<(StateTransitionHash, StateTransitionExecutionProof)>,
+    ) {
+        self.block_committed(height);
+        for (hash, proof) in proved {
+            self.store(hash, height, proof);
+        }
+    }
+
     /// Records that the block at `height` is committed, and forgets the registrations, the
     /// releases and the proofs that have outlived their bounds.
     fn block_committed(&self, height: u64) {
@@ -506,6 +520,7 @@ impl<C> Platform<C> {
         height: u64,
     ) {
         let platform_state = self.state.load();
+        let mut proved = Vec::new();
         if platform_state.last_committed_block_height() == height {
             for PendingStateTransitionExecutionProof {
                 hash,
@@ -518,11 +533,7 @@ impl<C> Platform<C> {
                     &hash,
                     &platform_state,
                 ) {
-                    self.state_transition_execution_proofs.store(
-                        hash,
-                        height,
-                        StateTransitionExecutionProof { before, after },
-                    );
+                    proved.push((hash, StateTransitionExecutionProof { before, after }));
                 }
             }
         } else if !pending.is_empty() {
@@ -535,7 +546,7 @@ impl<C> Platform<C> {
         }
 
         self.state_transition_execution_proofs
-            .block_committed(height);
+            .commit_block(height, proved);
     }
 
     /// A proof of the transition's keys in committed state, with the signature and the
@@ -583,10 +594,12 @@ impl<C> Platform<C> {
                 }
             };
 
-        // A client refuses a GroveDB proof envelope older than its verifier's floor, and with it
-        // the whole response, so a side it cannot read is not made. Across a protocol upgrade
-        // that changes the envelope no pair is kept, and the wait answers with a proof of the
-        // current state instead.
+        // A client refuses a GroveDB proof envelope below its verifier's floor, and with it the
+        // whole response, so a side below the floor is not made, and without it no pair is kept.
+        // Each side is checked on its own: two sides of different envelope versions both above
+        // the floor make a pair. A block at protocol version 11 or earlier (GroveDB version 2,
+        // envelope V0) is below it, so the first block after the upgrade to 12 keeps no pair
+        // and its wait answers with a proof of the current state.
         if let Err(error) =
             require_supported_grovedb_proof_envelope(&grovedb_proof, "execution proof")
         {
@@ -903,6 +916,22 @@ mod tests {
         proofs.block_committed(10 + PROOF_RETENTION_BLOCKS + 1);
         assert_eq!(proofs.get(&[1; 32]), None);
         assert_eq!(proofs.inner().proved_bytes, 0);
+    }
+
+    #[test]
+    fn should_keep_a_pair_of_the_block_that_frees_the_bytes_it_needs() {
+        let proofs = StateTransitionExecutionProofs::default();
+        let quarter = MAX_RETAINED_PROOF_BYTES / 4;
+        proofs.store([1; 32], 10, proof_of_size(10, quarter));
+        proofs.store([2; 32], 10, proof_of_size(10, quarter));
+
+        // The pairs of block 10 expire at the block whose own pair needs their bytes
+        let height = 10 + PROOF_RETENTION_BLOCKS + 1;
+        proofs.commit_block(height, vec![([3; 32], proof_of_size(height, quarter))]);
+
+        assert_eq!(proofs.get(&[1; 32]), None);
+        assert_eq!(proofs.get(&[2; 32]), None);
+        assert!(proofs.get(&[3; 32]).is_some());
     }
 
     #[test]

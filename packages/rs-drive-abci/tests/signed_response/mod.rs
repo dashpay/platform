@@ -60,9 +60,20 @@ fn key() -> SecretKey {
 }
 /// Wraps `bytes` in a proof that the test quorum signed for `root` and `metadata`.
 pub fn signed(bytes: Vec<u8>, metadata: &ResponseMetadata, root: [u8; 32]) -> Proof {
+    signed_by_quorum(bytes, metadata, root, [2; 32], &key())
+}
+/// Wraps `bytes` in a proof that the quorum `quorum_hash`, whose key is `secret`, signed for
+/// `root` and `metadata`.
+pub fn signed_by_quorum(
+    bytes: Vec<u8>,
+    metadata: &ResponseMetadata,
+    root: [u8; 32],
+    quorum_hash: [u8; 32],
+    secret: &SecretKey,
+) -> Proof {
     let mut proof = Proof {
         grovedb_proof: bytes,
-        quorum_hash: vec![2; 32],
+        quorum_hash: quorum_hash.to_vec(),
         quorum_type: 106,
         round: 1,
         block_id_hash: vec![3; 32],
@@ -93,11 +104,11 @@ pub fn signed(bytes: Vec<u8>, metadata: &ResponseMetadata, root: [u8; 32]) -> Pr
         .calculate_sign_hash(
             &metadata.chain_id,
             proof.quorum_type as u8,
-            &[2; 32],
+            &quorum_hash,
             metadata.height as i64,
             proof.round as i32,
         )
         .unwrap();
-    proof.signature = key().sign(&digest).unwrap().to_bytes().to_vec();
+    proof.signature = secret.sign(&digest).unwrap().to_bytes().to_vec();
     proof
 }
