@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::future::{poll_fn, Future};
+use std::future::Future;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -55,6 +55,16 @@ struct Held<'a> {
 struct Driver {
     shared: Arc<Shared>,
     finished: bool,
+}
+
+impl Future for Driver {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        let poll = self.shared.poll(cx);
+        self.finished = poll.is_ready();
+        poll
+    }
 }
 
 impl Drop for Driver {
@@ -146,33 +156,26 @@ impl ShieldedPrefetch {
     /// in the slot absorbs the request.
     fn spawn(&self, runtime: &Handle, future: impl Future<Output = ()> + Send + 'static) -> bool {
         let shared = &self.shared;
-        let admitted = shared.try_with_slot(|slot| {
-            if shared.sealed.load(Ordering::SeqCst) {
-                return None;
-            }
-            let vacant = slot.future.is_none();
-            if vacant {
-                slot.future = Some(Box::pin(future));
-            }
-            Some(vacant)
-        });
-        match admitted {
-            None => !shared.sealed.load(Ordering::SeqCst),
-            Some(None) => false,
-            Some(Some(false)) => true,
-            Some(Some(true)) => {
-                let mut driver = Driver {
-                    shared: Arc::clone(shared),
-                    finished: false,
-                };
-                runtime.spawn(poll_fn(move |cx| {
-                    let poll = driver.shared.poll(cx);
-                    driver.finished = poll.is_ready();
-                    poll
-                }));
+        let mut spawned = false;
+        let admitted = shared
+            .try_with_slot(|slot| {
+                if shared.sealed.load(Ordering::SeqCst) {
+                    return false;
+                }
+                if slot.future.is_none() {
+                    slot.future = Some(Box::pin(future));
+                    spawned = true;
+                }
                 true
-            }
+            })
+            .unwrap_or_else(|| !shared.sealed.load(Ordering::SeqCst));
+        if spawned {
+            runtime.spawn(Driver {
+                shared: Arc::clone(shared),
+                finished: false,
+            });
         }
+        admitted
     }
 
     /// Seals admission and drops the prefetch future. A host callback that is
