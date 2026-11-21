@@ -494,20 +494,30 @@ extension PlatformWalletManager {
     /// spent status and registrations are kept, so the host keeps its
     /// SwiftData rows. Background shielded sync restarts by itself if it was
     /// running, except after a quiesce timeout on top of an earlier stop's:
-    /// check `isShieldedSyncRunning()` after a successful retry. Blocks the
-    /// calling thread while an in-flight pass drains. Concurrent rebuilds run
-    /// one at a time, so a second caller also waits for the first to finish.
+    /// check `isShieldedSyncRunning()` after a successful retry. The native
+    /// call runs off the main actor, since it waits up to 10 s for an
+    /// in-flight pass to drain. Concurrent rebuilds run one at a time, so a
+    /// second caller also waits for the first to finish.
     ///
     /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
-    /// flight, for the same reason as [`clearShielded()`].
-    public func rebuildShieldedTree() throws {
+    /// flight, for the same reason as [`clearShielded()`]. Admitted like the
+    /// async stop: `shutdown()` waits for an in-flight rebuild.
+    public func rebuildShieldedTree() async throws {
         try ensureShieldedLifecycleAllowed("rebuildShieldedTree")
         try ensureNoShieldedStopInFlight(before: "rebuilding the shielded tree")
-        try withShieldedLocalBalanceMutation {
+        try admitNativeOp("rebuildShieldedTree")
+        defer { finishNativeOp() }
+        // Invalidate local balance reads before entering native code, as
+        // `withShieldedLocalBalanceMutation` does for synchronous calls.
+        shieldedLocalBalanceGeneration.bump()
+        let handle = self.handle
+        try await Task.detached(priority: .userInitiated) {
             try platform_wallet_manager_shielded_rebuild_tree(handle).check()
-        }
+        }.value
         // Drop a trailing completion from the pass that found the tree
         // inconsistent, so it cannot re-surface the error after the repair.
+        // A shutdown draining admitted operations bumps it itself.
+        guard !shutdownRequested else { return }
         shieldedSyncGeneration.bump()
         resetCurrentShieldedProgress()
     }
