@@ -38,5 +38,5 @@ pub use types::dashpay::profile::{calculate_avatar_hash, calculate_dhash_fingerp
 pub use types::{
     ContactProfileEntry, ContactRequest, DashPayProfile, DashpayAddressMatch, DpnsFetch,
     DpnsNameInfo, EstablishedContact, IdentityStatus, KeyStorage, PaymentDirection, PaymentEntry,
-    PaymentStatus, PrivateKeyData, ProfileUpdate,
+    PaymentStatus, PrivateKeyData, ProfileUpdate, WithdrawalOutcome,
 };
