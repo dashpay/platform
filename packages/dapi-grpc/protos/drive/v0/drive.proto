@@ -17,7 +17,10 @@ service DriveInternal {
   // again, takes a new one. RESOURCE_EXHAUSTED when Drive already holds as many
   // registrations as it keeps. FAILED_PRECONDITION when the lease's release
   // arrived first, or the lease is no newer than releases Drive has forgotten:
-  // Drive holds nothing for it.
+  // Drive holds nothing for it. Drive remembers releases that come first within
+  // bounds: up to 1,024 releases, and a low-water mark for each of up to 64
+  // callers, each for 64 blocks. A registration that arrives after Drive has
+  // forgotten its release is taken, and held until it expires.
   rpc registerStateTransitionExecutionProof(RegisterStateTransitionExecutionProofRequest)
       returns (RegisterStateTransitionExecutionProofResponse);
   // Undoes one registration of a state transition. A proof Drive already made

@@ -19,15 +19,14 @@
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
-use crate::query::response_metadata::CheckpointUsed;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
 use dpp::util::hash::hash_single;
+use dpp::version::PlatformVersion;
 use drive::drive::Drive;
-use drive::util::grove_operations::GroveDBToUse;
 use drive::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 /// How many registrations can be held at once, one per waiting client. A registration past
@@ -262,8 +261,11 @@ impl StateTransitionExecutionProofs {
     /// that is no newer than its issuer's low-water mark, is refused with
     /// [`RegistrationRefused::LeaseReleased`], so a caller still waiting learns that the node
     /// holds nothing for it. A remembered release refuses its registration once and is then
-    /// forgotten: no other registration of that lease follows. A lease is held until it is
-    /// released or expires, also once its transition is proved, so that its release finds it.
+    /// forgotten: no other registration of that lease follows. Releases are remembered within
+    /// [`MAX_REMEMBERED_RELEASES`], [`MAX_RELEASE_ISSUERS`] and [`REGISTRATION_LIFETIME_BLOCKS`]:
+    /// a registration that arrives after its release is forgotten is taken, and held until it
+    /// expires. A lease is held until it is released or expires, also once its transition is
+    /// proved, so that its release finds it.
     pub fn register(
         &self,
         hash: StateTransitionHash,
@@ -318,12 +320,25 @@ impl StateTransitionExecutionProofs {
         }
     }
 
+    /// The hashes of the registered state transitions waiting for their block.
+    pub fn waiting_hashes(&self) -> HashSet<StateTransitionHash> {
+        let inner = self.inner();
+        inner
+            .registered
+            .keys()
+            .filter(|hash| inner.waits_for_block(hash))
+            .copied()
+            .collect()
+    }
+
     /// Whether the state transition with this hash is waiting for its block.
+    #[cfg(test)]
     pub fn is_registered(&self, hash: &StateTransitionHash) -> bool {
         self.inner().waits_for_block(hash)
     }
 
     /// Whether any state transition is waiting for its block.
+    #[cfg(test)]
     pub fn has_registered(&self) -> bool {
         let inner = self.inner();
         inner
@@ -423,16 +438,19 @@ impl<C> Platform<C> {
     /// previous block's, so each proof is of the state the previous block left and carries that
     /// block's signature.
     ///
-    /// Only the kinds whose state before them a client can read are proved
-    /// (`Drive::state_transition_prior_state_is_readable`), and at most
-    /// [`MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK`] of them, in block order. A transition skipped
-    /// for either reason, or one that cannot be proved, stays registered until its client
-    /// releases it.
+    /// Only the kinds [`is_captured`] admits are proved, at most
+    /// [`MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK`] of them in block order, and at most
+    /// [`MAX_DECODED_STATE_TRANSITIONS_PER_BLOCK`] registered transitions are decoded to find
+    /// them. A transition skipped for any of these reasons, or one that cannot be proved, stays
+    /// registered until its client releases it.
     pub(crate) fn prove_registered_state_transitions_before_block(
         &self,
         raw_state_transitions: &[Vec<u8>],
     ) -> Vec<PendingStateTransitionExecutionProof> {
-        if !self.state_transition_execution_proofs.has_registered() {
+        // The registered transitions still waiting for their block, read under one lock, so
+        // the scan below does not contend with registrations
+        let waiting = self.state_transition_execution_proofs.waiting_hashes();
+        if waiting.is_empty() {
             return Vec::new();
         }
 
@@ -453,66 +471,48 @@ impl<C> Platform<C> {
             }
         };
 
-        // At most a budget of registered transitions is decoded, whatever their kind, so that
-        // registered transitions that are not proved cost a bounded amount of work too
-        let mut registered = raw_state_transitions
-            .iter()
-            .map(|raw_state_transition| (hash_single(raw_state_transition), raw_state_transition))
-            .filter(|(hash, _)| self.state_transition_execution_proofs.is_registered(hash));
-        let candidates = registered
-            .by_ref()
-            .take(MAX_DECODED_STATE_TRANSITIONS_PER_BLOCK)
-            .collect::<Vec<_>>();
-        if registered.next().is_some() {
-            tracing::warn!(
-                decoded = MAX_DECODED_STATE_TRANSITIONS_PER_BLOCK,
-                "more registered state transitions in the block than are decoded in one block; \
-                 the ones past the limit are not proved"
-            );
-        }
-
-        // Only the kinds whose state before them a client can read are proved: their proofs
-        // are a small fixed set of keys, so each costs a bounded amount of work. The scan stops
-        // once the block's limit is reached, looking one past it only to say so.
-        let mut provable = candidates
-            .into_iter()
-            .filter_map(|(hash, raw_state_transition)| {
+        // One pass over the block that stops at whichever budget runs out first: at most
+        // MAX_DECODED_STATE_TRANSITIONS_PER_BLOCK registered transitions are decoded, whatever
+        // their kind, and at most MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK are proved.
+        let mut decoded = 0;
+        let mut provable = Vec::new();
+        for raw_state_transition in raw_state_transitions {
+            if decoded == MAX_DECODED_STATE_TRANSITIONS_PER_BLOCK
+                || provable.len() == MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK
+            {
+                tracing::debug!(
+                    decoded,
+                    proved = provable.len(),
+                    "the block's budget for registered state transitions is spent; \
+                     the rest of the block is not proved"
+                );
+                break;
+            }
+            let hash = hash_single(raw_state_transition);
+            if !waiting.contains(&hash) {
+                continue;
+            }
+            decoded += 1;
+            let state_transition =
                 match StateTransition::deserialize_from_bytes_untrusted(raw_state_transition) {
-                    Ok(state_transition) => Some((hash, state_transition)),
+                    Ok(state_transition) => state_transition,
                     Err(error) => {
                         tracing::warn!(
                             state_transition_hash = hex::encode(hash),
                             ?error,
                             "cannot decode a registered state transition to prove it"
                         );
-                        None
+                        continue;
                     }
-                }
-            })
-            .filter(|(hash, state_transition)| {
-                let readable = Drive::state_transition_prior_state_is_readable(
-                    state_transition,
-                    platform_version,
-                )
-                .unwrap_or(false);
-                if !readable {
-                    tracing::debug!(
-                        state_transition_hash = hex::encode(hash),
-                        "a registered state transition of a kind whose state before it is not read is not proved"
-                    );
-                }
-                readable
-            })
-            .take(MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK + 1)
-            .collect::<Vec<_>>();
-
-        if provable.len() > MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK {
-            tracing::warn!(
-                proved = MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK,
-                "more registered state transitions in the block than are proved in one block; \
-                 the ones past the limit are not proved"
-            );
-            provable.truncate(MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK);
+                };
+            if !is_captured(&state_transition, platform_version) {
+                tracing::debug!(
+                    state_transition_hash = hex::encode(hash),
+                    "a registered state transition of a kind that is not proved"
+                );
+                continue;
+            }
+            provable.push((hash, state_transition));
         }
 
         provable
@@ -594,6 +594,16 @@ impl<C> Platform<C> {
             }
         };
 
+        // The kind is admitted again with this side's own version: across an upgrade the block
+        // after may prove it differently
+        if !is_captured(state_transition, platform_version) {
+            tracing::debug!(
+                state_transition_hash = hex::encode(hash),
+                "a registered state transition of a kind that is not proved at this block's version"
+            );
+            return None;
+        }
+
         let grovedb_proof =
             match self
                 .drive
@@ -635,8 +645,9 @@ impl<C> Platform<C> {
             return None;
         }
 
-        let (_, proof) = self
-            .response_proof_v0(platform_state, grovedb_proof, GroveDBToUse::Current)
+        // Signed off and described by the generation of the block whose state it is
+        let (proof, metadata) = self
+            .committed_block_proof_and_metadata(platform_state, grovedb_proof, platform_version)
             .inspect_err(|error| {
                 tracing::warn!(
                     state_transition_hash = hex::encode(hash),
@@ -646,11 +657,19 @@ impl<C> Platform<C> {
             })
             .ok()?;
 
-        Some(ProofOfStateAtBlock {
-            proof,
-            metadata: self.response_metadata_v0(platform_state, CheckpointUsed::Current),
-        })
+        Some(ProofOfStateAtBlock { proof, metadata })
     }
+}
+
+/// Whether a state transition's state before and after its block is proved at this platform
+/// version: a client can read the state before it, and the prover declares its proof to be of
+/// a fixed set of keys, so that making it while a block is finalized costs a bounded amount of
+/// work. Each side is checked with the version of the block it is of.
+fn is_captured(state_transition: &StateTransition, platform_version: &PlatformVersion) -> bool {
+    Drive::state_transition_prior_state_is_readable(state_transition, platform_version)
+        .unwrap_or(false)
+        && Drive::state_transition_proof_has_fixed_keys(state_transition, platform_version)
+            .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -850,6 +869,35 @@ mod tests {
 
         // So the registration still on its way is taken when it arrives
         assert_eq!(proofs.register([1; 32], in_flight), Ok(()));
+    }
+
+    #[test]
+    fn should_take_a_late_registration_once_its_issuers_mark_is_forgotten() {
+        let proofs = StateTransitionExecutionProofs::new(10);
+        // One issuer's releases fill the table
+        for sequence in 1_000..1_000 + MAX_REMEMBERED_RELEASES as u64 {
+            proofs.unregister(&[1; 32], &issued(200, sequence));
+        }
+
+        // Each early release of another issuer is the lowest, so it is forgotten at once and
+        // raises its issuer's mark: issuer 0's at block 10, the next ones' at block 11
+        proofs.unregister(&[1; 32], &issued(0, 0));
+        proofs.block_committed(11);
+        for issuer in 1..=MAX_RELEASE_ISSUERS as u8 {
+            proofs.unregister(&[1; 32], &issued(issuer, u64::from(issuer)));
+        }
+        assert_eq!(
+            proofs.inner().release_low_water_marks.len(),
+            MAX_RELEASE_ISSUERS
+        );
+
+        // Issuer 0's mark was the oldest when one more issuer needed one, so its late
+        // registration is taken, while a kept mark still refuses its own
+        assert_eq!(proofs.register([1; 32], issued(0, 0)), Ok(()));
+        assert_eq!(
+            proofs.register([1; 32], issued(1, 1)),
+            Err(RegistrationRefused::LeaseReleased)
+        );
     }
 
     #[test]
