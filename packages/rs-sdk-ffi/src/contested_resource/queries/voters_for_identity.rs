@@ -1,4 +1,4 @@
-use crate::contested_resource::parse_index_values_json;
+use crate::contested_resource::{parse_index_values_json, request_limit};
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::platform_value::Value;
@@ -22,7 +22,9 @@ use std::ffi::{c_char, c_void, CStr, CString};
 ///   with `"0x"` or a backslash (the DPNS label "oxford" normalizes to
 ///   `"0xf0rd"`), prepend one backslash. Shared with the read and vote FFIs.
 /// * `contestant_id` - Base58-encoded contestant identifier
-/// * `count` - Maximum number of voters to return
+/// * `count` - Maximum number of voters to return; 0 sends no limit (the
+///   node's default page). A value above `u16::MAX` is refused with
+///   `InvalidParameter`.
 /// * `order_ascending` - Whether to order results in ascending order
 ///
 /// # Returns
@@ -48,6 +50,10 @@ pub unsafe extern "C" fn dash_sdk_contested_resource_get_voters_for_identity(
     count: u32,
     order_ascending: bool,
 ) -> DashSDKResult {
+    let limit = match request_limit(count) {
+        Ok(limit) => limit,
+        Err(error) => return DashSDKResult::error(error),
+    };
     match get_contested_resource_voters_for_identity(
         sdk_handle,
         contract_id,
@@ -55,7 +61,7 @@ pub unsafe extern "C" fn dash_sdk_contested_resource_get_voters_for_identity(
         index_name,
         index_values_json,
         contestant_id,
-        count,
+        limit,
         order_ascending,
     ) {
         Ok(Some(json)) => {
@@ -102,7 +108,7 @@ fn get_contested_resource_voters_for_identity(
     index_name: *const c_char,
     index_values_json: *const c_char,
     contestant_id: *const c_char,
-    count: u32,
+    limit: Option<u16>,
     order_ascending: bool,
 ) -> Result<Option<String>, String> {
     if sdk_handle.is_null() {
@@ -196,7 +202,7 @@ fn get_contested_resource_voters_for_identity(
             vote_poll,
             contestant_id,
             offset: None,
-            limit: if count > 0 { Some(count as u16) } else { None },
+            limit,
             start_at: None,
             order_ascending,
         };

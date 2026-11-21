@@ -460,7 +460,7 @@ struct QueryDetailView: View {
             let name = queryInputs["name"] ?? ""
             let identityId = queryInputs["identityId"] ?? ""
             guard !name.isEmpty else {
-                throw SDKError.internalError("DPNS name is required")
+                throw SDKError.internalError("DPNS label is required")
             }
             guard !identityId.isEmpty else {
                 throw SDKError.internalError("Identity ID is required")
@@ -580,10 +580,9 @@ struct QueryDetailView: View {
             let resultTypeInput = (queryInputs["resultType"] ?? "").trimmingCharacters(in: .whitespaces)
             let resultType = resultTypeInput.isEmpty ? "documents_and_vote_tally" : resultTypeInput
             let allowIncludeLockedAndAbstainingVoteTally = queryInputs["allowIncludeLockedAndAbstainingVoteTally"] == "true"
-            let startAtIdentifierInfo = queryInputs["startAtIdentifierInfo"]
             let countStr = queryInputs["count"] ?? ""
             let count = countStr.isEmpty ? nil : UInt32(countStr)
-            let orderAscending = queryInputs["orderAscending"] == "true"
+            // The wrapper ignores a start position and an order, so the form offers neither.
             return try await sdk.getContestedResourceVoteState(
                 dataContractId: dataContractId,
                 documentTypeName: documentTypeName,
@@ -591,9 +590,9 @@ struct QueryDetailView: View {
                 indexValues: indexValues,
                 resultType: resultType,
                 allowIncludeLockedAndAbstainingVoteTally: allowIncludeLockedAndAbstainingVoteTally,
-                startAtIdentifierInfo: startAtIdentifierInfo,
+                startAtIdentifierInfo: nil,
                 count: count,
-                orderAscending: orderAscending
+                orderAscending: false
             )
 
         case "getContestedResourceVotersForIdentity":
@@ -602,7 +601,6 @@ struct QueryDetailView: View {
             let indexName = queryInputs["indexName"] ?? ""
             let indexValues = try parseIndexValues(queryInputs["indexValues"])
             let contestantId = queryInputs["contestantId"] ?? ""
-            let startAtIdentifierInfo = queryInputs["startAtIdentifierInfo"]
             let countStr = queryInputs["count"] ?? ""
             let count = countStr.isEmpty ? nil : UInt32(countStr)
             let orderAscending = queryInputs["orderAscending"] == "true"
@@ -612,7 +610,7 @@ struct QueryDetailView: View {
                 indexName: indexName,
                 indexValues: indexValues,
                 contestantId: contestantId,
-                startAtIdentifierInfo: startAtIdentifierInfo,
+                startAtIdentifierInfo: nil,
                 count: count,
                 orderAscending: orderAscending
             )
@@ -856,6 +854,8 @@ struct QueryDetailView: View {
     /// Parse an index-values input: a JSON string array when it starts with
     /// "[", otherwise comma-separated values, trimmed. Values pass through
     /// unchanged (the FFI reads a "0x" prefix as bytes). Empty input is nil.
+    /// A comma-separated list refuses an empty value (a stray or trailing
+    /// comma); an empty string can only be given in a JSON array.
     private func parseIndexValues(_ input: String?) throws -> [String]? {
         let trimmed = (input ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return nil }
@@ -866,9 +866,15 @@ struct QueryDetailView: View {
             }
             return values
         }
-        return trimmed
+        let values = trimmed
             .split(separator: ",", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespaces) }
+        if let emptyIndex = values.firstIndex(where: { $0.isEmpty }) {
+            throw SDKError.invalidParameter(
+                "Index values: empty value at position \(emptyIndex + 1); use a JSON array for an empty string"
+            )
+        }
+        return values
     }
 
     private func inputFields(for queryName: String) -> [QueryInput] {
@@ -1010,7 +1016,7 @@ struct QueryDetailView: View {
 
         case "getContestedDpnsNameVotersForIdentity":
             return [
-                QueryInput(name: "name", label: "DPNS Name", required: true, placeholder: "e.g., alice or alice.dash"),
+                QueryInput(name: "name", label: "DPNS Label", required: true, placeholder: "e.g., alice"),
                 QueryInput(name: "identityId", label: "Identity ID", required: true, placeholder: "Base58 identity ID")
             ]
 
@@ -1048,9 +1054,7 @@ struct QueryDetailView: View {
                 QueryInput(name: "indexValues", label: "Index Values", required: true, placeholder: "e.g., dash, a11ce or [\"dash\",\"a11ce\"]"),
                 QueryInput(name: "resultType", label: "Result Type", required: false, placeholder: "Default: documents_and_vote_tally (or documents, vote_tally)"),
                 QueryInput(name: "allowIncludeLockedAndAbstainingVoteTally", label: "Include Locked and Abstaining", required: false, placeholder: "true/false"),
-                QueryInput(name: "startAtIdentifierInfo", label: "Start At Identifier Info (JSON)", required: false),
-                QueryInput(name: "count", label: "Count", required: false),
-                QueryInput(name: "orderAscending", label: "Order Ascending", required: false, placeholder: "true/false")
+                QueryInput(name: "count", label: "Count", required: false)
             ]
 
         case "getContestedResourceVotersForIdentity":
@@ -1060,7 +1064,6 @@ struct QueryDetailView: View {
                 QueryInput(name: "indexName", label: "Index Name", required: true),
                 QueryInput(name: "indexValues", label: "Index Values", required: true, placeholder: "e.g., dash, a11ce or [\"dash\",\"a11ce\"]"),
                 QueryInput(name: "contestantId", label: "Contestant ID", required: true),
-                QueryInput(name: "startAtIdentifierInfo", label: "Start At Identifier Info (JSON)", required: false),
                 QueryInput(name: "count", label: "Count", required: false),
                 QueryInput(name: "orderAscending", label: "Order Ascending", required: false, placeholder: "true/false")
             ]
