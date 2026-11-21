@@ -877,7 +877,9 @@ pub enum KeyVerification {
     Matches = 0,
     DoesNotMatch = 1,
     /// The reference for this role isn't known (e.g. owner / payout of a
-    /// node whose registration details haven't been fetched) — not a pass.
+    /// node whose registration details haven't been fetched), or the role
+    /// cannot be checked this way (an operator key by its 20-byte id) — not a
+    /// pass.
     Unverifiable = 2,
 }
 
