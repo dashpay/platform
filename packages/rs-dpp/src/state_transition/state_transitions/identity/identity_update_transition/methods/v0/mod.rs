@@ -15,6 +15,14 @@ use crate::{identity::KeyID, ProtocolError};
 use platform_version::version::PlatformVersion;
 
 pub trait IdentityUpdateTransitionMethodsV0 {
+    /// Builds and signs an identity update that adds `add_public_keys` and disables
+    /// `disable_public_keys`, signed by the MASTER key `master_public_key_id`.
+    ///
+    /// Refuses, before signing anything, an update that would disable the last valid
+    /// authentication key of a security level, with [`ProtocolError::LastAuthenticationKey`]
+    /// (DIP-11 signing-side policy; see
+    /// [`check_keys_can_be_disabled`](crate::identity::key_disable_rule::check_keys_can_be_disabled)).
+    /// The builder has no clock, so a key with any expiry does not count as remaining.
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
     async fn try_from_identity_with_signer<S: Signer<IdentityPublicKey>>(
