@@ -158,16 +158,17 @@ impl PlatformServiceImpl {
                     debug!(?error, "Transaction not found, will wait for future events");
                 }
             };
+
+            // The wait's own timeout starts once the lookup is done, as it always has, and the
+            // optional pair lookup also ends before the ingress layer cuts the call off. A
+            // registration still on its way finishes within that time, not on top of it.
+            let deadline = Instant::now() + wait_timeout;
+            let work_deadline = optional_work_deadline(deadline, ingress_deadline);
+            let timeout_duration = wait_timeout;
             let _execution_proof_registration = match registered {
                 Some(registration) => registration,
                 None => register.await,
             };
-
-            // The wait's own timeout starts once the lookup is done, as it always has, and the
-            // optional pair lookup also ends before the ingress layer cuts the call off
-            let deadline = Instant::now() + wait_timeout;
-            let work_deadline = optional_work_deadline(deadline, ingress_deadline);
-            let timeout_duration = wait_timeout;
 
             trace!(
                 "Waiting for transaction event with timeout: {:?}",
@@ -1352,9 +1353,11 @@ mod tests {
         #[tokio::test]
         async fn should_answer_an_indexed_transaction_without_waiting_for_its_registration() {
             // Tenderdash holds the transaction, executed with an error, so the answer needs no
-            // call to Drive; Drive never answers the registration
-            let tenderdash = LookupTenderdash::holding(
-                Duration::ZERO,
+            // call to Drive. It answers only once Drive has the registration, which Drive never
+            // acknowledges.
+            let lookup_gate = Arc::new(Notify::new());
+            let tenderdash = LookupTenderdash::holding_once(
+                Arc::clone(&lookup_gate),
                 json!({
                     "hash": "0C",
                     "height": "7",
@@ -1377,21 +1380,62 @@ mod tests {
                 )),
             });
 
-            let answer = tokio::time::timeout(
-                EXECUTION_PROOF_CALL_TIMEOUT / 2,
-                fixture
-                    .service
-                    .wait_for_state_transition_result_impl(request),
-            )
-            .await
-            .expect("expected the answer before the registration's own limit");
-            answer.expect("expected an answer");
+            let answer_lookup = async {
+                fixture.wait_for_calls(1).await;
+                lookup_gate.notify_one();
+            };
+            let (answer, ()) = tokio::join!(
+                tokio::time::timeout(
+                    EXECUTION_PROOF_CALL_TIMEOUT / 2,
+                    fixture
+                        .service
+                        .wait_for_state_transition_result_impl(request),
+                ),
+                answer_lookup
+            );
+            answer
+                .expect("expected the answer before the registration's own limit")
+                .expect("expected an answer");
 
-            // The registration still on its way is released
+            // The registration Drive received is released
             fixture.wait_for_calls(2).await;
             let calls = fixture.calls();
             let lease = registered_lease(&calls[0]);
             assert_eq!(calls[1], Call::Unregister(vec![15; 32], lease));
+        }
+
+        #[tokio::test]
+        async fn should_count_a_pending_registration_against_the_event_wait() {
+            // Tenderdash misses at once, and Drive never acknowledges the registration
+            let tenderdash = LookupTenderdash::start(Duration::ZERO).await;
+            let mut fixture = Fixture::new(Registration::Stall);
+            let wait_timeout = Duration::from_secs(2);
+            tenderdash.serve(&mut fixture.service, wait_timeout);
+            let request = Request::new(WaitForStateTransitionResultRequest {
+                version: Some(WaitRequestVersion::V0(
+                    WaitForStateTransitionResultRequestV0 {
+                        state_transition_hash: vec![16; 32],
+                        prove: true,
+                        request_user_balance: false,
+                        prove_state_before_block: true,
+                    },
+                )),
+            });
+
+            let started = Instant::now();
+            let answer = fixture
+                .service
+                .wait_for_state_transition_result_impl(request)
+                .await;
+
+            // The wait ends at its own timeout after the miss, not that plus the registration's
+            // limit, a quarter of the wait
+            assert!(answer.is_err());
+            assert!(
+                started.elapsed() < wait_timeout + wait_timeout / 8,
+                "{:?}",
+                started.elapsed()
+            );
         }
 
         #[tokio::test]
@@ -1496,6 +1540,7 @@ mod tests {
         use std::sync::Arc;
         use std::time::Duration;
         use tokio::net::TcpListener;
+        use tokio::sync::Notify;
         use tokio::task::JoinHandle;
         use tokio_stream::StreamExt;
 
@@ -1520,15 +1565,19 @@ mod tests {
 
         impl LookupTenderdash {
             pub(super) async fn start(lookup_time: Duration) -> Self {
-                Self::answering(lookup_time, None).await
+                Self::answering(lookup_time, None, None).await
             }
 
-            /// Answers every lookup with this `tx` result.
-            pub(super) async fn holding(lookup_time: Duration, tx: Value) -> Self {
-                Self::answering(lookup_time, Some(tx)).await
+            /// Answers every lookup with this `tx` result, once `gate` is notified.
+            pub(super) async fn holding_once(gate: Arc<Notify>, tx: Value) -> Self {
+                Self::answering(Duration::ZERO, Some(tx), Some(gate)).await
             }
 
-            async fn answering(lookup_time: Duration, tx: Option<Value>) -> Self {
+            async fn answering(
+                lookup_time: Duration,
+                tx: Option<Value>,
+                gate: Option<Arc<Notify>>,
+            ) -> Self {
                 let listener = TcpListener::bind("127.0.0.1:0")
                     .await
                     .expect("slow lookup Tenderdash listener");
@@ -1538,6 +1587,9 @@ mod tests {
                 let router = Router::new().route(
                     "/",
                     post(move |Json(call): Json<Value>| async move {
+                        if let Some(gate) = gate {
+                            gate.notified().await;
+                        }
                         tokio::time::sleep(lookup_time).await;
                         Json(match tx {
                             Some(tx) => json!({ "jsonrpc": "2.0", "id": call["id"], "result": tx }),
