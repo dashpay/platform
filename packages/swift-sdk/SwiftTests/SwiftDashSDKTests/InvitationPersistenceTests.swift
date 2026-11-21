@@ -195,6 +195,7 @@ final class InvitationPersistenceTests: XCTestCase {
             poolTypeTag: 0,
             addressIndex: 0,
             isUsed: false,
+            balance: 0,
             derivationPath: "m/9'/1'/5'/3'/0'"
         )
     }

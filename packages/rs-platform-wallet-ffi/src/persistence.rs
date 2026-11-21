@@ -5349,6 +5349,7 @@ fn build_core_address_entry_ffi(
             AddressState::Used | AddressState::Reserved { .. } => true,
             AddressState::Available => false,
         },
+        balance: 0,
         address_base58: address_ptr,
         derivation_path: path_ptr,
     })
@@ -5664,6 +5665,7 @@ fn build_address_pools_from_derived(
                 // stays false until SPV later observes a tx paying
                 // to one of them.
                 is_used: false,
+                balance: 0,
                 address_base58: address_ptr,
                 derivation_path: path_ptr,
             });
@@ -12403,6 +12405,7 @@ mod tests {
             pool_type_tag: AddressPoolTypeTagFFI::Internal as u8,
             address_index: 0,
             is_used: false,
+            balance: 0,
             address_base58: addr_c.as_ptr(),
             derivation_path: path_c.as_ptr(),
         };
@@ -13038,6 +13041,7 @@ mod tests {
             pool_type_tag,
             address_index: restored_index,
             is_used: true,
+            balance: 0,
             address_base58: addr_c.as_ptr(),
             derivation_path: path_c.as_ptr(),
         };

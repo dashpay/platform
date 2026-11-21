@@ -95,8 +95,9 @@ private data class ReceiveAddr(
  * the wallet's shielded sub-wallet is bound; only offered on a shielded
  * build ([Sdk.hasShielded]).
  *
- * "Never used" approximates iOS's `addr.txos.isEmpty` with `!isUsed` — the
- * persisted flag Rust maintains for the same pool rows.
+ * "Never used" approximates iOS's `addr.txos.isEmpty` with
+ * `!isUsed && balance == 0` — the persisted flags Rust maintains for the
+ * same pool rows.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalCoroutinesApi::class)
 @Composable
@@ -126,7 +127,7 @@ fun ReceiveAddressSheet(
                 } else {
                     container.database.coreAddressDao().observeByAccount(account.id)
                         .map { pool ->
-                            pool.filter { it.poolTypeTag == 0 && !it.isUsed }
+                            pool.filter { it.poolTypeTag == 0 && !it.isUsed && it.balance == 0L }
                                 .minByOrNull { it.addressIndex }
                         }
                 }

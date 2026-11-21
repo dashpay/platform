@@ -8,9 +8,12 @@ use rusqlite::Connection;
 
 use platform_wallet::wallet::platform_wallet::WalletId;
 
+use crate::parent_permissions::warn_on_insecure_ancestors;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::persister::{PruneReport, RetentionPolicy};
-use crate::sqlite::util::permissions::{apply_secure_permissions, reject_symlink};
+use crate::sqlite::util::permissions::{
+    apply_secure_permissions, create_owner_only_dirs, reject_symlink,
+};
 
 struct CreatedDestinationGuard {
     path: PathBuf,
@@ -170,14 +173,15 @@ pub(crate) fn sanitize_db_stem(db_path: &Path) -> String {
 /// materialises a partial `.db`. A pre-existing `dest` is rejected
 /// atomically (no TOCTOU window), and the parent dir is fsynced afterward.
 pub(crate) fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
-    if let Some(parent) = dest.parent() {
-        if !parent.as_os_str().is_empty() && !parent.exists() {
-            std::fs::create_dir_all(parent)?;
-        }
-    }
+    let parent = dest
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    create_owner_only_dirs(parent)?;
+    // The one ancestor report for every backup, manual or automatic.
+    warn_on_insecure_ancestors("backup", parent);
     // Stage in an unguessable temp file in the same dir; the same-FS
     // guarantee makes `persist` an atomic rename.
-    let parent = dest.parent().unwrap_or(Path::new("."));
     let tmp = tempfile::NamedTempFile::new_in(parent)?;
     // chmod 0o600 BEFORE persist so the destination inherits owner-only
     // mode via the rename; chmod after would leave an observable window.
@@ -263,14 +267,7 @@ pub(crate) fn restore_from(
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    crate::parent_permissions::check_parent_perms(parent).map_err(|error| match error {
-        crate::parent_permissions::ParentPermissionsError::Io(source) => {
-            WalletStorageError::Io(source)
-        }
-        crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
-            WalletStorageError::InsecureParentDir { ancestor, reason }
-        }
-    })?;
+    warn_on_insecure_ancestors("database", parent);
     // Ahead of the placeholder block below: `exists()` follows a link to a
     // live target, so a planted symlink would skip that block entirely and
     // be opened — and restored over — directly.
