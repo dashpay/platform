@@ -10,6 +10,8 @@ pub(crate) use load::pool_validations_on_this_thread;
 mod persistence_load;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
+mod shielded_prefetch;
+#[cfg(feature = "shielded")]
 pub mod shielded_sync;
 #[cfg(feature = "spv-context")]
 mod spv_quorums;
@@ -444,6 +446,8 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// `start` after wallets are registered.
     #[cfg(feature = "shielded")]
     pub(super) shielded_sync_manager: Arc<ShieldedSyncManager>,
+    #[cfg(feature = "shielded")]
+    shielded_prefetch: shielded_prefetch::ShieldedPrefetch,
     /// Network-scoped shielded coordinator. `None` until
     /// `configure_shielded` opens the per-network SQLite tree;
     /// once `Some`, every wallet's `bind_shielded` reuses the
@@ -715,6 +719,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             shielded_sync_manager: shielded_sync,
             #[cfg(feature = "shielded")]
             shielded_coordinator,
+            #[cfg(feature = "shielded")]
+            shielded_prefetch: shielded_prefetch::ShieldedPrefetch::default(),
             #[cfg(any(test, feature = "shielded"))]
             event_manager,
             persister,
@@ -1337,6 +1343,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// [`WorkerStatus`]: dash_async::WorkerStatus
     pub async fn shutdown(&self) -> ShutdownReport<WalletWorker> {
+        #[cfg(feature = "shielded")]
+        self.shielded_prefetch.seal();
         // Stop serving SPV quorum keys before SPV stops, whether or not the
         // stop is clean: a stopping client must not answer proof lookups.
         #[cfg(feature = "spv-context")]
