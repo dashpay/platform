@@ -164,7 +164,8 @@ enum CoreSpvLauncher {
 /// non-obvious rules the caller relies on:
 ///
 ///   * a **no-wallets** launch does NOT latch (leaving the door open for
-///     a future call once wallets exist), whereas
+///     a future call once wallets exist); persisted wallets count even when
+///     their history load failed for unavailable finality evidence, whereas
 ///   * an **already-running** client DOES latch (the auto-start is
 ///     considered "handled" — we don't want to keep re-checking).
 enum CoreSpvAutoStart {
@@ -196,10 +197,11 @@ enum CoreSpvAutoStart {
     static func decision(
         alreadyLatched: Bool,
         hasWallets: Bool,
+        hasPersistedWallets: Bool = false,
         spvRunning: Bool
     ) -> Decision {
         if alreadyLatched { return .skipAlreadyLatched }
-        if !hasWallets { return .skipNoWallets }
+        if !hasWallets && !hasPersistedWallets { return .skipNoWallets }
         if spvRunning { return .latchOnly }
         return .startAndLatch
     }

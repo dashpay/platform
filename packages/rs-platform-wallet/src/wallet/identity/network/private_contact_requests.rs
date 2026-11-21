@@ -3257,6 +3257,7 @@ mod tests {
                     unused_asset_locks: BTreeMap::new(),
                     unconfirmed_outgoing_txs: Vec::new(),
                     dashpay_backfill: Default::default(),
+                    recorded_history: Default::default(),
                 },
             );
             #[allow(unused_mut)]

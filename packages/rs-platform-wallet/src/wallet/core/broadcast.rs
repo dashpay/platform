@@ -855,7 +855,8 @@ mod tests {
             "the fixture event must report at least one spend, or the test \
              would pass without observing anything"
         );
-        let handler = SpendObservationHandler::new(wallets_map(&[core]));
+        let map = wallets_map(&[core]);
+        let handler = SpendObservationHandler::new(Arc::clone(&map));
         dash_spv::EventHandler::on_wallet_event(&handler, &event);
     }
 
@@ -1278,7 +1279,8 @@ mod tests {
             );
         }
 
-        let handler = SpendObservationHandler::new(wallets_map(&[&core_a, &core_b]));
+        let map = wallets_map(&[&core_a, &core_b]);
+        let handler = SpendObservationHandler::new(Arc::clone(&map));
 
         // An event naming a wallet id registered NOWHERE: the lookup misses,
         // nothing panics, and neither fence moves — the fail-safe direction.

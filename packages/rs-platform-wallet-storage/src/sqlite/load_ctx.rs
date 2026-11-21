@@ -329,6 +329,12 @@ impl LoadCtx {
         }
     }
 
+    /// Recheck an already-counted snapshot under the same policy without
+    /// adding its inconsistencies to the load's original tally again.
+    pub(crate) fn for_recheck(&self) -> Self {
+        Self::new(self.policy)
+    }
+
     /// Context that aborts the load on any inconsistency. A production
     /// load takes its policy from the config; this is the shorthand for a
     /// caller driving a reader directly.
