@@ -4,6 +4,8 @@
 //! address and hand those rows back at load; this module owns how they land in
 //! the pool, so the FFI layer only marshals them.
 
+use std::collections::BTreeSet;
+
 use key_wallet::bip32::ChildNumber;
 use key_wallet::error::Error as KeyWalletError;
 use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
@@ -31,7 +33,9 @@ enum RowRefusal {
     Refused(#[source] KeyWalletError),
 }
 
-/// How [`restore_address_rows`] stores the addresses it derives to close a gap.
+/// How [`restore_address_rows`] leaves the pool's addresses at or below its
+/// highest persisted row that no persisted row restored: pre-derived ones and
+/// those it derives to close a gap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GapRows {
     /// Free to hand out, for pools whose usage the chain shows.
@@ -75,9 +79,10 @@ pub fn derive_through(
 ///
 /// Rows missing below a row's index (a lost persistence round) are derived
 /// from `key_source` first, at most [`MAX_RESTORE_GAP_FILL`] per call, so the
-/// row is watched and its index is never handed out again. The derived rows
-/// are stored as `gap_rows` says. Hardened pools, which cannot derive, take
-/// rows at any index.
+/// row is watched and its index is never handed out again. Every address at
+/// or below the highest row that no row restored, derived here or before, is
+/// left as `gap_rows` says. Hardened pools, which cannot derive, take rows at
+/// any index.
 ///
 /// A row is refused, counted and skipped when the gap below it cannot be
 /// derived or exceeds the bound, its address is already stored at another
@@ -89,12 +94,14 @@ pub fn restore_address_rows(
     gap_rows: GapRows,
 ) -> AddressRowsRestore {
     rows.sort_by_key(|row| row.index);
+    let highest_row = rows.last().map(|row| row.index);
+    let mut restored = BTreeSet::new();
     let mut outcome = AddressRowsRestore::default();
     let mut first_refusal: Option<(u32, RowRefusal)> = None;
     let mut budget = MAX_RESTORE_GAP_FILL;
     for mut row in rows {
         let index = row.index;
-        if let Err(error) = fill_gap_below(pool, key_source, index, gap_rows, &mut budget) {
+        if let Err(error) = fill_gap_below(pool, key_source, index, &mut budget) {
             outcome.refused += 1;
             first_refusal.get_or_insert((index, error));
             continue;
@@ -105,11 +112,25 @@ pub fn restore_address_rows(
             }
         }
         match pool.insert(row) {
-            Ok(()) => outcome.restored += 1,
+            Ok(()) => {
+                outcome.restored += 1;
+                restored.insert(index);
+            }
             Err(error) => {
                 outcome.refused += 1;
                 first_refusal.get_or_insert((index, RowRefusal::Refused(error)));
             }
+        }
+    }
+    if let (GapRows::Used, Some(highest_row)) = (gap_rows, highest_row) {
+        let missing: Vec<_> = pool
+            .addresses()
+            .range(..=highest_row)
+            .filter(|(index, _)| !restored.contains(*index))
+            .map(|(_, info)| info.address.clone())
+            .collect();
+        for address in missing {
+            pool.mark_used(&address);
         }
     }
     if let Some((address_index, error)) = first_refusal {
@@ -129,7 +150,6 @@ fn fill_gap_below(
     pool: &mut AddressPool,
     key_source: &KeySource,
     index: u32,
-    gap_rows: GapRows,
     budget: &mut u32,
 ) -> Result<(), RowRefusal> {
     let next = pool.highest_generated().map_or(0, |highest| highest + 1);
@@ -145,13 +165,6 @@ fn fill_gap_below(
     }
     derive_through(pool, key_source, index - 1).map_err(RowRefusal::GapUnderivable)?;
     *budget -= gap;
-    if gap_rows == GapRows::Used {
-        for gap_index in next..index {
-            if let Some(address) = pool.address_at_index(gap_index) {
-                pool.mark_used(&address);
-            }
-        }
-    }
     Ok(())
 }
 
