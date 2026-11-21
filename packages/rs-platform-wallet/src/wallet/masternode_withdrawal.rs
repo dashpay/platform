@@ -46,6 +46,7 @@ use key_wallet::account::AccountType;
 use key_wallet::bip32::{ChildNumber, DerivationPath};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::{Signer as CoreSigner, SignerMethod};
+use key_wallet::wallet::managed_wallet_info::ProviderKeyRole;
 
 use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
@@ -71,7 +72,6 @@ use crate::wallet::core_address_key::{p2pkh_address, CoreAddressKeyError, Master
 use crate::wallet::identity::network::{AvailableSigningKey, SignerRef};
 use crate::wallet::identity::WithdrawalOutcome;
 use crate::wallet::platform_wallet::PlatformWallet;
-use crate::wallet::provider_key_at_index::ProviderKeyKind;
 
 /// Which wallet-held key signs a masternode withdrawal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -152,10 +152,6 @@ pub struct MasternodeWithdrawalRequest {
     pub destination: Option<DashAddress>,
 }
 
-/// Default provider-key scan window when the owner pool has no deeper
-/// watermark — the same floor the operator derive-and-compare uses.
-const PROVIDER_KEY_WINDOW: u32 = 20;
-
 impl PlatformWallet {
     /// Which masternode-withdrawal keys this wallet holds for the node
     /// described by `owner_key_hash` / `payout_script`, plus its payout
@@ -166,11 +162,9 @@ impl PlatformWallet {
     ///
     /// `owner_key_index_hint` is a durable index the caller already knows
     /// for this owner key (the persisted ownership row, or the host's own
-    /// address join). It is VERIFIED, never trusted: the key at that index is
-    /// derived and compared first, so a restored wallet whose in-memory pool
-    /// has no watermark (and whose owner key sits above the default scan
-    /// window) still resolves. Without a hint — or if the hint doesn't match —
-    /// the pool depth (at least [`PROVIDER_KEY_WINDOW`]) is scanned.
+    /// address join). It is VERIFIED, never trusted, as in
+    /// [`Self::find_provider_key`], so a restored wallet whose owner key sits
+    /// past the default lookup window still resolves.
     ///
     /// `payout_path_hint` is where the caller knows the P2PKH payout key
     /// sits, for a payout address the funding pools never generated (such as
@@ -207,32 +201,14 @@ impl PlatformWallet {
                 .flatten()
         });
 
-        // Under the wallet-manager read lock: the owner pool's depth and the
-        // payout address's derivation path. Dropped before the derive loop
-        // below (which takes the wallet's own state lock).
-        let (owner_scan_max, transfer_key) = {
+        // The payout address's derivation path, under the wallet-manager read
+        // lock. Dropped before the owner key lookup, which takes it again.
+        let transfer_key = {
             let wm = self.wallet_manager().blocking_read();
             let info = wm.get_wallet_info(&self.wallet_id()).ok_or_else(|| {
                 PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id()))
             })?;
-
-            let owner_scan_max = info
-                .core_wallet
-                .accounts
-                .provider_owner_keys
-                .as_ref()
-                .and_then(|acct| {
-                    acct.managed_account_type()
-                        .address_pools()
-                        .iter()
-                        .filter_map(|p| p.highest_generated())
-                        .max()
-                })
-                .map(|h| h.saturating_add(1))
-                .unwrap_or(PROVIDER_KEY_WINDOW)
-                .max(PROVIDER_KEY_WINDOW);
-
-            let transfer_key = match (&payout_address, payout_key_hash160) {
+            match (&payout_address, payout_key_hash160) {
                 (Some(address), Some(_)) => info
                     .core_wallet
                     .accounts
@@ -241,19 +217,14 @@ impl PlatformWallet {
                     .filter(|acc| is_signable_funding_account(acc.managed_account_type()))
                     .find_map(|acc| acc.address_derivation_path(address)),
                 _ => None,
-            };
-
-            (owner_scan_max, transfer_key)
+            }
         };
         let transfer_key =
             transfer_key.or_else(|| payout_key_hash160.and(payout_path_hint.cloned()));
 
-        // Owner key: verify the caller's hint first, then derive-and-compare
-        // over the pool depth. Seedless — `derive_provider_key_at_index`
-        // reads the account xpub.
         let owner_key = match owner_key_hash {
             Some(target) => {
-                self.find_owner_key(target, owner_scan_max, owner_key_index_hint, network)?
+                self.find_provider_key(ProviderKeyRole::Owner, target, owner_key_index_hint)?
             }
             None => None,
         };
@@ -264,48 +235,6 @@ impl PlatformWallet {
             payout_address: payout_address.map(|a| a.to_string()),
             payout_key_hash160,
         })
-    }
-
-    fn find_owner_key(
-        &self,
-        owner_key_hash: &[u8; 20],
-        scan_max: u32,
-        index_hint: Option<u32>,
-        network: Network,
-    ) -> Result<Option<(u32, DerivationPath)>, PlatformWalletError> {
-        if let Some(hint) = index_hint {
-            match self.owner_key_matches_at(hint, owner_key_hash)? {
-                // No provider-owner-keys account at all ⇒ nothing to match.
-                None => return Ok(None),
-                Some(true) => return Ok(Some((hint, provider_owner_key_path(network, hint)?))),
-                Some(false) => {} // stale hint — fall back to the scan
-            }
-        }
-        for index in 0..scan_max {
-            match self.owner_key_matches_at(index, owner_key_hash)? {
-                None => return Ok(None),
-                Some(true) => return Ok(Some((index, provider_owner_key_path(network, index)?))),
-                Some(false) => {}
-            }
-        }
-        Ok(None)
-    }
-
-    /// `Some(matches)` for the owner key derived at `index`; `None` when the
-    /// wallet has no provider-owner-keys account to derive from.
-    fn owner_key_matches_at(
-        &self,
-        index: u32,
-        owner_key_hash: &[u8; 20],
-    ) -> Result<Option<bool>, PlatformWalletError> {
-        let derived =
-            match self.derive_provider_key_at_index(ProviderKeyKind::Owner, index, None, false) {
-                Ok(derived) => derived,
-                Err(PlatformWalletError::AddressNotFound(_)) => return Ok(None),
-                Err(e) => return Err(e),
-            };
-        let hash: [u8; 20] = hash160::Hash::hash(&derived.public_key_bytes).to_byte_array();
-        Ok(Some(&hash == owner_key_hash))
     }
 
     /// Submit an Identity Credit Withdrawal from the masternode's owner
@@ -1097,6 +1026,7 @@ mod tests {
         TEST_PLATFORM_WALLET_MNEMONIC,
     };
     use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+    use crate::wallet::provider_key_at_index::ProviderKeyKind;
     use crate::BlockTime;
     use dash_sdk::dapi_client::transport::TransportError;
     use dash_sdk::dapi_client::DapiClientError;
@@ -1596,6 +1526,37 @@ mod tests {
 
         assert_eq!(hash_of(&secret), hash);
         assert_eq!(provider.calls(), 0);
+    }
+
+    /// The owner key is found by its hash, past the lookup window only
+    /// through a matching index hint.
+    #[test]
+    fn should_resolve_the_owner_key_from_its_hash() {
+        let runtime = Runtime::new().unwrap();
+        let (manager, wallet_id) = runtime.block_on(test_platform_wallet_manager());
+        let wallet = runtime.block_on(manager.get_wallet(&wallet_id)).unwrap();
+        let network = wallet.network();
+        let owner_hash = |index| {
+            let derived = wallet
+                .derive_provider_key_at_index(ProviderKeyKind::Owner, index, None, false)
+                .unwrap();
+            hash160::Hash::hash(&derived.public_key_bytes).to_byte_array()
+        };
+
+        for (index, hint) in [(4, None), (300, Some(300))] {
+            let keys = wallet
+                .masternode_withdrawal_keys(Some(&owner_hash(index)), None, hint, None)
+                .unwrap();
+            assert_eq!(
+                keys.owner_key,
+                Some((index, provider_owner_key_path(network, index).unwrap())),
+                "index {index}"
+            );
+        }
+        let keys = wallet
+            .masternode_withdrawal_keys(Some(&owner_hash(300)), None, None, None)
+            .unwrap();
+        assert_eq!(keys.owner_key, None, "past the window without a hint");
     }
 
     /// A wallet without resident keys asks the provider once, and holds no

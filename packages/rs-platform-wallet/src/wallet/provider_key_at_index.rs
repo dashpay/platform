@@ -74,10 +74,12 @@
 
 use dashcore::bls_sig_utils::BlsScheme;
 use dashcore::eddsa::{EddsaPkBytes, EddsaPkHash, EddsaSecretKey};
+use dashcore::PubkeyHash;
 use key_wallet::account::derivation::AccountDerivation;
 use key_wallet::account::{AccountType, BLSAccount, EdDSAAccount};
-use key_wallet::bip32::{ChildNumber, ExtendedPrivKey};
-use key_wallet::managed_account::address_pool::AddressPoolType;
+use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey};
+use key_wallet::managed_account::address_pool::{AddressPoolType, DEFAULT_PROVIDER_KEY_WINDOW};
+use key_wallet::wallet::managed_wallet_info::ProviderKeyRole;
 use zeroize::Zeroizing;
 
 use super::platform_wallet::PlatformWallet;
@@ -791,6 +793,46 @@ impl PlatformWallet {
             }
         }
     }
+
+    /// This wallet's `role` key whose hash160 is `key_hash160`, as its index
+    /// and derivation path; `None` when the wallet does not hold it.
+    ///
+    /// Seedless: delegates to key-wallet's
+    /// [`ManagedWalletInfo::find_provider_key`](key_wallet::wallet::managed_wallet_info::ManagedWalletInfo::find_provider_key),
+    /// which checks the key at
+    /// `index_hint` first, then the provider pool's entries, then every index
+    /// below [`DEFAULT_PROVIDER_KEY_WINDOW`]. A key at or past that index and
+    /// outside the pool is found only through its hint, which is verified,
+    /// never trusted.
+    ///
+    /// Blocking (wallet-manager `blocking_read` — never call from an async
+    /// runtime worker).
+    ///
+    /// # Errors
+    /// - [`PlatformWalletError::WalletNotFound`] if the wallet was removed.
+    /// - [`PlatformWalletError::ProviderKeyLookup`] if key-wallet refuses
+    ///   the lookup, such as for an `index_hint` in the hardened range.
+    pub fn find_provider_key(
+        &self,
+        role: ProviderKeyRole,
+        key_hash160: &[u8; 20],
+        index_hint: Option<u32>,
+    ) -> Result<Option<(u32, DerivationPath)>, PlatformWalletError> {
+        let state = self.state_blocking();
+        let wallet = state
+            .try_wallet()
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id())))?;
+        state
+            .core_wallet
+            .find_provider_key(
+                wallet,
+                role,
+                &PubkeyHash::from_byte_array(*key_hash160),
+                index_hint,
+                DEFAULT_PROVIDER_KEY_WINDOW,
+            )
+            .map_err(|source| PlatformWalletError::ProviderKeyLookup { role, source })
+    }
 }
 
 #[cfg(test)]
@@ -1330,5 +1372,113 @@ mod tests {
                 "{kind:?} watch-only derivation must match m/9'/5'/3'/{family}/19"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod find_provider_key_tests {
+    use super::*;
+    use crate::test_support::sync_test_platform_wallet;
+    use dashcore::hashes::hash160;
+    use key_wallet::bip32::Error as Bip32Error;
+    use key_wallet::error::Error as KeyWalletError;
+
+    /// An index well past the lookup window and the test wallet's pools.
+    const FAR_INDEX: u32 = 300;
+
+    fn key_hash(wallet: &PlatformWallet, kind: ProviderKeyKind, index: u32) -> [u8; 20] {
+        let derived = wallet
+            .derive_provider_key_at_index(kind, index, None, false)
+            .expect("public provider key");
+        hash160::Hash::hash(&derived.public_key_bytes).to_byte_array()
+    }
+
+    fn path(wallet: &PlatformWallet, account_type: AccountType, index: u32) -> DerivationPath {
+        account_type
+            .derivation_path(wallet.network())
+            .expect("account path")
+            .child(ChildNumber::from_normal_idx(index).expect("normal index"))
+    }
+
+    const ROLES: [(ProviderKeyRole, ProviderKeyKind, AccountType); 2] = [
+        (
+            ProviderKeyRole::Owner,
+            ProviderKeyKind::Owner,
+            AccountType::ProviderOwnerKeys,
+        ),
+        (
+            ProviderKeyRole::Voting,
+            ProviderKeyKind::Voting,
+            AccountType::ProviderVotingKeys,
+        ),
+    ];
+
+    #[test]
+    fn should_find_owner_and_voting_keys_by_their_hash() {
+        let wallet = sync_test_platform_wallet();
+        for (role, kind, account_type) in ROLES {
+            let hash = key_hash(&wallet, kind, 7);
+            assert_eq!(
+                wallet.find_provider_key(role, &hash, None).expect("lookup"),
+                Some((7, path(&wallet, account_type, 7))),
+                "{role:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_find_a_key_past_the_window_only_through_a_matching_hint() {
+        let wallet = sync_test_platform_wallet();
+        for (role, kind, account_type) in ROLES {
+            let hash = key_hash(&wallet, kind, FAR_INDEX);
+            assert_eq!(
+                wallet.find_provider_key(role, &hash, None).expect("lookup"),
+                None,
+                "{role:?} without a hint"
+            );
+            assert_eq!(
+                wallet
+                    .find_provider_key(role, &hash, Some(FAR_INDEX - 1))
+                    .expect("lookup"),
+                None,
+                "{role:?} with a wrong hint"
+            );
+            assert_eq!(
+                wallet
+                    .find_provider_key(role, &hash, Some(FAR_INDEX))
+                    .expect("lookup"),
+                Some((FAR_INDEX, path(&wallet, account_type, FAR_INDEX))),
+                "{role:?} with its hint"
+            );
+        }
+    }
+
+    #[test]
+    fn should_not_find_an_owner_key_among_the_voting_keys() {
+        let wallet = sync_test_platform_wallet();
+        let owner_hash = key_hash(&wallet, ProviderKeyKind::Owner, 3);
+        assert_eq!(
+            wallet
+                .find_provider_key(ProviderKeyRole::Voting, &owner_hash, Some(3))
+                .expect("lookup"),
+            None
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_hardened_index_hint() {
+        let wallet = sync_test_platform_wallet();
+        let hash = key_hash(&wallet, ProviderKeyKind::Owner, 0);
+        let result = wallet.find_provider_key(ProviderKeyRole::Owner, &hash, Some(1 << 31));
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::ProviderKeyLookup {
+                    role: ProviderKeyRole::Owner,
+                    source: KeyWalletError::Bip32(Bip32Error::InvalidChildNumber(_)),
+                })
+            ),
+            "{result:?}"
+        );
     }
 }
