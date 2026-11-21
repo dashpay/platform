@@ -223,11 +223,13 @@ mod tests {
         StateBeforeBlock as StateBeforeBlockInResponse, WaitForStateTransitionResultResponseV0,
     };
     use dash_context_provider::ContextProviderError;
-    use dpp::data_contract::DataContract;
+    use dpp::data_contract::{DataContract, TokenConfiguration};
     use dpp::prelude::{CoreBlockHeight, Identifier};
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+    use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
     use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+    use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
     use std::sync::Arc;
 
     /// A provider no test here may reach: each one is refused, or answered, before a proof is
@@ -246,7 +248,7 @@ mod tests {
         fn get_token_configuration(
             &self,
             _token_id: &Identifier,
-        ) -> Result<Option<dpp::data_contract::TokenConfiguration>, ContextProviderError> {
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
             panic!("the context provider must not be reached")
         }
 
@@ -266,10 +268,8 @@ mod tests {
 
     fn credit_transfer() -> BroadcastStateTransitionRequest {
         let state_transition: StateTransition =
-            dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition::V0(
-                IdentityCreditTransferTransitionV0::default(),
-            )
-            .into();
+            IdentityCreditTransferTransition::V0(IdentityCreditTransferTransitionV0::default())
+                .into();
         BroadcastStateTransitionRequest {
             state_transition: state_transition
                 .serialize_to_bytes()
@@ -370,12 +370,10 @@ mod tests {
         // An identity create's proof is checked against the identity it creates, which the
         // state before its block does not hold
         let state_transition: StateTransition =
-            dpp::state_transition::identity_create_transition::IdentityCreateTransition::V0(
-                IdentityCreateTransitionV0 {
-                    identity_id: Identifier::from([7; 32]),
-                    ..Default::default()
-                },
-            )
+            IdentityCreateTransition::V0(IdentityCreateTransitionV0 {
+                identity_id: Identifier::from([7; 32]),
+                ..Default::default()
+            })
             .into();
 
         let verification = verify_state_before_block(

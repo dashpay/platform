@@ -153,6 +153,39 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.drive.v0.DriveInternal#unregisterStateTransitionExecutionProof}.
+                         * @memberof org.dash.platform.drive.v0.DriveInternal
+                         * @typedef unregisterStateTransitionExecutionProofCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse} [response] UnregisterStateTransitionExecutionProofResponse
+                         */
+
+                        /**
+                         * Calls unregisterStateTransitionExecutionProof.
+                         * @function unregisterStateTransitionExecutionProof
+                         * @memberof org.dash.platform.drive.v0.DriveInternal
+                         * @instance
+                         * @param {org.dash.platform.drive.v0.IUnregisterStateTransitionExecutionProofRequest} request UnregisterStateTransitionExecutionProofRequest message or plain object
+                         * @param {org.dash.platform.drive.v0.DriveInternal.unregisterStateTransitionExecutionProofCallback} callback Node-style callback called with the error, if any, and UnregisterStateTransitionExecutionProofResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(DriveInternal.prototype.unregisterStateTransitionExecutionProof = function unregisterStateTransitionExecutionProof(request, callback) {
+                            return this.rpcCall(unregisterStateTransitionExecutionProof, $root.org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest, $root.org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse, request, callback);
+                        }, "name", { value: "unregisterStateTransitionExecutionProof" });
+
+                        /**
+                         * Calls unregisterStateTransitionExecutionProof.
+                         * @function unregisterStateTransitionExecutionProof
+                         * @memberof org.dash.platform.drive.v0.DriveInternal
+                         * @instance
+                         * @param {org.dash.platform.drive.v0.IUnregisterStateTransitionExecutionProofRequest} request UnregisterStateTransitionExecutionProofRequest message or plain object
+                         * @returns {Promise<org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.drive.v0.DriveInternal#getStateTransitionExecutionProof}.
                          * @memberof org.dash.platform.drive.v0.DriveInternal
                          * @typedef getStateTransitionExecutionProofCallback
@@ -958,6 +991,362 @@ $root.org = (function() {
                         };
 
                         return RegisterStateTransitionExecutionProofResponse;
+                    })();
+
+                    v0.UnregisterStateTransitionExecutionProofRequest = (function() {
+
+                        /**
+                         * Properties of an UnregisterStateTransitionExecutionProofRequest.
+                         * @memberof org.dash.platform.drive.v0
+                         * @interface IUnregisterStateTransitionExecutionProofRequest
+                         * @property {Uint8Array|null} [stateTransitionHash] UnregisterStateTransitionExecutionProofRequest stateTransitionHash
+                         */
+
+                        /**
+                         * Constructs a new UnregisterStateTransitionExecutionProofRequest.
+                         * @memberof org.dash.platform.drive.v0
+                         * @classdesc Represents an UnregisterStateTransitionExecutionProofRequest.
+                         * @implements IUnregisterStateTransitionExecutionProofRequest
+                         * @constructor
+                         * @param {org.dash.platform.drive.v0.IUnregisterStateTransitionExecutionProofRequest=} [properties] Properties to set
+                         */
+                        function UnregisterStateTransitionExecutionProofRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * UnregisterStateTransitionExecutionProofRequest stateTransitionHash.
+                         * @member {Uint8Array} stateTransitionHash
+                         * @memberof org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest
+                         * @instance
+                         */
+                        UnregisterStateTransitionExecutionProofRequest.prototype.stateTransitionHash = $util.newBuffer([]);
+
+                        /**
+                         * Creates a new UnregisterStateTransitionExecutionProofRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {org.dash.platform.drive.v0.IUnregisterStateTransitionExecutionProofRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest} UnregisterStateTransitionExecutionProofRequest instance
+                         */
+                        UnregisterStateTransitionExecutionProofRequest.create = function create(properties) {
+                            return new UnregisterStateTransitionExecutionProofRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified UnregisterStateTransitionExecutionProofRequest message. Does not implicitly {@link org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {org.dash.platform.drive.v0.IUnregisterStateTransitionExecutionProofRequest} message UnregisterStateTransitionExecutionProofRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        UnregisterStateTransitionExecutionProofRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.stateTransitionHash != null && Object.hasOwnProperty.call(message, "stateTransitionHash"))
+                                writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.stateTransitionHash);
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified UnregisterStateTransitionExecutionProofRequest message, length delimited. Does not implicitly {@link org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {org.dash.platform.drive.v0.IUnregisterStateTransitionExecutionProofRequest} message UnregisterStateTransitionExecutionProofRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        UnregisterStateTransitionExecutionProofRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes an UnregisterStateTransitionExecutionProofRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest} UnregisterStateTransitionExecutionProofRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        UnregisterStateTransitionExecutionProofRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.stateTransitionHash = reader.bytes();
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes an UnregisterStateTransitionExecutionProofRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest} UnregisterStateTransitionExecutionProofRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        UnregisterStateTransitionExecutionProofRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies an UnregisterStateTransitionExecutionProofRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        UnregisterStateTransitionExecutionProofRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.stateTransitionHash != null && message.hasOwnProperty("stateTransitionHash"))
+                                if (!(message.stateTransitionHash && typeof message.stateTransitionHash.length === "number" || $util.isString(message.stateTransitionHash)))
+                                    return "stateTransitionHash: buffer expected";
+                            return null;
+                        };
+
+                        /**
+                         * Creates an UnregisterStateTransitionExecutionProofRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest} UnregisterStateTransitionExecutionProofRequest
+                         */
+                        UnregisterStateTransitionExecutionProofRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest();
+                            if (object.stateTransitionHash != null)
+                                if (typeof object.stateTransitionHash === "string")
+                                    $util.base64.decode(object.stateTransitionHash, message.stateTransitionHash = $util.newBuffer($util.base64.length(object.stateTransitionHash)), 0);
+                                else if (object.stateTransitionHash.length >= 0)
+                                    message.stateTransitionHash = object.stateTransitionHash;
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from an UnregisterStateTransitionExecutionProofRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest} message UnregisterStateTransitionExecutionProofRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        UnregisterStateTransitionExecutionProofRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.defaults)
+                                if (options.bytes === String)
+                                    object.stateTransitionHash = "";
+                                else {
+                                    object.stateTransitionHash = [];
+                                    if (options.bytes !== Array)
+                                        object.stateTransitionHash = $util.newBuffer(object.stateTransitionHash);
+                                }
+                            if (message.stateTransitionHash != null && message.hasOwnProperty("stateTransitionHash"))
+                                object.stateTransitionHash = options.bytes === String ? $util.base64.encode(message.stateTransitionHash, 0, message.stateTransitionHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.stateTransitionHash) : message.stateTransitionHash;
+                            return object;
+                        };
+
+                        /**
+                         * Converts this UnregisterStateTransitionExecutionProofRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        UnregisterStateTransitionExecutionProofRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return UnregisterStateTransitionExecutionProofRequest;
+                    })();
+
+                    v0.UnregisterStateTransitionExecutionProofResponse = (function() {
+
+                        /**
+                         * Properties of an UnregisterStateTransitionExecutionProofResponse.
+                         * @memberof org.dash.platform.drive.v0
+                         * @interface IUnregisterStateTransitionExecutionProofResponse
+                         */
+
+                        /**
+                         * Constructs a new UnregisterStateTransitionExecutionProofResponse.
+                         * @memberof org.dash.platform.drive.v0
+                         * @classdesc Represents an UnregisterStateTransitionExecutionProofResponse.
+                         * @implements IUnregisterStateTransitionExecutionProofResponse
+                         * @constructor
+                         * @param {org.dash.platform.drive.v0.IUnregisterStateTransitionExecutionProofResponse=} [properties] Properties to set
+                         */
+                        function UnregisterStateTransitionExecutionProofResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * Creates a new UnregisterStateTransitionExecutionProofResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {org.dash.platform.drive.v0.IUnregisterStateTransitionExecutionProofResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse} UnregisterStateTransitionExecutionProofResponse instance
+                         */
+                        UnregisterStateTransitionExecutionProofResponse.create = function create(properties) {
+                            return new UnregisterStateTransitionExecutionProofResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified UnregisterStateTransitionExecutionProofResponse message. Does not implicitly {@link org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {org.dash.platform.drive.v0.IUnregisterStateTransitionExecutionProofResponse} message UnregisterStateTransitionExecutionProofResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        UnregisterStateTransitionExecutionProofResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified UnregisterStateTransitionExecutionProofResponse message, length delimited. Does not implicitly {@link org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {org.dash.platform.drive.v0.IUnregisterStateTransitionExecutionProofResponse} message UnregisterStateTransitionExecutionProofResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        UnregisterStateTransitionExecutionProofResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes an UnregisterStateTransitionExecutionProofResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse} UnregisterStateTransitionExecutionProofResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        UnregisterStateTransitionExecutionProofResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes an UnregisterStateTransitionExecutionProofResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse} UnregisterStateTransitionExecutionProofResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        UnregisterStateTransitionExecutionProofResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies an UnregisterStateTransitionExecutionProofResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        UnregisterStateTransitionExecutionProofResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            return null;
+                        };
+
+                        /**
+                         * Creates an UnregisterStateTransitionExecutionProofResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse} UnregisterStateTransitionExecutionProofResponse
+                         */
+                        UnregisterStateTransitionExecutionProofResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse)
+                                return object;
+                            return new $root.org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse();
+                        };
+
+                        /**
+                         * Creates a plain object from an UnregisterStateTransitionExecutionProofResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse} message UnregisterStateTransitionExecutionProofResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        UnregisterStateTransitionExecutionProofResponse.toObject = function toObject() {
+                            return {};
+                        };
+
+                        /**
+                         * Converts this UnregisterStateTransitionExecutionProofResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.drive.v0.UnregisterStateTransitionExecutionProofResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        UnregisterStateTransitionExecutionProofResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return UnregisterStateTransitionExecutionProofResponse;
                     })();
 
                     v0.GetStateTransitionExecutionProofRequest = (function() {

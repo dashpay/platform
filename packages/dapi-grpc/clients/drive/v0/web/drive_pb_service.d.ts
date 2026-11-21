@@ -22,6 +22,15 @@ type DriveInternalregisterStateTransitionExecutionProof = {
   readonly responseType: typeof drive_pb.RegisterStateTransitionExecutionProofResponse;
 };
 
+type DriveInternalunregisterStateTransitionExecutionProof = {
+  readonly methodName: string;
+  readonly service: typeof DriveInternal;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof drive_pb.UnregisterStateTransitionExecutionProofRequest;
+  readonly responseType: typeof drive_pb.UnregisterStateTransitionExecutionProofResponse;
+};
+
 type DriveInternalgetStateTransitionExecutionProof = {
   readonly methodName: string;
   readonly service: typeof DriveInternal;
@@ -35,6 +44,7 @@ export class DriveInternal {
   static readonly serviceName: string;
   static readonly getProofs: DriveInternalgetProofs;
   static readonly registerStateTransitionExecutionProof: DriveInternalregisterStateTransitionExecutionProof;
+  static readonly unregisterStateTransitionExecutionProof: DriveInternalunregisterStateTransitionExecutionProof;
   static readonly getStateTransitionExecutionProof: DriveInternalgetStateTransitionExecutionProof;
 }
 
@@ -87,6 +97,15 @@ export class DriveInternalClient {
   registerStateTransitionExecutionProof(
     requestMessage: drive_pb.RegisterStateTransitionExecutionProofRequest,
     callback: (error: ServiceError|null, responseMessage: drive_pb.RegisterStateTransitionExecutionProofResponse|null) => void
+  ): UnaryResponse;
+  unregisterStateTransitionExecutionProof(
+    requestMessage: drive_pb.UnregisterStateTransitionExecutionProofRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: drive_pb.UnregisterStateTransitionExecutionProofResponse|null) => void
+  ): UnaryResponse;
+  unregisterStateTransitionExecutionProof(
+    requestMessage: drive_pb.UnregisterStateTransitionExecutionProofRequest,
+    callback: (error: ServiceError|null, responseMessage: drive_pb.UnregisterStateTransitionExecutionProofResponse|null) => void
   ): UnaryResponse;
   getStateTransitionExecutionProof(
     requestMessage: drive_pb.GetStateTransitionExecutionProofRequest,

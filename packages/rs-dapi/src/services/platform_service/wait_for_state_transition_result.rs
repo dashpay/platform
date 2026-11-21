@@ -1,9 +1,14 @@
+use crate::clients::drive_client::DriveChannel;
 use crate::error::DapiError;
 use crate::services::platform_service::error_mapping::decode_consensus_error;
 use crate::services::platform_service::{PlatformServiceImpl, TenderdashStatus};
 use crate::services::streaming_service::FilterType;
 use base64::Engine;
-use dapi_grpc::drive::v0::GetStateTransitionExecutionProofResponse;
+use dapi_grpc::drive::v0::drive_internal_client::DriveInternalClient;
+use dapi_grpc::drive::v0::{
+    GetStateTransitionExecutionProofRequest, GetStateTransitionExecutionProofResponse,
+    RegisterStateTransitionExecutionProofRequest, UnregisterStateTransitionExecutionProofRequest,
+};
 use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceRequestV0;
 use dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0;
 use dapi_grpc::platform::v0::wait_for_state_transition_result_response::{
@@ -20,7 +25,9 @@ use dpp::prelude::Identifier;
 use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
 use dpp::util::hash::hash_single;
+use std::mem;
 use std::time::Duration;
+use tokio::runtime::Handle;
 use tokio::time::timeout;
 use tracing::{Instrument, debug, trace};
 
@@ -97,11 +104,15 @@ impl PlatformServiceImpl {
             };
 
             // The transition is not in a block yet, so Drive can still prove the state before
-            // its block: that proof can only be made before the block is committed.
-            if v0.prove {
+            // its block: that proof can only be made before the block is committed. The
+            // registration lasts as long as this wait: dropping it, whichever way the wait
+            // ends, a client hanging up included, unregisters the transition.
+            let _execution_proof_registration = if v0.prove {
                 self.register_state_transition_execution_proof(&state_transition_hash)
-                    .await;
-            }
+                    .await
+            } else {
+                None
+            };
 
             // Wait for transaction event with timeout
             let timeout_duration =
@@ -391,23 +402,33 @@ impl PlatformServiceImpl {
     }
 
     /// Asks Drive to prove the state before and after the block that executes the state
-    /// transition with this hash. Best effort: when Drive refuses or cannot be reached, the
-    /// wait still answers with a proof of the state Drive holds when the transition is found.
-    async fn register_state_transition_execution_proof(&self, state_transition_hash: &[u8]) {
-        let request = dapi_grpc::drive::v0::RegisterStateTransitionExecutionProofRequest {
+    /// transition with this hash, until the returned registration is dropped. Best effort:
+    /// when Drive refuses or cannot be reached, there is no registration, and the wait still
+    /// answers with a proof of the state Drive holds when the transition is found.
+    async fn register_state_transition_execution_proof(
+        &self,
+        state_transition_hash: &[u8],
+    ) -> Option<ExecutionProofRegistration> {
+        let mut client = self.drive_client.get_internal_client();
+        let request = RegisterStateTransitionExecutionProofRequest {
             state_transition_hash: state_transition_hash.to_vec(),
         };
 
-        if let Err(status) = self
-            .drive_client
-            .get_internal_client()
+        match client
             .register_state_transition_execution_proof(request)
             .await
         {
-            debug!(
-                %status,
-                "Drive did not register the state transition for an execution proof"
-            );
+            Ok(_) => Some(ExecutionProofRegistration {
+                client,
+                state_transition_hash: state_transition_hash.to_vec(),
+            }),
+            Err(status) => {
+                debug!(
+                    %status,
+                    "Drive did not register the state transition for an execution proof"
+                );
+                None
+            }
         }
     }
 
@@ -419,7 +440,7 @@ impl PlatformServiceImpl {
         tx_bytes: &[u8],
         executed_at_height: u64,
     ) -> Option<((Proof, ResponseMetadata), (Proof, ResponseMetadata))> {
-        let request = dapi_grpc::drive::v0::GetStateTransitionExecutionProofRequest {
+        let request = GetStateTransitionExecutionProofRequest {
             state_transition_hash: hash_single(tx_bytes).to_vec(),
         };
 
@@ -471,6 +492,39 @@ impl PlatformServiceImpl {
                 )))
             }
         }
+    }
+}
+
+/// A state transition this wait registered with Drive for an execution proof. Dropping it
+/// unregisters the transition, so a registration never outlives the wait that made it: a
+/// client that waits for transitions that never land frees Drive's slots as its waits end.
+struct ExecutionProofRegistration {
+    client: DriveInternalClient<DriveChannel>,
+    state_transition_hash: Vec<u8>,
+}
+
+impl Drop for ExecutionProofRegistration {
+    fn drop(&mut self) {
+        // Drop cannot wait, so the call runs on its own. Outside a runtime there is nothing to
+        // run it on; Drive then forgets the registration after its lifetime in blocks.
+        let Ok(runtime) = Handle::try_current() else {
+            return;
+        };
+        let mut client = self.client.clone();
+        let request = UnregisterStateTransitionExecutionProofRequest {
+            state_transition_hash: mem::take(&mut self.state_transition_hash),
+        };
+        runtime.spawn(async move {
+            if let Err(status) = client
+                .unregister_state_transition_execution_proof(request)
+                .await
+            {
+                debug!(
+                    %status,
+                    "Drive did not unregister the state transition for an execution proof"
+                );
+            }
+        });
     }
 }
 
@@ -550,6 +604,325 @@ pub(super) fn build_wait_for_state_transition_error_response(
 
 #[cfg(test)]
 mod tests {
+    mod drive_calls {
+        use super::super::{ExecutionProofRegistration, StateBeforeBlock};
+        use crate::clients::drive_client::{DriveChannel, DriveClient};
+        use crate::services::platform_service::PlatformServiceImpl;
+        use crate::services::platform_service::protobuf_request_errors::channel;
+        use dapi_grpc::drive::v0::drive_internal_server::{DriveInternal, DriveInternalServer};
+        use dapi_grpc::drive::v0::get_state_transition_execution_proof_response::StateAtBlock;
+        use dapi_grpc::drive::v0::{
+            GetProofsRequest, GetProofsResponse, GetStateTransitionExecutionProofRequest,
+            GetStateTransitionExecutionProofResponse, RegisterStateTransitionExecutionProofRequest,
+            RegisterStateTransitionExecutionProofResponse,
+            UnregisterStateTransitionExecutionProofRequest,
+            UnregisterStateTransitionExecutionProofResponse,
+        };
+        use dapi_grpc::platform::v0::wait_for_state_transition_result_response::WaitForStateTransitionResultResponseV0;
+        use dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result as WaitResult;
+        use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+        use dapi_grpc::tonic::transport::Server;
+        use dapi_grpc::tonic::{Request, Response, Status};
+        use dpp::util::hash::hash_single;
+        use std::sync::{Arc, Mutex};
+        use std::time::Duration;
+        use tokio::task::JoinHandle;
+        use tokio_stream::StreamExt;
+        use tower::ServiceBuilder;
+        use tower_http::trace::TraceLayer;
+
+        /// One call Drive received, with the hash or bytes it named.
+        #[derive(Clone, Debug, PartialEq)]
+        enum Call {
+            Register(Vec<u8>),
+            Unregister(Vec<u8>),
+            GetExecutionProof(Vec<u8>),
+            GetProofs(Vec<u8>),
+        }
+
+        /// A Drive stand-in that records the internal calls it receives and answers them as
+        /// configured.
+        #[derive(Clone)]
+        struct RecordingDrive {
+            calls: Arc<Mutex<Vec<Call>>>,
+            refuse_registrations: bool,
+            execution_proof: GetStateTransitionExecutionProofResponse,
+        }
+
+        impl RecordingDrive {
+            fn record(&self, call: Call) {
+                self.calls.lock().unwrap().push(call);
+            }
+        }
+
+        fn state_at(height: u64) -> StateAtBlock {
+            StateAtBlock {
+                proof: Some(proof_of(height)),
+                metadata: Some(metadata_at(height)),
+            }
+        }
+
+        fn proof_of(height: u64) -> Proof {
+            Proof {
+                grovedb_proof: vec![height as u8],
+                ..Default::default()
+            }
+        }
+
+        fn metadata_at(height: u64) -> ResponseMetadata {
+            ResponseMetadata {
+                height,
+                ..Default::default()
+            }
+        }
+
+        /// What Drive answers for the current state: a proof at height 99.
+        const CURRENT_HEIGHT: u64 = 99;
+
+        #[dapi_grpc::tonic::async_trait]
+        impl DriveInternal for RecordingDrive {
+            async fn get_proofs(
+                &self,
+                request: Request<GetProofsRequest>,
+            ) -> Result<Response<GetProofsResponse>, Status> {
+                self.record(Call::GetProofs(request.into_inner().state_transition));
+                Ok(Response::new(GetProofsResponse {
+                    proof: Some(proof_of(CURRENT_HEIGHT)),
+                    metadata: Some(metadata_at(CURRENT_HEIGHT)),
+                }))
+            }
+
+            async fn register_state_transition_execution_proof(
+                &self,
+                request: Request<RegisterStateTransitionExecutionProofRequest>,
+            ) -> Result<Response<RegisterStateTransitionExecutionProofResponse>, Status>
+            {
+                self.record(Call::Register(request.into_inner().state_transition_hash));
+                if self.refuse_registrations {
+                    return Err(Status::resource_exhausted("full"));
+                }
+                Ok(Response::new(
+                    RegisterStateTransitionExecutionProofResponse {},
+                ))
+            }
+
+            async fn unregister_state_transition_execution_proof(
+                &self,
+                request: Request<UnregisterStateTransitionExecutionProofRequest>,
+            ) -> Result<Response<UnregisterStateTransitionExecutionProofResponse>, Status>
+            {
+                self.record(Call::Unregister(request.into_inner().state_transition_hash));
+                Ok(Response::new(
+                    UnregisterStateTransitionExecutionProofResponse {},
+                ))
+            }
+
+            async fn get_state_transition_execution_proof(
+                &self,
+                request: Request<GetStateTransitionExecutionProofRequest>,
+            ) -> Result<Response<GetStateTransitionExecutionProofResponse>, Status> {
+                self.record(Call::GetExecutionProof(
+                    request.into_inner().state_transition_hash,
+                ));
+                Ok(Response::new(self.execution_proof.clone()))
+            }
+        }
+
+        struct Fixture {
+            service: PlatformServiceImpl,
+            calls: Arc<Mutex<Vec<Call>>>,
+            server: JoinHandle<()>,
+        }
+
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                self.server.abort();
+            }
+        }
+
+        impl Fixture {
+            fn new(
+                refuse_registrations: bool,
+                execution_proof: GetStateTransitionExecutionProofResponse,
+            ) -> Self {
+                let calls = Arc::new(Mutex::new(Vec::new()));
+                let drive = RecordingDrive {
+                    calls: Arc::clone(&calls),
+                    refuse_registrations,
+                    execution_proof,
+                };
+                let (client_io, server_io) = tokio::io::duplex(64 * 1024);
+                let server = tokio::spawn(async move {
+                    let incoming = tokio_stream::iter([Ok::<_, std::io::Error>(server_io)])
+                        .chain(tokio_stream::pending());
+                    Server::builder()
+                        .add_service(DriveInternalServer::new(drive))
+                        .serve_with_incoming(incoming)
+                        .await
+                        .expect("serve the Drive stand-in");
+                });
+                let traced: DriveChannel = ServiceBuilder::new()
+                    .layer(TraceLayer::new_for_http())
+                    .service(channel(client_io, "http://drive.in-memory"));
+                Self {
+                    service: PlatformServiceImpl::with_test_drive(DriveClient::from_test_channel(
+                        traced,
+                    )),
+                    calls,
+                    server,
+                }
+            }
+
+            fn calls(&self) -> Vec<Call> {
+                self.calls.lock().unwrap().clone()
+            }
+
+            /// Wait until Drive has received `count` calls.
+            async fn wait_for_calls(&self, count: usize) {
+                tokio::time::timeout(Duration::from_secs(10), async {
+                    while self.calls().len() < count {
+                        tokio::time::sleep(Duration::from_millis(5)).await;
+                    }
+                })
+                .await
+                .expect("the calls reach Drive");
+            }
+
+            async fn fill_success_result(
+                &self,
+                tx: &[u8],
+                executed_at_height: u64,
+            ) -> WaitForStateTransitionResultResponseV0 {
+                let mut response_v0 = WaitForStateTransitionResultResponseV0 {
+                    result: None,
+                    metadata: None,
+                    state_before_block: None,
+                };
+                self.service
+                    .fill_success_result(
+                        &mut response_v0,
+                        tx.to_vec(),
+                        true,
+                        false,
+                        executed_at_height,
+                    )
+                    .await;
+                response_v0
+            }
+        }
+
+        fn pair(before: u64, after: u64) -> GetStateTransitionExecutionProofResponse {
+            GetStateTransitionExecutionProofResponse {
+                before: Some(state_at(before)),
+                after: Some(state_at(after)),
+            }
+        }
+
+        #[tokio::test]
+        async fn should_unregister_a_transition_when_its_registration_is_dropped() {
+            let fixture = Fixture::new(false, Default::default());
+
+            let registration: Option<ExecutionProofRegistration> = fixture
+                .service
+                .register_state_transition_execution_proof(&[7; 32])
+                .await;
+            assert!(registration.is_some());
+            assert_eq!(fixture.calls(), vec![Call::Register(vec![7; 32])]);
+
+            drop(registration);
+            fixture.wait_for_calls(2).await;
+
+            assert_eq!(
+                fixture.calls(),
+                vec![Call::Register(vec![7; 32]), Call::Unregister(vec![7; 32])]
+            );
+        }
+
+        #[tokio::test]
+        async fn should_unregister_when_the_wait_holding_the_registration_is_cancelled() {
+            let fixture = Fixture::new(false, Default::default());
+            let service = &fixture.service;
+
+            // A wait that registers and then waits for a block that never comes, as a client
+            // that hangs up leaves it
+            let wait = async {
+                let _registration = service
+                    .register_state_transition_execution_proof(&[8; 32])
+                    .await;
+                std::future::pending::<()>().await;
+            };
+            let _ = tokio::time::timeout(Duration::from_millis(50), wait).await;
+            fixture.wait_for_calls(2).await;
+
+            assert_eq!(
+                fixture.calls(),
+                vec![Call::Register(vec![8; 32]), Call::Unregister(vec![8; 32])]
+            );
+        }
+
+        #[tokio::test]
+        async fn should_have_no_registration_to_undo_when_drive_refuses_it() {
+            let fixture = Fixture::new(true, Default::default());
+
+            let registration = fixture
+                .service
+                .register_state_transition_execution_proof(&[9; 32])
+                .await;
+            assert!(registration.is_none());
+            drop(registration);
+            tokio::time::sleep(Duration::from_millis(50)).await;
+
+            assert_eq!(fixture.calls(), vec![Call::Register(vec![9; 32])]);
+        }
+
+        #[tokio::test]
+        async fn should_answer_with_drives_pair_around_the_block_of_the_transition() {
+            let fixture = Fixture::new(false, pair(9, 10));
+            let tx = b"a transition";
+
+            let response = fixture.fill_success_result(tx, 10).await;
+
+            assert_eq!(response.result, Some(WaitResult::Proof(proof_of(10))));
+            assert_eq!(response.metadata, Some(metadata_at(10)));
+            assert_eq!(
+                response.state_before_block,
+                Some(StateBeforeBlock {
+                    proof: Some(proof_of(9)),
+                    metadata: Some(metadata_at(9)),
+                })
+            );
+            // Drive is asked by the transition's hash, and not for a proof of current state
+            assert_eq!(
+                fixture.calls(),
+                vec![Call::GetExecutionProof(hash_single(tx).to_vec())]
+            );
+        }
+
+        #[tokio::test]
+        async fn should_answer_with_a_proof_of_current_state_when_drive_has_no_pair() {
+            for execution_proof in [Default::default(), pair(8, 9)] {
+                let fixture = Fixture::new(false, execution_proof);
+                let tx = b"a transition";
+
+                let response = fixture.fill_success_result(tx, 10).await;
+
+                assert_eq!(
+                    response.result,
+                    Some(WaitResult::Proof(proof_of(CURRENT_HEIGHT)))
+                );
+                assert_eq!(response.metadata, Some(metadata_at(CURRENT_HEIGHT)));
+                assert_eq!(response.state_before_block, None);
+                assert_eq!(
+                    fixture.calls(),
+                    vec![
+                        Call::GetExecutionProof(hash_single(tx).to_vec()),
+                        Call::GetProofs(tx.to_vec()),
+                    ]
+                );
+            }
+        }
+    }
+
     mod execution_proof {
         use super::super::execution_proof_around_block;
         use dapi_grpc::drive::v0::GetStateTransitionExecutionProofResponse;

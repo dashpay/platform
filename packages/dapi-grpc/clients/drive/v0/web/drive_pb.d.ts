@@ -92,6 +92,44 @@ export namespace RegisterStateTransitionExecutionProofResponse {
   }
 }
 
+export class UnregisterStateTransitionExecutionProofRequest extends jspb.Message {
+  getStateTransitionHash(): Uint8Array | string;
+  getStateTransitionHash_asU8(): Uint8Array;
+  getStateTransitionHash_asB64(): string;
+  setStateTransitionHash(value: Uint8Array | string): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): UnregisterStateTransitionExecutionProofRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: UnregisterStateTransitionExecutionProofRequest): UnregisterStateTransitionExecutionProofRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: UnregisterStateTransitionExecutionProofRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): UnregisterStateTransitionExecutionProofRequest;
+  static deserializeBinaryFromReader(message: UnregisterStateTransitionExecutionProofRequest, reader: jspb.BinaryReader): UnregisterStateTransitionExecutionProofRequest;
+}
+
+export namespace UnregisterStateTransitionExecutionProofRequest {
+  export type AsObject = {
+    stateTransitionHash: Uint8Array | string,
+  }
+}
+
+export class UnregisterStateTransitionExecutionProofResponse extends jspb.Message {
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): UnregisterStateTransitionExecutionProofResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: UnregisterStateTransitionExecutionProofResponse): UnregisterStateTransitionExecutionProofResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: UnregisterStateTransitionExecutionProofResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): UnregisterStateTransitionExecutionProofResponse;
+  static deserializeBinaryFromReader(message: UnregisterStateTransitionExecutionProofResponse, reader: jspb.BinaryReader): UnregisterStateTransitionExecutionProofResponse;
+}
+
+export namespace UnregisterStateTransitionExecutionProofResponse {
+  export type AsObject = {
+  }
+}
+
 export class GetStateTransitionExecutionProofRequest extends jspb.Message {
   getStateTransitionHash(): Uint8Array | string;
   getStateTransitionHash_asU8(): Uint8Array;

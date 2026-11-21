@@ -28,6 +28,15 @@ DriveInternal.registerStateTransitionExecutionProof = {
   responseType: drive_pb.RegisterStateTransitionExecutionProofResponse
 };
 
+DriveInternal.unregisterStateTransitionExecutionProof = {
+  methodName: "unregisterStateTransitionExecutionProof",
+  service: DriveInternal,
+  requestStream: false,
+  responseStream: false,
+  requestType: drive_pb.UnregisterStateTransitionExecutionProofRequest,
+  responseType: drive_pb.UnregisterStateTransitionExecutionProofResponse
+};
+
 DriveInternal.getStateTransitionExecutionProof = {
   methodName: "getStateTransitionExecutionProof",
   service: DriveInternal,
@@ -80,6 +89,37 @@ DriveInternalClient.prototype.registerStateTransitionExecutionProof = function r
     callback = arguments[1];
   }
   var client = grpc.unary(DriveInternal.registerStateTransitionExecutionProof, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+DriveInternalClient.prototype.unregisterStateTransitionExecutionProof = function unregisterStateTransitionExecutionProof(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(DriveInternal.unregisterStateTransitionExecutionProof, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

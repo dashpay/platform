@@ -1308,6 +1308,7 @@ mod tests {
     mod state_transition_execution_proofs {
         use super::*;
         use crate::platform_types::platform_state::PlatformStateV0Methods;
+        use crate::platform_types::state_transition_execution_proofs::MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK;
         use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
         use dpp::dash_to_credits;
         use dpp::identity::accessors::IdentityGettersV0;
@@ -1617,6 +1618,51 @@ mod tests {
             assert!(!proofs.is_registered(&registered_hash));
             assert_eq!(proofs.get(&hash_single(&not_registered)), None);
             assert!(proofs.is_registered(&never_in_a_block));
+        }
+
+        #[tokio::test]
+        async fn should_prove_at_most_the_per_block_limit_of_registered_state_transitions() {
+            let mut platform = platform();
+            let alice = sender(&mut platform, 220);
+            let bob = sender(&mut platform, 221);
+            let app = FullAbciApplication::new(&platform.platform);
+            let proofs = &platform.state_transition_execution_proofs;
+
+            finalize_real_block(&platform, &app, 1, FIRST_BLOCK_TIME_MS, None)
+                .expect("the first block must finalize");
+
+            let mut transfers = Vec::new();
+            for nonce in 1..=(MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK as u64 + 1) {
+                let raw = transfer(&alice, bob.identity.id(), nonce).await;
+                proofs
+                    .register(hash_single(&raw))
+                    .expect("expected to register");
+                transfers.push(raw);
+            }
+
+            let results = finalize_real_block_with_state_transitions(
+                &platform,
+                &app,
+                2,
+                SECOND_BLOCK_TIME_MS,
+                Some(FIRST_BLOCK_TIME_MS),
+                transfers.clone(),
+            );
+            assert!(results.iter().all(|result| matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            )));
+
+            // The first ones in block order are proved, the one past the limit is not and stays
+            // registered until its client unregisters it
+            let (proved, past_the_limit) =
+                transfers.split_at(MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK);
+            for raw in proved {
+                assert!(proofs.get(&hash_single(raw)).is_some());
+            }
+            let past_the_limit = hash_single(&past_the_limit[0]);
+            assert_eq!(proofs.get(&past_the_limit), None);
+            assert!(proofs.is_registered(&past_the_limit));
         }
 
         #[tokio::test]
