@@ -415,6 +415,21 @@ pub struct SystemLimits {
     /// v0 keeps reading.
     pub max_evonode_reward_claim_epochs: u16,
     pub max_shielded_transition_actions: u16,
+    /// Bytes the Halo 2 proof and the action itself add to a serialized shielded transition
+    /// for each Orchard action. Measured on the serialized transitions: every extra action of
+    /// a spend or `ShieldFromAssetLock` transition adds exactly this much (2 actions 8,189 B,
+    /// 3 actions 10,870 B, 6 actions 18,913 B for a transfer). Read only by the client-side
+    /// bounds in `dpp::shielded::max_actions_per_transition`, never by consensus: 2,681 in
+    /// every table.
+    pub shielded_action_wire_size: u64,
+    /// Bytes of a serialized shielded transition that do not depend on its action count: the
+    /// proof base, the anchor, the binding signature and the transition's own fields. Measured
+    /// for 2 actions: transfer 2,827 B, unshield 2,848 B, withdrawal with a P2PKH script
+    /// 2,855 B, identity top-up 2,859 B, `ShieldFromAssetLock` 2,932 B (6 actions: 19,018 B).
+    /// The value is the largest of these rounded up, so it holds for every kind and leaves
+    /// room for a longer Core script. Read only by the client-side bounds in
+    /// `dpp::shielded::max_actions_per_transition`, never by consensus: 3,000 in every table.
+    pub shielded_transition_fixed_wire_size: u64,
     /// Highest `minimumPoolNotesForOutgoing` a token's configuration may set. The threshold
     /// refuses outflows from the token's shielded pool while the pool holds fewer notes, so
     /// without an upper bound an issuer could set one no pool ever reaches and strand every

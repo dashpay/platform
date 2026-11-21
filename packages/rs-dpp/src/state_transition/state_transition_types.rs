@@ -1,5 +1,9 @@
+use std::ops::RangeInclusive;
+
 use bincode::{Decode, DecodeUntrusted, Encode};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use platform_version::version::feature_initial_protocol_versions::PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION;
+use platform_version::version::{ProtocolVersion, ALL_VERSIONS, LATEST_VERSION};
 
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
@@ -51,6 +55,55 @@ pub enum StateTransitionType {
     TokenUnshieldWithShieldedFee = 27,
     TokenPurchaseFromShieldedPool = 28,
     PrivateDocumentCreateFromShieldedPool = 29,
+}
+
+impl StateTransitionType {
+    /// The protocol versions in which every transition of this type is active, or `None` when
+    /// that depends on the transition's contents (its contract, keys, vote poll or version), for
+    /// which only [`StateTransition::active_version_range`] can answer.
+    ///
+    /// This is the single definition of those fixed ranges: `active_version_range` reads it for
+    /// every type it does not decide from contents, so a caller that has not built its
+    /// transition yet, such as a wallet planning a spend, checks the range consensus applies.
+    ///
+    /// [`StateTransition::active_version_range`]: crate::state_transition::StateTransition::active_version_range
+    pub fn fixed_active_version_range(self) -> Option<RangeInclusive<ProtocolVersion>> {
+        match self {
+            StateTransitionType::DataContractCreate
+            | StateTransitionType::DataContractUpdate
+            | StateTransitionType::Batch
+            | StateTransitionType::IdentityCreate
+            | StateTransitionType::IdentityUpdate
+            | StateTransitionType::IdentityCreateFromAddresses
+            | StateTransitionType::IdentityCreateFromShieldedPool
+            | StateTransitionType::MasternodeVote
+            | StateTransitionType::ShieldFromAssetLock => None,
+            StateTransitionType::IdentityTopUp
+            | StateTransitionType::IdentityCreditWithdrawal
+            | StateTransitionType::IdentityCreditTransfer => Some(ALL_VERSIONS),
+            StateTransitionType::IdentityCreditTransferToAddresses
+            | StateTransitionType::IdentityTopUpFromAddresses
+            | StateTransitionType::AddressFundsTransfer
+            | StateTransitionType::AddressFundingFromAssetLock
+            | StateTransitionType::AddressCreditWithdrawal => Some(11..=LATEST_VERSION),
+            StateTransitionType::Shield
+            | StateTransitionType::ShieldedTransfer
+            | StateTransitionType::Unshield
+            | StateTransitionType::ShieldedWithdrawal => Some(12..=LATEST_VERSION),
+            StateTransitionType::ShieldFromIdentity
+            | StateTransitionType::IdentityTopUpFromShieldedPool
+            | StateTransitionType::IdentityKeyLimitsUpdate
+            | StateTransitionType::ContractUserModeration
+            | StateTransitionType::ContractFeeClaim
+            | StateTransitionType::TokenShieldedTransferWithShieldedFee
+            | StateTransitionType::TokenUnshieldWithShieldedFee
+            | StateTransitionType::TokenPurchaseFromShieldedPool => Some(14..=LATEST_VERSION),
+            StateTransitionType::PrivateDocumentCreateFromShieldedPool => Some(
+                PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION
+                    ..=LATEST_VERSION,
+            ),
+        }
+    }
 }
 
 impl std::fmt::Display for StateTransitionType {
@@ -268,6 +321,63 @@ mod tests {
             let roundtripped = StateTransitionType::try_from(val).unwrap();
             assert_eq!(variant, roundtripped, "roundtrip failed for {:?}", variant);
         }
+    }
+
+    /// Pins every type's fixed range to the values `StateTransition::active_version_range`
+    /// returned before it read them from the type, so moving the table changed no consensus.
+    #[test]
+    fn should_keep_every_fixed_active_version_range() {
+        use StateTransitionType as T;
+        let content_dependent = [
+            T::DataContractCreate,
+            T::DataContractUpdate,
+            T::Batch,
+            T::IdentityCreate,
+            T::IdentityUpdate,
+            T::IdentityCreateFromAddresses,
+            T::IdentityCreateFromShieldedPool,
+            T::MasternodeVote,
+            T::ShieldFromAssetLock,
+        ];
+        let fixed = [
+            (T::IdentityTopUp, ALL_VERSIONS),
+            (T::IdentityCreditWithdrawal, ALL_VERSIONS),
+            (T::IdentityCreditTransfer, ALL_VERSIONS),
+            (T::IdentityCreditTransferToAddresses, 11..=LATEST_VERSION),
+            (T::IdentityTopUpFromAddresses, 11..=LATEST_VERSION),
+            (T::AddressFundsTransfer, 11..=LATEST_VERSION),
+            (T::AddressFundingFromAssetLock, 11..=LATEST_VERSION),
+            (T::AddressCreditWithdrawal, 11..=LATEST_VERSION),
+            (T::Shield, 12..=LATEST_VERSION),
+            (T::ShieldedTransfer, 12..=LATEST_VERSION),
+            (T::Unshield, 12..=LATEST_VERSION),
+            (T::ShieldedWithdrawal, 12..=LATEST_VERSION),
+            (T::ShieldFromIdentity, 14..=LATEST_VERSION),
+            (T::IdentityTopUpFromShieldedPool, 14..=LATEST_VERSION),
+            (T::IdentityKeyLimitsUpdate, 14..=LATEST_VERSION),
+            (T::ContractUserModeration, 14..=LATEST_VERSION),
+            (T::ContractFeeClaim, 14..=LATEST_VERSION),
+            (T::TokenShieldedTransferWithShieldedFee, 14..=LATEST_VERSION),
+            (T::TokenUnshieldWithShieldedFee, 14..=LATEST_VERSION),
+            (T::TokenPurchaseFromShieldedPool, 14..=LATEST_VERSION),
+            (
+                T::PrivateDocumentCreateFromShieldedPool,
+                PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION
+                    ..=LATEST_VERSION,
+            ),
+        ];
+        for ty in content_dependent {
+            assert_eq!(ty.fixed_active_version_range(), None, "{ty}");
+        }
+        for (ty, range) in fixed.clone() {
+            assert_eq!(ty.fixed_active_version_range(), Some(range), "{ty}");
+        }
+        // Every type is in exactly one of the two lists.
+        let listed = content_dependent.len() + fixed.len();
+        let all = (0..=u8::MAX)
+            .filter(|byte| T::try_from(*byte).is_ok())
+            .count();
+        assert_eq!(listed, all);
     }
 
     #[test]

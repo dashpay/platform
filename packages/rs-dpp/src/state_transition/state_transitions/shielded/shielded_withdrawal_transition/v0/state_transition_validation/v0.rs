@@ -1,19 +1,16 @@
 use crate::consensus::basic::identity::{
-    InvalidCreditWithdrawalTransitionCoreFeeError,
     InvalidCreditWithdrawalTransitionOutputScriptError,
     NotImplementedCreditWithdrawalTransitionPoolingError,
 };
 use crate::consensus::basic::state_transition::ShieldedInvalidValueBalanceError;
 use crate::consensus::basic::BasicError;
-use crate::state_transition::identity_credit_withdrawal_transition::MIN_CORE_FEE_PER_BYTE;
 use crate::state_transition::shielded_withdrawal_transition::v0::ShieldedWithdrawalTransitionV0;
 use crate::state_transition::state_transitions::shielded::common_validation::{
     validate_actions_count, validate_anchor_not_zero, validate_encrypted_note_sizes,
     validate_proof_not_empty,
 };
-use crate::util::is_non_zero_fibonacci_number::is_non_zero_fibonacci_number;
 use crate::validation::SimpleConsensusValidationResult;
-use crate::withdrawal::Pooling;
+use crate::withdrawal::{validate_core_fee_per_byte_is_non_zero_fibonacci, Pooling};
 use platform_version::version::PlatformVersion;
 
 impl ShieldedWithdrawalTransitionV0 {
@@ -95,16 +92,19 @@ impl ShieldedWithdrawalTransitionV0 {
         }
 
         // core_fee_per_byte must be a non-zero Fibonacci number.
-        if !is_non_zero_fibonacci_number(self.core_fee_per_byte as u64) {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::InvalidCreditWithdrawalTransitionCoreFeeError(
-                    InvalidCreditWithdrawalTransitionCoreFeeError::new(
-                        self.core_fee_per_byte,
-                        MIN_CORE_FEE_PER_BYTE,
-                    ),
-                )
-                .into(),
-            );
+        //
+        // In-place change to a shipped generation, inert: the inline check moved unchanged into
+        // `validate_core_fee_per_byte_is_non_zero_fibonacci`, which the shielded withdrawal
+        // preflight shares. It is the same predicate (`is_non_zero_fibonacci_number` of the rate
+        // as a `u64`), the same error (`InvalidCreditWithdrawalTransitionCoreFeeError` with the
+        // rate and `MIN_CORE_FEE_PER_BYTE`, as a `BasicError`) and the same place in the order of
+        // checks, after the pooling check and before the output script check. This generation is
+        // `validate_withdrawal_structure` 0, which protocol versions 1 to 13 select (the shielded
+        // withdrawal is active from 12), and `validate_structure_v1` runs it first, so versions
+        // 14 and 15 reach this line too.
+        let result = validate_core_fee_per_byte_is_non_zero_fibonacci(self.core_fee_per_byte);
+        if !result.is_valid() {
+            return result;
         }
 
         // output_script must be a canonical P2PKH or P2SH script.

@@ -688,6 +688,7 @@ public class PlatformWalletManager: ObservableObject {
                 "manager shutdown is in progress; \(name) rejected")
         }
         activeNativeOpCount += 1
+        nativeOpAdmissionObserver?(name)
     }
 
     func finishNativeOp() {
@@ -731,6 +732,16 @@ public class PlatformWalletManager: ObservableObject {
     /// [`nativeTeardownCalls`].
     internal var nativeShieldFromIdentityToRecipientCall: ShieldFromIdentityToRecipientCall =
         platform_wallet_manager_shielded_shield_from_identity_to_recipient
+
+    /// Test seam for the native calls behind `shieldedPlanSpend` and the
+    /// shielded transfer, unshield, identity top-up and withdrawal spends;
+    /// same contract as [`nativeTeardownCalls`].
+    internal var nativeShieldedSpendCalls = PlatformWalletNativeShieldedSpendCalls.live
+
+    /// Test-only: told the operation name each time [`admitNativeOp`] admits
+    /// an operation, so a test can prove an entry point is admitted without a
+    /// seam for its native call. Always `nil` in production.
+    internal var nativeOpAdmissionObserver: ((String) -> Void)?
 
     /// Test seam for the native reads behind the progress poller; same
     /// contract as [`nativeTeardownCalls`].

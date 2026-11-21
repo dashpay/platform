@@ -324,6 +324,25 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// outcome yet. Nothing new was signed. Unconfirmed, not failed: do not
     /// submit it again; a public contact request sync settles it.
     case errorPublicContactRequestUnconfirmed = 76
+    /// A shielded spend run against a plan (`shieldedPlanSpend`) selected
+    /// different notes or a different fee than the plan, as the wallet's
+    /// notes changed since, or is priced at another protocol version than
+    /// the plan. Nothing is built or broadcast and no note stays reserved.
+    case errorShieldedPlanChanged = 77
+    /// The wallet's notes cover a shielded spend, or its plan, only with more
+    /// notes than one shielded transition spends. Nothing was reserved, built
+    /// or broadcast: a smaller amount fits, or the notes can be merged first.
+    case errorShieldedSpendTooManyNotes = 78
+    /// A shielded withdrawal, or its plan, reserves an amount for Core below
+    /// the protocol minimum for its Core fee rate or above the maximum.
+    /// Nothing was reserved, built or broadcast: another amount fits.
+    case errorShieldedWithdrawalAmountOutOfRange = 79
+    /// The network runs a protocol version this SDK has no tables for, so a
+    /// shielded transfer, unshield, withdrawal or identity top-up from the
+    /// pool, or its plan, cannot be priced. Nothing is built or broadcast and
+    /// no note stays reserved. A retry does not help: ask the user to update
+    /// the app.
+    case errorNetworkProtocolVersionUnsupported = 81
     /// Platform could not be asked for an identity the operation names (the
     /// lookup failed, which is not Platform's answer that it does not exist,
     /// 7). Nothing was signed, reserved or broadcast: retry as it is.
@@ -479,6 +498,14 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorSdkPinnedBelowProtocolVersion
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PUBLIC_CONTACT_REQUEST_UNCONFIRMED:
             self = .errorPublicContactRequestUnconfirmed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_PLAN_CHANGED:
+            self = .errorShieldedPlanChanged
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_SPEND_TOO_MANY_NOTES:
+            self = .errorShieldedSpendTooManyNotes
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_WITHDRAWAL_AMOUNT_OUT_OF_RANGE:
+            self = .errorShieldedWithdrawalAmountOutOfRange
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_NETWORK_PROTOCOL_VERSION_UNSUPPORTED:
+            self = .errorNetworkProtocolVersionUnsupported
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_LOOKUP_FAILED:
             self = .errorIdentityLookupFailed
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
@@ -753,6 +780,26 @@ public enum PlatformWalletError: LocalizedError {
     /// or accept made while another public request to that identity is being
     /// sent: one is sent at a time, and nothing is signed for the second.
     case publicContactRequestUnconfirmed(String)
+    /// A shielded spend run against a `ShieldedSpendPlan` selected different
+    /// notes or a different fee than the plan, as the wallet's notes changed
+    /// since, or is priced at another protocol version than the plan (code
+    /// 77). Nothing is built or broadcast and no note stays reserved: plan
+    /// again and confirm the new fee before spending.
+    case shieldedPlanChanged(String)
+    /// The wallet's notes cover a shielded spend, or its plan, only with more
+    /// notes than one shielded transition spends (code 78). Nothing was
+    /// reserved, built or broadcast: a smaller amount fits, or the notes can
+    /// be merged first.
+    case shieldedSpendTooManyNotes(String)
+    /// A shielded withdrawal, or its plan, reserves an amount for Core below
+    /// the protocol minimum for its Core fee rate or above the maximum (code
+    /// 79). Nothing was reserved, built or broadcast: another amount fits.
+    case shieldedWithdrawalAmountOutOfRange(String)
+    /// The network runs a protocol version this SDK has no tables for (code
+    /// 81), so a shielded transfer, unshield, withdrawal or identity top-up
+    /// from the pool, or its plan, cannot be priced. Nothing is built or
+    /// broadcast and no note stays reserved; only an app update lifts it.
+    case networkProtocolVersionUnsupported(String)
     /// Platform could not be asked for an identity the operation names (code
     /// 80): the lookup itself failed, before anything was signed, reserved or
     /// broadcast. Not sent, so it may be retried as it is; unlike an unmapped
@@ -993,7 +1040,10 @@ public enum PlatformWalletError: LocalizedError {
              .privateContactRequestPending(let m), .privateContactPaymentsNotRestored(let m),
              .privateContactRecoveryUnsupported(let m),
              .privateContactStoreNotRead(let m), .sdkPinnedBelowProtocolVersion(let m),
-             .publicContactRequestUnconfirmed(let m), .identityLookupFailed(let m),
+             .publicContactRequestUnconfirmed(let m), .shieldedPlanChanged(let m),
+             .shieldedSpendTooManyNotes(let m), .shieldedWithdrawalAmountOutOfRange(let m),
+             .networkProtocolVersionUnsupported(let m),
+             .identityLookupFailed(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -1131,6 +1181,14 @@ public enum PlatformWalletError: LocalizedError {
             self = .sdkPinnedBelowProtocolVersion(detail)
         case .errorPublicContactRequestUnconfirmed:
             self = .publicContactRequestUnconfirmed(detail)
+        case .errorShieldedPlanChanged:
+            self = .shieldedPlanChanged(detail)
+        case .errorShieldedSpendTooManyNotes:
+            self = .shieldedSpendTooManyNotes(detail)
+        case .errorShieldedWithdrawalAmountOutOfRange:
+            self = .shieldedWithdrawalAmountOutOfRange(detail)
+        case .errorNetworkProtocolVersionUnsupported:
+            self = .networkProtocolVersionUnsupported(detail)
         case .errorIdentityLookupFailed:
             self = .identityLookupFailed(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)

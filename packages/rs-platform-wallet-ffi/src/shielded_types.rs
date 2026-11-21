@@ -87,6 +87,43 @@ pub struct ShieldedShieldPreflightFFI {
     pub max_shieldable_credits: u64,
 }
 
+/// A shielded spend planned ahead of the spend
+/// (`platform_wallet_manager_shielded_plan_spend`): the notes it selects, by
+/// count and digest, and their exact fee. All amounts are credits.
+///
+/// `kind` is the spend's fee kind as `platform_wallet_shielded_estimate_fee`
+/// numbers it: `0` transfer, `1` unshield, `2` withdrawal, `4` identity top-up.
+/// Pass `digest` to the spend's `_with_plan` export to run exactly this plan:
+/// it commits to the protocol version the fee was priced at, the kind (a
+/// withdrawal's Core fee rate too), the amount, the fee and the selected notes.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ShieldedSpendPlanFFI {
+    pub kind: u8,
+    /// The Core fee rate a withdrawal (kind `2`) was planned at, `0` for the
+    /// other kinds. Pass the same rate to the withdraw `_with_plan` export:
+    /// another rate refuses with `ErrorShieldedPlanChanged`.
+    pub core_fee_per_byte: u32,
+    /// What the spend reserves for the recipient: the amount sent, or for a
+    /// withdrawal the reserve for Core, of which the Core fee is taken.
+    pub amount: u64,
+    /// What the recipient receives: `amount`, except for a withdrawal, where
+    /// it is a quote at the plan's protocol version of the output the protocol
+    /// pays: `amount` truncated to whole duffs at versions 12 and 13, minus the
+    /// Core fee as well from 14. The spend checks `amount` and `fee`, not this:
+    /// a withdrawal still queued when a later version pools it is paid at that
+    /// version.
+    pub recipient_amount: u64,
+    /// The exact fee for the selected notes.
+    pub fee: u64,
+    /// The sum of the selected notes.
+    pub total_input: u64,
+    /// What leaves the pool: `amount + fee` (any rest returns as change).
+    pub total_debited: u64,
+    pub note_count: u32,
+    pub digest: [u8; 32],
+}
+
 /// Per-wallet outcome from a completed shielded sync pass.
 ///
 /// Mirrors

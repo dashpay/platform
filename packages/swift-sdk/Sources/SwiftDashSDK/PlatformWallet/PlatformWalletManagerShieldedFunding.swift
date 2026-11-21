@@ -145,6 +145,10 @@ extension PlatformWalletManager {
             recipients: recipients
         )
 
+        // Admitted through the detached call and the result delivery, like
+        // `shieldedShieldFromIdentityToRecipient`.
+        try admitNativeOp("shieldedFundFromAssetLock")
+        defer { finishNativeOp() }
         let handle = self.handle
         let recipientRaw43 = recipients[0].recipientRaw43
         // Constructed on the calling actor so it lives for the
@@ -232,6 +236,10 @@ extension PlatformWalletManager {
             recipients: recipients
         )
 
+        // Admitted through the detached call and the result delivery, like
+        // `shieldedShieldFromIdentityToRecipient`.
+        try admitNativeOp("shieldedFundFromCoinJoinDrain")
+        defer { finishNativeOp() }
         let handle = self.handle
         let recipientRaw43 = recipients[0].recipientRaw43
         // Constructed on the calling actor so it lives for the entire
@@ -319,6 +327,10 @@ extension PlatformWalletManager {
             recipients: recipients
         )
 
+        // Admitted through the detached call and the result delivery, like
+        // `shieldedShieldFromIdentityToRecipient`.
+        try admitNativeOp("shieldedResumeFundFromAssetLock")
+        defer { finishNativeOp() }
         let handle = self.handle
         let recipientRaw43 = recipients[0].recipientRaw43
         let coreSigner = MnemonicResolver()
@@ -426,6 +438,11 @@ extension PlatformWalletManager {
             )
         }
 
+        // Deliberately NOT admitted (unlike the funding calls above). This is
+        // a devnet/testnet QA tool that can run for tens of minutes, and the
+        // Rust seed loop does not watch for shutdown: admitting it would hold
+        // `shutdown()` and reject every synchronous manager call for the whole
+        // run. Making the long loop cancellable is tracked separately.
         let handle = self.handle
 
         try await Task.detached(priority: .userInitiated) {

@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **32**
+Capabilities tracked: **33**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 19 | 11 | 1 | 1 |
-| Swift | Example app | 5 | 14 | 4 | 9 |
-| Kotlin | SDK | 14 | 14 | 3 | 1 |
-| Kotlin | Example app | 6 | 13 | 3 | 10 |
+| Swift | SDK | 20 | 11 | 1 | 1 |
+| Swift | Example app | 5 | 14 | 5 | 9 |
+| Kotlin | SDK | 14 | 14 | 4 | 1 |
+| Kotlin | Example app | 6 | 13 | 4 | 10 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 10 | 20 |
-| Kotlin | 5 | 8 | 19 |
+| Swift | 2 | 10 | 21 |
+| Kotlin | 5 | 8 | 20 |
 
 ## Capability status
 
@@ -54,6 +54,7 @@ Capabilities tracked: **32**
 | `persistence.pending_identity_key_repair` | unsupported / unsupported / not_applicable | supported / not-applicable / tested |
 | `errors.signing_key_unavailable_discriminator` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
 | `shielded.core_wallet_drain` | supported / unsupported / tested | unsupported / unsupported / not_applicable |
+| `shielded.spend_plan` | supported / unsupported / not_applicable | unsupported / unsupported / not_applicable |
 | `network.adaptive_quorum_source` | supported / supported / tested | supported / supported / tested |
 | `shielded.shield_from_identity_to_recipient` | supported / unsupported / not_applicable | unsupported / unsupported / not_applicable |
 

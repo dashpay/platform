@@ -1085,6 +1085,44 @@ pub enum PlatformWalletError {
     #[error("Insufficient shielded balance: available {available}, required {required}")]
     ShieldedInsufficientBalance { available: u64, required: u64 },
 
+    /// A spend run against a `ShieldedSpendPlan` selected different notes, or a
+    /// different fee, than the plan: the wallet's notes changed since it was made (a sync
+    /// added or spent one, or another spend reserved one), or the spend is priced at another
+    /// protocol version than the plan. Nothing is built or broadcast and no note stays
+    /// reserved; plan again and confirm the new fee. A `fresh_note_count` of 0 means the notes
+    /// no longer make any selection for the spend (spent, too few, or too many for one
+    /// transition), so there is no fresh fee to quote.
+    #[error("{}", describe_plan_change(*.fresh_fee, *.fresh_note_count))]
+    ShieldedPlanChanged {
+        fresh_fee: u64,
+        fresh_note_count: usize,
+    },
+
+    /// The notes cover the spend only with more notes than one shielded transition can spend
+    /// (`max_shielded_actions_per_transition`). Refused before any note was reserved or anything
+    /// built; a smaller amount, or merging notes first, fits.
+    #[error("Shielded spend needs {needed} notes, more than the {max} one transition can spend")]
+    ShieldedSpendTooManyNotes { needed: usize, max: usize },
+
+    /// A shielded withdrawal's amount (the reserve for Core) is below the protocol minimum for
+    /// its Core fee rate or above the maximum. Refused before any note was reserved or anything
+    /// built; consensus would reject it after the proof.
+    #[error("Shielded withdrawal amount {amount} is outside the allowed range {min} to {max}")]
+    ShieldedWithdrawalAmountOutOfRange { amount: u64, min: u64, max: u64 },
+
+    /// The network runs a protocol version this SDK has no tables for, so an operation priced
+    /// or built at it (a shielded transfer, unshield, withdrawal or identity top-up from the
+    /// pool, or its plan; not a private document create) cannot be. Nothing is built or
+    /// broadcast and no note stays reserved: a version verified before the spend refuses it
+    /// before any note is reserved or the network asked, and one the spend learns from its
+    /// anchor fetch releases its notes. A retry does not lift it: only an SDK that knows the
+    /// version does, so a host asks the user to update the app.
+    #[error(
+        "The network runs protocol version {network}, which this SDK does not support \
+         (it supports up to {latest_supported}); update the app"
+    )]
+    NetworkProtocolVersionUnsupported { network: u32, latest_supported: u32 },
+
     /// A Platform Payment-account shield cannot be represented from the
     /// wallet's deterministic address-input set at the requested amount.
     /// Distinct from [`ShieldedInsufficientBalance`](Self::ShieldedInsufficientBalance),
@@ -1362,6 +1400,21 @@ impl PlatformWalletError {
             }
             _ => ContextProviderError::Generic(self.to_string()),
         }
+    }
+}
+
+/// [`PlatformWalletError::ShieldedPlanChanged`]'s message: the fresh selection when there is
+/// one, never a quote of 0 notes for a fee of 0.
+fn describe_plan_change(fresh_fee: u64, fresh_note_count: usize) -> String {
+    if fresh_note_count == 0 {
+        "Shielded spend plan changed: the planned notes no longer cover the spend in one \
+         transition; plan the spend again"
+            .to_string()
+    } else {
+        format!(
+            "Shielded spend plan changed: the notes now select {fresh_note_count} notes for a \
+             fee of {fresh_fee}; plan the spend again"
+        )
     }
 }
 
