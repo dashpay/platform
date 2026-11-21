@@ -148,6 +148,9 @@ impl IdentityWallet {
     ///
     /// Returns the remaining credit balance after the withdrawal, with the
     /// block that proved it.
+    // TODO: test that `proved_at` is the wait response's metadata. The rs-sdk
+    // mock cannot be given a WaitForStateTransitionResult proof expectation
+    // from outside rs-sdk, and without one it verifies a real proof.
     #[allow(clippy::too_many_arguments)]
     pub async fn withdraw_credits_with_signer<S: Signer<IdentityPublicKey> + Send>(
         &self,
