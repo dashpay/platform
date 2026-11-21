@@ -58,7 +58,11 @@ impl PlatformServiceImpl {
         validate_state_transition_hash(&state_transition_hash)?;
         // The state before the transition's block is asked for explicitly: with it, the
         // response's proof can be of an older block than the node's latest
-        let prove_state_before_block = v0.prove && v0.prove_state_before_block;
+        let options = WaitOptions {
+            prove: v0.prove,
+            request_user_balance: v0.request_user_balance,
+            prove_state_before_block: v0.prove && v0.prove_state_before_block,
+        };
 
         let _wait_permit = self
             .state_transition_wait_permits
@@ -104,9 +108,7 @@ impl PlatformServiceImpl {
                     return self
                         .build_response_from_existing_tx(
                             tx,
-                            v0.prove,
-                            v0.request_user_balance,
-                            prove_state_before_block,
+                            options,
                         )
                         .await;
                 }
@@ -125,11 +127,9 @@ impl PlatformServiceImpl {
             // its block: that proof can only be made before the block is committed. The
             // registration lasts as long as this wait: dropping it, whichever way the wait
             // ends, a client hanging up included, releases it.
-            let _execution_proof_registration = if prove_state_before_block {
-                Some(
-                    self.register_state_transition_execution_proof(&state_transition_hash)
-                        .await,
-                )
+            let _execution_proof_registration = if options.prove_state_before_block {
+                self.register_state_transition_execution_proof(&state_transition_hash, deadline)
+                    .await
             } else {
                 None
             };
@@ -149,9 +149,8 @@ impl PlatformServiceImpl {
                             return self
                                 .build_response_from_event(
                                     event,
-                                    v0.prove,
-                                    v0.request_user_balance,
-                                    prove_state_before_block,
+                                    options,
+                                    deadline,
                                 )
                                 .await;
                         }
@@ -190,9 +189,7 @@ impl PlatformServiceImpl {
     async fn build_response_from_existing_tx(
         &self,
         tx_response: crate::clients::tenderdash_client::TxResponse,
-        prove: bool,
-        request_user_balance: bool,
-        prove_state_before_block: bool,
+        options: WaitOptions,
     ) -> Result<Response<WaitForStateTransitionResultResponse>, DapiError> {
         let mut response_v0 =
             wait_for_state_transition_result_response::WaitForStateTransitionResultResponseV0 {
@@ -232,10 +229,10 @@ impl PlatformServiceImpl {
             self.fill_success_result(
                 &mut response_v0,
                 tx_data,
-                prove,
-                request_user_balance,
-                prove_state_before_block,
+                options,
                 u64::try_from(tx_response.height).unwrap_or(0),
+                // Nothing waited for the transition, so the answer has no deadline of its own
+                None,
             )
             .await;
         }
@@ -253,9 +250,8 @@ impl PlatformServiceImpl {
     async fn build_response_from_event(
         &self,
         transaction_event: crate::clients::TransactionEvent,
-        prove: bool,
-        request_user_balance: bool,
-        prove_state_before_block: bool,
+        options: WaitOptions,
+        deadline: Instant,
     ) -> Result<Response<WaitForStateTransitionResultResponse>, DapiError> {
         // Check transaction result
         match transaction_event.result {
@@ -272,10 +268,9 @@ impl PlatformServiceImpl {
                     self.fill_success_result(
                         &mut response_v0,
                         tx_bytes,
-                        prove,
-                        request_user_balance,
-                        prove_state_before_block,
+                        options,
                         transaction_event.height,
+                        Some(deadline),
                     )
                     .await;
                 }
@@ -321,18 +316,20 @@ impl PlatformServiceImpl {
         &self,
         response_v0: &mut wait_for_state_transition_result_response::WaitForStateTransitionResultResponseV0,
         tx_bytes: Vec<u8>,
-        prove: bool,
-        request_user_balance: bool,
-        prove_state_before_block: bool,
+        options: WaitOptions,
         executed_at_height: u64,
+        deadline: Option<Instant>,
     ) {
-        if prove {
+        if options.prove {
             // The proofs Drive made around the transition's block, when the client asked for
             // them and the transition was registered with Drive in time. Without them the proof
             // is of the state Drive holds now, as before.
-            if prove_state_before_block
+            // The lookup may take at most half of what is left of the wait, so the proof of
+            // current state below still has time when Drive does not answer it
+            if options.prove_state_before_block
+                && let Some(budget) = execution_proof_call_budget(deadline, 2)
                 && let Some((before, after)) = self
-                    .fetch_state_transition_execution_proof(&tx_bytes, executed_at_height)
+                    .fetch_state_transition_execution_proof(&tx_bytes, executed_at_height, budget)
                     .await
             {
                 response_v0.result = Some(
@@ -357,7 +354,7 @@ impl PlatformServiceImpl {
                     // Continue without proof
                 }
             }
-        } else if request_user_balance
+        } else if options.request_user_balance
             && let Some(owner_id) = transition_owner_id(&tx_bytes)
             && let Some((owner_balance, metadata)) =
                 self.fetch_identity_balance_unproved(owner_id).await
@@ -432,13 +429,16 @@ impl PlatformServiceImpl {
     /// transition with this hash, until the returned registration is dropped.
     ///
     /// The registration's lease is picked and armed before the call, so a wait cancelled while
-    /// the call is on its way still releases it. The call has [`EXECUTION_PROOF_CALL_TIMEOUT`]
-    /// at most. Best effort: when Drive refuses or does not answer in time, the wait answers
-    /// with a proof of the state Drive holds when the transition is found.
+    /// the call is on its way still releases it. The call may take a quarter of the time left
+    /// before `deadline`, and at most [`EXECUTION_PROOF_CALL_TIMEOUT`]; with too little time
+    /// left there is no registration. Best effort: when Drive refuses or does not answer in
+    /// time, the wait answers with a proof of the state Drive holds when the transition is found.
     async fn register_state_transition_execution_proof(
         &self,
         state_transition_hash: &[u8],
-    ) -> ExecutionProofRegistration {
+        deadline: Instant,
+    ) -> Option<ExecutionProofRegistration> {
+        let budget = execution_proof_call_budget(Some(deadline), 4)?;
         let mut registration = ExecutionProofRegistration {
             client: self.drive_client.get_internal_client(),
             state_transition_hash: state_transition_hash.to_vec(),
@@ -452,7 +452,7 @@ impl PlatformServiceImpl {
         let mut client = registration.client.clone();
 
         match timeout(
-            EXECUTION_PROOF_CALL_TIMEOUT,
+            budget,
             client.register_state_transition_execution_proof(request),
         )
         .await
@@ -476,7 +476,7 @@ impl PlatformServiceImpl {
             }
         }
 
-        registration
+        Some(registration)
     }
 
     /// The proofs Drive made of the state before and after the block that executed the state
@@ -486,28 +486,25 @@ impl PlatformServiceImpl {
         &self,
         tx_bytes: &[u8],
         executed_at_height: u64,
+        budget: Duration,
     ) -> Option<((Proof, ResponseMetadata), (Proof, ResponseMetadata))> {
         let request = GetStateTransitionExecutionProofRequest {
             state_transition_hash: hash_single(tx_bytes).to_vec(),
         };
 
         let mut client = self.drive_client.get_internal_client();
-        let response = match timeout(
-            EXECUTION_PROOF_CALL_TIMEOUT,
-            client.get_state_transition_execution_proof(request),
-        )
-        .await
-        {
-            Ok(Ok(response)) => response.into_inner(),
-            Ok(Err(status)) => {
-                debug!(%status, "Failed to fetch the execution proof from Drive");
-                return None;
-            }
-            Err(_) => {
-                debug!("Drive did not answer the execution proof lookup in time");
-                return None;
-            }
-        };
+        let response =
+            match timeout(budget, client.get_state_transition_execution_proof(request)).await {
+                Ok(Ok(response)) => response.into_inner(),
+                Ok(Err(status)) => {
+                    debug!(%status, "Failed to fetch the execution proof from Drive");
+                    return None;
+                }
+                Err(_) => {
+                    debug!("Drive did not answer the execution proof lookup in time");
+                    return None;
+                }
+            };
 
         execution_proof_around_block(response, executed_at_height)
     }
@@ -549,10 +546,36 @@ impl PlatformServiceImpl {
     }
 }
 
+/// What a wait asked for.
+#[derive(Clone, Copy, Debug)]
+struct WaitOptions {
+    /// A proof of the transition's keys.
+    prove: bool,
+    /// Without a proof, the owner's balance.
+    request_user_balance: bool,
+    /// With a proof, the state before the transition's block too.
+    prove_state_before_block: bool,
+}
+
 /// How long each optional call to Drive for an execution proof may take: the registration
 /// before the wait, and the lookup of the pair once the transition is found. Past it the wait
 /// goes on as it does without them, with the rest of its own deadline.
 const EXECUTION_PROOF_CALL_TIMEOUT: Duration = Duration::from_secs(1);
+
+/// The least time worth giving an optional call to Drive; with less left it is not made.
+const MIN_EXECUTION_PROOF_CALL_BUDGET: Duration = Duration::from_millis(10);
+
+/// How long an optional call to Drive for an execution proof may take: `1 / share` of the time
+/// left before `deadline`, so the rest of the wait keeps the remainder, and at most
+/// [`EXECUTION_PROOF_CALL_TIMEOUT`]. `None` when too little time is left to make it.
+fn execution_proof_call_budget(deadline: Option<Instant>, share: u32) -> Option<Duration> {
+    let budget = match deadline {
+        Some(deadline) => (deadline.saturating_duration_since(Instant::now()) / share)
+            .min(EXECUTION_PROOF_CALL_TIMEOUT),
+        None => EXECUTION_PROOF_CALL_TIMEOUT,
+    };
+    (budget >= MIN_EXECUTION_PROOF_CALL_BUDGET).then_some(budget)
+}
 
 /// A lease no other registration has: a random half drawn once per process, and a count.
 fn new_registration_lease() -> [u8; 16] {
@@ -689,7 +712,7 @@ pub(super) fn build_wait_for_state_transition_error_response(
 mod tests {
     mod drive_calls {
         use super::super::{
-            EXECUTION_PROOF_CALL_TIMEOUT, ExecutionProofRegistration, StateBeforeBlock,
+            EXECUTION_PROOF_CALL_TIMEOUT, ExecutionProofRegistration, StateBeforeBlock, WaitOptions,
         };
         use crate::clients::drive_client::{DriveChannel, DriveClient};
         use crate::services::platform_service::PlatformServiceImpl;
@@ -711,8 +734,9 @@ mod tests {
         use dpp::util::hash::hash_single;
         use std::future::pending;
         use std::sync::{Arc, Mutex};
-        use std::time::{Duration, Instant};
+        use std::time::Duration;
         use tokio::task::JoinHandle;
+        use tokio::time::Instant;
         use tokio_stream::StreamExt;
         use tower::ServiceBuilder;
         use tower_http::trace::TraceLayer;
@@ -916,6 +940,22 @@ mod tests {
                 prove_state_before_block: bool,
                 executed_at_height: u64,
             ) -> WaitForStateTransitionResultResponseV0 {
+                self.fill_success_result_before(
+                    tx,
+                    prove_state_before_block,
+                    executed_at_height,
+                    Some(far_deadline()),
+                )
+                .await
+            }
+
+            async fn fill_success_result_before(
+                &self,
+                tx: &[u8],
+                prove_state_before_block: bool,
+                executed_at_height: u64,
+                deadline: Option<Instant>,
+            ) -> WaitForStateTransitionResultResponseV0 {
                 let mut response_v0 = WaitForStateTransitionResultResponseV0 {
                     result: None,
                     metadata: None,
@@ -925,10 +965,13 @@ mod tests {
                     .fill_success_result(
                         &mut response_v0,
                         tx.to_vec(),
-                        true,
-                        false,
-                        prove_state_before_block,
+                        WaitOptions {
+                            prove: true,
+                            request_user_balance: false,
+                            prove_state_before_block,
+                        },
                         executed_at_height,
+                        deadline,
                     )
                     .await;
                 response_v0
@@ -940,6 +983,11 @@ mod tests {
                 before: Some(state_at(before)),
                 after: Some(state_at(after)),
             }
+        }
+
+        /// A deadline far enough that every optional call gets its whole budget.
+        fn far_deadline() -> Instant {
+            Instant::now() + Duration::from_secs(30)
         }
 
         /// The lease a recorded registration was taken with.
@@ -956,8 +1004,9 @@ mod tests {
 
             let registration: ExecutionProofRegistration = fixture
                 .service
-                .register_state_transition_execution_proof(&[7; 32])
-                .await;
+                .register_state_transition_execution_proof(&[7; 32], far_deadline())
+                .await
+                .expect("expected time to register");
             let lease = registered_lease(&fixture.calls()[0]);
             assert_eq!(lease.len(), 16);
 
@@ -979,12 +1028,14 @@ mod tests {
 
             let first = fixture
                 .service
-                .register_state_transition_execution_proof(&[7; 32])
-                .await;
+                .register_state_transition_execution_proof(&[7; 32], far_deadline())
+                .await
+                .expect("expected time to register");
             let second = fixture
                 .service
-                .register_state_transition_execution_proof(&[7; 32])
-                .await;
+                .register_state_transition_execution_proof(&[7; 32], far_deadline())
+                .await
+                .expect("expected time to register");
 
             let calls = fixture.calls();
             assert_ne!(registered_lease(&calls[0]), registered_lease(&calls[1]));
@@ -999,8 +1050,9 @@ mod tests {
             // Drive has taken the registration and not answered yet when the wait ends
             let wait = async {
                 let _registration = service
-                    .register_state_transition_execution_proof(&[8; 32])
-                    .await;
+                    .register_state_transition_execution_proof(&[8; 32], far_deadline())
+                    .await
+                    .expect("expected time to register");
                 pending::<()>().await;
             };
             let _ = tokio::time::timeout(Duration::from_millis(100), wait).await;
@@ -1017,8 +1069,9 @@ mod tests {
 
             let registration = fixture
                 .service
-                .register_state_transition_execution_proof(&[9; 32])
-                .await;
+                .register_state_transition_execution_proof(&[9; 32], far_deadline())
+                .await
+                .expect("expected time to register");
             drop(registration);
             tokio::time::sleep(Duration::from_millis(50)).await;
 
@@ -1032,8 +1085,9 @@ mod tests {
             let started = Instant::now();
             let registration = fixture
                 .service
-                .register_state_transition_execution_proof(&[10; 32])
-                .await;
+                .register_state_transition_execution_proof(&[10; 32], far_deadline())
+                .await
+                .expect("expected time to register");
 
             assert!(started.elapsed() < EXECUTION_PROOF_CALL_TIMEOUT + Duration::from_millis(500));
             // Drive may hold it, so it is released all the same
@@ -1125,6 +1179,57 @@ mod tests {
                 Some(WaitResult::Proof(proof_of(CURRENT_HEIGHT)))
             );
             assert_eq!(response.state_before_block, None);
+        }
+
+        #[tokio::test]
+        async fn should_keep_time_for_the_proof_of_current_state_when_the_pair_lookup_stalls() {
+            let fixture = Fixture::serving(RecordingDrive {
+                calls: Default::default(),
+                registration: Registration::Take,
+                execution_proof: pair(9, 10),
+                stall_execution_proof: true,
+            });
+            let tx = b"a transition";
+
+            // Less time is left of the wait than the lookup's own limit: the event arrived late
+            let deadline = Instant::now() + Duration::from_millis(800);
+            let response = tokio::time::timeout_at(
+                deadline,
+                fixture.fill_success_result_before(tx, true, 10, Some(deadline)),
+            )
+            .await
+            .expect("expected an answer before the wait's deadline");
+
+            assert_eq!(
+                response.result,
+                Some(WaitResult::Proof(proof_of(CURRENT_HEIGHT)))
+            );
+            assert_eq!(response.state_before_block, None);
+        }
+
+        #[tokio::test]
+        async fn should_give_a_registration_only_part_of_what_is_left_of_the_wait() {
+            let fixture = Fixture::new(Registration::Stall);
+
+            let deadline = Instant::now() + Duration::from_millis(400);
+            let started = Instant::now();
+            let registration = fixture
+                .service
+                .register_state_transition_execution_proof(&[11; 32], deadline)
+                .await;
+
+            // A quarter of the 400 ms left, not the whole second
+            assert!(started.elapsed() < Duration::from_millis(250));
+            assert!(registration.is_some());
+
+            // With no time left there is nothing to register
+            assert!(
+                fixture
+                    .service
+                    .register_state_transition_execution_proof(&[12; 32], Instant::now())
+                    .await
+                    .is_none()
+            );
         }
     }
 

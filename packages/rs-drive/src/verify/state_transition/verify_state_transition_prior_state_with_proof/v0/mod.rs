@@ -1,6 +1,7 @@
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
+use crate::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
 use crate::verify::RootHash;
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
@@ -28,6 +29,12 @@ impl Drive {
         proof: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<Option<(RootHash, StateTransitionProofResult)>, Error> {
+        if !Self::state_transition_prior_state_is_readable_v0(state_transition) {
+            return Ok(None);
+        }
+        // A quorum signature on the root does not make a V0 envelope's item values trustworthy
+        require_supported_grovedb_proof_envelope(proof, "prior state proof")?;
+
         let partial_identity = |id, balance, revision| PartialIdentity {
             id,
             loaded_public_keys: Default::default(),
@@ -115,6 +122,7 @@ mod tests {
     use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
     use dpp::platform_value::BinaryData;
     use dpp::state_transition::data_contract_update_transition::{
         DataContractUpdateTransition, DataContractUpdateTransitionV0,
@@ -241,5 +249,145 @@ mod tests {
         };
         assert_eq!(sender_state.balance, Some(sender.balance()));
         assert_eq!(recipient_state.balance, None);
+    }
+
+    fn drive_with(identities: &[&Identity]) -> Drive {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        for identity in identities {
+            drive
+                .add_new_identity(
+                    (*identity).clone(),
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+        }
+        drive
+    }
+
+    /// Proves `state_transition` in `drive` and reads the proof through the public reader.
+    fn read_prior_state(
+        drive: &Drive,
+        state_transition: &StateTransition,
+    ) -> (RootHash, StateTransitionProofResult) {
+        let platform_version = PlatformVersion::latest();
+        let proof = drive
+            .prove_state_transition(state_transition, None, platform_version)
+            .unwrap()
+            .into_data()
+            .unwrap();
+        let read = Drive::verify_state_transition_prior_state_with_proof(
+            state_transition,
+            &proof,
+            platform_version,
+        )
+        .expect("expected the proof to verify")
+        .expect("expected the kind to be read");
+        assert_eq!(
+            read.0,
+            drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .unwrap()
+        );
+        read
+    }
+
+    fn top_up_of(identity: &Identity) -> StateTransition {
+        IdentityTopUpTransition::V0(IdentityTopUpTransitionV0 {
+            identity_id: identity.id(),
+            ..Default::default()
+        })
+        .into()
+    }
+
+    #[test]
+    fn should_read_the_balance_and_revision_before_a_top_up() {
+        let identity = Identity::random_identity(3, Some(3), PlatformVersion::latest()).unwrap();
+        let drive = drive_with(&[&identity]);
+
+        let (_, state) = read_prior_state(&drive, &top_up_of(&identity));
+
+        let StateTransitionProofResult::VerifiedPartialIdentity(read) = state else {
+            panic!("expected the identity's balance and revision");
+        };
+        assert_eq!(read.id, identity.id());
+        assert_eq!(read.balance, Some(identity.balance()));
+        assert_eq!(read.revision, Some(identity.revision()));
+    }
+
+    #[test]
+    fn should_read_a_top_up_of_an_identity_that_does_not_exist_yet_as_absent() {
+        let identity = Identity::random_identity(3, Some(4), PlatformVersion::latest()).unwrap();
+        // Another identity exists, so the identities tree is not empty
+        let other = Identity::random_identity(3, Some(5), PlatformVersion::latest()).unwrap();
+        let drive = drive_with(&[&other]);
+
+        let (_, state) = read_prior_state(&drive, &top_up_of(&identity));
+
+        let StateTransitionProofResult::VerifiedPartialIdentity(read) = state else {
+            panic!("expected the identity's balance and revision");
+        };
+        assert_eq!(read.id, identity.id());
+        assert_eq!(read.balance, None);
+        assert_eq!(read.revision, None);
+    }
+
+    #[test]
+    fn should_read_the_balance_before_a_credit_withdrawal() {
+        let identity = Identity::random_identity(3, Some(6), PlatformVersion::latest()).unwrap();
+        let drive = drive_with(&[&identity]);
+        let withdrawal: StateTransition =
+            IdentityCreditWithdrawalTransition::V1(IdentityCreditWithdrawalTransitionV1 {
+                identity_id: identity.id(),
+                ..Default::default()
+            })
+            .into();
+
+        let (_, state) = read_prior_state(&drive, &withdrawal);
+
+        let StateTransitionProofResult::VerifiedPartialIdentity(read) = state else {
+            panic!("expected the identity's balance");
+        };
+        assert_eq!(read.id, identity.id());
+        assert_eq!(read.balance, Some(identity.balance()));
+        assert_eq!(read.revision, None);
+    }
+
+    #[test]
+    fn should_refuse_a_v0_proof_envelope_for_a_kind_it_reads_and_ignore_it_for_others() {
+        let platform_version = PlatformVersion::latest();
+        let v0_envelope = bincode::encode_to_vec(0u32, PLATFORM_BINCODE_CONFIG).unwrap();
+        let transfer: StateTransition =
+            IdentityCreditTransferTransition::V0(IdentityCreditTransferTransitionV0::default())
+                .into();
+
+        let error = Drive::verify_state_transition_prior_state_with_proof(
+            &transfer,
+            &v0_envelope,
+            platform_version,
+        )
+        .expect_err("a V0 envelope must be refused");
+        assert!(
+            matches!(
+                error,
+                Error::Proof(ProofError::UnsupportedGroveDBProofEnvelopeVersion { version: 0, .. })
+            ),
+            "{error}"
+        );
+
+        // A kind that is not read is answered without decoding the proof at all
+        assert!(Drive::verify_state_transition_prior_state_with_proof(
+            &contract_update(),
+            &v0_envelope,
+            platform_version,
+        )
+        .expect("expected no error")
+        .is_none());
     }
 }

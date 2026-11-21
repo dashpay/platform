@@ -41,7 +41,8 @@ pub struct StateBeforeBlock {
     /// yet is `None`.
     pub state: StateTransitionProofResult,
     /// The block the state is of: the one right before the block the response's own proof is
-    /// of, on the same chain.
+    /// of, on the same chain. The quorum signature covers its height, time, protocol version,
+    /// Core chain locked height and chain id; `epoch` is what the node reports, not signed.
     pub metadata: ResponseMetadata,
     /// The proof the state was verified with.
     pub proof: Proof,
@@ -69,7 +70,9 @@ pub struct StateTransitionResultAroundBlock {
     /// [`StateTransitionProofOutcome`].
     pub outcome: StateTransitionProofOutcome,
     /// The block the response's own proof is of. When `state_before_block` is present, it is the
-    /// block the node reports executed the transition.
+    /// block the node reports executed the transition. The quorum signature covers its height,
+    /// time, protocol version, Core chain locked height and chain id; `epoch` is what the node
+    /// reports, not signed.
     pub metadata: ResponseMetadata,
     /// The state before that block.
     pub state_before_block: StateBeforeBlockVerification,
@@ -97,11 +100,12 @@ where
     O: Into<WaitForStateTransitionResultResponse>,
 {
     let request: BroadcastStateTransitionRequest = request.into();
-    let response: WaitForStateTransitionResultResponse = response.into();
+    let mut response: WaitForStateTransitionResultResponse = response.into();
 
-    // What can be refused without verifying a proof is refused first
-    let before = match &response.version {
-        Some(Version::V0(v0)) => v0.state_before_block.clone(),
+    // What can be refused without verifying a proof is refused first. The response's own proof
+    // is verified without the state before the block, so it is taken out rather than copied.
+    let before = match &mut response.version {
+        Some(Version::V0(v0)) => v0.state_before_block.take(),
         None => return Err(Error::EmptyVersion),
     };
     let before = match before {
