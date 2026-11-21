@@ -793,6 +793,7 @@ mod tests {
         use dapi_grpc::tonic::transport::Server;
         use dapi_grpc::tonic::{Code, Request, Response, Status};
         use super::event_wait::{LOOKUP_TIME, LookupTenderdash};
+        use crate::error::DapiError;
         use serde_json::json;
         use dapi_grpc::platform::v0::WaitForStateTransitionResultRequest;
         use dapi_grpc::platform::v0::wait_for_state_transition_result_request::{
@@ -1429,13 +1430,20 @@ mod tests {
                 .await;
 
             // The wait ends at its own timeout after the miss, not that plus the registration's
-            // limit, a quarter of the wait
-            assert!(answer.is_err());
+            // limit, a quarter of the wait, nor earlier when that limit runs out
+            let elapsed = started.elapsed();
             assert!(
-                started.elapsed() < wait_timeout + wait_timeout / 8,
-                "{:?}",
-                started.elapsed()
+                matches!(answer, Err(DapiError::Timeout(_))),
+                "expected the event timeout, got {answer:?}"
             );
+            assert!(
+                elapsed >= wait_timeout && elapsed < wait_timeout + wait_timeout / 8,
+                "{elapsed:?}"
+            );
+            assert!(matches!(
+                fixture.calls().first(),
+                Some(Call::Register(hash, _)) if hash.as_slice() == [16; 32].as_slice()
+            ));
         }
 
         #[tokio::test]
