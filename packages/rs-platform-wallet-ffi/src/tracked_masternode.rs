@@ -328,12 +328,12 @@ pub unsafe extern "C" fn platform_wallet_manager_tracked_masternode_withdraw(
         }
     };
 
-    let new_balance = unwrap_result_or_return!(block_on_worker(async move {
+    let outcome = unwrap_result_or_return!(block_on_worker(async move {
         service
             .withdraw(&target, amount_credits, role, &secret, destination)
             .await
     }));
-    *out_new_balance = new_balance;
+    *out_new_balance = outcome.remaining_credits;
     PlatformWalletFFIResult::ok()
 }
 

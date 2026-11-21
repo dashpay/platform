@@ -51,6 +51,7 @@ use super::record::{
 use crate::changeset::{PersistenceCapabilities, PlatformWalletPersistence};
 use crate::error::PlatformWalletError;
 use crate::manager::PlatformWalletManager;
+use crate::wallet::identity::WithdrawalOutcome;
 use crate::wallet::masternode_withdrawal::{
     execute_masternode_withdrawal, MasternodeWithdrawalKey, RawSecretCoreSigner,
 };
@@ -1031,7 +1032,7 @@ impl TrackedMasternodes {
     /// payout-address key (`role == OwnerPayout`; destination optional,
     /// defaults to the payout address itself). The key is used for this
     /// call only — nothing is retained. Returns the identity's new
-    /// balance in credits.
+    /// balance in credits with the block that proved it.
     pub async fn withdraw(
         &self,
         pro_tx_hash: &[u8; 32],
@@ -1039,7 +1040,7 @@ impl TrackedMasternodes {
         role: MasternodeKeyRole,
         secret: &[u8; 32],
         destination: Option<String>,
-    ) -> Result<u64, PlatformWalletError> {
+    ) -> Result<WithdrawalOutcome, PlatformWalletError> {
         let tracked = self
             .get(pro_tx_hash)
             .ok_or_else(|| not_tracked(pro_tx_hash))?;
