@@ -3,11 +3,19 @@
 use crate::platform_address_sync::{
     PlatformAddressSyncMetricsFFI, PlatformAddressSyncWalletResultFFI,
 };
-use crate::shielded_types::ShieldedSyncWalletResultFFI;
+#[cfg(feature = "shielded")]
+use crate::shielded_types::{
+    ShieldedBalanceAccountFFI, ShieldedBalanceSourceFFI, ShieldedLocalBalanceStatusFFI,
+};
+use crate::shielded_types::{ShieldedBalanceUpdateFFI, ShieldedSyncWalletResultFFI};
 use platform_wallet::events::{EventHandler, PlatformEventHandler, WalletEvent};
 use platform_wallet::manager::dpns_sync::{DpnsSyncPassSummary, WalletDpnsSyncOutcome};
 #[cfg(feature = "shielded")]
 use platform_wallet::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
+#[cfg(feature = "shielded")]
+use platform_wallet::wallet::shielded::{
+    ShieldedBalanceSource, ShieldedBalanceUpdate, ShieldedLocalBalanceState,
+};
 use platform_wallet::{PlatformAddressSyncSummary, WalletSyncOutcome};
 use std::os::raw::{c_char, c_void};
 
@@ -49,6 +57,9 @@ pub type DpnsMarketplaceSyncCompletedFn = unsafe extern "C" fn(
     sync_unix_seconds: u64,
 );
 
+pub type ShieldedBalanceChangedFn =
+    unsafe extern "C" fn(context: *mut c_void, update: *const ShieldedBalanceUpdateFFI);
+
 /// Size/version-tagged event extension. It shares the legacy event
 /// vtable's context and destructor; only callback pointers are copied.
 /// This avoids growing [`EventHandlerCallbacks`] and over-reading callers
@@ -70,6 +81,28 @@ pub struct EventHandlerCallbacksExtension {
             sync_unix_seconds: u64,
         ),
     >,
+    /// Called whenever a wallet's local shielded balance state changes (only
+    /// emitted when the `shielded` feature is enabled in the FFI build):
+    /// what `platform_wallet_manager_local_shielded_balance_snapshot` would
+    /// return for the wallet now differs from the state last delivered for
+    /// it, or the wallet is seen for the first time. It carries the latest
+    /// state read, not every transition. `update` is valid only for the
+    /// duration of the call; copy what you keep. A wallet's updates arrive in
+    /// strictly increasing `revision` order. No replay: the slot is copied
+    /// when the manager is created, so it receives every change from the
+    /// first one on.
+    ///
+    /// `platform_wallet_manager_destroy` stops the emitter that calls this
+    /// and waits for it within a bounded budget; when the budget runs out it
+    /// returns while a delivery already in progress may still be finishing.
+    /// The host context must therefore stay valid until `release_fn` runs,
+    /// which happens only after that delivery has returned: the emitter holds
+    /// the event handler, and with it the context, until it ends.
+    ///
+    /// Read only when `struct_size` covers it, so an extension built before
+    /// the slot existed keeps its earlier callbacks.
+    pub on_shielded_balance_changed_fn:
+        Option<unsafe extern "C" fn(context: *mut c_void, update: *const ShieldedBalanceUpdateFFI)>,
 }
 
 impl Default for EventHandlerCallbacksExtension {
@@ -79,8 +112,21 @@ impl Default for EventHandlerCallbacksExtension {
             version: PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION,
             reserved: 0,
             on_dpns_marketplace_sync_completed_fn: None,
+            on_shielded_balance_changed_fn: None,
         }
     }
+}
+
+/// The callbacks negotiated out of an [`EventHandlerCallbacksExtension`]:
+/// each slot the host's `struct_size` and `version` prove it supplied, `None`
+/// otherwise. They share the legacy vtable's context.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct EventExtensionCallbacks {
+    pub(crate) dpns_marketplace_sync_completed: Option<DpnsMarketplaceSyncCompletedFn>,
+    /// Negotiated in every build so the extension layout does not depend on
+    /// features; only a `shielded` build has a balance update to deliver.
+    #[cfg_attr(not(feature = "shielded"), allow(dead_code))]
+    pub(crate) shielded_balance_changed: Option<ShieldedBalanceChangedFn>,
 }
 
 /// C callback vtable for event handling.
@@ -188,17 +234,17 @@ unsafe impl Sync for EventHandlerCallbacks {}
 /// Wrapper that implements `PlatformEventHandler` via FFI callbacks.
 pub(crate) struct FFIEventHandler {
     callbacks: EventHandlerCallbacks,
-    dpns_sync_callback: Option<DpnsMarketplaceSyncCompletedFn>,
+    extension: EventExtensionCallbacks,
 }
 
 impl FFIEventHandler {
-    pub fn new(
+    pub(crate) fn new(
         callbacks: EventHandlerCallbacks,
-        dpns_sync_callback: Option<DpnsMarketplaceSyncCompletedFn>,
+        extension: EventExtensionCallbacks,
     ) -> Self {
         Self {
             callbacks,
-            dpns_sync_callback,
+            extension,
         }
     }
 }
@@ -251,7 +297,7 @@ impl EventHandler for FFIEventHandler {
 
 impl PlatformEventHandler for FFIEventHandler {
     fn on_dpns_marketplace_sync_completed(&self, summary: &DpnsSyncPassSummary) {
-        let Some(callback) = self.dpns_sync_callback else {
+        let Some(callback) = self.extension.dpns_marketplace_sync_completed else {
             return;
         };
         if summary.wallet_results.is_empty() {
@@ -449,6 +495,69 @@ impl PlatformEventHandler for FFIEventHandler {
             cb(self.callbacks.context, leaves_committed, total_target);
         }
     }
+
+    #[cfg(feature = "shielded")]
+    fn on_shielded_balance_changed(&self, update: &ShieldedBalanceUpdate) {
+        let Some(cb) = self.extension.shielded_balance_changed else {
+            return;
+        };
+        let mut ffi = ShieldedBalanceUpdateFFI {
+            wallet_id: update.wallet_id,
+            revision: update.revision,
+            ..ShieldedBalanceUpdateFFI::default()
+        };
+        // Owns the account rows `ffi.accounts` borrows for the call.
+        let mut accounts: Vec<ShieldedBalanceAccountFFI> = Vec::new();
+        match &update.state {
+            ShieldedLocalBalanceState::Unbound => {}
+            ShieldedLocalBalanceState::RestoreIncomplete => {
+                ffi.status = ShieldedLocalBalanceStatusFFI::RestoreIncomplete;
+            }
+            ShieldedLocalBalanceState::Ready(snapshot) => {
+                ffi.status = ShieldedLocalBalanceStatusFFI::Ready;
+                match snapshot.ordinary_balance() {
+                    Ok(balance) => {
+                        ffi.ordinary_spendable_credits = balance.spendable_credits;
+                        ffi.ordinary_balance_established = balance.established;
+                    }
+                    // Still delivered, as not established: a host showing an
+                    // earlier number must learn it no longer holds.
+                    Err(error) => tracing::warn!(
+                        wallet_id = %hex::encode(update.wallet_id),
+                        %error,
+                        "shielded ordinary balance does not fit in u64; delivered as not established"
+                    ),
+                }
+                accounts = snapshot
+                    .accounts
+                    .iter()
+                    .map(|(account_index, balance)| ShieldedBalanceAccountFFI {
+                        account_index: *account_index,
+                        spendable_credits: balance.spendable_credits,
+                        established: balance.is_established(),
+                        last_scanned_index: balance.last_scanned_index.unwrap_or(0),
+                        has_last_scanned_index: balance.last_scanned_index.is_some(),
+                        source: match balance.source {
+                            ShieldedBalanceSource::NoHistory => ShieldedBalanceSourceFFI::NoHistory,
+                            ShieldedBalanceSource::Restored => ShieldedBalanceSourceFFI::Restored,
+                            ShieldedBalanceSource::ScannedThisSession => {
+                                ShieldedBalanceSourceFFI::ScannedThisSession
+                            }
+                        },
+                    })
+                    .collect();
+            }
+        }
+        if !accounts.is_empty() {
+            ffi.accounts = accounts.as_ptr();
+            ffi.accounts_count = accounts.len();
+        }
+        // SAFETY: the host supplied `cb` with `context` for this slot; `ffi`
+        // and the rows it points to outlive the call.
+        unsafe {
+            cb(self.callbacks.context, &ffi);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -495,7 +604,7 @@ mod release_tests {
                 on_shielded_tree_progress_fn: None,
                 release_fn: None,
             },
-            None,
+            EventExtensionCallbacks::default(),
         );
         handler.on_shielded_sync_completed(&ShieldedSyncPassSummary {
             wallet_results: BTreeMap::from([
@@ -539,6 +648,239 @@ mod release_tests {
         );
     }
 
+    #[cfg(feature = "shielded")]
+    fn no_legacy_callbacks(context: *mut c_void) -> EventHandlerCallbacks {
+        EventHandlerCallbacks {
+            context,
+            on_wallet_event_fn: None,
+            on_error_fn: None,
+            on_platform_address_sync_completed_fn: None,
+            on_shielded_sync_completed_fn: None,
+            on_shielded_sync_progress_fn: None,
+            on_shielded_tree_progress_fn: None,
+            release_fn: None,
+        }
+    }
+
+    /// What the balance callback saw, copied out during the call.
+    #[cfg(feature = "shielded")]
+    #[derive(Debug, PartialEq)]
+    struct ReceivedBalanceUpdate {
+        wallet_id: [u8; 32],
+        revision: u64,
+        status: ShieldedLocalBalanceStatusFFI,
+        ordinary_spendable_credits: u64,
+        ordinary_balance_established: bool,
+        accounts: Vec<ShieldedBalanceAccountFFI>,
+        accounts_null: bool,
+    }
+
+    #[cfg(feature = "shielded")]
+    unsafe extern "C" fn capture_balance_update(
+        context: *mut c_void,
+        update: *const ShieldedBalanceUpdateFFI,
+    ) {
+        let received = &mut *(context as *mut Vec<ReceivedBalanceUpdate>);
+        let update = &*update;
+        received.push(ReceivedBalanceUpdate {
+            wallet_id: update.wallet_id,
+            revision: update.revision,
+            status: update.status,
+            ordinary_spendable_credits: update.ordinary_spendable_credits,
+            ordinary_balance_established: update.ordinary_balance_established,
+            accounts: if update.accounts.is_null() {
+                Vec::new()
+            } else {
+                std::slice::from_raw_parts(update.accounts, update.accounts_count).to_vec()
+            },
+            accounts_null: update.accounts.is_null(),
+        });
+    }
+
+    #[cfg(feature = "shielded")]
+    fn balance_handler(received: &mut Vec<ReceivedBalanceUpdate>) -> FFIEventHandler {
+        FFIEventHandler::new(
+            no_legacy_callbacks(received as *mut Vec<ReceivedBalanceUpdate> as *mut c_void),
+            EventExtensionCallbacks {
+                shielded_balance_changed: Some(capture_balance_update),
+                ..EventExtensionCallbacks::default()
+            },
+        )
+    }
+
+    #[cfg(feature = "shielded")]
+    fn account(
+        spendable_credits: u64,
+        source: ShieldedBalanceSource,
+    ) -> platform_wallet::wallet::shielded::ShieldedLocalAccountBalance {
+        platform_wallet::wallet::shielded::ShieldedLocalAccountBalance {
+            spendable_credits,
+            last_scanned_index: (source == ShieldedBalanceSource::ScannedThisSession).then_some(9),
+            source,
+        }
+    }
+
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_deliver_exactly_the_balance_update_to_the_extension_callback() {
+        use platform_wallet::shielded_identity_account_index;
+        use platform_wallet::wallet::shielded::ShieldedLocalBalanceSnapshot;
+        use std::collections::BTreeMap;
+
+        let identity_account = shielded_identity_account_index(0).expect("identity account");
+        let mut received = Vec::new();
+        let handler = balance_handler(&mut received);
+        handler.on_shielded_balance_changed(&ShieldedBalanceUpdate {
+            wallet_id: [1; 32],
+            revision: 1,
+            state: ShieldedLocalBalanceState::RestoreIncomplete,
+        });
+        handler.on_shielded_balance_changed(&ShieldedBalanceUpdate {
+            wallet_id: [1; 32],
+            revision: 2,
+            state: ShieldedLocalBalanceState::Ready(ShieldedLocalBalanceSnapshot {
+                accounts: BTreeMap::from([
+                    (0, account(100, ShieldedBalanceSource::ScannedThisSession)),
+                    (1, account(50, ShieldedBalanceSource::Restored)),
+                    (
+                        identity_account,
+                        account(900, ShieldedBalanceSource::ScannedThisSession),
+                    ),
+                ]),
+            }),
+        });
+        handler.on_shielded_balance_changed(&ShieldedBalanceUpdate {
+            wallet_id: [2; 32],
+            revision: 1,
+            state: ShieldedLocalBalanceState::Ready(ShieldedLocalBalanceSnapshot {
+                accounts: BTreeMap::from([(0, account(0, ShieldedBalanceSource::NoHistory))]),
+            }),
+        });
+        handler.on_shielded_balance_changed(&ShieldedBalanceUpdate {
+            wallet_id: [1; 32],
+            revision: 3,
+            state: ShieldedLocalBalanceState::Unbound,
+        });
+        drop(handler);
+
+        assert_eq!(received.len(), 4);
+        assert_eq!(
+            received[0],
+            ReceivedBalanceUpdate {
+                wallet_id: [1; 32],
+                revision: 1,
+                status: ShieldedLocalBalanceStatusFFI::RestoreIncomplete,
+                ordinary_spendable_credits: 0,
+                ordinary_balance_established: false,
+                accounts: Vec::new(),
+                accounts_null: true,
+            }
+        );
+        assert_eq!(
+            received[1],
+            ReceivedBalanceUpdate {
+                wallet_id: [1; 32],
+                revision: 2,
+                status: ShieldedLocalBalanceStatusFFI::Ready,
+                ordinary_spendable_credits: 150,
+                ordinary_balance_established: true,
+                accounts: vec![
+                    ShieldedBalanceAccountFFI {
+                        account_index: 0,
+                        spendable_credits: 100,
+                        established: true,
+                        last_scanned_index: 9,
+                        has_last_scanned_index: true,
+                        source: ShieldedBalanceSourceFFI::ScannedThisSession,
+                    },
+                    ShieldedBalanceAccountFFI {
+                        account_index: 1,
+                        spendable_credits: 50,
+                        established: true,
+                        last_scanned_index: 0,
+                        has_last_scanned_index: false,
+                        source: ShieldedBalanceSourceFFI::Restored,
+                    },
+                    ShieldedBalanceAccountFFI {
+                        account_index: identity_account,
+                        spendable_credits: 900,
+                        established: true,
+                        last_scanned_index: 9,
+                        has_last_scanned_index: true,
+                        source: ShieldedBalanceSourceFFI::ScannedThisSession,
+                    },
+                ],
+                accounts_null: false,
+            }
+        );
+        assert_eq!(
+            (
+                received[2].status,
+                received[2].ordinary_spendable_credits,
+                received[2].ordinary_balance_established,
+                received[2].accounts.len(),
+            ),
+            (ShieldedLocalBalanceStatusFFI::Ready, 0, false, 1),
+            "a ledger without history is delivered with its zero not established"
+        );
+        assert_eq!(
+            received[3],
+            ReceivedBalanceUpdate {
+                wallet_id: [1; 32],
+                revision: 3,
+                status: ShieldedLocalBalanceStatusFFI::Unbound,
+                ordinary_spendable_credits: 0,
+                ordinary_balance_established: false,
+                accounts: Vec::new(),
+                accounts_null: true,
+            }
+        );
+    }
+
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_deliver_an_ordinary_balance_past_u64_as_not_established() {
+        use platform_wallet::wallet::shielded::ShieldedLocalBalanceSnapshot;
+        use std::collections::BTreeMap;
+
+        let mut received = Vec::new();
+        let handler = balance_handler(&mut received);
+        handler.on_shielded_balance_changed(&ShieldedBalanceUpdate {
+            wallet_id: [3; 32],
+            revision: 4,
+            state: ShieldedLocalBalanceState::Ready(ShieldedLocalBalanceSnapshot {
+                accounts: BTreeMap::from([
+                    (0, account(u64::MAX, ShieldedBalanceSource::Restored)),
+                    (1, account(1, ShieldedBalanceSource::Restored)),
+                ]),
+            }),
+        });
+        drop(handler);
+
+        assert_eq!(received.len(), 1, "the update is delivered, not dropped");
+        let update = &received[0];
+        assert_eq!(update.revision, 4);
+        assert_eq!(update.status, ShieldedLocalBalanceStatusFFI::Ready);
+        assert_eq!(update.ordinary_spendable_credits, 0);
+        assert!(!update.ordinary_balance_established);
+        assert_eq!(update.accounts.len(), 2);
+    }
+
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_skip_the_balance_update_without_the_extension_slot() {
+        let handler = FFIEventHandler::new(
+            no_legacy_callbacks(std::ptr::null_mut()),
+            EventExtensionCallbacks::default(),
+        );
+        // Nothing to call; must not fault on the null context.
+        handler.on_shielded_balance_changed(&ShieldedBalanceUpdate {
+            wallet_id: [4; 32],
+            revision: 1,
+            state: ShieldedLocalBalanceState::Unbound,
+        });
+    }
+
     /// Mirror of the persister-level test: the event context is released
     /// exactly once, only when the last `Arc<dyn PlatformEventHandler>`
     /// clone drops — so a straggling event dispatcher keeps the host
@@ -566,7 +908,7 @@ mod release_tests {
                 on_shielded_tree_progress_fn: None,
                 release_fn: Some(count_release),
             },
-            None,
+            EventExtensionCallbacks::default(),
         ));
         let straggler = Arc::clone(&handler);
 

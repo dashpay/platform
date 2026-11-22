@@ -6,7 +6,6 @@ struct SendTransactionView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
-    @EnvironmentObject var shieldedService: ShieldedService
     let wallet: PersistentWallet
 
     @StateObject private var viewModel: SendViewModel
@@ -52,11 +51,6 @@ struct SendTransactionView: View {
     /// credits".
     @Query private var syncStates: [PersistentPlatformAddressesSyncState]
 
-    /// This wallet's unspent account-0 shielded (Orchard) notes. Summed into
-    /// `shieldedBalance` below so the shielded source row reflects THIS
-    /// wallet's own pool, not the single-mirror `shieldedService`.
-    @Query private var shieldedNotes: [PersistentShieldedNote]
-
     init(wallet: PersistentWallet) {
         self.wallet = wallet
         _viewModel = StateObject(wrappedValue: SendViewModel(network: wallet.network ?? .testnet))
@@ -70,15 +64,6 @@ struct SendTransactionView: View {
                 $0.networkRaw == walletNetworkRaw
             }
         )
-        _shieldedNotes = Query(
-            filter: Self.shieldedSourcePredicate(walletId: walletId)
-        )
-    }
-
-    static func shieldedSourcePredicate(walletId: Data) -> Predicate<PersistentShieldedNote> {
-        #Predicate<PersistentShieldedNote> {
-            $0.walletId == walletId && $0.accountIndex == 0 && $0.isSpent == false
-        }
     }
 
     var body: some View {
@@ -134,7 +119,7 @@ struct SendTransactionView: View {
                         )
                         BalanceInfoRow(
                             label: "Shielded:",
-                            amount: shieldedBalance,
+                            amount: knownShieldedBalance,
                             unit: .credits,
                             color: .purple
                         )
@@ -185,8 +170,7 @@ struct SendTransactionView: View {
                     Section("Send From") {
                         ForEach(sources) { source in
                             Button {
-                                viewModel.selectedSource = source
-                                viewModel.updateFlow()
+                                viewModel.selectSource(source)
                             } label: {
                                 HStack {
                                     Image(systemName: source.iconName)
@@ -208,6 +192,19 @@ struct SendTransactionView: View {
                                 }
                             }
                         }
+                        if viewModel.chosenSourceUnavailable {
+                            // The explicit choice is never swapped for
+                            // another source; the user picks again.
+                            Text("\(viewModel.selectedSource.rawValue) is not available right now. Pick another source to send.")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
+                    }
+                } else if viewModel.chosenSourceUnavailable {
+                    Section("Send From") {
+                        Text("\(viewModel.selectedSource.rawValue) is not available right now, and no other source is.")
+                            .font(.caption)
+                            .foregroundColor(.orange)
                     }
                 }
 
@@ -261,6 +258,12 @@ struct SendTransactionView: View {
                         // guaranteed to agree with the version the
                         // shielded builders carve their fee at.
                         resolveShieldedFees()
+                        // The route and recipient the user confirmed by
+                        // tapping. The handler below is asynchronous;
+                        // `executeSend` refuses if either changed in
+                        // between.
+                        let tappedFlow = viewModel.detectedFlow
+                        let tappedRecipient = viewModel.recipientAddress
                         Task {
                             guard let sdk = platformState.sdk else { return }
                             // Look up the managed wallet by the
@@ -314,14 +317,15 @@ struct SendTransactionView: View {
                             await viewModel.executeSend(
                                 sdk: sdk,
                                 walletManager: walletManager,
-                                shieldedService: shieldedService,
                                 platformState: platformState,
                                 wallet: wallet,
                                 platformWallet: managed,
                                 platformAddressWallet: platformAddressWallet,
                                 signer: signer,
                                 senderAccountIndex: senderAccountIndex,
-                                modelContext: modelContext
+                                modelContext: modelContext,
+                                tappedFlow: tappedFlow,
+                                tappedRecipient: tappedRecipient
                             )
                         }
                     }
@@ -367,8 +371,11 @@ struct SendTransactionView: View {
                 // deliberately doesn't hold.
                 resolveShieldedFees()
             }
-            .onChange(of: viewModel.detectedAddressType) { _, _ in
-                autoSelectSource()
+            // Covers a recipient change and a balance that gates a source
+            // arriving later (the shielded balance comes from an async
+            // local read), so the selection always matches what is offered.
+            .onChange(of: sources, initial: true) { _, newSources in
+                viewModel.reconcileSource(available: newSources)
             }
             .onChange(of: platformState.platformProtocolVersion) { _, _ in
                 // The SDK learns the network's protocol version on a
@@ -492,14 +499,20 @@ struct SendTransactionView: View {
             .reduce(0) { $0 + $1.confirmed }
     }
 
-    /// Account-0 shielded balance: sum of THIS wallet's unspent
-    /// `PersistentShieldedNote` values (Rust pushes note rows via the
-    /// shielded persister). Reads SwiftData rather than the
-    /// single-mirror `shieldedService.shieldedBalance`, so the shielded
-    /// send source is correct for a non-`firstWallet` wallet whose
-    /// engine binding is live but whose UI mirror is pointed elsewhere.
+    /// What a shielded send from this screen can spend: account 0's
+    /// spendable credits as Rust pushes them, because the send spends from
+    /// account 0. Read per wallet from `walletManager.shieldedBalances`
+    /// rather than the single-mirror `shieldedService.shieldedBalance`, so
+    /// it is correct for a non-`firstWallet` wallet. Not known yet counts
+    /// as 0, so the shielded source is not offered.
     private var shieldedBalance: UInt64 {
-        shieldedNotes.reduce(0) { $0 + $1.value }
+        knownShieldedBalance ?? 0
+    }
+
+    /// Account 0's spendable credits, or `nil` while not known yet. The
+    /// balance row shows nil as not known rather than as a zero.
+    private var knownShieldedBalance: UInt64? {
+        walletManager.spendableShieldedCredits(walletId: wallet.walletId, account: 0)
     }
 
     /// Mirrors `WalletDetailView.platformBalance`: BLAST-synced
@@ -708,17 +721,6 @@ struct SendTransactionView: View {
         }
     }
 
-    /// Auto-select the first available source when address type changes.
-    /// Snapshots `coreBalance` once for the duration of this call so
-    /// the underlying FFI accessor isn't hit twice.
-    private func autoSelectSource() {
-        let coreBalance = coreBalanceSnapshot()
-        if let first = availableSources(coreBalance: coreBalance).first {
-            viewModel.selectedSource = first
-            viewModel.updateFlow()
-        }
-    }
-
     // MARK: - Helpers
 
     private func flowColor(for flow: SendFlow) -> Color {
@@ -896,7 +898,8 @@ enum SendBalanceUnit {
 
 private struct BalanceInfoRow: View {
     let label: String
-    let amount: UInt64
+    /// `nil` means the balance is not known yet.
+    let amount: UInt64?
     var unit: SendBalanceUnit = .duffs
     var color: Color = .primary
 
@@ -904,8 +907,13 @@ private struct BalanceInfoRow: View {
         HStack {
             Text(label).font(.caption).foregroundColor(.secondary)
             Spacer()
-            Text(formatBalance(amount, unit: unit))
-                .font(.caption).foregroundColor(amount > 0 ? color : .secondary)
+            if let amount {
+                Text(formatBalance(amount, unit: unit))
+                    .font(.caption).foregroundColor(amount > 0 ? color : .secondary)
+            } else {
+                Text("Not known yet")
+                    .font(.caption).foregroundColor(.secondary)
+            }
         }
     }
 

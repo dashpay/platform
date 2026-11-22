@@ -34,9 +34,12 @@ impl ShieldedSyncWalletResultFFI {
         summary: &ShieldedSyncSummary,
     ) -> Result<Self, PlatformWalletError> {
         // Multi-account on the Rust side; flattened to wallet-level
-        // sums here. Hosts that want per-account detail call
+        // sums here. `balance` is the ordinary balance: identity accounts
+        // are bound and scanned with the wallet, but a send from its
+        // ordinary accounts cannot spend their notes, so the wallet leaves
+        // them out. Hosts that want per-account detail call
         // `platform_wallet_manager_local_shielded_balance_snapshot`.
-        let balance = summary.balance_total()?;
+        let balance = summary.ordinary_balance_total()?;
         let new_notes = u32::try_from(summary.notes_result.total_new_notes()).unwrap_or(u32::MAX);
         let newly_spent = u32::try_from(summary.total_newly_spent()).unwrap_or(u32::MAX);
         Ok(Self {
@@ -894,6 +897,36 @@ fn map_shielded_error(error: PlatformWalletError, operation: &str) -> PlatformWa
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {other}"),
         ),
+    }
+}
+
+#[cfg(test)]
+mod sync_result_tests {
+    use super::*;
+    use platform_wallet::shielded_identity_account_index;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn should_report_only_ordinary_accounts_in_the_sync_result_balance() {
+        let identity_account = shielded_identity_account_index(0).expect("identity account");
+        let summary = ShieldedSyncSummary {
+            balances: BTreeMap::from([(0, 100), (1, 50), (identity_account, 900)]),
+            ..ShieldedSyncSummary::default()
+        };
+        let result = ShieldedSyncWalletResultFFI::ok([7; 32], &summary).expect("result");
+        assert!(result.success);
+        assert_eq!(result.balance, 150);
+    }
+
+    #[test]
+    fn should_report_zero_for_a_wallet_holding_only_identity_account_notes() {
+        let identity_account = shielded_identity_account_index(3).expect("identity account");
+        let summary = ShieldedSyncSummary {
+            balances: BTreeMap::from([(identity_account, u64::MAX)]),
+            ..ShieldedSyncSummary::default()
+        };
+        let result = ShieldedSyncWalletResultFFI::ok([7; 32], &summary).expect("result");
+        assert_eq!(result.balance, 0);
     }
 }
 
