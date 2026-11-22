@@ -885,10 +885,16 @@ pub unsafe extern "C" fn platform_wallet_dpns_purchase_name(
 /// the rule (a contested name can only be tombstoned); a host offers
 /// exactly the ways whose flag is `true` in `out_choices`.
 ///
-/// Typed results: `ErrorProtocolVersionNotActive` (70) when the network is
-/// proven below Platform protocol version 15, where no name can be given
-/// up; `NotFound` when the name is not registered; `ErrorInvalidParameter`
-/// when another identity holds it.
+/// Typed results:
+/// - `ErrorProtocolVersionNotActive` (70): a verified answer shows the
+///   network below Platform protocol version 15, where no name can be
+///   given up.
+/// - `ErrorSdkPinnedBelowProtocolVersion` (75): the SDK is pinned to a
+///   version below 15, whatever the network runs.
+/// - `ErrorUnknown`: the network's version could not be learned (a
+///   failed version probe); the refusal may pass on a retry.
+/// - `NotFound`: the name is not registered.
+/// - `ErrorInvalidParameter`: another identity holds it.
 ///
 /// `out_choices` is caller-owned and is zeroed before any fallible work, so
 /// an error leaves it all-`false`. It holds no heap memory: there is
@@ -936,11 +942,17 @@ pub unsafe extern "C" fn platform_wallet_dpns_name_give_up_choices(
 /// name's marketplace-row removal and an identity snapshot without the
 /// label. On any error nothing stored changes.
 ///
-/// Typed results: `ErrorProtocolVersionNotActive` (70) below protocol
-/// version 15; `NotFound` when the name is not registered;
-/// `ErrorInvalidParameter` when another identity holds it or the network
-/// does not accept `method` for it; `ErrorSigningKeyUnavailable` (31) when
-/// the signer has no key for the selected public key.
+/// Typed results:
+/// - `ErrorProtocolVersionNotActive` (70): a verified answer shows the
+///   network below protocol version 15. Nothing is signed.
+/// - `ErrorSdkPinnedBelowProtocolVersion` (75): the SDK is pinned below 15.
+/// - `ErrorUnknown` for a refusal whose version probe failed; it may pass
+///   on a retry.
+/// - `NotFound`: the name is not registered.
+/// - `ErrorInvalidParameter`: another identity holds it, or the network
+///   does not accept `method` for it.
+/// - `ErrorSigningKeyUnavailable` (31): the signer has no key for the
+///   selected public key.
 ///
 /// `signer_handle` must be a valid, non-destroyed handle produced by
 /// `dash_sdk_signer_create_with_ctx` (typically `KeychainSigner.handle`);

@@ -742,8 +742,9 @@ extension ManagedPlatformWallet {
     ///
     /// Needs Platform protocol version 15. On a network proven below it
     /// this throws `PlatformWalletError.protocolVersionNotActive` and no
-    /// name can be given up there. Throws `.notFound` when the name is not
-    /// registered and `.invalidParameter` when another identity holds it.
+    /// name can be given up there; an SDK pinned below 15 throws
+    /// `.sdkPinnedBelowProtocolVersion`. Throws `.notFound` when the name is
+    /// not registered and `.invalidParameter` when another identity holds it.
     public func dpnsNameGiveUpChoices(
         ownerIdentityId: Identifier,
         name: String

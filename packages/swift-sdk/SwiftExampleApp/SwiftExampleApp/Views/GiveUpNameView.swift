@@ -246,7 +246,11 @@ struct GiveUpNameView: View {
     }
 
     private func submit(_ method: DpnsNameGiveUpMethod) {
-        guard submitting == nil, let wallet else { return }
+        guard submitting == nil else { return }
+        guard let wallet else {
+            submitError = "This identity's wallet is not loaded."
+            return
+        }
         submitting = method
         submitError = nil
         let signer = KeychainSigner(modelContainer: modelContext.container)
