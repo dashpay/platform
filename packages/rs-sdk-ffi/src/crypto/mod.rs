@@ -3,6 +3,7 @@
 use crate::types::{FFINetwork, Network};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
 use dash_sdk::dpp::identity::KeyType;
+use simple_signer::private_key_from_text;
 use std::ffi::{c_char, CStr};
 use zeroize::Zeroizing;
 
@@ -268,5 +269,127 @@ pub unsafe extern "C" fn dash_sdk_public_key_data_from_private_key_data(
             DashSDKErrorCode::CryptoError,
             format!("Failed to derive public key: {}", e),
         )),
+    }
+}
+
+/// Reads a secp256k1 private key typed by a person, as 64 hex characters or in WIF, and
+/// writes its 32 secret bytes to `out_private_key`.
+///
+/// The text is read by `simple_signer::private_key_from_text`, which owns the rules for
+/// which forms are accepted.
+///
+/// # Parameters
+/// * `text` - The key as typed, a NUL-terminated string.
+/// * `out_private_key` - Pointer to 32 writable bytes that receive the secret. They need not
+///   be initialized.
+///
+/// # Returns
+/// No data on success, with the secret written. `InvalidParameter` for a null pointer or
+/// text the library refuses, with the library's reason as the message (it never contains
+/// the text); nothing is written then.
+///
+/// # Safety
+/// `text` must be null or a valid NUL-terminated string, and `out_private_key` null or point
+/// to 32 writable bytes, for the duration of the call.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_private_key_bytes_from_text(
+    text: *const c_char,
+    out_private_key: *mut u8,
+) -> DashSDKResult {
+    let invalid = |message: String| {
+        DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            message,
+        ))
+    };
+    if text.is_null() || out_private_key.is_null() {
+        return invalid("text or out_private_key is null".to_string());
+    }
+    let text = match CStr::from_ptr(text).to_str() {
+        Ok(text) => text,
+        Err(e) => return invalid(format!("Invalid private key string: {}", e)),
+    };
+    let secret = match private_key_from_text(text) {
+        Ok(secret) => secret,
+        Err(e) => return invalid(e.to_string()),
+    };
+
+    // A raw copy: the caller's buffer may be uninitialized, so no `&mut [u8]` is formed over it.
+    std::ptr::copy_nonoverlapping(secret.as_ptr(), out_private_key, 32);
+    DashSDKResult::success(std::ptr::null_mut())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dash_sdk_error_free;
+    use dash_sdk::dpp::dashcore::PrivateKey;
+    use simple_signer::PrivateKeyTextError;
+    use std::ffi::CString;
+    use std::mem::MaybeUninit;
+
+    /// The secret written for `text`, or the error code and message; the error is freed.
+    fn read(text: &str) -> Result<[u8; 32], (DashSDKErrorCode, String)> {
+        let text = CString::new(text).expect("no NUL");
+        let mut out = [0xEEu8; 32];
+        unsafe {
+            let result = dash_sdk_private_key_bytes_from_text(text.as_ptr(), out.as_mut_ptr());
+            assert!(result.data.is_null());
+            if result.error.is_null() {
+                return Ok(out);
+            }
+            let code = (*result.error).code;
+            let message = CStr::from_ptr((*result.error).message)
+                .to_string_lossy()
+                .into_owned();
+            dash_sdk_error_free(result.error);
+            assert_eq!(out, [0xEEu8; 32], "nothing is written on a refusal");
+            Err((code, message))
+        }
+    }
+
+    #[test]
+    fn should_refuse_an_uncompressed_wif_with_the_library_reason() {
+        let mut private_key =
+            PrivateKey::from_byte_array(&[2u8; 32], Network::Testnet).expect("a secret key");
+        private_key.compressed = false;
+        assert_eq!(
+            read(&private_key.to_wif()),
+            Err((
+                DashSDKErrorCode::InvalidParameter,
+                PrivateKeyTextError::UncompressedWif.to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn should_write_the_secret_into_an_uninitialized_buffer() {
+        let secret = [2u8; 32];
+        let text = CString::new(hex::encode(secret)).expect("no NUL");
+        let mut out = MaybeUninit::<[u8; 32]>::uninit();
+        let out = unsafe {
+            let result =
+                dash_sdk_private_key_bytes_from_text(text.as_ptr(), out.as_mut_ptr().cast::<u8>());
+            assert!(result.error.is_null());
+            assert!(result.data.is_null());
+            out.assume_init()
+        };
+        assert_eq!(out, secret);
+    }
+
+    #[test]
+    fn should_refuse_null_pointers() {
+        unsafe {
+            let mut out = [0u8; 32];
+            let result = dash_sdk_private_key_bytes_from_text(std::ptr::null(), out.as_mut_ptr());
+            assert!(!result.error.is_null());
+            assert_eq!((*result.error).code, DashSDKErrorCode::InvalidParameter);
+            dash_sdk_error_free(result.error);
+            let text = CString::new(hex::encode([2u8; 32])).expect("no NUL");
+            let result = dash_sdk_private_key_bytes_from_text(text.as_ptr(), std::ptr::null_mut());
+            assert!(!result.error.is_null());
+            assert_eq!((*result.error).code, DashSDKErrorCode::InvalidParameter);
+            dash_sdk_error_free(result.error);
+        }
     }
 }
