@@ -162,9 +162,12 @@ fn kept_fields_json(kept_values: BTreeMap<String, Value>) -> Result<JsonValue, F
 /// * `identifier` (base58) and `bytes` (base64, for every byte-string variant);
 /// * `array` of tagged values, and `object` of tagged values by member name.
 fn kept_value_json(value: Value) -> Result<JsonValue, String> {
-    let tagged = |tag: &str, value: JsonValue| json!({"type": tag, "value": value});
     Ok(match value {
-        Value::Null => json!({"type": "null"}),
+        Value::Null => {
+            let mut object = Map::new();
+            object.insert("type".to_string(), JsonValue::String("null".to_string()));
+            JsonValue::Object(object)
+        }
         Value::Bool(value) => tagged("bool", json!(value)),
         Value::Text(value) => tagged("string", json!(value)),
         Value::I8(value) => tagged("int", json!(value)),
@@ -220,6 +223,14 @@ fn kept_value_json(value: Value) -> Result<JsonValue, String> {
         // A variant added to platform values later is refused until it gets a tag here
         other => return Err(format!("{other:?} has no kept field tag")),
     })
+}
+
+/// `{"type": tag, "value": value}`, the payload moved in rather than serialized again.
+fn tagged(tag: &str, value: JsonValue) -> JsonValue {
+    let mut object = Map::new();
+    object.insert("type".to_string(), JsonValue::String(tag.to_string()));
+    object.insert("value".to_string(), value);
+    JsonValue::Object(object)
 }
 
 fn removal_entry_json(
@@ -769,9 +780,10 @@ mod tests {
         );
     }
 
-    /// The kept values the Swift decoding tests read
-    /// (`ContractModerationDecodingTests.keptFieldsFixture`): the same string there.
-    const KEPT_FIELDS_FIXTURE: &str = r#"{"bytes":{"type":"bytes","value":"AQID"},"flag":{"type":"bool","value":true},"i64min":{"type":"int","value":-9223372036854775808},"id":{"type":"identifier","value":"cGfHiC6Kgg3FpFZvgwGcswsCRtp4aBP2fzuXRQPizuN"},"int128":{"type":"int128","value":"-170141183460469231731687303715884105728"},"negativeZero":{"type":"double","value":-0.0},"nested":{"type":"object","value":{"list":{"type":"array","value":[{"type":"uint","value":7},{"type":"null"},{"type":"string","value":"a"}]}}},"u64max":{"type":"uint","value":18446744073709551615},"uint128":{"type":"uint128","value":"340282366920938463463374607431768211455"},"whole":{"type":"double","value":1.0}}"#;
+    /// The kept values the Swift decoding tests read too
+    /// (`ContractModerationDecodingTests.testShouldDecodeTheSharedKeptFieldsFixtureByItsTags`):
+    /// one file for both, written compact, one line.
+    const KEPT_FIELDS_FIXTURE: &str = include_str!("fixtures/kept_fields.json");
 
     #[test]
     fn should_write_kept_values_tagged_with_their_kind() {
@@ -802,7 +814,7 @@ mod tests {
         // The fixture byte for byte: the keys sort, and the floats keep their fraction and sign
         assert_eq!(
             serde_json::to_string(&written).expect("serializes"),
-            KEPT_FIELDS_FIXTURE
+            KEPT_FIELDS_FIXTURE.trim_end()
         );
     }
 

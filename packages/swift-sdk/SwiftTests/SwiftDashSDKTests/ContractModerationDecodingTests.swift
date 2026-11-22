@@ -202,15 +202,37 @@ final class ContractModerationDecodingTests: XCTestCase {
         XCTAssertEqual(page.nextStartAfter, id4)
     }
 
-    /// The kept values the FFI's writer tests produce
-    /// (`packages/rs-sdk-ffi/src/contract_moderation/json.rs`,
-    /// `KEPT_FIELDS_FIXTURE`): the same string there.
-    static let keptFieldsFixture = #"{"bytes":{"type":"bytes","value":"AQID"},"flag":{"type":"bool","value":true},"i64min":{"type":"int","value":-9223372036854775808},"id":{"type":"identifier","value":"cGfHiC6Kgg3FpFZvgwGcswsCRtp4aBP2fzuXRQPizuN"},"int128":{"type":"int128","value":"-170141183460469231731687303715884105728"},"negativeZero":{"type":"double","value":-0.0},"nested":{"type":"object","value":{"list":{"type":"array","value":[{"type":"uint","value":7},{"type":"null"},{"type":"string","value":"a"}]}}},"u64max":{"type":"uint","value":18446744073709551615},"uint128":{"type":"uint128","value":"340282366920938463463374607431768211455"},"whole":{"type":"double","value":1.0}}"#
+    /// The kept values the FFI's writer tests produce, read from the one
+    /// fixture file both sides use
+    /// (`packages/rs-sdk-ffi/src/contract_moderation/fixtures/kept_fields.json`),
+    /// found from this source file's path in the repository. A missing file
+    /// fails the test rather than skipping it.
+    static func keptFieldsFixture(file: StaticString = #filePath) throws -> String {
+        var directory = URL(fileURLWithPath: "\(file)").deletingLastPathComponent()
+        while directory.lastPathComponent != "packages" {
+            let parent = directory.deletingLastPathComponent()
+            guard parent.path != directory.path else {
+                throw FixtureMissing(reason: "no packages directory above \(file)")
+            }
+            directory = parent
+        }
+        let fixture = directory
+            .appendingPathComponent("rs-sdk-ffi/src/contract_moderation/fixtures/kept_fields.json")
+        guard let contents = try? String(contentsOf: fixture, encoding: .utf8) else {
+            throw FixtureMissing(reason: "cannot read \(fixture.path)")
+        }
+        return contents.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private struct FixtureMissing: Error, CustomStringConvertible {
+        let reason: String
+        var description: String { "kept fields fixture missing: \(reason)" }
+    }
 
     /// The FFI tags each kept value with its kind, so no kind is inferred
     /// from a JSON number.
     func testShouldDecodeTheSharedKeptFieldsFixtureByItsTags() throws {
-        let kept = try decode([Swift.String: ContractKeptFieldValue].self, Self.keptFieldsFixture)
+        let kept = try decode([Swift.String: ContractKeptFieldValue].self, Self.keptFieldsFixture())
 
         XCTAssertEqual(kept["bytes"], .bytes("AQID"))
         XCTAssertEqual(kept["flag"], .bool(true))

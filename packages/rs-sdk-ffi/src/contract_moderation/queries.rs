@@ -295,7 +295,11 @@ unsafe fn get_entries_inner(
 /// * `array` of tagged values, and `object` of tagged values by member name.
 ///
 /// A path the document held no value at is absent, and the object is empty when the type
-/// keeps none. `nextStartAfter` is
+/// keeps none. The values are read under the document type as the contract holds it now, as
+/// Drive reads them: a record stores a kept object's members by position, not by name, so on a
+/// contract whose protocol 14 update reordered a kept object's members (refused from protocol
+/// 15), a record written before that update reads under the new order's names.
+/// `nextStartAfter` is
 /// rs-sdk's cursor and is absent on the last page. Free the string with
 /// `dash_sdk_string_free`.
 ///

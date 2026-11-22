@@ -184,6 +184,25 @@ struct ContractDocumentRemovalsView: View {
     }
 }
 
+/// One kept field: its path above its value, the value wrapped in full so
+/// every member of a long object or array can be read and selected.
+private struct KeptFieldRow: View {
+    let path: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(path)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Text(value)
+                .font(.system(.caption, design: .monospaced))
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        }
+    }
+}
+
 /// One removal record: who removed what, why and when, whether it was
 /// restored, and the values the record keeps.
 private struct ContractDocumentRemovalRow: View {
@@ -207,7 +226,12 @@ private struct ContractDocumentRemovalRow: View {
                 ModerationFieldRow(label: "Restored", value: moderationDate(ms: restoredAtMs))
             }
             ForEach(removal.keptFields.keys.sorted(), id: \.self) { path in
-                ModerationFieldRow(label: path, value: removal.keptFields[path]?.displayText ?? "")
+                KeptFieldRow(path: path, value: removal.keptFields[path]?.displayText ?? "")
+            }
+            if !removal.keptFields.isEmpty {
+                Text("Field names follow the contract's current layout.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
             }
             ModerationFieldRow(label: "Hash", value: removal.documentHash, monospaced: true)
         }

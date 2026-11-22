@@ -295,7 +295,11 @@ public struct ContractDocumentRemovalEntry: Codable, Sendable, Equatable, Hashab
     /// removal stands.
     public let restoredAtMs: UInt64?
     /// The values the record keeps of the document, by property path; empty
-    /// when its type keeps none.
+    /// when its type keeps none. They are read under the document type as the
+    /// contract holds it now: a record stores a kept object's members by
+    /// position, not by name, so after a protocol 14 update that reordered
+    /// them (refused from protocol 15) an older record reads under the new
+    /// order's names.
     public let keptFields: [String: ContractKeptFieldValue]
 
     private enum CodingKeys: String, CodingKey {
