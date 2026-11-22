@@ -301,6 +301,20 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
         XCTAssertNil(vm.unconfirmedMessage)
     }
 
+    func test_identityDebitPendingMessage_isWalletScoped() {
+        // An unreadable record blocks every identity and the error names the
+        // requested identity, so the message must not blame it.
+        let message = SendViewModel.identityDebitPendingMessage
+        XCTAssertFalse(message.contains("from this identity"))
+        XCTAssertTrue(message.contains("an identity in this wallet"))
+        XCTAssertTrue(message.contains("could not be read"))
+        XCTAssertTrue(message.contains("In-Progress Identity Shields"))
+        XCTAssertEqual(
+            SendViewModel.identityShieldRefusalMessage(.shieldedIdentityDebitPending("x")),
+            message
+        )
+    }
+
     func test_insufficientIdentityCredits_showsRequiredAndAvailableInDash() {
         let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
         vm.applySendFailure(

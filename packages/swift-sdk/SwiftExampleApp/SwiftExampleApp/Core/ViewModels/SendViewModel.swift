@@ -1039,11 +1039,14 @@ class SendViewModel: ObservableObject {
         + "It is listed under In-Progress Identity Shields in Shielded "
         + "Activity, and the wallet keeps checking it on each shielded sync."
 
+    /// Wallet-scoped on purpose: an unreadable record blocks shields from
+    /// every identity in the wallet, and the error then names the requested
+    /// identity, not the record's.
     nonisolated static let identityDebitPendingMessage =
-        "An earlier shield from this identity is still unresolved, so a new "
-        + "one was not sent. See In-Progress Identity Shields in Shielded "
-        + "Activity: the wallet resolves it on a shielded sync, or you can "
-        + "stop retrying it there."
+        "An earlier shield from an identity in this wallet is still unresolved, "
+        + "or its record could not be read, so a new one was not sent. See "
+        + "In-Progress Identity Shields in Shielded Activity: the wallet resolves "
+        + "readable ones on a shielded sync, and you can stop retrying any of them there."
 
     /// Apply the authoritative Core broadcast outcome to the send UI. Kept as
     /// a small pure state transition so rejected/unknown can be regression

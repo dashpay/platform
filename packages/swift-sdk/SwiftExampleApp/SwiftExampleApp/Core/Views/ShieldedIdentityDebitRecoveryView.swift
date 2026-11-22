@@ -6,8 +6,16 @@ import SwiftDashSDK
 
 /// Plain-language text for a durable identity-funded shield (Type 21)
 /// record. The status itself is decided in Rust; this only labels it.
+///
+/// A record whose signed bytes do not decode has no `identityId`. The
+/// wallet cannot resend it, and until it is stopped it blocks new identity
+/// shields from every identity in the wallet, so it gets its own wording.
 enum ShieldedIdentityDebitRecoveryDisplay {
-    static func statusTitle(_ status: ShieldedIdentityDebitRecoveryStatus) -> String {
+    static func statusTitle(
+        _ status: ShieldedIdentityDebitRecoveryStatus,
+        identityId: Data?
+    ) -> String {
+        if identityId == nil, status != .unknown { return "Unreadable record" }
         switch status {
         case .retrying: return "Retrying"
         case .parked: return "Waiting for the note"
@@ -15,7 +23,19 @@ enum ShieldedIdentityDebitRecoveryDisplay {
         }
     }
 
-    static func statusDetail(_ status: ShieldedIdentityDebitRecoveryStatus) -> String {
+    static func statusDetail(
+        _ status: ShieldedIdentityDebitRecoveryStatus,
+        identityId: Data?
+    ) -> String {
+        if identityId == nil {
+            if status == .unknown {
+                return "Automatic retry was stopped. The identity that funded it "
+                    + "is unknown, and it may still have executed."
+            }
+            return "The identity that funded this shield is unknown and its saved "
+                + "transaction cannot be resent. It blocks new identity shields in "
+                + "this wallet until you stop retrying it."
+        }
         switch status {
         case .retrying:
             return "The wallet resends this signed shield on each shielded "
@@ -41,7 +61,11 @@ enum ShieldedIdentityDebitRecoveryDisplay {
         for record: ShieldedIdentityDebitRecoveryRecord,
         identities: [PersistentIdentity]
     ) -> String {
-        guard let identityId = record.identityId else { return "Unreadable record" }
+        identityLabel(identityId: record.identityId, identities: identities)
+    }
+
+    static func identityLabel(identityId: Data?, identities: [PersistentIdentity]) -> String {
+        guard let identityId else { return "Unknown identity" }
         if let identity = identities.first(where: { $0.identityId == identityId }) {
             return identity.displayName
         }
@@ -53,10 +77,31 @@ enum ShieldedIdentityDebitRecoveryDisplay {
         formatCreditsAsDash(credits)
     }
 
-    static let stopRetryingWarning =
-        "This does not cancel the payment. It may already have executed, or "
-        + "it may still execute later. The wallet stops resending it, and a "
-        + "new shield from this identity may become an additional debit."
+    /// Shown before Stop Retrying. Stopping never cancels an earlier
+    /// broadcast, whether or not the record could be read.
+    static func stopRetryingWarning(identityId: Data?) -> String {
+        let cancel = "This does not cancel the payment. It may already have "
+            + "executed, or it may still execute later."
+        if identityId == nil {
+            return cancel + " The identity it belongs to is unknown, so a new "
+                + "shield from any identity in this wallet may become an "
+                + "additional debit if it comes from that identity."
+        }
+        return cancel + " The wallet stops resending it, and a new shield from "
+            + "this identity may become an additional debit."
+    }
+
+    /// Footer of the section; readable records are resent on sync, an
+    /// unreadable one is not.
+    static func footerText(hasUnreadableRecord: Bool) -> String {
+        let base = "Shields from an identity's balance whose outcome is not known yet."
+        if hasUnreadableRecord {
+            return base + " A shielded sync resends and resolves readable ones. "
+                + "An unreadable record cannot be resent and blocks new identity "
+                + "shields in this wallet until you stop retrying it."
+        }
+        return base + " A shielded sync resends and resolves them."
+    }
 }
 
 // MARK: - Read state
@@ -351,7 +396,9 @@ struct ShieldedIdentityDebitRecoverySection: View {
         } header: {
             Text("In-Progress Identity Shields")
         } footer: {
-            Text("Shields from an identity's balance whose outcome is not known yet. A shielded sync resends and resolves them.")
+            Text(ShieldedIdentityDebitRecoveryDisplay.footerText(
+                hasUnreadableRecord: model.records.contains { $0.identityId == nil }
+            ))
         }
         .confirmationDialog(
             "Stop retrying this shield?",
@@ -367,8 +414,10 @@ struct ShieldedIdentityDebitRecoverySection: View {
             }
             .accessibilityIdentifier("shieldedActivity.identityShields.confirmStop")
             Button("Cancel", role: .cancel) {}
-        } message: { _ in
-            Text(ShieldedIdentityDebitRecoveryDisplay.stopRetryingWarning)
+        } message: { record in
+            Text(ShieldedIdentityDebitRecoveryDisplay.stopRetryingWarning(
+                identityId: record.identityId
+            ))
         }
     }
 
@@ -391,10 +440,16 @@ struct ShieldedIdentityDebitRecoverySection: View {
                         .font(.subheadline.weight(.semibold))
                 }
             }
-            Text(ShieldedIdentityDebitRecoveryDisplay.statusTitle(record.status))
+            Text(ShieldedIdentityDebitRecoveryDisplay.statusTitle(
+                record.status,
+                identityId: record.identityId
+            ))
                 .font(.caption.weight(.medium))
                 .foregroundColor(.orange)
-            Text(ShieldedIdentityDebitRecoveryDisplay.statusDetail(record.status))
+            Text(ShieldedIdentityDebitRecoveryDisplay.statusDetail(
+                record.status,
+                identityId: record.identityId
+            ))
                 .font(.caption)
                 .foregroundColor(.secondary)
             if ShieldedIdentityDebitRecoveryDisplay.canStopRetrying(record.status) {

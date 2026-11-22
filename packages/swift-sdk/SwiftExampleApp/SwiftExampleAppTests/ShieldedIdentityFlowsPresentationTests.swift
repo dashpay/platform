@@ -508,17 +508,99 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
     }
 
     func test_recoveryDisplay_unknownStatus_neverReadsAsFailed() {
-        let title = ShieldedIdentityDebitRecoveryDisplay.statusTitle(.unknown)
-        let detail = ShieldedIdentityDebitRecoveryDisplay.statusDetail(.unknown)
-        XCTAssertFalse(title.lowercased().contains("fail"))
-        XCTAssertFalse(detail.lowercased().contains("fail"))
+        for identityId in [identityId, nil] as [Data?] {
+            let title = ShieldedIdentityDebitRecoveryDisplay.statusTitle(.unknown, identityId: identityId)
+            let detail = ShieldedIdentityDebitRecoveryDisplay.statusDetail(.unknown, identityId: identityId)
+            XCTAssertFalse(title.lowercased().contains("fail"))
+            XCTAssertFalse(detail.lowercased().contains("fail"))
+        }
     }
 
     func test_recoveryDisplay_stopWarning_statesTheRisks() {
-        let warning = ShieldedIdentityDebitRecoveryDisplay.stopRetryingWarning
+        let warning = ShieldedIdentityDebitRecoveryDisplay.stopRetryingWarning(identityId: identityId)
         XCTAssertTrue(warning.contains("does not cancel"))
         XCTAssertTrue(warning.contains("may already have executed"))
         XCTAssertTrue(warning.contains("additional debit"))
+    }
+
+    // MARK: - Readable record labels (unchanged)
+
+    func test_readableRecord_retrying_promisesResendOnSync() {
+        XCTAssertEqual(
+            ShieldedIdentityDebitRecoveryDisplay.statusTitle(.retrying, identityId: identityId),
+            "Retrying"
+        )
+        XCTAssertTrue(
+            ShieldedIdentityDebitRecoveryDisplay.statusDetail(.retrying, identityId: identityId)
+                .contains("resends this signed shield on each shielded sync")
+        )
+    }
+
+    func test_readableRecord_parkedAndUnknown_keepTheirTitles() {
+        XCTAssertEqual(
+            ShieldedIdentityDebitRecoveryDisplay.statusTitle(.parked, identityId: identityId),
+            "Waiting for the note"
+        )
+        XCTAssertEqual(
+            ShieldedIdentityDebitRecoveryDisplay.statusTitle(.unknown, identityId: identityId),
+            "Outcome unknown"
+        )
+    }
+
+    func test_readableRecord_notInTheWallet_showsAShortId() {
+        let label = ShieldedIdentityDebitRecoveryDisplay.identityLabel(identityId: identityId, identities: [])
+        XCTAssertEqual(label, "020202020202…")
+    }
+
+    func test_readableRecords_footerPromisesResend() {
+        XCTAssertTrue(
+            ShieldedIdentityDebitRecoveryDisplay.footerText(hasUnreadableRecord: false)
+                .contains("A shielded sync resends and resolves them.")
+        )
+    }
+
+    // MARK: - Unreadable record labels
+
+    func test_unreadableRecord_activeStatuses_makeNoResendPromise() {
+        for status in [ShieldedIdentityDebitRecoveryStatus.retrying, .parked] {
+            let title = ShieldedIdentityDebitRecoveryDisplay.statusTitle(status, identityId: nil)
+            let detail = ShieldedIdentityDebitRecoveryDisplay.statusDetail(status, identityId: nil)
+            XCTAssertEqual(title, "Unreadable record")
+            XCTAssertNotEqual(title, "Retrying")
+            XCTAssertFalse(detail.contains("resends"))
+            XCTAssertTrue(detail.contains("identity that funded this shield is unknown"))
+            XCTAssertTrue(detail.contains("cannot be resent"))
+            XCTAssertTrue(detail.contains("blocks new identity shields in this wallet"))
+        }
+    }
+
+    func test_unreadableRecord_showsAnUnknownIdentity() {
+        XCTAssertEqual(
+            ShieldedIdentityDebitRecoveryDisplay.identityLabel(identityId: nil, identities: []),
+            "Unknown identity"
+        )
+    }
+
+    func test_unreadableRecord_canStillBeStopped() {
+        // Stopping depends on the status only, not on whether the record reads.
+        XCTAssertTrue(ShieldedIdentityDebitRecoveryDisplay.canStopRetrying(.retrying))
+        XCTAssertTrue(ShieldedIdentityDebitRecoveryDisplay.canStopRetrying(.parked))
+    }
+
+    func test_unreadableRecord_stopWarning_keepsTheCancelWarningAndNamesNoIdentity() {
+        let warning = ShieldedIdentityDebitRecoveryDisplay.stopRetryingWarning(identityId: nil)
+        XCTAssertTrue(warning.contains("does not cancel"))
+        XCTAssertTrue(warning.contains("may already have executed"))
+        XCTAssertTrue(warning.contains("identity it belongs to is unknown"))
+        XCTAssertTrue(warning.contains("additional debit"))
+        XCTAssertFalse(warning.contains("this identity"))
+    }
+
+    func test_unreadableRecord_footerQualifiesTheResendPromise() {
+        let footer = ShieldedIdentityDebitRecoveryDisplay.footerText(hasUnreadableRecord: true)
+        XCTAssertTrue(footer.contains("resends and resolves readable ones"))
+        XCTAssertTrue(footer.contains("unreadable record cannot be resent"))
+        XCTAssertFalse(footer.contains("resolves them."))
     }
 
     // MARK: - Recovery read state
