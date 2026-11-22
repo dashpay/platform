@@ -7,13 +7,20 @@
 // Rust's: this screen calls `ManagedPlatformWallet.readPrivateDocumentEntries`
 // once per tap and shows what came back. Nothing is persisted; the entries
 // live in view state.
+//
+// The screen takes the contract id and type name as plain values, not a
+// `PersistentDocumentType`: a contract-search preview presents its types
+// from a throwaway in-memory store, while this screen reads the device's
+// wallets and identities, so the caller hands it the device's model context
+// and no model object of the preview store crosses into it.
 
 import SwiftUI
 import SwiftData
 import SwiftDashSDK
 
 struct PrivateDocumentEntriesView: View {
-    let documentType: PersistentDocumentType
+    let contractId: Data
+    let documentTypeName: String
 
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var walletManager: PlatformWalletManager
@@ -28,12 +35,13 @@ struct PrivateDocumentEntriesView: View {
     static let pagesPerRead: UInt32 = 8
 
     @State private var selectedWalletId: Data?
-    /// The entries read since the last Read, in store order.
+    /// The entries read since the last Read (or the last read that
+    /// restarted), in store order.
     @State private var entries: [PrivateDocumentEntry] = []
     /// The latest read's answer; nil before the first read.
     @State private var lastRead: PrivateDocumentEntriesRead?
     /// Pages and refused entries across this screen's reads since the last
-    /// Read.
+    /// Read, or the last read that restarted.
     @State private var pagesReadTotal: UInt64 = 0
     @State private var rejectedTotal: UInt64 = 0
     @State private var isReading = false
@@ -58,7 +66,7 @@ struct PrivateDocumentEntriesView: View {
                 statusSection(lastRead)
             }
         }
-        .navigationTitle("\(documentType.name) Entries")
+        .navigationTitle("\(documentTypeName) Entries")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: ensureDefaultSelection)
         .onChange(of: wallets) {
@@ -112,7 +120,7 @@ struct PrivateDocumentEntriesView: View {
     private var readSection: some View {
         Section {
             Button {
-                read(from: 0, appending: false)
+                read(from: nil)
             } label: {
                 HStack {
                     if isReading {
@@ -127,7 +135,7 @@ struct PrivateDocumentEntriesView: View {
 
             if let lastRead, !lastRead.complete, lastRead.identityCount > 0 {
                 Button {
-                    read(from: lastRead.nextPosition, appending: true)
+                    read(from: lastRead.cursor)
                 } label: {
                     Text("Read more")
                         .frame(maxWidth: .infinity)
@@ -194,8 +202,11 @@ struct PrivateDocumentEntriesView: View {
         Section("Status") {
             VStack(alignment: .leading, spacing: 4) {
                 InfoRow(label: "Pages read:", value: "\(pagesReadTotal)")
-                InfoRow(label: "Store size:", value: "\(read.totalCount)")
-                InfoRow(label: "Next position:", value: "\(read.nextPosition)")
+                InfoRow(
+                    label: "Store size:",
+                    value: read.cursor.provedTotalCount.map { "\($0)" } ?? "Unknown"
+                )
+                InfoRow(label: "Next position:", value: "\(read.cursor.position)")
                 InfoRow(label: "Refused entries:", value: "\(rejectedTotal)")
                 InfoRow(label: "Read to the end:", value: read.complete ? "Yes" : "No")
             }
@@ -207,11 +218,13 @@ struct PrivateDocumentEntriesView: View {
 
     // MARK: - Reading
 
-    private func read(from position: UInt64, appending: Bool) {
+    /// One read of at most `pagesPerRead` pages: from the store's start when
+    /// `cursor` is nil, else on from the cursor the last read returned.
+    private func read(from cursor: PrivateDocumentReadCursor?) {
         guard let wallet = selectedManagedWallet else { return }
-        let contractId = documentType.contractId
+        let contractId = self.contractId
         let walletId = selectedWalletId
-        let typeName = documentType.name
+        let typeName = documentTypeName
         isReading = true
         failure = nil
         Task {
@@ -220,12 +233,14 @@ struct PrivateDocumentEntriesView: View {
                 let result = try await wallet.readPrivateDocumentEntries(
                     contractId: contractId,
                     documentTypeName: typeName,
-                    startPosition: position,
+                    from: cursor,
                     maxPages: Self.pagesPerRead
                 )
                 // The user picked another wallet while this read ran
                 guard walletId == selectedWalletId else { return }
-                if appending {
+                // A read that restarted (the wallet's keys changed since the
+                // cursor) read from the store's start: it replaces the list.
+                if cursor != nil && !result.restarted {
                     entries.append(contentsOf: result.entries)
                     pagesReadTotal += UInt64(result.pagesRead)
                     rejectedTotal += UInt64(result.rejectedCount)

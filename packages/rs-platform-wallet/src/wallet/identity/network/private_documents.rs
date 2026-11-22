@@ -7,19 +7,20 @@
 //! its identities may be sealed to, and with the outgoing viewing keys they
 //! seal with, which recover what they sent.
 //! [`IdentityWallet::read_private_document_entries`] reads a store that way,
-//! from a position the caller keeps, and reads each opened entry's payload
-//! against the type's schema.
+//! from a [`PrivateDocumentCursor`] the caller keeps, and reads each opened
+//! entry's payload against the type's schema.
 //!
 //! Which keys those are is decided here, once, for every private type
 //! ([`PrivateDocumentKeyPaths::add_identity`]): DashPay's private contact
 //! request sync scans with the same paths. The keys are derived inside the
 //! [`ContactCryptoProvider`], which keeps them.
 //!
-//! The read keeps nothing: no position, no entry. What an entry means, and
+//! The read keeps nothing: no cursor, no entry. What an entry means, and
 //! whether the sender it names wrote it, is its type's rule; DashPay's is in
 //! [`DashPayView::sync_private_contact_requests`](super::DashPayView::sync_private_contact_requests).
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use dash_sdk::platform::dashpay::recipient_key_purpose_is_valid;
 use dash_sdk::platform::private_document_entries::PrivateDocumentEntries;
@@ -27,6 +28,9 @@ use dash_sdk::platform::private_document_scan::{
     read_private_document_payload, PrivateDocumentPage, PrivateDocumentScanKeys,
     RejectedPrivateDocumentEntry, MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
 };
+use dash_sdk::platform::{ContextProvider, Fetch};
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::DataContract;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -34,11 +38,11 @@ use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 use dpp::secp256k1::SecretKey;
-use dpp::version::PlatformVersion;
 use futures::StreamExt;
 use key_wallet::bip32::{DerivationPath, KeyDerivationType};
 use key_wallet::Network;
 use platform_encryption::{OpenedPrivateDocumentEntry, PrivateDocumentAuthMode};
+use sha2::{Digest, Sha256};
 
 use super::{identity_auth_derivation_path_for_type, ContactCryptoProvider, IdentityWallet};
 use crate::broadcaster::TransactionBroadcaster;
@@ -103,6 +107,37 @@ impl PrivateDocumentKeyPaths {
         self.senders.extend(sender_paths);
         Ok(true)
     }
+
+    /// A fingerprint of these paths: every identity, key id and path, as a
+    /// recipient and as a sender. Paths with the same fingerprint open the
+    /// same entries, so a position read with one set holds nothing more for
+    /// the other.
+    pub fn fingerprint(&self) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update((self.recipients.len() as u64).to_le_bytes());
+        for (identity_id, keys) in &self.recipients {
+            hasher.update(identity_id.as_bytes());
+            hasher.update((keys.len() as u64).to_le_bytes());
+            for (key_id, path) in keys {
+                hasher.update(key_id.to_le_bytes());
+                hash_path(&mut hasher, path);
+            }
+        }
+        hasher.update((self.senders.len() as u64).to_le_bytes());
+        for (identity_id, key_id, path) in &self.senders {
+            hasher.update(identity_id.as_bytes());
+            hasher.update(key_id.to_le_bytes());
+            hash_path(&mut hasher, path);
+        }
+        hasher.finalize().into()
+    }
+}
+
+/// Adds `path` to `hasher`, length-prefixed so two paths cannot run together.
+fn hash_path(hasher: &mut Sha256, path: &DerivationPath) {
+    let path = path.to_string();
+    hasher.update((path.len() as u64).to_le_bytes());
+    hasher.update(path.as_bytes());
 }
 
 /// Whether `key` is one a private document entry can be sealed to, which a
@@ -161,6 +196,25 @@ pub struct OpenedPrivateDocument {
     pub properties: Result<BTreeMap<String, Value>, String>,
 }
 
+/// Where reading a private document type's store goes on from: the caller
+/// keeps it between reads ([`IdentityWallet::read_private_document_entries`])
+/// and hands it back as it got it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PrivateDocumentCursor {
+    /// The position the next read starts at.
+    pub position: u64,
+    /// The largest store size a page proved, in the reads this cursor comes
+    /// from; `None` before any page was read. A later page from a node
+    /// behind shows an older, smaller store: the store holds at least this
+    /// many entries, so a read reaches its end only there.
+    pub proved_total_count: Option<u64>,
+    /// The fingerprint of the keys those reads scanned with
+    /// ([`PrivateDocumentKeyPaths::fingerprint`]). When the wallet's keys no
+    /// longer match it, the next read starts over from the store's start:
+    /// the positions read before may hold entries the new keys open.
+    pub key_set: [u8; 32],
+}
+
 /// What a read of a private document type's store found for the wallet
 /// ([`IdentityWallet::read_private_document_entries`]).
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -175,53 +229,58 @@ pub struct PrivateDocumentRead {
     pub rejected: Vec<RejectedPrivateDocumentEntry>,
     /// The store pages read.
     pub pages_read: usize,
-    /// The position to read from next.
-    pub next_position: u64,
-    /// How many entries the store held, as the pages read proved it.
-    pub total_count: u64,
-    /// Whether the read reached the store's last entry. A later read from
-    /// [`Self::next_position`] reads the entries appended since.
+    /// Where to read on from: hand it to the next read.
+    pub cursor: PrivateDocumentCursor,
+    /// The wallet's keys changed since the cursor the read was given, so it
+    /// read from the store's start: its entries replace those of the earlier
+    /// reads rather than follow them.
+    pub restarted: bool,
+    /// Whether the read reached the store's last entry, as large a store as
+    /// any page proved. A later read from [`Self::cursor`] reads the entries
+    /// appended since. `false` with no page read means nothing was read: no
+    /// identity can open entries, or the page budget was 0, and reading again
+    /// changes nothing until that does.
     pub complete: bool,
 }
 
-/// `entry`, opened by or recovered for `wallet_identity_id`, as the read
-/// reports it.
-#[allow(clippy::too_many_arguments)]
-fn opened_private_document(
-    contract: &DataContract,
-    document_type_name: &str,
+/// An entry of a page one of the wallet's identities opened or recovered,
+/// before its payload is read.
+struct PageEntry<'a> {
     position: u64,
     block_height: u64,
     block_time_ms: u64,
     direction: PrivateDocumentDirection,
     wallet_identity_id: Identifier,
     wallet_key_id: KeyID,
-    entry: &OpenedPrivateDocumentEntry,
-    platform_version: &PlatformVersion,
-) -> OpenedPrivateDocument {
-    let auth_mode = entry.auth_mode();
-    OpenedPrivateDocument {
-        position,
-        block_height,
-        block_time_ms,
-        direction,
-        wallet_identity_id,
-        wallet_key_id,
-        recipient_identity_id: Identifier::from(*entry.recipient_identity_id()),
-        auth_mode,
-        claimed_sender: (auth_mode != PrivateDocumentAuthMode::Anonymous).then(|| {
-            (
-                Identifier::from(*entry.sender_identity_id()),
-                entry.sender_key_id(),
-            )
-        }),
-        commitment: *entry.commitment(),
-        properties: read_private_document_payload(
-            contract,
-            document_type_name,
-            entry.payload(),
-            platform_version,
-        ),
+    entry: &'a OpenedPrivateDocumentEntry,
+}
+
+impl PageEntry<'_> {
+    /// The entry as the read reports it, with `properties` read from its
+    /// payload.
+    fn into_document(
+        self,
+        properties: Result<BTreeMap<String, Value>, String>,
+    ) -> OpenedPrivateDocument {
+        let auth_mode = self.entry.auth_mode();
+        OpenedPrivateDocument {
+            position: self.position,
+            block_height: self.block_height,
+            block_time_ms: self.block_time_ms,
+            direction: self.direction,
+            wallet_identity_id: self.wallet_identity_id,
+            wallet_key_id: self.wallet_key_id,
+            recipient_identity_id: Identifier::from(*self.entry.recipient_identity_id()),
+            auth_mode,
+            claimed_sender: (auth_mode != PrivateDocumentAuthMode::Anonymous).then(|| {
+                (
+                    Identifier::from(*self.entry.sender_identity_id()),
+                    self.entry.sender_key_id(),
+                )
+            }),
+            commitment: *self.entry.commitment(),
+            properties,
+        }
     }
 }
 
@@ -256,17 +315,53 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         Ok((identities, paths))
     }
 
+    /// The contract `data_contract_id` as the network proves it now, when it is
+    /// newer than `held` and still declares `document_type_name` private, and
+    /// `None` otherwise. A type can gain optional properties, and a payload
+    /// written under the newer type does not read under an older one, which
+    /// DPP refuses for the reader to fetch the contract again. The context
+    /// provider is given the newer contract, so later reads use it.
+    async fn newer_private_document_contract(
+        &self,
+        held: &DataContract,
+        data_contract_id: Identifier,
+        document_type_name: &str,
+    ) -> Result<Option<Arc<DataContract>>, PlatformWalletError> {
+        let Some(fetched) = DataContract::fetch(&self.sdk, data_contract_id).await? else {
+            return Ok(None);
+        };
+        let declares_type = fetched
+            .document_type_for_name(document_type_name)
+            .is_ok_and(|document_type| document_type.is_private());
+        if fetched.version() <= held.version() || !declares_type {
+            return Ok(None);
+        }
+        let fetched = Arc::new(fetched);
+        if let Some(provider) = self.sdk.context_provider() {
+            provider.register_data_contract(Arc::clone(&fetched));
+        }
+        Ok(Some(fetched))
+    }
+
     /// Read the store of the private document type `document_type_name` of
     /// `data_contract_id` for the wallet's identities, at most `max_pages`
-    /// proved pages from `start_position`: the entries sealed to them, opened,
-    /// and the entries they sealed, recovered from the store alone, each with
-    /// its payload read against the type's schema.
+    /// proved pages from `from` (the store's start when `None`): the entries
+    /// sealed to them, opened, and the entries they sealed, recovered from the
+    /// store alone, each with its payload read against the type's schema.
     ///
     /// The keys are derived inside `crypto` and stay there. Nothing is kept:
-    /// the caller reads on from [`PrivateDocumentRead::next_position`], and a
-    /// store only grows, so a later read from there holds what was appended
-    /// since. A failed page fetch fails the read; the caller reads again from
-    /// the position it had.
+    /// the caller hands [`PrivateDocumentRead::cursor`] to the next read, and
+    /// a store only grows, so a later read from there holds what was appended
+    /// since. The cursor carries the largest store size proved so far, so a
+    /// later page from a node behind does not end the reading early, and the
+    /// keys it was read with: when they changed, the read starts over from the
+    /// store's start and says so ([`PrivateDocumentRead::restarted`]). A failed
+    /// page fetch fails the read; the caller reads again from the cursor it
+    /// had.
+    ///
+    /// A payload that does not read under the contract held is read once more,
+    /// once a read, under the contract the network proves now, when that one
+    /// is newer: the type may have gained properties since.
     ///
     /// An entry's sender is what the entry claims
     /// ([`OpenedPrivateDocument::claimed_sender`]): whether that identity
@@ -283,39 +378,52 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         crypto: &C,
         data_contract_id: Identifier,
         document_type_name: &str,
-        start_position: u64,
+        from: Option<PrivateDocumentCursor>,
         max_pages: usize,
     ) -> Result<PrivateDocumentRead, PlatformWalletError>
     where
         C: ContactCryptoProvider + Sync,
     {
         let (identities, paths) = self.private_document_key_paths().await?;
+        let key_set = paths.fingerprint();
+        let restarted = from.is_some_and(|cursor| cursor.key_set != key_set);
+        let start_position = from
+            .filter(|cursor| cursor.key_set == key_set)
+            .map_or(0, |cursor| cursor.position);
         let mut read = PrivateDocumentRead {
             identities,
-            next_position: start_position,
+            cursor: PrivateDocumentCursor {
+                position: start_position,
+                // The store's size does not depend on the keys.
+                proved_total_count: from.and_then(|cursor| cursor.proved_total_count),
+                key_set,
+            },
+            restarted,
             ..Default::default()
         };
-        if read.identities.is_empty() {
+        if read.identities.is_empty() || max_pages == 0 {
             return Ok(read);
         }
         self.verify_seed_binds(crypto).await?;
         // The contract the pages are verified against, with the type, which
         // each payload is read against.
-        let contract = self
+        let mut contract = self
             .sdk
             .fetch_private_document_contract(data_contract_id, document_type_name)
             .await?;
+        let mut contract_refreshed = false;
         let platform_version = self.sdk.version();
 
         // The pages are fetched many at once while earlier ones are scanned,
-        // in batches of those ready, one key derivation a batch.
+        // in batches of those ready, one key derivation a batch; no more at
+        // once than the read takes, so few are fetched only to be dropped.
         let mut batches = std::pin::pin!(self
             .sdk
             .private_document_pages(
                 data_contract_id,
                 document_type_name,
                 start_position,
-                MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+                max_pages.min(MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES),
             )
             .take(max_pages)
             .ready_chunks(PRIVATE_DOCUMENT_SCAN_BATCH_PAGES));
@@ -346,46 +454,70 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     )));
                 }
                 read.pages_read += 1;
-                read.next_position = scan.next_position;
+                read.cursor.position = scan.next_position;
                 // A later page from a node behind shows an older, smaller
                 // store: the largest size proved is the store's.
-                read.total_count = read.total_count.max(scan.total_count);
-                let first = read.entries.len();
-                read.entries.extend(scan.received.iter().map(|received| {
-                    opened_private_document(
-                        &contract,
-                        document_type_name,
-                        received.position,
-                        received.block_height,
-                        received.block_time_ms,
-                        PrivateDocumentDirection::Received,
-                        received.recipient_identity_id,
-                        received.recipient_key_id,
-                        &received.entry,
-                        platform_version,
-                    )
-                }));
-                read.entries.extend(scan.sent.iter().map(|sent| {
-                    opened_private_document(
-                        &contract,
-                        document_type_name,
-                        sent.position,
-                        sent.block_height,
-                        sent.block_time_ms,
-                        PrivateDocumentDirection::Sent,
-                        sent.sender_identity_id,
-                        sent.outgoing_key_id,
-                        &sent.entry,
-                        platform_version,
-                    )
-                }));
+                read.cursor.proved_total_count = Some(
+                    read.cursor
+                        .proved_total_count
+                        .map_or(scan.total_count, |proved| proved.max(scan.total_count)),
+                );
+                let received = scan.received.iter().map(|received| PageEntry {
+                    position: received.position,
+                    block_height: received.block_height,
+                    block_time_ms: received.block_time_ms,
+                    direction: PrivateDocumentDirection::Received,
+                    wallet_identity_id: received.recipient_identity_id,
+                    wallet_key_id: received.recipient_key_id,
+                    entry: &received.entry,
+                });
+                let sent = scan.sent.iter().map(|sent| PageEntry {
+                    position: sent.position,
+                    block_height: sent.block_height,
+                    block_time_ms: sent.block_time_ms,
+                    direction: PrivateDocumentDirection::Sent,
+                    wallet_identity_id: sent.sender_identity_id,
+                    wallet_key_id: sent.outgoing_key_id,
+                    entry: &sent.entry,
+                });
+                let mut page_entries: Vec<PageEntry> = received.chain(sent).collect();
                 // Pages come in store order, so only this page's entries are
-                // put in order: stable, the received one first at a position.
-                read.entries[first..].sort_by_key(|entry| (entry.position, entry.direction));
+                // put in order: the received one first at a position.
+                page_entries.sort_by_key(|entry| (entry.position, entry.direction));
+                for page_entry in page_entries {
+                    let read_payload = |contract: &DataContract| {
+                        read_private_document_payload(
+                            contract,
+                            document_type_name,
+                            page_entry.entry.payload(),
+                            platform_version,
+                        )
+                    };
+                    let mut properties = read_payload(&contract);
+                    if properties.is_err() && !contract_refreshed {
+                        contract_refreshed = true;
+                        if let Some(newer) = self
+                            .newer_private_document_contract(
+                                &contract,
+                                data_contract_id,
+                                document_type_name,
+                            )
+                            .await?
+                        {
+                            contract = newer;
+                            properties = read_payload(&contract);
+                        }
+                    }
+                    read.entries.push(page_entry.into_document(properties));
+                }
                 read.rejected.extend(scan.rejected);
             }
         }
-        read.complete = read.pages_read > 0 && read.next_position >= read.total_count;
+        read.complete = read.pages_read > 0
+            && read
+                .cursor
+                .proved_total_count
+                .is_some_and(|total| read.cursor.position >= total);
         Ok(read)
     }
 }
@@ -415,6 +547,7 @@ mod tests {
     use dpp::platform_value::string_encoding::Encoding;
     use dpp::platform_value::{to_value, BinaryData};
     use dpp::secp256k1::PublicKey;
+    use dpp::version::PlatformVersion;
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use platform_encryption::{
@@ -500,35 +633,49 @@ mod tests {
         }
     }
 
-    /// A contract holding the private `secret` type, a required `text` and an
-    /// optional `count`, and the public `note` type.
+    /// The test contract, version 1: the private `secret` type, a required
+    /// `text` and an optional `count`, and the public `note` type.
     fn contract() -> DataContract {
+        contract_at(1)
+    }
+
+    /// The test contract at `version`. From version 2 the `secret` type has an
+    /// optional `mood` too, appended as a compatible update appends one.
+    fn contract_at(version: u32) -> DataContract {
+        let mut secret_properties = json!({
+            "text": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 40,
+                "position": 0
+            },
+            "count": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255,
+                "position": 1
+            }
+        });
+        if version >= 2 {
+            secret_properties["mood"] = json!({
+                "type": "string",
+                "maxLength": 10,
+                "position": 2
+            });
+        }
         DataContract::from_value(
             to_value(json!({
                 "$formatVersion": "1",
                 "id": Identifier::from(CONTRACT_ID).to_string(Encoding::Base58),
                 "ownerId": Identifier::from([8; 32]).to_string(Encoding::Base58),
-                "version": 1,
+                "version": version,
                 "documentSchemas": {
                     "secret": {
                         "type": "object",
                         "private": { "entrySize": ENTRY_SIZE },
                         "documentsMutable": false,
                         "canBeDeleted": false,
-                        "properties": {
-                            "text": {
-                                "type": "string",
-                                "minLength": 3,
-                                "maxLength": 40,
-                                "position": 0
-                            },
-                            "count": {
-                                "type": "integer",
-                                "minimum": 0,
-                                "maximum": 255,
-                                "position": 1
-                            }
-                        },
+                        "properties": secret_properties,
                         "required": ["text"],
                         "additionalProperties": false
                     },
@@ -621,17 +768,33 @@ mod tests {
     }
 
     /// A wallet of `phrase` holding `own` at identity index 0, on a mock SDK
-    /// whose context provider holds the test contract.
+    /// whose context provider holds the test contract, which a fetch of it
+    /// also answers.
     async fn wallet(
         phrase: &str,
         own: &Identity,
     ) -> (PlatformWalletManager<NoPersistence>, Arc<PlatformWallet>) {
-        let sdk = dash_sdk::SdkBuilder::new_mock()
+        wallet_with(phrase, own, contract(), contract()).await
+    }
+
+    /// [`wallet`], its context provider holding `held` and a fetch of the
+    /// contract answered with `proved`.
+    async fn wallet_with(
+        phrase: &str,
+        own: &Identity,
+        held: DataContract,
+        proved: DataContract,
+    ) -> (PlatformWalletManager<NoPersistence>, Arc<PlatformWallet>) {
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
             .with_network(Network::Testnet)
             .with_version(PlatformVersion::latest())
-            .with_context_provider(HeldContract(Arc::new(contract())))
+            .with_context_provider(HeldContract(Arc::new(held)))
             .build()
             .expect("mock sdk");
+        sdk.mock()
+            .expect_fetch(Identifier::from(CONTRACT_ID), Some(proved))
+            .await
+            .expect("contract expectation");
         let manager = PlatformWalletManager::new(
             Arc::new(sdk),
             Arc::new(NoPersistence),
@@ -689,7 +852,11 @@ mod tests {
     /// The payload of a `secret` entry holding `properties`, unchecked against
     /// the schema.
     fn payload(properties: serde_json::Value) -> Vec<u8> {
-        let contract = contract();
+        payload_under(&contract(), properties)
+    }
+
+    /// [`payload`], encoded as `contract`'s `secret` type writes it.
+    fn payload_under(contract: &DataContract, properties: serde_json::Value) -> Vec<u8> {
         encode_private_document_payload(
             contract
                 .document_type_for_name(TYPE_NAME)
@@ -801,7 +968,7 @@ mod tests {
                 &crypto,
                 Identifier::from(CONTRACT_ID),
                 TYPE_NAME,
-                0,
+                None,
                 usize::MAX,
             )
             .await
@@ -809,8 +976,12 @@ mod tests {
 
         assert_eq!(read.identities, vec![Identifier::from(ALICE)]);
         assert_eq!(read.pages_read, 2);
-        assert_eq!((read.next_position, read.total_count), (4, 4));
+        assert_eq!(
+            (read.cursor.position, read.cursor.proved_total_count),
+            (4, Some(4))
+        );
         assert!(read.complete);
+        assert!(!read.restarted);
         assert_eq!(read.rejected, vec![]);
         assert_eq!(
             read.entries
@@ -880,54 +1051,72 @@ mod tests {
         assert!(refused.contains("text"), "{refused}");
     }
 
+    /// The entry from Carol, anonymous, to Alice's decryption key, carrying
+    /// `payload`.
+    fn to_alice(payload: &[u8], seed: u8) -> Vec<u8> {
+        seal(
+            ALICE,
+            &identity_secret_key(ALICE_PHRASE, DECRYPTION_KEY_ID),
+            &PrivateDocumentSender::Anonymous,
+            &other_key(0xC0),
+            payload,
+            seed,
+        )
+    }
+
+    /// Reads the test store for `wallet` with Alice's seed from `from`, at
+    /// most `max_pages` pages.
+    async fn read_from(
+        wallet: &PlatformWallet,
+        from: Option<PrivateDocumentCursor>,
+        max_pages: usize,
+    ) -> PrivateDocumentRead {
+        let crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        wallet
+            .identity()
+            .read_private_document_entries(
+                &crypto,
+                Identifier::from(CONTRACT_ID),
+                TYPE_NAME,
+                from,
+                max_pages,
+            )
+            .await
+            .expect("the store reads")
+    }
+
     /// A read stops at `max_pages`, short of the store's end, and a read from
-    /// where it stopped reaches the end.
+    /// its cursor reaches the end.
     #[tokio::test]
-    async fn should_read_on_from_the_position_a_bounded_read_stopped_at() {
+    async fn should_read_on_from_the_cursor_a_bounded_read_stopped_at() {
         let alice = identity(ALICE_PHRASE, ALICE, true);
         let (_manager, wallet) = wallet(ALICE_PHRASE, &alice).await;
-        let alice_decryption = identity_secret_key(ALICE_PHRASE, DECRYPTION_KEY_ID);
-        let to_alice = |seed: u8| {
-            seal(
-                ALICE,
-                &alice_decryption,
-                &PrivateDocumentSender::Anonymous,
-                &other_key(0xC0),
-                &payload(json!({ "text": "hello Alice" })),
-                seed,
-            )
-        };
-        serve_page(&wallet, 0, vec![to_alice(1), to_alice(2)], 3).await;
-        serve_page(&wallet, 2, vec![to_alice(3)], 3).await;
-        let crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
-        let read_from = |start: u64, max_pages: usize| {
-            let identity = wallet.identity();
-            let crypto = &crypto;
-            async move {
-                identity
-                    .read_private_document_entries(
-                        crypto,
-                        Identifier::from(CONTRACT_ID),
-                        TYPE_NAME,
-                        start,
-                        max_pages,
-                    )
-                    .await
-                    .expect("the store reads")
-            }
-        };
+        let hello = payload(json!({ "text": "hello Alice" }));
+        serve_page(
+            &wallet,
+            0,
+            vec![to_alice(&hello, 1), to_alice(&hello, 2)],
+            3,
+        )
+        .await;
+        serve_page(&wallet, 2, vec![to_alice(&hello, 3)], 3).await;
 
-        let first = read_from(0, 1).await;
+        let first = read_from(&wallet, None, 1).await;
         assert_eq!(
-            (first.pages_read, first.next_position, first.total_count),
-            (1, 2, 3)
+            (
+                first.pages_read,
+                first.cursor.position,
+                first.cursor.proved_total_count
+            ),
+            (1, 2, Some(3))
         );
         assert!(!first.complete);
         assert_eq!(first.entries.len(), 2);
 
-        let rest = read_from(first.next_position, 1).await;
-        assert_eq!((rest.pages_read, rest.next_position), (1, 3));
+        let rest = read_from(&wallet, Some(first.cursor), 1).await;
+        assert_eq!((rest.pages_read, rest.cursor.position), (1, 3));
         assert!(rest.complete);
+        assert!(!rest.restarted);
         assert_eq!(
             rest.entries
                 .iter()
@@ -939,10 +1128,120 @@ mod tests {
         // Nothing was appended since: the read from the end is complete and
         // holds nothing.
         serve_page(&wallet, 3, vec![], 3).await;
-        let end = read_from(rest.next_position, usize::MAX).await;
-        assert_eq!((end.pages_read, end.next_position), (1, 3));
+        let end = read_from(&wallet, Some(rest.cursor), usize::MAX).await;
+        assert_eq!((end.pages_read, end.cursor.position), (1, 3));
         assert!(end.complete);
         assert_eq!(end.entries, vec![]);
+    }
+
+    /// A read from a cursor that proved a store of 5 entries, served a page
+    /// from a node behind whose store ends at 4, does not take 4 for the end:
+    /// the store is still known to hold position 4.
+    #[tokio::test]
+    async fn should_keep_a_read_incomplete_below_a_store_size_an_earlier_read_proved() {
+        let alice = identity(ALICE_PHRASE, ALICE, true);
+        let (_manager, wallet) = wallet(ALICE_PHRASE, &alice).await;
+        let hello = payload(json!({ "text": "hello Alice" }));
+        serve_page(
+            &wallet,
+            0,
+            vec![to_alice(&hello, 1), to_alice(&hello, 2)],
+            5,
+        )
+        .await;
+        serve_page(
+            &wallet,
+            2,
+            vec![to_alice(&hello, 3), to_alice(&hello, 4)],
+            4,
+        )
+        .await;
+
+        let first = read_from(&wallet, None, 1).await;
+        assert_eq!(first.cursor.proved_total_count, Some(5));
+        assert!(!first.complete);
+
+        let behind = read_from(&wallet, Some(first.cursor), 1).await;
+        assert_eq!(behind.cursor.position, 4);
+        assert_eq!(behind.cursor.proved_total_count, Some(5));
+        assert!(!behind.complete, "position 4 is known to exist");
+    }
+
+    /// Once the wallet's keys differ from those a cursor was read with, the
+    /// next read starts over from the store's start and says so: the
+    /// positions read before may hold entries the new keys open.
+    #[tokio::test]
+    async fn should_read_from_the_start_again_once_the_wallet_s_keys_change() {
+        let alice = identity(ALICE_PHRASE, ALICE, true);
+        let (_manager, wallet) = wallet(ALICE_PHRASE, &alice).await;
+        let hello = payload(json!({ "text": "hello Alice" }));
+        serve_page(
+            &wallet,
+            0,
+            vec![to_alice(&hello, 1), to_alice(&hello, 2)],
+            2,
+        )
+        .await;
+        let read_with_other_keys = PrivateDocumentCursor {
+            position: 2,
+            proved_total_count: Some(2),
+            key_set: [9; 32],
+        };
+
+        let read = read_from(&wallet, Some(read_with_other_keys), usize::MAX).await;
+
+        assert!(read.restarted);
+        assert_eq!(
+            read.entries
+                .iter()
+                .map(|entry| entry.position)
+                .collect::<Vec<_>>(),
+            vec![0, 1]
+        );
+        assert_eq!(read.cursor.position, 2);
+        assert_ne!(read.cursor.key_set, [9; 32]);
+        assert!(read.complete);
+    }
+
+    /// A payload written under a newer version of the type, which gained an
+    /// optional property, does not read under the contract the provider
+    /// holds: the read fetches the contract again, once, and reads it under
+    /// the newer one. A payload the newer schema refuses is still refused.
+    #[tokio::test]
+    async fn should_read_a_payload_written_under_a_newer_version_of_the_type() {
+        let alice = identity(ALICE_PHRASE, ALICE, true);
+        let (_manager, wallet) =
+            wallet_with(ALICE_PHRASE, &alice, contract(), contract_at(2)).await;
+        let newer = contract_at(2);
+        serve_page(
+            &wallet,
+            0,
+            vec![
+                to_alice(
+                    &payload_under(&newer, json!({ "text": "hello Alice", "mood": "happy" })),
+                    1,
+                ),
+                to_alice(&payload_under(&newer, json!({ "text": "no" })), 2),
+            ],
+            2,
+        )
+        .await;
+
+        let read = read_from(&wallet, None, usize::MAX).await;
+
+        let properties = read.entries[0]
+            .properties
+            .as_ref()
+            .expect("read under the newer type");
+        assert_eq!(
+            properties.get("mood"),
+            Some(&Value::Text("happy".to_string()))
+        );
+        let refused = read.entries[1]
+            .properties
+            .as_ref()
+            .expect_err("a text shorter than the schema's minimum");
+        assert!(refused.contains("text"), "{refused}");
     }
 
     /// An entry that opens under the wallet's key but names another identity
@@ -968,7 +1267,7 @@ mod tests {
                 &crypto,
                 Identifier::from(CONTRACT_ID),
                 TYPE_NAME,
-                0,
+                None,
                 usize::MAX,
             )
             .await
@@ -1002,7 +1301,7 @@ mod tests {
                 &crypto,
                 Identifier::from(CONTRACT_ID),
                 TYPE_NAME,
-                0,
+                None,
                 usize::MAX,
             )
             .await
@@ -1014,32 +1313,33 @@ mod tests {
     }
 
     /// A wallet whose identities hold no key an entry can be sealed to reads
-    /// nothing, and says it read for no identity.
+    /// nothing, says it read for no identity, and hands back the cursor it was
+    /// given, its size unchanged and nothing complete.
     #[tokio::test]
     async fn should_read_nothing_for_a_wallet_with_no_key_to_open_entries() {
         let alice = identity(ALICE_PHRASE, ALICE, false);
         let (_manager, wallet) = wallet(ALICE_PHRASE, &alice).await;
-        let crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let cursor = PrivateDocumentCursor {
+            position: 5,
+            proved_total_count: Some(9),
+            key_set: PrivateDocumentKeyPaths::default().fingerprint(),
+        };
 
-        let read = wallet
-            .identity()
-            .read_private_document_entries(
-                &crypto,
-                Identifier::from(CONTRACT_ID),
-                TYPE_NAME,
-                5,
-                usize::MAX,
-            )
-            .await
-            .expect("nothing to read");
+        let read = read_from(&wallet, Some(cursor), usize::MAX).await;
 
         assert_eq!(
             read,
             PrivateDocumentRead {
-                next_position: 5,
+                cursor,
                 ..Default::default()
             }
         );
+
+        // Never read, the store's size is unknown.
+        let read = read_from(&wallet, None, usize::MAX).await;
+        assert_eq!(read.cursor.proved_total_count, None);
+        assert_eq!(read.pages_read, 0);
+        assert!(!read.complete);
     }
 
     /// A type that is not private has no store: the read is refused.
@@ -1047,11 +1347,6 @@ mod tests {
     async fn should_refuse_to_read_a_type_that_is_not_private() {
         let alice = identity(ALICE_PHRASE, ALICE, true);
         let (_manager, wallet) = wallet(ALICE_PHRASE, &alice).await;
-        let mut sdk = (*wallet.identity().sdk).clone();
-        sdk.mock()
-            .expect_fetch(Identifier::from(CONTRACT_ID), Some(contract()))
-            .await
-            .expect("contract expectation");
         let crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
 
         let error = wallet
@@ -1060,7 +1355,7 @@ mod tests {
                 &crypto,
                 Identifier::from(CONTRACT_ID),
                 "note",
-                0,
+                None,
                 usize::MAX,
             )
             .await
@@ -1112,5 +1407,8 @@ mod tests {
             .add_identity(Network::Testnet, 0, &identity(ALICE_PHRASE, ALICE, false))
             .expect("no path"));
         assert_eq!(none, PrivateDocumentKeyPaths::default());
+        // Another key set, another fingerprint: a cursor read with one is
+        // read again from the start with the other.
+        assert_ne!(paths.fingerprint(), none.fingerprint());
     }
 }

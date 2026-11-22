@@ -101,6 +101,12 @@ class AppState: ObservableObject {
     private var dataManager: DataManager?
     private var modelContext: ModelContext?
 
+    /// The device's model context, set by `initializeSDK`; nil before it.
+    /// For a screen that must read the device's wallets and identities when
+    /// it is presented from a contract-search preview, whose environment
+    /// holds a throwaway in-memory store instead.
+    var deviceModelContext: ModelContext? { modelContext }
+
     /// Every SDK `makeSdk` built that is still alive: the published one, one a
     /// rebuild is moving the wallet manager onto, and the wallet managers'
     /// background SDKs. `applyQuorumMode` applies the user's mode to all of

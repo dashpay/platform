@@ -94,7 +94,8 @@ pub use private_contact_requests::{
 // DashPay private contact request sync above scans with the same key paths.
 mod private_documents;
 pub use private_documents::{
-    OpenedPrivateDocument, PrivateDocumentDirection, PrivateDocumentKeyPaths, PrivateDocumentRead,
+    OpenedPrivateDocument, PrivateDocumentCursor, PrivateDocumentDirection,
+    PrivateDocumentKeyPaths, PrivateDocumentRead,
 };
 mod profile;
 mod public_keys;

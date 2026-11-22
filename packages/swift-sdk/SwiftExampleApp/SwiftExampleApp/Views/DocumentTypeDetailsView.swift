@@ -93,15 +93,33 @@ struct DocumentTypeDetailsView: View {
             .accessibilityIdentifier("documentType.privateSection")
 
             NavigationLink {
-                PrivateDocumentEntriesView(documentType: documentType)
-                    .environmentObject(appState)
-                    .environmentObject(walletManager)
+                privateDocumentEntriesDestination
             } label: {
                 Label("Read Entries", systemImage: "envelope.open")
             }
             .accessibilityIdentifier("documentType.privateEntriesLink")
         } header: {
             Text("Private")
+        }
+    }
+
+    /// The entries screen, reading the device's wallets and identities. A
+    /// contract-search preview presents this view against a throwaway
+    /// in-memory store holding only the previewed contract, where `@Query`
+    /// finds no wallet, so the screen gets the device's model context and
+    /// plain values rather than this preview-store model.
+    @ViewBuilder
+    private var privateDocumentEntriesDestination: some View {
+        let entries = PrivateDocumentEntriesView(
+            contractId: documentType.contractId,
+            documentTypeName: documentType.name
+        )
+        .environmentObject(appState)
+        .environmentObject(walletManager)
+        if let deviceContext = appState.deviceModelContext {
+            entries.environment(\.modelContext, deviceContext)
+        } else {
+            entries
         }
     }
 

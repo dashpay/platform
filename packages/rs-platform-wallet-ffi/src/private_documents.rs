@@ -7,7 +7,7 @@
 //! `IdentityWallet::read_private_document_entries` with keys derived inside
 //! the resolver-backed signer and hands back what opened, each entry's
 //! payload read against the type's schema. The read keeps nothing: the
-//! caller keeps the position to read on from.
+//! caller keeps the cursor it got and hands it back to read on.
 //!
 //! Release the result with [`platform_wallet_private_document_read_free`].
 
@@ -15,7 +15,9 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
 use platform_encryption::PrivateDocumentAuthMode;
-use platform_wallet::{OpenedPrivateDocument, PrivateDocumentDirection, PrivateDocumentRead};
+use platform_wallet::{
+    OpenedPrivateDocument, PrivateDocumentCursor, PrivateDocumentDirection, PrivateDocumentRead,
+};
 use rs_sdk_ffi::MnemonicResolverHandle;
 
 use crate::dashpay::resolver_contact_crypto_provider;
@@ -129,6 +131,70 @@ const _: () = assert!(std::mem::offset_of!(PrivateDocumentEntryFFI, auth_mode) =
 #[cfg(target_pointer_width = "64")]
 const _: () = assert!(std::mem::offset_of!(PrivateDocumentEntryFFI, has_claimed_sender) == 178);
 
+/// Where reading a private document type's store goes on from
+/// (`PrivateDocumentCursor`). The caller keeps it between reads and hands it
+/// back unchanged: it carries the largest store size proved so far, so a page
+/// from a node behind does not end the reading early, and the fingerprint of
+/// the keys read with, so a read after the wallet's keys changed starts over.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PrivateDocumentCursorFFI {
+    /// The position the next read starts at.
+    pub position: u64,
+    /// The largest store size a page proved, when
+    /// `has_proved_total_count`; 0 otherwise.
+    pub proved_total_count: u64,
+    /// The fingerprint of the keys the reads scanned with. Opaque: hand it
+    /// back as it came.
+    pub key_set: [u8; 32],
+    /// Whether a page was ever proved, so `proved_total_count` holds the
+    /// store size. `false` means the store's size is unknown, not 0.
+    pub has_proved_total_count: bool,
+}
+
+// Expected `PrivateDocumentCursorFFI` layout on 64-bit targets:
+//
+//   0..=7    position                u64
+//   8..=15   proved_total_count      u64
+//   16..=47  key_set                 [u8; 32]
+//   48       has_proved_total_count  bool
+//   49..=55  (tail padding to 8)
+//
+// Total size = 56, alignment = 8.
+#[cfg(target_pointer_width = "64")]
+const _: [u8; 56] = [0u8; std::mem::size_of::<PrivateDocumentCursorFFI>()];
+#[cfg(target_pointer_width = "64")]
+const _: [u8; 8] = [0u8; std::mem::align_of::<PrivateDocumentCursorFFI>()];
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(std::mem::offset_of!(PrivateDocumentCursorFFI, proved_total_count) == 8);
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(std::mem::offset_of!(PrivateDocumentCursorFFI, key_set) == 16);
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(std::mem::offset_of!(PrivateDocumentCursorFFI, has_proved_total_count) == 48);
+
+impl From<PrivateDocumentCursor> for PrivateDocumentCursorFFI {
+    fn from(cursor: PrivateDocumentCursor) -> Self {
+        Self {
+            position: cursor.position,
+            proved_total_count: cursor.proved_total_count.unwrap_or(0),
+            key_set: cursor.key_set,
+            has_proved_total_count: cursor.proved_total_count.is_some(),
+        }
+    }
+}
+
+impl From<PrivateDocumentCursorFFI> for PrivateDocumentCursor {
+    fn from(cursor: PrivateDocumentCursorFFI) -> Self {
+        Self {
+            position: cursor.position,
+            proved_total_count: cursor
+                .has_proved_total_count
+                .then_some(cursor.proved_total_count),
+            key_set: cursor.key_set,
+        }
+    }
+}
+
 /// What a read of a private document type's store found for the wallet
 /// (`PrivateDocumentRead`). Counts above `u32::MAX` saturate. Release with
 /// [`platform_wallet_private_document_read_free`].
@@ -140,11 +206,9 @@ pub struct PrivateDocumentReadFFI {
     pub entries: *mut PrivateDocumentEntryFFI,
     /// How many entries `entries` holds.
     pub entry_count: usize,
-    /// The position to read from next. The read keeps nothing: pass it back
-    /// as `start_position` to read on.
-    pub next_position: u64,
-    /// How many entries the store held, as the pages read proved it.
-    pub total_count: u64,
+    /// Where to read on from. The read keeps nothing: pass it back, as it
+    /// came, as `from` to read on.
+    pub cursor: PrivateDocumentCursorFFI,
     /// The store pages read.
     pub pages_read: u32,
     /// Entries that decrypted under one of the wallet's keys but are
@@ -154,56 +218,63 @@ pub struct PrivateDocumentReadFFI {
     /// index and a key an entry can be sealed to. With none, nothing was
     /// read.
     pub identity_count: u32,
-    /// Whether the read reached the store's last entry. A later read from
-    /// `next_position` reads the entries appended since.
+    /// Whether the read reached the store's last entry, as large a store as
+    /// any page proved. A later read from `cursor` reads the entries appended
+    /// since. `false` with `pages_read` 0 means nothing was read: no identity
+    /// can open entries, or the page budget was 0, and reading again changes
+    /// nothing until that does.
     pub complete: bool,
+    /// The wallet's keys changed since the `from` cursor, so the read started
+    /// over at the store's start: its entries replace those of the earlier
+    /// reads rather than follow them.
+    pub restarted: bool,
 }
 
 // Expected `PrivateDocumentReadFFI` layout on 64-bit targets:
 //
 //   0..=7     entries         *mut PrivateDocumentEntryFFI
 //   8..=15    entry_count     usize
-//   16..=23   next_position   u64
-//   24..=31   total_count     u64
-//   32..=35   pages_read      u32
-//   36..=39   rejected_count  u32
-//   40..=43   identity_count  u32
-//   44        complete        bool
-//   45..=47   (tail padding to 8)
+//   16..=71   cursor          PrivateDocumentCursorFFI (56 bytes)
+//   72..=75   pages_read      u32
+//   76..=79   rejected_count  u32
+//   80..=83   identity_count  u32
+//   84        complete        bool
+//   85        restarted       bool
+//   86..=87   (tail padding to 8)
 //
-// Total size = 48, alignment = 8.
+// Total size = 88, alignment = 8.
 #[cfg(target_pointer_width = "64")]
-const _: [u8; 48] = [0u8; std::mem::size_of::<PrivateDocumentReadFFI>()];
+const _: [u8; 88] = [0u8; std::mem::size_of::<PrivateDocumentReadFFI>()];
 #[cfg(target_pointer_width = "64")]
 const _: [u8; 8] = [0u8; std::mem::align_of::<PrivateDocumentReadFFI>()];
 #[cfg(target_pointer_width = "64")]
 const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, entry_count) == 8);
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, next_position) == 16);
+const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, cursor) == 16);
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, total_count) == 24);
+const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, pages_read) == 72);
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, pages_read) == 32);
+const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, rejected_count) == 76);
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, rejected_count) == 36);
+const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, identity_count) == 80);
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, identity_count) == 40);
+const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, complete) == 84);
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, complete) == 44);
+const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, restarted) == 85);
 
 impl PrivateDocumentReadFFI {
-    /// No entries, every count zero: the value an out-param holds before a
-    /// read fills it and after it is freed.
+    /// No entries, every count zero, a zeroed cursor: the value an
+    /// out-param holds before a read fills it and after it is freed.
     pub fn empty() -> Self {
         Self {
             entries: std::ptr::null_mut(),
             entry_count: 0,
-            next_position: 0,
-            total_count: 0,
+            cursor: PrivateDocumentCursorFFI::default(),
             pages_read: 0,
             rejected_count: 0,
             identity_count: 0,
             complete: false,
+            restarted: false,
         }
     }
 }
@@ -246,7 +317,13 @@ unsafe fn free_entry_strings(entry: &mut PrivateDocumentEntryFFI) {
 }
 
 /// `entry` as the FFI hands it over; its properties as the JSON a document
-/// query returns (`platform_value::Value` through `serde_json`).
+/// query returns (`platform_value::Value` through `serde_json`, which escapes
+/// a NUL in a string as `\u0000`).
+///
+/// A refusal is DPP's diagnostic, which can quote a rejected string verbatim,
+/// NUL included; a C string cannot hold a NUL, so each is written as the two
+/// characters `\0`. The entry keeps its refusal and the read its other
+/// entries.
 fn private_document_entry_ffi(
     entry: OpenedPrivateDocument,
 ) -> Result<PrivateDocumentEntryFFI, PlatformWalletFFIResult> {
@@ -255,7 +332,10 @@ fn private_document_entry_ffi(
             CString::new(serde_json::to_string(&properties)?)?.into_raw(),
             std::ptr::null_mut(),
         ),
-        Err(refusal) => (std::ptr::null_mut(), CString::new(refusal)?.into_raw()),
+        Err(refusal) => (
+            std::ptr::null_mut(),
+            CString::new(refusal.replace('\0', "\\0"))?.into_raw(),
+        ),
     };
     let (claimed_sender_identity_id, claimed_sender_key_id) = entry
         .claimed_sender
@@ -309,29 +389,41 @@ fn private_document_read_ffi(
     Ok(PrivateDocumentReadFFI {
         entries,
         entry_count,
-        next_position: read.next_position,
-        total_count: read.total_count,
+        cursor: read.cursor.into(),
         pages_read: saturating_count(read.pages_read),
         rejected_count: saturating_count(read.rejected.len()),
         identity_count: saturating_count(read.identities.len()),
         complete: read.complete,
+        restarted: read.restarted,
     })
+}
+
+/// The cursor `from` points to; `None` for null, which reads from the store's
+/// start.
+///
+/// # Safety
+/// `from`, when non-null, must point to a readable `PrivateDocumentCursorFFI`.
+unsafe fn read_cursor(from: *const PrivateDocumentCursorFFI) -> Option<PrivateDocumentCursor> {
+    unsafe { from.as_ref() }.map(|cursor| PrivateDocumentCursor::from(*cursor))
 }
 
 /// Read the store of the private document type `document_type_name` of the
 /// contract `data_contract_id` for every identity of the wallet, at most
-/// `max_pages` proved pages from `start_position`
-/// (`IdentityWallet::read_private_document_entries`): the entries sealed to
-/// them, opened, and the entries they sealed, recovered from the store
-/// alone, each with its payload read against the type's schema.
+/// `max_pages` proved pages from the cursor `from`, or from the store's start
+/// when `from` is null (`IdentityWallet::read_private_document_entries`): the
+/// entries sealed to them, opened, and the entries they sealed, recovered
+/// from the store alone, each with its payload read against the type's
+/// schema.
 ///
 /// `core_signer_handle` is the wallet-HD resolver signer: the keys are
-/// derived inside it and stay there. Nothing is kept: read on by passing
-/// `next_position` back as `start_position`. A store only grows, so a later
-/// read from there holds what was appended since. An entry's sender is what
-/// the entry claims; the read does not check it against that identity's
-/// keys. With no identity able to open entries (`identity_count` 0) nothing
-/// is read and `next_position` is `start_position`.
+/// derived inside it and stay there. Nothing is kept: read on by passing the
+/// result's `cursor` back, unchanged, as `from`. A store only grows, so a
+/// later read from there holds what was appended since. When the wallet's
+/// keys changed since that cursor, the read starts over from the store's
+/// start and sets `restarted`: its entries replace the earlier ones. An
+/// entry's sender is what the entry claims; the read does not check it
+/// against that identity's keys. With no identity able to open entries
+/// (`identity_count` 0) nothing is read.
 ///
 /// Errors: a resolver whose seed is not the wallet's is refused before any
 /// page is read with `ErrorInvalidParameter`, as the private contact request
@@ -348,6 +440,8 @@ fn private_document_read_ffi(
 ///   `*mut MnemonicResolverHandle`; the caller pins it for the call.
 /// - `data_contract_id` must point to 32 readable bytes.
 /// - `document_type_name` must be a valid NUL-terminated UTF-8 C string.
+/// - `from`, when non-null, must point to a readable
+///   `PrivateDocumentCursorFFI`, one a read returned.
 /// - `out_read` must be a valid, writable pointer.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_read_private_document_entries(
@@ -355,7 +449,7 @@ pub unsafe extern "C" fn platform_wallet_read_private_document_entries(
     core_signer_handle: *mut MnemonicResolverHandle,
     data_contract_id: *const u8,
     document_type_name: *const c_char,
-    start_position: u64,
+    from: *const PrivateDocumentCursorFFI,
     max_pages: u32,
     out_read: *mut PrivateDocumentReadFFI,
 ) -> PlatformWalletFFIResult {
@@ -370,6 +464,8 @@ pub unsafe extern "C" fn platform_wallet_read_private_document_entries(
     let document_type_name =
         unwrap_result_or_return!(unsafe { CStr::from_ptr(document_type_name) }.to_str())
             .to_string();
+    // SAFETY: the caller guarantees a non-null `from` is readable.
+    let from = unsafe { read_cursor(from) };
 
     // Look the wallet up under the registry guard, but run the read outside
     // it: a read fetches many pages, and a registry read guard held across
@@ -393,7 +489,7 @@ pub unsafe extern "C" fn platform_wallet_read_private_document_entries(
                 &provider,
                 data_contract_id,
                 &document_type_name,
-                start_position,
+                from,
                 max_pages as usize,
             )
             .await
@@ -457,6 +553,7 @@ mod tests {
 
     const WALLET_IDENTITY: [u8; 32] = [0xA1; 32];
     const OTHER_IDENTITY: [u8; 32] = [0xC2; 32];
+    const KEY_SET: [u8; 32] = [0x5E; 32];
 
     fn text_of(string: *mut c_char) -> String {
         assert!(!string.is_null());
@@ -529,8 +626,12 @@ mod tests {
                 error: PrivateDocumentEnvelopeError::WrongRecipient,
             }],
             pages_read: 2,
-            next_position: 4,
-            total_count: 4,
+            cursor: PrivateDocumentCursor {
+                position: 4,
+                proved_total_count: Some(4),
+                key_set: KEY_SET,
+            },
+            restarted: true,
             complete: true,
         }
     }
@@ -540,12 +641,21 @@ mod tests {
         let mut read = private_document_read_ffi(sample_read()).expect("the read marshals");
 
         assert_eq!(read.entry_count, 3);
-        assert_eq!((read.next_position, read.total_count), (4, 4));
+        assert_eq!(
+            read.cursor,
+            PrivateDocumentCursorFFI {
+                position: 4,
+                proved_total_count: 4,
+                key_set: KEY_SET,
+                has_proved_total_count: true,
+            }
+        );
         assert_eq!(
             (read.pages_read, read.rejected_count, read.identity_count),
             (2, 1, 1)
         );
         assert!(read.complete);
+        assert!(read.restarted);
         let entries = unsafe { std::slice::from_raw_parts(read.entries, read.entry_count) };
 
         let received = &entries[0];
@@ -596,9 +706,7 @@ mod tests {
         );
 
         unsafe { platform_wallet_private_document_read_free(&mut read) };
-        assert!(read.entries.is_null());
-        assert_eq!(read.entry_count, 0);
-        assert!(!read.complete);
+        assert_empty(&read);
         // Idempotent once reset.
         unsafe { platform_wallet_private_document_read_free(&mut read) };
     }
@@ -606,13 +714,19 @@ mod tests {
     #[test]
     fn should_marshal_a_read_for_no_identity_as_empty_and_free_it_safely() {
         let mut read = private_document_read_ffi(PrivateDocumentRead {
-            next_position: 5,
+            cursor: PrivateDocumentCursor {
+                position: 5,
+                proved_total_count: None,
+                key_set: KEY_SET,
+            },
             ..Default::default()
         })
         .expect("the read marshals");
         assert!(read.entries.is_null());
         assert_eq!((read.entry_count, read.identity_count), (0, 0));
-        assert_eq!(read.next_position, 5);
+        assert_eq!(read.cursor.position, 5);
+        // No page proved: the size is unknown, not 0.
+        assert!(!read.cursor.has_proved_total_count);
         unsafe {
             platform_wallet_private_document_read_free(&mut read);
             platform_wallet_private_document_read_free(&mut read);
@@ -621,19 +735,67 @@ mod tests {
     }
 
     #[test]
-    fn should_free_the_strings_already_made_when_an_entry_cannot_be_marshalled() {
+    fn should_escape_a_nul_in_a_refusal_and_keep_the_rest_of_the_read() {
         let mut read = sample_read();
-        // A refusal holding a NUL cannot cross as a C string.
+        // A DPP diagnostic can quote the rejected string, NUL included.
         read.entries[2].properties = Err("bad\0reason".to_string());
-        let result = private_document_read_ffi(read).expect_err("an interior NUL");
+        let mut read = private_document_read_ffi(read).expect("the read marshals");
+
+        assert_eq!(read.entry_count, 3);
+        let entries = unsafe { std::slice::from_raw_parts(read.entries, read.entry_count) };
+        assert!(entries[2].properties_json.is_null());
+        assert_eq!(text_of(entries[2].properties_refusal), r"bad\0reason");
+        assert!(text_of(entries[0].properties_json).contains("hello"));
+        assert_eq!(text_of(entries[1].properties_json), r#"{"text":"hi"}"#);
+        assert_eq!(read.cursor.position, 4);
+        assert_eq!(read.cursor.key_set, KEY_SET);
+        assert_eq!(
+            (read.pages_read, read.rejected_count, read.identity_count),
+            (2, 1, 1)
+        );
+
+        unsafe { platform_wallet_private_document_read_free(&mut read) };
+        assert_empty(&read);
+    }
+
+    #[test]
+    fn should_fail_the_read_when_properties_cannot_become_json() {
+        let mut read = sample_read();
+        // JSON object keys are strings: a map keyed by an array has no JSON.
+        // The first two entries' strings are made by then, and are freed.
+        read.entries[2].properties = Ok(BTreeMap::from([(
+            "nested".to_string(),
+            Value::Map(vec![(Value::Array(vec![]), Value::Null)]),
+        )]));
+        let result = private_document_read_ffi(read).expect_err("no JSON for the properties");
         assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
     }
 
-    /// Calls the read with each pointer argument valid except as given.
+    #[test]
+    fn should_round_trip_a_cursor_through_its_ffi_form() {
+        // A null `from` reads from the store's start; it is no error.
+        assert_eq!(unsafe { read_cursor(std::ptr::null()) }, None);
+
+        for proved_total_count in [Some(7), Some(0), None] {
+            let cursor = PrivateDocumentCursor {
+                position: 3,
+                proved_total_count,
+                key_set: KEY_SET,
+            };
+            let ffi = PrivateDocumentCursorFFI::from(cursor);
+            assert_eq!(ffi.has_proved_total_count, proved_total_count.is_some());
+            assert_eq!(ffi.proved_total_count, proved_total_count.unwrap_or(0));
+            assert_eq!(unsafe { read_cursor(&ffi) }, Some(cursor));
+        }
+    }
+
+    /// Calls the read from `from` with each pointer argument valid except as
+    /// given.
     unsafe fn read_with(
         resolver: *mut MnemonicResolverHandle,
         contract_id: *const u8,
         type_name: *const c_char,
+        from: *const PrivateDocumentCursorFFI,
         out_read: *mut PrivateDocumentReadFFI,
     ) -> PlatformWalletFFIResult {
         unsafe {
@@ -642,7 +804,7 @@ mod tests {
                 resolver,
                 contract_id,
                 type_name,
-                0,
+                from,
                 1,
                 out_read,
             )
@@ -653,28 +815,33 @@ mod tests {
         PrivateDocumentReadFFI {
             entries: std::ptr::null_mut(),
             entry_count: 0,
-            next_position: 9,
-            total_count: 9,
+            cursor: PrivateDocumentCursorFFI {
+                position: 9,
+                proved_total_count: 9,
+                key_set: KEY_SET,
+                has_proved_total_count: true,
+            },
             pages_read: 9,
             rejected_count: 9,
             identity_count: 9,
             complete: true,
+            restarted: true,
         }
     }
 
     fn assert_empty(read: &PrivateDocumentReadFFI) {
         assert!(read.entries.is_null());
+        assert_eq!(read.cursor, PrivateDocumentCursorFFI::default());
         assert_eq!(
             (
                 read.entry_count,
-                read.next_position,
-                read.total_count,
                 read.pages_read,
                 read.rejected_count,
                 read.identity_count,
                 read.complete,
+                read.restarted,
             ),
-            (0, 0, 0, 0, 0, 0, false)
+            (0, 0, 0, 0, false, false)
         );
     }
 
@@ -691,6 +858,7 @@ mod tests {
                 resolver,
                 contract_id.as_ptr(),
                 type_name.as_ptr(),
+                std::ptr::null(),
                 std::ptr::null_mut(),
             )
         };
@@ -707,7 +875,15 @@ mod tests {
         ];
         for (resolver, contract_id, type_name) in cases {
             let mut read = stale_read();
-            let result = unsafe { read_with(resolver, contract_id, type_name, &mut read) };
+            let result = unsafe {
+                read_with(
+                    resolver,
+                    contract_id,
+                    type_name,
+                    std::ptr::null(),
+                    &mut read,
+                )
+            };
             assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
             assert_empty(&read);
         }
@@ -717,16 +893,22 @@ mod tests {
     fn should_clear_the_read_output_on_an_unknown_wallet() {
         let contract_id = [7u8; 32];
         let resolver = std::ptr::NonNull::<MnemonicResolverHandle>::dangling().as_ptr();
-        let mut read = stale_read();
-        let result = unsafe {
-            read_with(
-                resolver,
-                contract_id.as_ptr(),
-                c"secret".as_ptr(),
-                &mut read,
-            )
-        };
-        assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
-        assert_empty(&read);
+        let cursor = stale_read().cursor;
+        // A null `from` is no null-pointer error: both reach the wallet
+        // lookup.
+        for from in [std::ptr::null(), &cursor as *const PrivateDocumentCursorFFI] {
+            let mut read = stale_read();
+            let result = unsafe {
+                read_with(
+                    resolver,
+                    contract_id.as_ptr(),
+                    c"secret".as_ptr(),
+                    from,
+                    &mut read,
+                )
+            };
+            assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
+            assert_empty(&read);
+        }
     }
 }

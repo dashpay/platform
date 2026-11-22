@@ -116,18 +116,57 @@ public struct PrivateDocumentEntry: Sendable, Equatable {
     }
 }
 
+/// Where reading a private document type's store goes on from. Keep the
+/// one a read returned and hand it back, as it came, as the next read's
+/// `from`: Rust decides from it where that read starts.
+///
+/// It carries the largest store size a page proved so far, so a page from a
+/// node behind does not end the reading early, and the fingerprint of the
+/// keys the reads used, so a read after the wallet's keys changed starts
+/// over (`PrivateDocumentEntriesRead.restarted`).
+public struct PrivateDocumentReadCursor: Sendable, Equatable {
+    /// The position the next read starts at.
+    public let position: UInt64
+    /// The largest store size a page proved, in the reads this cursor comes
+    /// from; `nil` while no page was ever proved: the size is unknown, not
+    /// 0.
+    public let provedTotalCount: UInt64?
+    /// The fingerprint of the keys the reads scanned with, 32 bytes. Opaque
+    /// to Swift: it only crosses back.
+    let keySet: Data
+
+    init(ffi: PrivateDocumentCursorFFI) {
+        self.position = ffi.position
+        self.provedTotalCount = ffi.has_proved_total_count ? ffi.proved_total_count : nil
+        self.keySet = withUnsafeBytes(of: ffi.key_set) { Data($0) }
+    }
+
+    /// The cursor as the FFI takes it back.
+    var ffi: PrivateDocumentCursorFFI {
+        var cursor = PrivateDocumentCursorFFI()
+        cursor.position = position
+        cursor.proved_total_count = provedTotalCount ?? 0
+        cursor.has_proved_total_count = provedTotalCount != nil
+        withUnsafeMutableBytes(of: &cursor.key_set) { $0.copyBytes(from: keySet.prefix($0.count)) }
+        return cursor
+    }
+}
+
 /// What one read of a private document type's store found for the wallet.
 /// Nothing of it is kept anywhere: hold it in view state.
 public struct PrivateDocumentEntriesRead: Sendable, Equatable {
     /// The entries opened or recovered, in store order; at one position,
     /// the received one first.
     public let entries: [PrivateDocumentEntry]
-    /// The position to read from next. Pass it back as `startPosition` to
-    /// read on; a store only grows, so a later read from there holds what
-    /// was appended since.
-    public let nextPosition: UInt64
-    /// How many entries the store held, as the pages read proved it.
-    public let totalCount: UInt64
+    /// Where to read on from: pass it back as `from`. A store only grows, so
+    /// a later read from there holds what was appended since.
+    /// `cursor.provedTotalCount` is the largest store size proved so far,
+    /// `nil` while unknown.
+    public let cursor: PrivateDocumentReadCursor
+    /// The wallet's keys changed since the `from` cursor, so the read
+    /// started over at the store's start: its entries replace those of the
+    /// earlier reads rather than follow them.
+    public let restarted: Bool
     /// The store pages read.
     public let pagesRead: UInt32
     /// Entries that decrypted under one of the wallet's keys but are
@@ -137,57 +176,72 @@ public struct PrivateDocumentEntriesRead: Sendable, Equatable {
     /// index and a key an entry can be sealed to. With none, nothing was
     /// read.
     public let identityCount: UInt32
-    /// Whether the read reached the store's last entry.
+    /// Whether the read reached the store's last entry, as large a store as
+    /// any page proved. A later read from `cursor` reads the entries
+    /// appended since. `false` with `pagesRead` 0 means nothing was read (no
+    /// identity can open entries, or a page budget of 0), and reading again
+    /// changes nothing until that does.
     public let complete: Bool
 }
 
 extension ManagedPlatformWallet {
     /// Read the store of the private document type `documentTypeName` of
     /// `contractId` for every identity of this wallet, at most `maxPages`
-    /// proved pages from `startPosition` (the default reads to the end): the
-    /// entries sealed to them, opened, and the entries they sealed,
-    /// recovered from the store alone, each with its payload read against
-    /// the type's schema.
+    /// proved pages from the cursor `from`, or from the store's start when
+    /// `from` is nil: the entries sealed to them, opened, and the entries
+    /// they sealed, recovered from the store alone, each with its payload
+    /// read against the type's schema.
     ///
     /// The keys are derived inside the Keychain mnemonic resolver Rust-side
-    /// and stay there. The read keeps nothing: the caller keeps
-    /// `nextPosition` and reads on from it. A failed page fetch fails the
-    /// read; read again from the position you had. An entry's sender is
-    /// what the entry claims (`PrivateDocumentEntry.claimedSenderIdentityId`):
-    /// whether that identity wrote it is not checked here.
+    /// and stay there. The read keeps nothing: the caller keeps the
+    /// returned `cursor` and passes it back, unchanged, to read on. When
+    /// the wallet's keys changed since that cursor the read starts over
+    /// and sets `restarted`. A failed page fetch fails the read; read again
+    /// from the cursor you had. An entry's sender is what the entry claims
+    /// (`PrivateDocumentEntry.claimedSenderIdentityId`): whether that
+    /// identity wrote it is not checked here.
     ///
-    /// Throws `PlatformWalletError.invalidParameter` when the resolver's
-    /// mnemonic is not this wallet's (before any page is read),
+    /// Throws `PlatformWalletError.invalidParameter` when `contractId` is
+    /// not 32 bytes, when `documentTypeName` holds a NUL, or when the
+    /// resolver's mnemonic is not this wallet's (before any page is read),
     /// `.protocolVersionNotActive` below protocol version 15, and the error
     /// the wallet reports when the contract declares no such private type.
     public func readPrivateDocumentEntries(
         contractId: Identifier,
         documentTypeName: String,
-        startPosition: UInt64 = 0,
-        maxPages: UInt32 = .max
+        from: PrivateDocumentReadCursor? = nil,
+        maxPages: UInt32
     ) async throws -> PrivateDocumentEntriesRead {
         guard contractId.count == 32 else {
             throw PlatformWalletError.invalidParameter("contractId must be exactly 32 bytes")
+        }
+        // `withCString` would hand Rust only the part before a NUL.
+        guard !documentTypeName.utf8.contains(0) else {
+            throw PlatformWalletError.invalidParameter(
+                "documentTypeName contains an embedded NUL byte")
         }
         let handle = self.handle
         let coreSigner = MnemonicResolver()
         return try await Task.detached(priority: .userInitiated) {
             () -> PrivateDocumentEntriesRead in
             var read = PrivateDocumentReadFFI()
+            let fromFFI = from?.ffi
             // Keep the resolver alive across the synchronous FFI call: its
             // vtable callback fires during it.
             let result = withExtendedLifetime(coreSigner) {
                 contractId.withFFIBytes { contractPtr in
                     documentTypeName.withCString { namePtr in
-                        platform_wallet_read_private_document_entries(
-                            handle,
-                            coreSigner.handle,
-                            contractPtr,
-                            namePtr,
-                            startPosition,
-                            maxPages,
-                            &read
-                        )
+                        withOptionalPointer(to: fromFFI) { fromPtr in
+                            platform_wallet_read_private_document_entries(
+                                handle,
+                                coreSigner.handle,
+                                contractPtr,
+                                namePtr,
+                                fromPtr,
+                                maxPages,
+                                &read
+                            )
+                        }
                     }
                 }
             }
@@ -203,8 +257,8 @@ extension ManagedPlatformWallet {
             }
             return PrivateDocumentEntriesRead(
                 entries: entries,
-                nextPosition: read.next_position,
-                totalCount: read.total_count,
+                cursor: PrivateDocumentReadCursor(ffi: read.cursor),
+                restarted: read.restarted,
                 pagesRead: read.pages_read,
                 rejectedCount: read.rejected_count,
                 identityCount: read.identity_count,
@@ -212,4 +266,13 @@ extension ManagedPlatformWallet {
             )
         }.value
     }
+}
+
+/// `body` with a pointer to `value`, or with nil when it is nil.
+private func withOptionalPointer<T, R>(
+    to value: T?,
+    _ body: (UnsafePointer<T>?) throws -> R
+) rethrows -> R {
+    guard var value else { return try body(nil) }
+    return try withUnsafePointer(to: &value) { try body($0) }
 }
