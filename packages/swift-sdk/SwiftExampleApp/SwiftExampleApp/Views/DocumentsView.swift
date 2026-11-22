@@ -1962,7 +1962,10 @@ struct CreateDocumentView: View {
         // Prefer the parsed PersistentDocumentType rows (they carry the
         // schema the form needs); fall back to the stored name list.
         if let types = contract.documentTypes, !types.isEmpty {
-            return types.map { $0.name }.sorted()
+            // A private type (protocol version 15) takes no ordinary document: its
+            // store holds encrypted entries, read from the type's detail
+            // screen.
+            return types.filter { !$0.isPrivate }.map { $0.name }.sorted()
         }
         return contract.documentTypesList.sorted()
     }

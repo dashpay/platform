@@ -202,7 +202,7 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | ID | Action | Layer | Tier | Status | Tags | Entry point & test notes |
 |---|---|---|---|---|---|---|
 | DC-01 | Register / load contract from network | Platform | Common | ✅ |  | `RegisterContractSourceView` / `LocalDataContractsView` / `ContractsTabView`. |
-| DC-02 | View contract / schema / doc types / history | Platform | Common | ✅ | read-only | `DataContractDetailsView`, `DocumentTypeDetailsView`. |
+| DC-02 | View contract / schema / doc types / history | Platform | Common | ✅ | read-only | `DataContractDetailsView`, `DocumentTypeDetailsView`. A private document type (protocol version 15) shows a **Private** badge on its row (`documentType.privateBadge`) and, on its detail screen, a **Private** section with its entry size and the **Read Entries** link (`documentType.privateSection`, `documentType.privateEntrySize`, `documentType.privateEntriesLink`; see `DOC-17`). It offers no **New Document**, and the ordinary document pickers (`CreateDocumentView`, the Count and Sum / Average read views, the Settings builder's document create) leave it out: it takes no ordinary document and refuses document queries. |
 | DC-03 | Create data contract | Platform | Common | ✅ |  | `QuickBasicTokenView` and *Settings builder → Data Contract Create* → `platform_wallet_create_data_contract_with_signer`. |
 | DC-04 | Update data contract | Platform | Thorough | ✅ |  | Contracts → contract (owned by a local identity) → **Update Contract** (`contractDetails.updateContract`) → `UpdateContractView`: fill the inputs by **Paste from Clipboard**, **Import from File** or editing (`updateContract.documentsJson` / `tokensJson` / `groupsJson` / `keywords` / `description`) → **Review Changes** (`updateContract.reviewButton`; the changes show in `updateContract.preview`) → **Update Contract** (`updateContract.submitButton`, enabled only when the review reports a change) → success alert (`updateContract.success`), stored contract refreshed (an older fetched version is not stored). An unconfirmed broadcast shows `updateContract.unconfirmed` and keeps Update Contract off for the rest of the screen's life (`updateContract.unconfirmedHold`) → `platform_wallet_preview_data_contract_update` + `platform_wallet_update_data_contract_with_signer`. Secondary entry: *Settings builder → Data Contract Update*. (Note the consensus-sensitive byteArray-widening case in memory when authoring updates.) |
 
@@ -226,6 +226,7 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | DOC-14 | Aggregation — average of a numeric property | Platform | Uncommon | 🧪 | aggregation, read-only | Same **Sum / Average Documents** read view (op selector → **Average**) → Swift wrapper over FFI `dash_sdk_document_average` (proof-verified) → `{averages:{hexKey:{count,sum}}}`; the view divides `sum/count` for display. Needs a doc type with a `summable` index on the numeric property. |
 | DOC-15 | Document transfer / purchase across wallets | Platform | Uncommon | ✅ | multiwallet | A creates + lists a document (`DOC-02`/`DOC-06`); B transfers/purchases it (`DOC-05`/`DOC-07`). Ownership and credits move between A and B. Transfer half driven end-to-end this session via the production UI: the `card` doc `FgVSYG6sTZZ9…` moved from identity `BjJz3hdmg5Ec…` to a different seed-controlled identity `8267geu4…` (QA2), with ownership re-persisted. Purchase half shares `DOC-07`'s status (a fresh buy needs a counterparty-owned for-sale listing). |
 | DOC-16 | Erase a deleted keep-history document's revisions | Platform | Thorough | 🧪 | | Routes: **Settings → Platform State Transitions → Document Erase**; **Browse Documents** → document → **⋯** → **Erase History…**. The erase form calls the Rust wallet read/decide/select/submit/observe operation through `platform_wallet_document_erase_and_observe`. Settings requires an identity linked to a wallet in the active manager; orphaned/import-only identities cannot erase. Rust loads the real contract, rejects ineligible types, skips ACTIVE/ABSENT, and submits nothing when the preflight/ownership read is unavailable. DELETED requires the newest retained revision's owner; ERASING accepts any submitting identity. Keys are selected in Rust using the actual requirement, contract bounds, expiry and supplied signer. A closing-read failure remains a submitted result with unavailable progress; outcome-unknown errors require reading history before any manual retry. Each call submits at most one chunk and never retries automatically. Display skipped/submitted reasons, remaining revisions and cautious progress wording. Needs an erasable keep-history type; not driven on a device or a live provider. |
+| DOC-17 | Read a private document type's entries | Platform | Uncommon | ✅ | read-only | Contracts → contract → a type with the **Private** badge → **Read Entries** (`documentType.privateEntriesLink`) → `PrivateDocumentEntriesView` → pick a wallet (`privateEntries.walletPicker`) → **Read** (`privateEntries.readButton`) → `ManagedPlatformWallet.readPrivateDocumentEntries` → `platform_wallet_read_private_document_entries` (routes through `rs-platform-wallet` `IdentityWallet::read_private_document_entries`: proved `getPrivateDocumentEntries` pages, scanned with keys derived inside the Keychain mnemonic resolver, each opened payload decoded and checked against the type's schema). Each tap reads at most 8 store pages; **Read more** (`privateEntries.readMoreButton`) reads on from the cursor the last read returned until the status says the store was read to its end, and **Read from the start** starts over. The cursor carries the largest store size proved so far, so a page from a node behind does not end the reading early, and the keys it was read with: when an identity's keys changed in between, the read starts over and its entries replace the list. Nothing is persisted: the entries live in the screen, and are covered (`privateEntries.privacyCover`) whenever the app leaves the foreground, so the app switcher shows no decrypted entry. Also reachable from a contract-search preview (Contracts → search → result → type): the screen must list the device's wallets there too. Expect one row per entry the wallet's identities opened (**Received**) or recovered with their outgoing viewing key (**Recovered (outgoing)**: a key of the wallet sealed it, which does not show that the wallet appended that copy), `privateEntries.entry.<position>.<received|sent>`, with its position, append time, the wallet identity and key, the recipient, the authentication mode, the properties, and for an entry that names a sender a **Claimed sender … not verified** line (the read does not check the sender against that identity's keys). A payload the schema refuses shows **Payload refused** with the reason. Status (`privateEntries.status`): pages read, store size (**Unknown** until a page was read), next position, refused envelopes (entries that opened for the wallet but whose envelope was refused; a payload the schema refuses shows on its row instead), read to the end. When an identity holds a key the wallet does not derive at its identity key slot (such as a DashPay Connect application key), **Keys not scanned** (`privateEntries.unscannedKeys`) counts it: entries sealed to it are not read. A payload written after the type gained an optional property is read under the contract fetched again, not refused. Empty states: `privateEntries.noIdentity` (no identity of the wallet holds an encryption or decryption key the wallet derives, nothing is read), `privateEntries.empty` (nothing for this wallet in the pages read), `privateEntries.notActive` (a network before protocol version 15), `privateEntries.error` (any other failure, verbatim; a mnemonic that is not the wallet's is refused before any page is read). Needs a protocol version 15 network and a contract with a private type that holds an entry sealed to, or by, one of the wallet's identities; DashPay's `privateContactRequest` is one once a private contact request was exchanged (`DP` rows). Not yet driven: the Rust read and the FFI marshalling are unit-tested, and the screen and its Swift wrapper were compiled against the new FFI header but not linked or run, as no xcframework built from this change existed. Creating an entry of an arbitrary private type has no flow yet (only DashPay private contact requests append entries). |
 
 ### 4.8 Tokens — `Domain=Token`
 
@@ -331,7 +332,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Essential | 22 | yes |
 | Common | 35 | yes |
 | Thorough | 38 | yes |
-| Uncommon | 30 | yes |
+| Uncommon | 31 | yes |
 | Manual | 2 (`CORE-08`, `DP-10`) | no — physical device |
 
 **By layer (automatable only):**
@@ -339,7 +340,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Layer | Count (approx.) |
 |---|---|
 | Core | 18 |
-| Platform | ~81 |
+| Platform | ~82 |
 | Cross | 11 |
 | Shielded | 14 |
 
@@ -359,7 +360,7 @@ Each row's **primary home** is its §4 section, but a few rows are cross-cutting
 - **DPNS** — `DPNS-01..08`
 - **Voting** — `VOTE-01..07`, `DPNS-05`
 - **Contract** — `DC-01..04`
-- **Document** — `DOC-01..15`
+- **Document** — `DOC-01..17`
 - **Token** — `TOK-01..20`
 - **Shielded** — `SH-01..17`, `CORE-21`
 - **DashPay** — `DP-01..19` (`DP-12..19` = shipped invitation create, claim, persistence, and reclaim UI; funded testnet acceptance is not automated)
@@ -413,6 +414,7 @@ The complete Platform read surface, mapped to where each RPC is exercised in the
 |---|---|---|---|
 | getDocuments (incl. V1 COUNT/SUM/AVG, group_by, having) | Common | ✅ / 🧪 | `DocumentsView` / catalog. COUNT (total/`where`/`group_by`) has a **Count Documents** read view — `DOC-10/11/12`. SUM/AVG now have a **Sum / Average Documents** read view — `DOC-13/14`. `having` is not exposed by the FFI. |
 | getDocumentHistory | Thorough | ✅ | catalog |
+| getPrivateDocumentEntries | Uncommon | ✅ | `PrivateDocumentEntriesView` (`DOC-17`), proof-verified page by page; also the DashPay private contact request sync. Not in the catalog: an entry is opened with wallet keys, so the read goes through the wallet. |
 
 ### Token
 | RPC | Tier | Status | Where |

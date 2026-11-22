@@ -66,6 +66,8 @@
     "platform_wallet_manager_spv_rescan_filters": "packages/rs-platform-wallet-ffi/src/spv.rs",
     "platform_wallet_manager_sync_fault_detected": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_preview_data_contract_update": "packages/rs-platform-wallet-ffi/src/data_contract.rs",
+    "platform_wallet_private_document_read_free": "packages/rs-platform-wallet-ffi/src/private_documents.rs",
+    "platform_wallet_read_private_document_entries": "packages/rs-platform-wallet-ffi/src/private_documents.rs",
     "platform_wallet_resume_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
     "platform_wallet_split_contract_update_source": "packages/rs-platform-wallet-ffi/src/data_contract.rs",
     "platform_wallet_sync_contested_dpns_names": "packages/rs-platform-wallet-ffi/src/dpns.rs",
@@ -1674,6 +1676,88 @@
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
           "id": "DC-04",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "documents.private_document_entries_read",
+      "title": "Read the entries of any private document type a wallet's identities can open (protocol version 15)",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_read_private_document_entries",
+        "platform_wallet_private_document_read_free"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "PrivateDocuments.swift wraps the read (ManagedPlatformWallet.readPrivateDocumentEntries: proved store pages scanned with keys derived inside the Keychain mnemonic resolver, each opened payload decoded and checked against the type's schema in Rust, the sender reported as an unverified claim) and PersistentDocumentType.isPrivate / privateEntrySize read the keyword off the stored schema. The example app badges a private type, leaves it out of the ordinary document create and query pickers, and reads its entries page budget by page budget from the type's detail screen (TEST_PLAN DOC-17), handing back the cursor Rust returned (the position, the largest store size proved and the key set read with, so a node behind does not end the reading early and changed keys restart it), holding the entries in view state: the read keeps nothing, so there is nothing to resume after a restart. The Rust read and the FFI marshalling are unit-tested; no gate records the Swift call or the screen against a protocol version 15 network holding a private type. Keys the wallet does not derive at their identity key slot, such as DashPay Connect application keys, are reported as not scanned rather than scanned. Appending an entry of an arbitrary private type has no wallet entry point yet: only DashPay private contact requests append entries."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "Not ported: no JNI binding for platform_wallet_read_private_document_entries, and the example app neither marks a private document type nor reads its entries."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/private_documents.rs",
+          "id": "should_read_the_entries_a_wallet_s_identity_received_and_sent",
+          "command": "cargo test -p platform-wallet --lib should_read_the_entries_a_wallet_s_identity_received_and_sent",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/private_documents.rs",
+          "id": "should_read_on_from_the_cursor_a_bounded_read_stopped_at",
+          "command": "cargo test -p platform-wallet --lib should_read_on_from_the_cursor_a_bounded_read_stopped_at",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/private_documents.rs",
+          "id": "should_keep_a_read_incomplete_below_a_store_size_an_earlier_read_proved",
+          "command": "cargo test -p platform-wallet --lib should_keep_a_read_incomplete_below_a_store_size_an_earlier_read_proved",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/private_documents.rs",
+          "id": "should_read_a_payload_written_under_a_newer_version_of_the_type",
+          "command": "cargo test -p platform-wallet --lib should_read_a_payload_written_under_a_newer_version_of_the_type",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/private_documents.rs",
+          "id": "should_list_a_key_its_identity_key_slot_does_not_derive_as_unscanned",
+          "command": "cargo test -p platform-wallet --lib should_list_a_key_its_identity_key_slot_does_not_derive_as_unscanned",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/private_documents.rs",
+          "id": "should_marshal_received_sent_and_refused_entries_and_free_them",
+          "command": "cargo test -p platform-wallet-ffi --lib should_marshal_received_sent_and_refused_entries_and_free_them",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/DocumentTypePrivateTests.swift",
+          "id": "testShouldReadAPrivateTypesEntrySizeThroughTheParser",
+          "command": "swift test --package-path packages/swift-sdk --filter DocumentTypePrivateTests",
           "covers_restart": false
         }
       ]

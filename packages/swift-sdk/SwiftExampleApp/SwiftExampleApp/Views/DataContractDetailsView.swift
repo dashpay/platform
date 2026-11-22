@@ -553,6 +553,17 @@ struct DocumentTypeRowView: View {
             HStack {
                 Text(docType.name)
                     .font(.headline)
+                if docType.isPrivate {
+                    // Protocol version 15: encrypted entries, not documents
+                    Label("Private", systemImage: "lock.fill")
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.indigo.opacity(0.2))
+                        .foregroundColor(.indigo)
+                        .cornerRadius(4)
+                        .accessibilityIdentifier("documentType.privateBadge")
+                }
                 Spacer()
                 if docType.documentCount > 0 {
                     Text("\(docType.documentCount) docs")
