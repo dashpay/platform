@@ -283,7 +283,9 @@ struct TransitionInputView: View {
                 return dataContracts.filter { contract in
                     if let docTypes = contract.documentTypes {
                         return docTypes.contains { docType in
-                            docType.creationRestrictionMode <= 1  // 0 = anyone, 1 = owner only
+                            // 0 = anyone, 1 = owner only; a private type
+                            // takes no ordinary document
+                            docType.creationRestrictionMode <= 1 && !docType.isPrivate
                         }
                     }
                     return false
@@ -423,7 +425,9 @@ struct TransitionInputView: View {
                         return docTypes.filter { $0.tradeMode == 1 }
                     } else if isCreateOperation {
                         // For document creation, exclude types with creationRestrictionMode = 2 (system only)
-                        return docTypes.filter { $0.creationRestrictionMode <= 1 }
+                        // and private types (protocol version 15), which take no
+                        // ordinary document
+                        return docTypes.filter { $0.creationRestrictionMode <= 1 && !$0.isPrivate }
                     } else if isReplaceOperation {
                         // For document replace, only show mutable document types
                         return docTypes.filter { $0.documentsMutable }
