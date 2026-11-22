@@ -149,16 +149,18 @@ fun SyncStatusScreen() {
                                     if (isRunning) {
                                         currentManager.stopSpv()
                                     } else {
-                                        // The manager is network-locked and is
-                                        // replaced only after a new SDK is
-                                        // published: never start the old one
-                                        // with the new network's settings.
-                                        val spvNetwork = currentManager.network
-                                        if (spvNetwork != network) {
-                                            error = "The wallet manager is still switching " +
-                                                "to ${network.displayName}. Try again in a moment."
+                                        // The manager is built for one SDK and
+                                        // is replaced only after a new SDK is
+                                        // published (a network switch, or a
+                                        // devnet Apply): never start the old
+                                        // one with the new SDK's settings.
+                                        val switching = "The wallet manager is still switching " +
+                                            "to ${network.displayName}. Try again in a moment."
+                                        if (currentManager.sdk !== appState.sdk.value) {
+                                            error = switching
                                             return@launch
                                         }
+                                        val spvNetwork = currentManager.network
                                         // ← CoreContentView.startSync():
                                         // Documents/SPV/<network> + peer override.
                                         val dataDir = File(
@@ -178,6 +180,13 @@ fun SyncStatusScreen() {
                                             return@launch
                                         }
                                         val peers = appState.spvPeerOverride(spvNetwork)
+                                        // The peer lookup suspends: an SDK
+                                        // published meanwhile makes this
+                                        // manager, name and peers stale.
+                                        if (currentManager.sdk !== appState.sdk.value) {
+                                            error = switching
+                                            return@launch
+                                        }
                                         currentManager.startSpv(
                                             dataDir = dataDir.absolutePath,
                                             peers = peers,
