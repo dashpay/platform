@@ -4,8 +4,8 @@
 //! [`platform_wallet_identity_withdrawals`] calls
 //! `platform_wallet::IdentityWallet::identity_withdrawals`, which reads the
 //! identity's `withdrawal` documents from the withdrawals system contract with
-//! proofs and returns the whole list, each withdrawal once, most recently
-//! updated first. Rust decides everything a client
+//! proofs, every page at one block height, and returns the whole list, each
+//! withdrawal once, most recently updated first. Rust decides everything a client
 //! shows: the status, its label, and whether the withdrawal is final. This
 //! module only flattens the typed rows into C structs.
 
@@ -27,7 +27,8 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 /// [`platform_wallet_identity_withdrawals`] reports it.
 ///
 /// `status_label`, `destination` and `output_script` are owned by the
-/// array; release the whole array with
+/// array and are read-only for the caller: do not modify a row, its strings
+/// or its script, and release the whole array, unchanged, with
 /// [`platform_wallet_identity_withdrawals_free`]. Each optional value is a
 /// `has_*` flag and the value, which is meaningful only when the flag is
 /// set; `destination` is null when the output script is not an address.
@@ -42,28 +43,33 @@ pub struct IdentityWithdrawalFFI {
     /// The Core fee rate the withdrawal offered, in duffs per byte.
     pub core_fee_per_byte: u32,
     /// The withdrawals contract status code: 0 queued, 1 pooled,
-    /// 2 broadcasted, 3 complete, 4 expired, 5 failed.
+    /// 2 broadcasted (Platform built the asset unlock transaction for a quorum
+    /// to sign and handed it on to Core; Core has not necessarily accepted
+    /// it), 3 complete (Platform saw the transaction in a chain-locked Core
+    /// block), 4 expired, 5 failed.
     pub status: u8,
     /// The status as Rust names it ("Queued", "Pooled", ...), NUL-terminated
     /// UTF-8. Null only if the label could not be encoded.
-    pub status_label: *mut c_char,
+    pub status_label: *const c_char,
     /// Whether the withdrawal reached a status it never leaves (complete or
     /// failed). An expired withdrawal is not final: Platform signs it again.
     pub is_final: bool,
     /// The Core address the withdrawal pays on the wallet's network,
     /// NUL-terminated UTF-8; null for a script that is not an address.
-    pub destination: *mut c_char,
+    pub destination: *const c_char,
     /// The Core output script the withdrawal pays. Null when empty.
-    pub output_script: *mut u8,
+    pub output_script: *const u8,
     /// The length of `output_script` in bytes.
     pub output_script_len: usize,
     /// Platform pooled the withdrawal into an asset unlock transaction.
     pub has_transaction_index: bool,
     /// The index of that asset unlock transaction.
     pub transaction_index: u64,
-    /// A quorum signed that transaction.
+    /// Platform built the asset unlock transaction.
     pub has_transaction_sign_height: bool,
-    /// The Core height at which it was signed.
+    /// The Core chain-locked height Platform built the asset unlock
+    /// transaction at (its request height). Not proof that a quorum signed
+    /// it or that Core accepted it.
     pub transaction_sign_height: u32,
     /// When the withdrawal was submitted, block time in milliseconds.
     pub created_at_ms: u64,
@@ -73,10 +79,10 @@ pub struct IdentityWithdrawalFFI {
 
 /// Heap-allocate `s` as an owned C string, or null if it holds an interior
 /// NUL (which neither a status label nor a Base58 address can).
-fn owned_c_string(s: String) -> *mut c_char {
+fn owned_c_string(s: String) -> *const c_char {
     CString::new(s)
-        .map(CString::into_raw)
-        .unwrap_or(ptr::null_mut())
+        .map(|c| CString::into_raw(c).cast_const())
+        .unwrap_or(ptr::null())
 }
 
 impl IdentityWithdrawalFFI {
@@ -85,11 +91,11 @@ impl IdentityWithdrawalFFI {
     fn from_withdrawal(withdrawal: &IdentityWithdrawal) -> Self {
         let script = withdrawal.output_script.as_bytes();
         let (output_script, output_script_len) = if script.is_empty() {
-            (ptr::null_mut(), 0)
+            (ptr::null(), 0)
         } else {
             let boxed: Box<[u8]> = script.to_vec().into_boxed_slice();
             let len = boxed.len();
-            (Box::into_raw(boxed) as *mut u8, len)
+            (Box::into_raw(boxed).cast::<u8>().cast_const(), len)
         };
         Self {
             id: withdrawal.id.to_buffer(),
@@ -103,7 +109,7 @@ impl IdentityWithdrawalFFI {
                 .destination
                 .as_ref()
                 .map(|address| owned_c_string(address.to_string()))
-                .unwrap_or(ptr::null_mut()),
+                .unwrap_or(ptr::null()),
             output_script,
             output_script_len,
             has_transaction_index: withdrawal.transaction_index.is_some(),
@@ -116,7 +122,8 @@ impl IdentityWithdrawalFFI {
     }
 
     /// Free the strings and the script this row owns and null their slots,
-    /// so a second release is a no-op.
+    /// so a second release is a no-op. The pointers are read-only for the
+    /// caller; only here are they turned back into the owned allocations.
     ///
     /// # Safety
     /// Each pointer must be null or an allocation [`Self::from_withdrawal`]
@@ -124,18 +131,18 @@ impl IdentityWithdrawalFFI {
     unsafe fn release_owned(&mut self) {
         for slot in [&mut self.status_label, &mut self.destination] {
             if !slot.is_null() {
-                drop(unsafe { CString::from_raw(*slot) });
-                *slot = ptr::null_mut();
+                drop(unsafe { CString::from_raw(slot.cast_mut()) });
+                *slot = ptr::null();
             }
         }
         if !self.output_script.is_null() {
             drop(unsafe {
                 Box::from_raw(ptr::slice_from_raw_parts_mut(
-                    self.output_script,
+                    self.output_script.cast_mut(),
                     self.output_script_len,
                 ))
             });
-            self.output_script = ptr::null_mut();
+            self.output_script = ptr::null();
             self.output_script_len = 0;
         }
     }
@@ -143,16 +150,23 @@ impl IdentityWithdrawalFFI {
 
 /// Every withdrawal of `identity_id` to Core, each listed once, most
 /// recently updated first, read with proofs from the withdrawals system
-/// contract. Rust reads every page and keeps one row per withdrawal, so a
-/// withdrawal that changes status during the read is neither repeated nor
-/// skipped. Any identity can be asked for, not only the wallet's.
-/// Withdrawals from Platform addresses and from the shielded pool are not
-/// found: the withdrawals contract stores them under its own owner.
+/// contract (protocol version 14 and later). Rust reads every page at one
+/// block height; when no walk stays at one height in a few attempts the call
+/// fails with an error the caller can retry by reading again. Any identity
+/// can be asked for, not only the wallet's. Withdrawals from Platform
+/// addresses and from the shielded pool are not found: the withdrawals
+/// contract stores them under its own owner.
 ///
 /// On success `*out_rows` / `*out_count` hold the rows (null and 0 when
 /// there are none); release them with
-/// [`platform_wallet_identity_withdrawals_free`]. Both out slots are written
-/// before any fallible work, so an error leaves nothing to free.
+/// [`platform_wallet_identity_withdrawals_free`]. Every supplied out slot is
+/// reset before anything is checked, so an error, including a refused null
+/// slot or a caught panic, leaves nothing to free.
+///
+/// # Safety
+/// - `out_rows` and `out_count`, when not null, must be valid and writable.
+///   A null one is refused with `ErrorNullPointer`.
+/// - `identity_id`, when not null, must point to 32 readable bytes.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_identity_withdrawals(
     wallet_handle: Handle,
@@ -160,12 +174,37 @@ pub unsafe extern "C" fn platform_wallet_identity_withdrawals(
     out_rows: *mut *mut IdentityWithdrawalFFI,
     out_count: *mut usize,
 ) -> PlatformWalletFFIResult {
+    // Reset the supplied slots before the guard, so even a refused call or a
+    // caught panic leaves them empty.
+    unsafe {
+        if !out_rows.is_null() {
+            *out_rows = ptr::null_mut();
+        }
+        if !out_count.is_null() {
+            *out_count = 0;
+        }
+    }
+    catch_panic_to_code(
+        "platform_wallet_identity_withdrawals",
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        "Nothing was changed; read the withdrawals again.",
+        || unsafe { identity_withdrawals_inner(wallet_handle, identity_id, out_rows, out_count) },
+    )
+}
+
+/// The body of [`platform_wallet_identity_withdrawals`], run inside its panic
+/// guard after the out slots were reset.
+///
+/// # Safety
+/// As [`platform_wallet_identity_withdrawals`].
+unsafe fn identity_withdrawals_inner(
+    wallet_handle: Handle,
+    identity_id: *const u8,
+    out_rows: *mut *mut IdentityWithdrawalFFI,
+    out_count: *mut usize,
+) -> PlatformWalletFFIResult {
     check_ptr!(out_rows);
     check_ptr!(out_count);
-    unsafe {
-        *out_rows = ptr::null_mut();
-        *out_count = 0;
-    }
 
     let id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });
 
@@ -191,7 +230,8 @@ pub unsafe extern "C" fn platform_wallet_identity_withdrawals(
 ///
 /// # Safety
 /// `rows` must be null or an array this module returned with exactly
-/// `count` elements, not previously freed.
+/// `count` elements, not previously freed, whose rows, strings and scripts
+/// the caller did not modify.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_identity_withdrawals_free(
     rows: *mut IdentityWithdrawalFFI,
@@ -337,9 +377,8 @@ mod tests {
     }
 
     #[test]
-    fn should_refuse_null_out_pointers_and_answer_an_unknown_wallet_as_not_found() {
+    fn should_reset_the_supplied_count_when_the_rows_slot_is_null() {
         let identity_id = [1u8; 32];
-        let mut rows: *mut IdentityWithdrawalFFI = ptr::null_mut();
         let mut count = 7usize;
 
         let result = unsafe {
@@ -350,7 +389,16 @@ mod tests {
                 &mut count,
             )
         };
+
         assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn should_reset_the_supplied_rows_when_the_count_slot_is_null() {
+        let identity_id = [1u8; 32];
+        // A non-null value the call must overwrite; never dereferenced.
+        let mut rows: *mut IdentityWithdrawalFFI = ptr::NonNull::dangling().as_ptr();
 
         let result = unsafe {
             platform_wallet_identity_withdrawals(
@@ -360,7 +408,16 @@ mod tests {
                 ptr::null_mut(),
             )
         };
+
         assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert!(rows.is_null());
+    }
+
+    #[test]
+    fn should_answer_an_unknown_wallet_as_not_found_with_empty_outputs() {
+        let identity_id = [1u8; 32];
+        let mut rows: *mut IdentityWithdrawalFFI = ptr::NonNull::dangling().as_ptr();
+        let mut count = 7usize;
 
         let result = unsafe {
             platform_wallet_identity_withdrawals(
@@ -370,8 +427,8 @@ mod tests {
                 &mut count,
             )
         };
+
         assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
-        // The out slots were reset before the lookup failed.
         assert!(rows.is_null());
         assert_eq!(count, 0);
     }

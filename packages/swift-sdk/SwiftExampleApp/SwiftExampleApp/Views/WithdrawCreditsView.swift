@@ -24,11 +24,12 @@
 // withdrawals are pooled and processed asynchronously by the network,
 // and the withdraw FFI path returns only the void / new balance. The
 // success screen therefore shows the destination address + amount and
-// a "Track this withdrawal" link to `IdentityWithdrawalsView`, which
-// reads the withdrawal's status from the withdrawals system contract
-// until it is complete. Platform state stores only the asset unlock
-// index of the Core transaction, never its txid, so no txid is shown
-// there either.
+// a "View withdrawals" link to `IdentityWithdrawalsView`, this
+// identity's withdrawal history as the withdrawals system contract
+// records it; the new withdrawal appears there once Platform has
+// recorded it. Platform state stores only the asset unlock index of
+// the Core transaction, never its txid, so no txid is shown there
+// either.
 
 import SwiftUI
 import SwiftDashSDK
@@ -222,17 +223,18 @@ struct WithdrawCreditsView: View {
                 }
                 // Platform withdrawals are pooled and broadcast to L1 by
                 // the network asynchronously, so there is no immediate
-                // L1 transaction id to show here; "Track this withdrawal"
-                // opens its status as the withdrawals contract records it.
+                // L1 transaction id to show here; "View withdrawals" opens
+                // this identity's withdrawal history, where the new one
+                // appears once Platform has recorded it.
                 // The credit-balance decrease reflects automatically via
                 // the persister → SwiftData → @Query path.
-                Text("The Layer 1 payout is processed asynchronously by the network and may take a while to appear on-chain. Track it to see when it is pooled, broadcast and complete.")
+                Text("The Layer 1 payout is processed asynchronously by the network and may take a while to appear on-chain. View withdrawals opens this identity's withdrawal history, where this withdrawal appears once Platform has recorded it.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                 NavigationLink {
                     IdentityWithdrawalsView(identity: identity)
                 } label: {
-                    Label("Track this withdrawal", systemImage: "list.bullet.rectangle")
+                    Label("View withdrawals", systemImage: "list.bullet.rectangle")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)

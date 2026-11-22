@@ -2864,7 +2864,7 @@
           "sdk": "supported",
           "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "IdentityWithdrawalsView (IdentityDetailView -> Withdrawals, and Track this withdrawal after a submit in WithdrawCreditsView) lists the withdrawals Rust reads from the withdrawals contract with their status, finality and asset unlock index. The TEST_PLAN gates ID-19 and ID-20 are written but not yet run on a simulator or device. Nothing is stored locally, so there is no restart state: the list is read from the chain each time."
+          "reason": "IdentityWithdrawalsView (IdentityDetailView -> Withdrawals, and View withdrawals after a submit in WithdrawCreditsView) lists the withdrawals Rust reads from the withdrawals contract with their status, finality and asset unlock index. The TEST_PLAN gates ID-19 and ID-20 are written but not yet run on a simulator or device. Nothing is stored locally, so there is no restart state: the list is read from the chain each time."
         },
         "kotlin": {
           "sdk": "unsupported",

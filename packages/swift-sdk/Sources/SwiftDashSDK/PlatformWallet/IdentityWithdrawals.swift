@@ -11,9 +11,11 @@ public enum WithdrawalStatus: UInt8, Sendable, Equatable, CaseIterable {
     case queued = 0
     /// Pooled into an asset unlock transaction, waiting for a quorum to sign.
     case pooled = 1
-    /// The signed transaction was broadcast to Core.
+    /// Platform built the asset unlock transaction and handed it on for a
+    /// quorum to sign and for broadcast to Core. Core has not necessarily
+    /// accepted it.
     case broadcasted = 2
-    /// Core included the transaction in a chain-locked block.
+    /// Platform saw the transaction in a chain-locked Core block.
     case complete = 3
     /// Core never mined the transaction in time; Platform signs it again.
     case expired = 4
@@ -49,7 +51,9 @@ public struct IdentityWithdrawal: Sendable, Equatable, Identifiable {
     /// The index of the asset unlock transaction that carries the withdrawal
     /// to Core, once Platform pooled it.
     public let transactionIndex: UInt64?
-    /// The Core height at which a quorum signed that transaction.
+    /// The Core chain-locked height Platform built the asset unlock
+    /// transaction at (its request height), once it built it. Not proof that
+    /// a quorum signed the transaction or that Core accepted it.
     public let transactionSignHeight: UInt32?
     /// When the withdrawal was submitted, block time in Unix milliseconds.
     public let createdAtMs: UInt64
@@ -157,9 +161,10 @@ extension IdentityWithdrawal {
 extension ManagedPlatformWallet {
     /// Every withdrawal of `identityId` to Core, each listed once, most
     /// recently updated first, read with proofs from the withdrawals system
-    /// contract. Rust reads every page and keeps one row per withdrawal, so a
-    /// withdrawal that changes status during the read is neither repeated nor
-    /// skipped. Any identity can be asked for, not only the wallet's.
+    /// contract (protocol version 14 and later). Rust reads every page at one
+    /// block height. When no read of the listing stays at one block height in
+    /// a few attempts this throws an error that is safe to retry: call it
+    /// again. Any identity can be asked for, not only the wallet's.
     /// Withdrawals from Platform addresses and from the shielded pool are not
     /// found: the contract stores them under its own owner.
     public func identityWithdrawals(identityId: Data) async throws -> [IdentityWithdrawal] {

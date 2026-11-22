@@ -8,10 +8,13 @@
 // Rust decides the status, its label and whether the withdrawal is final; this
 // view only presents them and refreshes.
 //
-// The Platform side of a withdrawal ends at "Complete": Core included the
-// asset unlock transaction in a chain-locked block. Platform state stores the
-// transaction's asset unlock index (and the Core height a quorum signed it
-// at), not its transaction id, so the row shows the index rather than a txid.
+// The Platform side of a withdrawal ends at "Complete": Platform saw the
+// asset unlock transaction in a chain-locked Core block. "Broadcasted" only
+// means Platform built the transaction and handed it on for signing and
+// broadcast; Core may not have accepted it yet. Platform state stores the
+// transaction's asset unlock index (and the Core height Platform requested
+// it at), not its transaction id, so the row shows the index rather than a
+// txid.
 
 import SwiftUI
 import SwiftDashSDK
@@ -121,11 +124,13 @@ struct IdentityWithdrawalsView: View {
             }
         } footer: {
             Text(
-                "A withdrawal is queued, pooled into an asset unlock transaction that a quorum "
-                    + "signs, broadcast to Core, and Complete once Core includes it in a "
-                    + "chain-locked block; that is where Platform's side ends. Expired means "
-                    + "Core did not mine it in time and Platform signs it again. Failed means "
-                    + "the payout is below Core's dust threshold, so Core never mines it.\n\n"
+                "A withdrawal is queued, then pooled into an asset unlock transaction. "
+                    + "Broadcasted means Platform built that transaction and handed it on for a "
+                    + "quorum to sign and for broadcast to Core; Core may not have accepted it "
+                    + "yet. Complete means Platform saw it in a chain-locked Core block; that is "
+                    + "where Platform's side ends. Expired means Core did not mine it in time "
+                    + "and Platform signs it again. Failed means the payout is below Core's "
+                    + "dust threshold, so Core never mines it.\n\n"
                     + "Platform state stores the asset unlock index of the Core transaction, "
                     + "not its transaction id, so the transaction id is not shown. "
                     + "Withdrawals from Platform addresses or the shielded pool are not listed."
@@ -169,7 +174,10 @@ struct IdentityWithdrawalsView: View {
                     ContentUnavailableView(
                         "No withdrawals",
                         systemImage: "arrow.up.circle",
-                        description: Text("This identity has not withdrawn credits to Core.")
+                        description: Text(
+                            "No withdrawals found. A withdrawal submitted moments ago can take "
+                                + "a block to appear; refresh to check again."
+                        )
                     )
                     .accessibilityIdentifier("identityWithdrawals.empty")
                 }
@@ -284,7 +292,7 @@ private struct WithdrawalRow: View {
 
     private func coreTransactionText(index: UInt64) -> String {
         if let height = withdrawal.transactionSignHeight {
-            return "Asset unlock #\(index), signed at Core height \(height)"
+            return "Asset unlock #\(index), requested at Core height \(height)"
         }
         return "Asset unlock #\(index)"
     }

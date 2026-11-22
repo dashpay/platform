@@ -43,11 +43,12 @@ final class IdentityWithdrawalDecodingTests: XCTestCase {
             free(label)
             free(address)
         }
-        row.status_label = label
-        row.destination = address
+        // The rows' strings and script are read-only (`const`) for Swift.
+        row.status_label = UnsafePointer(label)
+        row.destination = UnsafePointer(address)
         var scriptBytes = script
         return try scriptBytes.withUnsafeMutableBufferPointer { scriptBp in
-            row.output_script = script.isEmpty ? nil : scriptBp.baseAddress
+            row.output_script = script.isEmpty ? nil : UnsafePointer(scriptBp.baseAddress)
             row.output_script_len = UInt(script.count)
             return try body(row)
         }
