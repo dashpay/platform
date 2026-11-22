@@ -13,7 +13,7 @@
 //! bookkeeping the backend refused, leaves the label; the next marketplace sync pass then
 //! finds the name gone and removes the label and the row.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use dash_sdk::platform::documents::transitions::DocumentDeleteResult;
 use dash_sdk::platform::dpns_usernames::{convert_to_homograph_safe_chars, normalize_dpns_label};
@@ -106,13 +106,19 @@ pub(super) struct DpnsGiveUpTarget {
 /// gone (or held by another identity), no other give-up of it is signed: a tombstone sent
 /// after a pending delete could execute first and retire a name the user only meant to
 /// free, and even a second delete of the same document is a second paid transition. The
-/// record lives for the session: a transition still pending across a restart is rare
-/// enough that the user is then asked again.
+/// record lives for the session (keeping it across a restart is #6072).
+///
+/// Each hold carries the attempt that took it. A read clears a hold only if it is the one
+/// the read saw when it started, so a read that began before a later give-up was signed
+/// can not clear that give-up's hold.
 #[derive(Debug, Default)]
 pub(crate) struct DpnsOperationGate {
     gate: tokio::sync::Mutex<()>,
-    /// `(owner identity, normalized label)` of each give-up sent but not confirmed.
-    unresolved_give_ups: std::sync::Mutex<BTreeSet<(Identifier, String)>>,
+    /// The attempt holding each `(owner identity, normalized label)` given up but not
+    /// confirmed.
+    unresolved_give_ups: std::sync::Mutex<BTreeMap<(Identifier, String), u64>>,
+    /// The last attempt number handed out; attempts start at 1.
+    attempts: std::sync::atomic::AtomicU64,
 }
 
 impl DpnsOperationGate {
@@ -121,10 +127,39 @@ impl DpnsOperationGate {
         self.gate.lock().await
     }
 
-    pub(super) fn unresolved(&self) -> std::sync::MutexGuard<'_, BTreeSet<(Identifier, String)>> {
+    fn unresolved(&self) -> std::sync::MutexGuard<'_, BTreeMap<(Identifier, String), u64>> {
         self.unresolved_give_ups
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Hold `key` for a new attempt, which it returns.
+    pub(super) fn hold(&self, key: (Identifier, String)) -> u64 {
+        let attempt = self
+            .attempts
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1;
+        self.unresolved().insert(key, attempt);
+        attempt
+    }
+
+    /// The attempt holding `key`, if any.
+    pub(super) fn holder(&self, key: &(Identifier, String)) -> Option<u64> {
+        self.unresolved().get(key).copied()
+    }
+
+    /// Release `key` if `attempt` still holds it: by the attempt's own outcome, or by a
+    /// read that saw `attempt` holding it when it started.
+    pub(super) fn release(&self, key: &(Identifier, String), attempt: Option<u64>) {
+        let mut unresolved = self.unresolved();
+        if attempt.is_some() && unresolved.get(key).copied() == attempt {
+            unresolved.remove(key);
+        }
+    }
+
+    /// Whether nothing is held.
+    pub(super) fn holds_nothing(&self) -> bool {
+        self.unresolved().is_empty()
     }
 }
 
@@ -238,30 +273,30 @@ impl IdentityWallet {
         owner_identity_id: &Identifier,
         name: &str,
     ) -> Result<DpnsGiveUpTarget, PlatformWalletError> {
+        // The label the SDK queries, its `.dash` stripped whatever its case, and the give-up
+        // holding it when this read starts: only that one may be settled by what it reads
+        let key = (*owner_identity_id, normalize_dpns_label(name));
+        let seen = self.dpns_operation_gate.holder(&key);
         let options = self
             .sdk
             .dpns_name_give_up_options(name)
             .await
             .map_err(|error| give_up_error(error, name))?;
         let Some(options) = options else {
-            // The label the SDK queried, its `.dash` stripped whatever its case
-            self.dpns_operation_gate
-                .unresolved()
-                .remove(&(*owner_identity_id, normalize_dpns_label(name)));
+            self.dpns_operation_gate.release(&key, seen);
             return Err(PlatformWalletError::DpnsNameNotFound {
                 name: name.to_string(),
             });
         };
         let state = DpnsDomainState::from_document(&options.domain)?;
-        let key = (*owner_identity_id, state.normalized_label.clone());
         let owner_id = options.domain.owner_id();
         if owner_id != *owner_identity_id {
-            self.dpns_operation_gate.unresolved().remove(&key);
+            self.dpns_operation_gate.release(&key, seen);
             return Err(PlatformWalletError::InvalidParameter(format!(
                 "DPNS name {name:?} is owned by {owner_id}, not by {owner_identity_id}"
             )));
         }
-        if self.dpns_operation_gate.unresolved().contains(&key) {
+        if self.dpns_operation_gate.holder(&key).is_some() {
             return Err(earlier_give_up_unconfirmed(name));
         }
         Ok(DpnsGiveUpTarget {
@@ -374,10 +409,15 @@ impl IdentityWallet {
         // other failure releases it.
         let unresolved_key = (*owner_identity_id, target.state.normalized_label.clone());
         let gated = GatedSigner::new(signer, self);
+        // This attempt's number once it holds the name; 0 until then
+        let attempt = std::sync::atomic::AtomicU64::new(0);
+        let own_attempt =
+            || Some(attempt.load(std::sync::atomic::Ordering::Relaxed)).filter(|n| *n != 0);
         let hold = || {
-            self.dpns_operation_gate
-                .unresolved()
-                .insert(unresolved_key.clone());
+            attempt.store(
+                self.dpns_operation_gate.hold(unresolved_key.clone()),
+                std::sync::atomic::Ordering::Relaxed,
+            );
         };
         let held = HoldWhenSigned {
             signer: &gated,
@@ -386,8 +426,7 @@ impl IdentityWallet {
         let sent_error = |error: dash_sdk::Error| {
             if !error.is_state_transition_result_unconfirmed() || gated.removed() {
                 self.dpns_operation_gate
-                    .unresolved()
-                    .remove(&unresolved_key);
+                    .release(&unresolved_key, own_attempt());
             }
             if gated.removed() {
                 return PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id));
@@ -413,8 +452,7 @@ impl IdentityWallet {
             }
         };
         self.dpns_operation_gate
-            .unresolved()
-            .remove(&unresolved_key);
+            .release(&unresolved_key, own_attempt());
         // Still under the generation's lifecycle gate the signature took (`gated` lives to
         // the end of this call): the generation that sent the give-up is the current one.
         self.forget_given_up_dpns_name(owner_identity_id, &target)
@@ -467,13 +505,13 @@ impl IdentityWallet {
             removed: removed.clone(),
             ..Default::default()
         };
-        if let Err(error) = self.persister.store(rows.into()) {
+        if let Err(error) = self.persister.withdraw_durably(rows.into()) {
             tracing::error!(
                 identity = %owner_identity_id,
                 document = %target.choices.document_id,
                 "failed to persist the row removal of a confirmed DPNS name give-up; keeping \
                  the label and a row of the name so the next marketplace sync removes both: \
-                 {error}"
+                 {error:?}"
             );
             // The departure path removes the row whose id it finds in memory: keep one for
             // the checked document even on a wallet loaded cold, whose session map does not
@@ -501,12 +539,15 @@ impl IdentityWallet {
         managed.dpns_names.retain(|known| {
             convert_to_homograph_safe_chars(&known.label) != target.state.normalized_label
         });
-        if let Err(error) = self.persister.store(managed.snapshot_changeset().into()) {
+        if let Err(error) = self
+            .persister
+            .store_durably(managed.snapshot_changeset().into())
+        {
             tracing::error!(
                 identity = %owner_identity_id,
                 document = %target.choices.document_id,
                 "failed to persist the label removal of a confirmed DPNS name give-up; \
-                 keeping the label so the next marketplace sync removes the name: {error}"
+                 keeping the label so the next marketplace sync removes the name: {error:?}"
             );
             managed.dpns_names = previous_names;
         }

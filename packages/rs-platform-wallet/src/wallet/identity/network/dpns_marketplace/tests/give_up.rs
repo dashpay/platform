@@ -2,7 +2,7 @@
 //! signed, and that the wallet forgets a name only once the network confirmed it gone.
 
 use super::super::super::signing_key::tests::KeyFilter;
-use super::super::give_up::{DpnsGiveUpTarget, HoldWhenSigned};
+use super::super::give_up::{DpnsGiveUpTarget, DpnsOperationGate, HoldWhenSigned};
 use super::*;
 use dash_sdk::query_types::Documents;
 use dash_sdk::{Sdk, SdkBuilder};
@@ -381,6 +381,7 @@ async fn should_forget_a_given_up_name_rows_first_and_keep_the_others() {
         )
         .await;
     let stores_before = mirror.stored_dpns.lock().expect("stored log").len();
+    let order_before = mirror.store_order().len();
 
     wallet
         .forget_given_up_dpns_name(&owner, &plain_target(owner))
@@ -392,6 +393,13 @@ async fn should_forget_a_given_up_name_rows_first_and_keep_the_others() {
     );
     let stored = mirror.stored_dpns.lock().expect("stored log").clone();
     assert_eq!(stored.len(), stores_before + 1, "one row removal");
+    // The row removal is stored before the identity snapshot that drops the label: the label
+    // is what lets a later sync find a row whose removal failed
+    assert_eq!(
+        mirror.store_order()[order_before..],
+        ["rows", "identity"],
+        "rows first, then the label"
+    );
     assert_eq!(
         stored.last().expect("the give-up changeset").removed,
         [document_id, again].into_iter().collect()
@@ -487,10 +495,7 @@ async fn should_change_nothing_and_hold_nothing_when_a_give_up_stops_before_sign
         );
         assert!(mirror.stored_dpns_removals().is_empty(), "{method:?}");
         // Nothing left the wallet, so the give-up is not held as unresolved
-        assert!(
-            wallet.dpns_operation_gate.unresolved().is_empty(),
-            "{method:?}"
-        );
+        assert!(wallet.dpns_operation_gate.holds_nothing(), "{method:?}");
         assert_eq!(
             wallet
                 .local_dpns_name_states(Some(&owner))
@@ -572,8 +577,7 @@ async fn should_refuse_another_give_up_while_an_earlier_one_is_unconfirmed() {
     let (wallet, mirror) = wallet_with_name(PLAIN_LABEL, owner).await;
     wallet
         .dpns_operation_gate
-        .unresolved()
-        .insert((owner, convert_to_homograph_safe_chars(PLAIN_LABEL)));
+        .hold((owner, convert_to_homograph_safe_chars(PLAIN_LABEL)));
     let unconfirmed = |error: &PlatformWalletError| matches!(error, PlatformWalletError::Sdk(sdk) if sdk.is_state_transition_result_unconfirmed());
 
     let read = wallet
@@ -607,8 +611,7 @@ async fn should_settle_an_unconfirmed_give_up_once_the_name_is_gone() {
     let (wallet, _mirror) = wallet_holding(sdk_holding(PLAIN_LABEL, None).await, &[]).await;
     wallet
         .dpns_operation_gate
-        .unresolved()
-        .insert((owner, convert_to_homograph_safe_chars(PLAIN_LABEL)));
+        .hold((owner, convert_to_homograph_safe_chars(PLAIN_LABEL)));
 
     let error = wallet
         .dpns_name_give_up_choices(&owner, PLAIN_LABEL)
@@ -618,7 +621,7 @@ async fn should_settle_an_unconfirmed_give_up_once_the_name_is_gone() {
         matches!(error, PlatformWalletError::DpnsNameNotFound { .. }),
         "{error:?}"
     );
-    assert!(wallet.dpns_operation_gate.unresolved().is_empty());
+    assert!(wallet.dpns_operation_gate.holds_nothing());
 }
 
 /// A name asked for with a `.DASH` suffix settles the hold of the label the SDK queried
@@ -628,8 +631,7 @@ async fn should_settle_an_unconfirmed_give_up_asked_for_with_a_mixed_case_suffix
     let (wallet, _mirror) = wallet_holding(sdk_holding(PLAIN_LABEL, None).await, &[]).await;
     wallet
         .dpns_operation_gate
-        .unresolved()
-        .insert((owner, convert_to_homograph_safe_chars(PLAIN_LABEL)));
+        .hold((owner, convert_to_homograph_safe_chars(PLAIN_LABEL)));
 
     let error = wallet
         .dpns_name_give_up_choices(&owner, &format!("{PLAIN_LABEL}.DASH"))
@@ -639,7 +641,7 @@ async fn should_settle_an_unconfirmed_give_up_asked_for_with_a_mixed_case_suffix
         matches!(error, PlatformWalletError::DpnsNameNotFound { .. }),
         "{error:?}"
     );
-    assert!(wallet.dpns_operation_gate.unresolved().is_empty());
+    assert!(wallet.dpns_operation_gate.holds_nothing());
 }
 
 /// A signer answering every signature with `signs`, for [`HoldWhenSigned`].
@@ -816,4 +818,96 @@ async fn should_send_the_delete_of_the_checked_document_only_for_a_delete() {
         );
         assert!(mirror.stored_dpns_removals().is_empty(), "{method:?}");
     }
+}
+
+/// A buffered row removal whose commit fails leaves everything in place: the label and the
+/// row stay, so the next marketplace sync finds the name gone and removes both
+#[tokio::test]
+async fn should_keep_the_label_and_row_when_the_row_removal_is_not_committed() {
+    let owner = Identifier::from(OWNER);
+    let (wallet, mirror) = wallet_with_name(PLAIN_LABEL, owner).await;
+    wallet
+        .record_dpns_name_states(
+            vec![owned_row(Identifier::from(DOCUMENT), owner, PLAIN_LABEL)],
+            vec![],
+        )
+        .await;
+    mirror.fail_flushes();
+
+    wallet
+        .forget_given_up_dpns_name(&owner, &plain_target(owner))
+        .await;
+
+    assert_eq!(
+        dpns_labels(&wallet, &owner).await,
+        vec![PLAIN_LABEL.to_string(), KEPT_LABEL.to_string()]
+    );
+    assert_eq!(
+        wallet
+            .local_dpns_name_states(Some(&owner))
+            .await
+            .expect("the rows are read")
+            .len(),
+        1
+    );
+}
+
+/// A committed row removal followed by a failed identity snapshot drops the row and keeps
+/// the label, which the next marketplace sync resolves as a departure
+#[tokio::test]
+async fn should_keep_the_label_when_the_snapshot_without_it_is_not_stored() {
+    let owner = Identifier::from(OWNER);
+    let (wallet, mirror) = wallet_with_name(PLAIN_LABEL, owner).await;
+    wallet
+        .record_dpns_name_states(
+            vec![owned_row(Identifier::from(DOCUMENT), owner, PLAIN_LABEL)],
+            vec![],
+        )
+        .await;
+    mirror.fail_identity_stores();
+
+    wallet
+        .forget_given_up_dpns_name(&owner, &plain_target(owner))
+        .await;
+
+    assert_eq!(
+        mirror.stored_dpns_removals(),
+        vec![Identifier::from(DOCUMENT)]
+    );
+    assert!(wallet
+        .local_dpns_name_states(Some(&owner))
+        .await
+        .expect("the rows are read")
+        .is_empty());
+    assert_eq!(
+        dpns_labels(&wallet, &owner).await,
+        vec![PLAIN_LABEL.to_string(), KEPT_LABEL.to_string()]
+    );
+}
+
+/// A read settles only the attempt it saw holding the name when it started: a give-up
+/// signed after the read began keeps its hold whatever the read finds
+#[test]
+fn should_release_a_hold_only_for_the_attempt_a_read_saw() {
+    let gate = DpnsOperationGate::default();
+    let key = (
+        Identifier::from(OWNER),
+        convert_to_homograph_safe_chars(PLAIN_LABEL),
+    );
+
+    // The read starts while nothing is held, then a give-up is signed
+    let seen = gate.holder(&key);
+    let later = gate.hold(key.clone());
+    gate.release(&key, seen);
+    assert_eq!(gate.holder(&key), Some(later));
+
+    // The read starts while `later` holds; a newer attempt takes over before it settles
+    let seen = gate.holder(&key);
+    let newer = gate.hold(key.clone());
+    gate.release(&key, seen);
+    assert_eq!(gate.holder(&key), Some(newer));
+
+    // A read that saw the current attempt settles it
+    gate.release(&key, Some(newer));
+    assert!(gate.holds_nothing());
 }

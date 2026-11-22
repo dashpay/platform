@@ -26,6 +26,7 @@
 //! purchase/transfer; a name inside an active contested-name vote is not
 //! in the documents tree at all.
 
+use super::contact_requests::GatedSigner;
 use super::signing_key::AvailableSigningKey;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
@@ -1103,6 +1104,21 @@ impl IdentityWallet {
         managed.remove_dpns_name(label, &self.persister);
     }
 
+    /// `error` from a write signed through `gated`, reported as
+    /// [`PlatformWalletError::WalletRemovedBeforeSend`] when the wallet was
+    /// removed or re-created while the host signed: then nothing was sent.
+    pub(super) fn removed_while_signing<S: ?Sized>(
+        &self,
+        gated: &GatedSigner<'_, S, crate::broadcaster::SpvBroadcaster>,
+        error: PlatformWalletError,
+    ) -> PlatformWalletError {
+        if gated.removed() {
+            PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id))
+        } else {
+            error
+        }
+    }
+
     /// Whether `identity_id` is one of this wallet's identities.
     async fn is_wallet_identity(&self, identity_id: &Identifier) -> bool {
         let wm = self.wallet_manager.read().await;
@@ -1182,6 +1198,9 @@ impl IdentityWallet {
             .select_dpns_signing_key(owner_identity_id, signer)
             .await?;
         let contract_id = dpns_contract_id();
+        // Signed through the generation-gated signer: a wallet removed while the host
+        // signed sends nothing, and the bookkeeping below runs on this generation.
+        let gated = GatedSigner::new(signer, self);
         let confirmed = self
             .set_document_price_with_signer(
                 owner_identity_id,
@@ -1190,9 +1209,10 @@ impl IdentityWallet {
                 &state.document_id,
                 price,
                 signing_key.id(),
-                signer,
+                &gated,
             )
-            .await?;
+            .await
+            .map_err(|error| self.removed_while_signing(&gated, error))?;
         let confirmed_state = DpnsDomainState::from_document(&confirmed)?;
         self.record_dpns_name_states(
             vec![confirmed_state.to_entry(*owner_identity_id, DpnsNameSaleStatus::Owned, now_ms())],
@@ -1236,6 +1256,9 @@ impl IdentityWallet {
             .select_dpns_signing_key(owner_identity_id, signer)
             .await?;
         let contract_id = dpns_contract_id();
+        // Signed through the generation-gated signer: a wallet removed while the host
+        // signed sends nothing, and the bookkeeping below runs on this generation.
+        let gated = GatedSigner::new(signer, self);
         let confirmed = self
             .transfer_document_with_signer(
                 owner_identity_id,
@@ -1244,9 +1267,10 @@ impl IdentityWallet {
                 &state.document_id,
                 owner_identity_id,
                 signing_key.id(),
-                signer,
+                &gated,
             )
-            .await?;
+            .await
+            .map_err(|error| self.removed_while_signing(&gated, error))?;
         let confirmed_state = DpnsDomainState::from_document(&confirmed)?;
         if confirmed_state.price.is_some() || confirmed_state.owner_id != *owner_identity_id {
             return Err(PlatformWalletError::InvalidIdentityData(format!(
@@ -1299,6 +1323,9 @@ impl IdentityWallet {
             .select_dpns_signing_key(owner_identity_id, signer)
             .await?;
         let contract_id = dpns_contract_id();
+        // Signed through the generation-gated signer: a wallet removed while the host
+        // signed sends nothing, and the bookkeeping below runs on this generation.
+        let gated = GatedSigner::new(signer, self);
         let confirmed = self
             .transfer_document_with_signer(
                 owner_identity_id,
@@ -1307,9 +1334,10 @@ impl IdentityWallet {
                 &state.document_id,
                 recipient_id,
                 signing_key.id(),
-                signer,
+                &gated,
             )
-            .await?;
+            .await
+            .map_err(|error| self.removed_while_signing(&gated, error))?;
         let confirmed_state = DpnsDomainState::from_document(&confirmed)?;
         let now = now_ms();
         self.remove_dpns_label(owner_identity_id, &confirmed_state.label)
@@ -1421,6 +1449,9 @@ impl IdentityWallet {
             .select_dpns_signing_key(purchaser_identity_id, signer)
             .await?;
         let contract_id = dpns_contract_id();
+        // Signed through the generation-gated signer: a wallet removed while the host
+        // signed sends nothing, and the bookkeeping below runs on this generation.
+        let gated = GatedSigner::new(signer, self);
         let confirmed = self
             .purchase_document_with_signer(
                 purchaser_identity_id,
@@ -1429,9 +1460,10 @@ impl IdentityWallet {
                 &state.document_id,
                 expected_price,
                 signing_key.id(),
-                signer,
+                &gated,
             )
-            .await?;
+            .await
+            .map_err(|error| self.removed_while_signing(&gated, error))?;
         let confirmed_state = DpnsDomainState::from_document(&confirmed)?;
         let now = now_ms();
         let seller_id = state.owner_id;
@@ -2463,6 +2495,13 @@ mod tests {
         /// When set, every [`Self::store`] fails and records nothing, as a
         /// backend that rejects the whole changeset does.
         fail_stores: std::sync::atomic::AtomicBool,
+        /// When set, every store carrying an identity snapshot fails.
+        fail_identity_stores: std::sync::atomic::AtomicBool,
+        /// When set, every flush fails: a store is buffered but never committed.
+        fail_flushes: std::sync::atomic::AtomicBool,
+        /// What each successful store carried, in order: `"rows"` for DPNS name-state rows,
+        /// `"identity"` for identity snapshots.
+        store_order: std::sync::Mutex<Vec<&'static str>>,
     }
 
     impl MirrorPersister {
@@ -2482,6 +2521,9 @@ mod tests {
                 stored_dpns: std::sync::Mutex::new(Vec::new()),
                 stored_identity_labels: std::sync::Mutex::new(Vec::new()),
                 fail_stores: std::sync::atomic::AtomicBool::new(false),
+                fail_identity_stores: std::sync::atomic::AtomicBool::new(false),
+                fail_flushes: std::sync::atomic::AtomicBool::new(false),
+                store_order: std::sync::Mutex::new(Vec::new()),
             }
         }
 
@@ -2489,6 +2531,23 @@ mod tests {
         fn fail_stores(&self) {
             self.fail_stores
                 .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+
+        /// Make every later store of an identity snapshot fail.
+        fn fail_identity_stores(&self) {
+            self.fail_identity_stores
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+
+        /// Make every later flush fail, so nothing stored is committed.
+        fn fail_flushes(&self) {
+            self.fail_flushes
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+
+        /// What the successful stores carried, in order.
+        fn store_order(&self) -> Vec<&'static str> {
+            self.store_order.lock().expect("store order").clone()
         }
 
         /// Holds `rows`, but every read fails with `kind` until
@@ -2542,11 +2601,25 @@ mod tests {
             _wallet_id: WalletId,
             changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
-            if self.fail_stores.load(std::sync::atomic::Ordering::SeqCst) {
+            if self.fail_stores.load(std::sync::atomic::Ordering::SeqCst)
+                || (changeset.identities.is_some()
+                    && self
+                        .fail_identity_stores
+                        .load(std::sync::atomic::Ordering::SeqCst))
+            {
                 return Err(PersistenceError::backend_with_kind(
                     PersistenceErrorKind::Fatal,
                     "simulated store failure",
                 ));
+            }
+            {
+                let mut order = self.store_order.lock().expect("store order");
+                if changeset.dpns_name_states.is_some() {
+                    order.push("rows");
+                }
+                if changeset.identities.is_some() {
+                    order.push("identity");
+                }
             }
             if let Some(cs) = changeset.dpns_name_states {
                 self.stored_dpns.lock().expect("stored log").push(cs);
@@ -2565,6 +2638,12 @@ mod tests {
         }
 
         fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            if self.fail_flushes.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(PersistenceError::backend_with_kind(
+                    PersistenceErrorKind::Fatal,
+                    "simulated commit failure",
+                ));
+            }
             Ok(())
         }
 
