@@ -24,6 +24,9 @@ struct PrivateDocumentEntriesView: View {
 
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var walletManager: PlatformWalletManager
+    /// Off `.active`, the screen is covered so the app-switcher snapshot
+    /// shows no decrypted entry or identity.
+    @Environment(\.scenePhase) private var scenePhase
 
     /// Every persisted wallet; filtered to the active network by `wallets`.
     @Query(sort: \PersistentWallet.createdAt) private var allWallets: [PersistentWallet]
@@ -66,6 +69,11 @@ struct PrivateDocumentEntriesView: View {
                 statusSection(lastRead)
             }
         }
+        .overlay {
+            if scenePhase != .active {
+                privacyCover
+            }
+        }
         .navigationTitle("\(documentTypeName) Entries")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: ensureDefaultSelection)
@@ -75,6 +83,25 @@ struct PrivateDocumentEntriesView: View {
     }
 
     // MARK: - Sections
+
+    /// Opaque cover over the form while the scene is inactive or in the
+    /// background. It only hides the entries: the read state stays.
+    private var privacyCover: some View {
+        ZStack {
+            Color(.systemBackground)
+            VStack(spacing: 12) {
+                Image(systemName: "lock.fill")
+                    .font(.largeTitle)
+                    .foregroundColor(.secondary)
+                Text("Private entries hidden")
+                    .font(.headline)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .ignoresSafeArea()
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("privateEntries.privacyCover")
+    }
 
     @ViewBuilder
     private var walletSection: some View {

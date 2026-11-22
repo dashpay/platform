@@ -190,9 +190,9 @@ public struct PrivateDocumentEntriesRead: Sendable, Equatable {
     /// Whether the read reached the store's last entry, as large a store as
     /// any page proved, with every key but the unscanned ones
     /// (`unscannedKeyCount`). A later read from `cursor` reads the entries
-    /// appended since. `false` with `pagesRead` 0 means nothing was read (no
-    /// identity can open entries, or a page budget of 0), and reading again
-    /// changes nothing until that does.
+    /// appended since. `false` with `pagesRead` 0 means nothing was read (a
+    /// page budget of 0, or no identity with a key the wallet can scan with),
+    /// and reading again changes nothing until that does.
     public let complete: Bool
 }
 
@@ -213,10 +213,12 @@ extension ManagedPlatformWallet {
     /// (`PrivateDocumentEntry.claimedSenderIdentityId`): whether that
     /// identity wrote it is not checked here.
     ///
-    /// A read that reads no page (no identity can open entries, or
-    /// `maxPages` is 0) succeeds without asking the network anything: its
-    /// success shows neither that the network serves private types nor
-    /// that the resolver's mnemonic is this wallet's.
+    /// Two reads read no page. With `maxPages` 0, or no identity holding a
+    /// key with a path, it succeeds before the mnemonic resolver, the seed
+    /// check, the protocol version check and any request: its success shows
+    /// none of them. When keys have paths but none derives its registered
+    /// key, the resolver is asked first, so the read throws as that fails (a
+    /// locked Keychain, another wallet's mnemonic), then succeeds with no page.
     ///
     /// Throws `PlatformWalletError.invalidParameter` when `contractId` is
     /// not 32 bytes, when `documentTypeName` holds a NUL, when `from` was

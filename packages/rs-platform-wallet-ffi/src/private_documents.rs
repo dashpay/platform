@@ -235,9 +235,9 @@ pub struct PrivateDocumentReadFFI {
     /// Whether the read reached the store's last entry, as large a store as
     /// any page proved, with every key but the unscanned ones
     /// (`unscanned_key_count`). A later read from `cursor` reads the entries
-    /// appended since. `false` with `pages_read` 0 means nothing was read: no identity
-    /// can open entries, or the page budget was 0, and reading again changes
-    /// nothing until that does.
+    /// appended since. `false` with `pages_read` 0 means nothing was read: the
+    /// page budget was 0, or no identity has a key the wallet can scan with,
+    /// and reading again changes nothing until that does.
     pub complete: bool,
     /// The wallet's keys changed since the `from` cursor, so the read started
     /// over at the store's start: its entries replace those of the earlier
@@ -467,10 +467,12 @@ unsafe fn read_cursor(from: *const PrivateDocumentCursorFFI) -> Option<PrivateDo
 /// entry's sender is what the entry claims; the read does not check it
 /// against that identity's keys.
 ///
-/// A read that reads no page (no identity can open entries, `identity_count`
-/// 0, or `max_pages` is 0) succeeds without asking the network anything: its
-/// success shows neither that the network serves private types nor that the
-/// resolver's seed is the wallet's.
+/// Two reads read no page. With `max_pages` 0, or no identity holding a key
+/// with a path, the read succeeds before the resolver, the seed check, the
+/// protocol version check and any request: its success shows none of them.
+/// When keys have paths but none derives its registered key, the resolver is
+/// asked first (the seed check and the key derivation), so the read fails as
+/// they fail, then succeeds with no page and no request to the store.
 ///
 /// Errors: a `from` cursor of another store (another contract or type) with
 /// `ErrorInvalidParameter`; a resolver whose seed is not the wallet's is

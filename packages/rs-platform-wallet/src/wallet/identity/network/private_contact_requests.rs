@@ -1947,7 +1947,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             let Some(identity_index) = managed.identity_index else {
                 continue;
             };
-            if !paths.add_identity(self.sdk.network, identity_index, &managed.identity)? {
+            let added = paths.add_identity(self.sdk.network, identity_index, &managed.identity)?;
+            // A key the sync cannot scan with could hold a request to the
+            // identity, and a read to the end gates its sends and replies:
+            // refused, rather than read past.
+            if let Some(key_id) = added.keys_without_slot.first() {
+                return Err(PlatformWalletError::InvalidIdentityData(format!(
+                    "the key {key_id} of identity {identity_id} names no hardened derivation \
+                     slot, so the private contact request store cannot be read for it"
+                )));
+            }
+            if !added.added {
                 continue;
             }
             identities.push(ScannedIdentity {
@@ -15120,5 +15130,56 @@ mod tests {
                 .expect("the xpub opens"),
             vec![0x33; COMPACT_XPUB_LEN]
         );
+    }
+
+    /// An identity holding a key an entry can be sealed to whose id names no
+    /// hardened slot is refused by the private sync rather than read past: a
+    /// request sealed to that key would go unseen while the read to the end
+    /// clears the identity's sends and replies.
+    #[tokio::test]
+    async fn should_refuse_to_sync_an_identity_holding_a_key_with_no_slot() {
+        let mut alice = identity(ALICE_PHRASE, ALICE);
+        let far_key_id: KeyID = 0x8000_0000;
+        alice.public_keys_mut().insert(
+            far_key_id,
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: far_key_id,
+                purpose: Purpose::DECRYPTION,
+                security_level: SecurityLevel::MEDIUM,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(
+                    PublicKey::from_secret_key(&identity_secret_key(BOB_PHRASE, DECRYPTION_KEY_ID))
+                        .serialize()
+                        .to_vec(),
+                ),
+                disabled_at: None,
+            }),
+        );
+        let (_manager, wallet) = wallet(ALICE_PHRASE, &alice, &[&alice], vec![]).await;
+        let crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+
+        let error = wallet
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&crypto, usize::MAX)
+            .await
+            .expect_err("a key the sync cannot scan with");
+
+        assert!(
+            matches!(&error, PlatformWalletError::InvalidIdentityData(message)
+                if message.contains("names no hardened derivation slot")),
+            "{error:?}"
+        );
+        let wm = wallet.identity().wallet_manager.read().await;
+        let managed = wm
+            .get_wallet_info(&wallet.wallet_id())
+            .expect("wallet info")
+            .identity_manager
+            .managed_identity(&alice.id())
+            .expect("alice");
+        assert_eq!(managed.dashpay().private_contact_requests_position(), 0);
+        assert!(!managed.dashpay().private_contact_requests_read());
     }
 }

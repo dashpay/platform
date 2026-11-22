@@ -76,17 +76,19 @@ impl PrivateDocumentKeyPaths {
     /// to ([`scanning_key`]) as a recipient key, and every such `ENCRYPTION`
     /// key as a sender's, one outgoing viewing key each. A key whose id names
     /// no hardened slot (`2^31` or above) has no path and is left out: the
-    /// wallet derives no key there. Whether the identity was added: one with
-    /// no such key reads no store, and is left out.
+    /// wallet derives no key there. It is reported, so each reader decides
+    /// what a key it cannot scan with means for it: DashPay's sync refuses,
+    /// as its reads gate sends and replies; the generic read lists it.
     pub(super) fn add_identity(
         &mut self,
         network: Network,
         identity_index: u32,
         identity: &Identity,
-    ) -> Result<bool, PlatformWalletError> {
+    ) -> Result<AddedIdentity, PlatformWalletError> {
         let identity_id = identity.id();
         let mut recipient_paths = Vec::new();
         let mut sender_paths = Vec::new();
+        let mut keys_without_slot = Vec::new();
         for (key_id, key) in identity.public_keys() {
             if !scanning_key(key) {
                 continue;
@@ -97,6 +99,7 @@ impl PrivateDocumentKeyPaths {
                 identity_index,
                 *key_id,
             ) else {
+                keys_without_slot.push(*key_id);
                 continue;
             };
             if key.purpose() == Purpose::ENCRYPTION {
@@ -104,12 +107,15 @@ impl PrivateDocumentKeyPaths {
             }
             recipient_paths.push((*key_id, path));
         }
-        if recipient_paths.is_empty() {
-            return Ok(false);
+        let added = !recipient_paths.is_empty();
+        if added {
+            self.recipients.push((identity_id, recipient_paths));
+            self.senders.extend(sender_paths);
         }
-        self.recipients.push((identity_id, recipient_paths));
-        self.senders.extend(sender_paths);
-        Ok(true)
+        Ok(AddedIdentity {
+            added,
+            keys_without_slot,
+        })
     }
 
     /// A fingerprint of these paths: every identity, key id and path, as a
@@ -144,6 +150,17 @@ fn hash_path(hasher: &mut Sha256, path: &DerivationPath) {
     hasher.update(path.as_bytes());
 }
 
+/// What [`PrivateDocumentKeyPaths::add_identity`] did with an identity.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct AddedIdentity {
+    /// Whether it was added: it has a key, with a path, an entry can be
+    /// sealed to.
+    pub(super) added: bool,
+    /// Its keys an entry can be sealed to whose id names no hardened slot:
+    /// they have no path and were left out.
+    pub(super) keys_without_slot: Vec<KeyID>,
+}
+
 /// Whether `key` is one a private document entry can be sealed to, which a
 /// wallet scans a private type's store with: an `ECDSA_SECP256K1` `DECRYPTION`
 /// or `ENCRYPTION` key, disabled ones included, as an entry sealed before a
@@ -155,6 +172,17 @@ pub(super) fn scanning_key(key: &IdentityPublicKey) -> bool {
 /// The public key data of each key of the wallet's identities an entry may be
 /// sealed to, by identity and key id.
 type RegisteredKeys = BTreeMap<(Identifier, KeyID), Vec<u8>>;
+
+/// The keys the wallet's identities read a private document type's store
+/// with, before any is checked against its registered key.
+struct KeyPathsOfWallet {
+    /// The identities with a key that has a path.
+    identities: Vec<Identifier>,
+    paths: PrivateDocumentKeyPaths,
+    registered: RegisteredKeys,
+    /// The keys an entry can be sealed to whose id names no slot.
+    keys_without_slot: Vec<(Identifier, KeyID)>,
+}
 
 /// How many fetched pages a read scans at once, one key derivation for them
 /// all: at most the pages in flight.
@@ -200,7 +228,10 @@ pub struct OpenedPrivateDocument {
     /// The entry's commitment: two entries with the same one are copies.
     pub commitment: [u8; 32],
     /// The properties its payload holds, decoded and checked against the
-    /// type's schema, or why they are refused.
+    /// type's schema, or why they are refused. The contract is fetched once a
+    /// read, before its first page: a refusal of an entry appended after that
+    /// fetch may come from a newer version of the type, which a later read
+    /// from the store's start reads under the newer contract.
     pub properties: Result<BTreeMap<String, Value>, String>,
 }
 
@@ -273,12 +304,13 @@ pub struct PrivateDocumentRead {
     /// reads rather than follow them.
     pub restarted: bool,
     /// Whether the read reached the store's last entry, as large a store as
-    /// any page proved, with every key but [`Self::unscanned_keys`]. A later read from [`Self::cursor`] reads the entries
-    /// appended since. `false` with no page read means nothing was read: no
-    /// identity can open entries, or the page budget was 0, and reading again
-    /// changes nothing until that does. Such a read asks the network nothing
-    /// and checks nothing: it does not show that the network serves private
-    /// types, nor that the crypto provider's seed is the wallet's.
+    /// any page proved, with every key but [`Self::unscanned_keys`]. A later
+    /// read from [`Self::cursor`] reads the entries appended since. `false`
+    /// with no page read means nothing was read, and reading again changes
+    /// nothing until the wallet's keys or the budget do: the page budget was
+    /// 0, or no identity has a key the wallet can scan with. See
+    /// [`IdentityWallet::read_private_document_entries`] for which of those
+    /// reads asked the signer.
     pub complete: bool,
 }
 
@@ -329,10 +361,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// the signer can derive, and a key an entry can be sealed to
     /// ([`PrivateDocumentKeyPaths::add_identity`]). With them, the identities
     /// they are of.
-    async fn private_document_key_paths(
-        &self,
-    ) -> Result<(Vec<Identifier>, PrivateDocumentKeyPaths, RegisteredKeys), PlatformWalletError>
-    {
+    async fn private_document_key_paths(&self) -> Result<KeyPathsOfWallet, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
         let info = wm
             .get_wallet_info(&self.wallet_id)
@@ -340,6 +369,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let mut identities = Vec::new();
         let mut paths = PrivateDocumentKeyPaths::default();
         let mut registered = RegisteredKeys::new();
+        let mut keys_without_slot = Vec::new();
         for identity in info.identity_manager.all_identities() {
             let identity_id = identity.id();
             let Some(identity_index) = info
@@ -354,11 +384,23 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     registered.insert((identity_id, *key_id), key.data().to_vec());
                 }
             }
-            if paths.add_identity(self.sdk.network, identity_index, identity)? {
+            let added = paths.add_identity(self.sdk.network, identity_index, identity)?;
+            keys_without_slot.extend(
+                added
+                    .keys_without_slot
+                    .into_iter()
+                    .map(|key_id| (identity_id, key_id)),
+            );
+            if added.added {
                 identities.push(identity_id);
             }
         }
-        Ok((identities, paths, registered))
+        Ok(KeyPathsOfWallet {
+            identities,
+            paths,
+            registered,
+            keys_without_slot,
+        })
     }
 
     /// `paths` with only the keys whose path derives, inside `crypto`, the
@@ -498,9 +540,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// derives valid but unrelated keys, which open nothing, so the read
     /// would show a store holding nothing for the wallet. Refused with the
     /// SDK's `ProtocolVersionNotActive` below protocol version 15, and when
-    /// the contract declares no such private type. A read that reads no page
-    /// (no identity can open entries, or `max_pages` is 0) returns before
-    /// either check, asking the network nothing.
+    /// the contract declares no such private type.
+    ///
+    /// Two reads read no page. With `max_pages` 0, or no identity holding a
+    /// key with a path, it returns before the signer, the seed check, the
+    /// protocol version check and any request: its success shows none of
+    /// them. When keys have paths but none derives its registered key, it runs
+    /// the seed check and the key derivation in the signer first, so it fails
+    /// as they fail (a locked resolver, another seed), and then returns before
+    /// the protocol version check and any request to the store.
     pub async fn read_private_document_entries<C>(
         &self,
         crypto: &C,
@@ -523,11 +571,18 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                  \"{document_type_name}\" of contract {data_contract_id}"
             )));
         }
-        let (identities, paths, registered) = self.private_document_key_paths().await?;
+        let KeyPathsOfWallet {
+            identities,
+            paths,
+            registered,
+            keys_without_slot,
+        } = self.private_document_key_paths().await?;
         if identities.is_empty() || max_pages == 0 {
-            // Nothing is read: the cursor goes back as it came.
+            // Nothing is read, and the signer is not asked: the cursor goes
+            // back as it came, with the keys known unscanned without it.
             return Ok(PrivateDocumentRead {
                 identities,
+                unscanned_keys: keys_without_slot,
                 cursor: from.unwrap_or(PrivateDocumentCursor {
                     key_set: paths.fingerprint(),
                     store,
@@ -1595,6 +1650,60 @@ mod tests {
         );
     }
 
+    /// An identity whose only key an entry can be sealed to names no slot
+    /// reads nothing, without asking the signer, and the key is still listed
+    /// as not scanned.
+    #[tokio::test]
+    async fn should_list_a_key_with_no_slot_even_when_nothing_is_read() {
+        let mut alice = identity(ALICE_PHRASE, ALICE, false);
+        let far_key_id: KeyID = 0x8000_0002;
+        alice.public_keys_mut().insert(
+            far_key_id,
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: far_key_id,
+                purpose: Purpose::DECRYPTION,
+                security_level: SecurityLevel::MEDIUM,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(
+                    PublicKey::from_secret_key(&other_key(0x45))
+                        .serialize()
+                        .to_vec(),
+                ),
+                disabled_at: None,
+            }),
+        );
+        let (_manager, wallet) = wallet(ALICE_PHRASE, &alice).await;
+        let crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+
+        let read = wallet
+            .identity()
+            .read_private_document_entries(
+                &crypto,
+                Identifier::from(CONTRACT_ID),
+                TYPE_NAME,
+                None,
+                usize::MAX,
+            )
+            .await
+            .expect("nothing to read");
+
+        assert_eq!(
+            read.unscanned_keys,
+            vec![(Identifier::from(ALICE), far_key_id)]
+        );
+        assert_eq!((read.pages_read, read.identities.len()), (0, 0));
+        assert!(!read.complete);
+        assert_eq!(
+            crypto
+                .public_key_batches
+                .load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "the signer is not asked"
+        );
+    }
+
     /// A cursor of another store is refused: its position and size describe
     /// that store, not this one.
     #[tokio::test]
@@ -1759,9 +1868,12 @@ mod tests {
     fn should_scan_with_an_identity_s_decryption_and_encryption_keys() {
         let alice = identity(ALICE_PHRASE, ALICE, true);
         let mut paths = PrivateDocumentKeyPaths::default();
-        assert!(paths
-            .add_identity(Network::Testnet, 0, &alice)
-            .expect("the paths"));
+        assert!(
+            paths
+                .add_identity(Network::Testnet, 0, &alice)
+                .expect("the paths")
+                .added
+        );
         let path = |key_id| {
             identity_auth_derivation_path_for_type(
                 Network::Testnet,
@@ -1790,9 +1902,11 @@ mod tests {
         );
 
         let mut none = PrivateDocumentKeyPaths::default();
-        assert!(!none
-            .add_identity(Network::Testnet, 0, &identity(ALICE_PHRASE, ALICE, false))
-            .expect("no path"));
+        assert_eq!(
+            none.add_identity(Network::Testnet, 0, &identity(ALICE_PHRASE, ALICE, false))
+                .expect("no path"),
+            AddedIdentity::default()
+        );
         assert_eq!(none, PrivateDocumentKeyPaths::default());
         // Another key set, another fingerprint: a cursor read with one is
         // read again from the start with the other.
