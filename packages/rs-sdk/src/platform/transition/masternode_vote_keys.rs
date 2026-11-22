@@ -14,6 +14,11 @@
 //! signer and owns the rest: the broadcast, and the diagnosis of a refused
 //! voting key.
 //!
+//!
+//! [`check_masternode_voting_key`] asks the same question before any vote: whether a
+//! `(pro_tx_hash, voting address)` pair is a masternode voter Platform knows, so a host can
+//! refuse a mismatched pair when it is entered rather than when a vote is refused.
+//!
 //! [`PutVote`]: super::vote::PutVote
 //! [`Signer`]: dpp::identity::signer::Signer
 
@@ -41,8 +46,9 @@ use crate::{Error, Sdk};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VotingKeyProblem {
     /// No voter identity exists for this `(pro_tx_hash, voting address)` pair.
-    /// Either the voting key does not match the masternode's registered voting
-    /// address, or Platform has not created the identity yet.
+    /// Either `pro_tx_hash` is not a masternode, the voting key does not match
+    /// the masternode's registered voting address, or Platform has not created
+    /// the identity yet.
     NoVoterIdentity {
         /// The masternode the vote was cast for.
         pro_tx_hash: ProTxHash,
@@ -52,7 +58,8 @@ pub enum VotingKeyProblem {
     /// The voter identity exists but holds no enabled `ECDSA_HASH160` voting
     /// key for this address — what a rotation leaves behind, since
     /// `update_voter_identity_v0` disables the old identity's keys rather than
-    /// removing them.
+    /// removing them, and what a removed masternode leaves behind
+    /// (`disable_identity_keys_v0`).
     NoUsableVotingKey {
         /// The identity that was fetched.
         voter_identity: Identifier,
@@ -150,6 +157,76 @@ pub fn is_voting_key_failure(error: &Error) -> bool {
     }
 }
 
+/// Whether a voting key can vote for a masternode, as Platform's state proves it.
+///
+/// Platform creates the voter identity `voter_identity_id(pro_tx_hash, voting_address)` only
+/// for a masternode in its masternode list with that registered voting address, gives it the
+/// voting key, and disables that key when the masternode is removed or its voting address
+/// changes. So one proof-verified fetch of that identity answers the question without the
+/// masternode list: no Core or SPV sync is needed.
+#[derive(Debug)]
+pub enum VotingKeyCheck {
+    /// The voter identity exists and holds an enabled voting key for this address: the key
+    /// can vote for this masternode. A host stores it as checked.
+    Valid {
+        /// The voter identity that holds the key.
+        voter_identity: Identifier,
+    },
+    /// Platform proves the key cannot vote for this masternode: the pro_tx_hash is not a
+    /// masternode, the address is not its voting address, or the key was rotated away or
+    /// disabled. A host refuses the key.
+    Invalid(VotingKeyProblem),
+    /// The voter identity could not be fetched (network, proof or SDK failure), so nothing is
+    /// known about the key. A host may keep the key and mark it unchecked, to check again
+    /// later.
+    Undetermined(Box<Error>),
+}
+
+/// The verdict for the voter identity `fetched` from Platform at
+/// `voter_identity_id(pro_tx_hash, voting_address)`: `None` when Platform proved it absent.
+///
+/// Kept apart from the fetch so the rule can be tested without a network.
+pub fn voting_key_check_from_voter_identity(
+    pro_tx_hash: ProTxHash,
+    voting_address: &[u8; 20],
+    fetched: Option<&Identity>,
+) -> Result<Identifier, VotingKeyProblem> {
+    let expected_voter_identity = voter_identity_id(pro_tx_hash, voting_address);
+    let Some(identity) = fetched else {
+        return Err(VotingKeyProblem::NoVoterIdentity {
+            pro_tx_hash,
+            expected_voter_identity,
+        });
+    };
+    match select_voting_key(identity, voting_address) {
+        Some(_) => Ok(expected_voter_identity),
+        None => Err(VotingKeyProblem::NoUsableVotingKey {
+            voter_identity: expected_voter_identity,
+        }),
+    }
+}
+
+/// Checks whether the voting key with `voting_address` can vote for the masternode
+/// `pro_tx_hash`, by one proof-verified fetch of its voter identity (see [`VotingKeyCheck`]).
+///
+/// A masternode registered, or a voting key changed, in the last few blocks reads as
+/// [`VotingKeyCheck::Invalid`] until Platform processes the masternode list update.
+pub async fn check_masternode_voting_key(
+    sdk: &Sdk,
+    pro_tx_hash: ProTxHash,
+    voting_address: &[u8; 20],
+) -> VotingKeyCheck {
+    let voter_identity = voter_identity_id(pro_tx_hash, voting_address);
+    let fetched = match Identity::fetch(sdk, voter_identity).await {
+        Ok(fetched) => fetched,
+        Err(error) => return VotingKeyCheck::Undetermined(Box::new(error)),
+    };
+    match voting_key_check_from_voter_identity(pro_tx_hash, voting_address, fetched.as_ref()) {
+        Ok(voter_identity) => VotingKeyCheck::Valid { voter_identity },
+        Err(problem) => VotingKeyCheck::Invalid(problem),
+    }
+}
+
 /// Explain a voting-key rejection by fetching the voter identity.
 ///
 /// Costs one Platform round trip, so gate it on [`is_voting_key_failure`] and
@@ -165,20 +242,9 @@ pub async fn diagnose_voting_key_failure(
     pro_tx_hash: ProTxHash,
     voting_address: &[u8; 20],
 ) -> Option<VotingKeyProblem> {
-    let voter_identity = voter_identity_id(pro_tx_hash, voting_address);
-
-    let fetched = Identity::fetch(sdk, voter_identity).await.ok()?;
-
-    let Some(identity) = fetched else {
-        return Some(VotingKeyProblem::NoVoterIdentity {
-            pro_tx_hash,
-            expected_voter_identity: voter_identity,
-        });
-    };
-
-    match select_voting_key(&identity, voting_address) {
-        Some(_) => None,
-        None => Some(VotingKeyProblem::NoUsableVotingKey { voter_identity }),
+    match check_masternode_voting_key(sdk, pro_tx_hash, voting_address).await {
+        VotingKeyCheck::Invalid(problem) => Some(problem),
+        VotingKeyCheck::Valid { .. } | VotingKeyCheck::Undetermined(_) => None,
     }
 }
 
@@ -414,6 +480,131 @@ mod tests {
             None,
         )]);
         assert!(select_voting_key(&identity, &VOTING_ADDRESS).is_none());
+    }
+
+    // ---- checking a (pro_tx_hash, voting address) pair ----------------------
+
+    /// A pro_tx_hash whose two byte orders differ, so a reversal would show.
+    fn pro_tx_hash() -> ProTxHash {
+        ProTxHash::from_byte_array(std::array::from_fn(|i| i as u8 + 1))
+    }
+
+    /// The voter identity Platform creates for `pro_tx_hash` and `voting_address`: its own id,
+    /// not the masternode's (owner) identity id, holding the voting key at id 0.
+    fn voter_identity(
+        pro_tx_hash: ProTxHash,
+        voting_address: [u8; 20],
+        disabled_at: Option<u64>,
+    ) -> Identity {
+        let mut public_keys = BTreeMap::new();
+        public_keys.insert(
+            0,
+            key(
+                0,
+                Purpose::VOTING,
+                KeyType::ECDSA_HASH160,
+                voting_address,
+                disabled_at,
+            ),
+        );
+        Identity::V0(IdentityV0 {
+            id: voter_identity_id(pro_tx_hash, &voting_address),
+            public_keys,
+            balance: 0,
+            revision: 0,
+        })
+    }
+
+    /// The masternode's identity is named by its pro_tx_hash; its voter identity is a
+    /// different id, derived from the pro_tx_hash and the voting address together.
+    #[test]
+    fn should_derive_a_voter_identity_distinct_from_the_owner_identity() {
+        let owner_identity = Identifier::new(pro_tx_hash().to_byte_array());
+        let voter = voter_identity_id(pro_tx_hash(), &VOTING_ADDRESS);
+        assert_ne!(voter, owner_identity);
+        assert_ne!(voter, voter_identity_id(pro_tx_hash(), &OTHER_ADDRESS));
+    }
+
+    #[test]
+    fn should_accept_a_voter_identity_holding_the_enabled_voting_key() {
+        let identity = voter_identity(pro_tx_hash(), VOTING_ADDRESS, None);
+        assert_eq!(
+            voting_key_check_from_voter_identity(pro_tx_hash(), &VOTING_ADDRESS, Some(&identity)),
+            Ok(voter_identity_id(pro_tx_hash(), &VOTING_ADDRESS))
+        );
+    }
+
+    /// Absent: not a masternode, or not its voting address. The problem names the voter
+    /// identity that was looked for, not the masternode's own identity.
+    #[test]
+    fn should_refuse_a_pair_with_no_voter_identity() {
+        assert_eq!(
+            voting_key_check_from_voter_identity(pro_tx_hash(), &VOTING_ADDRESS, None),
+            Err(VotingKeyProblem::NoVoterIdentity {
+                pro_tx_hash: pro_tx_hash(),
+                expected_voter_identity: voter_identity_id(pro_tx_hash(), &VOTING_ADDRESS),
+            })
+        );
+    }
+
+    /// What a removed masternode or a rotated voting key leaves behind.
+    #[test]
+    fn should_refuse_a_voter_identity_whose_voting_key_is_disabled() {
+        let identity = voter_identity(pro_tx_hash(), VOTING_ADDRESS, Some(1_700_000_000));
+        assert_eq!(
+            voting_key_check_from_voter_identity(pro_tx_hash(), &VOTING_ADDRESS, Some(&identity)),
+            Err(VotingKeyProblem::NoUsableVotingKey {
+                voter_identity: voter_identity_id(pro_tx_hash(), &VOTING_ADDRESS),
+            })
+        );
+    }
+
+    #[cfg(feature = "mocks")]
+    mod with_a_mock_sdk {
+        use super::*;
+
+        async fn check_against(fetched: Option<Option<Identity>>) -> VotingKeyCheck {
+            let mut sdk = Sdk::new_mock();
+            if let Some(fetched) = fetched {
+                sdk.mock()
+                    .expect_fetch::<Identity, _>(
+                        voter_identity_id(pro_tx_hash(), &VOTING_ADDRESS),
+                        fetched,
+                    )
+                    .await
+                    .expect("set mock expectation");
+            }
+            check_masternode_voting_key(&sdk, pro_tx_hash(), &VOTING_ADDRESS).await
+        }
+
+        #[tokio::test]
+        async fn should_check_a_valid_pair_as_valid() {
+            let identity = voter_identity(pro_tx_hash(), VOTING_ADDRESS, None);
+            match check_against(Some(Some(identity))).await {
+                VotingKeyCheck::Valid { voter_identity } => assert_eq!(
+                    voter_identity,
+                    voter_identity_id(pro_tx_hash(), &VOTING_ADDRESS)
+                ),
+                other => panic!("expected Valid, got {other:?}"),
+            }
+        }
+
+        #[tokio::test]
+        async fn should_check_a_pair_platform_proves_absent_as_invalid() {
+            assert!(matches!(
+                check_against(Some(None)).await,
+                VotingKeyCheck::Invalid(VotingKeyProblem::NoVoterIdentity { .. })
+            ));
+        }
+
+        /// A failed fetch says nothing about the key: it is undetermined, never invalid.
+        #[tokio::test]
+        async fn should_check_a_pair_whose_fetch_fails_as_undetermined() {
+            assert!(matches!(
+                check_against(None).await,
+                VotingKeyCheck::Undetermined(_)
+            ));
+        }
     }
 
     #[test]

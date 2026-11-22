@@ -55,6 +55,9 @@ struct LoadIdentityView: View {
         /// by role. Success requires each slot to still hold its key, so a
         /// key changed elsewhere while the dialog was open is reported.
         let enteredKeyDigests: [SpecialKeyType: Data]
+        /// What Platform said about the entered voting key, recorded on the
+        /// identity only when that key replaces the stored one.
+        let votingKeyCheck: MasternodeVotingKeyCheck?
     }
 
     /// Held only until the replacement dialog is answered, then cleared.
@@ -435,6 +438,36 @@ struct LoadIdentityView: View {
                     return
                 }
 
+                // A masternode voting key is checked against Platform before
+                // anything is stored: a key Platform proves cannot vote for
+                // this masternode stops the load, one that could not be
+                // checked is stored and marked unchecked.
+                var votingKeyCheck: MasternodeVotingKeyCheck?
+                if let votingKeyData {
+                    let check = try await sdk.checkMasternodeVotingKey(
+                        proTxHash: MasternodeVoter.wireOrderProTxHash(identityId: validIdData),
+                        votingPrivateKey: votingKeyData
+                    )
+                    guard appState.sdk === sdk else {
+                        await MainActor.run {
+                            errorMessage = "The network changed during the load, so the identity was not saved. Load it again."
+                            isLoading = false
+                            loadStartTime = nil
+                        }
+                        return
+                    }
+                    if case .invalid(let reason) = check {
+                        let text = "The voting key does not belong to masternode \(validIdData.toHexString()), so the identity was not saved: \(reason)"
+                        await MainActor.run {
+                            errorMessage = text
+                            isLoading = false
+                            loadStartTime = nil
+                        }
+                        return
+                    }
+                    votingKeyCheck = check
+                }
+
                 // Debug: Print the entire identity data to see its structure
                 print("🔵 Fetched identity data: \(identityData)")
 
@@ -558,6 +591,7 @@ struct LoadIdentityView: View {
                 let capturedVotingKey = votingKeyData
                 let capturedOwnerKey = ownerKeyData
                 let capturedPayoutKey = payoutKeyData
+                let capturedVotingKeyCheck = votingKeyCheck
 
                 await MainActor.run {
                     // Upsert the PersistentIdentity row.
@@ -662,8 +696,14 @@ struct LoadIdentityView: View {
                             return nil
                         }
                     }
+                    var enteredVotingKeyStored = false
                     if let identifier = storeSlot(capturedVotingKey, .voting, named: "voting") {
+                        enteredVotingKeyStored = true
                         row.votingPrivateKeyIdentifier = identifier
+                        // The slot holds the entered key, so the check made
+                        // of that key is the row's. A key kept in its place
+                        // keeps its own check.
+                        row.votingKeyCheck = capturedVotingKeyCheck
                     }
                     if let identifier = storeSlot(capturedOwnerKey, .owner, named: "owner") {
                         row.ownerPrivateKeyIdentifier = identifier
@@ -691,8 +731,18 @@ struct LoadIdentityView: View {
                         return
                     }
 
-                    if unstoredKeys.isEmpty && conflictingKeys.isEmpty {
+                    // The entered voting key was stored but Platform could not
+                    // be asked about it: said in place of the plain success.
+                    let uncheckedNote = Self.uncheckedVotingKeyNote(
+                        capturedVotingKeyCheck,
+                        stored: enteredVotingKeyStored
+                    )
+                    if unstoredKeys.isEmpty && conflictingKeys.isEmpty && uncheckedNote == nil {
                         showSuccess = true
+                    } else if unstoredKeys.isEmpty && conflictingKeys.isEmpty, let uncheckedNote {
+                        errorMessage = "The identity was loaded and its voting key was stored. " + uncheckedNote
+                        isLoading = false
+                        loadStartTime = nil
                     } else {
                         var parts: [String] = []
                         // Kept apart so the report after a replacement can
@@ -720,6 +770,9 @@ struct LoadIdentityView: View {
                         if unstoredKeys.contains("voting") && row.votingPrivateKeyIdentifier == nil {
                             text += " The identity cannot vote until it is loaded again."
                         }
+                        if let uncheckedNote {
+                            text += " The voting key was stored. " + uncheckedNote
+                        }
                         errorMessage = text
                         isLoading = false
                         loadStartTime = nil
@@ -738,7 +791,8 @@ struct LoadIdentityView: View {
                                 identityId: validIdData,
                                 keys: conflictingReplacements,
                                 unstoredNote: unstoredNote,
-                                enteredKeyDigests: enteredKeyDigests
+                                enteredKeyDigests: enteredKeyDigests,
+                                votingKeyCheck: capturedVotingKeyCheck
                             )
                         }
                     }
@@ -823,7 +877,9 @@ struct LoadIdentityView: View {
                 case .success(nil):
                     removed.append(name)
                     switch key.keyType {
-                    case .voting: row.votingPrivateKeyIdentifier = nil
+                    case .voting:
+                        row.votingPrivateKeyIdentifier = nil
+                        row.votingKeyCheck = nil
                     case .owner: row.ownerPrivateKeyIdentifier = nil
                     case .payout: row.payoutPrivateKeyIdentifier = nil
                     }
@@ -836,7 +892,11 @@ struct LoadIdentityView: View {
             }
             if let identifier {
                 switch key.keyType {
-                case .voting: row.votingPrivateKeyIdentifier = identifier
+                case .voting:
+                    row.votingPrivateKeyIdentifier = identifier
+                    // The slot now holds the entered key: record what
+                    // Platform said about it at the load.
+                    row.votingKeyCheck = pending.votingKeyCheck
                 case .owner: row.ownerPrivateKeyIdentifier = identifier
                 case .payout: row.payoutPrivateKeyIdentifier = identifier
                 }
@@ -919,7 +979,15 @@ struct LoadIdentityView: View {
             let noun = notInPlace.count == 1 ? "key is" : "keys are"
             parts.append("The \(names) \(noun) no longer the one you entered; it was changed on this device since the load. Load the identity again.")
         }
-        if saved && replaced.count == pending.keys.count && pending.unstoredNote == nil && notInPlace.isEmpty {
+        let uncheckedNote = Self.uncheckedVotingKeyNote(
+            pending.votingKeyCheck,
+            stored: replaced.contains(SpecialKeyType.voting.rawValue)
+        )
+        if let uncheckedNote {
+            parts.append(uncheckedNote)
+        }
+        if saved && replaced.count == pending.keys.count && pending.unstoredNote == nil && notInPlace.isEmpty
+            && uncheckedNote == nil {
             errorMessage = nil
             showSuccess = true
         } else {
@@ -927,6 +995,14 @@ struct LoadIdentityView: View {
             isLoading = false
             loadStartTime = nil
         }
+    }
+
+    /// What the load reports when the voting key it stored could not be
+    /// checked against Platform; `nil` when it was checked, or when the
+    /// entered key did not end up in the voting slot.
+    private static func uncheckedVotingKeyNote(_ check: MasternodeVotingKeyCheck?, stored: Bool) -> String? {
+        guard stored, case .undetermined(let reason) = check else { return nil }
+        return reason + " It is checked again when you pick this identity to vote."
     }
 
     /// Bring `identity`'s public-key rows in line with the keys fetched from

@@ -51,6 +51,18 @@ public final class PersistentIdentity {
     public var ownerPrivateKeyIdentifier: String?
     public var payoutPrivateKeyIdentifier: String?
 
+    // MARK: - Masternode voting key check
+    /// What Platform proved, when last asked, about the voting key stored
+    /// for this masternode or evonode identity
+    /// (``SDK/checkMasternodeVotingKey(proTxHash:votingAddress:)``): `"valid"`,
+    /// `"invalid"` or `"undetermined"`. `nil` when the key was never checked:
+    /// the identity has no voting key, or it was stored before keys were
+    /// checked. Read and write it through ``votingKeyCheck``.
+    public var votingKeyCheckRaw: String? = nil
+    /// The reason that came with an `"invalid"` or `"undetermined"` check,
+    /// worded in Rust; `nil` otherwise.
+    public var votingKeyCheckMessage: String? = nil
+
     // MARK: - Public Keys
     @Relationship(deleteRule: .cascade) public var publicKeys: [PersistentPublicKey]
 
@@ -306,6 +318,41 @@ public final class PersistentIdentity {
 
     public var identityTypeEnum: IdentityType {
         IdentityType(rawValue: identityType) ?? .user
+    }
+
+    /// The last check of the stored voting key, over ``votingKeyCheckRaw``
+    /// and ``votingKeyCheckMessage``; `nil` when it was never checked (or
+    /// the stored value is not one this build knows). Setting `nil` clears
+    /// both, for a voting key that was removed or replaced unchecked.
+    public var votingKeyCheck: MasternodeVotingKeyCheck? {
+        get {
+            switch votingKeyCheckRaw {
+            case "valid":
+                return .valid
+            case "invalid":
+                return .invalid(message: votingKeyCheckMessage ?? "")
+            case "undetermined":
+                return .undetermined(message: votingKeyCheckMessage ?? "")
+            default:
+                return nil
+            }
+        }
+        set {
+            switch newValue {
+            case .valid:
+                votingKeyCheckRaw = "valid"
+                votingKeyCheckMessage = nil
+            case .invalid(let message):
+                votingKeyCheckRaw = "invalid"
+                votingKeyCheckMessage = message
+            case .undetermined(let message):
+                votingKeyCheckRaw = "undetermined"
+                votingKeyCheckMessage = message
+            case nil:
+                votingKeyCheckRaw = nil
+                votingKeyCheckMessage = nil
+            }
+        }
     }
 
     // MARK: - Methods

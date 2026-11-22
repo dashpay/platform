@@ -170,6 +170,12 @@ enum MasternodeVoteCallError: LocalizedError {
 /// also offers, in every build, a typed pro_tx_hash with no key
 /// (`<prefix>.useTypedProTxHash`, field `<prefix>.proTxHash`), published as
 /// `.typedProTxHash`: it reads any masternode's answer and casts nothing.
+///
+/// A candidate whose stored voting key Platform proved cannot vote for it
+/// (`PersistentIdentity.votingKeyCheck` is `.invalid`) is labelled and never
+/// published. A picked candidate whose key was never checked (stored before
+/// keys were checked) or could not be checked is checked once when picked
+/// (`<prefix>.voterKeyCheck` shows how it went) and stays usable meanwhile.
 struct MasternodeVoterSection: View {
     let accessibilityPrefix: String
     @Binding var voter: MasternodeVoter?
@@ -178,7 +184,14 @@ struct MasternodeVoterSection: View {
     var allowsTypedProTxHash: Bool = false
 
     @EnvironmentObject private var appState: AppState
+    @Environment(\.modelContext) private var modelContext
     @Query private var identities: [PersistentIdentity]
+
+    /// The identity whose stored voting key is being checked right now.
+    @State private var checkingIdentityId: Data?
+    /// Why the last check of the picked identity's key could not run at all
+    /// (the Keychain could not be read, or the call was refused), by identity.
+    @State private var checkFailure: (identityId: Data, message: String)?
 
     @State private var selectedIdentityId: Data?
     @State private var useTypedProTxHash = false
@@ -234,6 +247,9 @@ struct MasternodeVoterSection: View {
         // the id list compares equal; re-check the selection.
         .onChange(of: appState.currentNetwork) { _, _ in selectDefaultIfNeeded() }
         .onChange(of: selectedIdentityId) { _, _ in publish() }
+        // Once per pick: a key never checked, or not checked last time, is
+        // checked when its identity is picked.
+        .task(id: selectedIdentityId) { await checkSelectedVotingKeyIfNeeded() }
         .onChange(of: useTypedProTxHash) { _, isOn in
             #if DEBUG
             if isOn { useTypedCredentials = false }
@@ -267,6 +283,14 @@ struct MasternodeVoterSection: View {
             }
             .accessibilityIdentifier("\(accessibilityPrefix).voter")
             .disabled(usesTypedInput)
+            if !usesTypedInput, let selected = candidates.first(where: { $0.identityId == selectedIdentityId }) {
+                VotingKeyCheckStatus(
+                    check: selected.votingKeyCheck,
+                    isChecking: checkingIdentityId == selected.identityId,
+                    failure: checkFailure?.identityId == selected.identityId ? checkFailure?.message : nil
+                )
+                .accessibilityIdentifier("\(accessibilityPrefix).voterKeyCheck")
+            }
         }
     }
 
@@ -276,7 +300,15 @@ struct MasternodeVoterSection: View {
         let name = identity.displayName
         let shared = candidates.contains { $0.identityId != identity.identityId && $0.displayName == name }
         let suffix = shared ? ", \(identity.identityId.toHexString().prefix(8))" : ""
-        return Text("\(name) (\(identity.identityTypeEnum.rawValue)\(suffix))")
+        let mismatch = Self.isRefused(identity) ? ", voting key does not match" : ""
+        return Text("\(name) (\(identity.identityTypeEnum.rawValue)\(suffix)\(mismatch))")
+    }
+
+    /// Whether Platform proved the identity's stored voting key cannot vote
+    /// for it.
+    private static func isRefused(_ identity: PersistentIdentity) -> Bool {
+        if case .invalid = identity.votingKeyCheck { return true }
+        return false
     }
 
     /// A pro_tx_hash typed with no key, available in every build: reads
@@ -339,7 +371,60 @@ struct MasternodeVoterSection: View {
     private func selectDefaultIfNeeded() {
         let candidates = votingIdentities
         if selectedIdentityId == nil || !candidates.contains(where: { $0.identityId == selectedIdentityId }) {
-            selectedIdentityId = candidates.first?.identityId
+            // Prefer an identity whose voting key Platform did not refuse.
+            selectedIdentityId = (candidates.first { !Self.isRefused($0) } ?? candidates.first)?.identityId
+        }
+        publish()
+    }
+
+    /// Checks the picked identity's stored voting key against Platform when
+    /// it was never checked or could not be checked, and records the verdict
+    /// on its row. The check reads only the key's voting address
+    /// (`KeychainSigner.storedMasternodeVotingAddress`); the key is not made
+    /// signable.
+    private func checkSelectedVotingKeyIfNeeded() async {
+        guard let identityId = selectedIdentityId,
+              let identity = votingIdentities.first(where: { $0.identityId == identityId }),
+              let sdk = appState.sdk else {
+            return
+        }
+        switch identity.votingKeyCheck {
+        case .valid, .invalid:
+            return
+        case .undetermined, nil:
+            break
+        }
+        let network = appState.currentNetwork
+        checkingIdentityId = identityId
+        defer {
+            if checkingIdentityId == identityId { checkingIdentityId = nil }
+        }
+        let check: MasternodeVotingKeyCheck
+        do {
+            let signer = KeychainSigner(modelContainer: modelContext.container, network: network)
+            let votingAddress = try await signer.storedMasternodeVotingAddress(identityId: identityId)
+            check = try await sdk.checkMasternodeVotingKey(
+                proTxHash: MasternodeVoter.wireOrderProTxHash(identityId: identityId),
+                votingAddress: votingAddress
+            )
+        } catch {
+            // Nothing was learned about the key; the row is left as it was.
+            checkFailure = (identityId, "The voting key could not be checked: \(error.localizedDescription)")
+            return
+        }
+        // An answer from another network, or for a row that is gone or no
+        // longer holds a voting key, is not recorded.
+        guard appState.sdk === sdk, appState.currentNetwork == network,
+              let row = PersistentIdentity.fetch(in: modelContext, identityId: identityId),
+              row.network == network, row.votingPrivateKeyIdentifier != nil else {
+            return
+        }
+        row.votingKeyCheck = check
+        do {
+            try modelContext.save()
+            if checkFailure?.identityId == identityId { checkFailure = nil }
+        } catch {
+            checkFailure = (identityId, "The voting key check could not be saved: \(error.localizedDescription)")
         }
         publish()
     }
@@ -366,6 +451,44 @@ struct MasternodeVoterSection: View {
             voter = Self.decode32(proTxHashHex).map { .typedProTxHash($0) }
             return
         }
+        // An identity whose voting key Platform refused does not vote.
+        if let selected = votingIdentities.first(where: { $0.identityId == selectedIdentityId }),
+           Self.isRefused(selected) {
+            voter = nil
+            return
+        }
         voter = selectedIdentityId.map { .storedKey(identityId: $0) }
+    }
+}
+
+/// How the check of the picked identity's stored voting key went, under the
+/// picker. Nothing for a key Platform accepted.
+private struct VotingKeyCheckStatus: View {
+    let check: MasternodeVotingKeyCheck?
+    let isChecking: Bool
+    /// Why the check could not run, when it could not.
+    let failure: String?
+
+    var body: some View {
+        if isChecking {
+            HStack(spacing: 8) {
+                ProgressView()
+                Text("Checking the voting key...")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        } else if case .invalid(let message) = check {
+            Text("This voting key cannot vote for this masternode: \(message) Load the identity again with its voting key under Identities, Load Identity.")
+                .font(.caption)
+                .foregroundColor(.red)
+        } else if let failure {
+            Text(failure + " You can still vote with it.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        } else if case .undetermined(let message) = check {
+            Text(message + " You can still vote with it; it is checked again when you pick this identity.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
     }
 }

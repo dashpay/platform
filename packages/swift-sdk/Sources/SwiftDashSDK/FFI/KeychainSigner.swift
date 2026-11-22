@@ -1043,16 +1043,39 @@ extension KeychainSigner {
         }
     }
 
-    /// Reads the stored voting key for `identityId` and returns its voting
-    /// address and a registry entry holding its own copy of the key. The
-    /// read buffer is reset before returning.
-    private func prepareStoredVotingKey(
-        identityId: Data
-    ) throws -> (Data, [AdditionalSigningKeyEntry]) {
-        var privateKey: Data
+    /// The voting address of the voting key stored for a loaded masternode
+    /// or evonode identity, without making the key signable: what
+    /// ``SDK/checkMasternodeVotingKey(proTxHash:votingAddress:)`` takes to
+    /// check a key stored before it was checked. The key is read on a worker
+    /// and its buffer reset before this returns; only the address leaves.
+    ///
+    /// - Parameter identityId: The loaded identity's id, the bytes it was
+    ///   stored under (`PersistentIdentity.identityId`).
+    /// - Throws: The same errors as
+    ///   ``withStoredMasternodeVotingKey(identityId:isolation:perform:)``:
+    ///   ``Error/votingKeyNotStored(identityIdHex:)``,
+    ///   ``Error/votingKeyUnreadable(status:)`` and
+    ///   ``Error/invalidVotingKey(message:)``.
+    public func storedMasternodeVotingAddress(identityId: Data) async throws -> Data {
+        // `SecItemCopyMatching` is synchronous and the caller is often the
+        // main actor, so the read runs on a worker.
+        try await Task.detached { [self] () -> Result<Data, Swift.Error> in
+            Result {
+                var privateKey = try self.readStoredVotingKey(identityId: identityId)
+                defer { privateKey.resetBytes(in: 0..<privateKey.count) }
+                return try Self.masternodeVotingAddress(privateKey: privateKey)
+            }
+        }.value.get()
+    }
+
+    /// The voting private key stored for `identityId`. The caller resets the
+    /// returned buffer. The read keeps its status: `retrieveSpecialKey`
+    /// returns `nil` for a locked Keychain too, which would read as a key
+    /// never stored.
+    private func readStoredVotingKey(identityId: Data) throws -> Data {
         switch keychain.readSpecialKey(identityId: identityId, keyType: .voting) {
         case .success(let stored?):
-            privateKey = stored
+            return stored
         case .success(nil):
             throw Error.votingKeyNotStored(identityIdHex: identityId.toHexString())
         case .failure(.retrieveFailed(let status)):
@@ -1060,6 +1083,15 @@ extension KeychainSigner {
         case .failure(let error):
             throw Error.invalidVotingKey(message: error.localizedDescription)
         }
+    }
+
+    /// Reads the stored voting key for `identityId` and returns its voting
+    /// address and a registry entry holding its own copy of the key. The
+    /// read buffer is reset before returning.
+    private func prepareStoredVotingKey(
+        identityId: Data
+    ) throws -> (Data, [AdditionalSigningKeyEntry]) {
+        var privateKey = try readStoredVotingKey(identityId: identityId)
         defer { privateKey.resetBytes(in: 0..<privateKey.count) }
         let votingAddress = try Self.masternodeVotingAddress(privateKey: privateKey)
         // The entry copies the key; the signing scope zeroes that copy on exit.
@@ -1073,27 +1105,9 @@ extension KeychainSigner {
     /// (`dash_sdk_masternode_voting_address_from_private_key`): bytes in,
     /// bytes out.
     static func masternodeVotingAddress(privateKey: Data) throws -> Data {
-        // The FFI reads exactly 32 bytes through the key pointer.
-        guard privateKey.count == 32 else {
-            throw Error.invalidVotingKey(
-                message: "expected 32 bytes, found \(privateKey.count)"
-            )
-        }
-        var address = [UInt8](repeating: 0, count: 20)
-        let result = privateKey.withUnsafeBytes { keyRaw in
-            address.withUnsafeMutableBufferPointer { out in
-                dash_sdk_masternode_voting_address_from_private_key(
-                    keyRaw.bindMemory(to: UInt8.self).baseAddress,
-                    out.baseAddress
-                )
-            }
-        }
-        if let error = result.error {
-            let message = error.pointee.message.map { String(cString: $0) } ?? "unknown error"
-            dash_sdk_error_free(error)
-            throw Error.invalidVotingKey(message: message)
-        }
-        return Data(address)
+        try MasternodeVotingAddress.of(privateKey: privateKey)
+            .mapError { Error.invalidVotingKey(message: $0.message) }
+            .get()
     }
 }
 

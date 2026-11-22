@@ -48,6 +48,43 @@ final class KeychainSignerStoredVotingKeyTests: XCTestCase {
         )
     }
 
+    /// The address read for a check is the one the signing scope signs
+    /// under, and reading it leaves the key unsignable.
+    func testStoredVotingAddressIsTheSigningAddressAndLeavesTheKeyUnsignable() async throws {
+        let container = try DashModelContainer.createInMemory()
+        let keychain = KeychainManager(serviceName: "org.dashfoundation.tests.\(UUID().uuidString)")
+        let signer = KeychainSigner(modelContainer: container, network: .testnet, keychain: keychain)
+
+        let identityId = Data(repeating: 0x23, count: 32)
+        let privateKey = Data(repeating: 0x15, count: 32)
+        XCTAssertNotNil(keychain.storeSpecialKey(privateKey, identityId: identityId, keyType: .voting))
+        addTeardownBlock { @MainActor in
+            _ = keychain.deleteSpecialKey(identityId: identityId, keyType: .voting)
+        }
+
+        let address = try await signer.storedMasternodeVotingAddress(identityId: identityId)
+        let signingAddress = try await signer.withStoredMasternodeVotingKey(identityId: identityId) { $0 }
+        XCTAssertEqual(address, signingAddress)
+        XCTAssertEqual(address.count, 20)
+        XCTAssertFalse(
+            signer.canSign(publicKey: address, keyType: KeyType.ecdsaHash160.rawValue)
+        )
+    }
+
+    func testStoredVotingAddressThrowsVotingKeyNotStoredWithoutAKey() async throws {
+        let container = try DashModelContainer.createInMemory()
+        let keychain = KeychainManager(serviceName: "org.dashfoundation.tests.\(UUID().uuidString)")
+        let signer = KeychainSigner(modelContainer: container, network: .testnet, keychain: keychain)
+        let identityId = Data(repeating: 0x24, count: 32)
+
+        do {
+            _ = try await signer.storedMasternodeVotingAddress(identityId: identityId)
+            XCTFail("expected votingKeyNotStored")
+        } catch KeychainSigner.Error.votingKeyNotStored(let identityIdHex) {
+            XCTAssertEqual(identityIdHex, identityId.toHexString())
+        }
+    }
+
     func testMissingVotingKeyThrowsVotingKeyNotStored() async throws {
         let container = try DashModelContainer.createInMemory()
         let keychain = KeychainManager(serviceName: "org.dashfoundation.tests.\(UUID().uuidString)")
