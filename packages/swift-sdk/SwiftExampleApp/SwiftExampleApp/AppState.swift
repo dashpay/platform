@@ -44,18 +44,18 @@ class AppState: ObservableObject {
 
     /// Whether an SDK rebuild is running, started from any window. Options
     /// disables its rebuild controls on it; `rebuildSdk` refuses a second
-    /// rebuild by itself. Every asset-lock funding start refuses on it
-    /// (`coreFundingRefusal`): the rebuild has stopped, or is about to
-    /// stop, the SPV client a funding needs.
+    /// rebuild by itself. Every asset-lock funding and every identity
+    /// registration start refuses on it (`fundingRefusal`): the rebuild
+    /// has stopped, or is about to stop, the SPV client a funding needs.
     @Published private(set) var isRebuildingSdk = false
 
-    /// Why an asset-lock funding (a shield, a Max or its Resume, a Platform
-    /// address top-up, or a Core-funded identity registration, fresh or
+    /// Why a funding (a shield, a Max or its Resume, a Platform address
+    /// top-up, or an identity registration from any source, fresh or
     /// resumed) may not start now, or `nil` when it may. A rebuild reserves
-    /// `isRebuildingSdk` before it checks for running fundings and then
-    /// stops SPV, so a funding started after that reservation would wait
-    /// for a ChainLock that never comes and hold up the rebuild's shutdown.
-    nonisolated static func coreFundingRefusal(isRebuildingSdk: Bool) -> String? {
+    /// `isRebuildingSdk` before it checks for running fundings and
+    /// registrations and then stops SPV, so one started after that
+    /// reservation would run beside the shutdown it was not counted in.
+    nonisolated static func fundingRefusal(isRebuildingSdk: Bool) -> String? {
         isRebuildingSdk ? WalletDrainCoordinator.rebuildInProgressMessage : nil
     }
 
@@ -246,8 +246,8 @@ class AppState: ObservableObject {
     /// settings the flow changes), `activateManager` (the wallet manager
     /// store's) and `beforePublish` (the flow's own state). The sequence
     /// checks `fundingInFlight` before its first suspension, and every
-    /// asset-lock funding checks `isRebuildingSdk` before it starts
-    /// (`coreFundingRefusal`), so neither starts beside the other.
+    /// funding and identity registration checks `isRebuildingSdk` before
+    /// it starts (`fundingRefusal`), so neither starts beside the other.
     func rebuildSdk(
         from network: Network,
         to target: Network,

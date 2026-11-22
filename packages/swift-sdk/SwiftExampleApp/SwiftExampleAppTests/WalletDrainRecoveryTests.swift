@@ -1159,6 +1159,30 @@ final class WalletDrainRecoveryTests: XCTestCase {
         )
     }
 
+    /// After Platform rejects a first proof the worker can be waiting for a
+    /// ChainLock, so step 5 names that instead of claiming live proving.
+    func testShouldDescribeTheShieldStepWithoutClaimingLiveProving() {
+        for isResume in [false, true] {
+            XCTAssertEqual(
+                Progress.stepTitle(5, isResumingExistingLock: isResume, lockStatusRaw: 2),
+                "Shielding"
+            )
+            let footer = Progress.footerText(
+                step: 5,
+                isFailed: false,
+                finalityKindUnknown: false,
+                isResumingExistingLock: isResume
+            )
+            XCTAssertEqual(
+                footer,
+                "The asset lock has a proof; the wallet is proving the shield (about 30 s) "
+                    + "and submitting it to Platform, which can include waiting for a ChainLock if "
+                    + "Platform asks for one. The shielded note appears in your balance after the "
+                    + "next sync."
+            )
+        }
+    }
+
     /// Past Built, a resume follows the same lanes as a fresh attempt.
     func testShouldFollowTheSameStepsForAResumePastBuilt() {
         for status in [1, 2, 3, 5, 6] {
@@ -1215,15 +1239,15 @@ final class WalletDrainRecoveryTests: XCTestCase {
 
     // MARK: - SDK rebuild
 
-    /// Every asset-lock funding submit (Max and its Resume, resumed lock,
-    /// fresh shield, Platform address top-up, Core-funded identity
-    /// registration fresh or resumed) goes through this rule before it
+    /// Every funding submit (Max and its Resume, resumed lock, fresh
+    /// shield, Platform address top-up, and identity registration from
+    /// any source, fresh or resumed) goes through this rule before it
     /// starts anything.
-    func testShouldRefuseACoreFundingOnlyWhileAnSdkRebuildRuns() {
+    func testShouldRefuseAFundingOnlyWhileAnSdkRebuildRuns() {
         XCTAssertEqual(
-            AppState.coreFundingRefusal(isRebuildingSdk: true),
+            AppState.fundingRefusal(isRebuildingSdk: true),
             WalletDrainCoordinator.rebuildInProgressMessage
         )
-        XCTAssertNil(AppState.coreFundingRefusal(isRebuildingSdk: false))
+        XCTAssertNil(AppState.fundingRefusal(isRebuildingSdk: false))
     }
 }

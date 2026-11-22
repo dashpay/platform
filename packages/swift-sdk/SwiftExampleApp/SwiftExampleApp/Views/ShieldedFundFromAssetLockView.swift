@@ -805,7 +805,7 @@ struct ShieldedFundFromAssetLockView: View {
 
         // Same rule as Max: a resume is admitted by the manager, so it
         // must not start once a rebuild has reserved its slot.
-        if let refusal = AppState.coreFundingRefusal(isRebuildingSdk: platformState.isRebuildingSdk) {
+        if let refusal = AppState.fundingRefusal(isRebuildingSdk: platformState.isRebuildingSdk) {
             submitError = SubmitError(message: refusal)
             return
         }
@@ -936,7 +936,7 @@ struct ShieldedFundFromAssetLockView: View {
         // a drain started now could wait for a ChainLock that never comes.
         // The rebuild refuses to start beside a funding; this is the other
         // side of that rule.
-        if let refusal = AppState.coreFundingRefusal(isRebuildingSdk: platformState.isRebuildingSdk) {
+        if let refusal = AppState.fundingRefusal(isRebuildingSdk: platformState.isRebuildingSdk) {
             submitError = SubmitError(message: refusal)
             return
         }

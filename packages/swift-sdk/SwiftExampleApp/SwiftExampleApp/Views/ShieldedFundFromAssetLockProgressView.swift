@@ -43,7 +43,7 @@ extension PersistentAssetLock: ShieldedProgressLockRow {}
 ///                                      when `statusRaw == 3`
 ///                                      (CL-locked), `.notAsserted` at
 ///                                      2 (InstantSend recorded)
-///   5. Shielding (Halo 2 + submit)   → activeLock `statusRaw ∈ {2, 3, 5}`
+///   5. Shielding                     → activeLock `statusRaw ∈ {2, 3, 5}`
 ///                                      AND controller still `.inFlight`
 ///                                      (5, RecoveredFromChain: the lock
 ///                                      is confirmed on Core, only the
@@ -62,9 +62,9 @@ extension PersistentAssetLock: ShieldedProgressLockRow {}
 /// steps 2 to 5 stay pending (`currentStep`).
 ///
 /// Step 5 is meaningfully longer than its address-funding sibling
-/// because Type 18 builds a ~30s Halo 2 proof inside the FFI call.
-/// The footer explicitly calls that out so users don't think the
-/// app is hung.
+/// because Type 18 builds a ~30s Halo 2 proof inside the FFI call. Its
+/// title and footer claim no live proving: after Platform rejects a first
+/// proof the worker can be waiting for a ChainLock instead.
 ///
 /// Steps 3 and 4 state only what the row records (`stepState`): step 3
 /// waits for either proof, so a recorded proof completes it and names
@@ -324,7 +324,7 @@ struct ShieldedFundFromAssetLockProgressSection: View {
             default: return "Waiting for InstantSend or ChainLock proof"
             }
         case 4: return "ChainLock proof"
-        case 5: return "Building Orchard proof and shielding"
+        case 5: return "Shielding"
         default: return ""
         }
     }
@@ -464,7 +464,11 @@ struct ShieldedFundFromAssetLockProgressSection: View {
                 stepText = "Waiting for the asset-lock transaction to become final, by an "
                     + "InstantSend lock or, if none arrives, a ChainLock. A ChainLock can take "
                     + "a few minutes."
-            case 5: stepText = "Building the Halo 2 proof (~30s) and submitting the ShieldFromAssetLock state transition to Platform. The shielded note appears in your balance after the next sync pass."
+            case 5:
+                stepText = "The asset lock has a proof; the wallet is proving the shield (about 30 s) "
+                    + "and submitting it to Platform, which can include waiting for a ChainLock if "
+                    + "Platform asks for one. The shielded note appears in your balance after the "
+                    + "next sync."
             default: stepText = ""
             }
         }

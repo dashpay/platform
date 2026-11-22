@@ -174,8 +174,8 @@ final class WalletDrainCoordinator: ObservableObject {
     nonisolated static let controllerOperationIdPrefix = "drain:"
 
     /// Shown when an asset-lock funding (a shield, a Max or its Resume, a
-    /// Platform address top-up or a Core-funded identity registration) is
-    /// tapped while an SDK rebuild runs (`AppState.coreFundingRefusal`).
+    /// Platform address top-up or an identity registration) is
+    /// tapped while an SDK rebuild runs (`AppState.fundingRefusal`).
     /// The rebuild stops SPV, which a funding needs for its ChainLock, so
     /// the views refuse to start one until it ends.
     nonisolated static let rebuildInProgressMessage =
