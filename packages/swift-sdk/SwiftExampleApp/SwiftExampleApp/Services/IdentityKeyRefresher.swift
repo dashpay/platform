@@ -110,6 +110,16 @@ enum IdentityKeyRefresher {
                 return (key.keyId, identifier)
             }
         )
+        // Contract bounds are carried over the same way: the parse above
+        // does not read them, and a key's bounds never change after it is
+        // registered, so the row we already hold is right. Without this a
+        // refresh would persist a bound key as unbound.
+        let boundsByKeyId: [Int32: (data: Data?, documentTypeName: String?, kind: Int?)] = Dictionary(
+            identity.publicKeys.map { key in
+                (key.keyId, (key.contractBoundsData, key.contractBoundsDocumentTypeName, key.contractBoundsKind))
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
         identity.publicKeys.removeAll()
         let identityHex = identity.identityIdBase58
         for publicKey in parsedPublicKeys {
@@ -118,6 +128,11 @@ enum IdentityKeyRefresher {
             }
             if let identifier = identifierByKeyId[persistentKey.keyId] {
                 persistentKey.privateKeyKeychainIdentifier = identifier
+            }
+            if let bounds = boundsByKeyId[persistentKey.keyId] {
+                persistentKey.contractBoundsData = bounds.data
+                persistentKey.contractBoundsDocumentTypeName = bounds.documentTypeName
+                persistentKey.contractBoundsKind = bounds.kind
             }
             identity.addPublicKey(persistentKey)
         }

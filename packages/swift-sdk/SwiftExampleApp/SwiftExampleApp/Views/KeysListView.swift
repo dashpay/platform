@@ -23,6 +23,10 @@ struct KeysListView: View {
   /// What Platform says is left of each budgeted key, fetched once for the
   /// whole list. Absent while loading or when the query failed.
   @State private var remainingBudgets: [UInt32: UInt64?] = [:]
+  /// The key the user swiped to raise the limits of. Leading edge, away
+  /// from Disable; the same sheet `KeyDetailView` opens, reachable here
+  /// for keys whose row taps into `PrivateKeyView`.
+  @State private var limitsKey: IdentifiableInt?
 
   private var publicKeys: [IdentityPublicKey] {
     identity.identityPublicKeys
@@ -55,6 +59,9 @@ struct KeysListView: View {
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
               disableSwipeButton(for: publicKey)
             }
+            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+              updateLimitsSwipeButton(for: publicKey)
+            }
           } else {
             // For keys without private keys, use NavigationLink
             NavigationLink(destination: KeyDetailView(identity: identity, publicKey: publicKey)) {
@@ -66,6 +73,9 @@ struct KeysListView: View {
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
               disableSwipeButton(for: publicKey)
+            }
+            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+              updateLimitsSwipeButton(for: publicKey)
             }
           }
         }
@@ -123,6 +133,13 @@ struct KeysListView: View {
     }
     .sheet(isPresented: $showingAddKey) {
       AddIdentityKeyView(identity: identity)
+    }
+    .sheet(item: $limitsKey) { selected in
+      if let key = publicKeys.first(where: { $0.id == UInt32(selected.id) }) {
+        UpdateKeyLimitsView(identity: identity, publicKey: key) {
+          Task { await loadRemainingBudgets() }
+        }
+      }
     }
     .sheet(item: $showingPrivateKey) { keyId in
       PrivateKeyView(
@@ -189,6 +206,22 @@ struct KeysListView: View {
         Label("Disable", systemImage: "xmark.circle")
       }
       .disabled(isDisabling)
+    }
+  }
+
+  /// Leading-edge swipe button opening `UpdateKeyLimitsView`, on keys that
+  /// carry limits. Whether they can be raised is Rust's answer, shown in
+  /// the sheet.
+  @ViewBuilder
+  private func updateLimitsSwipeButton(for publicKey: IdentityPublicKey) -> some View {
+    if publicKey.hasLimits {
+      Button {
+        limitsKey = IdentifiableInt(id: Int(publicKey.id))
+      } label: {
+        Label("Limits", systemImage: "arrow.up.circle")
+      }
+      .tint(.blue)
+      .accessibilityIdentifier("keyLimits.update.swipe.\(publicKey.id)")
     }
   }
 

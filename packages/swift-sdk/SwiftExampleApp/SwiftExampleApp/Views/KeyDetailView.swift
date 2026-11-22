@@ -18,10 +18,22 @@ struct KeyDetailView: View {
     @State private var remainingBudget: UInt64?? = nil
     @State private var remainingBudgetError: String?
     @State private var isLoadingRemainingBudget = false
+    /// Rust's answer to "can this key's limits be raised at all": `nil`
+    /// while asking, then `.allowed` or `.refused` with Rust's reason.
+    @State private var updateLimitsGate: UpdateLimitsGate?
+    @State private var showUpdateLimits = false
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var walletManager: PlatformWalletManager
+
+    /// The key as the identity's rows hold it now, so a limits update or a
+    /// refresh shows on this screen without leaving it. Falls back to the
+    /// value the screen was opened with. Only what can change is read
+    /// through it: the limits and the disabled state.
+    private var currentKey: IdentityPublicKey {
+        identity.identityPublicKeys.first { $0.id == publicKey.id } ?? publicKey
+    }
 
     var hasPrivateKey: Bool {
         let result = KeychainManager.shared.hasPrivateKey(identityId: identity.identityId, keyIndex: Int32(publicKey.id))
@@ -34,7 +46,7 @@ struct KeyDetailView: View {
     /// last enabled auth/transfer key" relative to everything else.
     private var disableEvaluation: KeyDisableGate.Evaluation {
         KeyDisableGate.evaluate(
-            target: publicKey,
+            target: currentKey,
             allKeys: identity.identityPublicKeys
         )
     }
@@ -78,7 +90,7 @@ struct KeyDetailView: View {
                     .textSelection(.enabled)
             }
 
-            if publicKey.hasLimits || publicKey.contractBounds != nil {
+            if currentKey.hasLimits || currentKey.contractBounds != nil {
                 limitsSection
             }
 
@@ -140,6 +152,13 @@ struct KeyDetailView: View {
         }
         .navigationTitle("Key #\(publicKey.id)")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showUpdateLimits) {
+            UpdateKeyLimitsView(identity: identity, publicKey: currentKey) {
+                // The new limits arrive through the refreshed rows; what is
+                // left of the budget is Platform's, so ask again.
+                Task { await loadRemainingBudget() }
+            }
+        }
         .alert("Success", isPresented: $showSuccessAlert) {
             Button("OK") {
                 dismiss()
@@ -183,7 +202,7 @@ struct KeyDetailView: View {
     /// Drive and is fetched when the section appears.
     private var limitsSection: some View {
         Section {
-            if let bounds = publicKey.contractBounds {
+            if let bounds = currentKey.contractBounds {
                 HStack {
                     Text("Bound to")
                     Spacer()
@@ -193,7 +212,7 @@ struct KeyDetailView: View {
                 }
             }
 
-            if let totalBudget = publicKey.totalBudget {
+            if let totalBudget = currentKey.totalBudget {
                 HStack {
                     Text("Total budget")
                     Spacer()
@@ -232,7 +251,7 @@ struct KeyDetailView: View {
                 }
             }
 
-            if let expiresAt = publicKey.expiresAt {
+            if let expiresAt = currentKey.expiresAt {
                 let expired = KeyLimitsFormatting.isExpired(expiresAt: expiresAt, now: Date())
                 HStack {
                     Text("Expires")
@@ -246,21 +265,104 @@ struct KeyDetailView: View {
                     }
                 }
             }
+
+            if currentKey.hasLimits {
+                updateLimitsRow
+            }
         } header: {
             Text("Limits")
         } footer: {
-            if publicKey.hasLimits {
-                Text("Platform refuses anything this key signs once its budget is spent or its expiry has passed. The limits cannot be lowered; the budget can be raised and the expiry extended by the identity's master key.")
+            if currentKey.hasLimits {
+                Text("Platform refuses anything this key signs once its budget is spent or its expiry has passed. The limits cannot be lowered. The budget can be raised and the expiry extended by the identity's master key, or by a critical authentication key that has no limits and no contract bounds.")
             }
         }
-        .task(id: publicKey.id) {
+        // Keyed on the limits too, so a raised key re-reads what is left
+        // and asks Rust again.
+        .task(id: LimitsTaskKey(key: currentKey)) {
             await loadRemainingBudget()
+            await loadUpdateLimitsGate()
+        }
+    }
+
+    private enum UpdateLimitsGate {
+        case allowed
+        case refused(String)
+    }
+
+    private struct LimitsTaskKey: Hashable {
+        let id: UInt32
+        let totalBudget: UInt64?
+        let expiresAt: UInt64?
+        let disabledAt: UInt64?
+
+        init(key: IdentityPublicKey) {
+            id = key.id
+            totalBudget = key.totalBudget
+            expiresAt = key.expiresAt
+            disabledAt = key.disabledAt
+        }
+    }
+
+    /// "Update Limits", enabled only when Rust's no-change preview answers;
+    /// otherwise disabled with Rust's reason, as the forbidden Disable Key.
+    @ViewBuilder
+    private var updateLimitsRow: some View {
+        switch updateLimitsGate {
+        case .none:
+            HStack {
+                Label("Update Limits", systemImage: "arrow.up.circle")
+                Spacer()
+                ProgressView().controlSize(.small)
+            }
+            .foregroundColor(.secondary)
+        case .allowed:
+            Button {
+                showUpdateLimits = true
+            } label: {
+                Label("Update Limits", systemImage: "arrow.up.circle")
+            }
+            .accessibilityIdentifier("keyLimits.update.open")
+        case .refused(let reason):
+            Button {
+                // No-op: button is disabled.
+            } label: {
+                Label("Update Limits", systemImage: "arrow.up.circle")
+            }
+            .disabled(true)
+            .accessibilityIdentifier("keyLimits.update.open")
+            Text(reason)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .accessibilityIdentifier("keyLimits.update.unavailableReason")
+        }
+    }
+
+    /// Ask Rust, with no change, whether this key's limits can be raised.
+    @MainActor
+    private func loadUpdateLimitsGate() async {
+        guard currentKey.hasLimits else { return }
+        guard let walletId = identity.wallet?.walletId,
+              let wallet = walletManager.wallet(for: walletId) else {
+            updateLimitsGate = .refused("Wallet not loaded; this identity's keys cannot sign here.")
+            return
+        }
+        do {
+            let signer = KeychainSigner(modelContainer: modelContext.container)
+            _ = try await wallet.previewIdentityKeyLimitsUpdate(
+                identityId: identity.identityId,
+                keyId: publicKey.id,
+                signer: signer
+            )
+            _ = signer  // keepalive: see KeychainSigner lifetime contract.
+            updateLimitsGate = .allowed
+        } catch {
+            updateLimitsGate = .refused(error.localizedDescription)
         }
     }
 
     @MainActor
     private func loadRemainingBudget() async {
-        guard publicKey.totalBudget != nil, let sdk = appState.sdk else { return }
+        guard currentKey.totalBudget != nil, let sdk = appState.sdk else { return }
         isLoadingRemainingBudget = true
         defer { isLoadingRemainingBudget = false }
         do {
