@@ -23,6 +23,7 @@ import java.util.concurrent.FutureTask
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -691,50 +692,69 @@ class Sdk private constructor(
          * Also throws when [MAX_OUTSTANDING_REQUESTS] blocks are running.
          */
         internal fun <T> withDeadline(timeoutMs: Long, abort: () -> Unit, block: () -> T): T {
-            // A slot is held until [block] has really ended, not until the
-            // caller stopped waiting for it.
+            // A slot is held until [block], and an [abort] started for it,
+            // have really ended, not until the caller stopped waiting.
             if (!requestSlots.tryAcquire()) {
                 throw IOException("$MAX_OUTSTANDING_REQUESTS earlier requests are still running")
             }
-            val task = FutureTask(
-                Callable {
-                    try {
-                        block()
-                    } finally {
-                        requestSlots.release()
-                    }
-                },
-            )
-            try {
-                daemon("dash-sdk-bounded-request", task)
-            } catch (e: Throwable) {
-                requestSlots.release()
-                throw e
+            val threads = AtomicInteger(1)
+            fun leave() {
+                if (threads.decrementAndGet() == 0) requestSlots.release()
             }
+            fun startAbort() {
+                // Nothing is left to abort once the request has ended.
+                while (true) {
+                    val running = threads.get()
+                    if (running == 0) return
+                    if (threads.compareAndSet(running, running + 1)) break
+                }
+                startOrLeave("dash-sdk-bounded-request-abort", ::leave) { abort() }
+            }
+            val task = FutureTask(Callable { block() })
+            startOrLeave("dash-sdk-bounded-request", ::leave, task)
             try {
                 return task.get(timeoutMs, TimeUnit.MILLISECONDS)
             } catch (e: ExecutionException) {
                 throw e.cause ?: e
             } catch (_: TimeoutException) {
-                daemon("dash-sdk-bounded-request-abort", abort)
+                startAbort()
                 throw IOException("the request did not finish in $timeoutMs ms")
             } catch (e: InterruptedException) {
-                daemon("dash-sdk-bounded-request-abort", abort)
+                startAbort()
                 Thread.currentThread().interrupt()
                 throw e
             }
         }
 
         /**
-         * How many [withDeadline] blocks may be running at once, counting
-         * those whose caller already gave up on them: retries against a
-         * host that never answers cannot pile up threads.
+         * How many [withDeadline] requests may be running at once, counting
+         * those whose caller already gave up on them and their aborts:
+         * retries against a host that never answers cannot pile up threads.
          */
         internal const val MAX_OUTSTANDING_REQUESTS = 4
         private val requestSlots = Semaphore(MAX_OUTSTANDING_REQUESTS)
 
-        private fun daemon(name: String, task: Runnable) {
-            Thread(task, name).apply { isDaemon = true }.start()
+        /**
+         * Run [task] on a daemon thread and call [leave] when it ends, or at
+         * once if the thread cannot be started.
+         */
+        private fun startOrLeave(name: String, leave: () -> Unit, task: Runnable) {
+            val thread = Thread(
+                {
+                    try {
+                        task.run()
+                    } finally {
+                        leave()
+                    }
+                },
+                name,
+            ).apply { isDaemon = true }
+            try {
+                thread.start()
+            } catch (e: Throwable) {
+                leave()
+                throw e
+            }
         }
 
         /**

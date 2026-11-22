@@ -135,11 +135,43 @@ class MasternodeDiscoveryTest {
             blocked.countDown()
         }
         // The slots come back once those requests end.
+        assertEquals("body", withDeadlineOnceASlotIsFree { "body" })
+    }
+
+    @Test
+    fun shouldKeepARequestsSlotUntilItsAbortEndsToo() {
+        val abortBlocked = CountDownLatch(1)
+        try {
+            repeat(Sdk.MAX_OUTSTANDING_REQUESTS) {
+                // The abort ends the request, then does not return itself.
+                val requestEnded = CountDownLatch(1)
+                assertThrows(IOException::class.java) {
+                    Sdk.withDeadline(
+                        50,
+                        abort = {
+                            requestEnded.countDown()
+                            abortBlocked.await()
+                        },
+                    ) { requestEnded.await() }
+                }
+            }
+            var ran = false
+            assertThrows(IOException::class.java) {
+                Sdk.withDeadline(5_000, abort = {}) { ran = true }
+            }
+            assertFalse(ran)
+        } finally {
+            abortBlocked.countDown()
+        }
+        assertEquals("body", withDeadlineOnceASlotIsFree { "body" })
+    }
+
+    /** Slots are given back by threads that are still ending: retry briefly. */
+    private fun <T> withDeadlineOnceASlotIsFree(block: () -> T): T {
         val giveUpAt = System.nanoTime() + 5_000_000_000L
         while (true) {
             try {
-                assertEquals("body", Sdk.withDeadline(5_000, abort = {}) { "body" })
-                break
+                return Sdk.withDeadline(5_000, abort = {}, block = block)
             } catch (e: IOException) {
                 if (System.nanoTime() > giveUpAt) throw e
                 Thread.sleep(10)

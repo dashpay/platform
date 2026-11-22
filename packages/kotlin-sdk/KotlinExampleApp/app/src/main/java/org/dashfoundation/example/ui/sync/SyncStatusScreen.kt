@@ -202,6 +202,11 @@ fun SyncStatusScreen() {
                                 } catch (e: Exception) {
                                     error = e.message ?: "SPV operation failed"
                                 } finally {
+                                    // Before the buttons come back: the
+                                    // poll may still show the old state,
+                                    // and Clear is offered on "stopped".
+                                    isRunning = runCatching { currentManager.isSpvRunning() }
+                                        .getOrDefault(false)
                                     spvActionInFlight = false
                                 }
                             }

@@ -524,7 +524,9 @@ class AppState(
 
     fun setDevnetQuorumUrl(url: String) {
         _devnetQuorumUrl.value = url
-        savePreference { it[KEY_DEVNET_QUORUM_URL] = url }
+        // The field keeps what was typed, so it can be corrected; a user
+        // name or password in it is refused, and is not saved either.
+        savePreference { it[KEY_DEVNET_QUORUM_URL] = withoutUserInfo(url) }
     }
 
     /**
@@ -690,6 +692,11 @@ class AppState(
          * and would land inside either. A user name or password is refused
          * too: the URL is saved and shown in error messages as typed.
          */
+        /** [url] without a user name or password in front of its server. */
+        fun withoutUserInfo(url: String): String = url.replace(URL_USER_INFO, "$1")
+
+        private val URL_USER_INFO = Regex("""^(\s*[A-Za-z][A-Za-z0-9+.-]*://)[^/?#]*@""")
+
         fun isHttpsUrlWithHost(url: String): Boolean {
             val uri = try {
                 java.net.URI(url.trim())

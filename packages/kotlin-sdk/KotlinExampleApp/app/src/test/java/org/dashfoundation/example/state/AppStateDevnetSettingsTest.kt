@@ -239,6 +239,19 @@ class AppStateDevnetSettingsTest {
                 assertEquals(usable, appState.resolvedDevnetQuorumUrl())
             }
 
+            // A refused user name and password stay in the field for
+            // correction, but are not saved with the draft.
+            appState.setDevnetQuorumUrl("https://user:secret@quorums.example.org/base")
+            advanceUntilIdle()
+            assertEquals(
+                "https://user:secret@quorums.example.org/base",
+                appState.devnetQuorumUrl.value,
+            )
+            assertEquals(
+                "https://quorums.example.org/base",
+                session.dataStore.data.first()[stringPreferencesKey("platformQuorumURL")],
+            )
+
             // Saved Devnet with only such a URL starts on the default network.
             appState.setDevnetQuorumUrl("https://")
             session.dataStore.edit {

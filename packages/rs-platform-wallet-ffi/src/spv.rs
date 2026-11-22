@@ -550,22 +550,21 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
     // registration.
     config.enable_masternodes = true;
     config.restrict_to_configured_peers = restrict_to_configured_peers;
-    // Decoding only: every address that parses is passed on, so what the
-    // client does with a given list is decided in Rust, not here.
+    // Decoding only: every address that parses is passed on, and what a
+    // given list means for the client is decided in `platform-wallet`.
     config.peers = decoded_peers(&peer_list);
-    // Peers were given, none can be dialed, and the client may use no
-    // others: it would never find a peer, so refuse the start instead of
-    // running one that cannot sync. An empty list stays allowed: that is
-    // how a host asks for an offline start. "Given" is the caller's count,
-    // so entries skipped above (null, not UTF-8) still count as given.
+    // Peers were given and none could be decoded. Passed on, that would be
+    // an empty list, which is how a host asks for an offline start: only
+    // this boundary can still tell the two apart, so it refuses here.
+    // "Given" is the caller's count, so entries skipped above (null, not
+    // UTF-8) still count as given.
     let peers_given = !peers.is_null() && peer_count > 0;
-    let any_usable = config.peers.iter().any(|addr| addr.port() != 0);
-    if restrict_to_configured_peers && peers_given && !any_usable {
+    if restrict_to_configured_peers && peers_given && config.peers.is_empty() {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
             format!(
                 "no usable SPV peer: restrict_to_configured_peers needs at least one IP:port \
-                 address with a non-zero port, and none of the {peer_count} given is one{}",
+                 address, and none of the {peer_count} given is one{}",
                 peer_examples(&peer_list)
             ),
         );
@@ -713,10 +712,10 @@ mod spv_start_peer_tests {
     }
 
     #[test]
-    fn should_refuse_a_restricted_start_with_no_usable_peer() {
+    fn should_refuse_a_restricted_start_whose_peers_are_not_addresses() {
         for peers in [
             &["seed.example.org:19999"][..],
-            &["192.0.2.1:0", "[2001:db8::1]:0"][..],
+            &["192.0.2.1", "not a peer"][..],
         ] {
             let (code, message) = restricted_start(peers);
             assert_eq!(
@@ -730,8 +729,13 @@ mod spv_start_peer_tests {
 
     #[test]
     fn should_let_a_restricted_start_through_with_a_usable_peer_or_no_peers() {
-        // No peers at all is an offline start, not a mistake.
-        for peers in [&[][..], &["192.0.2.1:0", "192.0.2.2:19999"][..]] {
+        // No peers at all is an offline start, not a mistake. Port 0 is an
+        // address: `platform-wallet` decides about it, with a manager.
+        for peers in [
+            &[][..],
+            &["192.0.2.1:0", "192.0.2.2:19999"][..],
+            &["192.0.2.1:0"][..],
+        ] {
             let (code, message) = restricted_start(peers);
             assert_eq!(
                 code,
@@ -791,8 +795,8 @@ mod spv_start_peer_tests {
 
     #[test]
     fn should_pass_on_every_peer_that_is_an_address() {
-        // Port 0 stays in the list: the refusal above reads it, but which
-        // peers a client dials is not decided while decoding.
+        // Port 0 stays in the list: which peers a client can use is not
+        // decided while decoding.
         let peers = [
             "192.0.2.1:19999",
             "192.0.2.1:0",
