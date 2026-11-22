@@ -1,14 +1,18 @@
 import Foundation
+import SwiftDashSDK
 
 /// Fills the Update Contract screen's six fields from pasted or imported
 /// contract JSON, and turns the fields into the wallet's update arguments.
 ///
+/// Rust splits the source into sections (`DataContractUpdateSource.split`).
 /// Unlike the register flow's `PasteboardContractCandidate.classify`, the
 /// import rewrites nothing and drops nothing it recognises: every supplied
-/// section is written to its field as given (re-serialized, keys sorted),
-/// whatever it holds, so a malformed section reaches the wallet and is
-/// refused there. Nothing here checks what a section says; that is the
-/// wallet's and Platform's to decide.
+/// section is written to its field as the source spells it, members in
+/// source order, whatever it holds, so a malformed section reaches the
+/// wallet and is refused there. The order matters: it is part of a
+/// document type's schema, and protocol version 15 refuses a reorder.
+/// Nothing here checks what a section says; that is the wallet's and
+/// Platform's to decide.
 enum UpdateContractImport {
     /// The most bytes the screen reads from one source (a file or the
     /// clipboard) before parsing it. A UI input budget that keeps a huge
@@ -62,36 +66,11 @@ enum UpdateContractImport {
     }
 
     enum ImportError: Error, LocalizedError, Equatable {
-        /// The text is not JSON.
-        case notJSON
-        /// The JSON is not an object.
-        case notAnObject
-        /// An object with none of the sections and not a document schemas
-        /// map. Carries its top-level keys, sorted.
-        case noSections(topLevelKeys: [String])
-        /// The object names one section twice, under both of its keys.
-        case sectionGivenTwice(String, String)
-        /// A section's value cannot be written to its field: keywords must be
-        /// a JSON array and the description a JSON string.
-        case unsupportedValue(section: String, expected: String)
         /// The source is over `maxInputBytes`.
         case tooLarge
 
         var errorDescription: String? {
             switch self {
-            case .notJSON:
-                return "The text is not JSON."
-            case .notAnObject:
-                return "The JSON is not an object."
-            case .noSections(let keys):
-                if keys.isEmpty {
-                    return "The JSON object is empty."
-                }
-                return "No contract sections found (documents, documentSchemas, tokens, tokenSchemas, groups, keywords, description, config). Top-level keys: \(keys.joined(separator: ", "))."
-            case .sectionGivenTwice(let first, let second):
-                return "The JSON has both `\(first)` and `\(second)`; keep one."
-            case .unsupportedValue(let section, let expected):
-                return "`\(section)` must be \(expected)."
             case .tooLarge:
                 return "The input is larger than this screen's import limit of \(UpdateContractImport.maxInputBytes / (1024 * 1024)) MiB."
             }
@@ -103,137 +82,36 @@ enum UpdateContractImport {
     /// equality the screen uses to clear a review on edit.
     struct Imported {
         let fields: Fields
-        /// The object has a `schemaDefs` or `$defs` member that is a
+        /// The source has a `schemaDefs` or `$defs` member that is a
         /// non-empty JSON object. The update does not send definitions, so
-        /// Platform keeps the live ones.
+        /// Platform keeps the live ones. Decided by Rust.
         let carriesSharedDefinitions: Bool
     }
 
-    /// The fields `text` fills. A section the text does not carry gets the
-    /// value of `Fields.empty`.
+    /// The fields `text` fills, and whether it carries shared definitions
+    /// (`schemaDefs` or `$defs`) that the fields do not hold. A section the
+    /// text does not carry gets the value of `Fields.empty`.
     ///
-    /// The text must be a JSON object. Read are `documents` or
-    /// `documentSchemas`, `tokens` or `tokenSchemas`, `groups`, `keywords`,
-    /// `description` and `config` (a `null` config is ignored, so the live
-    /// one is kept); every other key (`id`, `ownerId`, `version`,
-    /// `$formatVersion`, `schemaDefs`, ...) is ignored, so an exported
-    /// contract imports as is. An object with none of those keys whose values
-    /// all look like document schemas is read as a bare document schemas
-    /// map, which has no config.
-    static func fields(from text: String) throws -> Fields {
-        try read(from: text).fields
-    }
-
-    /// `fields(from:)`, plus whether `text` carries shared definitions
-    /// (`schemaDefs` or `$defs`) that the fields do not hold.
+    /// The split is Rust's (`DataContractUpdateSource.split`, over
+    /// `split_contract_update_source`): it decides which members are
+    /// sections, reads a bare document schemas map, and refuses text it
+    /// cannot split. Each JSON section comes back in source order and is
+    /// written to its field verbatim.
+    ///
+    /// - Throws: the wallet's `PlatformWalletError`, whose message is
+    ///   Rust's and is shown as is.
     static func read(from text: String) throws -> Imported {
-        guard let data = text.data(using: .utf8),
-              let parsed = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
-        else {
-            throw ImportError.notJSON
-        }
-        guard let object = parsed as? [String: Any] else {
-            throw ImportError.notAnObject
-        }
-        let carriesSharedDefinitions = ["schemaDefs", "$defs"].contains { key in
-            guard let definitions = object[key] as? [String: Any] else { return false }
-            return !definitions.isEmpty
-        }
-
-        // A bare document schemas map is read first: Platform allows a
-        // document type named `documents`, `description`, `groups`, ..., and
-        // reading such a name as a contract section would unwrap or refuse
-        // it. A wrapped contract never qualifies, since its sections and
-        // other members (`id`, `version`, a description string, a map of
-        // types) do not look like document schemas.
-        if !object.isEmpty, object.values.allSatisfy(looksLikeDocumentSchema) {
-            var fields = Fields.empty
-            fields.documents = try json(object)
-            return Imported(fields: fields, carriesSharedDefinitions: carriesSharedDefinitions)
-        }
-
-        let documents = try section(object, "documents", "documentSchemas")
-        let tokens = try section(object, "tokens", "tokenSchemas")
-        let groups = object["groups"]
-        let keywords = object["keywords"]
-        let description = object["description"]
-        // A `null` config is the same as none: the live one is kept.
-        let config: Any? = object["config"].flatMap { value -> Any? in value is NSNull ? nil : value }
-
-        var fields = Fields.empty
-        guard documents != nil || tokens != nil || groups != nil || keywords != nil || description != nil
-            || config != nil
-        else {
-            guard !object.isEmpty, object.values.allSatisfy(looksLikeDocumentSchema) else {
-                throw ImportError.noSections(topLevelKeys: object.keys.sorted())
-            }
-            fields.documents = try json(object)
-            return Imported(fields: fields, carriesSharedDefinitions: carriesSharedDefinitions)
-        }
-
-        if let documents {
-            fields.documents = try json(documents)
-        }
-        if let tokens {
-            fields.tokens = try json(tokens)
-        }
-        if let groups {
-            fields.groups = try json(groups)
-        }
-        if let keywords {
-            guard keywords is [Any] else {
-                throw ImportError.unsupportedValue(section: "keywords", expected: "a JSON array")
-            }
-            fields.keywords = try json(keywords)
-        }
-        // An exported contract without a description writes
-        // `"description": null` (the serialization format's description is
-        // an optional it does not skip), which means no description: the
-        // field stays empty and the live one is kept.
-        if let description, !(description is NSNull) {
-            guard let descriptionText = description as? String else {
-                throw ImportError.unsupportedValue(section: "description", expected: "a JSON string")
-            }
-            fields.description = descriptionText
-        }
-        // Written as given: Platform decides which configuration changes it
-        // accepts.
-        if let config {
-            fields.config = try json(config)
-        }
-        return Imported(fields: fields, carriesSharedDefinitions: carriesSharedDefinitions)
-    }
-
-    /// The value of a section that has two names, or nil when neither is
-    /// present. A present key counts even when its value is `null`.
-    private static func section(_ object: [String: Any], _ name: String, _ alias: String) throws -> Any? {
-        switch (object[name], object[alias]) {
-        case (.some, .some):
-            throw ImportError.sectionGivenTwice(name, alias)
-        case (.some(let value), nil), (nil, .some(let value)):
-            return value
-        case (nil, nil):
-            return nil
-        }
-    }
-
-    /// Whether `value` looks like a document type schema: an object with
-    /// `properties`, or with `type` equal to `object`.
-    private static func looksLikeDocumentSchema(_ value: Any) -> Bool {
-        guard let schema = value as? [String: Any] else { return false }
-        return schema["properties"] != nil || schema["type"] as? String == "object"
-    }
-
-    /// `value` as JSON text with sorted keys.
-    private static func json(_ value: Any) throws -> String {
-        let data = try JSONSerialization.data(
-            withJSONObject: value,
-            options: [.sortedKeys, .fragmentsAllowed, .withoutEscapingSlashes]
+        let source = try DataContractUpdateSource.split(text)
+        let empty = Fields.empty
+        let fields = Fields(
+            documents: source.documents ?? empty.documents,
+            tokens: source.tokens ?? empty.tokens,
+            groups: source.groups ?? empty.groups,
+            keywords: source.keywords ?? empty.keywords,
+            description: source.description ?? empty.description,
+            config: source.config ?? empty.config
         )
-        guard let text = String(data: data, encoding: .utf8) else {
-            throw ImportError.notJSON
-        }
-        return text
+        return Imported(fields: fields, carriesSharedDefinitions: source.carriesSharedDefinitions)
     }
 
     /// The six fields in the form the wallet calls take. Converts text

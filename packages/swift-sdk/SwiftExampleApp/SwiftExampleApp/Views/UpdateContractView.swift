@@ -508,6 +508,9 @@ struct UpdateContractView: View {
             return
         }
 
+        // A failed review must not leave an older review, or its
+        // acknowledgment, standing.
+        setReview(nil)
         isReviewing = true
         defer { isReviewing = false }
         do {
@@ -741,8 +744,9 @@ private struct UpdateContractPreviewSection: View {
     }
 
     /// The configuration change as Rust lists it: the members that differ,
-    /// and the identities the configuration newly names, or stops naming,
-    /// as moderators.
+    /// and the identities the configuration newly appoints, or stops
+    /// appointing, as moderators. The owner may moderate without an
+    /// appointment, as the caption under the rows says.
     @ViewBuilder
     private var configRows: some View {
         LabeledContent(
@@ -752,17 +756,23 @@ private struct UpdateContractPreviewSection: View {
         .accessibilityIdentifier("updateContract.configFieldsChanged")
         if !preview.moderatorsAdded.isEmpty {
             identityListRow(
-                "Moderators added",
+                "Moderator appointments added",
                 ids: preview.moderatorsAdded,
                 identifier: "updateContract.moderatorsAdded"
             )
         }
         if !preview.moderatorsRemoved.isEmpty {
             identityListRow(
-                "Moderators removed",
+                "Moderator appointments removed",
                 ids: preview.moderatorsRemoved,
                 identifier: "updateContract.moderatorsRemoved"
             )
+        }
+        if !preview.moderatorsAdded.isEmpty || !preview.moderatorsRemoved.isEmpty {
+            Text("The contract owner may always moderate, appointed or not.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .accessibilityIdentifier("updateContract.ownerAlwaysModerates")
         }
     }
 

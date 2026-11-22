@@ -103,6 +103,113 @@ final class DataContractUpdatePreviewDecodingTests: XCTestCase {
         }
     }
 
+    // MARK: - Contract update source
+
+    /// The JSON `platform_wallet_split_contract_update_source` writes
+    /// (`source_to_json` in `packages/rs-platform-wallet-ffi/src/data_contract.rs`),
+    /// decoded by `DataContractUpdateSource.decode(fromJSON:)` exactly as
+    /// `DataContractUpdateSource.split` decodes it. Each JSON section is a
+    /// string holding JSON text, kept byte for byte: `z` before `a` here,
+    /// as a sorting reader would not keep it.
+    func testShouldDecodeASourceWithEverySection() throws {
+        let json = #"""
+            {"documents":"{\"note\":{\"type\":\"object\",\"properties\":{\"z\":{\"type\":\"string\",\"position\":0},\"a\":{\"type\":\"string\",\"position\":1}}}}",
+            "tokens":"{\"0\":{\"baseSupply\":1000}}",
+            "groups":"[{\"id\":0,\"requiredPower\":1}]",
+            "keywords":"[\"alpha,beta\",\"gamma\"]",
+            "description":"  spaced  ",
+            "config":"{\"readonly\":true}",
+            "carriesSharedDefinitions":true}
+            """#
+
+        let source = try DataContractUpdateSource.decode(fromJSON: json)
+
+        XCTAssertEqual(
+            source,
+            DataContractUpdateSource(
+                documents: #"{"note":{"type":"object","properties":{"z":{"type":"string","position":0},"a":{"type":"string","position":1}}}}"#,
+                tokens: #"{"0":{"baseSupply":1000}}"#,
+                groups: #"[{"id":0,"requiredPower":1}]"#,
+                keywords: #"["alpha,beta","gamma"]"#,
+                description: "  spaced  ",
+                config: #"{"readonly":true}"#,
+                carriesSharedDefinitions: true
+            )
+        )
+    }
+
+    /// A section the source does not supply is `null`, read as nil.
+    func testShouldDecodeASourceWithNullSections() throws {
+        let json = """
+            {"documents":null,"tokens":null,"groups":null,"keywords":null,\
+            "description":"Only this","config":null,"carriesSharedDefinitions":false}
+            """
+
+        let source = try DataContractUpdateSource.decode(fromJSON: json)
+
+        XCTAssertEqual(
+            source,
+            DataContractUpdateSource(
+                documents: nil,
+                tokens: nil,
+                groups: nil,
+                keywords: nil,
+                description: "Only this",
+                config: nil,
+                carriesSharedDefinitions: false
+            )
+        )
+    }
+
+    func testShouldRejectAMalformedSource() {
+        let malformed = [
+            "",
+            "not json",
+            "[]",
+            // A section is missing: it is not read as nil.
+            """
+            {"documents":null,"tokens":null,"groups":null,"keywords":null,\
+            "description":null,"carriesSharedDefinitions":false}
+            """,
+            // The flag is missing.
+            """
+            {"documents":null,"tokens":null,"groups":null,"keywords":null,\
+            "description":null,"config":null}
+            """,
+            // A section is JSON, not JSON text in a string.
+            """
+            {"documents":{"note":{}},"tokens":null,"groups":null,"keywords":null,\
+            "description":null,"config":null,"carriesSharedDefinitions":false}
+            """,
+            // The flag is not a Boolean.
+            """
+            {"documents":null,"tokens":null,"groups":null,"keywords":null,\
+            "description":null,"config":null,"carriesSharedDefinitions":"false"}
+            """,
+        ]
+
+        for json in malformed {
+            XCTAssertThrowsError(try DataContractUpdateSource.decode(fromJSON: json), json) { error in
+                guard case PlatformWalletError.deserialization = error else {
+                    return XCTFail("expected a deserialization error, got \(error)")
+                }
+            }
+        }
+    }
+
+    /// Text with a NUL would reach Rust cut at the NUL, so the split refuses
+    /// it before any FFI call.
+    func testShouldRefuseSourceTextThatHoldsANUL() {
+        XCTAssertThrowsError(
+            try DataContractUpdateSource.split(#"{"description":"short"}"# + "\u{0}" + #"{"description":"long"}"#)
+        ) { error in
+            guard case PlatformWalletError.invalidParameter(let message) = error else {
+                return XCTFail("expected invalidParameter, got \(error)")
+            }
+            XCTAssertTrue(message.contains("Contract JSON"), message)
+        }
+    }
+
     // MARK: - Arguments that cannot cross the FFI
 
     /// A string with a NUL would reach Rust cut at the NUL, so the update
