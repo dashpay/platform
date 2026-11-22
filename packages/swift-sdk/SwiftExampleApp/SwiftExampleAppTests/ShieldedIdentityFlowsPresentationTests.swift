@@ -50,6 +50,78 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         ))
     }
 
+    // MARK: - Captured top-up request
+
+    private let walletId = Data(repeating: 0x01, count: 32)
+    private let identityId = Data(repeating: 0x02, count: 32)
+
+    func test_capture_shieldedForm_capturesAmountInCredits() {
+        let request = ShieldedTopUpRequest.capture(
+            fundingIsShielded: true,
+            amountText: "0.001",
+            walletId: walletId,
+            identityId: identityId
+        )
+        XCTAssertEqual(request, ShieldedTopUpRequest(
+            walletId: walletId,
+            identityId: identityId,
+            amount: 100_000_000
+        ))
+    }
+
+    func test_capture_otherFundingSource_capturesNothing() {
+        XCTAssertNil(ShieldedTopUpRequest.capture(
+            fundingIsShielded: false,
+            amountText: "0.001",
+            walletId: walletId,
+            identityId: identityId
+        ))
+    }
+
+    func test_capture_withoutWalletOrPositiveAmount_capturesNothing() {
+        XCTAssertNil(ShieldedTopUpRequest.capture(
+            fundingIsShielded: true, amountText: "0.001", walletId: nil, identityId: identityId
+        ))
+        XCTAssertNil(ShieldedTopUpRequest.capture(
+            fundingIsShielded: true, amountText: "0", walletId: walletId, identityId: identityId
+        ))
+        XCTAssertNil(ShieldedTopUpRequest.capture(
+            fundingIsShielded: true, amountText: "abc", walletId: walletId, identityId: identityId
+        ))
+    }
+
+    func test_capturedRequest_isUnaffectedByLaterFormChanges() {
+        // The tap captures 0.001 DASH from the shielded form.
+        var amountText = "0.001"
+        var fundingIsShielded = true
+        let request = ShieldedTopUpRequest.capture(
+            fundingIsShielded: fundingIsShielded,
+            amountText: amountText,
+            walletId: walletId,
+            identityId: identityId
+        )!
+        // While the balance is re-read, the user picks a Platform Payment
+        // account, which replaces the amount with that account's balance.
+        fundingIsShielded = false
+        amountText = "25"
+        XCTAssertFalse(fundingIsShielded)
+        XCTAssertEqual(amountText, "25")
+        // The request that is checked and sent is still the captured one.
+        XCTAssertEqual(request.amount, 100_000_000)
+        XCTAssertTrue(request.isAffordable(minimumFee: 10, spendable: 100_000_010))
+    }
+
+    func test_capturedRequest_isCheckedAgainstTheRefreshedBalance() {
+        let request = ShieldedTopUpRequest(walletId: walletId, identityId: identityId, amount: 1_000)
+        // Affordable at capture time...
+        XCTAssertTrue(request.isAffordable(minimumFee: 10, spendable: 2_000))
+        // ...but the refreshed spendable balance (notes reserved meanwhile) is too low.
+        XCTAssertFalse(request.isAffordable(minimumFee: 10, spendable: 1_009))
+        // An unknown refreshed balance or fee never lets it through.
+        XCTAssertFalse(request.isAffordable(minimumFee: 10, spendable: nil))
+        XCTAssertFalse(request.isAffordable(minimumFee: nil, spendable: 2_000))
+    }
+
     // MARK: - Spendable shielded credits
 
     private func ready(
@@ -202,6 +274,68 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         state.applySuccess([])
         state.applyFailure("busy")
         XCTAssertFalse(state.isKnownEmpty)
+    }
+
+    // MARK: - Recovery read ordering
+
+    func test_readCoordinator_firstRequest_startsARead() {
+        var reads = RecoveryReadCoordinator()
+        let generation = reads.request()
+        XCTAssertNotNil(generation)
+        XCTAssertEqual(reads.inFlight, generation)
+    }
+
+    func test_readCoordinator_requestsWhileInFlight_coalesceIntoOneFollowUp() {
+        var reads = RecoveryReadCoordinator()
+        let first = reads.request()!
+        // Two more requests while the first is in flight start nothing.
+        XCTAssertNil(reads.request())
+        XCTAssertNil(reads.request())
+        // The first finishes and applies; exactly one follow-up starts.
+        let outcome = reads.finish(first)
+        XCTAssertTrue(outcome.apply)
+        let followUp = outcome.next!
+        XCTAssertGreaterThan(followUp, first)
+        // The follow-up finishes with nothing more to run.
+        let last = reads.finish(followUp)
+        XCTAssertTrue(last.apply)
+        XCTAssertNil(last.next)
+        XCTAssertNil(reads.inFlight)
+    }
+
+    func test_readCoordinator_completionsInReverseOrder_onlyNewestApplies() {
+        var reads = RecoveryReadCoordinator()
+        // A read is in flight when Stop Retrying starts a superseding one.
+        let before = reads.request()!
+        let after = reads.startSuperseding()
+        // The newer read finishes first and applies.
+        XCTAssertTrue(reads.finish(after).apply)
+        // The older read finishes last and must not overwrite it.
+        let late = reads.finish(before)
+        XCTAssertFalse(late.apply)
+        XCTAssertNil(late.next)
+    }
+
+    func test_readCoordinator_olderReadFinishingFirst_doesNotApplyOrEndTheNewer() {
+        var reads = RecoveryReadCoordinator()
+        let before = reads.request()!
+        let after = reads.startSuperseding()
+        XCTAssertFalse(reads.finish(before).apply)
+        // The superseding read is still the one in flight.
+        XCTAssertEqual(reads.inFlight, after)
+        XCTAssertNil(reads.request())
+        XCTAssertTrue(reads.finish(after).apply)
+    }
+
+    func test_readCoordinator_reset_discardsReadsOfThePreviousWallet() {
+        var reads = RecoveryReadCoordinator()
+        let oldWalletRead = reads.request()!
+        reads.reset()
+        // A read for the new wallet starts at once.
+        let newWalletRead = reads.request()!
+        XCTAssertNotEqual(oldWalletRead, newWalletRead)
+        XCTAssertFalse(reads.finish(oldWalletRead).apply)
+        XCTAssertTrue(reads.finish(newWalletRead).apply)
     }
 
     func test_readState_successAfterFailure_clearsTheError() {

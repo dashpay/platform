@@ -95,6 +95,69 @@ struct RecoveryReadState<Record: Equatable>: Equatable {
 
 typealias ShieldedIdentityDebitRecoveryReadState = RecoveryReadState<ShieldedIdentityDebitRecoveryRecord>
 
+// MARK: - Sync completion
+
+/// Whether a shielded sync completion event covered `walletId`, so
+/// wallet-owned state shown for it (records, spendable credits) is re-read.
+enum ShieldedSyncEventScope {
+    static func covers(_ event: ShieldedSyncEvent?, walletId: Data) -> Bool {
+        event?.result(for: walletId) != nil
+    }
+}
+
+// MARK: - Read ordering
+
+/// Orders the record reads of one wallet. Each read gets a generation; only
+/// the newest started read may apply its result. While a read is in flight a
+/// new request is coalesced into one follow-up read after it finishes. A
+/// superseding read (after Stop Retrying) starts at once, and the older read
+/// still in flight can no longer apply.
+struct RecoveryReadCoordinator: Equatable {
+    private(set) var latestStarted: UInt64 = 0
+    private(set) var inFlight: UInt64?
+    private(set) var followUpRequested = false
+
+    /// The generation to start now, or `nil` when a read is already in
+    /// flight (one follow-up is then remembered).
+    mutating func request() -> UInt64? {
+        guard inFlight == nil else {
+            followUpRequested = true
+            return nil
+        }
+        return start()
+    }
+
+    /// Start a read that supersedes any read in flight.
+    mutating func startSuperseding() -> UInt64 {
+        followUpRequested = false
+        return start()
+    }
+
+    /// A read finished. `apply` says whether its result may be shown;
+    /// `next` is a coalesced follow-up read to start now, if any.
+    mutating func finish(_ generation: UInt64) -> (apply: Bool, next: UInt64?) {
+        let apply = generation == latestStarted
+        guard generation == inFlight else { return (apply, nil) }
+        inFlight = nil
+        guard followUpRequested else { return (apply, nil) }
+        followUpRequested = false
+        return (apply, start())
+    }
+
+    /// Forget every read (the wallet changed): none of them may apply.
+    mutating func reset() {
+        latestStarted += 1
+        inFlight = nil
+        followUpRequested = false
+    }
+
+    private mutating func start() -> UInt64 {
+        latestStarted += 1
+        inFlight = latestStarted
+        return latestStarted
+    }
+}
+
 // MARK: - Model
 
 /// Loads and abandons the per-wallet identity-funded shield records.
@@ -106,6 +169,7 @@ final class ShieldedIdentityDebitRecoveryModel: ObservableObject {
     @Published private(set) var isAbandoning = false
 
     private var walletId: Data?
+    private var reads = RecoveryReadCoordinator()
 
     var records: [ShieldedIdentityDebitRecoveryRecord] { state.records }
 
@@ -114,17 +178,10 @@ final class ShieldedIdentityDebitRecoveryModel: ObservableObject {
         if self.walletId != walletId {
             self.walletId = walletId
             state = ShieldedIdentityDebitRecoveryReadState()
+            reads.reset()
         }
-        do {
-            let records = try await walletManager.shieldedIdentityDebitRecoveryRecords(
-                walletId: walletId
-            )
-            guard self.walletId == walletId else { return }
-            state.applySuccess(records)
-        } catch {
-            guard self.walletId == walletId else { return }
-            state.applyFailure(error.localizedDescription)
-        }
+        guard let generation = reads.request() else { return }
+        await runReads(from: generation, walletManager: walletManager, walletId: walletId)
     }
 
     /// Call only after the user confirmed `stopRetryingWarning`.
@@ -145,7 +202,36 @@ final class ShieldedIdentityDebitRecoveryModel: ObservableObject {
         } catch {
             actionError = error.localizedDescription
         }
-        await load(walletManager: walletManager, walletId: walletId)
+        guard self.walletId == walletId else { return }
+        // A read started before the abandon must not overwrite this one.
+        let generation = reads.startSuperseding()
+        await runReads(from: generation, walletManager: walletManager, walletId: walletId)
+    }
+
+    private func runReads(
+        from generation: UInt64,
+        walletManager: PlatformWalletManager,
+        walletId: Data
+    ) async {
+        var next: UInt64? = generation
+        while let current = next {
+            let result: Result<[ShieldedIdentityDebitRecoveryRecord], Error>
+            do {
+                result = .success(try await walletManager.shieldedIdentityDebitRecoveryRecords(
+                    walletId: walletId
+                ))
+            } catch {
+                result = .failure(error)
+            }
+            let outcome = reads.finish(current)
+            if outcome.apply {
+                switch result {
+                case .success(let records): state.applySuccess(records)
+                case .failure(let error): state.applyFailure(error.localizedDescription)
+                }
+            }
+            next = outcome.next
+        }
     }
 }
 

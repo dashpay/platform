@@ -11,6 +11,7 @@
 // wallet's shielded pool (Type 22 IdentityTopUpFromShieldedPool) for a
 // free-form amount.
 
+import Combine
 import SwiftUI
 import SwiftDashSDK
 import SwiftData
@@ -25,6 +26,39 @@ enum ShieldedTopUpAmountGate {
         guard let amount, amount > 0, let minimumFee, let spendable else { return false }
         let (total, overflow) = amount.addingReportingOverflow(minimumFee)
         return !overflow && total <= spendable
+    }
+}
+
+/// A shielded top-up exactly as the user authorized it at the tap. Captured
+/// synchronously before any await, so later edits to the form (a different
+/// funding source replacing the amount text, for example) cannot change
+/// what is sent.
+struct ShieldedTopUpRequest: Equatable {
+    let walletId: Data
+    let identityId: Data
+    let amount: UInt64
+
+    /// The request the form describes now, or `nil` when the form is not a
+    /// complete shielded top-up (another funding source, no wallet, or an
+    /// amount that does not parse to more than zero credits).
+    static func capture(
+        fundingIsShielded: Bool,
+        amountText: String,
+        walletId: Data?,
+        identityId: Data
+    ) -> ShieldedTopUpRequest? {
+        guard fundingIsShielded,
+              let walletId,
+              let amount = parseTokenAmount(amountText, decimals: 11),
+              amount > 0
+        else { return nil }
+        return ShieldedTopUpRequest(walletId: walletId, identityId: identityId, amount: amount)
+    }
+
+    /// Whether this captured request may be sent against the balance and
+    /// fee read after the capture.
+    func isAffordable(minimumFee: UInt64?, spendable: UInt64?) -> Bool {
+        ShieldedTopUpAmountGate.canSubmit(amount: amount, minimumFee: minimumFee, spendable: spendable)
     }
 }
 
@@ -175,8 +209,13 @@ struct TopUpIdentityView: View {
             }
             .onAppear { resolveShieldedTopUpFee() }
             .task { await refreshShieldedSpendable() }
-            .onChange(of: shieldedService.isSyncing) { _, syncing in
-                if !syncing { Task { await refreshShieldedSpendable() } }
+            // Re-read on the wallet's sync completion event; `isSyncing` can
+            // miss a fast pass and only drives the spinner.
+            .onReceive(walletManager.$lastShieldedSyncEvent.dropFirst()) { event in
+                if let walletId = identity.wallet?.walletId,
+                   ShieldedSyncEventScope.covers(event, walletId: walletId) {
+                    Task { await refreshShieldedSpendable() }
+                }
             }
             .onChange(of: shieldedSpendable) { _, spendable in
                 // Drop a shielded selection the wallet can no longer fund.
@@ -248,6 +287,9 @@ struct TopUpIdentityView: View {
                         }
                     }
                     .accessibleFormPicker("topup.fundingSourcePicker")
+                    // Locked while a top-up runs: picking another source
+                    // replaces the amount text.
+                    .disabled(isToppingUp)
                     .onChange(of: fundingSelection) { _, newValue in
                         amountDash = defaultAmountString(for: newValue)
                     }
@@ -496,12 +538,16 @@ struct TopUpIdentityView: View {
 
     private var canSubmit: Bool {
         if fundingSelection == .shieldedBalance {
-            return identity.wallet?.walletId != nil
-                && ShieldedTopUpAmountGate.canSubmit(
-                    amount: parsedShieldedAmountCredits,
-                    minimumFee: shieldedTopUpFee,
-                    spendable: shieldedSpendable.credits
-                )
+            // The same capture the tap uses, so the button and the send agree.
+            return ShieldedTopUpRequest.capture(
+                fundingIsShielded: true,
+                amountText: amountDash,
+                walletId: identity.wallet?.walletId,
+                identityId: identity.identityId
+            )?.isAffordable(
+                minimumFee: shieldedTopUpFee,
+                spendable: shieldedSpendable.credits
+            ) ?? false
         }
         guard
             identity.wallet?.walletId != nil,
@@ -575,11 +621,6 @@ struct TopUpIdentityView: View {
                 return
             }
         }
-    }
-
-    /// Shielded amount in credits through the exact `Decimal` parser.
-    private var parsedShieldedAmountCredits: UInt64? {
-        parseTokenAmount(amountDash, decimals: 11)
     }
 
     private func resolveShieldedTopUpFee() {
@@ -667,37 +708,40 @@ struct TopUpIdentityView: View {
     /// selection, the fee and the proof are all Rust-side; Rust also
     /// applies the proven balance to the identity row through the persister.
     private func submitShielded() {
-        guard let walletId = identity.wallet?.walletId else {
+        // Capture what the user authorized before any await; only the
+        // captured values are used below, whatever the form shows later.
+        guard let request = ShieldedTopUpRequest.capture(
+            fundingIsShielded: fundingSelection == .shieldedBalance,
+            amountText: amountDash,
+            walletId: identity.wallet?.walletId,
+            identityId: identity.identityId
+        ) else {
             submitError = .init(message: "Selection is incomplete.")
             return
         }
-        // Set first so a second tap cannot start another top-up while the
-        // fee and spendable balance are re-read below.
+        // Set before the re-reads so a second tap cannot start another
+        // top-up, and so the funding picker and amount field lock.
         isToppingUp = true
-        let identityId = identity.identityId
 
         Task {
             // Re-read both right before the final gate check.
             resolveShieldedTopUpFee()
             await refreshShieldedSpendable()
-            guard
-                let amount = parsedShieldedAmountCredits,
-                ShieldedTopUpAmountGate.canSubmit(
-                    amount: amount,
-                    minimumFee: shieldedTopUpFee,
-                    spendable: shieldedSpendable.credits
-                )
-            else {
+            guard request.isAffordable(
+                minimumFee: shieldedTopUpFee,
+                spendable: shieldedSpendable.credits
+            ) else {
                 submitError = .init(message: "The amount plus the minimum fee must fit the spendable shielded balance.")
                 isToppingUp = false
                 return
             }
+            let amount = request.amount
             do {
                 try await walletManager.shieldedIdentityTopUpFromPool(
-                    walletId: walletId,
+                    walletId: request.walletId,
                     resolver: MnemonicResolver(),
                     account: 0,
-                    identityId: identityId,
+                    identityId: request.identityId,
                     amount: amount
                 )
                 await MainActor.run {

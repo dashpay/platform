@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import SwiftData
 import SwiftDashSDK
@@ -214,8 +215,12 @@ struct ShieldedActivityListView: View {
         .task(id: walletId) { await loadRecoveryRecords() }
         .refreshable { await loadRecoveryRecords() }
         // A finished sync pass is what resends and resolves the records.
-        .onChange(of: shieldedService.isSyncing) { _, syncing in
-            if !syncing { Task { await loadRecoveryRecords() } }
+        // The completion event is used rather than `isSyncing`, which a fast
+        // pass can toggle between two observations.
+        .onReceive(walletManager.$lastShieldedSyncEvent.dropFirst()) { event in
+            if ShieldedSyncEventScope.covers(event, walletId: walletId) {
+                Task { await loadRecoveryRecords() }
+            }
         }
         .alert(
             "Could not stop retrying",
