@@ -317,9 +317,9 @@ impl IdentityWallet {
     ///
     /// Before anything is signed the name is read again: the network must serve the feature
     /// (protocol version 15, and an SDK not pinned below it), the name must be registered,
-    /// held by `owner_identity_id` and still be `expected_document_id` (a name deleted and
-    /// registered again since the user looked is refused, so the user never gives up a
-    /// registration they did not see), and the network must accept `method` for it (a
+    /// held by `owner_identity_id` and still be `expected_document_id` (a replacement
+    /// registration this read detects is refused before signing; see below for what a
+    /// tombstone consumes at execution), and the network must accept `method` for it (a
     /// contested name can only be tombstoned). The signing key is selected on the owner, as
     /// for the other DPNS writes.
     ///

@@ -16,6 +16,14 @@ use dash_sdk::query_types::IdentityContractNonceFetcher;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::BatchTransition;
+use dash_sdk::platform::dpns_usernames::normalize_dpns_label;
+use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
+use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use dpp::state_transition::{StateTransition, StateTransitionOwned};
 
 /// A name that is not contested: its normalized form (`a11ce7`) holds a digit the contest
 /// pattern does not.
@@ -803,11 +811,27 @@ async fn should_send_the_delete_of_the_checked_document_only_for_a_delete() {
             }
             DpnsNameGiveUpMethod::Tombstone => {
                 assert_eq!(deletes_sent, 0, "a tombstone sends no delete");
-                assert!(
-                    error
-                        .to_string()
-                        .contains("BroadcastStateTransitionRequest"),
-                    "the tombstone is sent: {error}"
+                // The tombstone's entropy is random, so its request can not be rebuilt; the
+                // mock's refusal prints the request it refused, which is read back here
+                let sent = refused_broadcast(&error.to_string());
+                let StateTransition::Batch(batch) = sent else {
+                    panic!("a tombstone is a batch transition, got {sent:?}");
+                };
+                assert_eq!(batch.owner_id(), owner);
+                assert_eq!(batch.transitions_len(), 1, "one transition, so no delete");
+                let Some(BatchedTransitionRef::Document(DocumentTransition::Create(create))) =
+                    batch.first_transition()
+                else {
+                    panic!("the tombstone is a document create");
+                };
+                assert_eq!(create.base().document_type_name(), "tombstone");
+                assert_eq!(
+                    create.data().get("normalizedLabel"),
+                    Some(&Value::Text(normalize_dpns_label(PLAIN_LABEL)))
+                );
+                assert_eq!(
+                    create.data().get("normalizedParentDomainName"),
+                    Some(&Value::Text("dash".to_string()))
                 );
             }
         }
@@ -910,4 +934,24 @@ fn should_release_a_hold_only_for_the_attempt_a_read_saw() {
     // A read that saw the current attempt settles it
     gate.release(&key, Some(newer));
     assert!(gate.holds_nothing());
+}
+
+/// The state transition a mock SDK refused to answer, read back from its refusal: the mock
+/// prints the refused `BroadcastStateTransitionRequest` with `{:?}`, whose
+/// `state_transition` bytes are the serialized transition.
+fn refused_broadcast(error: &str) -> StateTransition {
+    let start = error
+        .find("state_transition: [")
+        .map(|at| at + "state_transition: [".len())
+        .unwrap_or_else(|| panic!("no refused broadcast in {error}"));
+    let end = start
+        + error[start..]
+            .find(']')
+            .unwrap_or_else(|| panic!("an unterminated byte list in {error}"));
+    let bytes: Vec<u8> = error[start..end]
+        .split(',')
+        .map(|byte| byte.trim().parse().expect("a byte"))
+        .collect();
+    StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, PlatformVersion::latest())
+        .expect("a serialized state transition")
 }
