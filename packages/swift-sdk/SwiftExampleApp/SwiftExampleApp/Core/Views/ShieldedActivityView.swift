@@ -186,11 +186,15 @@ struct ShieldedActivityListView: View {
                 onCheckNow: { Task { await checkNow() } },
                 onStopRetrying: { record in
                     Task {
-                        await recovery.stopRetrying(
+                        let abandoned = await recovery.stopRetrying(
                             record,
                             walletManager: walletManager,
                             walletId: walletId
                         )
+                        // Other open lists for this wallet re-read too.
+                        if abandoned {
+                            shieldedService.noteRecoveryRecordsChanged(walletId: walletId)
+                        }
                     }
                 }
             )
@@ -214,7 +218,10 @@ struct ShieldedActivityListView: View {
         .navigationTitle("Shielded Activity")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selected) { ShieldedActivityDetailView(entry: $0) }
-        .task(id: walletId) { await loadRecoveryRecords() }
+        // Keyed by manager and wallet: a replaced manager resets the list.
+        .task(id: RecoveryReadScope(manager: ObjectIdentifier(walletManager), walletId: walletId)) {
+            await loadRecoveryRecords()
+        }
         .refreshable { await loadRecoveryRecords() }
         // A finished sync pass is what resends and resolves the records.
         // The completion event is used rather than `isSyncing`, which a fast
@@ -228,6 +235,11 @@ struct ShieldedActivityListView: View {
         .onReceive(shieldedService.$localStateClearCount.dropFirst()) { _ in
             recovery.resetSnapshot()
             Task { await loadRecoveryRecords() }
+        }
+        // Stop Retrying in another window changed this wallet's records.
+        .onReceive(shieldedService.$lastRecoveryRecordsChange.dropFirst()) { change in
+            guard let change, change.walletId == walletId else { return }
+            Task { await recovery.invalidate(walletId: walletId) }
         }
         .alert(
             "Could not stop retrying",

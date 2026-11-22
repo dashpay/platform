@@ -75,6 +75,21 @@ class ShieldedService: ObservableObject {
     /// Views showing wallet-owned shielded state re-read on a change.
     @Published private(set) var localStateClearCount: UInt64 = 0
 
+    /// A wallet's identity-shield recovery records changed outside a sync
+    /// (Stop Retrying). Every open recovery list for that wallet re-reads;
+    /// `sequence` makes a repeat for the same wallet a new value.
+    struct RecoveryRecordsChange: Equatable {
+        let walletId: Data
+        let sequence: UInt64
+    }
+
+    @Published private(set) var lastRecoveryRecordsChange: RecoveryRecordsChange?
+
+    func noteRecoveryRecordsChanged(walletId: Data) {
+        let sequence = (lastRecoveryRecordsChange?.sequence ?? 0) &+ 1
+        lastRecoveryRecordsChange = RecoveryRecordsChange(walletId: walletId, sequence: sequence)
+    }
+
     /// Bech32m-encoded Orchard payment address for account 0.
     /// Kept for the existing Receive sheet which is still
     /// single-account; multi-account-aware UI uses

@@ -125,15 +125,19 @@ enum ShieldedTopUpSubmitCheck: Equatable {
 /// spend are already excluded by the wallet. "Unknown" is kept distinct
 /// from a known zero: an unknown balance never offers the shielded source.
 enum ShieldedSpendableCredits: Equatable {
-    /// No known amount. `reason` is shown to the user when present; `nil`
-    /// means nothing worth saying (no update yet, or no shielded pool).
+    /// No known amount. `reason` is shown to the user when present, so an
+    /// unknown balance never looks like a known zero.
     case unknown(reason: String?)
     case known(UInt64)
 
     /// The state for the wallet's latest pushed update, if any.
     static func from(_ update: ShieldedBalanceUpdate?) -> ShieldedSpendableCredits {
-        guard let update else { return .unknown(reason: nil) }
-        if case .unbound = update.state { return .unknown(reason: nil) }
+        guard let update else {
+            return .unknown(reason: "The wallet has not reported a shielded balance yet.")
+        }
+        if case .unbound = update.state {
+            return .unknown(reason: "This wallet's shielded pool is not set up.")
+        }
         if let credits = update.accountBalance(0) { return .known(credits) }
         return .unknown(reason: "The shielded balance is not known yet.")
     }

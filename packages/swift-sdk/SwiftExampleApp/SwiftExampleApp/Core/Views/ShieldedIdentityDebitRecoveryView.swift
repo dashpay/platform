@@ -38,8 +38,8 @@ enum ShieldedIdentityDebitRecoveryDisplay {
         }
         switch status {
         case .retrying:
-            return "The wallet resends this signed shield on each shielded "
-                + "sync until its outcome is known."
+            return "Automatic retry is enabled. The wallet may resend the "
+                + "original signed shield during a shielded sync."
         case .parked:
             return "Its identity nonce is used up, so it either already "
                 + "executed or never will. The wallet is waiting for the "
@@ -256,6 +256,52 @@ struct RecoveryReadCoordinator: Equatable {
     }
 }
 
+/// The wallet manager instance and wallet whose records a list shows.
+struct RecoveryReadScope: Equatable {
+    let manager: ObjectIdentifier
+    let walletId: Data
+}
+
+/// Read ordering for the scope a list currently shows. A new scope (another
+/// wallet, or a replaced wallet manager) forgets every read started before
+/// it, so a read on a replaced manager never applies. An invalidation for
+/// the shown wallet starts a read that supersedes the ones in flight; one
+/// for another wallet does nothing.
+struct RecoveryReadTracker: Equatable {
+    private(set) var scope: RecoveryReadScope?
+    private(set) var reads = RecoveryReadCoordinator()
+
+    /// Request a read for `scope`. `scopeChanged` tells the caller to drop
+    /// the shown records; `start` is the generation to start now, or `nil`
+    /// when a read for this scope is in flight (a follow-up is remembered).
+    mutating func request(for scope: RecoveryReadScope) -> (scopeChanged: Bool, start: UInt64?) {
+        var scopeChanged = false
+        if self.scope != scope {
+            self.scope = scope
+            reads.reset()
+            scopeChanged = true
+        }
+        return (scopeChanged, reads.request())
+    }
+
+    /// The records of `walletId` changed elsewhere (Stop Retrying in another
+    /// window): the generation of a superseding read, or `nil` when another
+    /// wallet is shown.
+    mutating func invalidate(walletId: Data) -> UInt64? {
+        guard let scope, scope.walletId == walletId else { return nil }
+        return reads.startSuperseding()
+    }
+
+    /// Forget every read started so far (a shielded Clear).
+    mutating func reset() {
+        reads.reset()
+    }
+
+    mutating func finish(_ generation: UInt64) -> (apply: Bool, next: UInt64?) {
+        reads.finish(generation)
+    }
+}
+
 // MARK: - Model
 
 /// Loads and abandons the per-wallet identity-funded shield records.
@@ -266,37 +312,54 @@ final class ShieldedIdentityDebitRecoveryModel: ObservableObject {
     @Published var actionError: String?
     @Published private(set) var isAbandoning = false
 
-    private var walletId: Data?
-    private var reads = RecoveryReadCoordinator()
+    private var tracker = RecoveryReadTracker()
+    /// The manager of the shown scope. Each read, a coalesced follow-up
+    /// included, runs on this one, not on the one an earlier read captured.
+    private var manager: PlatformWalletManager?
 
     var records: [ShieldedIdentityDebitRecoveryRecord] { state.records }
 
     func load(walletManager: PlatformWalletManager, walletId: Data) async {
-        // Another wallet's records must never show under this one.
-        if self.walletId != walletId {
-            self.walletId = walletId
-            resetSnapshot()
+        manager = walletManager
+        let request = tracker.request(for: RecoveryReadScope(
+            manager: ObjectIdentifier(walletManager),
+            walletId: walletId
+        ))
+        // Another wallet's or manager's records must never show here.
+        if request.scopeChanged {
+            state = ShieldedIdentityDebitRecoveryReadState()
         }
-        guard let generation = reads.request() else { return }
-        await runReads(from: generation, walletManager: walletManager, walletId: walletId)
+        guard let generation = request.start else { return }
+        await runReads(from: generation, walletId: walletId)
+    }
+
+    /// The records of `walletId` changed elsewhere: re-read, superseding
+    /// any read in flight. Ignored when another wallet is shown.
+    func invalidate(walletId: Data) async {
+        guard let generation = tracker.invalidate(walletId: walletId) else { return }
+        await runReads(from: generation, walletId: walletId)
     }
 
     /// Forget the records and every read already started, so none of them
-    /// can apply. Used when the wallet changes and after a shielded Clear,
-    /// which purges the records without a sync event.
+    /// can apply. Used after a shielded Clear, which purges the records
+    /// without a sync event.
     func resetSnapshot() {
         state = ShieldedIdentityDebitRecoveryReadState()
-        reads.reset()
+        tracker.reset()
     }
 
-    /// Call only after the user confirmed `stopRetryingWarning`.
+    /// Call only after the user confirmed `stopRetryingWarning`. Returns
+    /// whether the record was abandoned, so the caller can tell other lists
+    /// for this wallet.
+    @discardableResult
     func stopRetrying(
         _ record: ShieldedIdentityDebitRecoveryRecord,
         walletManager: PlatformWalletManager,
         walletId: Data
-    ) async {
+    ) async -> Bool {
         isAbandoning = true
         defer { isAbandoning = false }
+        var abandoned = false
         do {
             try await walletManager.abandonShieldedIdentityDebit(
                 walletId: walletId,
@@ -304,31 +367,31 @@ final class ShieldedIdentityDebitRecoveryModel: ObservableObject {
                 activityId: record.activityId,
                 acknowledgePossibleExecution: true
             )
+            abandoned = true
         } catch {
             actionError = error.localizedDescription
         }
-        guard self.walletId == walletId else { return }
         // A read started before the abandon must not overwrite this one.
-        let generation = reads.startSuperseding()
-        await runReads(from: generation, walletManager: walletManager, walletId: walletId)
+        await invalidate(walletId: walletId)
+        return abandoned
     }
 
-    private func runReads(
-        from generation: UInt64,
-        walletManager: PlatformWalletManager,
-        walletId: Data
-    ) async {
+    private func runReads(from generation: UInt64, walletId: Data) async {
         var next: UInt64? = generation
         while let current = next {
             let result: Result<[ShieldedIdentityDebitRecoveryRecord], Error>
-            do {
-                result = .success(try await walletManager.shieldedIdentityDebitRecoveryRecords(
-                    walletId: walletId
-                ))
-            } catch {
-                result = .failure(error)
+            if let manager {
+                do {
+                    result = .success(try await manager.shieldedIdentityDebitRecoveryRecords(
+                        walletId: walletId
+                    ))
+                } catch {
+                    result = .failure(error)
+                }
+            } else {
+                result = .failure(PlatformWalletError.invalidHandle("No wallet manager"))
             }
-            let outcome = reads.finish(current)
+            let outcome = tracker.finish(current)
             if outcome.apply {
                 switch result {
                 case .success(let records): state.applySuccess(records)

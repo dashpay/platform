@@ -268,16 +268,24 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         )))
     }
 
-    func test_pushedBalance_noUpdateYet_isUnknownWithoutAReason() {
+    func test_pushedBalance_noUpdateYet_isUnknownWithAReasonNotAReadyZero() {
         let spendable = ShieldedSpendableCredits.from(nil)
-        XCTAssertEqual(spendable, .unknown(reason: nil))
+        XCTAssertNotEqual(spendable, .known(0))
+        XCTAssertNil(spendable.credits)
         XCTAssertFalse(spendable.offersShieldedSource)
+        XCTAssertEqual(spendable.unavailableReason, "The wallet has not reported a shielded balance yet.")
     }
 
-    func test_pushedBalance_unbound_isUnknownNotZero() {
+    func test_pushedBalance_unbound_isUnknownWithAReasonNotAReadyZero() {
         let spendable = ShieldedSpendableCredits.from(update(.unbound))
-        XCTAssertEqual(spendable, .unknown(reason: nil))
+        XCTAssertNotEqual(spendable, .known(0))
         XCTAssertNil(spendable.credits)
+        XCTAssertEqual(spendable.unavailableReason, "This wallet's shielded pool is not set up.")
+    }
+
+    func test_pushedBalance_readyZero_hasNoUnavailableReason() {
+        // Only a ready zero reads as zero; the unknown states above carry a reason.
+        XCTAssertNil(ShieldedSpendableCredits.from(readyUpdate(credits: 0)).unavailableReason)
     }
 
     func test_pushedBalance_restoreIncomplete_isUnknownWithAReason() {
@@ -419,15 +427,18 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
 
     // MARK: - Readable record labels (unchanged)
 
-    func test_readableRecord_retrying_promisesResendOnSync() {
+    func test_readableRecord_retrying_saysRetryIsEnabledWithoutPromisingEverySync() {
         XCTAssertEqual(
             ShieldedIdentityDebitRecoveryDisplay.statusTitle(.retrying, identityId: identityId),
             "Retrying"
         )
-        XCTAssertTrue(
-            ShieldedIdentityDebitRecoveryDisplay.statusDetail(.retrying, identityId: identityId)
-                .contains("resends this signed shield on each shielded sync")
+        let detail = ShieldedIdentityDebitRecoveryDisplay.statusDetail(.retrying, identityId: identityId)
+        XCTAssertEqual(
+            detail,
+            "Automatic retry is enabled. The wallet may resend the original signed shield during a shielded sync."
         )
+        // A protocol refusal skips the resend, so no per-sync promise.
+        XCTAssertFalse(detail.contains("on each shielded sync"))
     }
 
     func test_readableRecord_parkedAndUnknown_keepTheirTitles() {
@@ -563,6 +574,71 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         state.applySuccess([])
         state.applyFailure("busy")
         XCTAssertFalse(state.isKnownEmpty)
+    }
+
+    // MARK: - Recovery read scope and invalidation
+
+    private let otherWalletId = Data(repeating: 0x03, count: 32)
+
+    private func scope(_ manager: NSObject, _ wallet: Data) -> RecoveryReadScope {
+        RecoveryReadScope(manager: ObjectIdentifier(manager), walletId: wallet)
+    }
+
+    func test_tracker_firstRequest_isANewScopeAndStartsARead() throws {
+        let manager = NSObject()
+        var tracker = RecoveryReadTracker()
+        let request = tracker.request(for: scope(manager, walletId))
+        XCTAssertTrue(request.scopeChanged)
+        _ = try XCTUnwrap(request.start)
+    }
+
+    func test_tracker_invalidationForTheShownWallet_startsASupersedingRead() throws {
+        let manager = NSObject()
+        var tracker = RecoveryReadTracker()
+        let before = try XCTUnwrap(tracker.request(for: scope(manager, walletId)).start)
+        // Stop Retrying in another window for this wallet.
+        let superseding = try XCTUnwrap(tracker.invalidate(walletId: walletId))
+        // The read started before it finishes later and must not apply.
+        XCTAssertTrue(tracker.finish(superseding).apply)
+        XCTAssertFalse(tracker.finish(before).apply)
+    }
+
+    func test_tracker_invalidationForAnotherWallet_doesNothing() throws {
+        let manager = NSObject()
+        var tracker = RecoveryReadTracker()
+        let shown = try XCTUnwrap(tracker.request(for: scope(manager, walletId)).start)
+        XCTAssertNil(tracker.invalidate(walletId: otherWalletId))
+        // The shown wallet's read is unaffected.
+        XCTAssertTrue(tracker.finish(shown).apply)
+    }
+
+    func test_tracker_invalidationBeforeAnyRead_doesNothing() {
+        var tracker = RecoveryReadTracker()
+        XCTAssertNil(tracker.invalidate(walletId: walletId))
+    }
+
+    func test_tracker_replacedManager_isANewScopeAndTheOldReadNeverApplies() throws {
+        let oldManager = NSObject()
+        let newManager = NSObject()
+        var tracker = RecoveryReadTracker()
+        let oldRead = try XCTUnwrap(tracker.request(for: scope(oldManager, walletId)).start)
+        // A follow-up was also requested on the old manager.
+        XCTAssertNil(tracker.request(for: scope(oldManager, walletId)).start)
+        let replaced = tracker.request(for: scope(newManager, walletId))
+        XCTAssertTrue(replaced.scopeChanged)
+        let newRead = try XCTUnwrap(replaced.start)
+        // The old manager's read finishes: no apply and no old follow-up.
+        let late = tracker.finish(oldRead)
+        XCTAssertFalse(late.apply)
+        XCTAssertNil(late.next)
+        XCTAssertTrue(tracker.finish(newRead).apply)
+    }
+
+    func test_tracker_sameScope_isNotANewScope() {
+        let manager = NSObject()
+        var tracker = RecoveryReadTracker()
+        _ = tracker.request(for: scope(manager, walletId))
+        XCTAssertFalse(tracker.request(for: scope(manager, walletId)).scopeChanged)
     }
 
     // MARK: - Recovery read ordering
