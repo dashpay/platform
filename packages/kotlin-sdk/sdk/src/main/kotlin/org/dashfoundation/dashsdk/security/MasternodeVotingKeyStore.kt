@@ -2,31 +2,34 @@ package org.dashfoundation.dashsdk.security
 
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.MasternodeVotingKeyNative
+import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.persistence.hexToByteArray
 import org.dashfoundation.dashsdk.persistence.toHex
 
 /**
  * Stores masternode voting private keys so a vote can be signed by the wallet manager's
  * [KeystoreSigner] instead of a key pasted for each vote. The Android counterpart of the
- * voting key slice of Swift's `KeychainSigner.swift` (`masternodeVotingAddress`) and of
- * `KeyValidation.privateKeyBytes(fromText:)` (`Utils/KeyValidation.swift`).
+ * voting key slice of Swift's `KeychainSigner.swift` (`storeSpecialKey(_:identityId:keyType:)`
+ * with `.voting`, `masternodeVotingAddress`) and of `KeyValidation.privateKeyBytes(fromText:)`
+ * (`Utils/KeyValidation.swift`).
  *
- * A voting key is stored in [WalletStorage] as an ordinary identity-key entry under the
- * lowercase hex of its 20-byte voting address, with no owner wallet. That hex is the
- * identifier [store] returns and `IdentityEntity.votingPrivateKeyIdentifier` records. It is
- * exactly the entry the signer reads: for a vote Rust builds the ECDSA_HASH160 voting key
- * from the voting address and asks the signer to sign with it, so [KeystoreSigner] receives
- * the 20 address bytes and looks the key up by their hex, as for any identity key.
+ * Each loaded masternode or evonode identity keeps its voting key in its own [WalletStorage]
+ * private-key entry named `mnvoting.<identityIdHex>.<votingAddressHex>` (lowercase hex, the
+ * 32-byte identity id and the 20-byte voting address), with no owner wallet. That name is the
+ * identifier [store] returns and `IdentityEntity.votingPrivateKeyIdentifier` records. It never
+ * equals an identity key's entry (the public key or HASH160 hex), so deleting a wallet cannot
+ * remove a voting key and replacing a voting key cannot remove a wallet's signing key. Two
+ * identities that share one voting key each hold their own entry, so an entry belongs to one
+ * identity row and needs no reference counting.
+ *
+ * Outside a vote nothing resolves the voting address to the entry: the signer reaches it only
+ * inside `PlatformWalletManager.withStoredMasternodeVotingKey`, which maps the address to
+ * the entry for the duration of one call.
  *
  * Persistence and bridge only: Rust forms the voting address
  * (`dash_sdk_masternode_voting_address_from_private_key`) and reads typed key text
- * (`dash_sdk_private_key_bytes_from_text`); nothing is decided here. Which identities use a
- * key, and when a replaced key may be deleted, is the caller's
- * (`IdentityDao.countByVotingPrivateKeyIdentifier`).
- *
- * Wallet deletion does not remove these entries: they belong to no wallet's owner index.
- * It does remove an entry whose hex equals a `public_keys` row of one of the deleted
- * wallet's own identities, as it does for every identity key.
+ * (`dash_sdk_private_key_bytes_from_text`); nothing is decided here. Each native call loads
+ * the native library first, so the store works in a fresh process.
  */
 class MasternodeVotingKeyStore(private val storage: WalletStorage) {
 
@@ -42,6 +45,7 @@ class MasternodeVotingKeyStore(private val storage: WalletStorage) {
      *   character. The reason never contains the text.
      */
     fun privateKeyBytesFromText(text: String): ByteArray {
+        NativeLoader.ensureLoaded()
         val utf8 = text.toByteArray(Charsets.UTF_8)
         try {
             return mapNativeErrors { MasternodeVotingKeyNative.privateKeyBytesFromText(utf8) }
@@ -56,20 +60,21 @@ class MasternodeVotingKeyStore(private val storage: WalletStorage) {
      */
     fun votingAddress(privateKey: ByteArray): ByteArray {
         require(privateKey.size == 32) { "privateKey must be 32 bytes, got ${privateKey.size}" }
+        NativeLoader.ensureLoaded()
         return mapNativeErrors { MasternodeVotingKeyNative.votingAddressFromPrivateKey(privateKey) }
     }
 
     /**
-     * Store the 32-byte voting [privateKey] under its voting address and return the
-     * identifier (the lowercase address hex). A key already stored there and readable is
-     * left as it is; the same key always lands under the same address. [privateKey] stays
-     * the caller's to zero.
+     * Write the 32-byte voting [privateKey] into [identityId]'s voting entry and return its
+     * identifier. Always writes from the supplied bytes, replacing whatever the entry held,
+     * so storing the key again repairs an entry that can no longer be read. [privateKey]
+     * stays the caller's to zero.
+     *
+     * @param identityId the masternode or evonode identity's 32-byte id.
      */
-    suspend fun store(privateKey: ByteArray): String {
-        val identifier = votingAddress(privateKey).toHex()
-        if (!storage.isPrivateKeyDecryptable(identifier)) {
-            storage.storePrivateKey(identifier, privateKey, ownerWalletId = null)
-        }
+    suspend fun store(identityId: ByteArray, privateKey: ByteArray): String {
+        val identifier = identifierFor(identityId, votingAddress(privateKey))
+        storage.storePrivateKey(identifier, privateKey, ownerWalletId = null)
         return identifier
     }
 
@@ -82,21 +87,78 @@ class MasternodeVotingKeyStore(private val storage: WalletStorage) {
     }
 
     /**
+     * Delete every stored voting key, in one atomic write: what clearing the identities of
+     * this device removes along with their rows. Identity keys and mnemonics are not touched.
+     */
+    suspend fun deleteAll() {
+        val names = storage.listEntryNames()
+            .filter { it.startsWith(STORAGE_ENTRY_PREFIX + IDENTIFIER_PREFIX) }
+            .map { it.removePrefix(STORAGE_ENTRY_PREFIX) }
+        storage.deletePrivateKeys(names)
+    }
+
+    /**
      * The 20-byte voting address an [identifier] from [store] names, the `votingAddress` the
      * signer forms of the votes take.
      *
-     * @throws IllegalArgumentException when [identifier] is not 40 hex characters.
+     * @throws IllegalArgumentException when [identifier] is not a voting key identifier.
      */
-    fun votingAddressOf(identifier: String): ByteArray {
-        require(identifier.length == VOTING_ADDRESS_HEX_LENGTH) {
-            "a voting key identifier is $VOTING_ADDRESS_HEX_LENGTH hex characters, " +
-                "got ${identifier.length}"
-        }
-        return identifier.hexToByteArray()
-    }
+    fun votingAddressOf(identifier: String): ByteArray = parse(identifier).second
 
-    private companion object {
-        /** A 20-byte voting address as hex. */
-        const val VOTING_ADDRESS_HEX_LENGTH = 40
+    /**
+     * The 32-byte id of the identity an [identifier] from [store] belongs to.
+     *
+     * @throws IllegalArgumentException when [identifier] is not a voting key identifier.
+     */
+    fun identityIdOf(identifier: String): ByteArray = parse(identifier).first
+
+    companion object {
+        /** The start of every voting key identifier. */
+        const val IDENTIFIER_PREFIX = "mnvoting."
+
+        /** `WalletStorage`'s private-key entry prefix, as `listEntryNames` shows it. */
+        private const val STORAGE_ENTRY_PREFIX = "privkey."
+
+        private const val IDENTITY_ID_HEX_LENGTH = 64
+        private const val VOTING_ADDRESS_HEX_LENGTH = 40
+
+        /**
+         * The identifier of [identityId]'s voting key whose voting address is
+         * [votingAddress]: `mnvoting.<identityIdHex>.<votingAddressHex>`, lowercase.
+         */
+        fun identifierFor(identityId: ByteArray, votingAddress: ByteArray): String {
+            require(identityId.size == 32) { "identityId must be 32 bytes, got ${identityId.size}" }
+            require(votingAddress.size == 20) {
+                "votingAddress must be 20 bytes, got ${votingAddress.size}"
+            }
+            return IDENTIFIER_PREFIX + identityId.toHex() + "." + votingAddress.toHex()
+        }
+
+        private fun parse(identifier: String): Pair<ByteArray, ByteArray> {
+            val parts = identifier.lowercase().split('.')
+            require(
+                parts.size == 3 &&
+                    parts[0] + "." == IDENTIFIER_PREFIX &&
+                    parts[1].length == IDENTITY_ID_HEX_LENGTH && parts[1].isHex() &&
+                    parts[2].length == VOTING_ADDRESS_HEX_LENGTH && parts[2].isHex(),
+            ) {
+                "not a voting key identifier: expected " +
+                    "${IDENTIFIER_PREFIX}<64 hex characters>.<40 hex characters>"
+            }
+            return parts[1].hexToByteArray() to parts[2].hexToByteArray()
+        }
+
+        private fun String.isHex(): Boolean = all { it in '0'..'9' || it in 'a'..'f' }
     }
 }
+
+/**
+ * No readable masternode voting key is stored for the identity a vote was asked to sign for
+ * (`PlatformWalletManager.withStoredMasternodeVotingKey`). Swift
+ * `KeychainSigner.Error.votingKeyNotStored`. Load the identity again with its voting key.
+ */
+class MasternodeVotingKeyNotStoredException :
+    IllegalStateException(
+        "No voting key is stored for this masternode identity. Load it again with its " +
+            "voting private key.",
+    )

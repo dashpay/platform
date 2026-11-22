@@ -5,6 +5,7 @@ import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.DecisionProposalsNative
 import org.dashfoundation.dashsdk.persistence.toBase58String
+import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.dashsdk.wallet.TeardownGate
 import org.dashfoundation.dashsdk.wallet.op
 import org.dashfoundation.dashsdk.wallet.opReturningCompletedResult
@@ -162,26 +163,29 @@ class DecisionProposals internal constructor(private val sdk: Sdk) {
      *   overload.
      * @param votingAddress 20-byte voting address: the hash160 of the compressed voting
      *   public key ([org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore.votingAddressOf]).
-     * @param signerHandle the native handle of the signer that holds the voting key,
-     *   `PlatformWalletManager.signerHandle`. The caller keeps the owning signer (its
-     *   manager) open until this returns.
+     * @param manager the wallet manager whose signer holds the voting key. Call this inside
+     *   [PlatformWalletManager.withStoredMasternodeVotingKey], which makes the stored key
+     *   signable and supplies [votingAddress]. The manager's teardown and the SDK's close
+     *   both wait for the call.
      */
     suspend fun castVote(
         proposalId: String,
         choice: YesNoAbstainVoteChoice,
         proTxHash: ByteArray,
         votingAddress: ByteArray,
-        signerHandle: Long,
-    ) = sdk.queryGate.op {
-        mapNativeErrors {
-            DecisionProposalsNative.castVoteWithSigner(
-                sdk.handle,
-                proposalId,
-                choice.discriminant,
-                proTxHash,
-                votingAddress,
-                signerHandle,
-            )
+        manager: PlatformWalletManager,
+    ): Unit = manager.withSignerHandle { signerHandle ->
+        sdk.queryGate.op {
+            mapNativeErrors {
+                DecisionProposalsNative.castVoteWithSigner(
+                    sdk.handle,
+                    proposalId,
+                    choice.discriminant,
+                    proTxHash,
+                    votingAddress,
+                    signerHandle,
+                )
+            }
         }
     }
 }

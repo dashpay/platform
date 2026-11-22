@@ -2,6 +2,8 @@ package org.dashfoundation.dashsdk.persistence.dao
 
 import androidx.room.Dao
 import androidx.room.Delete
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
@@ -68,6 +70,54 @@ interface IdentityDao {
     @Upsert
     suspend fun upsert(identity: IdentityEntity)
 
+    /**
+     * Insert [identity] unless a row with its id exists. Returns the new row id, or -1 when
+     * a row was already there and nothing was written.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIfAbsent(identity: IdentityEntity): Long
+
+    /**
+     * Load Identity's write to a row already on the device: only the fields a load owns, on
+     * the current row, and only while the row is on [networkRaw]. The alias changes only when
+     * one is given; every other column (wallet link, key identifiers, DPNS names) is left as
+     * the row has it. Returns the number of rows changed (0 when the row is gone or on
+     * another network).
+     */
+    @Query(
+        "UPDATE identities SET balance = :balance, alias = COALESCE(:alias, alias), " +
+            "isLocal = :isLocal, identityType = :identityType, lastUpdated = :nowMillis " +
+            "WHERE identityId = :identityId AND networkRaw = :networkRaw"
+    )
+    suspend fun updateLoadedFields(
+        identityId: ByteArray,
+        networkRaw: Int,
+        balance: Long,
+        alias: String?,
+        isLocal: Boolean,
+        identityType: String,
+        nowMillis: Long,
+    ): Int
+
+    /**
+     * Point the row at the voting key [newIdentifier] only while it still names
+     * [expectedIdentifier] (null for none), so a key association changed by another write
+     * since it was read is never overwritten. Returns the number of rows changed: 0 when the
+     * row is gone or names another key.
+     */
+    @Query(
+        "UPDATE identities SET votingPrivateKeyIdentifier = :newIdentifier, " +
+            "lastUpdated = :nowMillis " +
+            "WHERE identityId = :identityId " +
+            "AND votingPrivateKeyIdentifier IS :expectedIdentifier"
+    )
+    suspend fun replaceVotingPrivateKeyIdentifier(
+        identityId: ByteArray,
+        expectedIdentifier: String?,
+        newIdentifier: String?,
+        nowMillis: Long,
+    ): Int
+
     /** Mirror of `PersistentIdentity.updateBalance(in:identityId:balance:)`. */
     @Query(
         "UPDATE identities SET balance = :balance, lastUpdated = :nowMillis " +
@@ -116,15 +166,6 @@ interface IdentityDao {
     /** StorageExplorer row count. */
     @Query("SELECT COUNT(*) FROM identities")
     fun count(): Flow<Long>
-
-    /**
-     * How many identities name the stored voting key [identifier] (the
-     * lowercase hex voting address `MasternodeVotingKeyStore.store` returns).
-     * Several masternodes can share one voting key, so a replaced key is
-     * deleted only when no other row still names it.
-     */
-    @Query("SELECT COUNT(*) FROM identities WHERE votingPrivateKeyIdentifier = :identifier")
-    suspend fun countByVotingPrivateKeyIdentifier(identifier: String): Int
 
     /** StorageExplorer network-scoped row count. */
     @Query("SELECT COUNT(*) FROM identities WHERE networkRaw = :networkRaw")

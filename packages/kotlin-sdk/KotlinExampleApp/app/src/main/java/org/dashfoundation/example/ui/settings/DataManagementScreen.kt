@@ -44,7 +44,7 @@ import org.dashfoundation.example.ui.components.LabeledContent
 @Composable
 fun DataManagementScreen(navController: NavHostController) {
     val container = LocalAppContainer.current
-    val dataManager = remember { DataManager(container.database) }
+    val dataManager = remember { DataManager(container.database, container.walletStorage) }
     val scope = rememberCoroutineScope()
 
     var pendingClear by remember { mutableStateOf<DataManager.Category?>(null) }
@@ -112,7 +112,17 @@ fun DataManagementScreen(navController: NavHostController) {
         AlertDialog(
             onDismissRequest = { pendingClear = null },
             title = { Text("Clear ${category.displayName}?") },
-            text = { Text("This permanently deletes the locally stored records. Data on the network is unaffected.") },
+            text = {
+                Text(
+                    "This permanently deletes the locally stored records. Data on the network " +
+                        "is unaffected." +
+                        if (category == DataManager.Category.IDENTITIES) {
+                            " Imported masternode voting keys are removed from secure storage too."
+                        } else {
+                            ""
+                        },
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     scope.launch { dataManager.clear(category) }
@@ -129,7 +139,7 @@ fun DataManagementScreen(navController: NavHostController) {
         AlertDialog(
             onDismissRequest = { pendingClearAll = false },
             title = { Text("Clear ALL local data?") },
-            text = { Text("Every locally stored wallet, identity, contract, and token record will be deleted. Mnemonics in secure storage are kept.") },
+            text = { Text("Every locally stored wallet, identity, contract, and token record will be deleted, and so are imported masternode voting keys. Mnemonics in secure storage are kept.") },
             confirmButton = {
                 TextButton(onClick = {
                     scope.launch { dataManager.clearAll() }

@@ -609,13 +609,13 @@ private fun MultipleChoiceVoteDialog(
                     val currentSdk = sdk ?: return@TextButton
                     val picked = voter ?: return@TextButton
                     val pickedChoice = choice
-                    val call = MasternodeVoteCall { proTxHash, votingAddress, _, signerHandle ->
+                    val call = MasternodeVoteCall { proTxHash, votingAddress, manager ->
                         currentSdk.multipleChoiceProposals.castVote(
                             proposalId = proposal.id,
                             choice = pickedChoice,
                             proTxHash = proTxHash,
                             votingAddress = votingAddress,
-                            signerHandle = signerHandle,
+                            manager = manager,
                         )
                     }.let { call ->
                         // Debug builds only: the raw-key call is not reachable in a release

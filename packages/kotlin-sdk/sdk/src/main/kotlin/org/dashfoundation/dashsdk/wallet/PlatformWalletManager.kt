@@ -39,6 +39,8 @@ import org.json.JSONArray
 import org.dashfoundation.dashsdk.security.BiometricGate
 import org.dashfoundation.dashsdk.security.IdentityKeyPrivateKeyDeriver
 import org.dashfoundation.dashsdk.security.KeystoreSigner
+import org.dashfoundation.dashsdk.security.MasternodeVotingKeyNotStoredException
+import org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore
 import org.dashfoundation.dashsdk.security.MnemonicResolverAndPersister
 import org.dashfoundation.dashsdk.security.WalletStorage
 import org.dashfoundation.dashsdk.tokens.ContactRequestRef
@@ -622,16 +624,55 @@ class PlatformWalletManager(
 
     /**
      * Runs [block] with [signerHandle] while keeping this manager's teardown from freeing
-     * the signer until [block] returns. For SDK calls that take a signer handle but do not
-     * run through one of the manager's own gated entry points, such as the masternode votes
-     * signed with a stored voting key (`VoteCasting.castVote`, `DecisionProposals.castVote`
-     * and `MultipleChoiceProposals.castVote` with a `signerHandle`). Without it, a network
-     * switch during the vote could free the signer while Rust still calls into it.
+     * the signer until [block] returns. For the SDK calls that take this manager rather than
+     * a raw handle and run outside the manager's own gated entry points, such as the
+     * masternode votes signed with a stored voting key (`VoteCasting.castVote`,
+     * `DecisionProposals.castVote` and `MultipleChoiceProposals.castVote` with a `manager`).
+     * Without it, a network switch during the vote could free the signer while Rust still
+     * calls into it.
      *
      * @throws IllegalStateException once the manager is closing.
      */
-    suspend fun <T> withSignerHandle(block: suspend (signerHandle: Long) -> T): T =
+    internal suspend fun <T> withSignerHandle(block: suspend (signerHandle: Long) -> T): T =
         teardownGate.withOp { block(signer.nativeHandle) }
+
+    /**
+     * Makes the masternode voting key stored under [identifier] signable by this manager's
+     * signer for the duration of [block], and hands [block] the masternode's 20-byte voting
+     * address. Port of Swift `KeychainSigner.withStoredMasternodeVotingKey(identityId:isolation:perform:)`
+     * (`FFI/KeychainSigner.swift`).
+     *
+     * A masternode vote is signed with the voting key Rust builds from the voting address
+     * (ECDSA_HASH160, data = the address), so the signer is asked for exactly those 20
+     * bytes. While [block] runs, the signer resolves that address to the identity's own
+     * voting entry ([MasternodeVotingKeyStore]); before and after, nothing does. Pass the
+     * address and this manager to a signer vote, for example
+     * `sdk.decisionProposals.castVote(proposalId, choice, proTxHash, votingAddress, manager)`.
+     *
+     * The manager's teardown waits for the whole call, so the signer stays alive through the
+     * vote.
+     *
+     * @param identifier the identity's `IdentityEntity.votingPrivateKeyIdentifier`, as
+     *   [MasternodeVotingKeyStore.store] returned it.
+     * @throws MasternodeVotingKeyNotStoredException when no readable voting key is stored
+     *   under [identifier], or [identifier] is not a voting key identifier.
+     * @throws IllegalStateException once the manager is closing; and whatever [block] throws.
+     */
+    suspend fun <T> withStoredMasternodeVotingKey(
+        identifier: String,
+        block: suspend (votingAddress: ByteArray) -> T,
+    ): T = teardownGate.withOp {
+        val keys = MasternodeVotingKeyStore(walletStorage)
+        val votingAddress = try {
+            keys.votingAddressOf(identifier)
+        } catch (_: IllegalArgumentException) {
+            throw MasternodeVotingKeyNotStoredException()
+        }
+        if (!keys.isStored(identifier)) throw MasternodeVotingKeyNotStoredException()
+        signer.openScopedAlias(votingAddress.toHex(), identifier).use {
+            block(votingAddress.copyOf())
+        }
+    }
 
     /**
      * Re-derive the canonical identity-authentication private key for

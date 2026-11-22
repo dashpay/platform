@@ -3,6 +3,8 @@ package org.dashfoundation.dashsdk.services
 import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import org.dashfoundation.dashsdk.persistence.DashDatabase
+import org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore
+import org.dashfoundation.dashsdk.security.WalletStorage
 
 /**
  * Bulk data-management operations — port of `Services/DataManager.swift`,
@@ -10,8 +12,16 @@ import org.dashfoundation.dashsdk.persistence.DashDatabase
  *
  * Categories mirror the iOS grouping. Every clear runs in one transaction;
  * child tables clear before parents so FK constraints hold.
+ *
+ * Clearing [Category.IDENTITIES] also deletes every masternode voting key imported
+ * through Load Identity ([MasternodeVotingKeyStore.deleteAll]) from [walletStorage],
+ * after the rows are gone: those keys exist only for the identity rows that name them.
+ * Identity keys of wallets and mnemonics stay in secure storage.
  */
-class DataManager(private val db: DashDatabase) {
+class DataManager(
+    private val db: DashDatabase,
+    private val walletStorage: WalletStorage,
+) {
 
     enum class Category(val displayName: String) {
         WALLETS("Wallets & Accounts"),
@@ -43,7 +53,14 @@ class DataManager(private val db: DashDatabase) {
         }
     }
 
-    suspend fun clear(category: Category) = db.withTransaction {
+    suspend fun clear(category: Category) {
+        clearRows(category)
+        if (category == Category.IDENTITIES) {
+            MasternodeVotingKeyStore(walletStorage).deleteAll()
+        }
+    }
+
+    private suspend fun clearRows(category: Category) = db.withTransaction {
         when (category) {
             Category.WALLETS -> {
                 // Children first; wallets cascade accounts but be explicit.

@@ -26,7 +26,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
-import org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore
+import org.dashfoundation.dashsdk.security.MasternodeVotingKeyNotStoredException
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.example.BuildConfig
 import org.dashfoundation.example.di.AppContainer
@@ -238,18 +238,18 @@ internal const val NO_WALLET_MANAGER_MESSAGE =
  * `MasternodeVoteCall`: [run] picks how the vote is signed, so the dialogs do not repeat
  * the dispatch.
  *
- * [withSigner] casts with a signer: the wire-order pro_tx_hash, the 20-byte voting address,
- * the active wallet manager and its signer handle, which the lambda passes to the SDK's
- * signer overload. [run] calls it inside [PlatformWalletManager.withSignerHandle], so the
- * manager cannot free the signer while the vote is in flight. The manager is read when
- * [run] is called, never held in composition.
+ * [withSigner] casts with a signer: the wire-order pro_tx_hash, the 20-byte voting address
+ * and the active wallet manager, which the lambda passes to the SDK's signer overload. [run]
+ * calls it inside [PlatformWalletManager.withStoredMasternodeVotingKey], which makes the
+ * identity's stored voting key signable for that call only and keeps the manager from
+ * freeing the signer while the vote is in flight. The manager is read when [run] is called,
+ * never held in composition.
  */
 class MasternodeVoteCall(
     private val withSigner: suspend (
         proTxHash: ByteArray,
         votingAddress: ByteArray,
         manager: PlatformWalletManager,
-        signerHandle: Long,
     ) -> Unit,
 ) {
     private var withTypedKey: (suspend (proTxHash: ByteArray, votingPrivateKey: ByteArray) -> Unit)? = null
@@ -268,8 +268,8 @@ class MasternodeVoteCall(
 
     /**
      * Cast as [voter]. A stored key signs through the active wallet manager's signer: the
-     * identity's voting key identifier is read from Room now, the key must be readable in
-     * `WalletStorage`, and the voting address is the identifier's 20 bytes.
+     * identity's voting key identifier is read from Room now, and the manager refuses the
+     * vote when no readable key is stored under it.
      *
      * @throws MasternodeVoteCallException when the vote cannot be cast as [voter]; any SDK
      *   error from the cast itself propagates.
@@ -280,19 +280,14 @@ class MasternodeVoteCall(
                 val identity = container.database.identityDao().getByIdentityId(voter.identityId)
                 val identifier = identity?.votingPrivateKeyIdentifier
                     ?: throw MasternodeVoteCallException(NO_STORED_VOTING_KEY_MESSAGE)
-                val keys = MasternodeVotingKeyStore(container.walletStorage)
-                if (!keys.isStored(identifier)) {
-                    throw MasternodeVoteCallException(NO_STORED_VOTING_KEY_MESSAGE)
-                }
-                val votingAddress = try {
-                    keys.votingAddressOf(identifier)
-                } catch (_: IllegalArgumentException) {
-                    throw MasternodeVoteCallException(NO_STORED_VOTING_KEY_MESSAGE)
-                }
                 val manager = container.walletManagerStore.activeManager.value
                     ?: throw MasternodeVoteCallException(NO_WALLET_MANAGER_MESSAGE)
-                manager.withSignerHandle { signerHandle ->
-                    withSigner(voter.wireOrderProTxHash, votingAddress, manager, signerHandle)
+                try {
+                    manager.withStoredMasternodeVotingKey(identifier) { votingAddress ->
+                        withSigner(voter.wireOrderProTxHash, votingAddress, manager)
+                    }
+                } catch (_: MasternodeVotingKeyNotStoredException) {
+                    throw MasternodeVoteCallException(NO_STORED_VOTING_KEY_MESSAGE)
                 }
             }
             is MasternodeVoter.TypedProTxHash -> throw MasternodeVoteCallException(

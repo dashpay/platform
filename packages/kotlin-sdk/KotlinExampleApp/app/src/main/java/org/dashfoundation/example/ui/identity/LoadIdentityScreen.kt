@@ -38,13 +38,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
-import java.util.Date
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import org.dashfoundation.dashsdk.Network
+import org.dashfoundation.dashsdk.persistence.dao.IdentityDao
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore
 import org.dashfoundation.example.di.LocalAppContainer
@@ -64,18 +65,23 @@ import org.dashfoundation.example.util.toHex
  * [IdentityEntity] with `isLocal = true`: a manual add is an identity the owner deliberately
  * tracks, which is what the flag means under the owner semantics. A row already on the
  * device is merged, never replaced: only the balance, the alias (when one is typed), the
- * type, `isLocal`, the network and `lastUpdated` change, so a wallet link, key identifiers
- * and DPNS names survive a reload.
+ * type, `isLocal` and `lastUpdated` change, in one targeted update of the current row, so a
+ * wallet link, key identifiers and DPNS names survive a reload, as do writes made while the
+ * fetch was in flight. A row stored for another network is not touched: the load is refused.
+ * The type picker starts from the stored row's type once the typed id names one, and a type
+ * the user did not pick never overwrites the stored one.
  *
  * A masternode or evonode identity can bring its voting private key (hex or WIF, read by
  * Rust through [MasternodeVotingKeyStore.privateKeyBytesFromText]). The key is read before
  * the fetch, so a refused key stops the load with Rust's reason and nothing is written. Once
- * the identity is saved, the key is stored in `WalletStorage` under its voting address, the
- * identifier the row records, and the vote dialogs sign with it through the wallet
- * manager's signer (Swift `storeSpecialKeyIfAbsent`, adapted to address-keyed storage, see
- * [decideVotingKeyOutcome]). A different key already stored for the identity is kept until
- * the user confirms replacing it. Owner and payout keys and identity private keys are not
- * imported: nothing in this app signs with them.
+ * the identity is saved, the key is stored in the identity's own `WalletStorage` entry, the
+ * identifier the row records, and the vote dialogs sign with it through the wallet manager's
+ * signer (Swift `storeSpecialKeyIfAbsent`, see [decideVotingKeyOutcome]). Entering the key
+ * the row already names writes the entry again from the entered bytes, which repairs an
+ * unreadable one. A different key already stored for the identity is kept until the user
+ * confirms replacing it, and the replacement happens only while the row still names the key
+ * the question showed. Owner and payout keys and identity private keys are not imported:
+ * nothing in this app signs with them.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,6 +95,8 @@ fun LoadIdentityScreen(navController: NavHostController) {
     var identityIdText by remember { mutableStateOf("") }
     var alias by remember { mutableStateOf("") }
     var identityType by remember { mutableStateOf(LoadIdentityType.USER) }
+    // Whether the user picked the type: an unpicked type never overwrites a stored row's.
+    var identityTypePicked by remember { mutableStateOf(false) }
     // The typed text, never the decoded bytes: a confirmed replacement reads it again.
     var votingKeyText by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
@@ -106,6 +114,15 @@ fun LoadIdentityScreen(navController: NavHostController) {
                     savedStateHandle[QrScanner.RESULT_KEY] = null
                 }
             }
+    }
+
+    // Start the picker from the stored row's type once the typed id names a row on this
+    // network, so a reload shows (and keeps) the identity's type and its voting key field.
+    LaunchedEffect(identityIdText, network) {
+        if (identityTypePicked) return@LaunchedEffect
+        val idBytes = Base58.decodeIdentifier(identityIdText.trim()) ?: return@LaunchedEffect
+        val row = container.database.identityDao().getByIdentityId(idBytes)
+        initialLoadIdentityType(row, network.ffiValue)?.let { identityType = it }
     }
 
     fun showIdentity(idBytes: ByteArray) {
@@ -169,6 +186,7 @@ fun LoadIdentityScreen(navController: NavHostController) {
                     enabled = !isLoading,
                     onSelected = {
                         identityType = it
+                        identityTypePicked = true
                         // A key typed for another type is not stored.
                         if (!it.isMasternode) votingKeyText = ""
                     },
@@ -220,6 +238,7 @@ fun LoadIdentityScreen(navController: NavHostController) {
                 val activeNetwork = network
                 val id = identityIdText.trim()
                 val type = identityType
+                val typePicked = identityTypePicked
                 val keyText = if (type.isMasternode) votingKeyText.trim() else ""
                 val trimmedAlias = alias.trim().ifBlank { null }
                 isLoading = true
@@ -265,72 +284,25 @@ fun LoadIdentityScreen(navController: NavHostController) {
                                 ?.jsonPrimitive?.longOrNull ?: 0L
                         }.getOrDefault(0L)
 
-                        val dao = container.database.identityDao()
-                        val existing = dao.getByIdentityId(idBytes)
-                        var row = existing?.let {
-                            it.copy(
-                                balance = balance,
-                                alias = trimmedAlias ?: it.alias,
-                                // A manual add is a tracked identity under the owner's
-                                // semantics; see the file header.
-                                isLocal = true,
-                                identityType = type.rawValue,
-                                networkRaw = activeNetwork.ffiValue,
-                                lastUpdated = Date(),
-                            )
-                        } ?: IdentityEntity(
+                        val result = saveLoadedIdentity(
+                            dao = container.database.identityDao(),
+                            entries = StoredVotingKeyEntries(keys),
                             identityId = idBytes,
-                            balance = balance,
-                            isLocal = true,
-                            alias = trimmedAlias,
-                            identityType = type.rawValue,
                             networkRaw = activeNetwork.ffiValue,
+                            balance = balance,
+                            alias = trimmedAlias,
+                            pickedType = type,
+                            typePicked = typePicked,
+                            votingKey = votingKey,
                         )
-
-                        val key = votingKey
-                        if (key == null) {
-                            dao.upsert(row)
-                            showIdentity(idBytes)
-                            return@launch
-                        }
-
-                        val enteredIdentifier = keys.votingAddress(key).toHex()
-                        val outcome =
-                            decideVotingKeyOutcome(row.votingPrivateKeyIdentifier, enteredIdentifier)
-                        when (outcome) {
-                            VotingKeyOutcome.AlreadyStored -> {
-                                // Heals a missing ciphertext; a no-op when the key reads.
-                                runCatching { keys.store(key) }
-                                dao.upsert(row)
-                                showIdentity(idBytes)
-                            }
-                            VotingKeyOutcome.StoreNew -> {
-                                val stored = try {
-                                    keys.store(key)
-                                } catch (e: CancellationException) {
-                                    throw e
-                                } catch (_: Exception) {
-                                    null
-                                }
-                                if (stored != null) row = row.copy(votingPrivateKeyIdentifier = stored)
-                                // The identity itself loaded, so its row is saved even when
-                                // the key could not be stored.
-                                dao.upsert(row)
-                                if (stored != null) {
-                                    showIdentity(idBytes)
-                                } else {
-                                    error = VOTING_KEY_NOT_STORED_MESSAGE
-                                }
-                            }
-                            is VotingKeyOutcome.Conflicting -> {
-                                // The stored key and the row's identifier are kept; the
-                                // replacement waits for the user's answer.
-                                dao.upsert(row)
+                        when (result) {
+                            LoadSaveResult.Saved -> showIdentity(idBytes)
+                            is LoadSaveResult.Failed -> error = result.message
+                            is LoadSaveResult.ConfirmReplacement ->
                                 pendingReplacement = PendingVotingKeyReplacement(
                                     identityId = idBytes,
-                                    storedIdentifier = outcome.storedIdentifier,
+                                    storedIdentifier = result.storedIdentifier,
                                 )
-                            }
                         }
                     } catch (e: CancellationException) {
                         throw e
@@ -373,17 +345,38 @@ fun LoadIdentityScreen(navController: NavHostController) {
                         isLoading = true
                         scope.launch {
                             try {
-                                val message = replaceVotingKey(
-                                    keys = MasternodeVotingKeyStore(container.walletStorage),
-                                    container = container,
-                                    pending = pending,
-                                    keyText = keyText,
-                                )
-                                if (message == null) {
-                                    showIdentity(pending.identityId)
-                                } else {
-                                    error = message
+                                val keys = MasternodeVotingKeyStore(container.walletStorage)
+                                // Read the text again: the bytes decoded for the load were
+                                // zeroed when the question was asked.
+                                val key = try {
+                                    keys.privateKeyBytesFromText(keyText)
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    error = votingKeyRefusedMessage(e.message)
+                                    return@launch
                                 }
+                                val result = try {
+                                    replaceVotingKey(
+                                        dao = container.database.identityDao(),
+                                        entries = StoredVotingKeyEntries(keys),
+                                        identityId = pending.identityId,
+                                        expectedIdentifier = pending.storedIdentifier,
+                                        votingKey = key,
+                                    )
+                                } finally {
+                                    key.fill(0)
+                                }
+                                when (result) {
+                                    LoadSaveResult.Saved -> showIdentity(pending.identityId)
+                                    is LoadSaveResult.Failed -> error = result.message
+                                    // A replacement never asks again by itself.
+                                    is LoadSaveResult.ConfirmReplacement -> Unit
+                                }
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                error = e.message ?: "Failed to replace the voting key"
                             } finally {
                                 isLoading = false
                             }
@@ -420,7 +413,7 @@ internal enum class LoadIdentityType(val rawValue: String) {
 
 /** What to do with an entered voting key, given the identifier the row already records. */
 internal sealed interface VotingKeyOutcome {
-    /** The row already names this key: store it again only to heal a missing ciphertext. */
+    /** The row already names this key: write its entry again from the entered bytes. */
     data object AlreadyStored : VotingKeyOutcome
 
     /** The row names no key: store it and record its identifier. */
@@ -431,20 +424,15 @@ internal sealed interface VotingKeyOutcome {
 }
 
 /**
- * Swift `KeychainManager.storeSpecialKeyIfAbsent`, adapted to voting keys stored under their
- * voting address: the identifier [entered] (the entered key's lowercase address hex) against
- * the row's [current] one.
+ * Swift `KeychainManager.storeSpecialKeyIfAbsent`, adapted to identifiers that name the key:
+ * the identifier [entered] (the entered key's `MasternodeVotingKeyStore` identifier for this
+ * identity) against the row's [current] one.
  */
 internal fun decideVotingKeyOutcome(current: String?, entered: String): VotingKeyOutcome = when {
     current == null -> VotingKeyOutcome.StoreNew
     current.equals(entered, ignoreCase = true) -> VotingKeyOutcome.AlreadyStored
     else -> VotingKeyOutcome.Conflicting(current)
 }
-
-/** Shown when a voting key could not be stored; the identity itself was saved. */
-internal const val VOTING_KEY_NOT_STORED_MESSAGE =
-    "The voting private key could not be stored. The identity cannot vote until it is " +
-        "loaded again."
 
 /** The load error for a voting key Rust refused, with its [reason] and never the text. */
 internal fun votingKeyRefusedMessage(reason: String?): String {
@@ -469,48 +457,245 @@ private data class PendingVotingKeyReplacement(
 }
 
 /**
- * Replace the identity's stored voting key with the one typed in [keyText] after the user
- * confirmed it: read the text again, store the new key, point the row at it, and delete the
- * key the row named before only when no identity still names it (several masternodes can
- * share one voting key). Returns null on success, else the message to show; a failure
- * before the row changes leaves the stored key and the row as they were.
+ * The type the picker starts from for the stored [row]: its type when the row is on
+ * [networkRaw] and the type is one Load Identity offers, else null (the picker stays as it
+ * is).
  */
-private suspend fun replaceVotingKey(
-    keys: MasternodeVotingKeyStore,
-    container: org.dashfoundation.example.di.AppContainer,
-    pending: PendingVotingKeyReplacement,
-    keyText: String,
-): String? {
-    val key = try {
-        keys.privateKeyBytesFromText(keyText)
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        return votingKeyRefusedMessage(e.message)
+internal fun initialLoadIdentityType(row: IdentityEntity?, networkRaw: Int): LoadIdentityType? =
+    row?.takeIf { it.networkRaw == networkRaw }
+        ?.let { stored -> LoadIdentityType.entries.firstOrNull { it.rawValue == stored.identityType } }
+
+/**
+ * The type a load writes: the [picked] one when the user picked it or no row is stored yet,
+ * else the stored row's [storedType], so a reload with the form's default type keeps a
+ * masternode or evonode a voter.
+ */
+internal fun identityTypeToSave(
+    storedType: String?,
+    picked: LoadIdentityType,
+    typePicked: Boolean,
+): String = if (typePicked || storedType == null) picked.rawValue else storedType
+
+/** The load error for an identity already stored for another network. */
+internal fun networkMismatchMessage(storedNetworkRaw: Int): String {
+    val name = try {
+        Network.fromFfiValue(storedNetworkRaw).displayName
+    } catch (_: IllegalArgumentException) {
+        "another network"
     }
-    try {
-        val newIdentifier = try {
-            keys.store(key)
+    return "This identity is already stored for $name. Switch to that network to reload it."
+}
+
+/** Shown when another write changed the row while a load was saving it. */
+internal const val IDENTITY_CHANGED_MESSAGE =
+    "The identity changed while it was loading. Load it again."
+
+/** Shown when the row stopped naming the key a replacement question showed. */
+internal const val VOTING_KEY_CHANGED_MESSAGE =
+    "The identity's stored voting key changed before it could be replaced, so it was kept. " +
+        "Load the identity again with the new key to be asked again."
+
+/** The load error for a voting key that could not be written; the identity was saved. */
+internal fun votingKeyNotStoredMessage(reason: String?): String {
+    val trimmed = reason?.trim()?.trimEnd('.')
+    val because = if (trimmed.isNullOrEmpty()) "" else ": $trimmed"
+    return "The identity was saved, but its voting private key could not be stored$because. " +
+        "Load it again with the key to vote with it."
+}
+
+/** The error for a replacement key that could not be written; the stored key was kept. */
+internal fun votingKeyNotReplacedMessage(reason: String?): String {
+    val trimmed = reason?.trim()?.trimEnd('.')
+    val because = if (trimmed.isNullOrEmpty()) "" else ": $trimmed"
+    return "The new voting private key could not be stored$because. The stored key was kept."
+}
+
+/** What a load or a confirmed replacement did. */
+internal sealed interface LoadSaveResult {
+    /** Everything was saved; show the identity. */
+    data object Saved : LoadSaveResult
+
+    /** Show [message] and stay on the form. */
+    data class Failed(val message: String) : LoadSaveResult
+
+    /** The row names another voting key; ask before replacing [storedIdentifier]. */
+    data class ConfirmReplacement(val storedIdentifier: String) : LoadSaveResult
+}
+
+/** The voting key entries a load writes; [StoredVotingKeyEntries] in the app. */
+internal interface VotingKeyEntries {
+    /** The identifier [store] would return for [votingKey] and [identityId]. */
+    fun identifierFor(identityId: ByteArray, votingKey: ByteArray): String
+
+    /** Write [identityId]'s voting entry from [votingKey] and return its identifier. */
+    suspend fun store(identityId: ByteArray, votingKey: ByteArray): String
+
+    /** Delete the entry [identifier]. */
+    suspend fun delete(identifier: String)
+}
+
+/** [VotingKeyEntries] over [MasternodeVotingKeyStore]. */
+internal class StoredVotingKeyEntries(private val keys: MasternodeVotingKeyStore) : VotingKeyEntries {
+    override fun identifierFor(identityId: ByteArray, votingKey: ByteArray): String =
+        MasternodeVotingKeyStore.identifierFor(identityId, keys.votingAddress(votingKey))
+
+    override suspend fun store(identityId: ByteArray, votingKey: ByteArray): String =
+        keys.store(identityId, votingKey)
+
+    override suspend fun delete(identifier: String) = keys.delete(identifier)
+}
+
+/**
+ * Save a fetched identity and, when [votingKey] is given, its voting key.
+ *
+ * The row is inserted when absent; otherwise only the fields a load owns change on the
+ * current row, which must be on [networkRaw]. The voting key association then changes only
+ * through a conditional update against the identifier the row names now, so a write made
+ * meanwhile is never overwritten: the entry just written is discarded unless the row names
+ * it, and the load reports the change. [votingKey] stays the caller's to zero.
+ */
+internal suspend fun saveLoadedIdentity(
+    dao: IdentityDao,
+    entries: VotingKeyEntries,
+    identityId: ByteArray,
+    networkRaw: Int,
+    balance: Long,
+    alias: String?,
+    pickedType: LoadIdentityType,
+    typePicked: Boolean,
+    votingKey: ByteArray?,
+    nowMillis: Long = System.currentTimeMillis(),
+): LoadSaveResult {
+    val existing = dao.getByIdentityId(identityId)
+    if (existing != null && existing.networkRaw != networkRaw) {
+        return LoadSaveResult.Failed(networkMismatchMessage(existing.networkRaw))
+    }
+    val inserted = existing == null && dao.insertIfAbsent(
+        IdentityEntity(
+            identityId = identityId,
+            balance = balance,
+            // A manual add is a tracked identity under the owner's semantics; see the
+            // LoadIdentityScreen header.
+            isLocal = true,
+            alias = alias,
+            identityType = pickedType.rawValue,
+            networkRaw = networkRaw,
+        ),
+    ) != -1L
+    if (!inserted) {
+        // Either the row was there, or another write inserted it after the read above.
+        val current = existing ?: dao.getByIdentityId(identityId)
+            ?: return LoadSaveResult.Failed(IDENTITY_CHANGED_MESSAGE)
+        if (current.networkRaw != networkRaw) {
+            return LoadSaveResult.Failed(networkMismatchMessage(current.networkRaw))
+        }
+        val changed = dao.updateLoadedFields(
+            identityId = identityId,
+            networkRaw = networkRaw,
+            balance = balance,
+            alias = alias,
+            isLocal = true,
+            identityType = identityTypeToSave(current.identityType, pickedType, typePicked),
+            nowMillis = nowMillis,
+        )
+        if (changed == 0) return LoadSaveResult.Failed(IDENTITY_CHANGED_MESSAGE)
+    }
+    if (votingKey == null) return LoadSaveResult.Saved
+
+    // The association as it is now, after the identity's own fields were saved.
+    val current = dao.getByIdentityId(identityId)
+        ?: return LoadSaveResult.Failed(IDENTITY_CHANGED_MESSAGE)
+    val entered = entries.identifierFor(identityId, votingKey)
+    return when (val outcome = decideVotingKeyOutcome(current.votingPrivateKeyIdentifier, entered)) {
+        VotingKeyOutcome.AlreadyStored -> {
+            // Written again from the entered bytes: repairs an entry that no longer reads.
+            val stored = storeEntry(entries, identityId, votingKey) { reason ->
+                return LoadSaveResult.Failed(votingKeyNotStoredMessage(reason))
+            }
+            if (dao.getByIdentityId(identityId)?.votingPrivateKeyIdentifier == stored) {
+                LoadSaveResult.Saved
+            } else {
+                discardUnlessNamed(dao, entries, identityId, stored)
+                LoadSaveResult.Failed(IDENTITY_CHANGED_MESSAGE)
+            }
+        }
+        VotingKeyOutcome.StoreNew -> {
+            val stored = storeEntry(entries, identityId, votingKey) { reason ->
+                return LoadSaveResult.Failed(votingKeyNotStoredMessage(reason))
+            }
+            if (dao.replaceVotingPrivateKeyIdentifier(identityId, null, stored, nowMillis) == 1) {
+                LoadSaveResult.Saved
+            } else {
+                discardUnlessNamed(dao, entries, identityId, stored)
+                LoadSaveResult.Failed(IDENTITY_CHANGED_MESSAGE)
+            }
+        }
+        is VotingKeyOutcome.Conflicting -> LoadSaveResult.ConfirmReplacement(outcome.storedIdentifier)
+    }
+}
+
+/**
+ * Replace the identity's voting key with [votingKey] after the user confirmed replacing
+ * [expectedIdentifier], the key the question showed: store the new entry, point the row at it
+ * only while the row still names [expectedIdentifier], then delete that entry. When the row
+ * changed meanwhile, the new entry is discarded unless the row names it, the current
+ * association is kept, and the result says to load again, which asks again. An entry's name
+ * contains its identity's id, so the replaced entry is only this row's. [votingKey] stays the
+ * caller's to zero.
+ */
+internal suspend fun replaceVotingKey(
+    dao: IdentityDao,
+    entries: VotingKeyEntries,
+    identityId: ByteArray,
+    expectedIdentifier: String,
+    votingKey: ByteArray,
+    nowMillis: Long = System.currentTimeMillis(),
+): LoadSaveResult {
+    val stored = storeEntry(entries, identityId, votingKey) { reason ->
+        return LoadSaveResult.Failed(votingKeyNotReplacedMessage(reason))
+    }
+    if (dao.replaceVotingPrivateKeyIdentifier(identityId, expectedIdentifier, stored, nowMillis) == 0) {
+        discardUnlessNamed(dao, entries, identityId, stored)
+        return LoadSaveResult.Failed(VOTING_KEY_CHANGED_MESSAGE)
+    }
+    if (expectedIdentifier != stored) {
+        try {
+            entries.delete(expectedIdentifier)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            return "The voting private key could not be stored, so the stored key was kept."
+            // The replacement is done and the row names the new key; the old entry stays
+            // as unused ciphertext until the identities are cleared (DataManager).
         }
-        val dao = container.database.identityDao()
-        val row = dao.getByIdentityId(pending.identityId)
-            ?: return "The identity could not be found on this device, so no key was " +
-                "replaced. Load it again."
-        // The key the row names now, which another load may have changed since the
-        // question was asked; it is the one being replaced.
-        val replaced = row.votingPrivateKeyIdentifier
-        dao.upsert(row.copy(votingPrivateKeyIdentifier = newIdentifier, lastUpdated = Date()))
-        if (replaced != null && !replaced.equals(newIdentifier, ignoreCase = true) &&
-            dao.countByVotingPrivateKeyIdentifier(replaced) == 0
-        ) {
-            keys.delete(replaced)
-        }
-        return null
-    } finally {
-        key.fill(0)
+    }
+    return LoadSaveResult.Saved
+}
+
+/**
+ * Write [identityId]'s voting entry; on a failure other than cancellation, hand [onFailure]
+ * the reason. Cancellation always propagates.
+ */
+private suspend inline fun storeEntry(
+    entries: VotingKeyEntries,
+    identityId: ByteArray,
+    votingKey: ByteArray,
+    onFailure: (reason: String?) -> Nothing,
+): String = try {
+    entries.store(identityId, votingKey)
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    onFailure(e.message)
+}
+
+/** Delete [identifier] unless the identity's row names it now. */
+private suspend fun discardUnlessNamed(
+    dao: IdentityDao,
+    entries: VotingKeyEntries,
+    identityId: ByteArray,
+    identifier: String,
+) {
+    if (dao.getByIdentityId(identityId)?.votingPrivateKeyIdentifier != identifier) {
+        entries.delete(identifier)
     }
 }

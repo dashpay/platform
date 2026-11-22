@@ -18,7 +18,7 @@ class MasternodeVoterSectionTest {
     private fun identity(
         firstByte: Int,
         type: String = "Masternode",
-        votingKey: String? = "ab".repeat(20),
+        votingKey: String? = "mnvoting." + "01".repeat(32) + "." + "ab".repeat(20),
         networkRaw: Int = network,
         alias: String? = null,
         mainDpnsName: String? = null,
