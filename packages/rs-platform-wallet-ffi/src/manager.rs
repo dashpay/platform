@@ -2788,10 +2788,11 @@ mod big_stack_polling_tests {
     use super::*;
     use crate::persistence::TrackedMasternodeFFI;
     use crate::test_fixtures::mock_manager_with;
+    use crate::wallet::platform_wallet_destroy;
     use crate::wallet_restore_types::WalletRestoreEntryFFI;
     use std::ffi::CString;
     use std::os::raw::c_char;
-    use std::sync::{Mutex, PoisonError};
+    use std::sync::{Arc, Mutex, PoisonError};
 
     const BIG_STACK_THREAD: &str = "pw-ffi-bigstack";
     const TEST_MNEMONIC: &str =
@@ -2803,8 +2804,9 @@ mod big_stack_polling_tests {
 
     impl CallbackThreads {
         /// # Safety
-        /// `context` must be the `&'static CallbackThreads` the persister
-        /// was built around.
+        /// `context` must point at a live `CallbackThreads`: the reference
+        /// the persister owns ([`probe_callbacks`]), or one its fixture
+        /// still holds.
         unsafe fn record(context: *const c_void, callback: &'static str) {
             let threads = &*(context as *const CallbackThreads);
             threads
@@ -2871,10 +2873,17 @@ mod big_stack_polling_tests {
     ) {
     }
 
-    /// The probed persistence callbacks, writing to `threads`.
-    fn probe_callbacks(threads: &'static CallbackThreads) -> PersistenceCallbacks {
+    /// Releases the reference to the `CallbackThreads` a persister owns.
+    unsafe extern "C" fn release_threads(context: *mut c_void) {
+        drop(Arc::from_raw(context as *const CallbackThreads));
+    }
+
+    /// The probed persistence callbacks, writing to `threads`. The persister
+    /// built over them owns a reference to it, released with its last owner.
+    fn probe_callbacks(threads: &Arc<CallbackThreads>) -> PersistenceCallbacks {
         PersistenceCallbacks {
-            context: threads as *const CallbackThreads as *mut c_void,
+            context: Arc::into_raw(Arc::clone(threads)) as *mut c_void,
+            release_fn: Some(release_threads),
             on_changeset_begin_fn: Some(record_begin),
             on_changeset_end_fn: Some(end),
             on_load_wallet_list_fn: Some(record_load_wallet_list),
@@ -2883,32 +2892,61 @@ mod big_stack_polling_tests {
         }
     }
 
-    /// A manager over `callbacks` (with the tracked-masternode load probe)
-    /// declaring `capabilities`.
-    fn manager_over(
-        callbacks: PersistenceCallbacks,
-        capabilities: PersistenceCapabilities,
-    ) -> Handle {
-        let manager = mock_manager_with(
-            FFIPersister::new_with_persistence_capabilities_and_extensions(
-                callbacks,
-                capabilities,
-                PersistenceExtensionCallbacks {
-                    load_tracked_masternodes: Some(record_load_tracked_masternodes),
-                    load_tracked_masternodes_free: Some(free_tracked_masternodes),
-                    ..Default::default()
-                },
-            ),
-        );
-        PLATFORM_WALLET_MANAGER_STORAGE.insert(manager)
+    /// A manager whose persister records the thread of every probed callback
+    /// in `threads`. Dropped, it destroys the wallet handles it was given
+    /// and then the manager, on a failed assertion too.
+    struct ProbedManager {
+        handle: Handle,
+        wallets: Vec<Handle>,
+        threads: Arc<CallbackThreads>,
     }
 
-    /// A manager whose persister records the thread of every probed
-    /// callback, and the record it writes to.
-    fn probed_manager() -> (Handle, &'static CallbackThreads) {
-        let threads: &'static CallbackThreads = Box::leak(Box::default());
-        let handle = manager_over(probe_callbacks(threads), PersistenceCapabilities::NONE);
-        (handle, threads)
+    impl ProbedManager {
+        fn new() -> Self {
+            Self::over(PersistenceCapabilities::NONE, |callbacks| callbacks)
+        }
+
+        /// Over the probed callbacks as `extend` completes them (and the
+        /// tracked-masternode load probe), declaring `capabilities`.
+        fn over(
+            capabilities: PersistenceCapabilities,
+            extend: impl FnOnce(PersistenceCallbacks) -> PersistenceCallbacks,
+        ) -> Self {
+            let threads = Arc::new(CallbackThreads::default());
+            let manager = mock_manager_with(
+                FFIPersister::new_with_persistence_capabilities_and_extensions(
+                    extend(probe_callbacks(&threads)),
+                    capabilities,
+                    PersistenceExtensionCallbacks {
+                        load_tracked_masternodes: Some(record_load_tracked_masternodes),
+                        load_tracked_masternodes_free: Some(free_tracked_masternodes),
+                        ..Default::default()
+                    },
+                ),
+            );
+            Self {
+                handle: PLATFORM_WALLET_MANAGER_STORAGE.insert(manager),
+                wallets: Vec::new(),
+                threads,
+            }
+        }
+
+        /// Create the [`TEST_MNEMONIC`] wallet, returning its id.
+        fn create_wallet(&mut self) -> [u8; 32] {
+            let (result, wallet_handle, wallet_id) = unsafe { create_from_mnemonic(self.handle) };
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+            self.wallets.push(wallet_handle);
+            wallet_id
+        }
+    }
+
+    impl Drop for ProbedManager {
+        fn drop(&mut self) {
+            for wallet in self.wallets.drain(..) {
+                unsafe { platform_wallet_destroy(wallet) };
+            }
+            unsafe { platform_wallet_manager_destroy(self.handle) };
+        }
     }
 
     /// `callback` ran during the call, every time on the big-stack thread.
@@ -2951,21 +2989,20 @@ mod big_stack_polling_tests {
 
     #[test]
     fn should_poll_the_mnemonic_wallet_create_on_the_big_stack_thread() {
-        let (handle, threads) = probed_manager();
-        let (result, _, _) = unsafe { create_from_mnemonic(handle) };
-        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-        assert_polled_on_big_stack(&threads.take(), "changeset_begin");
+        let mut manager = ProbedManager::new();
+        manager.create_wallet();
+        assert_polled_on_big_stack(&manager.threads.take(), "changeset_begin");
     }
 
     #[test]
     fn should_poll_the_seed_wallet_create_on_the_big_stack_thread() {
-        let (handle, threads) = probed_manager();
+        let mut manager = ProbedManager::new();
         let seed = [42u8; 64];
         let mut wallet_handle: Handle = 0;
         let mut wallet_id = [0u8; 32];
         let result = unsafe {
             platform_wallet_manager_create_wallet_from_seed_with_birth_height(
-                handle,
+                manager.handle,
                 FFINetwork::Testnet,
                 seed.as_ptr(),
                 seed.len(),
@@ -2977,15 +3014,16 @@ mod big_stack_polling_tests {
             )
         };
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-        assert_polled_on_big_stack(&threads.take(), "changeset_begin");
+        manager.wallets.push(wallet_handle);
+        assert_polled_on_big_stack(&manager.threads.take(), "changeset_begin");
     }
 
     #[test]
     fn should_poll_the_persistor_load_on_the_big_stack_thread() {
-        let (handle, threads) = probed_manager();
-        let result = unsafe { platform_wallet_manager_load_from_persistor(handle) };
+        let manager = ProbedManager::new();
+        let result = unsafe { platform_wallet_manager_load_from_persistor(manager.handle) };
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-        assert_polled_on_big_stack(&threads.take(), "load_tracked_masternodes");
+        assert_polled_on_big_stack(&manager.threads.take(), "load_tracked_masternodes");
     }
 
     #[cfg(feature = "shielded")]
@@ -2996,7 +3034,6 @@ mod big_stack_polling_tests {
             platform_wallet_manager_bind_shielded, platform_wallet_manager_configure_shielded,
         };
         use crate::test_fixtures::{noop_free_viewing_keys, noop_load_viewing_keys};
-        use crate::wallet::platform_wallet_destroy;
         use rs_sdk_ffi::{
             dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy,
             mnemonic_resolver_result, MnemonicResolverHandle,
@@ -3041,66 +3078,40 @@ mod big_stack_polling_tests {
 
         unsafe extern "C" fn keep_resolver_context(_context: *mut c_void) {}
 
-        /// A probed manager with a directory for its shielded store. Dropped,
-        /// it destroys the wallet handles and the manager, which close the
-        /// store, and then removes the directory, on a failed assertion too.
+        /// A probed manager that keeps shielded viewing keys, with a
+        /// directory for its shielded store. The manager is dropped first,
+        /// which closes the store, and the directory after it.
         struct ShieldedFixture {
-            handle: Handle,
-            wallets: Vec<Handle>,
-            threads: &'static CallbackThreads,
+            manager: ProbedManager,
             dir: TempDir,
         }
 
         impl ShieldedFixture {
-            /// Over a persister that keeps shielded viewing keys.
             fn new() -> Self {
-                let threads: &'static CallbackThreads = Box::leak(Box::default());
-                let handle = manager_over(
-                    PersistenceCallbacks {
+                let manager = ProbedManager::over(
+                    PersistenceCapabilities::ATOMIC_CHANGESETS
+                        .union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS),
+                    |callbacks| PersistenceCallbacks {
                         on_persist_shielded_viewing_keys_fn: Some(record_persist_viewing_keys),
                         on_load_shielded_viewing_keys_fn: Some(noop_load_viewing_keys),
                         on_load_shielded_viewing_keys_free_fn: Some(noop_free_viewing_keys),
-                        ..probe_callbacks(threads)
+                        ..callbacks
                     },
-                    PersistenceCapabilities::ATOMIC_CHANGESETS
-                        .union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS),
                 );
                 Self {
-                    handle,
-                    wallets: Vec::new(),
-                    threads,
+                    manager,
                     dir: tempfile::tempdir().expect("a temporary directory"),
                 }
             }
 
-            /// The path of the shielded store, as the export takes it.
-            fn store_path(&self) -> CString {
-                let path = self.dir.path().join("shielded.sqlite");
-                CString::new(path.to_str().expect("utf-8 temp path")).expect("no NUL")
-            }
-
+            /// Configure the shielded store in the fixture's directory.
             fn configure(&self) -> PlatformWalletFFIResultCode {
-                let path = self.store_path();
-                unsafe { platform_wallet_manager_configure_shielded(self.handle, path.as_ptr()) }
-                    .code
-            }
-
-            /// Create the [`TEST_MNEMONIC`] wallet, returning its id.
-            fn create_wallet(&mut self) -> [u8; 32] {
-                let (result, wallet_handle, wallet_id) =
-                    unsafe { create_from_mnemonic(self.handle) };
-                assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-                self.wallets.push(wallet_handle);
-                wallet_id
-            }
-        }
-
-        impl Drop for ShieldedFixture {
-            fn drop(&mut self) {
-                for wallet in self.wallets.drain(..) {
-                    unsafe { platform_wallet_destroy(wallet) };
+                let path = self.dir.path().join("shielded.sqlite");
+                let path = CString::new(path.to_str().expect("utf-8 temp path")).expect("no NUL");
+                unsafe {
+                    platform_wallet_manager_configure_shielded(self.manager.handle, path.as_ptr())
                 }
-                unsafe { platform_wallet_manager_destroy(self.handle) };
+                .code
             }
         }
 
@@ -3121,16 +3132,16 @@ mod big_stack_polling_tests {
         /// it. Only the call's own frames run on the caller's stack.
         #[test]
         fn should_create_a_wallet_from_a_caller_thread_too_small_to_poll_it() {
-            let fixture = ShieldedFixture::new();
+            let mut fixture = ShieldedFixture::new();
             assert_eq!(fixture.configure(), PlatformWalletFFIResultCode::Success);
 
-            let handle = fixture.handle;
+            let handle = fixture.manager.handle;
             let (created, wallet_handle) = on_a_small_stack(move || {
                 let (result, wallet_handle, _) = unsafe { create_from_mnemonic(handle) };
                 (result.code, wallet_handle)
             });
             assert_eq!(created, PlatformWalletFFIResultCode::Success);
-            unsafe { platform_wallet_destroy(wallet_handle) };
+            fixture.manager.wallets.push(wallet_handle);
         }
 
         /// Both binds of the export, the one from persisted viewing keys and
@@ -3139,14 +3150,15 @@ mod big_stack_polling_tests {
         #[test]
         fn should_poll_both_shielded_binds_on_the_big_stack_thread() {
             let mut fixture = ShieldedFixture::new();
-            let wallet_id = fixture.create_wallet();
+            let wallet_id = fixture.manager.create_wallet();
             assert_eq!(fixture.configure(), PlatformWalletFFIResultCode::Success);
-            let threads = fixture.threads;
-            threads.take();
+            fixture.manager.threads.take();
 
+            // The resolver borrows the record the fixture holds, and is
+            // destroyed before the fixture.
             let resolver: *mut MnemonicResolverHandle = unsafe {
                 dash_sdk_mnemonic_resolver_create(
-                    threads as *const CallbackThreads as *mut c_void,
+                    Arc::as_ptr(&fixture.manager.threads) as *mut c_void,
                     record_resolve,
                     keep_resolver_context,
                 )
@@ -3154,7 +3166,7 @@ mod big_stack_polling_tests {
             let accounts = [0u32];
             let result = unsafe {
                 platform_wallet_manager_bind_shielded(
-                    fixture.handle,
+                    fixture.manager.handle,
                     wallet_id.as_ptr(),
                     resolver,
                     accounts.as_ptr(),
@@ -3166,7 +3178,7 @@ mod big_stack_polling_tests {
 
             // The resolver runs between the two binds, so a snapshot load
             // recorded before it is the bind from persisted viewing keys.
-            let seen = threads.take();
+            let seen = fixture.manager.threads.take();
             let resolved_at = seen
                 .iter()
                 .position(|(name, _)| *name == "resolve_mnemonic")
