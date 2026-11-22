@@ -32,12 +32,14 @@
 //! the newest checkpoint; the cache then keeps that older, still recorded
 //! anchor for up to the TTL, where a fresh fetch would retry the node's luck.
 //!
-//! A third guard ties the set to how it was verified: it is dropped when the
-//! SDK's context provider is replaced or reports a new
-//! [`policy_revision`](ContextProvider::policy_revision), as on every quorum
-//! mode change, and the cache is bypassed while the revision cannot be read
-//! without blocking. A spend never reuses evidence that an earlier
-//! verification policy accepted.
+//! A third guard ties the set to how it was verified. A request records the
+//! SDK's context provider and its
+//! [`policy_revision`](ContextProvider::policy_revision), which advances on
+//! every quorum mode change, before it is sent. The set is stored only if
+//! both are unchanged when it arrives, and returned only while they still
+//! match. A provider whose revision cannot be read is never cached against,
+//! so a spend never reuses evidence that an earlier verification policy
+//! accepted.
 //!
 //! An anchor pruned after the cached fetch can still be selected, where a
 //! fresh fetch would already omit it. Platform then rejects the spend after
@@ -73,14 +75,14 @@ pub struct RecordedAnchorCache {
 
 /// What verifies the SDK's proofs: the installed context provider and its
 /// policy revision, which an adaptive provider advances on every mode change.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ProofPolicy {
     provider: Weak<dyn ContextProvider>,
     revision: u64,
 }
 
 impl ProofPolicy {
-    /// `None` when the revision cannot be read without blocking.
+    /// `None` when the provider reports no revision.
     fn of(sdk: &dash_sdk::Sdk) -> Option<Self> {
         let provider = sdk.context_provider_arc();
         Some(Self {
@@ -96,12 +98,17 @@ impl PartialEq for ProofPolicy {
     }
 }
 
+/// The policy a set is bound to: its SDK's [`ProofPolicy`], or none for a
+/// cache never bound with [`RecordedAnchorCache::for_sdk`].
+#[derive(Debug, Clone, PartialEq)]
+enum PolicyKey {
+    Unbound,
+    Bound(ProofPolicy),
+}
+
 #[derive(Debug, Default)]
 struct CacheState {
     entry: Option<CachedAnchorSet>,
-    /// The policy [`RecordedAnchorCache::observe_policy`] last saw, `None`
-    /// inside when it could not be read.
-    policy: Option<Option<ProofPolicy>>,
     /// When [`RecordedAnchorCache::invalidate`] last ran. Requests sent
     /// before it may carry the set it meant to discard, so they are dropped.
     invalidated_at: Option<Instant>,
@@ -118,6 +125,7 @@ struct CachedAnchorSet {
     tree_size: u64,
     /// Proved height of this exact set, retained for pending-spend recovery.
     height: u64,
+    policy: PolicyKey,
 }
 
 /// When a recorded-anchor request was sent, on two clocks.
@@ -128,18 +136,24 @@ struct CachedAnchorSet {
 /// would still look seconds old. The wall clock keeps running through sleep
 /// but can be set backwards. A set's age is the larger of the two readings,
 /// and a wall clock that moved before the stamp counts as expired.
-#[derive(Debug, Clone, Copy)]
+///
+/// It also records the verification policy in force when the request was
+/// sent, `None` when it could not be read.
+#[derive(Debug, Clone)]
 pub(crate) struct FetchStamp {
     monotonic: Instant,
     wall: SystemTime,
+    policy: Option<PolicyKey>,
 }
 
 impl FetchStamp {
-    /// Stamp a request about to be sent.
+    /// Stamp a request to an unbound cache, about to be sent.
+    #[cfg(test)]
     pub(crate) fn now() -> Self {
         Self {
             monotonic: Instant::now(),
             wall: SystemTime::now(),
+            policy: Some(PolicyKey::Unbound),
         }
     }
 
@@ -153,6 +167,7 @@ impl FetchStamp {
             wall: SystemTime::now()
                 .checked_sub(age)
                 .expect("wall clock is past the requested age"),
+            policy: Some(PolicyKey::Unbound),
         }
     }
 
@@ -185,47 +200,54 @@ impl RecordedAnchorCache {
         }
     }
 
+    /// Bind the cache to `sdk`, whose proofs every cached set must have been
+    /// verified by. `None` when it is bound to another SDK.
     pub(crate) fn for_sdk(&self, sdk: &Arc<dash_sdk::Sdk>) -> Option<&Self> {
         let owner = self.sdk.get_or_init(|| Arc::downgrade(sdk));
-        if !owner.ptr_eq(&Arc::downgrade(sdk)) {
-            return None;
-        }
-        self.observe_policy(sdk).then_some(self)
+        owner.ptr_eq(&Arc::downgrade(sdk)).then_some(self)
     }
 
-    /// Drop the cached set, and any fetch already sent, unless `sdk` still
-    /// verifies proofs under the policy last observed. Every reader calls
-    /// this before [`get`](Self::get) and every fetch before
-    /// [`insert`](Self::insert), so a set verified under an earlier policy is
-    /// neither reused nor stored. Returns whether the policy could be read.
-    pub(crate) fn observe_policy(&self, sdk: &dash_sdk::Sdk) -> bool {
-        let policy = ProofPolicy::of(sdk);
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let known = policy.is_some();
-        if !known || state.policy.as_ref().is_some_and(|seen| *seen != policy) {
-            state.entry = None;
-            state.invalidated_at = Some(Instant::now());
+    /// The policy in force now, `None` when it cannot be read or the bound
+    /// SDK is gone.
+    fn current_policy(&self) -> Option<PolicyKey> {
+        match self.sdk.get() {
+            None => Some(PolicyKey::Unbound),
+            Some(sdk) => ProofPolicy::of(&*sdk.upgrade()?).map(PolicyKey::Bound),
         }
-        state.policy = Some(policy);
-        known
     }
 
-    /// The cached set, if one is younger than the TTL and was fetched while
-    /// the local tree had exactly `tree_size` leaves.
+    /// Stamp a request about to be sent.
+    pub(crate) fn stamp(&self) -> FetchStamp {
+        FetchStamp {
+            monotonic: Instant::now(),
+            wall: SystemTime::now(),
+            policy: self.current_policy(),
+        }
+    }
+
+    /// The cached set, if one is younger than the TTL, was fetched while the
+    /// local tree had exactly `tree_size` leaves, and was verified under the
+    /// policy in force now.
     pub(crate) fn get(&self, tree_size: u64) -> Option<(Arc<HashSet<[u8; 32]>>, u64)> {
+        let policy = self.current_policy()?;
         let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         state
             .entry
             .as_ref()
-            .filter(|e| e.tree_size == tree_size && e.fetch_started.is_younger_than(self.ttl))
+            .filter(|e| {
+                e.tree_size == tree_size
+                    && e.policy == policy
+                    && e.fetch_started.is_younger_than(self.ttl)
+            })
             .map(|e| (Arc::clone(&e.anchors), e.height))
     }
 
-    /// Record a freshly fetched set. `fetch_started` is when its request was
-    /// sent, `tree_size` the local tree's leaf count read before that, and
-    /// `height` the proved height of this set.
-    /// Concurrent fetches resolve to the one sent last, and a fetch sent
-    /// before the last [`invalidate`](Self::invalidate) is dropped.
+    /// Record a freshly fetched set. `fetch_started` is its request's
+    /// [`stamp`](Self::stamp), `tree_size` the local tree's leaf count read
+    /// before that, and `height` the proved height of this set.
+    /// Concurrent fetches resolve to the one sent last. A fetch sent before
+    /// the last [`invalidate`](Self::invalidate), or whose policy changed or
+    /// could not be read between its stamp and now, is dropped.
     pub(crate) fn insert(
         &self,
         anchors: Arc<HashSet<[u8; 32]>>,
@@ -233,6 +255,12 @@ impl RecordedAnchorCache {
         tree_size: u64,
         height: u64,
     ) {
+        let Some(policy) = fetch_started.policy.clone() else {
+            return;
+        };
+        if self.current_policy().as_ref() != Some(&policy) {
+            return;
+        }
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let sent = fetch_started.monotonic;
         if state.invalidated_at.is_some_and(|at| sent <= at)
@@ -248,6 +276,7 @@ impl RecordedAnchorCache {
             fetch_started,
             tree_size,
             height,
+            policy,
         });
     }
 
@@ -290,11 +319,12 @@ mod tests {
         let other = Arc::new(dash_sdk::SdkBuilder::new_mock().build().unwrap());
         let cache = RecordedAnchorCache::new();
         assert!(cache.for_sdk(&first).is_some());
-        cache.insert(set(&[1]), FetchStamp::now(), 10, 100);
+        cache.insert(set(&[1]), cache.stamp(), 10, 100);
         assert!(cache.for_sdk(&other).is_none());
         assert_eq!(cache.for_sdk(&first).unwrap().get(10).unwrap().1, 100);
         drop(first);
         assert!(cache.for_sdk(&other).is_none());
+        assert!(cache.get(10).is_none(), "the proving SDK is gone");
     }
 
     #[derive(Default)]
@@ -355,30 +385,26 @@ mod tests {
         let provider = Arc::new(SwitchingProvider::default());
         let sdk = sdk_with(Arc::clone(&provider));
         let cache = RecordedAnchorCache::new();
-        cache
-            .for_sdk(&sdk)
-            .unwrap()
-            .insert(set(&[1]), FetchStamp::now(), 10, 100);
-        assert!(cache.for_sdk(&sdk).unwrap().get(10).is_some());
+        let cache = cache.for_sdk(&sdk).unwrap();
+        cache.insert(set(&[1]), cache.stamp(), 10, 100);
+        assert!(cache.get(10).is_some());
 
         provider.revision.fetch_add(1, Ordering::SeqCst);
 
-        assert!(cache.for_sdk(&sdk).unwrap().get(10).is_none());
+        assert!(cache.get(10).is_none());
     }
 
     #[test]
     fn should_drop_a_set_verified_by_a_replaced_context_provider() {
         let sdk = sdk_with(Arc::new(SwitchingProvider::default()));
         let cache = RecordedAnchorCache::new();
-        cache
-            .for_sdk(&sdk)
-            .unwrap()
-            .insert(set(&[1]), FetchStamp::now(), 10, 100);
+        let cache = cache.for_sdk(&sdk).unwrap();
+        cache.insert(set(&[1]), cache.stamp(), 10, 100);
 
         sdk.set_context_provider(SwitchingProvider::default())
             .unwrap();
 
-        assert!(cache.for_sdk(&sdk).unwrap().get(10).is_none());
+        assert!(cache.get(10).is_none());
     }
 
     #[test]
@@ -387,13 +413,17 @@ mod tests {
         let sdk = sdk_with(Arc::clone(&provider));
         let cache = RecordedAnchorCache::new();
         let cache = cache.for_sdk(&sdk).unwrap();
-        let sent = FetchStamp::now();
+        let sent = cache.stamp();
 
         provider.revision.fetch_add(2, Ordering::SeqCst);
-        assert!(cache.observe_policy(&sdk));
         cache.insert(set(&[1]), sent, 10, 100);
-
         assert!(cache.get(10).is_none());
+
+        cache.insert(set(&[2]), cache.stamp(), 10, 100);
+        assert!(
+            cache.get(10).is_some(),
+            "a fetch sent after the change is stored"
+        );
     }
 
     #[test]
@@ -401,22 +431,47 @@ mod tests {
         let provider = Arc::new(SwitchingProvider::default());
         let sdk = sdk_with(Arc::clone(&provider));
         let cache = RecordedAnchorCache::new();
-        cache
-            .for_sdk(&sdk)
-            .unwrap()
-            .insert(set(&[1]), FetchStamp::now(), 10, 100);
-        let sent = FetchStamp::now();
+        let cache = cache.for_sdk(&sdk).unwrap();
+        cache.insert(set(&[1]), cache.stamp(), 10, 100);
 
         provider.busy.store(true, Ordering::SeqCst);
-        assert!(cache.for_sdk(&sdk).is_none());
+        assert!(cache.get(10).is_none());
+        let sent = cache.stamp();
         provider.busy.store(false, Ordering::SeqCst);
-
-        let cache = cache.for_sdk(&sdk).unwrap();
         cache.insert(set(&[2]), sent, 10, 100);
+
+        let hit = cache.get(10).expect("the earlier set's policy still holds");
+        assert!(hit.0.contains(&[1; 32]) && !hit.0.contains(&[2; 32]));
+    }
+
+    #[test]
+    fn should_never_cache_against_a_mutex_wrapped_provider() {
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_context_provider_arc(Arc::new(Mutex::new(SwitchingProvider::default())))
+                .build()
+                .unwrap(),
+        );
+        let cache = RecordedAnchorCache::new();
+        let cache = cache.for_sdk(&sdk).unwrap();
+        cache.insert(set(&[1]), cache.stamp(), 10, 100);
         assert!(cache.get(10).is_none());
 
-        cache.insert(set(&[3]), FetchStamp::now(), 10, 100);
-        assert!(cache.get(10).is_some());
+        let plain = sdk_with(Arc::new(SwitchingProvider::default()));
+        let control = RecordedAnchorCache::new();
+        let control = control.for_sdk(&plain).unwrap();
+        control.insert(set(&[1]), control.stamp(), 10, 100);
+        assert!(control.get(10).is_some());
+    }
+
+    #[test]
+    fn should_drop_a_fetch_stamped_before_the_cache_was_bound() {
+        let sdk = sdk_with(Arc::new(SwitchingProvider::default()));
+        let cache = RecordedAnchorCache::new();
+        let sent = cache.stamp();
+        let cache = cache.for_sdk(&sdk).unwrap();
+        cache.insert(set(&[1]), sent, 10, 100);
+        assert!(cache.get(10).is_none());
     }
 
     #[test]
@@ -466,6 +521,7 @@ mod tests {
         let slept = FetchStamp {
             monotonic: Instant::now(),
             wall: SystemTime::now() - Duration::from_secs(3 * 60 * 60),
+            ..FetchStamp::now()
         };
         cache.insert(set(&[1]), slept, 10, 100);
 
@@ -480,6 +536,7 @@ mod tests {
         let future_wall = FetchStamp {
             monotonic: Instant::now(),
             wall: SystemTime::now() + Duration::from_secs(60 * 60),
+            ..FetchStamp::now()
         };
         cache.insert(set(&[1]), future_wall, 10, 100);
 

@@ -23,7 +23,7 @@ use super::activity::{ShieldedActivityKind, ShieldedActivityStatus, ShieldedDire
 use super::activity_recorder::{
     build_pending_entry, changeset_for_entry, non_zero_memo, with_status, LiveEntryParams,
 };
-use super::anchor_cache::{fetch_recorded_anchor_set, FetchStamp, RecordedAnchorCache};
+use super::anchor_cache::{fetch_recorded_anchor_set, RecordedAnchorCache};
 use super::keys::{AccountViewingKeys, OrchardKeySet};
 use super::note_selection::{
     ensure_allowed_denomination, ensure_positive_amount, select_notes_for_denomination,
@@ -3340,9 +3340,7 @@ async fn extract_spends_and_cached_anchor<S: ShieldedStore>(
         return extract_spends_and_recorded_anchor(sdk, store, notes).await;
     };
     select_spends_with_anchor_cache(store, anchor_cache, notes, || async {
-        let fetched = fetch_recorded_anchor_set(sdk).await?;
-        anchor_cache.observe_policy(sdk);
-        Ok(fetched)
+        Ok(fetch_recorded_anchor_set(sdk).await?)
     })
     .await
 }
@@ -3405,7 +3403,7 @@ where
     // Fetch the recorded anchor set OUTSIDE the store lock so the network
     // round-trip doesn't serialize with other store users, and so the lock is
     // held only for the mutually-consistent depth/witness probe below.
-    let fetch_started = FetchStamp::now();
+    let fetch_started = anchor_cache.stamp();
     let (recorded, height) = fetch().await?;
     let recorded = Arc::new(recorded);
     if let Some(tree_size) = tree_size_before_fetch {
@@ -8221,6 +8219,7 @@ mod record_activity_status_tests {
 #[cfg(test)]
 mod select_recorded_spends_tests {
     use super::*;
+    use crate::wallet::shielded::anchor_cache::FetchStamp;
     use crate::wallet::shielded::file_store::FileBackedShieldedStore;
     use dashcore::Network;
     use grovedb_commitment_tree::{ExtractedNoteCommitment, Note, NoteValue, RandomSeed, Rho};
@@ -8817,19 +8816,20 @@ mod select_recorded_spends_tests {
             .expect("save note");
 
         let size = tree_size(&store).await;
+        let sdk = Arc::new(dash_sdk::Sdk::new_mock());
         let cache = RecordedAnchorCache::new();
+        let cache = cache.for_sdk(&sdk).expect("fresh cache binds");
         cache.insert(
             Arc::new([recorded_root].into_iter().collect()),
-            FetchStamp::now(),
+            cache.stamp(),
             size,
             100,
         );
 
-        let sdk = Arc::new(dash_sdk::Sdk::new_mock());
         let to = PlatformAddress::P2pkh([0x22; 20]);
         let prover = crate::wallet::shielded::CachedOrchardProver::new();
         let result = unshield(
-            &sdk, &store, &cache, None, wallet_id, &keys, 0, &to, 1_000, &&prover,
+            &sdk, &store, cache, None, wallet_id, &keys, 0, &to, 1_000, &&prover,
         )
         .await;
 

@@ -235,9 +235,11 @@ pub trait ContextProvider: Send + Sync {
     /// verifies proofs, such as on every
     /// [`set_quorum_mode`](Self::set_quorum_mode), so a caller can tell
     /// whether results verified earlier came from the policy now in force.
-    /// It never blocks; `None` means it could not be read without blocking.
+    /// It never blocks. While it returns `None` no earlier result may be
+    /// reused, and a change made meanwhile must still advance the revision.
     /// The default, `Some(0)`, suits a provider whose policy never changes; a
-    /// provider that overrides `set_quorum_mode` overrides this too.
+    /// provider that overrides `set_quorum_mode` overrides this too, and a
+    /// wrapper whose inner provider can be replaced returns `None`.
     fn policy_revision(&self) -> Option<u64> {
         Some(0)
     }
@@ -416,8 +418,10 @@ where
         lock.quorum_source()
     }
 
+    /// `None`: the provider inside can be replaced without the revision
+    /// changing.
     fn policy_revision(&self) -> Option<u64> {
-        self.try_lock().ok()?.policy_revision()
+        None
     }
 
     fn set_quorum_mode(&self, mode: ContextProviderMode) -> Result<(), ContextProviderError> {
@@ -626,6 +630,7 @@ mod tests {
     /// heights reported verified.
     #[derive(Default)]
     struct FetchingProvider {
+        revision: u64,
         calls: AtomicUsize,
         asked: Mutex<Option<(u32, [u8; 32], u32)>>,
         verified: Mutex<Vec<Verified>>,
@@ -674,6 +679,10 @@ mod tests {
             Ok(1)
         }
 
+        fn policy_revision(&self) -> Option<u64> {
+            Some(self.revision)
+        }
+
         fn network(&self) -> Option<Network> {
             Some(Network::Testnet)
         }
@@ -701,7 +710,10 @@ mod tests {
     /// would let the SDK accept a provider it must refuse.
     #[test]
     fn should_forward_provider_requirements_through_every_wrapper() {
-        let inner = Arc::new(FetchingProvider::default());
+        let inner = Arc::new(FetchingProvider {
+            revision: 7,
+            ..Default::default()
+        });
         let boxed: Arc<Box<dyn ContextProvider>> =
             Arc::new(Box::new(Arc::clone(&inner)) as Box<dyn ContextProvider>);
         let mutex = std::sync::Mutex::new(Arc::clone(&inner));
@@ -710,15 +722,23 @@ mod tests {
             assert_eq!(provider.network(), Some(Network::Testnet));
             assert!(provider.requires_proofs());
         }
+        assert_eq!(inner.policy_revision(), Some(7));
+        assert_eq!(boxed.policy_revision(), Some(7));
     }
 
     #[test]
-    fn should_not_block_reading_the_policy_revision_of_a_held_mutex() {
-        let mutex = Mutex::new(FetchingProvider::default());
-        assert_eq!(mutex.policy_revision(), Some(0));
+    fn should_report_no_policy_revision_through_a_mutex_without_locking_it() {
+        let mutex = Arc::new(Mutex::new(FetchingProvider::default()));
         let held = mutex.lock().unwrap();
-        assert_eq!(mutex.policy_revision(), None);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let reader = {
+            let mutex = Arc::clone(&mutex);
+            std::thread::spawn(move || tx.send(mutex.policy_revision()).unwrap())
+        };
+        let revision = rx.recv_timeout(std::time::Duration::from_secs(5));
         drop(held);
+        reader.join().unwrap();
+        assert_eq!(revision, Ok(None));
     }
 
     /// A provider that does not say where its quorum keys come from is

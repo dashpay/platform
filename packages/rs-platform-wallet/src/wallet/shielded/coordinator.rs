@@ -85,7 +85,7 @@ use tokio::sync::RwLock;
 
 use super::activity::ShieldedActivityStatus;
 use super::activity_recorder::{identity_redrive_output_cmxs, IdentityRecoveryError};
-use super::anchor_cache::{FetchStamp, RecordedAnchorCache};
+use super::anchor_cache::RecordedAnchorCache;
 use super::balance::{
     ShieldedBalanceSource, ShieldedLocalBalanceSnapshot, ShieldedLocalBalanceState,
 };
@@ -1777,12 +1777,12 @@ impl NetworkShieldedCoordinator {
                 &*store,
                 subwallets.iter().map(|(id, _)| id.wallet_id),
             );
+            if stale.is_empty() && journal.is_empty() {
+                return None;
+            }
             let tree_bounds = heightless_tree_bounds(&*store, &stale, &journal);
             (stale, journal, tree_bounds, store.tree_size().ok())
         };
-        if stale.is_empty() && journal.is_empty() {
-            return None;
-        }
 
         use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
         // The pool's leaf count, read before the anchor set so that it is
@@ -1816,12 +1816,11 @@ impl NetworkShieldedCoordinator {
             }
             None => None,
         };
-        let fetch_started = FetchStamp::now();
+        let fetch_started = self.anchor_cache.stamp();
         match dash_sdk::query_types::ShieldedAnchors::fetch_current_with_metadata(&self.sdk).await {
             Ok((dash_sdk::query_types::ShieldedAnchors(anchors), metadata)) => {
                 let recorded: HashSet<[u8; 32]> = anchors.into_iter().collect();
                 if let Some(tree_size) = tree_size {
-                    self.anchor_cache.observe_policy(&self.sdk);
                     self.anchor_cache.insert(
                         Arc::new(recorded.clone()),
                         fetch_started,
@@ -4951,7 +4950,7 @@ mod tests {
         // reservation's anchor; Platform's current set (the mock) does not.
         coordinator.anchor_cache().insert(
             Arc::new([[0xAB; 32]].into_iter().collect()),
-            FetchStamp::now(),
+            coordinator.anchor_cache().stamp(),
             tree_size,
             100,
         );
@@ -5009,7 +5008,7 @@ mod tests {
         let coordinator = coordinator_with_one_wallet(&dir).await;
         coordinator.anchor_cache().insert(
             Arc::new([[0x5C; 32]].into_iter().collect()),
-            FetchStamp::now(),
+            coordinator.anchor_cache().stamp(),
             0,
             100,
         );
