@@ -18,6 +18,9 @@ use dash_sdk::platform::transition::update_identity_key_limits::{
 };
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::{
+    IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
+};
 use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
@@ -148,17 +151,14 @@ impl IdentityWallet {
         preview_key_limits_update(&identity, key_id, add_budget, expires_at, signer)
     }
 
-    /// The identity as the wallet holds it.
+    /// The identity as this handle's wallet generation holds it: a wallet removed and
+    /// imported again under the same id is another generation and is not read.
     async fn held_identity(
         &self,
         identity_id: &Identifier,
     ) -> Result<Identity, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
-        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-            PlatformWalletError::WalletNotFound(
-                "Wallet info not found in wallet manager".to_string(),
-            )
-        })?;
+        let info = self.current_wallet_info(&wm)?;
         info.identity_manager
             .identity(identity_id)
             .map(|m| m.identity.clone())
@@ -171,11 +171,6 @@ impl IdentityWallet {
     /// [`Self::preview_identity_key_limits_update`] refuses it: a disabled key, a limit the
     /// key does not have, a zero top-up, an expiry that is not later.
     ///
-    /// `reviewed` is the preview the caller showed for these arguments. When given, the update
-    /// is refused, before a nonce is taken or anything is signed, if what it would sign now
-    /// differs from it: the held identity moved in between (a refresh, another update), so the
-    /// absolute limits or the signing key are no longer the ones the user saw.
-    ///
     /// Signing is routed through the supplied `&S: Signer<IdentityPublicKey>`, which must hold
     /// the identity's MASTER key or a CRITICAL authentication key without limits and without
     /// contract bounds. No identity revision is claimed or bumped, so the cached identity only
@@ -183,15 +178,15 @@ impl IdentityWallet {
     ///
     /// Resolves to the key as stored after the update, which is also laid over the cached
     /// identity and upserted through the persister, as
-    /// [`Self::update_identity_with_external_signer`] does for an added key.
-    #[allow(clippy::too_many_arguments)]
+    /// [`Self::update_identity_with_external_signer`] does for an added key. A client that
+    /// showed a preview first signs with
+    /// [`Self::update_identity_key_limits_as_reviewed_with_external_signer`] instead.
     pub async fn update_identity_key_limits_with_external_signer<S>(
         &self,
         identity_id: &Identifier,
         key_id: KeyID,
         add_budget: Option<Credits>,
         expires_at: Option<TimestampMillis>,
-        reviewed: Option<&IdentityKeyLimitsUpdatePreview>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<IdentityPublicKey, PlatformWalletError>
@@ -199,9 +194,55 @@ impl IdentityWallet {
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
         let identity = self.held_identity(identity_id).await?;
+        let preview = preview_to_submit(&identity, key_id, add_budget, expires_at, None, signer)?;
+        self.submit_key_limits_update(identity, identity_id, key_id, preview, signer, settings)
+            .await
+    }
 
-        let preview =
-            preview_to_submit(&identity, key_id, add_budget, expires_at, reviewed, signer)?;
+    /// Raise the limits of the key `key_id` of `identity_id` to exactly what `reviewed` shows:
+    /// the preview [`Self::preview_identity_key_limits_update`] returned and the user saw. The
+    /// update signs that new total, that expiry and that signing key, or nothing: when the held
+    /// identity moved since the review (a refresh, another update), so that the same change
+    /// would now sign other limits or another key, it is refused before a nonce is taken.
+    /// Preview again and show the new values.
+    pub async fn update_identity_key_limits_as_reviewed_with_external_signer<S>(
+        &self,
+        identity_id: &Identifier,
+        key_id: KeyID,
+        reviewed: &IdentityKeyLimitsUpdatePreview,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<IdentityPublicKey, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
+        let identity = self.held_identity(identity_id).await?;
+        let (add_budget, expires_at) = reviewed_change(key_id, reviewed)?;
+        let preview = preview_to_submit(
+            &identity,
+            key_id,
+            add_budget,
+            expires_at,
+            Some(reviewed),
+            signer,
+        )?;
+        self.submit_key_limits_update(identity, identity_id, key_id, preview, signer, settings)
+            .await
+    }
+
+    /// Sign and send what `preview` describes, then lay the proved key over the cached one.
+    async fn submit_key_limits_update<S>(
+        &self,
+        identity: Identity,
+        identity_id: &Identifier,
+        key_id: KeyID,
+        preview: IdentityKeyLimitsUpdatePreview,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<IdentityPublicKey, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
         let signing_key = identity.public_keys().get(&preview.signing_key_id);
 
         let updated_key = identity
@@ -216,23 +257,23 @@ impl IdentityWallet {
             )
             .await?;
 
-        // Post-broadcast local apply: the cached key carries the raised limits and the
-        // client's key row follows through the persister.
+        // Post-broadcast local apply, fenced to this handle's wallet generation. A refresh
+        // may have folded a later state of the key (a further raise, a disable) while this
+        // update waited for its proof, so the proved key is merged into the held one rather
+        // than laid over it; the client's key row follows through the persister.
         {
             let mut wm = self.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
+            let info = self.current_wallet_info_mut(&mut wm)?;
             if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                managed
-                    .replace_key(updated_key.clone(), &self.persister)
-                    .map_err(|e| {
-                        PlatformWalletError::Persistence(format!(
-                            "identity key not persisted after the key limits update: {e}"
-                        ))
-                    })?;
+                let merged = merge_proved_key(
+                    managed.identity.public_keys().get(&key_id),
+                    updated_key.clone(),
+                );
+                managed.replace_key(merged, &self.persister).map_err(|e| {
+                    PlatformWalletError::Persistence(format!(
+                        "identity key not persisted after the key limits update: {e}"
+                    ))
+                })?;
             }
         }
 
@@ -240,13 +281,54 @@ impl IdentityWallet {
     }
 }
 
+/// The change a reviewed preview stands for: the budget to add (its new total less the total
+/// the key carried) and the new expiry. A preview that sets neither raises nothing.
+fn reviewed_change(
+    key_id: KeyID,
+    reviewed: &IdentityKeyLimitsUpdatePreview,
+) -> Result<(Option<Credits>, Option<TimestampMillis>), PlatformWalletError> {
+    let add_budget = reviewed
+        .new_total_budget
+        .map(|new_total| {
+            reviewed
+                .current_total_budget
+                .and_then(|current| new_total.checked_sub(current))
+                .ok_or_else(|| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "the reviewed preview of key {key_id} sets a total budget it does not raise"
+                    ))
+                })
+        })
+        .transpose()?;
+    Ok((add_budget, reviewed.new_expires_at))
+}
+
+/// The key to hold after a key limits update proved `proved`, given the key the cache holds
+/// now. Limits only go up and a disable is permanent, so a later state the cache took in
+/// while the update waited for its proof (a further raise, a disable) is kept: the higher
+/// of each limit, and the cache's disable when it has one.
+fn merge_proved_key(
+    held: Option<&IdentityPublicKey>,
+    proved: IdentityPublicKey,
+) -> IdentityPublicKey {
+    let Some(held) = held else {
+        return proved;
+    };
+    let total_budget = held.total_budget().max(proved.total_budget());
+    let expires_at = held.expires_at().max(proved.expires_at());
+    let mut merged = proved.with_limits(total_budget, expires_at);
+    if let Some(disabled_at) = held.disabled_at() {
+        if merged.disabled_at().is_none() {
+            merged.set_disabled_at(disabled_at);
+        }
+    }
+    merged
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use dpp::address_funds::AddressWitness;
-    use dpp::identity::identity_public_key::accessors::v0::{
-        IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
-    };
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
@@ -483,6 +565,55 @@ mod tests {
             matches!(result, Err(PlatformWalletError::InvalidIdentityData(_))),
             "{result:?}"
         );
+    }
+
+    #[test]
+    fn should_derive_the_change_a_reviewed_preview_stands_for() {
+        let reviewed = preview_key_limits_update(
+            &identity(),
+            4,
+            Some(500),
+            Some(EXPIRES_AT + 1),
+            &master_signer(),
+        )
+        .expect("expected a raise of both limits");
+        assert!(matches!(
+            reviewed_change(4, &reviewed),
+            Ok((Some(500), Some(expires))) if expires == EXPIRES_AT + 1
+        ));
+
+        let lowered = IdentityKeyLimitsUpdatePreview {
+            new_total_budget: Some(10),
+            ..reviewed
+        };
+        assert!(matches!(
+            reviewed_change(4, &lowered),
+            Err(PlatformWalletError::InvalidIdentityData(_))
+        ));
+    }
+
+    #[test]
+    fn should_keep_a_later_raise_or_disable_when_a_delayed_proof_is_applied() {
+        let proved =
+            authentication_key(2, SecurityLevel::HIGH).with_limits(Some(1_500), Some(EXPIRES_AT));
+        // The cache took a further raise and a disable while the proof was on its way.
+        let mut held = authentication_key(2, SecurityLevel::HIGH)
+            .with_limits(Some(2_000), Some(EXPIRES_AT + 5));
+        held.set_disabled_at(7);
+        let merged = merge_proved_key(Some(&held), proved.clone());
+        assert_eq!(merged.total_budget(), Some(2_000));
+        assert_eq!(merged.expires_at(), Some(EXPIRES_AT + 5));
+        assert_eq!(merged.disabled_at(), Some(7));
+
+        // An older held key takes the proved limits.
+        let older = authentication_key(2, SecurityLevel::HIGH)
+            .with_limits(Some(1_000), Some(EXPIRES_AT - 5));
+        let merged = merge_proved_key(Some(&older), proved.clone());
+        assert_eq!(merged.total_budget(), Some(1_500));
+        assert_eq!(merged.expires_at(), Some(EXPIRES_AT));
+        assert_eq!(merged.disabled_at(), None);
+
+        assert_eq!(merge_proved_key(None, proved.clone()), proved);
     }
 
     #[test]

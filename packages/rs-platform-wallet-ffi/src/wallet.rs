@@ -31,9 +31,11 @@ pub unsafe extern "C" fn platform_wallet_refresh_identity_balance(
 
 /// Fetch a managed identity from Platform with a proof and fold it into the
 /// wallet, as `IdentityWallet::refresh_identity` does: keys added or changed
-/// on another client are taken in, a node behind the cache cannot roll back
-/// an update the cache already holds, and every changed key row reaches the
-/// host through the persistence changeset.
+/// on another client are taken in, and a node behind the cache cannot roll
+/// back an update the cache already holds. The changed key rows are handed
+/// to the host's persister; as for every refresh, a failed store is logged
+/// rather than returned, so success here means the wallet's copy is current,
+/// not that the host stored every row.
 ///
 /// # Safety
 /// `identity_id` points to 32 readable bytes. `handle` must refer to a live

@@ -146,11 +146,9 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_key_limits_update(
 /// that is not later are refused before anything is signed, since Platform
 /// would refuse them and charge for it.
 ///
-/// `reviewed_preview` may be null. When it points to the preview
-/// [`platform_wallet_preview_identity_key_limits_update`] returned for the
-/// same arguments and the caller showed, the update is refused before a
-/// nonce is taken or anything is signed if what it would sign now differs
-/// (the wallet's identity moved in between).
+/// A client that showed a preview first signs with
+/// [`platform_wallet_update_identity_key_limits_as_reviewed_with_signer`]
+/// instead, which signs exactly what that preview showed or nothing.
 ///
 /// The cached identity carries the key as stored after the update, and the
 /// client's key row follows through the persistence changeset, as an
@@ -165,7 +163,6 @@ pub unsafe extern "C" fn platform_wallet_update_identity_key_limits_with_signer(
     add_budget: u64,
     has_expires_at: bool,
     expires_at: u64,
-    reviewed_preview: *const IdentityKeyLimitsUpdatePreviewFFI,
     signer_handle: *mut SignerHandle,
 ) -> PlatformWalletFFIResult {
     check_ptr!(signer_handle);
@@ -181,9 +178,6 @@ pub unsafe extern "C" fn platform_wallet_update_identity_key_limits_with_signer(
     let add_budget = has_add_budget.then_some(add_budget);
     let expires_at = has_expires_at.then_some(expires_at);
 
-    let reviewed: Option<IdentityKeyLimitsUpdatePreview> =
-        reviewed_preview.as_ref().map(|preview| (*preview).into());
-
     let signer_addr = signer_handle as usize;
 
     // Run outside the registry guard, as the preview does: signing calls back into the host.
@@ -194,13 +188,50 @@ pub unsafe extern "C" fn platform_wallet_update_identity_key_limits_with_signer(
         let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
         identity_wallet
             .update_identity_key_limits_with_external_signer(
-                &id,
-                key_id,
-                add_budget,
-                expires_at,
-                reviewed.as_ref(),
-                signer,
-                None,
+                &id, key_id, add_budget, expires_at, signer, None,
+            )
+            .await
+    });
+    unwrap_result_or_return!(result);
+    PlatformWalletFFIResult::ok()
+}
+
+/// Raise the limits of the key `key_id` of the identity to exactly what
+/// `reviewed_preview` shows: the preview
+/// [`platform_wallet_preview_identity_key_limits_update`] returned for the
+/// change and the caller showed. The update signs that new total, that
+/// expiry and that signing key, or nothing: when the wallet's identity
+/// moved since the preview, so the same change would now sign other limits
+/// or another key, it is refused before a nonce is taken or anything is
+/// signed. Preview again and show the new values.
+///
+/// The cached identity carries the key as stored after the update, and the
+/// client's key row follows through the persistence changeset.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_update_identity_key_limits_as_reviewed_with_signer(
+    wallet_handle: Handle,
+    identity_id: *const u8,
+    key_id: u32,
+    reviewed_preview: *const IdentityKeyLimitsUpdatePreviewFFI,
+    signer_handle: *mut SignerHandle,
+) -> PlatformWalletFFIResult {
+    check_ptr!(reviewed_preview);
+    check_ptr!(signer_handle);
+
+    let id = unwrap_result_or_return!(read_identifier(identity_id));
+    let reviewed: IdentityKeyLimitsUpdatePreview = (*reviewed_preview).into();
+
+    let signer_addr = signer_handle as usize;
+
+    // Run outside the registry guard, as the preview does: signing calls back into the host.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity_wallet = unwrap_option_or_return!(option);
+    let result = block_on_worker(async move {
+        let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+        identity_wallet
+            .update_identity_key_limits_as_reviewed_with_external_signer(
+                &id, key_id, &reviewed, signer, None,
             )
             .await
     });
@@ -276,6 +307,32 @@ mod tests {
         // no change at all, so it reaches the wallet lookup.
         assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
         assert_eq!(out, IdentityKeyLimitsUpdatePreviewFFI::default());
+    }
+
+    #[test]
+    fn should_refuse_a_reviewed_update_without_a_preview_or_a_signer() {
+        let identity_id = [1u8; 32];
+        let preview = IdentityKeyLimitsUpdatePreviewFFI::default();
+        let result = unsafe {
+            platform_wallet_update_identity_key_limits_as_reviewed_with_signer(
+                Handle::MAX,
+                identity_id.as_ptr(),
+                2,
+                std::ptr::null(),
+                unreachable_signer(),
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        let result = unsafe {
+            platform_wallet_update_identity_key_limits_as_reviewed_with_signer(
+                Handle::MAX,
+                identity_id.as_ptr(),
+                2,
+                &preview,
+                std::ptr::null_mut(),
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
     }
 
     #[test]

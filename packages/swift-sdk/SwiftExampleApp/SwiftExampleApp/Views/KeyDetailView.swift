@@ -16,8 +16,8 @@ struct KeyDetailView: View {
     /// What Platform says is left of this key's budget, with the total
     /// budget the screen showed when it asked. `.some(nil)` means the node
     /// answered that the key carries no budget. A reading taken for another
-    /// total is not shown, so a raised total is never set against what was
-    /// left before the raise.
+    /// total is not shown. The answer may lag a block behind the total, so
+    /// no figure is derived from the two (a "spent" row would mix them).
     @State private var remainingReading: (forTotal: UInt64, remaining: UInt64?)?
     @State private var remainingBudgetError: String?
     @State private var isLoadingRemainingBudget = false
@@ -240,16 +240,6 @@ struct KeyDetailView: View {
                     } else {
                         Text("Unknown")
                             .foregroundColor(.secondary)
-                    }
-                }
-                if !isLoadingRemainingBudget,
-                   let remaining = remainingBudget(for: totalBudget),
-                   remaining <= totalBudget {
-                    HStack {
-                        Text("Spent")
-                        Spacer()
-                        Text(KeyLimitsFormatting.dash(totalBudget - remaining))
-                            .fontWeight(.medium)
                     }
                 }
                 if let error = remainingBudgetError {

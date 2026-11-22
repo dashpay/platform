@@ -14,8 +14,9 @@ import SwiftUI
 /// latest preview for the current inputs succeeded, and it hands that
 /// preview back to Rust, which refuses to sign anything other than what it
 /// shows. When the sheet opens, the wallet's copy of the identity is first
-/// refreshed from Platform (best effort), so the preview starts from the
-/// chain rather than from an older copy.
+/// refreshed from Platform with a proof, and nothing is offered until that
+/// succeeds, so the preview starts from the chain rather than from an older
+/// or locally restored copy.
 struct UpdateKeyLimitsView: View {
     let identity: PersistentIdentity
     let publicKey: IdentityPublicKey
@@ -76,8 +77,6 @@ struct UpdateKeyLimitsView: View {
     /// further submission is offered from this sheet, since a second one
     /// against the same reviewed limits could only be refused, for a fee.
     @State private var outcomeUnknown = false
-    /// Why the opening refresh from Platform failed, when it did.
-    @State private var refreshNote: String?
 
     var body: some View {
         NavigationStack {
@@ -140,11 +139,6 @@ struct UpdateKeyLimitsView: View {
             }
             LabeledContent("Signed by", value: "Key #\(current.signingKeyId)")
                 .accessibilityIdentifier("keyLimits.update.signingKey")
-            if let refreshNote {
-                Text(refreshNote)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
         }
     }
 
@@ -323,13 +317,19 @@ struct UpdateKeyLimitsView: View {
     @MainActor
     private func loadGate() async {
         // Start from the chain: a key added or raised on another client is
-        // otherwise unknown to, or stale in, the wallet's copy.
-        if case .answered(let wallet) = resolveWallet() {
+        // otherwise unknown to, or stale in, the wallet's copy, and a copy
+        // restored from local rows must not choose the signing key.
+        switch resolveWallet() {
+        case .answered(let wallet):
             do {
                 try await wallet.refreshIdentity(identityId: identity.identityId)
             } catch {
-                refreshNote = "Could not refresh from Platform (\(error.localizedDescription)); showing the wallet's copy."
+                gate = .refused("Could not read this identity from Platform: \(error.localizedDescription). Close the sheet and try again when the network is reachable.")
+                return
             }
+        case .refused(let message):
+            gate = .refused(message)
+            return
         }
         switch await preview(addBudget: nil, expiresAt: nil) {
         case .answered(let current):
@@ -367,7 +367,8 @@ struct UpdateKeyLimitsView: View {
             return
         }
         let result = await preview(addBudget: inputs.addBudget, expiresAt: inputs.expiresAt)
-        guard !Task.isCancelled else { return }
+        // Only an answer for what the form shows now may replace the current one.
+        guard !Task.isCancelled, inputs == self.inputs else { return }
         switch result {
         case .answered(let preview):
             inputPreview = .ready(preview, for: inputs)
@@ -400,9 +401,7 @@ struct UpdateKeyLimitsView: View {
             try await wallet.updateIdentityKeyLimits(
                 identityId: identity.identityId,
                 keyId: publicKey.id,
-                addBudget: change.addBudget,
-                expiresAt: change.expiresAt,
-                reviewedPreview: reviewed,
+                asReviewed: reviewed,
                 signer: signer
             )
             _ = signer  // keepalive: see KeychainSigner lifetime contract.
@@ -417,10 +416,13 @@ struct UpdateKeyLimitsView: View {
                 submitError = "\(error.localizedDescription)\nThe update may have landed. Close this sheet and check the key before trying again."
                 return
             }
-            // Preview the same inputs again: if the wallet's copy moved
-            // (the update landed but was not stored, or another client
-            // raised the key), the sheet shows what would be signed now.
-            await previewInputs(change)
+            // Preview again if the form still shows what was submitted: if
+            // the wallet's copy moved (the update landed but was not stored,
+            // or another client raised the key), the sheet shows what would
+            // be signed now. An edit made meanwhile has its own preview.
+            if change == inputs {
+                await previewInputs(change)
+            }
             return
         }
 

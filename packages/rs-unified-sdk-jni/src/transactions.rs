@@ -327,7 +327,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
                 add_budget as u64,
                 has_expires_at,
                 expires_at as u64,
-                std::ptr::null(),
                 signer_handle as *mut SignerHandle,
             )
         };
