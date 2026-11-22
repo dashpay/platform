@@ -32,7 +32,17 @@ final class WalletDrainCoordinator: ObservableObject {
         /// when the read failed or named none, so the row offers no spend.
         let outpoint: WalletDrainOutpoint?
         let readError: String?
+        /// `false` until a status read for this operation has finished,
+        /// successfully or not. A stored marker is listed before that (its
+        /// lock is already hidden from the generic list), as a row that
+        /// says its status is being checked and offers no spend.
+        let statusRead: Bool
         var id: UUID { record.operationId }
+
+        /// A stored marker no status read has reported on yet.
+        static func unread(_ record: WalletDrainOperationRecord) -> Entry {
+            Entry(record: record, outpoint: nil, readError: nil, statusRead: false)
+        }
     }
 
     /// What one status read produced.
@@ -62,7 +72,8 @@ final class WalletDrainCoordinator: ObservableObject {
         case checkAgain
     }
 
-    /// Unfinished operations with their last reported state.
+    /// Every stored marker, on every network, with its last reported state
+    /// (`statusRead == false` before any read has reported on it).
     @Published private(set) var unfinished: [Entry] = []
     /// Every operation id with a stored marker, read or not yet read.
     @Published private(set) var markedOperationIds: Set<UUID> = []
@@ -223,11 +234,17 @@ final class WalletDrainCoordinator: ObservableObject {
                     latest[id] = Entry(
                         record: record,
                         outpoint: nil,
-                        readError: "Could not clear the finished marker: \(error.localizedDescription)"
+                        readError: "Could not clear the finished marker: \(error.localizedDescription)",
+                        statusRead: true
                     )
                 }
             case .keep:
-                latest[id] = Entry(record: record, outpoint: outpoint, readError: readError)
+                latest[id] = Entry(
+                    record: record,
+                    outpoint: outpoint,
+                    readError: readError,
+                    statusRead: true
+                )
             }
         }
         refreshFromStore()
@@ -270,7 +287,7 @@ final class WalletDrainCoordinator: ObservableObject {
         }
         switch result {
         case .started(let controller, _):
-            latest[record.operationId] = Entry(record: record, outpoint: nil, readError: nil)
+            // Listed as unread until the reconcile after the attempt reads it.
             refreshFromStore()
             return .started(controller)
         case .blockedByOtherWalletFunding(let blocker):
@@ -398,8 +415,11 @@ final class WalletDrainCoordinator: ObservableObject {
         let ids = Set(records.map(\.operationId))
         latest = latest.filter { ids.contains($0.key) }
         markedOperationIds = ids
+        // Every marker is listed, read or not: `markedOperationIds` already
+        // hides its lock from the generic list, so dropping an unread one
+        // would hide the transfer everywhere until a read reports on it.
         unfinished = records
             .sorted { $0.createdAt < $1.createdAt }
-            .compactMap { latest[$0.operationId] }
+            .map { latest[$0.operationId] ?? .unread($0) }
     }
 }

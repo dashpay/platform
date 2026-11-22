@@ -1,6 +1,28 @@
 import Foundation
 import SwiftDashSDK
 
+/// Outpoint of the asset lock a fresh fixed-amount shield built, so its
+/// progress follows that exact lock rather than any untagged row.
+///
+/// Filled synchronously by the SDK's `onAssetLockBuilt` handler, on the
+/// FFI worker thread, before the lock's row is persisted; read on the main
+/// actor. Hence the lock: a hop to the main actor could let the row arrive
+/// before the outpoint.
+final class BuiltOutPointRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: String?
+
+    func record(_ outPointHex: String) {
+        lock.withLock { recorded = outPointHex }
+    }
+
+    /// `PersistentAssetLock.outPointHex` of the built lock, `nil` until
+    /// the lock is built.
+    var outPointHex: String? {
+        lock.withLock { recorded }
+    }
+}
+
 /// Per-slot state owned by a single shielded fund-from-asset-lock
 /// attempt.
 ///
@@ -87,6 +109,14 @@ final class ShieldedFundFromAssetLockController: ObservableObject {
     /// `submit` would otherwise silently drop (two resumable locks
     /// normally share the wallet's default shielded recipient).
     private(set) var operationId: String?
+
+    /// For a fresh fixed-amount shield (`"shield:..."`), where the SDK
+    /// reports the outpoint of the lock this operation built; the progress
+    /// matches only that row. `nil` for drains and resumes, which name
+    /// their lock in `operationId`. Not published: the recorder is filled
+    /// before the lock's row is inserted, and that insertion re-renders the
+    /// progress section through its `@Query`.
+    var builtOutPoint: BuiltOutPointRecorder?
 
     /// Active funding task. Holds a reference so the coordinator's
     /// stash retains the work until completion; cancellation isn't

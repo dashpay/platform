@@ -839,6 +839,8 @@ struct ShieldedFundFromAssetLockView: View {
         // re-tap of the SAME lock still rebinds).
         let operationId: String
         let body: () async throws -> Void
+        // Set for a fresh shield only: a resume names its lock in its id.
+        var builtOutPoint: BuiltOutPointRecorder?
         if let lock = resumeFromLock {
             guard let parsed = parseOutPoint(lock.outPointHex) else {
                 submitError = SubmitError(
@@ -863,6 +865,11 @@ struct ShieldedFundFromAssetLockView: View {
                 let duffs = parsedDuffs
             else { return }
             operationId = "shield:\(UUID().uuidString)"
+            // A fresh lock carries no operation id, so its outpoint, which
+            // the SDK reports before persisting the row, is the only thing
+            // that ties the row to this attempt.
+            let recorder = BuiltOutPointRecorder()
+            builtOutPoint = recorder
             body = {
                 try await manager.shieldedFundFromAssetLock(
                     walletId: walletId,
@@ -870,7 +877,8 @@ struct ShieldedFundFromAssetLockView: View {
                     amountDuffs: duffs,
                     recipients: [
                         ShieldedFundFromAssetLockRecipient(recipientRaw43: recipient)
-                    ]
+                    ],
+                    onAssetLockBuilt: { recorder.record($0.outPointHex) }
                 )
             }
         }
@@ -892,7 +900,14 @@ struct ShieldedFundFromAssetLockView: View {
             operationId: operationId,
             body: body
         ) {
-        case .started(let controller, _):
+        case .started(let controller, let bodyScheduled):
+            // Only when this call's body runs: a re-presented controller
+            // keeps the recorder of the body it ran. The body cannot have
+            // started yet: the controller's task is scheduled on the main
+            // actor, which this code holds until it returns.
+            if bodyScheduled, let builtOutPoint {
+                controller.builtOutPoint = builtOutPoint
+            }
             activeController = controller
             activePhase = controller.phase
         case .blockedByOtherWalletFunding(let blocker):

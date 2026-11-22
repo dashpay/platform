@@ -8,7 +8,6 @@ import SwiftDashSDK
 protocol ShieldedProgressLockRow {
     var outPointHex: String { get }
     var operationId: Data? { get }
-    var createdAt: Date { get }
 }
 
 extension PersistentAssetLock: ShieldedProgressLockRow {}
@@ -142,10 +141,13 @@ struct ShieldedFundFromAssetLockProgressSection: View {
     // MARK: - Lock selection
 
     /// This controller's lock among the wallet's shielded top-up rows.
+    /// The recorder is read on every render; it is filled before the
+    /// lock's row is inserted, and that insertion updates `activeLocks`,
+    /// so no extra publishing is needed to pick the row up.
     private var activeLock: PersistentAssetLock? {
         Self.matchingLock(
             controllerOperationId: controller.operationId,
-            submittedAt: controller.lastSubmittedAt,
+            builtOutPointHex: controller.builtOutPoint?.outPointHex,
             newestFirst: activeLocks
         )
     }
@@ -153,20 +155,20 @@ struct ShieldedFundFromAssetLockProgressSection: View {
     /// Picks the row that belongs to a controller's operation id:
     /// `"drain:<uuid>"` matches the row whose `operationId` bytes are that
     /// UUID, `"resume:<outPointHex>"` the row with that outpoint, and
-    /// anything else (a fresh `"shield:..."`) the newest row without an
-    /// operation id created at or after `submittedAt`. An untagged row
-    /// carries nothing that ties it to an attempt, so only its creation
-    /// time can: an older one (say a RecoveredFromChain lock) would put a
-    /// shield that has built nothing yet on the shield step. `nil` when
+    /// anything else (a fresh `"shield:..."`) only the row at
+    /// `builtOutPointHex`, the outpoint the SDK reported for the lock this
+    /// attempt built. An untagged row carries nothing else that ties it to
+    /// an attempt: neither recency nor creation time does, since a
+    /// historical lock first stored during catch-up is new too. `nil` when
     /// nothing matches, which the steps read as "no lock yet"; another
     /// operation's row is never borrowed.
     nonisolated static func matchingLock<R: ShieldedProgressLockRow>(
         controllerOperationId: String?,
-        submittedAt: Date?,
+        builtOutPointHex: String?,
         newestFirst rows: [R]
     ) -> R? {
         guard let controllerOperationId else {
-            return freshShieldLock(submittedAt: submittedAt, newestFirst: rows)
+            return builtLock(builtOutPointHex: builtOutPointHex, newestFirst: rows)
         }
         if controllerOperationId.hasPrefix(WalletDrainCoordinator.controllerOperationIdPrefix) {
             guard let drainId = WalletDrainCoordinator.drainOperationId(
@@ -182,17 +184,17 @@ struct ShieldedFundFromAssetLockProgressSection: View {
             let outPointHex = String(controllerOperationId.dropFirst(resumePrefix.count))
             return rows.first { $0.outPointHex == outPointHex }
         }
-        return freshShieldLock(submittedAt: submittedAt, newestFirst: rows)
+        return builtLock(builtOutPointHex: builtOutPointHex, newestFirst: rows)
     }
 
-    /// The newest untagged row created by the attempt submitted at
-    /// `submittedAt`; none before the controller has submitted.
-    nonisolated private static func freshShieldLock<R: ShieldedProgressLockRow>(
-        submittedAt: Date?,
+    /// The row at the outpoint the attempt's lock was built with; none
+    /// before the SDK has reported one (step 1).
+    nonisolated private static func builtLock<R: ShieldedProgressLockRow>(
+        builtOutPointHex: String?,
         newestFirst rows: [R]
     ) -> R? {
-        guard let submittedAt else { return nil }
-        return rows.first { $0.operationId == nil && $0.createdAt >= submittedAt }
+        guard let builtOutPointHex else { return nil }
+        return rows.first { $0.outPointHex == builtOutPointHex }
     }
 
     // MARK: - Step computation

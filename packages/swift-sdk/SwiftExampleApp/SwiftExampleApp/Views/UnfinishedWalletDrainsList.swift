@@ -42,7 +42,12 @@ struct UnfinishedWalletDrainsList: View {
 
     @ViewBuilder
     private var content: some View {
-        let entries = drainCoordinator.unfinished.filter { $0.record.walletId == walletId }
+        // `unfinished` holds every network's markers, and reconcile reads only
+        // the current network's, so another network's would stay unread here.
+        let networkRaw = platformState.currentNetwork.rawValue
+        let entries = drainCoordinator.unfinished.filter {
+            $0.record.walletId == walletId && $0.record.networkRaw == networkRaw
+        }
         if !entries.isEmpty || drainCoordinator.storeError != nil {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -208,6 +213,15 @@ private struct DrainRowContent: View {
                     Text(readError)
                         .font(.caption)
                         .foregroundColor(.red)
+                }
+                // No read has reported yet, so there is no outpoint and the
+                // row offers no Resume. Check again stays: if no reconcile
+                // reaches this marker, it is the only way to read it.
+                if !entry.statusRead && action != .inProgress {
+                    Text("Checking status…")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .accessibilityIdentifier("walletDetail.unfinishedMaxTransfer.checkingStatus")
                 }
             }
             Spacer(minLength: 8)
