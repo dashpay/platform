@@ -8899,9 +8899,13 @@ mod tests {
         use platform_wallet::wallet::shielded::{FileBackedShieldedStore, ShieldedStore};
         use std::ffi::CString;
 
-        /// Destroys the manager when dropped, on a failed assertion too:
-        /// before the host its persister borrows, and before the store's
-        /// directory.
+        /// Releases the reference to the host the persister owns.
+        unsafe extern "C" fn release_host(context: *mut c_void) {
+            drop(std::sync::Arc::from_raw(context as *const ScanStateHost));
+        }
+
+        /// Destroys the manager when dropped, on a failed assertion too, and
+        /// before the store's directory.
         struct Destroyed(Handle);
         impl Drop for Destroyed {
             fn drop(&mut self) {
@@ -8909,7 +8913,7 @@ mod tests {
             }
         }
 
-        let host = ScanStateHost::default();
+        let host = std::sync::Arc::new(ScanStateHost::default());
         host.positions
             .lock()
             .unwrap()
@@ -8923,13 +8927,19 @@ mod tests {
             .open_private_payment_journal([42; 32])
             .expect("the journal opened");
 
-        let manager = Destroyed(PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager_with(
-            scan_state_persister(
-                &host,
-                PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
-                scan_state_trio(),
-            ),
-        )));
+        // The persister lives in a manager whose workers may outlast its
+        // destruction, so it owns a reference to the host, released with its
+        // last owner, where the other scan-state tests lend it a local.
+        let mut persister = scan_state_persister(
+            &host,
+            PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+            scan_state_trio(),
+        );
+        persister.callbacks.context =
+            std::sync::Arc::into_raw(std::sync::Arc::clone(&host)) as *mut c_void;
+        persister.callbacks.release_fn = Some(release_host);
+        let manager =
+            Destroyed(PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager_with(persister)));
         let loaded = unsafe { platform_wallet_manager_load_from_persistor(manager.0) };
         assert_eq!(loaded.code, PlatformWalletFFIResultCode::Success);
         assert!(
