@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **32**
+Capabilities tracked: **33**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 18 | 12 | 1 | 1 |
-| Swift | Example app | 5 | 17 | 1 | 9 |
-| Kotlin | SDK | 14 | 14 | 3 | 1 |
-| Kotlin | Example app | 6 | 13 | 3 | 10 |
+| Swift | SDK | 19 | 12 | 1 | 1 |
+| Swift | Example app | 5 | 18 | 1 | 9 |
+| Kotlin | SDK | 14 | 14 | 4 | 1 |
+| Kotlin | Example app | 6 | 13 | 4 | 10 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 10 | 20 |
-| Kotlin | 5 | 8 | 19 |
+| Swift | 2 | 11 | 20 |
+| Kotlin | 5 | 8 | 20 |
 
 ## Capability status
 
@@ -38,6 +38,7 @@ Capabilities tracked: **32**
 | `identity.asset_lock_resume` | supported / partial / required | partial / partial / required |
 | `core.compact_filter_rescan` | supported / partial / not_applicable | partial / partial / not_applicable |
 | `dpns.contested_names_by_identity` | supported / partial / not_applicable | partial / partial / required |
+| `dpns.give_up_name` | supported / partial / required | unsupported / unsupported / not_applicable |
 | `persistence.sync_fault_latch` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
 | `persistence.dashpay_payment_history` | partial / not-applicable / required | not-applicable / not-applicable / not_applicable |
 | `network.masternode_discovery` | partial / not-applicable / not_applicable | partial / not-applicable / not_applicable |

@@ -60,7 +60,7 @@ mod top_up_from_addresses;
 mod transfer;
 mod transfer_to_addresses;
 mod update;
-pub(crate) use key_selection::usable_authentication_key;
+pub(crate) use key_selection::{usable_authentication_key, usable_authentication_key_for_types};
 mod withdrawal;
 pub(crate) use withdrawal::{select_owner_withdrawal_key, select_transfer_withdrawal_key};
 
@@ -127,7 +127,8 @@ pub use dashpay_view::DashPayView;
 pub use discovery::IdentityDiscoveryOptions;
 pub use dpns::{ContestContender, ContestVoteState, ContestWinner};
 pub use dpns_marketplace::{
-    DepartedDpnsName, DpnsDomainState, DpnsMarketplaceSyncSummary, DpnsNameHistoryEvent,
+    DepartedDpnsName, DpnsDomainState, DpnsMarketplaceSyncSummary, DpnsNameGiveUpChoices,
+    DpnsNameGiveUpMethod, DpnsNameGiveUpOutcome, DpnsNameGivenUp, DpnsNameHistoryEvent,
     DpnsNameHistoryEventKind, DpnsPriceChange, FailedDpnsDeparture,
     DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS,
 };
