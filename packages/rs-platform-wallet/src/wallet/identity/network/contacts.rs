@@ -470,7 +470,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// written in the same store round, so the durable marker always names
     /// the request the durable account was built from. Any other backend
     /// gets no marker from this round; the caller stamps it once the account
-    /// is stored (dashpay/platform#4302 review).
+    /// is stored (dashpay/platform#4302 review). A contact's
+    /// `payment_channel_broken` flag is cleared in the same round on every
+    /// backend; where a round may keep the contact row and drop the account,
+    /// the sweep rebuilds an account missing beside a channel no longer
+    /// broken.
     pub async fn register_external_contact_account(
         &self,
         our_identity_id: &Identifier,
@@ -651,9 +655,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 );
                 return Ok(ExternalAccountRegistration::Superseded);
             }
-            Some(contact) if binds_marker => {
+            // The round also clears a broken flag, on any backend: the account
+            // it stores repairs the channel, and a flag stored apart from it
+            // could fail to reach disk, leaving a stored account the sweep
+            // never revisits beside a channel still broken.
+            Some(contact) if binds_marker || contact.payment_channel_broken => {
                 let mut bound = contact.clone();
-                bound.external_account_reference = Some(contact.incoming_request.account_reference);
+                if binds_marker {
+                    bound.external_account_reference =
+                        Some(contact.incoming_request.account_reference);
+                }
+                bound.payment_channel_broken = false;
                 Some(bound)
             }
             Some(_) | None => None,
@@ -711,6 +723,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .and_then(|managed| managed.established_contact_mut(&contact_identity_id))
             {
                 contact.external_account_reference = bound.external_account_reference;
+                contact.payment_channel_broken = false;
             }
         }
 

@@ -4400,12 +4400,18 @@ mod tests {
         );
     }
 
-    /// An earlier version marked the channel broken because Alice disabled the
-    /// key her stored request names, and dropped its queued build. The sweep
-    /// queues the stored request again and the drain builds the account and
-    /// clears the flag, with no new request from Alice.
-    #[tokio::test]
-    async fn should_recover_a_channel_broken_over_a_since_disabled_key() {
+    /// Bob's wallet on `persistence`, holding Alice's stored request in an
+    /// established channel an earlier version marked broken because Alice
+    /// disabled the key the request names, and whose queued build it dropped;
+    /// the sweep has queued the stored request again.
+    async fn broken_channel_over_a_since_disabled_key<P: PlatformWalletPersistence + 'static>(
+        persistence: Arc<P>,
+    ) -> (
+        PlatformWalletManager<P>,
+        Arc<PlatformWallet>,
+        Identity,
+        Identity,
+    ) {
         use crate::broadcaster::SpvBroadcaster;
         use dpp::identity::accessors::IdentitySettersV0;
         let (_entry, received) = alice_to_bob([0x55; 43]).await;
@@ -4415,8 +4421,8 @@ mod tests {
         disabled.set_disabled_at(1_700_000_000_000);
         alice.add_public_key(disabled);
         alice.set_revision(1);
-        let (_manager, bob_wallet) = wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![]).await;
-        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let (manager, bob_wallet) =
+            wallet_on(persistence, BOB_PHRASE, &bob, &[&alice, &bob], vec![]).await;
         let iw = bob_wallet.identity();
         {
             let mut wm = iw.wallet_manager.write().await;
@@ -4454,15 +4460,22 @@ mod tests {
                 .build_contact_accounts(&bob.id(), candidate)
                 .await;
         }
-        iw.dashpay()
-            .drain_pending_contact_crypto_until(&bob_crypto, None)
-            .await;
+        (manager, bob_wallet, bob, alice)
+    }
 
+    /// Whether Bob holds an external account for Alice, and whether his
+    /// channel to her is still marked broken.
+    async fn external_account_and_broken(
+        bob_wallet: &PlatformWallet,
+        bob: &Identity,
+        alice: &Identity,
+    ) -> (bool, bool) {
+        let iw = bob_wallet.identity();
         let wm = iw.wallet_manager.read().await;
         let info = wm
             .get_wallet_info(&bob_wallet.wallet_id())
             .expect("wallet info");
-        assert!(info
+        let has_external = info
             .core_wallet
             .accounts
             .dashpay_external_accounts
@@ -4470,12 +4483,103 @@ mod tests {
                 index: 0,
                 user_identity_id: bob.id().to_buffer(),
                 friend_identity_id: alice.id().to_buffer(),
-            }));
+            });
         let managed = info
             .identity_manager
             .managed_identity(&bob.id())
             .expect("Bob");
-        assert!(!managed.dashpay().established_contacts()[&alice.id()].payment_channel_broken);
+        let broken = managed.dashpay().established_contacts()[&alice.id()].payment_channel_broken;
+        (has_external, broken)
+    }
+
+    /// The drain builds the account from the stored request and clears the
+    /// flag, with no new request from Alice.
+    #[tokio::test]
+    async fn should_recover_a_channel_broken_over_a_since_disabled_key() {
+        let (_manager, bob_wallet, bob, alice) =
+            broken_channel_over_a_since_disabled_key(Arc::new(NoPersistence)).await;
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+
+        bob_wallet
+            .identity()
+            .dashpay()
+            .drain_pending_contact_crypto_until(&bob_crypto, None)
+            .await;
+
+        assert_eq!(
+            external_account_and_broken(&bob_wallet, &bob, &alice).await,
+            (true, false)
+        );
+    }
+
+    /// The recovered account and the cleared flag are stored in one round: a
+    /// failed round leaves both undone and the build queued, and the next drain
+    /// stores the account with the flag cleared, so no write failure leaves a
+    /// stored account beside a flag still broken on disk, which no sweep
+    /// would repair.
+    #[tokio::test]
+    async fn should_store_the_recovered_account_and_the_cleared_flag_in_one_round() {
+        use crate::changeset::{PendingContactCryptoOp, SentContactRequestKey};
+        use key_wallet::account::AccountType;
+        let persistence = RecordingPersistence::attesting(PersistenceCapabilities::NONE);
+        let (_manager, bob_wallet, bob, alice) =
+            broken_channel_over_a_since_disabled_key(Arc::clone(&persistence)).await;
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let dashpay = bob_wallet.identity().dashpay();
+
+        persistence.accounts_fail.store(true, Ordering::SeqCst);
+        dashpay
+            .drain_pending_contact_crypto_until(&bob_crypto, None)
+            .await;
+        assert_eq!(
+            external_account_and_broken(&bob_wallet, &bob, &alice).await,
+            (false, true)
+        );
+        assert!(
+            managed(&bob_wallet, BOB, |managed| {
+                managed
+                    .dashpay()
+                    .pending_contact_crypto
+                    .iter()
+                    .any(|entry| {
+                        matches!(entry.op, PendingContactCryptoOp::RegisterExternal { .. })
+                    })
+            })
+            .await,
+            "the build stays queued"
+        );
+
+        persistence.accounts_fail.store(false, Ordering::SeqCst);
+        dashpay
+            .drain_pending_contact_crypto_until(&bob_crypto, None)
+            .await;
+        assert_eq!(
+            external_account_and_broken(&bob_wallet, &bob, &alice).await,
+            (true, false)
+        );
+        let stored = persistence.stored.lock().expect("stored");
+        let round = stored
+            .iter()
+            .find(|changeset| {
+                changeset.account_registrations.iter().any(|entry| {
+                    matches!(
+                        entry.account_type,
+                        AccountType::DashpayExternalAccount { .. }
+                    )
+                })
+            })
+            .expect("the account was stored");
+        let row = round
+            .contacts
+            .as_ref()
+            .and_then(|contacts| {
+                contacts.established.get(&SentContactRequestKey {
+                    owner_id: bob.id(),
+                    recipient_id: alice.id(),
+                })
+            })
+            .expect("the round stores the contact too");
+        assert!(!row.payment_channel_broken);
     }
 
     /// The store's end as the pass's highest proved total: with chunks of two,
