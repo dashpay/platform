@@ -881,10 +881,10 @@ fn merge_contract_update_payload(
 
     merge_map_section(obj, "documentSchemas", documents)?;
     if let Some(v) = tokens {
-        merge_map_section(obj, "tokens", v)?;
+        merge_map_section(obj, "tokens", canonical_position_keys("tokens", v)?)?;
     }
     if let Some(v) = groups {
-        merge_map_section(obj, "groups", v)?;
+        merge_map_section(obj, "groups", canonical_position_keys("groups", v)?)?;
     }
 
     if let Some(v) = keywords {
@@ -917,6 +917,40 @@ fn merge_contract_update_payload(
     }
 
     Ok(base)
+}
+
+/// Re-key a caller-supplied tokens or groups map by its contract
+/// positions written in canonical decimal form, the form the fetched
+/// contract's section carries.
+///
+/// The contract parser reads a key as a `u16` position, so `"0"` and
+/// `"00"` would name the same token or group, and one of the two
+/// definitions would be dropped without a word. A key that is not a
+/// position, or two keys naming one position, is refused instead. A
+/// value that is not an object is left for `merge_map_section` to
+/// judge.
+fn canonical_position_keys(
+    section: &str,
+    supplied: serde_json::Value,
+) -> Result<serde_json::Value, PlatformWalletError> {
+    let serde_json::Value::Object(entries) = supplied else {
+        return Ok(supplied);
+    };
+    let mut canonical = serde_json::Map::new();
+    for (key, definition) in entries {
+        let position: u16 = key.trim().parse().map_err(|_| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "{section} update payload key `{key}` is not a contract position (0 to {})",
+                u16::MAX
+            ))
+        })?;
+        if canonical.insert(position.to_string(), definition).is_some() {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "{section} update payload names position {position} more than once"
+            )));
+        }
+    }
+    Ok(serde_json::Value::Object(canonical))
 }
 
 /// Merge a caller-supplied keyed map (`addition`, e.g. document
@@ -1294,6 +1328,169 @@ mod tests {
         assert_eq!(added.document_types.added, vec!["comment"]);
         assert!(added.document_types.changed.is_empty(), "{added:?}");
         assert!(!added.keywords_changed && !added.description_changed && !added.config_changed);
+    }
+
+    #[test]
+    fn should_merge_token_and_group_positions_in_canonical_form() {
+        let merged = merge_contract_update_payload(
+            base_contract(),
+            2,
+            json!({}),
+            Some(json!({ "01": { "conventions": {} } })),
+            Some(json!({ " 2 ": { "requiredPower": 1 } })),
+            None,
+            None,
+            None,
+        )
+        .expect("merge");
+
+        let tokens = merged["tokens"].as_object().unwrap();
+        assert!(tokens.contains_key("0") && tokens.contains_key("1"));
+        assert!(!tokens.contains_key("01"));
+        assert!(merged["groups"].as_object().unwrap().contains_key("2"));
+    }
+
+    #[test]
+    fn should_refuse_two_keys_naming_one_position() {
+        for (tokens, groups) in [
+            (Some(json!({ "0": {}, "00": {} })), None),
+            (
+                None,
+                Some(json!({ "3": { "requiredPower": 1 }, "03": { "requiredPower": 2 } })),
+            ),
+        ] {
+            let err = merge_contract_update_payload(
+                base_contract(),
+                2,
+                json!({}),
+                tokens,
+                groups,
+                None,
+                None,
+                None,
+            )
+            .expect_err("a repeated position must be refused");
+            assert!(
+                err.to_string().contains("more than once"),
+                "unexpected error: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_key_that_is_not_a_position() {
+        for key in ["group", "-1", "65536"] {
+            let err = merge_contract_update_payload(
+                base_contract(),
+                2,
+                json!({}),
+                None,
+                Some(json!({ key: { "requiredPower": 1 } })),
+                None,
+                None,
+                None,
+            )
+            .expect_err("a key that is not a position must be refused");
+            assert!(
+                err.to_string().contains("is not a contract position"),
+                "unexpected error for {key}: {err}"
+            );
+        }
+    }
+
+    /// A registered contract owned by `[1; 32]` with one document type,
+    /// `note`.
+    fn registered_contract() -> DataContract {
+        use dpp::data_contract::factory::DataContractFactory;
+        use dpp::platform_value::platform_value;
+        DataContractFactory::new(PlatformVersion::latest().protocol_version)
+            .unwrap()
+            .create_with_value_config(
+                Identifier::from([1; 32]),
+                1,
+                platform_value!({
+                    "note": { "type": "object",
+                    "properties": {"message": {"type": "string", "maxLength": 63, "position": 0}},
+                    "additionalProperties": false }
+                }),
+                None,
+                None,
+            )
+            .unwrap()
+            .data_contract_owned()
+    }
+
+    /// A wallet over a mock SDK that answers only the fetch of `contract`:
+    /// any other request (a nonce read, a broadcast) fails the call.
+    async fn wallet_answering_only_the_fetch_of(
+        contract: &DataContract,
+    ) -> std::sync::Arc<crate::PlatformWallet> {
+        use super::super::signing_key::tests::wallet_with_signing_keys_on;
+        use crate::wallet::persister::NoPlatformPersistence;
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .unwrap();
+        sdk.mock()
+            .expect_fetch(contract.id(), Some(contract.clone()))
+            .await
+            .unwrap();
+        wallet_with_signing_keys_on(sdk, std::sync::Arc::new(NoPlatformPersistence)).await
+    }
+
+    #[tokio::test]
+    async fn should_preview_the_update_of_the_fetched_contract() {
+        let contract = registered_contract();
+        let wallet = wallet_answering_only_the_fetch_of(&contract).await;
+
+        let preview = wallet
+            .identity()
+            .preview_data_contract_update(
+                &Identifier::from([1; 32]),
+                &contract.id(),
+                r#"{"comment": {"type": "object", "properties": {"text": {"type": "string", "maxLength": 63, "position": 0}}, "additionalProperties": false}}"#,
+                None,
+                None,
+                Some(r#"["notes"]"#),
+                None,
+                None,
+            )
+            .await
+            .expect("preview");
+
+        assert_eq!(preview.current_version, contract.version());
+        assert_eq!(preview.new_version, contract.version() + 1);
+        assert_eq!(preview.document_types.added, vec!["comment"]);
+        assert!(preview.document_types.changed.is_empty());
+        assert!(preview.keywords_changed);
+        assert!(!preview.description_changed);
+        assert!(preview.has_changes());
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_preview_for_an_identity_that_does_not_own_the_contract() {
+        let contract = registered_contract();
+        let wallet = wallet_answering_only_the_fetch_of(&contract).await;
+
+        let err = wallet
+            .identity()
+            .preview_data_contract_update(
+                &Identifier::from([9; 32]),
+                &contract.id(),
+                "{}",
+                None,
+                None,
+                None,
+                Some("new description"),
+                None,
+            )
+            .await
+            .expect_err("a preview by another identity must be refused");
+
+        assert!(
+            err.to_string().contains("cannot update with this identity"),
+            "unexpected error: {err}"
+        );
     }
 
     /// The current default config version for the latest protocol — 1 on
