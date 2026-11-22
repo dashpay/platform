@@ -301,11 +301,11 @@ pub enum VotingKeySlot {
 pub struct VotingKeyCheckOutcome {
     /// Whether the host stores the checked key: every check but a proven refusal.
     pub store_key: bool,
-    /// What the host records, with the checked key's voting address, for the checked key once
-    /// it is in the slot, or for the stored key when it is the same one. `None` leaves what is
-    /// recorded unchanged: a check that could not run never erases what Platform proved about
-    /// the same key before.
-    pub record: Option<RecordedVotingKeyCheck>,
+    /// What the host records for the checked key once it is in the slot, or for the stored key
+    /// when it is the same one: always made of the checked key, so it carries that key's voting
+    /// address and the host persists it as one value. `None` leaves what is recorded unchanged:
+    /// a check that could not run never erases what Platform proved about the same key before.
+    pub record: Option<RecordedVotingKey>,
 }
 
 /// What a host does with a voting key after checking it ([`check_masternode_voting_key`]),
@@ -331,21 +331,18 @@ pub fn voting_key_check_outcome(
         ),
         other => other,
     };
-    match check {
-        RecordedVotingKeyCheck::Invalid => VotingKeyCheckOutcome {
-            store_key: false,
-            record: match slot {
+    let (store_key, record) = match check {
+        RecordedVotingKeyCheck::Invalid => (
+            false,
+            match slot {
                 VotingKeySlot::SameKey(_) => Some(RecordedVotingKeyCheck::Invalid),
                 VotingKeySlot::Empty | VotingKeySlot::DifferentKey => None,
             },
-        },
-        RecordedVotingKeyCheck::Valid => VotingKeyCheckOutcome {
-            store_key: true,
-            record: Some(RecordedVotingKeyCheck::Valid),
-        },
-        RecordedVotingKeyCheck::Undetermined => VotingKeyCheckOutcome {
-            store_key: true,
-            record: match slot {
+        ),
+        RecordedVotingKeyCheck::Valid => (true, Some(RecordedVotingKeyCheck::Valid)),
+        RecordedVotingKeyCheck::Undetermined => (
+            true,
+            match slot {
                 VotingKeySlot::SameKey(Some(RecordedVotingKey {
                     check: RecordedVotingKeyCheck::Valid | RecordedVotingKeyCheck::Invalid,
                     ..
@@ -354,7 +351,14 @@ pub fn voting_key_check_outcome(
                     Some(RecordedVotingKeyCheck::Undetermined)
                 }
             },
-        },
+        ),
+    };
+    VotingKeyCheckOutcome {
+        store_key,
+        record: record.map(|check| RecordedVotingKey {
+            check,
+            voting_address: *voting_address,
+        }),
     }
 }
 
@@ -760,8 +764,15 @@ mod tests {
         Invalid as RecordedInvalid, Undetermined as RecordedUndetermined, Valid as RecordedValid,
     };
 
+    /// The outcome for the checked key (`VOTING_ADDRESS`): a record is always made of it.
     fn outcome(store_key: bool, record: Option<RecordedVotingKeyCheck>) -> VotingKeyCheckOutcome {
-        VotingKeyCheckOutcome { store_key, record }
+        VotingKeyCheckOutcome {
+            store_key,
+            record: record.map(|check| RecordedVotingKey {
+                check,
+                voting_address: VOTING_ADDRESS,
+            }),
+        }
     }
 
     /// A record of the key with `address`.

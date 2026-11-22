@@ -211,6 +211,9 @@ impl From<DashSDKVotingKeyVerdict> for RecordedVotingKeyCheck {
 }
 
 /// A masternode voting address, the hash160 of the voting public key, passed by value.
+///
+/// Every one passed in must be fully initialized, all 20 bytes, even where it is not read; use
+/// `{0}` for an absent address.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DashSDKVotingAddress {
@@ -219,15 +222,31 @@ pub struct DashSDKVotingAddress {
 }
 
 /// A check a host recorded, with the voting address of the key it was made of: rs-sdk's
-/// `RecordedVotingKey`, or nothing recorded.
+/// `RecordedVotingKey`, or no record (`check` is `None`).
+///
+/// Every one passed in must be fully initialized even where it is not read: `check` a declared
+/// `DashSDKRecordedVotingKeyCheck` value and all 20 address bytes set. `{0}` is no record.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DashSDKRecordedVotingKey {
-    /// What the check found. `None` when nothing is recorded, such as a key stored before checks
-    /// existed or a record kept without its address.
+    /// What the check found. `None` for no record: passed in, nothing is recorded (such as a key
+    /// stored before checks existed, or a record kept without its address); returned in an
+    /// outcome, leave the record unchanged.
     pub check: DashSDKRecordedVotingKeyCheck,
-    /// The voting address of the key that was checked. Read only when `check` is not `None`.
+    /// The voting address of the key that was checked. Meaningful only when `check` is not
+    /// `None`; all zero otherwise when returned.
     pub voting_address: DashSDKVotingAddress,
+}
+
+impl From<Option<RecordedVotingKey>> for DashSDKRecordedVotingKey {
+    fn from(recorded: Option<RecordedVotingKey>) -> Self {
+        DashSDKRecordedVotingKey {
+            check: recorded.map(|recorded| recorded.check).into(),
+            voting_address: DashSDKVotingAddress {
+                bytes: recorded.map_or([0u8; 20], |recorded| recorded.voting_address),
+            },
+        }
+    }
 }
 
 impl From<DashSDKRecordedVotingKey> for Option<RecordedVotingKey> {
@@ -273,10 +292,10 @@ fn voting_key_slot(
 pub struct DashSDKVotingKeyCheckOutcome {
     /// Whether the host stores the checked key.
     pub store_key: bool,
-    /// What the host records, with the checked key's voting address, for the checked key once
-    /// it is in the slot, or for the stored key when it is the same one. `None` leaves the
-    /// record unchanged.
-    pub record: DashSDKRecordedVotingKeyCheck,
+    /// What the host records for the checked key once it is in the slot, or for the stored key
+    /// when it is the same one, made of the checked key and carrying its voting address: the
+    /// host persists it as it is. `record.check` `None` leaves the record unchanged.
+    pub record: DashSDKRecordedVotingKey,
 }
 
 impl From<VotingKeyCheckOutcome> for DashSDKVotingKeyCheckOutcome {
@@ -300,8 +319,12 @@ impl From<VotingKeyCheckOutcome> for DashSDKVotingKeyCheckOutcome {
 /// * `recorded_for_same_key` - What the host recorded for the masternode, with the address of
 ///   the key it was made of. Read only when `slot` is `SameKey`.
 ///
+/// Every argument is passed by value and must be fully initialized even when it is ignored:
+/// each enum a declared value, and every address byte set. Pass `{0}` for
+/// `recorded_for_same_key` when there is no record or the slot is not `SameKey`.
+///
 /// # Returns
-/// Whether to store the key, and what to record for it with `voting_address` (`None`: leave the
+/// Whether to store the key, and the record to persist for it (`record.check` `None`: leave the
 /// record unchanged).
 #[no_mangle]
 pub extern "C" fn dash_sdk_masternode_voting_key_check_outcome(
@@ -346,6 +369,10 @@ impl From<RecordedVotingKeyUse> for DashSDKRecordedVotingKeyUse {
 ///   was made of.
 /// * `has_stored_voting_address` - Whether the host read the voting address of the stored key.
 /// * `stored_voting_address` - That address. Read only when `has_stored_voting_address`.
+///
+/// Every argument is passed by value and must be fully initialized even when it is ignored:
+/// `recorded.check` a declared value and every address byte set. Pass `{0}` for `recorded` when
+/// there is no record and for `stored_voting_address` when the address was not read.
 ///
 /// # Returns
 /// Whether the key may vote, and whether it is checked before it is used.
@@ -553,7 +580,15 @@ mod tests {
         }
         for (ffi, recorded) in every_recorded_key() {
             assert_eq!(Option::<RecordedVotingKey>::from(ffi), recorded, "{ffi:?}");
+            if recorded.is_some() {
+                assert_eq!(DashSDKRecordedVotingKey::from(recorded), ffi, "{ffi:?}");
+            }
         }
+        // No record goes out as `{0}`.
+        assert_eq!(
+            DashSDKRecordedVotingKey::from(None),
+            recorded_key(DashSDKRecordedVotingKeyCheck::None, [0u8; 20])
+        );
         // Nothing recorded carries no address, whatever the bytes beside it.
         assert_eq!(
             Option::<RecordedVotingKey>::from(recorded_key(
@@ -597,6 +632,23 @@ mod tests {
                     DashSDKVotingKeyCheckOutcome {
                         store_key: expected.store_key,
                         record: expected.record.into(),
+                    },
+                    "{verdict:?} {rs_slot:?}"
+                );
+                // A record is always of the checked key; no record carries a zero address.
+                let returned = dash_sdk_masternode_voting_key_check_outcome(
+                    verdict,
+                    address(CHECKED_ADDRESS),
+                    *slot,
+                    *recorded_for_same_key,
+                )
+                .record;
+                assert_eq!(
+                    returned.voting_address.bytes,
+                    if returned.check == DashSDKRecordedVotingKeyCheck::None {
+                        [0u8; 20]
+                    } else {
+                        CHECKED_ADDRESS
                     },
                     "{verdict:?} {rs_slot:?}"
                 );
@@ -651,21 +703,21 @@ mod tests {
             outcome(DashSDKVotingKeyVerdict::Invalid, CHECKED_ADDRESS),
             DashSDKVotingKeyCheckOutcome {
                 store_key: false,
-                record: DashSDKRecordedVotingKeyCheck::Invalid,
+                record: recorded_key(DashSDKRecordedVotingKeyCheck::Invalid, CHECKED_ADDRESS),
             }
         );
         assert_eq!(
             outcome(DashSDKVotingKeyVerdict::Undetermined, CHECKED_ADDRESS),
             DashSDKVotingKeyCheckOutcome {
                 store_key: true,
-                record: DashSDKRecordedVotingKeyCheck::None,
+                record: recorded_key(DashSDKRecordedVotingKeyCheck::None, [0u8; 20]),
             }
         );
         assert_eq!(
             outcome(DashSDKVotingKeyVerdict::Undetermined, OTHER_ADDRESS),
             DashSDKVotingKeyCheckOutcome {
                 store_key: true,
-                record: DashSDKRecordedVotingKeyCheck::Undetermined,
+                record: recorded_key(DashSDKRecordedVotingKeyCheck::Undetermined, CHECKED_ADDRESS),
             }
         );
     }

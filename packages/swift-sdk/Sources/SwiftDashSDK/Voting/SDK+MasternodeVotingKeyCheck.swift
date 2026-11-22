@@ -103,7 +103,7 @@ extension SDK {
         votingPrivateKey: Data
     ) async throws -> MasternodeVotingKeyCheck {
         let votingAddress = try SDK.masternodeVotingAddress(privateKey: votingPrivateKey)
-        return try await checkMasternodeVotingKey(proTxHash: proTxHash, votingAddress: votingAddress)
+        return try await checkMasternodeVotingKey(proTxHash: proTxHash, votingAddress: votingAddress.data)
     }
 }
 
@@ -115,10 +115,20 @@ extension SDK {
 // holds the rules (store or refuse a key, what to record for it, whether a
 // stored key may vote or is checked first, and which record belongs to which
 // key); the host only reports what it stores and persists what comes back.
-//
-// Voting addresses here are the 20-byte hash160 of the voting public key, as
-// ``SDK/masternodeVotingAddress(privateKey:)`` and the Keychain signer return
-// them. Passing any other length is a programming error and traps.
+
+/// A masternode voting address: the 20-byte hash160 of the voting public key.
+/// Built only from 20 bytes, so the voting key rules always receive a whole
+/// address.
+public struct MasternodeVotingKeyAddress: Hashable, Sendable {
+    /// The 20 address bytes.
+    public let data: Data
+
+    /// The address in `data`; `nil` unless it is exactly 20 bytes.
+    public init?(_ data: Data) {
+        guard data.count == 20 else { return nil }
+        self.data = data
+    }
+}
 
 /// A check the host recorded, with the voting address of the key it was made
 /// of. The address ties the record to its key: Rust uses a record only for a
@@ -126,13 +136,10 @@ extension SDK {
 public struct MasternodeRecordedVotingKey: Equatable, Sendable {
     /// What the check found.
     public let check: MasternodeVotingKeyCheck
-    /// The 20-byte voting address of the key that was checked.
-    public let votingAddress: Data
+    /// The voting address of the key that was checked.
+    public let votingAddress: MasternodeVotingKeyAddress
 
-    /// A recorded check with its key's address; `nil` when `votingAddress`
-    /// is not 20 bytes, so it is no address and the record is no record.
-    public init?(check: MasternodeVotingKeyCheck, votingAddress: Data) {
-        guard votingAddress.count == 20 else { return nil }
+    public init(check: MasternodeVotingKeyCheck, votingAddress: MasternodeVotingKeyAddress) {
         self.check = check
         self.votingAddress = votingAddress
     }
@@ -157,10 +164,11 @@ public enum MasternodeVotingKeySlot: Equatable, Sendable {
 public struct MasternodeVotingKeyCheckOutcome: Equatable, Sendable {
     /// Whether the host stores the checked key.
     public let storeKey: Bool
-    /// What the host records, with the checked key's voting address, for the
-    /// checked key once it is in the slot, or for the stored key when it is
-    /// the same one. `nil` leaves the record unchanged.
-    public let record: MasternodeVotingKeyCheck?
+    /// What the host records for the checked key once it is in the slot, or
+    /// for the stored key when it is the same one: made of the checked key,
+    /// with its address, to persist as it is. `nil` leaves the record
+    /// unchanged.
+    public let record: MasternodeRecordedVotingKey?
 }
 
 /// How the host may use a stored voting key, as Rust decides it from the
@@ -179,9 +187,9 @@ public struct MasternodeRecordedVotingKeyUse: Equatable, Sendable {
     /// - Parameters:
     ///   - recorded: The record the host holds for the masternode, `nil`
     ///     when it holds none.
-    ///   - storedVotingAddress: The 20-byte voting address of the stored key,
-    ///     when the host has read it; `nil` otherwise.
-    public init(recorded: MasternodeRecordedVotingKey?, storedVotingAddress: Data?) {
+    ///   - storedVotingAddress: The voting address of the stored key, when the
+    ///     host has read it; `nil` otherwise.
+    public init(recorded: MasternodeRecordedVotingKey?, storedVotingAddress: MasternodeVotingKeyAddress?) {
         let keyUse = dash_sdk_masternode_recorded_voting_key_use(
             MasternodeVotingKeyCheckFFI.recorded(recorded),
             storedVotingAddress != nil,
@@ -198,14 +206,14 @@ extension MasternodeVotingKeyCheck {
     /// (`dash_sdk_masternode_voting_key_check_outcome`).
     ///
     /// - Parameters:
-    ///   - votingAddress: The 20-byte voting address of the checked key.
+    ///   - votingAddress: The voting address of the checked key.
     ///   - slot: What the host's voting key slot for the masternode holds,
     ///     compared with the checked key.
-    /// - Returns: Whether to store the key, and what to record for it with
-    ///   `votingAddress`. A record of this check's own kind is this check,
-    ///   with its message.
+    /// - Returns: Whether to store the key, and the record to persist for it.
+    ///   A record of this check's own kind carries this check, with its
+    ///   message.
     public func outcome(
-        votingAddress: Data,
+        votingAddress: MasternodeVotingKeyAddress,
         slot: MasternodeVotingKeySlot
     ) -> MasternodeVotingKeyCheckOutcome {
         let ffiSlot: DashSDKVotingKeySlot
@@ -227,7 +235,7 @@ extension MasternodeVotingKeyCheck {
         )
         return MasternodeVotingKeyCheckOutcome(
             storeKey: outcome.store_key,
-            record: MasternodeVotingKeyCheckFFI.check(recorded: outcome.record, preferring: self)
+            record: MasternodeVotingKeyCheckFFI.recordedKey(outcome.record, preferring: self)
         )
     }
 }
@@ -242,16 +250,17 @@ enum MasternodeVotingKeyCheckFFI {
         }
     }
 
-    /// The FFI address for 20 address bytes; all zero for `nil`, which the
-    /// FFI does not read.
-    static func address(_ bytes: Data?) -> DashSDKVotingAddress {
-        var address = DashSDKVotingAddress()
-        guard let bytes else { return address }
-        precondition(bytes.count == 20, "a voting address has 20 bytes, not \(bytes.count)")
-        withUnsafeMutableBytes(of: &address.bytes) { $0.copyBytes(from: bytes) }
-        return address
+    /// The FFI address; all zero (`{0}`) for `nil`, which the FFI does not
+    /// read.
+    static func address(_ address: MasternodeVotingKeyAddress?) -> DashSDKVotingAddress {
+        var ffi = DashSDKVotingAddress()
+        guard let address else { return ffi }
+        // Exactly 20 bytes, as `MasternodeVotingKeyAddress` guarantees.
+        withUnsafeMutableBytes(of: &ffi.bytes) { $0.copyBytes(from: address.data) }
+        return ffi
     }
 
+    /// The FFI record; `{0}` for `nil`.
     static func recorded(_ recorded: MasternodeRecordedVotingKey?) -> DashSDKRecordedVotingKey {
         let check: DashSDKRecordedVotingKeyCheck
         switch recorded?.check {
@@ -263,15 +272,15 @@ enum MasternodeVotingKeyCheckFFI {
         return DashSDKRecordedVotingKey(check: check, voting_address: address(recorded?.votingAddress))
     }
 
-    /// The check for a record Rust returned: `nil` for `None` (leave the
-    /// record unchanged), `check` itself when it is of the returned kind, so
-    /// its message is kept, otherwise the kind with no message.
-    static func check(
-        recorded: DashSDKRecordedVotingKeyCheck,
+    /// The record Rust returned: `nil` for `None` (leave the record
+    /// unchanged); otherwise its kind, carrying `check` itself when it is of
+    /// that kind so its message is kept, with the returned address.
+    static func recordedKey(
+        _ recorded: DashSDKRecordedVotingKey,
         preferring check: MasternodeVotingKeyCheck
-    ) -> MasternodeVotingKeyCheck? {
+    ) -> MasternodeRecordedVotingKey? {
         let kind: MasternodeVotingKeyCheck
-        switch recorded {
+        switch recorded.check {
         case DashSDKRecordedVotingKeyCheck_Valid:
             kind = .valid
         case DashSDKRecordedVotingKeyCheck_Invalid:
@@ -282,20 +291,31 @@ enum MasternodeVotingKeyCheckFFI {
             // `None`. The C enum holds no other value today.
             return nil
         }
-        return verdict(of: kind) == verdict(of: check) ? check : kind
+        var bytes = recorded.voting_address.bytes
+        let data = withUnsafeBytes(of: &bytes) { Data($0) }
+        // A C `uint8_t[20]` is always 20 bytes.
+        guard let address = MasternodeVotingKeyAddress(data) else { return nil }
+        return MasternodeRecordedVotingKey(
+            check: verdict(of: kind) == verdict(of: check) ? check : kind,
+            votingAddress: address
+        )
     }
 }
 
 extension SDK {
-    /// The 20-byte voting address of a 32-byte masternode voting private key,
-    /// formed in Rust (`dash_sdk_masternode_voting_address_from_private_key`).
+    /// The voting address of a 32-byte masternode voting private key, formed
+    /// in Rust (`dash_sdk_masternode_voting_address_from_private_key`).
     ///
     /// - Throws: ``SDKError/invalidParameter(_:)`` when the key is not a
     ///   secp256k1 secret key or has the wrong length.
-    public nonisolated static func masternodeVotingAddress(privateKey: Data) throws -> Data {
-        try MasternodeVotingAddress.of(privateKey: privateKey)
+    public nonisolated static func masternodeVotingAddress(privateKey: Data) throws -> MasternodeVotingKeyAddress {
+        let data = try MasternodeVotingAddress.of(privateKey: privateKey)
             .mapError { SDKError.invalidParameter($0.message) }
             .get()
+        guard let address = MasternodeVotingKeyAddress(data) else {
+            throw SDKError.internalError("A voting address has 20 bytes, not \(data.count)")
+        }
+        return address
     }
 }
 

@@ -66,7 +66,7 @@ public final class PersistentIdentity {
     /// Keychain key and this row are written separately, so a check can
     /// outlive its key; the address ties it to the key it describes. `nil`
     /// for a check recorded without it, which the voting key rules read as
-    /// nothing recorded. Written with ``setVotingKeyCheck(_:votingAddress:)``.
+    /// nothing recorded. Written through ``recordedVotingKey``.
     public var votingKeyCheckAddress: Data? = nil
 
     // MARK: - Public Keys
@@ -332,7 +332,7 @@ public final class PersistentIdentity {
     /// clears ``votingKeyCheckAddress``, so a check set without its key's
     /// address is read by the rules as nothing recorded; setting `nil` clears
     /// all three, for a voting key that was removed. Record a check with
-    /// ``setVotingKeyCheck(_:votingAddress:)``.
+    /// ``recordedVotingKey``.
     public var votingKeyCheck: MasternodeVotingKeyCheck? {
         get {
             switch votingKeyCheckRaw {
@@ -365,19 +365,24 @@ public final class PersistentIdentity {
         }
     }
 
-    /// Records `check` as the last check of the stored voting key, made of
-    /// the key with the 20-byte `votingAddress`.
-    public func setVotingKeyCheck(_ check: MasternodeVotingKeyCheck, votingAddress: Data) {
-        votingKeyCheck = check
-        votingKeyCheckAddress = votingAddress
-    }
-
     /// The recorded check with the address of the key it was made of, as the
-    /// voting key rules take it; `nil` when nothing is recorded or the check
-    /// was recorded without its key's address.
+    /// voting key rules take and return it; `nil` when nothing is recorded or
+    /// the check was recorded without a whole address. Setting a record
+    /// writes the check, its message and its address together; setting `nil`
+    /// clears all three.
     public var recordedVotingKey: MasternodeRecordedVotingKey? {
-        guard let check = votingKeyCheck, let address = votingKeyCheckAddress else { return nil }
-        return MasternodeRecordedVotingKey(check: check, votingAddress: address)
+        get {
+            guard let check = votingKeyCheck,
+                  let data = votingKeyCheckAddress,
+                  let address = MasternodeVotingKeyAddress(data) else {
+                return nil
+            }
+            return MasternodeRecordedVotingKey(check: check, votingAddress: address)
+        }
+        set {
+            votingKeyCheck = newValue?.check
+            votingKeyCheckAddress = newValue?.votingAddress.data
+        }
     }
 
     // MARK: - Methods

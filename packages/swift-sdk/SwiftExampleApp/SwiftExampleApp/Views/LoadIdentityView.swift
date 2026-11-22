@@ -56,12 +56,9 @@ struct LoadIdentityView: View {
         /// key changed elsewhere while the dialog was open is reported.
         let enteredKeyDigests: [SpecialKeyType: Data]
         /// What Rust's outcome for the entered voting key says to record,
-        /// written on the identity only when that key replaces the stored
-        /// one; `nil` keeps what is recorded.
-        let votingKeyRecord: MasternodeVotingKeyCheck?
-        /// The voting address of the entered voting key, recorded with
-        /// ``votingKeyRecord``.
-        let votingKeyAddress: Data?
+        /// with that key's address, written on the identity only when that
+        /// key replaces the stored one; `nil` keeps what is recorded.
+        let votingKeyRecord: MasternodeRecordedVotingKey?
         /// What the report says when the entered voting key could not be
         /// checked, shown only when that key is in the voting slot after the
         /// replacement.
@@ -454,12 +451,12 @@ struct LoadIdentityView: View {
                 // Every record is written with the address of the key it was
                 // made of.
                 var votingKeyCheck: MasternodeVotingKeyCheck?
-                var votingKeyAddress: Data?
+                var votingKeyAddress: MasternodeVotingKeyAddress?
                 if let votingKeyData {
                     let votingAddress = try SDK.masternodeVotingAddress(privateKey: votingKeyData)
                     let check = try await sdk.checkMasternodeVotingKey(
                         proTxHash: MasternodeVoter.wireOrderProTxHash(identityId: validIdData),
-                        votingAddress: votingAddress
+                        votingAddress: votingAddress.data
                     )
                     guard appState.sdk === sdk else {
                         await MainActor.run {
@@ -484,7 +481,7 @@ struct LoadIdentityView: View {
                             var text = refusal
                             if let record = outcome.record,
                                let row = Self.identityRow(validIdData, on: network, in: modelContext) {
-                                row.setVotingKeyCheck(record, votingAddress: votingAddress)
+                                row.recordedVotingKey = record
                                 do {
                                     try modelContext.save()
                                 } catch {
@@ -754,7 +751,7 @@ struct LoadIdentityView: View {
                             // The slot holds the entered key: record what
                             // Rust says for it, or keep what is recorded.
                             if let record = storedVotingKeyOutcome?.record {
-                                row.setVotingKeyCheck(record, votingAddress: address)
+                                row.recordedVotingKey = record
                             }
                         }
                     } else if conflictingKeys.contains("voting"),
@@ -850,7 +847,6 @@ struct LoadIdentityView: View {
                                 unstoredNote: unstoredNote,
                                 enteredKeyDigests: enteredKeyDigests,
                                 votingKeyRecord: storedVotingKeyOutcome?.record,
-                                votingKeyAddress: capturedVotingKeyAddress,
                                 uncheckedVotingKeyNote: uncheckedNoteIfStored
                             )
                         }
@@ -956,8 +952,8 @@ struct LoadIdentityView: View {
                     // The slot now holds the entered key: record what Rust's
                     // outcome at the load says for it, or keep what is
                     // recorded.
-                    if let record = pending.votingKeyRecord, let address = pending.votingKeyAddress {
-                        row.setVotingKeyCheck(record, votingAddress: address)
+                    if let record = pending.votingKeyRecord {
+                        row.recordedVotingKey = record
                     }
                 case .owner: row.ownerPrivateKeyIdentifier = identifier
                 case .payout: row.payoutPrivateKeyIdentifier = identifier

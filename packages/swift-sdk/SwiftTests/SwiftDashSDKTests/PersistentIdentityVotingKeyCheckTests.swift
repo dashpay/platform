@@ -63,46 +63,50 @@ final class PersistentIdentityVotingKeyCheckTests: XCTestCase {
             network: .testnet
         )
         context.insert(identity)
-        let address = Data(repeating: 0x07, count: 20)
-        let refusal = MasternodeVotingKeyCheck.invalid(message: "No voting identity exists.")
-        identity.setVotingKeyCheck(refusal, votingAddress: address)
+        let address = try XCTUnwrap(MasternodeVotingKeyAddress(Data(repeating: 0x07, count: 20)))
+        let refusal = MasternodeRecordedVotingKey(
+            check: .invalid(message: "No voting identity exists."),
+            votingAddress: address
+        )
+        identity.recordedVotingKey = refusal
         try context.save()
 
         let fresh = ModelContext(container)
         let fetched = try XCTUnwrap(fresh.fetch(FetchDescriptor<PersistentIdentity>()).first)
         XCTAssertFalse(fetched === identity)
-        XCTAssertEqual(fetched.votingKeyCheckAddress, address)
-        XCTAssertEqual(
-            fetched.recordedVotingKey,
-            MasternodeRecordedVotingKey(check: refusal, votingAddress: address)
-        )
+        XCTAssertEqual(fetched.votingKeyCheckAddress, address.data)
+        XCTAssertEqual(fetched.recordedVotingKey, refusal)
 
         identity.votingKeyCheck = .valid
         XCTAssertNil(identity.votingKeyCheckAddress, "a check set without its address drops the old one")
         XCTAssertNil(identity.recordedVotingKey, "a check without its address is nothing recorded")
 
-        identity.setVotingKeyCheck(.valid, votingAddress: address)
-        identity.votingKeyCheck = nil
+        identity.recordedVotingKey = MasternodeRecordedVotingKey(check: .valid, votingAddress: address)
+        identity.recordedVotingKey = nil
         XCTAssertNil(identity.votingKeyCheckRaw)
         XCTAssertNil(identity.votingKeyCheckMessage)
         XCTAssertNil(identity.votingKeyCheckAddress)
+
+        identity.votingKeyCheck = .valid
+        identity.votingKeyCheckAddress = Data(repeating: 0x07, count: 19)
+        XCTAssertNil(identity.recordedVotingKey, "a stored address that is not 20 bytes is no record")
     }
 
     /// A refusal recorded for another key does not refuse the stored key once
     /// its address is read: Rust treats it as never checked.
-    func testShouldTreatARecordOfAnotherKeyAsNeverChecked() {
+    func testShouldTreatARecordOfAnotherKeyAsNeverChecked() throws {
         let identity = PersistentIdentity(
             identityId: Data(repeating: 0x34, count: 32),
             identityType: .masternode,
             network: .testnet
         )
-        identity.setVotingKeyCheck(
-            .invalid(message: "No voting identity exists."),
-            votingAddress: Data(repeating: 0x09, count: 20)
+        identity.recordedVotingKey = MasternodeRecordedVotingKey(
+            check: .invalid(message: "No voting identity exists."),
+            votingAddress: try XCTUnwrap(MasternodeVotingKeyAddress(Data(repeating: 0x09, count: 20)))
         )
         let use = MasternodeRecordedVotingKeyUse(
             recorded: identity.recordedVotingKey,
-            storedVotingAddress: Data(repeating: 0x07, count: 20)
+            storedVotingAddress: MasternodeVotingKeyAddress(Data(repeating: 0x07, count: 20))
         )
         XCTAssertTrue(use.canVote)
         XCTAssertTrue(use.checkBeforeUse)

@@ -7,10 +7,13 @@ import XCTest
 final class MasternodeVotingKeyRulesTests: XCTestCase {
     private let invalid = MasternodeVotingKeyCheck.invalid(message: "No voting identity exists.")
     private let undetermined = MasternodeVotingKeyCheck.undetermined(message: "timeout.")
-    private let checkedAddress = Data(repeating: 0x07, count: 20)
-    private let otherAddress = Data(repeating: 0x09, count: 20)
+    private let checkedAddress = MasternodeVotingKeyAddress(Data(repeating: 0x07, count: 20))!
+    private let otherAddress = MasternodeVotingKeyAddress(Data(repeating: 0x09, count: 20))!
 
-    private func recorded(_ check: MasternodeVotingKeyCheck, _ address: Data) -> MasternodeRecordedVotingKey? {
+    private func recorded(
+        _ check: MasternodeVotingKeyCheck,
+        _ address: MasternodeVotingKeyAddress
+    ) -> MasternodeRecordedVotingKey {
         MasternodeRecordedVotingKey(check: check, votingAddress: address)
     }
 
@@ -20,7 +23,11 @@ final class MasternodeVotingKeyRulesTests: XCTestCase {
             slot: .sameKey(recorded: recorded(.valid, checkedAddress))
         )
         XCTAssertFalse(onSameKey.storeKey)
-        XCTAssertEqual(onSameKey.record, invalid, "the record is the check, with its message")
+        XCTAssertEqual(
+            onSameKey.record,
+            recorded(invalid, checkedAddress),
+            "the record is the check, with its message and the checked key's address"
+        )
 
         let onDifferentKey = invalid.outcome(votingAddress: checkedAddress, slot: .differentKey)
         XCTAssertFalse(onDifferentKey.storeKey)
@@ -33,7 +40,7 @@ final class MasternodeVotingKeyRulesTests: XCTestCase {
         ] {
             XCTAssertEqual(
                 MasternodeVotingKeyCheck.valid.outcome(votingAddress: checkedAddress, slot: slot),
-                MasternodeVotingKeyCheckOutcome(storeKey: true, record: .valid),
+                MasternodeVotingKeyCheckOutcome(storeKey: true, record: recorded(.valid, checkedAddress)),
                 "\(slot)"
             )
         }
@@ -52,24 +59,28 @@ final class MasternodeVotingKeyRulesTests: XCTestCase {
             slot: .sameKey(recorded: recorded(.valid, otherAddress))
         )
         XCTAssertTrue(ofAnotherKey.storeKey)
-        XCTAssertEqual(ofAnotherKey.record, undetermined, "a record of another key is not kept")
+        XCTAssertEqual(
+            ofAnotherKey.record,
+            recorded(undetermined, checkedAddress),
+            "a record of another key is not kept"
+        )
 
         let recordedInEmptySlot = undetermined.outcome(votingAddress: checkedAddress, slot: .empty)
         XCTAssertTrue(recordedInEmptySlot.storeKey)
-        XCTAssertEqual(recordedInEmptySlot.record, undetermined)
+        XCTAssertEqual(recordedInEmptySlot.record, recorded(undetermined, checkedAddress))
     }
 
     func testShouldOfferEveryKeyButARefusedOneAndCheckOnlyUnprovenOnes() {
-        for (recorded, canVote, checkBeforeUse): (MasternodeRecordedVotingKey?, Bool, Bool) in [
+        for (record, canVote, checkBeforeUse): (MasternodeRecordedVotingKey?, Bool, Bool) in [
             (nil, true, true),
             (recorded(undetermined, checkedAddress), true, true),
             (recorded(.valid, checkedAddress), true, false),
             (recorded(invalid, checkedAddress), false, false),
         ] {
             for stored in [nil, checkedAddress] {
-                let use = MasternodeRecordedVotingKeyUse(recorded: recorded, storedVotingAddress: stored)
-                XCTAssertEqual(use.canVote, canVote, "\(String(describing: recorded))")
-                XCTAssertEqual(use.checkBeforeUse, checkBeforeUse, "\(String(describing: recorded))")
+                let use = MasternodeRecordedVotingKeyUse(recorded: record, storedVotingAddress: stored)
+                XCTAssertEqual(use.canVote, canVote, "\(String(describing: record))")
+                XCTAssertEqual(use.checkBeforeUse, checkBeforeUse, "\(String(describing: record))")
             }
         }
     }
@@ -87,7 +98,11 @@ final class MasternodeVotingKeyRulesTests: XCTestCase {
         XCTAssertFalse(unknown.checkBeforeUse)
     }
 
-    func testShouldRefuseARecordWhoseAddressIsNotTwentyBytes() {
-        XCTAssertNil(MasternodeRecordedVotingKey(check: .valid, votingAddress: Data(repeating: 1, count: 19)))
+    /// A value that is not 20 bytes is refused as an address, so it can never
+    /// reach the rules.
+    func testShouldRefuseAnAddressThatIsNotTwentyBytes() {
+        XCTAssertNil(MasternodeVotingKeyAddress(Data(repeating: 1, count: 19)))
+        XCTAssertNil(MasternodeVotingKeyAddress(Data(repeating: 1, count: 21)))
+        XCTAssertNotNil(MasternodeVotingKeyAddress(Data(repeating: 1, count: 20)))
     }
 }
