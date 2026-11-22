@@ -867,9 +867,15 @@ fn section_changes(
     let Some(updated_entries) = updated.get(section).and_then(serde_json::Value::as_object) else {
         return changes;
     };
+    // A document type is compared as text, member order included:
+    // `serde_json::Value` equality ignores the order of an object's members,
+    // but Platform stores and checks it (protocol version 15 refuses a
+    // reorder), so a reordered schema must show as a change.
     let differs = |existing: &serde_json::Value, updated: &serde_json::Value| {
         if section == "documentSchemas" {
-            with_indices_by_name(existing) != with_indices_by_name(updated)
+            let existing_text = with_indices_by_name(existing).to_string();
+            let updated_text = with_indices_by_name(updated).to_string();
+            existing_text != updated_text
         } else {
             existing != updated
         }
@@ -1046,7 +1052,7 @@ fn canonical_position_keys(
     for (key, definition) in entries {
         let position: u16 = key.trim().parse().map_err(|_| {
             PlatformWalletError::InvalidIdentityData(format!(
-                "{section} update payload key `{key}` is not a contract position (0 to {})",
+                "{section} update payload key {key:?} is not a contract position (0 to {})",
                 u16::MAX
             ))
         })?;
@@ -1733,6 +1739,91 @@ mod tests {
             vec![bs58::encode(revoked.to_buffer()).into_string()]
         );
         assert_eq!(moderator_changes(&existing, &existing), (vec![], vec![]));
+    }
+
+    #[test]
+    fn should_count_a_reordering_of_an_objects_members_as_a_change() {
+        let existing: serde_json::Value = serde_json::from_str(
+            r#"{"documentSchemas":{"note":{"type":"object","properties":{"z":{"type":"string","position":0},"a":{"type":"string","position":1}}}}}"#,
+        )
+        .unwrap();
+        let reordered: serde_json::Value = serde_json::from_str(
+            r#"{"documentSchemas":{"note":{"type":"object","properties":{"a":{"type":"string","position":1},"z":{"type":"string","position":0}}}}}"#,
+        )
+        .unwrap();
+
+        // `Value` equality ignores member order; the preview must not.
+        assert_eq!(existing, reordered);
+        assert_eq!(
+            section_changes(&existing, &reordered, "documentSchemas").changed,
+            vec!["note"]
+        );
+        assert!(section_changes(&existing, &existing.clone(), "documentSchemas").is_empty());
+    }
+
+    /// Through the public preview, against a contract whose configuration
+    /// appoints two moderators: the update keeps one and appoints another.
+    #[tokio::test]
+    async fn should_report_moderator_appointments_through_the_public_preview() {
+        let platform_version = PlatformVersion::latest();
+        let base58 = |id: Identifier| bs58::encode(id.to_buffer()).into_string();
+        let kept = Identifier::from([0x11; 32]);
+        let revoked = Identifier::from([0x22; 32]);
+        let granted = Identifier::from([0x33; 32]);
+        let owner = Identifier::from([1; 32]);
+        let config_version = latest_config_version().to_string();
+        let contract = build_contract(json!({
+            "$formatVersion": "1",
+            "id": base58(Identifier::from([9; 32])),
+            "ownerId": base58(owner),
+            "version": INITIAL_DATA_CONTRACT_VERSION,
+            "documentSchemas": { "note": {
+                "type": "object",
+                "properties": { "message": { "type": "string", "position": 0, "maxLength": 63 } },
+                "additionalProperties": false
+            } },
+            "config": {
+                "$formatVersion": config_version,
+                "moderation": { "moderators": {
+                    "$type": "appointedModerators",
+                    "identities": [base58(kept), base58(revoked)]
+                } }
+            }
+        }));
+        assert_eq!(
+            named_moderators(&contract),
+            BTreeSet::from([kept, revoked]),
+            "fixture must appoint two moderators at {platform_version:?}"
+        );
+        let wallet = wallet_answering_only_the_fetch_of(&contract).await;
+
+        let config = json!({
+            "$formatVersion": config_version,
+            "moderation": { "moderators": {
+                "$type": "appointedModerators",
+                "identities": [base58(kept), base58(granted)]
+            } }
+        })
+        .to_string();
+        let preview = wallet
+            .identity()
+            .preview_data_contract_update(
+                &owner,
+                &contract.id(),
+                "{}",
+                None,
+                None,
+                None,
+                None,
+                Some(&config),
+            )
+            .await
+            .expect("preview");
+
+        assert_eq!(preview.moderators_added, vec![base58(granted)]);
+        assert_eq!(preview.moderators_removed, vec![base58(revoked)]);
+        assert!(preview.config_changed);
+        assert_eq!(preview.config_changed_fields, vec!["moderation"]);
     }
 
     /// The current default config version for the latest protocol — 1 on

@@ -9,7 +9,8 @@ use std::slice;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::prelude::Identifier;
 use platform_wallet::wallet::identity::network::{
-    ContractSectionChanges, DataContractUpdatePreview,
+    split_contract_update_source, ContractSectionChanges, ContractUpdateSource,
+    DataContractUpdatePreview,
 };
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 use serde_json::json;
@@ -309,6 +310,79 @@ unsafe fn preview_data_contract_update(
     PlatformWalletFFIResult::ok()
 }
 
+/// Split pasted or imported contract JSON into the sections a contract
+/// update takes, each as JSON text in source order.
+///
+/// Goes through `split_contract_update_source`: `text` must be a JSON object;
+/// `documents`/`documentSchemas`, `tokens`/`tokenSchemas`, `groups`,
+/// `keywords`, `description` and `config` are read and every other member is
+/// ignored, so an exported contract splits as is. An object whose members all
+/// look like document schemas is a bare document schemas map. A host must
+/// not re-serialize the sections: the order of a schema's members is part of
+/// the contract.
+///
+/// On success `*out_sections_json` receives a JSON object; release it with
+/// `platform_wallet_string_free`. On any error it is left null. The shape,
+/// with `null` for a section the text does not supply:
+///
+/// ```json
+/// {"documents":"{...}","tokens":null,"groups":null,"keywords":"[\"a\"]",
+///  "description":"text","config":null,"carriesSharedDefinitions":false}
+/// ```
+///
+/// `description` is the description itself; every other section is JSON
+/// text. Text that is not a JSON object, or that supplies no section, is
+/// refused with a message the host can show as is.
+///
+/// # Safety
+/// - `text` must be a NUL-terminated UTF-8 string.
+/// - `out_sections_json` must be a valid, writable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_split_contract_update_source(
+    text: *const c_char,
+    out_sections_json: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    catch_panic_to_code(
+        "platform_wallet_split_contract_update_source",
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        "Nothing was changed; paste or import the contract again.",
+        || unsafe { split_contract_update_source_inner(text, out_sections_json) },
+    )
+}
+
+/// The body of `platform_wallet_split_contract_update_source`, run inside its
+/// panic guard.
+///
+/// # Safety
+/// As `platform_wallet_split_contract_update_source`.
+unsafe fn split_contract_update_source_inner(
+    text: *const c_char,
+    out_sections_json: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_sections_json);
+    *out_sections_json = ptr::null_mut();
+    check_ptr!(text);
+    let text = unwrap_result_or_return!(CStr::from_ptr(text).to_str());
+    let sections = unwrap_result_or_return!(split_contract_update_source(text));
+    let json = source_to_json(&sections).to_string();
+    *out_sections_json = unwrap_result_or_return!(CString::new(json)).into_raw();
+    PlatformWalletFFIResult::ok()
+}
+
+/// `sections` in the JSON shape `platform_wallet_split_contract_update_source`
+/// documents.
+fn source_to_json(sections: &ContractUpdateSource) -> serde_json::Value {
+    json!({
+        "documents": sections.documents,
+        "tokens": sections.tokens,
+        "groups": sections.groups,
+        "keywords": sections.keywords,
+        "description": sections.description,
+        "config": sections.config,
+        "carriesSharedDefinitions": sections.carries_shared_definitions,
+    })
+}
+
 /// `preview` in the JSON shape `platform_wallet_preview_data_contract_update`
 /// documents.
 fn preview_to_json(preview: &DataContractUpdatePreview) -> serde_json::Value {
@@ -414,6 +488,44 @@ mod tests {
         assert_eq!(json["hasChanges"], json!(preview.has_changes()));
         assert_eq!(json["hasChanges"], json!(false));
         assert_eq!(json["documentTypes"], json!({ "added": [], "changed": [] }));
+    }
+
+    #[test]
+    fn should_return_the_split_sections_in_source_order() {
+        let text = CString::new(
+            r#"{"id":"x","documentSchemas":{"note":{"type":"object","properties":{"z":{"type":"string","position":0},"a":{"type":"string","position":1}}}},"description":null}"#,
+        )
+        .unwrap();
+        let mut out: *mut c_char = ptr::null_mut();
+
+        let result =
+            unsafe { platform_wallet_split_contract_update_source(text.as_ptr(), &mut out) };
+
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        let json = unsafe { CString::from_raw(out) }.into_string().unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            value["documents"],
+            json!(
+                r#"{"note":{"type":"object","properties":{"z":{"type":"string","position":0},"a":{"type":"string","position":1}}}}"#
+            )
+        );
+        assert_eq!(value["description"], serde_json::Value::Null);
+        assert_eq!(value["tokens"], serde_json::Value::Null);
+        assert_eq!(value["carriesSharedDefinitions"], json!(false));
+    }
+
+    #[test]
+    fn should_refuse_text_that_is_not_a_contract_and_leave_the_output_null() {
+        let text = CString::new("[1, 2]").unwrap();
+        let mut sentinel: c_char = 0;
+        let mut out: *mut c_char = &mut sentinel;
+
+        let result =
+            unsafe { platform_wallet_split_contract_update_source(text.as_ptr(), &mut out) };
+
+        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(out.is_null());
     }
 
     /// The export clears a caller's output slot before it refuses a null

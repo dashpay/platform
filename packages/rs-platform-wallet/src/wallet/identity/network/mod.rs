@@ -35,6 +35,8 @@ pub(crate) const DPNS_USERNAMES_MAX_PAGES: usize = 10;
 mod balance;
 mod contract;
 pub use contract::{ContractSectionChanges, DataContractUpdatePreview};
+mod contract_update_source;
+pub use contract_update_source::{split_contract_update_source, ContractUpdateSource};
 mod decision_proposal;
 mod discovery;
 mod document;
