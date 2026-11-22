@@ -4,7 +4,13 @@ import SwiftDashSDK
 
 @MainActor
 class AppState: ObservableObject {
-    @Published var sdk: SDK?
+    @Published var sdk: SDK? {
+        didSet { sdkGeneration &+= 1 }
+    }
+    /// Advanced every time `sdk` is set, so a result read through one SDK can
+    /// tell it no longer answers for the current one: a stable identity for
+    /// the connection, unlike the network, which a devnet edit keeps.
+    @Published private(set) var sdkGeneration = 0
     @Published var isLoading = false
     @Published var showError = false
     @Published var errorMessage = ""

@@ -50,10 +50,13 @@ use std::sync::Arc;
 
 use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
-use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+use dash_sdk::platform::transition::broadcast::{
+    identity_top_up_from_shielded_pool_requirement, shield_from_identity_requirement,
+    transition_protocol_requirement, BroadcastStateTransition,
+};
 use dash_sdk::platform::transition::identity_create_from_shielded_pool::IdentityCreateFromShieldedPool;
 use dash_sdk::platform::Fetch;
-use dash_sdk::query_types::IdentityNonceFetcher;
+use dash_sdk::query_types::{IdentityBalance, IdentityNonceFetcher};
 use dpp::address_funds::{
     AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, OrchardAddress, PlatformAddress,
 };
@@ -77,7 +80,7 @@ use dpp::shielded::builder::{
     build_shielded_transfer_transition, build_shielded_withdrawal_transition,
     build_unshield_transition, OrchardProver, SpendableNote,
 };
-use dpp::shielded::compute_minimum_shielded_fee;
+use dpp::shielded::{compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee};
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::StateTransition;
@@ -1105,6 +1108,13 @@ pub(in crate::wallet) async fn shield_from_identity_to<
         });
     }
 
+    // Nodes before the transition's activation reject it, and a rejected debit would
+    // stay saved for a retry that can never execute: establish that the network serves
+    // it before anything is proved or saved. After the pending-debit check, so a caller
+    // offline after a restart still learns about the debit that may execute.
+    sdk.ensure_protocol_requirement(shield_from_identity_requirement())
+        .await?;
+
     // A self-shield funded by an identity is its own activity kind so the
     // history shows which identity paid; a third-party recipient stays `Sent`.
     let kind = match kind {
@@ -1113,6 +1123,27 @@ pub(in crate::wallet) async fn shield_from_identity_to<
         },
         other => other,
     };
+
+    // Refuse before the redrive guard is armed or anything is broadcast: consensus
+    // refuses a debit the identity cannot cover (amount plus the admission floor)
+    // at CheckTx, and a guard armed for a debit that never executes can never be
+    // resolved by the scan. The caller's managed identity may be stale, so read the
+    // proved balance.
+    let fee = compute_shielded_identity_balance_write_fee(2, sdk.version()).map_err(|e| {
+        PlatformWalletError::ShieldedBuildError(format!("compute identity shield fee: {e}"))
+    })?;
+    let required = amount.saturating_add(fee);
+    // A failed read keeps its typed SDK cause; no balance at all is its own refusal.
+    let available = IdentityBalance::fetch(sdk, identity_id)
+        .await?
+        .ok_or(PlatformWalletError::IdentityBalanceUnavailable(identity_id))?;
+    if available < required {
+        return Err(PlatformWalletError::InsufficientIdentityCredits {
+            identity_id,
+            required,
+            available,
+        });
+    }
 
     let nonce = sdk
         .get_identity_nonce(identity_id, true, None)
@@ -1534,6 +1565,12 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
     amount: u64,
     prover: &P,
 ) -> Result<(Option<Credits>, ResponseMetadata), PlatformWalletError> {
+    // A zero amount is refused before anything asks the network.
+    ensure_positive_amount(amount)?;
+    // Nodes before the transition's activation reject it: establish that the network
+    // serves it before any note is reserved or anything is proved or saved.
+    sdk.ensure_protocol_requirement(identity_top_up_from_shielded_pool_requirement())
+        .await?;
     let views = keys.viewing_keys();
     let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
@@ -4382,8 +4419,32 @@ pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
                 }
             }
         }
+        // A refusal by the protocol gate sends nothing: do not count it. Checked
+        // before the live-record check below, so a Stop Retrying that lands while
+        // the check waits on the network is seen before anything is sent.
+        match cancel
+            .run_until_cancelled(
+                sdk.ensure_protocol_requirement(shield_from_identity_requirement()),
+            )
+            .await
+        {
+            None => {
+                debug!("identity redrive: pass cancelled during the protocol check");
+                return;
+            }
+            Some(Err(e)) => {
+                debug!(
+                    error = %e,
+                    "identity redrive: cannot be sent at this protocol version; not counted"
+                );
+                continue;
+            }
+            Some(Ok(())) => {}
+        }
+
         // A host recovery decision may have archived this snapshot while the
-        // nonce request was in flight. Do not initiate a new broadcast from it.
+        // nonce request or the protocol check was in flight. Do not initiate a
+        // new broadcast from it.
         // Already submitted network requests cannot be cancelled by this check.
         let still_active = store
             .read()
@@ -4488,6 +4549,29 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
                 continue;
             }
         };
+        // A kind the network or this SDK does not run yet is refused by the broadcast
+        // gate without being sent; check it before claiming an attempt, so local
+        // refusals do not use up the record's budget.
+        if let Some(requirement) = transition_protocol_requirement(&st) {
+            match cancel
+                .run_until_cancelled(sdk.ensure_protocol_requirement(requirement))
+                .await
+            {
+                None => {
+                    debug!("redrive: pass cancelled during the protocol check");
+                    return;
+                }
+                Some(Err(e)) => {
+                    debug!(
+                        error = %e,
+                        "redrive: the transition cannot be sent at this protocol version; \
+                         no attempt claimed"
+                    );
+                    continue;
+                }
+                Some(Ok(())) => {}
+            }
+        }
         let Some(attempts) = claim_redrive_attempt(store, id, &redrive).await else {
             continue;
         };
@@ -4844,6 +4928,10 @@ mod redrive_tests {
     use dpp::state_transition::shield_transition::v0::ShieldTransitionV0;
     use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
     use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+    use dpp::version::feature_initial_protocol_versions::{
+        IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+        SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION,
+    };
     use dpp::version::PlatformVersion;
     use futures::{poll, FutureExt};
     use grovedb_commitment_tree::ProvingKey;
@@ -4864,6 +4952,452 @@ mod redrive_tests {
             signature: BinaryData::new(vec![]),
         }
         .into()
+    }
+
+    /// Signer and prover for the pre-broadcast refusals: neither is reached.
+    #[derive(Debug)]
+    struct UnreachableIdentitySigner;
+
+    #[async_trait::async_trait]
+    impl Signer<IdentityPublicKey> for UnreachableIdentitySigner {
+        async fn sign(&self, _: &IdentityPublicKey, _: &[u8]) -> Result<BinaryData, ProtocolError> {
+            unreachable!("nothing is signed")
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _: &IdentityPublicKey,
+            _: &[u8],
+        ) -> Result<dpp::address_funds::AddressWitness, ProtocolError> {
+            unreachable!("nothing is signed")
+        }
+
+        fn can_sign_with(&self, _: &IdentityPublicKey) -> bool {
+            false
+        }
+    }
+
+    struct UnreachableIdentityProver;
+    impl OrchardProver for UnreachableIdentityProver {
+        fn proving_key(&self) -> &ProvingKey {
+            panic!("nothing is proved")
+        }
+    }
+
+    /// Run a self-shield from an identity (`shield_from_identity_to` with no
+    /// recipient) on a mock SDK at `platform_version`. When `proved_balance` is
+    /// set the mock answers the identity's balance with it, while the managed
+    /// identity (the caller's possibly stale copy) claims a huge balance.
+    /// Returns the result and the store, to inspect what was armed or recorded.
+    async fn identity_shield_on_mock(
+        platform_version: &'static PlatformVersion,
+        proved_balance: Option<u64>,
+        amount: u64,
+    ) -> (
+        Result<(Credits, ResponseMetadata), PlatformWalletError>,
+        Arc<RwLock<InMemoryShieldedStore>>,
+        SubwalletId,
+    ) {
+        let sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(platform_version)
+            .build()
+            .expect("mock sdk");
+        identity_shield_on_sdk(sdk, proved_balance, amount).await
+    }
+
+    /// [`identity_shield_on_mock`] on a mock SDK the caller built.
+    async fn identity_shield_on_sdk(
+        mut sdk: dash_sdk::Sdk,
+        proved_balance: Option<u64>,
+        amount: u64,
+    ) -> (
+        Result<(Credits, ResponseMetadata), PlatformWalletError>,
+        Arc<RwLock<InMemoryShieldedStore>>,
+        SubwalletId,
+    ) {
+        use dpp::identity::v0::IdentityV0;
+
+        let identity_id = Identifier::from([0x71; 32]);
+        if let Some(balance) = proved_balance {
+            sdk.mock()
+                .expect_fetch::<IdentityBalance, Identifier>(identity_id, Some(balance))
+                .await
+                .expect("balance expectation");
+        }
+        let sdk = Arc::new(sdk);
+        let wallet_id = [0x72; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let keys = OrchardKeySet::from_seed(&[0x42; 32], Network::Testnet, 0)
+            .expect("keys")
+            .viewing_keys();
+        let identity = Identity::V0(IdentityV0 {
+            id: identity_id,
+            public_keys: Default::default(),
+            balance: u64::MAX / 2,
+            revision: 0,
+        });
+        let result = shield_from_identity_to(
+            &sdk,
+            &store,
+            None,
+            wallet_id,
+            &keys,
+            0,
+            None,
+            &identity,
+            amount,
+            [0u8; 36],
+            &UnreachableIdentitySigner,
+            &UnreachableIdentityProver,
+        )
+        .await;
+        (result, store, id)
+    }
+
+    async fn assert_nothing_armed_or_recorded(
+        store: &Arc<RwLock<InMemoryShieldedStore>>,
+        id: SubwalletId,
+    ) {
+        let store = store.read().await;
+        assert!(store.pending_redrives(id).unwrap().is_empty(), "no guard");
+        assert!(store.get_activity_ids(id).unwrap().is_empty(), "no row");
+    }
+
+    fn identity_shield_fee() -> Credits {
+        compute_shielded_identity_balance_write_fee(2, PlatformVersion::latest()).expect("fee")
+    }
+
+    #[tokio::test]
+    async fn should_refuse_an_identity_shield_whose_proved_balance_is_one_credit_short() {
+        let amount = 1_000_000;
+        let fee = identity_shield_fee();
+
+        let (result, store, id) =
+            identity_shield_on_mock(PlatformVersion::latest(), Some(amount + fee - 1), amount)
+                .await;
+
+        match result {
+            Err(PlatformWalletError::InsufficientIdentityCredits {
+                required,
+                available,
+                ..
+            }) => {
+                assert_eq!(required, amount + fee);
+                assert_eq!(available, amount + fee - 1);
+            }
+            other => panic!("expected InsufficientIdentityCredits, got {other:?}"),
+        }
+        assert_nothing_armed_or_recorded(&store, id).await;
+    }
+
+    #[tokio::test]
+    async fn should_pass_the_identity_balance_check_when_it_covers_the_amount_and_fee_exactly() {
+        let amount = 1_000_000;
+        let fee = identity_shield_fee();
+
+        let (result, store, id) =
+            identity_shield_on_mock(PlatformVersion::latest(), Some(amount + fee), amount).await;
+
+        // The unconfigured mock refuses the nonce fetch that follows the check.
+        match result {
+            Err(PlatformWalletError::ShieldedBuildError(reason)) => {
+                assert!(reason.contains("fetch identity nonce"), "{reason}")
+            }
+            other => panic!("expected to reach the nonce fetch, got {other:?}"),
+        }
+        assert_nothing_armed_or_recorded(&store, id).await;
+    }
+
+    #[tokio::test]
+    async fn should_refuse_an_identity_shield_below_its_activation_version() {
+        let below = PlatformVersion::get(SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION - 1)
+            .expect("the version before activation");
+
+        // No balance expectation: the refusal comes before any network read.
+        let (result, store, id) = identity_shield_on_mock(below, None, 1_000_000).await;
+
+        match result {
+            Err(PlatformWalletError::Sdk(dash_sdk::Error::ProtocolVersionNotActive {
+                required,
+                pinned,
+                ..
+            })) => {
+                assert_eq!(required, SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION);
+                assert!(
+                    pinned,
+                    "a pinned SDK below the activation is refused as pinned"
+                );
+            }
+            other => panic!("expected the activation refusal, got {other:?}"),
+        }
+        assert_nothing_armed_or_recorded(&store, id).await;
+    }
+
+    /// Answer the proved epoch queries `refresh_protocol_version` sends. The mock
+    /// signs its answers with the latest protocol version, as a network that has
+    /// activated it would.
+    async fn expect_epoch_refresh(sdk: &mut dash_sdk::Sdk) {
+        use dash_sdk::platform::types::epoch::EpochQuery;
+        use dash_sdk::platform::LimitQuery;
+        use dash_sdk::query_types::ExtendedEpochInfos;
+        use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0;
+        use dpp::block::extended_epoch_info::ExtendedEpochInfo;
+
+        let probe_query = LimitQuery {
+            query: EpochQuery::genesis(),
+            limit: Some(1),
+            start_info: None,
+        };
+        let confirmation_query = LimitQuery {
+            query: EpochQuery::ascending_from(0),
+            limit: Some(2),
+            start_info: None,
+        };
+        let epoch = ExtendedEpochInfo::from(ExtendedEpochInfoV0 {
+            index: 0,
+            first_block_time: 0,
+            first_block_height: 0,
+            first_core_block_height: 0,
+            fee_multiplier_permille: 0,
+            protocol_version: dpp::version::LATEST_VERSION,
+        });
+        sdk.mock()
+            .expect_fetch::<ExtendedEpochInfo, _>(probe_query, Some(epoch.clone()))
+            .await
+            .expect("epoch probe expectation");
+        sdk.mock()
+            .expect_fetch_many::<_, ExtendedEpochInfo, _, ExtendedEpochInfos>(
+                confirmation_query,
+                Some(ExtendedEpochInfos::from_iter([(0, Some(epoch))])),
+            )
+            .await
+            .expect("epoch refresh expectation");
+    }
+
+    #[tokio::test]
+    async fn should_let_an_unpinned_sdk_seeded_below_activation_learn_the_network_s_version() {
+        let below = PlatformVersion::get(SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION - 1)
+            .expect("the version before activation");
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_initial_version(below)
+            .build()
+            .expect("mock sdk");
+        expect_epoch_refresh(&mut sdk).await;
+        let amount = 1_000_000;
+        let fee = identity_shield_fee();
+
+        let (result, store, id) = identity_shield_on_sdk(sdk, Some(amount + fee), amount).await;
+
+        // Past the activation check and the balance check, the unconfigured mock
+        // refuses the nonce fetch.
+        match result {
+            Err(PlatformWalletError::ShieldedBuildError(reason)) => {
+                assert!(reason.contains("fetch identity nonce"), "{reason}")
+            }
+            other => panic!("expected to reach the nonce fetch, got {other:?}"),
+        }
+        assert_nothing_armed_or_recorded(&store, id).await;
+    }
+
+    #[tokio::test]
+    async fn should_refuse_an_identity_shield_when_the_identity_has_no_balance_on_platform() {
+        let identity_id = Identifier::from([0x71; 32]);
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .expect("mock sdk");
+        // The proved answer is "no balance": `IdentityBalance::fetch` returns `Ok(None)`.
+        sdk.mock()
+            .expect_fetch::<IdentityBalance, Identifier>(identity_id, None)
+            .await
+            .expect("absent balance expectation");
+
+        let (result, store, id) = identity_shield_on_sdk(sdk, None, 1_000_000).await;
+
+        match result {
+            Err(PlatformWalletError::IdentityBalanceUnavailable(found)) => {
+                assert_eq!(found, identity_id)
+            }
+            other => panic!("expected IdentityBalanceUnavailable, got {other:?}"),
+        }
+        assert_nothing_armed_or_recorded(&store, id).await;
+    }
+
+    #[tokio::test]
+    async fn should_keep_the_sdk_error_when_the_identity_balance_read_fails() {
+        // No balance expectation: the mock fails the read, past the activation check.
+        let (result, store, id) =
+            identity_shield_on_mock(PlatformVersion::latest(), None, 1_000_000).await;
+
+        // The mock's own refusal of the unanswered read, kept as the cause.
+        match result {
+            Err(PlatformWalletError::Sdk(error)) => assert!(
+                error.to_string().contains("mock expectation not found"),
+                "expected the read's own failure, got {error:?}"
+            ),
+            other => panic!("expected the SDK's own error, got {other:?}"),
+        }
+        assert_nothing_armed_or_recorded(&store, id).await;
+    }
+
+    #[tokio::test]
+    async fn should_report_a_pending_identity_debit_before_the_activation_check() {
+        use dpp::identity::v0::IdentityV0;
+
+        // A pinned SDK below the activation refuses without asking the network, standing
+        // in for a probe that cannot run while offline after a restart.
+        let below = PlatformVersion::get(SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION - 1)
+            .expect("the version before activation");
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_version(below)
+                .build()
+                .expect("mock sdk"),
+        );
+        let identity_id = [0x75; 32];
+        let wallet_id = [0x76; 32];
+        let mut store = InMemoryShieldedStore::new();
+        store
+            .arm_redrive(
+                SubwalletId::new(wallet_id, 0),
+                PendingRedrive {
+                    activity_id: [0x77; 32],
+                    anchor: [1; 32],
+                    nullifiers: vec![],
+                    st_bytes: identity_shield_transition(identity_id, 3)
+                        .serialize_to_bytes()
+                        .expect("identity shield should serialize"),
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                    anchor_height: None,
+                },
+            )
+            .expect("redrive should arm");
+        let store = Arc::new(RwLock::new(store));
+        let keys = OrchardKeySet::from_seed(&[0x44; 32], Network::Testnet, 0)
+            .expect("keys")
+            .viewing_keys();
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from(identity_id),
+            public_keys: Default::default(),
+            balance: u64::MAX / 2,
+            revision: 0,
+        });
+
+        let result = shield_from_identity_to(
+            &sdk,
+            &store,
+            None,
+            wallet_id,
+            &keys,
+            0,
+            None,
+            &identity,
+            1_000_000,
+            [0u8; 36],
+            &UnreachableIdentitySigner,
+            &UnreachableIdentityProver,
+        )
+        .await;
+
+        match result {
+            Err(PlatformWalletError::ShieldedIdentityDebitPending { identity_id: found }) => {
+                assert_eq!(found, identity_id)
+            }
+            other => panic!("expected the pending debit, got {other:?}"),
+        }
+    }
+
+    /// The public free function refuses a zero top-up before the activation check, so a
+    /// pinned SDK below 14 reports the amount, not the protocol version, and an unpinned
+    /// one asks the network nothing.
+    #[tokio::test]
+    async fn should_refuse_a_zero_pool_top_up_before_the_activation_check() {
+        let below =
+            PlatformVersion::get(IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION - 1)
+                .expect("the version before activation");
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_version(below)
+                .build()
+                .expect("mock sdk"),
+        );
+        let wallet_id = [0x7B; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let keys = OrchardKeySet::from_seed(&[0x45; 32], Network::Testnet, 0).expect("keys");
+
+        let result = identity_top_up_from_pool(
+            &sdk,
+            &store,
+            None,
+            wallet_id,
+            &keys,
+            0,
+            Identifier::from([0x7C; 32]),
+            0,
+            &UnreachableIdentityProver,
+        )
+        .await;
+
+        match result {
+            Err(PlatformWalletError::ShieldedBuildError(reason)) => {
+                assert!(reason.contains("amount must be > 0"), "{reason}")
+            }
+            other => panic!("expected the zero-amount refusal, got {other:?}"),
+        }
+        assert_nothing_armed_or_recorded(&store, id).await;
+    }
+
+    #[tokio::test]
+    async fn should_refuse_an_identity_top_up_from_the_pool_below_its_activation_version() {
+        let below =
+            PlatformVersion::get(IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION - 1)
+                .expect("the version before activation");
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_version(below)
+                .build()
+                .expect("mock sdk"),
+        );
+        let wallet_id = [0x73; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let keys = OrchardKeySet::from_seed(&[0x43; 32], Network::Testnet, 0).expect("keys");
+
+        let result = identity_top_up_from_pool_with_metadata(
+            &sdk,
+            &store,
+            None,
+            wallet_id,
+            &keys,
+            0,
+            Identifier::from([0x74; 32]),
+            1_000_000,
+            &UnreachableIdentityProver,
+        )
+        .await;
+
+        match result {
+            Err(PlatformWalletError::Sdk(dash_sdk::Error::ProtocolVersionNotActive {
+                required,
+                pinned,
+                ..
+            })) => {
+                assert_eq!(
+                    required,
+                    IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION
+                );
+                assert!(
+                    pinned,
+                    "a pinned SDK below the activation is refused as pinned"
+                );
+            }
+            other => panic!("expected the activation refusal, got {other:?}"),
+        }
+        assert_nothing_armed_or_recorded(&store, id).await;
     }
 
     #[tokio::test]
@@ -6180,6 +6714,113 @@ mod redrive_tests {
         assert_eq!(saved.len(), 1);
         assert_eq!(saved[0].activity_id, [0x77; 32]);
         assert_eq!(saved[0].nullifiers, vec![[1; 32]]);
+    }
+
+    /// A saved pool top-up (type 22) the protocol gate refuses locally is not
+    /// counted against its retry budget; once the SDK can send it, the next pass
+    /// claims an attempt and sends the saved bytes.
+    #[tokio::test]
+    async fn should_not_count_locally_refused_top_up_redrives_against_their_budget() {
+        use dpp::state_transition::identity_top_up_from_shielded_pool_transition::v0::IdentityTopUpFromShieldedPoolTransitionV0;
+        use dpp::state_transition::identity_top_up_from_shielded_pool_transition::IdentityTopUpFromShieldedPoolTransition;
+
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = SubwalletId::new([0x55; 32], 0);
+        let anchor = [0x78; 32];
+        let action = SerializedAction {
+            nullifier: [1; 32],
+            rk: [2; 32],
+            cmx: [3; 32],
+            encrypted_note: vec![4; 216],
+            cv_net: [5; 32],
+            spend_auth_sig: [6; 64],
+        };
+        let top_up = StateTransition::IdentityTopUpFromShieldedPool(
+            IdentityTopUpFromShieldedPoolTransition::V0(
+                IdentityTopUpFromShieldedPoolTransitionV0 {
+                    identity_id: Identifier::from([0x79; 32]),
+                    actions: vec![action.clone(), action],
+                    top_up_amount: 1_000,
+                    anchor,
+                    proof: vec![8; 64],
+                    binding_signature: [9; 64],
+                },
+            ),
+        );
+        store
+            .write()
+            .await
+            .arm_redrive(
+                id,
+                PendingRedrive {
+                    activity_id: [0x7A; 32],
+                    anchor,
+                    nullifiers: vec![[1; 32]],
+                    st_bytes: top_up.serialize_to_bytes().expect("serialize"),
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                    anchor_height: None,
+                },
+            )
+            .expect("arm top-up redrive");
+        let recorded = [anchor].into_iter().collect();
+        let attempts = |store: &Arc<RwLock<InMemoryShieldedStore>>| {
+            let store = store.clone();
+            async move { store.read().await.pending_redrives(id).expect("redrives")[0].attempts }
+        };
+
+        use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+        let request = top_up
+            .broadcast_request_for_state_transition()
+            .expect("serializes");
+
+        let below =
+            PlatformVersion::get(IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION - 1)
+                .expect("the version before activation");
+        let mut pinned_below = dash_sdk::SdkBuilder::new_mock()
+            .with_version(below)
+            .build()
+            .expect("mock sdk");
+        let pinned_below_handle = Arc::new(pinned_below.clone());
+        for _ in 0..MAX_REDRIVE_ATTEMPTS + 1 {
+            redrive_pending_spends(
+                &pinned_below_handle,
+                &store,
+                id,
+                &recorded,
+                &CancellationToken::new(),
+            )
+            .await;
+        }
+        assert_eq!(
+            attempts(&store).await,
+            0,
+            "local refusals must not use up the retry budget"
+        );
+        assert_eq!(
+            pinned_below.mock().request_count(&request).await,
+            0,
+            "nothing was sent"
+        );
+
+        // A compatible SDK claims an attempt and sends the saved bytes; the mock has
+        // no broadcast answer, so the send is inconclusive and counted.
+        let mut compatible = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        let compatible_handle = Arc::new(compatible.clone());
+        redrive_pending_spends(
+            &compatible_handle,
+            &store,
+            id,
+            &recorded,
+            &CancellationToken::new(),
+        )
+        .await;
+        assert_eq!(attempts(&store).await, 1, "a send is counted");
+        assert!(
+            compatible.mock().request_count(&request).await > 0,
+            "the saved top-up bytes were sent"
+        );
     }
 
     #[tokio::test]

@@ -2,7 +2,7 @@
 
 use super::common::{bootstrap_mock_sdk_to_latest, mock_data_contract, mock_document_type};
 use dash_sdk::{
-    platform::{DocumentQuery, DocumentQuerySdk, Fetch},
+    platform::{DocumentQuery, DocumentQuerySdk, Fetch, Query},
     Sdk, SdkBuilder,
 };
 use dpp::{
@@ -284,4 +284,623 @@ async fn should_fetch_mocked_team_actions_with_their_approval_counts() {
         .expect("actions should exist");
 
     assert_eq!(fetched, expected);
+}
+
+/// A mock contract declaring `moderation`, or unmoderated for `None`.
+fn mock_contract_with_moderation(
+    moderation: Option<dpp::data_contract::config::moderation::ContractModerationConfig>,
+) -> DataContract {
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+
+    let mut contract = mock_data_contract(Some(&mock_document_type()));
+    let config = contract.config().clone().with_moderation(moderation);
+    contract.set_config(config);
+    contract
+}
+
+#[tokio::test]
+/// Given only the id of a moderated contract, when I build an identity's status query from it,
+/// then the query names every list the contract keeps and no other
+async fn should_build_a_moderation_status_query_over_the_lists_a_contract_keeps() {
+    use dash_sdk::platform::contract_moderation::{
+        ContractModerationList, ContractModerationStatusQuery,
+    };
+    use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+
+    let mut sdk = Sdk::new_mock();
+    bootstrap_mock_sdk_to_latest(&mut sdk).await;
+
+    let contract = mock_contract_with_moderation(Some(ContractModerationConfig {
+        banlist: true,
+        suspensions: false,
+        moderators: ContractModerators::ContractOwner,
+        warnings: true,
+    }));
+    let contract_id = contract.id();
+    let identity_id = Identifier::from([3u8; 32]);
+    sdk.mock()
+        .expect_fetch(contract_id, Some(contract))
+        .await
+        .unwrap();
+
+    let query = ContractModerationStatusQuery::for_contract_id(&sdk, contract_id, identity_id)
+        .await
+        .expect("a moderated contract has a status query");
+
+    assert_eq!(
+        query,
+        ContractModerationStatusQuery {
+            contract_id,
+            identity_id,
+            lists: vec![
+                ContractModerationList::Banlist,
+                ContractModerationList::Warnings
+            ],
+        }
+    );
+}
+
+#[tokio::test]
+/// Given the id of a contract with no list to read (not moderated, moderated without a list, or
+/// absent), when I build a status query from it, then it is refused before any status request
+async fn should_refuse_a_moderation_status_query_for_a_contract_without_lists() {
+    use dash_sdk::platform::contract_moderation::ContractModerationStatusQuery;
+    use dash_sdk::Error;
+    use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+
+    let mut sdk = Sdk::new_mock();
+    bootstrap_mock_sdk_to_latest(&mut sdk).await;
+    let identity_id = Identifier::from([3u8; 32]);
+
+    let unmoderated = mock_contract_with_moderation(None);
+    let unmoderated_id = unmoderated.id();
+    sdk.mock()
+        .expect_fetch(unmoderated_id, Some(unmoderated))
+        .await
+        .unwrap();
+    let refused = ContractModerationStatusQuery::for_contract_id(&sdk, unmoderated_id, identity_id)
+        .await
+        .expect_err("an unmoderated contract has no status to read");
+    assert!(
+        matches!(&refused, Error::InvalidRequest(reason) if reason.contains("is not moderated")),
+        "{refused}"
+    );
+
+    let listless = mock_contract_with_moderation(Some(ContractModerationConfig {
+        banlist: false,
+        suspensions: false,
+        moderators: ContractModerators::ContractOwner,
+        warnings: false,
+    }));
+    let listless_id = listless.id();
+    sdk.mock()
+        .expect_fetch(listless_id, Some(listless))
+        .await
+        .unwrap();
+    let refused = ContractModerationStatusQuery::for_contract_id(&sdk, listless_id, identity_id)
+        .await
+        .expect_err("a contract that keeps no list has no status to read");
+    assert!(
+        matches!(&refused, Error::InvalidRequest(reason) if reason.contains("keeps no moderation list")),
+        "{refused}"
+    );
+
+    let absent_id = Identifier::from([9u8; 32]);
+    sdk.mock()
+        .expect_fetch(absent_id, None as Option<DataContract>)
+        .await
+        .unwrap();
+    let refused = ContractModerationStatusQuery::for_contract_id(&sdk, absent_id, identity_id)
+        .await
+        .expect_err("a contract the network does not hold has no status to read");
+    assert!(
+        matches!(&refused, Error::MissingDependency(what, _) if what == "DataContract"),
+        "{refused}"
+    );
+}
+
+/// A removal record of document `[seed; 32]` keeping `kept_fields`.
+fn mock_removal_entry(
+    seed: u8,
+    kept_fields: Vec<u8>,
+) -> dash_sdk::platform::contract_moderation::ContractDocumentRemovalEntry {
+    use dash_sdk::platform::contract_moderation::{
+        ContractDocumentRemoval, ContractDocumentRemovalEntry,
+    };
+    use dpp::data_contract::config::moderation::ContractModerationReason;
+
+    ContractDocumentRemovalEntry {
+        document_id: Identifier::from([seed; 32]),
+        removal: ContractDocumentRemoval {
+            document_owner_id: Identifier::from([20u8; 32]),
+            moderator_id: Identifier::from([21u8; 32]),
+            reason: ContractModerationReason::from_text("off topic"),
+            removed_at: 1_700_000_000_000,
+            document_hash: [0xab; 32],
+            restoration: None,
+            kept_fields,
+        },
+    }
+}
+
+#[tokio::test]
+/// Given removal records that keep no values, when I read them with their kept values, then
+/// each reads as no values and the contract is never fetched (the mock holds no contract)
+async fn should_read_removals_keeping_no_values_without_fetching_the_contract() {
+    use dash_sdk::platform::contract_moderation::{
+        ContractDocumentRemovals, ContractDocumentRemovalsPageQuery,
+    };
+    use std::collections::BTreeMap;
+
+    let mut sdk = Sdk::new_mock();
+    bootstrap_mock_sdk_to_latest(&mut sdk).await;
+
+    let query = ContractDocumentRemovalsPageQuery::new(
+        Identifier::from([1u8; 32]),
+        "post".to_string(),
+        sdk.version(),
+    );
+    let page = ContractDocumentRemovals(vec![mock_removal_entry(3, vec![])]);
+    sdk.mock()
+        .expect_fetch(query.clone(), Some(page.clone()))
+        .await
+        .unwrap();
+
+    let read = query
+        .fetch_with_kept_values(&sdk)
+        .await
+        .expect("records keeping nothing need no contract")
+        .expect("the records are there");
+
+    assert_eq!(read.removals, vec![(page.0[0].clone(), BTreeMap::new())]);
+    assert_eq!(read.next, None);
+}
+
+#[tokio::test]
+/// Given a removal record keeping a value of its document, when I read it with its kept values,
+/// then the value reads under the document's type, and the page's cursor is rs-sdk's
+async fn should_read_the_values_a_removal_record_keeps_under_its_document_type() {
+    use dash_sdk::platform::contract_moderation::{
+        ContractDocumentRemovals, ContractDocumentRemovalsPageQuery,
+    };
+    use dpp::data_contract::config::moderation::{
+        encode_kept_fields, ContractModerationConfig, ContractModerators,
+    };
+    use dpp::data_contract::config::DataContractConfig;
+    use dpp::data_contract::document_type::DocumentType;
+    use dpp::document::DocumentV0;
+    use dpp::platform_value::{platform_value, Value};
+    use std::collections::BTreeMap;
+
+    let mut sdk = Sdk::new_mock();
+    bootstrap_mock_sdk_to_latest(&mut sdk).await;
+    let platform_version = PlatformVersion::latest();
+
+    let moderation = ContractModerationConfig {
+        banlist: false,
+        suspensions: false,
+        moderators: ContractModerators::ContractOwner,
+        warnings: false,
+    };
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("a default config")
+        .with_moderation(Some(moderation.clone()));
+    let mut contract = mock_contract_with_moderation(Some(moderation));
+    let post = DocumentType::try_from_schema(
+        contract.id(),
+        1,
+        config.version(),
+        "post",
+        platform_value!({
+            "type": "object",
+            "properties": {
+                "hashtag": { "type": "string", "maxLength": 61, "position": 0 },
+            },
+            "additionalProperties": false,
+            "moderatorAbilities": {
+                "delete": true,
+                "deleteKeepsFields": ["hashtag"],
+            },
+        }),
+        None,
+        &BTreeMap::new(),
+        &config,
+        true,
+        &mut vec![],
+        platform_version,
+    )
+    .expect("a post type keeping its hashtag");
+    let kept_fields = encode_kept_fields(
+        &Document::V0(DocumentV0 {
+            id: Identifier::from([3u8; 32]),
+            properties: BTreeMap::from([("hashtag".to_string(), Value::Text("dash".into()))]),
+            ..Default::default()
+        }),
+        post.as_ref(),
+    )
+    .expect("encodes");
+    contract
+        .document_types_mut()
+        .insert("post".to_string(), post);
+    let contract_id = contract.id();
+
+    let query =
+        ContractDocumentRemovalsPageQuery::new(contract_id, "post".to_string(), sdk.version())
+            .with_limit(1);
+    let page = ContractDocumentRemovals(vec![mock_removal_entry(3, kept_fields)]);
+    sdk.mock()
+        .expect_fetch(query.clone(), Some(page.clone()))
+        .await
+        .unwrap();
+    sdk.mock()
+        .expect_fetch(contract_id, Some(contract))
+        .await
+        .unwrap();
+
+    let read = query
+        .fetch_with_kept_values(&sdk)
+        .await
+        .expect("reads")
+        .expect("the records are there");
+
+    assert_eq!(
+        read.removals,
+        vec![(
+            page.0[0].clone(),
+            BTreeMap::from([("hashtag".to_string(), Value::Text("dash".into()))])
+        )]
+    );
+    // A full page has a page after it, the one rs-sdk's `after` gives
+    assert_eq!(read.next, query.after(&page));
+    assert!(read.next.is_some());
+}
+
+#[tokio::test]
+/// Given an explicit empty list selection, when I resolve the status query, then it is sent as
+/// given for the node to judge, without a contract request (the mock holds no contract)
+async fn should_pass_an_empty_list_selection_through_unchanged() {
+    use dash_sdk::platform::contract_moderation::ContractModerationStatusQuery;
+
+    let mut sdk = Sdk::new_mock();
+    bootstrap_mock_sdk_to_latest(&mut sdk).await;
+    let contract_id = Identifier::from([1u8; 32]);
+    let identity_id = Identifier::from([2u8; 32]);
+
+    let query =
+        ContractModerationStatusQuery::resolve(&sdk, contract_id, identity_id, Some(vec![]))
+            .await
+            .expect("an explicit selection needs no contract");
+
+    assert_eq!(
+        query,
+        ContractModerationStatusQuery {
+            contract_id,
+            identity_id,
+            lists: vec![],
+        }
+    );
+}
+
+/// A moderated contract whose `post` type keeps `kept` of `properties` when a moderator
+/// deletes a post, at contract version `version`.
+fn mock_contract_keeping(
+    properties: dpp::platform_value::Value,
+    kept: &[&str],
+    version: u32,
+) -> DataContract {
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+    use dpp::data_contract::config::DataContractConfig;
+    use dpp::platform_value::platform_value;
+    use std::collections::BTreeMap;
+
+    let platform_version = PlatformVersion::latest();
+    let moderation = ContractModerationConfig {
+        banlist: false,
+        suspensions: false,
+        moderators: ContractModerators::ContractOwner,
+        warnings: false,
+    };
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("a default config")
+        .with_moderation(Some(moderation.clone()));
+    let mut contract = mock_contract_with_moderation(Some(moderation));
+    contract.set_id(Identifier::from([1u8; 32]));
+    contract.set_version(version);
+    let post = DocumentType::try_from_schema(
+        contract.id(),
+        1,
+        config.version(),
+        "post",
+        platform_value!({
+            "type": "object",
+            "properties": properties,
+            "additionalProperties": false,
+            "moderatorAbilities": {
+                "delete": true,
+                "deleteKeepsFields": kept,
+            },
+        }),
+        None,
+        &BTreeMap::new(),
+        &config,
+        true,
+        &mut vec![],
+        platform_version,
+    )
+    .expect("a post type keeping fields");
+    contract
+        .document_types_mut()
+        .insert("post".to_string(), post);
+    contract
+}
+
+/// The `meta` object a post keeps, declaring `tags` alone, or also `note` as a later
+/// compatible version of the contract adds it.
+fn meta_schema(with_note: bool) -> dpp::platform_value::Value {
+    use dpp::platform_value::platform_value;
+
+    let mut meta = platform_value!({
+        "type": "object",
+        "position": 0,
+        "properties": {
+            "tags": { "type": "string", "maxLength": 20, "position": 0 },
+        },
+        "additionalProperties": false,
+    });
+    if with_note {
+        meta = platform_value!({
+            "type": "object",
+            "position": 0,
+            "properties": {
+                "tags": { "type": "string", "maxLength": 20, "position": 0 },
+                "note": { "type": "string", "maxLength": 20, "position": 1 },
+            },
+            "additionalProperties": false,
+        });
+    }
+    platform_value!({ "meta": meta })
+}
+
+/// The kept fields of a post whose `meta` holds a tag and a note, encoded under `contract`.
+fn kept_meta_under(contract: &DataContract) -> Vec<u8> {
+    use dpp::data_contract::config::moderation::encode_kept_fields;
+    use dpp::document::DocumentV0;
+    use dpp::platform_value::Value;
+    use std::collections::BTreeMap;
+
+    let meta = Value::Map(vec![
+        (Value::Text("tags".into()), Value::Text("privacy".into())),
+        (Value::Text("note".into()), Value::Text("n".into())),
+    ]);
+    encode_kept_fields(
+        &Document::V0(DocumentV0 {
+            id: Identifier::from([3u8; 32]),
+            properties: BTreeMap::from([("meta".to_string(), meta)]),
+            ..Default::default()
+        }),
+        contract
+            .document_type_for_name("post")
+            .expect("the post type"),
+    )
+    .expect("encodes")
+}
+
+#[test]
+/// Given a removal record encoded after a compatible update added a member to a kept object,
+/// when its values are read under the contract from before the update, then the member is
+/// dropped without an error: why the contract must be answered no older than the records
+fn should_drop_a_kept_member_read_under_an_older_contract() {
+    use dash_sdk::platform::contract_moderation::ContractDocumentRemoval;
+    use dpp::platform_value::Value;
+
+    let older = mock_contract_keeping(meta_schema(false), &["meta"], 1);
+    let newer = mock_contract_keeping(meta_schema(true), &["meta"], 2);
+    let removal = ContractDocumentRemoval {
+        kept_fields: kept_meta_under(&newer),
+        ..Default::default()
+    };
+    let member = |contract: &DataContract, name: &str| {
+        removal
+            .kept_values(
+                contract
+                    .document_type_for_name("post")
+                    .expect("the post type"),
+            )
+            .expect("reads")
+            .get("meta")
+            .and_then(|meta| meta.get_optional_value(name).ok().flatten().cloned())
+    };
+
+    assert_eq!(member(&newer, "note"), Some(Value::Text("n".into())));
+    assert_eq!(member(&older, "note"), None);
+    // The older layout still reads `meta` as an object holding the member it declares, so
+    // only the member it does not declare is lost
+    assert_eq!(member(&older, "tags"), Some(Value::Text("privacy".into())));
+}
+
+#[tokio::test]
+/// Given records proved at a block newer than every contract answer, when I read their kept
+/// values, then the read is refused as stale rather than read under an older contract
+async fn should_refuse_kept_values_when_every_contract_answer_is_older_than_the_records() {
+    use dash_sdk::error::StaleNodeError;
+    use dash_sdk::platform::contract_moderation::{
+        ContractDocumentRemovals, ContractDocumentRemovalsPageQuery,
+    };
+    use dash_sdk::Error;
+
+    let mut sdk = Sdk::new_mock();
+    bootstrap_mock_sdk_to_latest(&mut sdk).await;
+    let contract = mock_contract_keeping(meta_schema(true), &["meta"], 2);
+    let contract_id = contract.id();
+    let query =
+        ContractDocumentRemovalsPageQuery::new(contract_id, "post".to_string(), sdk.version());
+    let page = ContractDocumentRemovals(vec![mock_removal_entry(3, kept_meta_under(&contract))]);
+    sdk.mock()
+        .expect_fetch(query.clone(), Some(page))
+        .await
+        .unwrap();
+    sdk.mock()
+        .expect_fetch(contract_id, Some(contract))
+        .await
+        .unwrap();
+    sdk.mock()
+        .set_response_height_of::<ContractDocumentRemovals>(10)
+        .set_response_height_of::<DataContract>(9);
+
+    let refused = query
+        .fetch_with_kept_values(&sdk)
+        .await
+        .expect_err("a contract older than the records cannot read their values");
+
+    // The first contract request and two more, every answer older than the records
+    let contract_request: dapi_grpc::platform::v0::GetDataContractRequest = contract_id
+        .query(&sdk.query_settings())
+        .expect("the contract request");
+    assert_eq!(sdk.mock().request_count(&contract_request).await, 3);
+
+    assert!(
+        matches!(
+            refused,
+            Error::StaleNode(StaleNodeError::Height {
+                expected_height: 10,
+                received_height: 9,
+                tolerance_blocks: 0,
+            })
+        ),
+        "{refused:?}"
+    );
+}
+
+#[tokio::test]
+/// Given records proved at a block newer than every answer that the contract is absent, when I
+/// read their kept values, then the read is refused as stale: an old absence does not show the
+/// contract is gone
+async fn should_refuse_kept_values_as_stale_when_every_contract_absence_is_older_than_the_records()
+{
+    use dash_sdk::error::StaleNodeError;
+    use dash_sdk::platform::contract_moderation::{
+        ContractDocumentRemovals, ContractDocumentRemovalsPageQuery,
+    };
+    use dash_sdk::Error;
+
+    let mut sdk = Sdk::new_mock();
+    bootstrap_mock_sdk_to_latest(&mut sdk).await;
+    let contract = mock_contract_keeping(meta_schema(true), &["meta"], 2);
+    let contract_id = contract.id();
+    let query =
+        ContractDocumentRemovalsPageQuery::new(contract_id, "post".to_string(), sdk.version());
+    let page = ContractDocumentRemovals(vec![mock_removal_entry(3, kept_meta_under(&contract))]);
+    sdk.mock()
+        .expect_fetch(query.clone(), Some(page))
+        .await
+        .unwrap();
+    sdk.mock()
+        .expect_fetch(contract_id, None as Option<DataContract>)
+        .await
+        .unwrap();
+    sdk.mock()
+        .set_response_height_of::<ContractDocumentRemovals>(10)
+        .set_response_height_of::<DataContract>(9);
+
+    let refused = query
+        .fetch_with_kept_values(&sdk)
+        .await
+        .expect_err("an absence older than the records does not show the contract gone");
+
+    // The first contract request and two more, every answer older than the records
+    let contract_request: dapi_grpc::platform::v0::GetDataContractRequest = contract_id
+        .query(&sdk.query_settings())
+        .expect("the contract request");
+    assert_eq!(sdk.mock().request_count(&contract_request).await, 3);
+
+    assert!(
+        matches!(
+            refused,
+            Error::StaleNode(StaleNodeError::Height {
+                expected_height: 10,
+                received_height: 9,
+                tolerance_blocks: 0,
+            })
+        ),
+        "{refused:?}"
+    );
+}
+
+#[tokio::test]
+/// Given a moderated contract and an identity's status on the lists it keeps, when I fetch the
+/// identity's status without naming lists, then rs-sdk resolves the lists from the
+/// contract and fetches the status over them; naming lists sends them as they are
+async fn should_fetch_an_identitys_moderation_status_over_the_lists_resolved_or_named() {
+    use dash_sdk::platform::contract_moderation::{
+        ContractModerationList, ContractModerationListStatus, ContractModerationListStatuses,
+        ContractModerationStatusQuery,
+    };
+    use dpp::data_contract::config::moderation::{
+        ContractBan, ContractModerationConfig, ContractModerationReason, ContractModerators,
+    };
+
+    let mut sdk = Sdk::new_mock();
+    bootstrap_mock_sdk_to_latest(&mut sdk).await;
+    let contract = mock_contract_with_moderation(Some(ContractModerationConfig {
+        banlist: true,
+        suspensions: false,
+        moderators: ContractModerators::ContractOwner,
+        warnings: true,
+    }));
+    let contract_id = contract.id();
+    let identity_id = Identifier::from([3u8; 32]);
+    let every_list = ContractModerationStatusQuery {
+        contract_id,
+        identity_id,
+        lists: vec![
+            ContractModerationList::Banlist,
+            ContractModerationList::Warnings,
+        ],
+    };
+    let resolved = ContractModerationListStatuses(vec![
+        ContractModerationListStatus::Banlist {
+            ban: Some(ContractBan {
+                reason: ContractModerationReason::from_text("spam"),
+            }),
+        },
+        ContractModerationListStatus::Warnings { warnings: vec![] },
+    ]);
+    let named = ContractModerationStatusQuery {
+        contract_id,
+        identity_id,
+        lists: vec![ContractModerationList::Warnings],
+    };
+    let named_statuses =
+        ContractModerationListStatuses(vec![ContractModerationListStatus::Warnings {
+            warnings: vec![],
+        }]);
+    sdk.mock()
+        .expect_fetch(contract_id, Some(contract))
+        .await
+        .unwrap();
+    sdk.mock()
+        .expect_fetch(every_list, Some(resolved.clone()))
+        .await
+        .unwrap();
+    sdk.mock()
+        .expect_fetch(named, Some(named_statuses.clone()))
+        .await
+        .unwrap();
+
+    let fetched = sdk
+        .fetch_contract_moderation_status(contract_id, identity_id, None)
+        .await
+        .expect("fetches over every list the contract keeps");
+    assert_eq!(fetched, Some(resolved));
+
+    let fetched = sdk
+        .fetch_contract_moderation_status(
+            contract_id,
+            identity_id,
+            Some(vec![ContractModerationList::Warnings]),
+        )
+        .await
+        .expect("fetches over the lists named");
+    assert_eq!(fetched, Some(named_statuses));
 }
