@@ -1,4 +1,25 @@
 import Foundation
+import SwiftDashSDK
+
+/// The SDK a moderation read goes out on, with the generation `AppState`
+/// gave it (``AppState/sdkGeneration``): a result is shown only while that
+/// generation is still the current one.
+struct ModerationConnection {
+    let sdk: SDK
+    let generation: Int
+}
+
+extension AppState {
+    /// The current SDK and its generation; `nil` without an SDK.
+    var moderationConnection: ModerationConnection? {
+        sdk.map { ModerationConnection(sdk: $0, generation: sdkGeneration) }
+    }
+
+    /// Whether `connection` is still the current one.
+    func isCurrent(_ connection: ModerationConnection) -> Bool {
+        sdk != nil && sdkGeneration == connection.generation
+    }
+}
 
 /// One page a paged moderation read answered: its rows and the cursor of the
 /// next page, `nil` on the last.
@@ -31,12 +52,20 @@ final class ModerationPagedLoader<Item: Sendable, Cursor: Sendable>: ObservableO
 
     private var generation = 0
     private var fetch: Fetch?
+    /// Whether the connection the current fetch reads through is still the
+    /// app's; a completion after it was replaced is dropped, and Load More
+    /// does not query it.
+    private var connectionIsCurrent: @MainActor () -> Bool = { true }
 
     /// Start over from the first page of `fetch`, dropping what is shown and
     /// whatever an older request still brings back.
-    func reload(_ fetch: @escaping Fetch) async {
+    func reload(
+        _ fetch: @escaping Fetch,
+        connectionIsCurrent: @escaping @MainActor () -> Bool = { true }
+    ) async {
         generation += 1
         self.fetch = fetch
+        self.connectionIsCurrent = connectionIsCurrent
         items = []
         nextCursor = nil
         errorMessage = nil
@@ -47,7 +76,7 @@ final class ModerationPagedLoader<Item: Sendable, Cursor: Sendable>: ObservableO
     /// Load the page after the last one shown, unless a request is running
     /// or the last page was the last.
     func loadMore() async {
-        guard let fetch, let cursor = nextCursor, !isLoading else { return }
+        guard let fetch, let cursor = nextCursor, !isLoading, connectionIsCurrent() else { return }
         await load(fetch, cursor: cursor, generation: generation)
     }
 
@@ -92,11 +121,11 @@ final class ModerationPagedLoader<Item: Sendable, Cursor: Sendable>: ObservableO
         errorMessage = nil
         do {
             let page = try await fetch(cursor)
-            guard generation == self.generation else { return }
+            guard generation == self.generation, connectionIsCurrent() else { return }
             items.append(contentsOf: page?.items ?? [])
             nextCursor = page?.nextCursor
         } catch {
-            guard generation == self.generation else { return }
+            guard generation == self.generation, connectionIsCurrent() else { return }
             errorMessage = moderationErrorText(error)
         }
         isLoading = false
@@ -116,19 +145,31 @@ final class ModerationSingleLoader<Value: Sendable>: ObservableObject {
 
     private var generation = 0
 
-    /// Read again with `fetch`, dropping whatever an older read brings back.
-    func reload(_ fetch: @Sendable () async throws -> Value) async {
+    /// Read again with `fetch`, dropping whatever an older read brings back,
+    /// and an answer that arrives after the connection it was read through
+    /// stopped being current.
+    func reload(
+        _ fetch: @Sendable () async throws -> Value,
+        connectionIsCurrent: @MainActor () -> Bool = { true }
+    ) async {
         generation += 1
         let current = generation
         load = .loading
         do {
             let value = try await fetch()
-            guard current == generation else { return }
+            guard current == generation, connectionIsCurrent() else { return }
             load = .loaded(value)
         } catch {
-            guard current == generation else { return }
+            guard current == generation, connectionIsCurrent() else { return }
             load = .failed(moderationErrorText(error))
         }
+    }
+
+    /// Show nothing, as before the first read, and drop whatever a running
+    /// read brings back: the connection was replaced.
+    func clear() {
+        generation += 1
+        load = .idle
     }
 
     /// Show `message`, ending whatever is in flight.

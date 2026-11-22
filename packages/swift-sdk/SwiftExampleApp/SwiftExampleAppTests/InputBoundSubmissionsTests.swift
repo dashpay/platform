@@ -105,6 +105,16 @@ final class InputBoundSubmissionsTests: XCTestCase {
         XCTAssertTrue(submissions.isCurrent(submissions.submit(form)))
     }
 
+    /// A result read through a replaced SDK is not current, whatever its
+    /// inputs.
+    func testShouldNotShowAResultReadThroughAReplacedConnection() {
+        let submissions = InputBoundSubmissions()
+        let submission = submissions.submit(["contractId": "A"], connection: 1)
+
+        XCTAssertTrue(submissions.isCurrent(submission, connection: 1))
+        XCTAssertFalse(submissions.isCurrent(submission, connection: 2))
+    }
+
     func testShouldShowAReadNoEditInterrupted() async throws {
         let submissions = InputBoundSubmissions()
         let screen = Screen()

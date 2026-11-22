@@ -8,7 +8,9 @@ enum ContractModerationRoute: Hashable {
     case status
     case removals(documentTypeName: String)
     case teamActions
-    case teamAction(ContractTeamActionEntry, ContractTeamActionStatus)
+    /// An action, the status it was listed under and the generation of the
+    /// connection the listing was read through (``AppState/sdkGeneration``).
+    case teamAction(ContractTeamActionEntry, ContractTeamActionStatus, connection: Int)
     case actionCounts
 }
 
@@ -103,11 +105,16 @@ struct ModerationReasonView: View {
                     .foregroundColor(.secondary)
             }
             ForEach(reason.documents ?? [], id: \.self) { document in
-                Text("\(document.documentTypeName) \(document.documentId)")
-                    .font(.system(.caption2, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                // The type name is the moderator's text: its bidi controls are shown
+                // as escapes, and the id is set apart so the name cannot reorder it
+                HStack(spacing: 4) {
+                    Text(BidiControls.visible(document.documentTypeName))
+                    Text(document.documentId)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundColor(.secondary)
             }
             if let reasonDocumentId = reason.reasonDocumentId {
                 Text("Reason document \(reasonDocumentId)")
@@ -175,23 +182,44 @@ extension ContractKeptFieldValue {
         } else {
             literal = "\"" + text + "\""
         }
+        return BidiControls.visible(literal)
+    }
+}
+
+/// The Unicode bidirectional formatting controls (the Arabic letter mark, the
+/// left-to-right and right-to-left marks, the embeddings and overrides, and
+/// the isolates), made visible where text a document or a moderator wrote is
+/// shown, so it cannot reorder what is shown around it. Only the display
+/// changes: the SDK's values stay as they are.
+enum BidiControls {
+    static let scalars: Set<UInt32> = [
+        0x061C, 0x200E, 0x200F,
+        0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
+        0x2066, 0x2067, 0x2068, 0x2069,
+    ]
+
+    /// `text` with each control written as a visible `\u{202E}` escape.
+    static func visible(_ text: String) -> String {
+        escaping(text) { String(format: "\\u{%04X}", $0) }
+    }
+
+    /// JSON text with each control written as the JSON escape `\u202E`. The
+    /// controls can only stand inside a string of encoder output (the JSON
+    /// structure is ASCII), where that escape is valid, so the text stays
+    /// parseable JSON with the same values.
+    static func jsonEscaped(_ json: String) -> String {
+        escaping(json) { String(format: "\\u%04X", $0) }
+    }
+
+    private static func escaping(_ text: String, _ escape: (UInt32) -> String) -> String {
         var shown = ""
-        for scalar in literal.unicodeScalars {
-            if bidiControls.contains(scalar.value) {
-                shown += String(format: "\\u{%04X}", scalar.value)
+        for scalar in text.unicodeScalars {
+            if scalars.contains(scalar.value) {
+                shown += escape(scalar.value)
             } else {
                 shown.unicodeScalars.append(scalar)
             }
         }
         return shown
     }
-
-    /// The bidirectional formatting controls: the Arabic letter mark, the
-    /// left-to-right and right-to-left marks, the embeddings and overrides,
-    /// and the isolates.
-    private static let bidiControls: Set<UInt32> = [
-        0x061C, 0x200E, 0x200F,
-        0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
-        0x2066, 0x2067, 0x2068, 0x2069,
-    ]
 }

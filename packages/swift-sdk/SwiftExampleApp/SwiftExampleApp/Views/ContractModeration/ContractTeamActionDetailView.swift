@@ -9,6 +9,10 @@ struct ContractTeamActionDetailView: View {
     /// The status the action was listed under, which its signers are read
     /// with.
     let status: ContractTeamActionStatus
+    /// The generation of the connection the listing was read through
+    /// (``AppState/sdkGeneration``): the signers are read through that SDK,
+    /// and not at all once it was replaced.
+    let connection: Int
 
     @StateObject private var loader = ModerationSingleLoader<ContractTeamActionSigners?>()
     private var signers: ModerationLoad<ContractTeamActionSigners?> { loader.load }
@@ -49,6 +53,7 @@ struct ContractTeamActionDetailView: View {
         .navigationTitle("Team Action")
         .navigationBarTitleDisplayMode(.inline)
         .task { await loadSigners() }
+        .onChange(of: appState.sdkGeneration) { _, _ in listingReplaced() }
     }
 
     @ViewBuilder
@@ -113,19 +118,30 @@ struct ContractTeamActionDetailView: View {
     }
 
     private func loadSigners() async {
-        guard let sdk = appState.sdk else {
-            loader.fail("SDK not initialized")
+        guard let listing = appState.moderationConnection, listing.generation == connection else {
+            listingReplaced()
             return
         }
+        let sdk = listing.sdk
+        let appState = appState
         let contractId = contractId
         let status = status
         let actionId = action.actionId
-        await loader.reload {
-            try await sdk.contractTeamActionSigners(
-                contractId: contractId,
-                status: status,
-                actionId: actionId
-            )
-        }
+        await loader.reload(
+            {
+                try await sdk.contractTeamActionSigners(
+                    contractId: contractId,
+                    status: status,
+                    actionId: actionId
+                )
+            },
+            connectionIsCurrent: { appState.isCurrent(listing) }
+        )
+    }
+
+    /// The SDK the listing was read through was replaced: its action may not
+    /// exist on the new one, so nothing is read and the signers are cleared.
+    private func listingReplaced() {
+        loader.fail("The connection changed since this action was listed. Go back and list the actions again.")
     }
 }

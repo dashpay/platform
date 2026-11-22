@@ -126,6 +126,7 @@ struct QueryDetailView: View {
                 }
             }
         }
+        .onChange(of: appState.sdkGeneration) { _, _ in connectionReplaced() }
         .navigationTitle(query.label)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -157,6 +158,24 @@ struct QueryDetailView: View {
     /// answers name neither the contract nor most of what was asked.
     private var resultFollowsInputs: Bool {
         Self.inputBoundQueries.contains(query.name)
+    }
+
+    /// Whether `submission`'s result may still be shown: it answers the inputs
+    /// on screen and, for a moderation read, was read through the current SDK.
+    private func stillAnswers(_ submission: InputBoundSubmission) -> Bool {
+        guard resultFollowsInputs else { return submissions.isCurrent(submission) }
+        return submissions.isCurrent(submission, connection: appState.sdkGeneration)
+    }
+
+    /// The SDK was replaced: a moderation result shown, or still being read,
+    /// answered for the old connection.
+    private func connectionReplaced() {
+        guard resultFollowsInputs else { return }
+        submissions.invalidate()
+        result = ""
+        error = ""
+        showResult = false
+        isLoading = false
     }
 
     private static let inputBoundQueries: Set<String> = [
@@ -198,7 +217,10 @@ struct QueryDetailView: View {
         // A moderation read is built from its inputs as they are now, so an
         // edit made before the task runs cannot change what it sends; its
         // result echoes the same snapshot
-        let submission = submissions.submit(resultFollowsInputs ? submittedInputs() : [:])
+        let submission = submissions.submit(
+            resultFollowsInputs ? submittedInputs() : [:],
+            connection: appState.sdkGeneration
+        )
 
         Task {
             do {
@@ -213,7 +235,7 @@ struct QueryDetailView: View {
                 print("🔵 QueryDetailView: Query result type: \(type(of: queryResult))")
 
                 await MainActor.run {
-                    guard submissions.isCurrent(submission) else { return }
+                    guard stillAnswers(submission) else { return }
                     result = formatResult(queryResult)
                     showResult = true
                     isLoading = false
@@ -222,7 +244,7 @@ struct QueryDetailView: View {
             } catch let sdkError as SDKError {
                 print("❌ QueryDetailView: SDK error occurred: \(sdkError)")
                 await MainActor.run {
-                    guard submissions.isCurrent(submission) else { return }
+                    guard stillAnswers(submission) else { return }
                     // Handle SDK errors with more detail
                     switch sdkError {
                     case .invalidParameter(let message):
@@ -258,7 +280,7 @@ struct QueryDetailView: View {
             } catch {
                 print("❌ QueryDetailView: General error occurred: \(error)")
                 await MainActor.run {
-                    guard submissions.isCurrent(submission) else { return }
+                    guard stillAnswers(submission) else { return }
                     // For non-SDK errors, try to get more information
                     let nsError = error as NSError
                     var errorMessage = ""
@@ -949,13 +971,13 @@ struct QueryDetailView: View {
                 if inputs["startAfter"] != nil || inputs["limit"] != nil {
                     throw SDKError.invalidParameter("Give either Document IDs or Start After and Limit")
                 }
-                return try moderationResult(inputs, await sdk.contractDocumentRemovals(
+                return try removalsResult(inputs, await sdk.contractDocumentRemovals(
                     contractId: contractId,
                     documentTypeName: documentTypeName,
                     documentIds: documentIds.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
                 ))
             }
-            return try moderationResult(inputs, await sdk.contractDocumentRemovals(
+            return try removalsResult(inputs, await sdk.contractDocumentRemovals(
                 contractId: contractId,
                 documentTypeName: documentTypeName,
                 startAfter: inputs["startAfter"],
@@ -1059,10 +1081,46 @@ struct QueryDetailView: View {
     /// writes it, the models' `Codable` form, so a removal record's kept
     /// values appear tagged (`{"type": "double", "value": 1}`).
     private func moderationResult<T: Encodable>(_ inputs: [String: String], _ answer: T?) throws -> Any {
+        PreformattedJSON(text: try catalogJSON(ModerationCatalogResult(inputs: inputs, result: answer)))
+    }
+
+    /// `value` as the catalog shows it: pretty, sorted JSON, with bidi controls
+    /// in the values as JSON escapes, so the text shown cannot reorder itself
+    /// and, copied, is still the same JSON.
+    private func catalogJSON<T: Encodable>(_ value: T) throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        let data = try encoder.encode(ModerationCatalogResult(inputs: inputs, result: answer))
-        return PreformattedJSON(text: String(decoding: data, as: UTF8.self))
+        return BidiControls.jsonEscaped(String(decoding: try encoder.encode(value), as: UTF8.self))
+    }
+
+    /// The most text a removal records preview shows. It protects rendering
+    /// only (one selectable `Text` lays out every character); the page read is
+    /// whole, and a smaller limit shows it whole.
+    private static let maxRemovalsPreviewBytes = 64 * 1024
+
+    /// A removal records page as the catalog shows it, cut to the most leading
+    /// records whose text fits ``maxRemovalsPreviewBytes``, with a `preview`
+    /// note saying how many of how many are shown when any are left out.
+    private func removalsResult(_ inputs: [String: String], _ page: ContractDocumentRemovalsPage?) throws -> Any {
+        guard let page else { return try moderationResult(inputs, page) }
+        var shown = page.removals.count
+        while true {
+            let note: String? = shown < page.removals.count
+                ? "Preview truncated (\(shown) of \(page.removals.count) records shown). Use a smaller limit."
+                : nil
+            let text = try catalogJSON(ModerationCatalogResult(
+                inputs: inputs,
+                result: RemovalsPreview(
+                    removals: Array(page.removals.prefix(shown)),
+                    nextStartAfter: page.nextStartAfter,
+                    preview: note
+                )
+            ))
+            if text.utf8.count <= Self.maxRemovalsPreviewBytes || shown == 0 {
+                return PreformattedJSON(text: text)
+            }
+            shown /= 2
+        }
     }
 
     private func inputFields(for queryName: String) -> [QueryInput] {
@@ -1492,6 +1550,14 @@ private struct ModerationCatalogResult<Answer: Encodable>: Encodable {
         try container.encode(inputs, forKey: .inputs)
         try container.encode(result, forKey: .result)
     }
+}
+
+/// A removal records page as the catalog previews it: the records shown, the
+/// page's cursor, and a note when records were left out of the preview.
+private struct RemovalsPreview: Encodable {
+    let removals: [ContractDocumentRemovalEntry]
+    let nextStartAfter: String?
+    let preview: String?
 }
 
 /// A query result already written as JSON text, shown as it is.

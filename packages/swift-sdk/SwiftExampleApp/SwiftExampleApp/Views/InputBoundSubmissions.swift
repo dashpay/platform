@@ -16,11 +16,12 @@ import Foundation
 final class InputBoundSubmissions {
     private var generation = 0
 
-    /// A read submitted now with `inputs`; any earlier read stops being
-    /// current.
-    func submit(_ inputs: [String: String] = [:]) -> InputBoundSubmission {
+    /// A read submitted now with `inputs`, through the connection of
+    /// generation `connection` (``AppState/sdkGeneration``); any earlier read
+    /// stops being current.
+    func submit(_ inputs: [String: String] = [:], connection: Int = 0) -> InputBoundSubmission {
         generation += 1
-        return InputBoundSubmission(token: generation, inputs: inputs)
+        return InputBoundSubmission(token: generation, inputs: inputs, connection: connection)
     }
 
     /// The inputs were edited: no read running answers them any more.
@@ -32,10 +33,19 @@ final class InputBoundSubmissions {
     func isCurrent(_ submission: InputBoundSubmission) -> Bool {
         submission.token == generation
     }
+
+    /// Whether `submission` still answers the inputs on screen and was read
+    /// through the connection of generation `connection`, the current one: a
+    /// result read through a replaced SDK is not shown as the current answer.
+    func isCurrent(_ submission: InputBoundSubmission, connection: Int) -> Bool {
+        isCurrent(submission) && submission.connection == connection
+    }
 }
 
 /// One submitted read: its token and the inputs it was submitted with.
 struct InputBoundSubmission: Sendable, Equatable {
     let token: Int
     let inputs: [String: String]
+    /// The generation of the connection it is read through.
+    let connection: Int
 }

@@ -31,6 +31,11 @@ struct ContractModerationActionCountsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await reload() }
         .task { await reload() }
+        // A replaced SDK: drop the counts and read again through the new one
+        .onChange(of: appState.sdkGeneration) { _, _ in
+            loader.clear()
+            Task { await reload() }
+        }
     }
 
     @ViewBuilder
@@ -71,11 +76,16 @@ struct ContractModerationActionCountsView: View {
     }
 
     private func reload() async {
-        guard let sdk = appState.sdk else {
+        guard let connection = appState.moderationConnection else {
             loader.fail("SDK not initialized")
             return
         }
+        let sdk = connection.sdk
+        let appState = appState
         let contractId = contractId
-        await loader.reload { try await sdk.contractModerationActionCounts(contractId: contractId) }
+        await loader.reload(
+            { try await sdk.contractModerationActionCounts(contractId: contractId) },
+            connectionIsCurrent: { appState.isCurrent(connection) }
+        )
     }
 }

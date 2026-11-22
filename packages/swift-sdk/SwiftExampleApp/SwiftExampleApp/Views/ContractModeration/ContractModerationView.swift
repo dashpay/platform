@@ -89,8 +89,13 @@ struct ContractModerationView: View {
             ContractDocumentRemovalsView(contractId: contractId, documentTypeName: documentTypeName)
         case .teamActions:
             ContractTeamActionsView(contractId: contractId)
-        case .teamAction(let action, let status):
-            ContractTeamActionDetailView(contractId: contractId, action: action, status: status)
+        case .teamAction(let action, let status, let connection):
+            ContractTeamActionDetailView(
+                contractId: contractId,
+                action: action,
+                status: status,
+                connection: connection
+            )
         case .actionCounts:
             ContractModerationActionCountsView(contractId: contractId)
         }

@@ -43,4 +43,23 @@ final class ContractKeptFieldDisplayTests: XCTestCase {
                        "340282366920938463463374607431768211455")
         XCTAssertEqual(ContractKeptFieldValue.double(-0.0).displayText, "-0.0")
     }
+
+    /// A cited document type name shows its bidi controls as visible escapes.
+    func testShouldShowBidiControlsInAPlainNameAsEscapes() {
+        XCTAssertEqual(BidiControls.visible("post\u{202E}tsop"), #"post\u{202E}tsop"#)
+        XCTAssertEqual(BidiControls.visible("plain"), "plain")
+    }
+
+    /// The catalog's JSON gets JSON escapes, so the text shown cannot reorder
+    /// itself and, copied, parses to the same values.
+    func testShouldEscapeBidiControlsInCatalogJSONAsValidJSON() throws {
+        let original = ["text": "abc\u{202E}def\u{2066}"]
+        let encoded = String(decoding: try JSONEncoder().encode(original), as: UTF8.self)
+        let shown = BidiControls.jsonEscaped(encoded)
+
+        XCTAssertEqual(shown, #"{"text":"abc\u202Edef\u2066"}"#)
+        XCTAssertFalse(shown.unicodeScalars.contains { $0.value == 0x202E })
+        let parsed = try JSONDecoder().decode([Swift.String: Swift.String].self, from: Data(shown.utf8))
+        XCTAssertEqual(parsed, original)
+    }
 }

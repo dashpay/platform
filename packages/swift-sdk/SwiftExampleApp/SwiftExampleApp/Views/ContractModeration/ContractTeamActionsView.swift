@@ -25,6 +25,9 @@ struct ContractTeamActionsView: View {
     /// Advanced by every read started (a status picked, a refresh), so a read
     /// queued before a newer one is not sent.
     @State private var readToken = 0
+    /// The connection the rows shown were read through; their drill-down reads
+    /// signers through it, and only while it is current.
+    @State private var listedConnection: ModerationConnection?
     @StateObject private var loader =
         ModerationPagedLoader<ContractTeamActionEntry, ContractTeamActionsCursor>()
 
@@ -68,7 +71,11 @@ struct ContractTeamActionsView: View {
                     }
                 }
                 ForEach(loader.items) { action in
-                    NavigationLink(value: ContractModerationRoute.teamAction(action, listedStatus)) {
+                    NavigationLink(value: ContractModerationRoute.teamAction(
+                        action,
+                        listedStatus,
+                        connection: listedConnection?.generation ?? -1
+                    )) {
                         ContractTeamActionRow(action: action)
                     }
                     .accessibilityIdentifier("contractModeration.teamActions.row.\(action.actionId)")
@@ -92,6 +99,12 @@ struct ContractTeamActionsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await reload(status: status, token: begin(status: status)) }
         .task { await reload(status: status, token: begin(status: status)) }
+        // A replaced SDK: drop the actions, their cursor and any read in
+        // flight, and read again through the new one
+        .onChange(of: appState.sdkGeneration) { _, _ in
+            let token = begin(status: status)
+            Task { await reload(status: status, token: token) }
+        }
     }
 
     /// A status picked: in this main-actor turn the selection changes, the
@@ -108,6 +121,7 @@ struct ContractTeamActionsView: View {
     private func begin(status: ContractTeamActionStatus) -> Int {
         readToken += 1
         listedStatus = status
+        listedConnection = appState.moderationConnection
         loader.begin()
         return readToken
     }
@@ -116,13 +130,15 @@ struct ContractTeamActionsView: View {
     /// began, unless a newer selection superseded it before it ran.
     private func reload(status: ContractTeamActionStatus, token: Int) async {
         guard token == readToken else { return }
-        guard let sdk = appState.sdk else {
+        guard let connection = listedConnection, appState.isCurrent(connection) else {
             loader.fail("SDK not initialized")
             return
         }
+        let sdk = connection.sdk
+        let appState = appState
         let contractId = contractId
         let pageSize = Self.pageSize
-        await loader.reload { cursor in
+        await loader.reload({ cursor in
             // The cursor goes back as the last page returned it
             try await sdk.contractTeamActions(
                 contractId: contractId,
@@ -142,7 +158,7 @@ struct ContractTeamActionsView: View {
                     }
                 )
             }
-        }
+        }, connectionIsCurrent: { appState.isCurrent(connection) })
     }
 }
 

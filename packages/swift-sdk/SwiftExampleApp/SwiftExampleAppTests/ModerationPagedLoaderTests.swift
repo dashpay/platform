@@ -133,6 +133,75 @@ final class ModerationPagedLoaderTests: XCTestCase {
         XCTAssertFalse(loader.isLoading)
     }
 
+    /// The app's connection, as the views read it from `AppState`.
+    private final class Connection {
+        var generation = 1
+    }
+
+    /// A replacement of the SDK while a response is pending drops it.
+    func testShouldDropAPendingAnswerWhenTheConnectionIsReplaced() async {
+        let fetches = ControlledFetch()
+        let connection = Connection()
+        let loader = Loader()
+        let read = Task {
+            await loader.reload(fetches.source("A"), connectionIsCurrent: { connection.generation == 1 })
+        }
+        await fetches.waitUntilCalled("A-first")
+        connection.generation = 2
+        fetches.answer("A-first", with: Page(items: ["old"], nextCursor: "old"))
+        await read.value
+
+        XCTAssertEqual(loader.items, [])
+        XCTAssertNil(loader.nextCursor)
+    }
+
+    /// A replacement after a page is shown clears the page and its cursor (the
+    /// view calls `clear()` when the generation changes), and Load More then
+    /// queries nothing, the old SDK included.
+    func testShouldClearAShownPageAndNotLoadMoreAfterAReplacement() async {
+        let fetches = ControlledFetch()
+        let connection = Connection()
+        let loader = Loader()
+        let read = Task {
+            await loader.reload(fetches.source("A"), connectionIsCurrent: { connection.generation == 1 })
+        }
+        await fetches.waitUntilCalled("A-first")
+        fetches.answer("A-first", with: Page(items: ["a1"], nextCursor: "a1"))
+        await read.value
+        XCTAssertEqual(loader.nextCursor, "a1")
+
+        connection.generation = 2
+        // Before the view's clear() runs, Load More already refuses the old SDK
+        await loader.loadMore()
+        XCTAssertFalse(loader.isLoading)
+        XCTAssertFalse(fetches.wasCalled("A-a1"))
+
+        loader.clear()
+        XCTAssertEqual(loader.items, [])
+        XCTAssertNil(loader.nextCursor)
+        await loader.loadMore()
+        XCTAssertFalse(fetches.wasCalled("A-a1"))
+    }
+
+    /// A single read (fee pots, action counts, signers) drops an answer that
+    /// arrives after the connection was replaced.
+    func testShouldDropASingleReadAnsweredAfterAReplacement() async {
+        let connection = Connection()
+        let loader = ModerationSingleLoader<String>()
+        let gate = ReleasedValue()
+        let read = Task {
+            await loader.reload({ try await gate.value() }, connectionIsCurrent: { connection.generation == 1 })
+        }
+        await gate.waitUntilStarted()
+        connection.generation = 2
+        gate.release("old balance")
+        await read.value
+
+        if case .loaded = loader.load {
+            XCTFail("an answer from the replaced connection was shown")
+        }
+    }
+
     func testShouldShowTheCurrentRequestsFailure() async {
         let fetches = ControlledFetch()
         let loader = Loader()
@@ -153,6 +222,7 @@ final class ModerationPagedLoaderTests: XCTestCase {
 final class ControlledFetch {
     private var pending: [String: CheckedContinuation<ModerationPage<String, String>?, Error>] = [:]
     private var callWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
+    private var called: Set<String> = []
 
     /// The fetch of source `name`.
     func source(_ name: String) -> ModerationPagedLoader<String, String>.Fetch {
@@ -169,6 +239,11 @@ final class ControlledFetch {
         }
     }
 
+    /// Whether the call `key` was ever made.
+    func wasCalled(_ key: String) -> Bool {
+        called.contains(key)
+    }
+
     func answer(_ key: String, with page: ModerationPage<String, String>?) {
         pending.removeValue(forKey: key)?.resume(returning: page)
     }
@@ -178,9 +253,39 @@ final class ControlledFetch {
     }
 
     private func call(_ key: String) async throws -> ModerationPage<String, String>? {
-        try await withCheckedThrowingContinuation { continuation in
+        called.insert(key)
+        return try await withCheckedThrowingContinuation { continuation in
             pending[key] = continuation
             callWaiters.removeValue(forKey: key)?.forEach { $0.resume() }
         }
+    }
+}
+
+/// A single value the test releases once the read waits for it.
+@MainActor
+final class ReleasedValue {
+    private var pending: CheckedContinuation<String, Error>?
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+
+    nonisolated func value() async throws -> String {
+        try await wait()
+    }
+
+    private func wait() async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
+            pending = continuation
+            startWaiters.forEach { $0.resume() }
+            startWaiters = []
+        }
+    }
+
+    func waitUntilStarted() async {
+        if pending != nil { return }
+        await withCheckedContinuation { startWaiters.append($0) }
+    }
+
+    func release(_ value: String) {
+        pending?.resume(returning: value)
+        pending = nil
     }
 }

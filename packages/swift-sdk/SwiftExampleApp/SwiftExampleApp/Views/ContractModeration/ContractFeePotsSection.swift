@@ -50,6 +50,11 @@ struct ContractFeePotsSection: View {
         .task(id: contractId) {
             await reload()
         }
+        // A replaced SDK: drop the pots and read again through the new one
+        .onChange(of: appState.sdkGeneration) { _, _ in
+            loader.clear()
+            Task { await reload() }
+        }
     }
 
     private var isLoading: Bool {
@@ -58,12 +63,17 @@ struct ContractFeePotsSection: View {
     }
 
     private func reload() async {
-        guard let sdk = appState.sdk else {
+        guard let connection = appState.moderationConnection else {
             loader.fail("SDK not initialized")
             return
         }
+        let sdk = connection.sdk
+        let appState = appState
         let contractId = contractId
-        await loader.reload { try await sdk.contractFeePots(contractId: contractId) }
+        await loader.reload(
+            { try await sdk.contractFeePots(contractId: contractId) },
+            connectionIsCurrent: { appState.isCurrent(connection) }
+        )
     }
 }
 

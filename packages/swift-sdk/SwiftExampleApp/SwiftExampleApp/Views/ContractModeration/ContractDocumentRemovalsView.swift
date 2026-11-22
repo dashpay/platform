@@ -106,7 +106,10 @@ struct ContractDocumentRemovalsView: View {
         .navigationTitle(documentTypeName)
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await refresh() }
-        .task { await reload() }
+        .task { submit(ids: nil) }
+        // A replaced SDK: drop the records, their cursor and any read in
+        // flight, and read every record again through the new one
+        .onChange(of: appState.sdkGeneration) { _, _ in submit(ids: nil) }
     }
 
     private var parsedIds: [String] {
@@ -135,7 +138,8 @@ struct ContractDocumentRemovalsView: View {
     /// Only then is the read queued.
     private func submit(ids: [String]?) {
         let token = begin(ids: ids)
-        Task { await send(ids: ids, token: token) }
+        let connection = appState.moderationConnection
+        Task { await send(ids: ids, token: token, connection: connection) }
     }
 
     /// The synchronous part of a read of `ids`; returns its token.
@@ -147,12 +151,17 @@ struct ContractDocumentRemovalsView: View {
 
     /// Sends the read of `ids` unless a newer read or an edit superseded it
     /// before it ran.
-    private func send(ids: [String]?, token: Int) async {
+    /// The read goes out on `connection`, the SDK current when it began.
+    private func send(ids: [String]?, token: Int, connection: ModerationConnection?) async {
         guard filter.isCurrent(token) else { return }
+        guard let connection, appState.isCurrent(connection) else {
+            loader.fail("SDK not initialized")
+            return
+        }
         if let ids {
-            await read(ids: ids)
+            await read(ids: ids, on: connection)
         } else {
-            await reload()
+            await reload(on: connection)
         }
     }
 
@@ -160,19 +169,17 @@ struct ContractDocumentRemovalsView: View {
     private func refresh() async {
         let ids = lookedUpIds
         let token = begin(ids: ids)
-        await send(ids: ids, token: token)
+        await send(ids: ids, token: token, connection: appState.moderationConnection)
     }
 
     /// Every record, a page at a time.
-    private func reload() async {
-        guard let sdk = appState.sdk else {
-            loader.fail("SDK not initialized")
-            return
-        }
+    private func reload(on connection: ModerationConnection) async {
+        let sdk = connection.sdk
+        let appState = appState
         let contractId = contractId
         let documentTypeName = documentTypeName
         let pageSize = Self.pageSize
-        await loader.reload { startAfter in
+        await loader.reload({ startAfter in
             try await sdk.contractDocumentRemovals(
                 contractId: contractId,
                 documentTypeName: documentTypeName,
@@ -180,25 +187,23 @@ struct ContractDocumentRemovalsView: View {
                 limit: pageSize
             )
             .map { ModerationPage(items: $0.removals, nextCursor: $0.nextStartAfter) }
-        }
+        }, connectionIsCurrent: { appState.isCurrent(connection) })
     }
 
     /// The records of `ids` alone; a read by ids has no page after it.
-    private func read(ids: [String]) async {
-        guard let sdk = appState.sdk else {
-            loader.fail("SDK not initialized")
-            return
-        }
+    private func read(ids: [String], on connection: ModerationConnection) async {
+        let sdk = connection.sdk
+        let appState = appState
         let contractId = contractId
         let documentTypeName = documentTypeName
-        await loader.reload { _ in
+        await loader.reload({ _ in
             try await sdk.contractDocumentRemovals(
                 contractId: contractId,
                 documentTypeName: documentTypeName,
                 documentIds: ids
             )
             .map { ModerationPage(items: $0.removals, nextCursor: $0.nextStartAfter) }
-        }
+        }, connectionIsCurrent: { appState.isCurrent(connection) })
     }
 }
 

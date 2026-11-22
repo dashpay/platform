@@ -62,17 +62,25 @@ struct ContractModerationEntriesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await reload() }
         .task { await reload() }
+        // A replaced SDK: drop the page, its cursor and any read in flight, and
+        // read again through the new one
+        .onChange(of: appState.sdkGeneration) { _, _ in
+            loader.clear()
+            Task { await reload() }
+        }
     }
 
     private func reload() async {
-        guard let sdk = appState.sdk else {
+        guard let connection = appState.moderationConnection else {
             loader.fail("SDK not initialized")
             return
         }
+        let sdk = connection.sdk
+        let appState = appState
         let contractId = contractId
         let list = list
         let pageSize = Self.pageSize
-        await loader.reload { startAfter in
+        await loader.reload({ startAfter in
             try await sdk.contractModerationEntries(
                 contractId: contractId,
                 list: list,
@@ -80,7 +88,7 @@ struct ContractModerationEntriesView: View {
                 limit: pageSize
             )
             .map { ModerationPage(items: $0.entries, nextCursor: $0.nextStartAfter) }
-        }
+        }, connectionIsCurrent: { appState.isCurrent(connection) })
     }
 }
 
