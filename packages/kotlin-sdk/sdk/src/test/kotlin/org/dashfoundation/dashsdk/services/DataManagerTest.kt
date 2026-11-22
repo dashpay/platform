@@ -70,6 +70,36 @@ class DataManagerTest {
         assertTrue(storage.hasPrivateKey(walletKeyHex))
     }
 
+    /** The keys go first: a clear interrupted after them leaves rows to clear again. */
+    @Test
+    fun shouldDeleteTheVotingKeysBeforeTheRows() = runBlocking {
+        var rowsWhenKeysWereDeleted = -1
+        val ordered = DataManager(db) {
+            rowsWhenKeysWereDeleted = if (db.identityDao().getByIdentityId(identityId) != null) 1 else 0
+        }
+
+        ordered.clear(DataManager.Category.IDENTITIES)
+
+        assertEquals(1, rowsWhenKeysWereDeleted)
+        assertNull(db.identityDao().getByIdentityId(identityId))
+    }
+
+    @Test
+    fun shouldLeaveRowsAndKeysToRetryWhenTheKeyStepFails() = runBlocking {
+        val failing = DataManager(db) { throw IllegalStateException("secure storage unavailable") }
+
+        val error = runCatching { failing.clear(DataManager.Category.IDENTITIES) }.exceptionOrNull()
+
+        assertTrue(error is IllegalStateException)
+        assertEquals(votingIdentifier, db.identityDao().getByIdentityId(identityId)?.votingPrivateKeyIdentifier)
+        assertTrue(storage.hasPrivateKey(votingIdentifier))
+
+        // The retry finishes the job.
+        manager.clear(DataManager.Category.IDENTITIES)
+        assertNull(db.identityDao().getByIdentityId(identityId))
+        assertFalse(storage.hasPrivateKey(votingIdentifier))
+    }
+
     @Test
     fun shouldKeepVotingKeysWhenClearingAnotherCategory() = runBlocking {
         manager.clear(DataManager.Category.TOKENS)

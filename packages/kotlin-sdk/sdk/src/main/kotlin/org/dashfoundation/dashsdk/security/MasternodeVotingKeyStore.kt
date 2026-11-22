@@ -78,12 +78,49 @@ class MasternodeVotingKeyStore(private val storage: WalletStorage) {
         return identifier
     }
 
-    /** Whether a readable voting key is stored under [identifier]. */
-    suspend fun isStored(identifier: String): Boolean = storage.isPrivateKeyDecryptable(identifier)
+    /**
+     * Whether a readable voting key is stored under [identifier].
+     *
+     * @throws IllegalArgumentException when [identifier] is not a voting key identifier, so
+     *   a bare address or public key hex never reaches a wallet key's entry.
+     */
+    suspend fun isStored(identifier: String): Boolean {
+        parse(identifier)
+        return storage.isPrivateKeyDecryptable(identifier)
+    }
 
-    /** Delete the voting key stored under [identifier]; nothing happens when there is none. */
+    /**
+     * Delete the voting key stored under [identifier]; nothing happens when there is none.
+     *
+     * @throws IllegalArgumentException when [identifier] is not a voting key identifier, so
+     *   a bare address or public key hex never deletes a wallet key's entry.
+     */
     suspend fun delete(identifier: String) {
+        parse(identifier)
         storage.deletePrivateKey(identifier)
+    }
+
+    /**
+     * Delete every voting entry of [identityId] except [keep], in one atomic write: the
+     * entries a replaced key, or an interrupted load or replacement, left behind. Run after
+     * each successful save, so a sweep that failed is repeated by the next one.
+     *
+     * @param keep the identifier the identity's row names now, or null to delete them all.
+     * @throws IllegalArgumentException when [keep] is not one of [identityId]'s identifiers.
+     */
+    suspend fun deleteOtherEntriesOf(identityId: ByteArray, keep: String?) {
+        require(identityId.size == 32) { "identityId must be 32 bytes, got ${identityId.size}" }
+        val keepName = keep?.lowercase()?.also {
+            require(parse(it).first.contentEquals(identityId)) {
+                "keep must be a voting key identifier of this identity"
+            }
+        }
+        val prefix = STORAGE_ENTRY_PREFIX + IDENTIFIER_PREFIX + identityId.toHex() + "."
+        val names = storage.listEntryNames()
+            .filter { it.startsWith(prefix) }
+            .map { it.removePrefix(STORAGE_ENTRY_PREFIX) }
+            .filter { it != keepName }
+        storage.deletePrivateKeys(names)
     }
 
     /**

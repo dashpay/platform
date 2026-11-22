@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.security.MasternodeVotingKeyNotStoredException
+import org.dashfoundation.dashsdk.voting.MasternodeVotingSigner
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.example.BuildConfig
 import org.dashfoundation.example.di.AppContainer
@@ -238,17 +239,17 @@ internal const val NO_WALLET_MANAGER_MESSAGE =
  * `MasternodeVoteCall`: [run] picks how the vote is signed, so the dialogs do not repeat
  * the dispatch.
  *
- * [withSigner] casts with a signer: the wire-order pro_tx_hash, the 20-byte voting address
- * and the active wallet manager, which the lambda passes to the SDK's signer overload. [run]
- * calls it inside [PlatformWalletManager.withStoredMasternodeVotingKey], which makes the
- * identity's stored voting key signable for that call only and keeps the manager from
- * freeing the signer while the vote is in flight. The manager is read when [run] is called,
- * never held in composition.
+ * [withSigner] casts with a signer: the wire-order pro_tx_hash, the vote's
+ * [MasternodeVotingSigner], which the lambda passes to the SDK's signer overload, and the
+ * active wallet manager. [run] calls
+ * it inside [PlatformWalletManager.withStoredMasternodeVotingKey], which builds that signer
+ * for this vote only, holding just the identity's stored voting key, and frees it after.
+ * The manager is read when [run] is called, never held in composition.
  */
 class MasternodeVoteCall(
     private val withSigner: suspend (
         proTxHash: ByteArray,
-        votingAddress: ByteArray,
+        signer: MasternodeVotingSigner,
         manager: PlatformWalletManager,
     ) -> Unit,
 ) {
@@ -283,8 +284,8 @@ class MasternodeVoteCall(
                 val manager = container.walletManagerStore.activeManager.value
                     ?: throw MasternodeVoteCallException(NO_WALLET_MANAGER_MESSAGE)
                 try {
-                    manager.withStoredMasternodeVotingKey(identifier) { votingAddress ->
-                        withSigner(voter.wireOrderProTxHash, votingAddress, manager)
+                    manager.withStoredMasternodeVotingKey(identifier) { signer ->
+                        withSigner(voter.wireOrderProTxHash, signer, manager)
                     }
                 } catch (_: MasternodeVotingKeyNotStoredException) {
                     throw MasternodeVoteCallException(NO_STORED_VOTING_KEY_MESSAGE)

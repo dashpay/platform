@@ -79,6 +79,49 @@ class MasternodeVotingKeyStoreTest {
         }
     }
 
+    /** A bare address hex is refused, so it can reach neither a wallet entry nor a voting one. */
+    @Test
+    fun shouldRefuseABareAddressInLookupsAndDeletes() = runBlocking {
+        storage.storePrivateKey(identifier, ByteArray(32) { 1 })
+        storage.storePrivateKey(addressHex, ByteArray(32) { 2 }, ownerWalletId = ByteArray(32) { 3 })
+
+        assertThrows(IllegalArgumentException::class.java) { runBlocking { store.delete(addressHex) } }
+        assertThrows(IllegalArgumentException::class.java) { runBlocking { store.isStored(addressHex) } }
+
+        assertTrue(storage.hasPrivateKey(identifier))
+        assertTrue(storage.hasPrivateKey(addressHex))
+    }
+
+    /** The sweep deletes this identity's other voting entries only. */
+    @Test
+    fun shouldDeleteTheIdentitysOtherVotingEntriesAndKeepTheCurrentOne() = runBlocking {
+        val stale = MasternodeVotingKeyStore.identifierFor(identityId, ByteArray(20) { 8 })
+        val otherIdentity = MasternodeVotingKeyStore.identifierFor(ByteArray(32) { 9 }, address)
+        for (name in listOf(identifier, stale, otherIdentity)) {
+            storage.storePrivateKey(name, ByteArray(32) { 1 })
+        }
+        storage.storePrivateKey(addressHex, ByteArray(32) { 2 }, ownerWalletId = ByteArray(32) { 3 })
+
+        store.deleteOtherEntriesOf(identityId, keep = identifier)
+
+        assertTrue(storage.hasPrivateKey(identifier))
+        assertFalse(storage.hasPrivateKey(stale))
+        assertTrue(storage.hasPrivateKey(otherIdentity))
+        assertTrue(storage.hasPrivateKey(addressHex))
+
+        store.deleteOtherEntriesOf(identityId, keep = null)
+        assertFalse(storage.hasPrivateKey(identifier))
+        assertTrue(storage.hasPrivateKey(otherIdentity))
+    }
+
+    @Test
+    fun shouldRefuseToKeepAnotherIdentitysEntryInTheSweep() {
+        val otherIdentity = MasternodeVotingKeyStore.identifierFor(ByteArray(32) { 9 }, address)
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { store.deleteOtherEntriesOf(identityId, keep = otherIdentity) }
+        }
+    }
+
     @Test
     fun shouldReportAKeyNeverStoredAsAbsentAndDeleteItQuietly() = runBlocking {
         assertFalse(store.isStored(identifier))

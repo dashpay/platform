@@ -1,6 +1,5 @@
 package org.dashfoundation.dashsdk.voting
 
-import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.dashsdk.wallet.op
 
 import kotlinx.coroutines.Dispatchers
@@ -101,7 +100,7 @@ class VoteCasting internal constructor() {
     }
 
     /**
-     * Cast a masternode contested-resource vote signed by [manager]'s signer with a stored
+     * Cast a masternode contested-resource vote signed by [voter], the signer of one stored
      * voting key, and wait for the response: the vote of the `votingPrivateKey` overload,
      * for a key the app stores
      * ([org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore]) rather than one
@@ -109,18 +108,16 @@ class VoteCasting internal constructor() {
      * `SDK.castContestedResourceVote(..., votingAddress:, signer:)`
      * (`PlatformQueryExtensions.swift`).
      *
-     * Call it inside [PlatformWalletManager.withStoredMasternodeVotingKey], which makes the
-     * stored key signable and supplies [votingAddress]. Rust builds the ECDSA_HASH160 voting
-     * key from [votingAddress] and asks the signer to sign with it; a signer that holds no
-     * key for that address fails the call with the signer's error. [manager]'s teardown and
-     * [sdk]'s close both wait for the call, so neither frees what the vote uses.
+     * Call it inside `PlatformWalletManager.withStoredMasternodeVotingKey`, which supplies
+     * [voter]. Rust builds the ECDSA_HASH160 voting key from the voter's voting address and
+     * asks the signer to sign with it. The voter's signer and [sdk] both stay alive until
+     * the call returns.
      *
      * @param indexValues as for the `votingPrivateKey` overload.
      * @param proTxHash 32-byte masternode pro_tx_hash in **wire order**, as
      *   for the `votingPrivateKey` overload.
-     * @param votingAddress 20-byte voting address: the hash160 of the
-     *   compressed voting public key. Rust refuses any other length.
-     * @param manager the wallet manager whose signer holds the voting key.
+     * @param voter the signer of the masternode's stored voting key.
+     * @throws IllegalStateException when [voter] is used after its call ended.
      */
     suspend fun castVote(
         sdk: org.dashfoundation.dashsdk.Sdk,
@@ -130,9 +127,8 @@ class VoteCasting internal constructor() {
         indexValues: List<String>,
         choice: VoteChoice,
         proTxHash: ByteArray,
-        votingAddress: ByteArray,
-        manager: PlatformWalletManager,
-    ): Unit = manager.withSignerHandle { signerHandle ->
+        voter: MasternodeVotingSigner,
+    ): Unit = voter.withSignerHandle { signerHandle ->
         sdk.queryGate.op {
             val contender = (choice as? VoteChoice.TowardsIdentity)?.contenderIdentityId
             mapNativeErrors {
@@ -145,7 +141,7 @@ class VoteCasting internal constructor() {
                     choice.discriminant,
                     contender,
                     proTxHash,
-                    votingAddress,
+                    voter.votingAddress,
                     signerHandle,
                 )
             }

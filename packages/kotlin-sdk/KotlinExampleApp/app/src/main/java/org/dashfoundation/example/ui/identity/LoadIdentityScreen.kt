@@ -102,6 +102,9 @@ fun LoadIdentityScreen(navController: NavHostController) {
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var pendingReplacement by remember { mutableStateOf<PendingVotingKeyReplacement?>(null) }
+    // Shown after a replacement whose old key could not be removed yet; the identity is
+    // opened once the message is dismissed.
+    var showAfterError by remember { mutableStateOf<ByteArray?>(null) }
 
     // QR scanner hand-back.
     val savedStateHandle = navController.currentBackStackEntry?.savedStateHandle
@@ -116,13 +119,14 @@ fun LoadIdentityScreen(navController: NavHostController) {
             }
     }
 
-    // Start the picker from the stored row's type once the typed id names a row on this
-    // network, so a reload shows (and keeps) the identity's type and its voting key field.
+    // Until the user picks a type, the picker follows the typed id: the stored row's type
+    // when the id names a row on this network, so a reload shows (and keeps) it and its
+    // voting key field, else User, so another identity's type never carries over.
     LaunchedEffect(identityIdText, network) {
         if (identityTypePicked) return@LaunchedEffect
-        val idBytes = Base58.decodeIdentifier(identityIdText.trim()) ?: return@LaunchedEffect
-        val row = container.database.identityDao().getByIdentityId(idBytes)
-        initialLoadIdentityType(row, network.ffiValue)?.let { identityType = it }
+        val row = Base58.decodeIdentifier(identityIdText.trim())
+            ?.let { container.database.identityDao().getByIdentityId(it) }
+        identityType = inferredLoadIdentityType(row, network.ffiValue)
     }
 
     fun showIdentity(idBytes: ByteArray) {
@@ -298,6 +302,10 @@ fun LoadIdentityScreen(navController: NavHostController) {
                         when (result) {
                             LoadSaveResult.Saved -> showIdentity(idBytes)
                             is LoadSaveResult.Failed -> error = result.message
+                            is LoadSaveResult.SavedWithWarning -> {
+                                showAfterError = idBytes
+                                error = result.message
+                            }
                             is LoadSaveResult.ConfirmReplacement ->
                                 pendingReplacement = PendingVotingKeyReplacement(
                                     identityId = idBytes,
@@ -370,6 +378,10 @@ fun LoadIdentityScreen(navController: NavHostController) {
                                 when (result) {
                                     LoadSaveResult.Saved -> showIdentity(pending.identityId)
                                     is LoadSaveResult.Failed -> error = result.message
+                                    is LoadSaveResult.SavedWithWarning -> {
+                                        showAfterError = pending.identityId
+                                        error = result.message
+                                    }
                                     // A replacement never asks again by itself.
                                     is LoadSaveResult.ConfirmReplacement -> Unit
                                 }
@@ -397,7 +409,16 @@ fun LoadIdentityScreen(navController: NavHostController) {
         )
     }
 
-    ErrorAlertDialog(message = error, onDismiss = { error = null })
+    ErrorAlertDialog(
+        message = error,
+        onDismiss = {
+            error = null
+            showAfterError?.let {
+                showAfterError = null
+                showIdentity(it)
+            }
+        },
+    )
 }
 
 /** The identity types Load Identity offers (Swift `IdentityType`). */
@@ -457,24 +478,27 @@ private data class PendingVotingKeyReplacement(
 }
 
 /**
- * The type the picker starts from for the stored [row]: its type when the row is on
- * [networkRaw] and the type is one Load Identity offers, else null (the picker stays as it
- * is).
+ * The type the picker shows, until the user picks one, for the typed id's stored [row]: its
+ * type when the row is on [networkRaw] and the type is one Load Identity offers, else User.
  */
-internal fun initialLoadIdentityType(row: IdentityEntity?, networkRaw: Int): LoadIdentityType? =
+internal fun inferredLoadIdentityType(row: IdentityEntity?, networkRaw: Int): LoadIdentityType =
     row?.takeIf { it.networkRaw == networkRaw }
         ?.let { stored -> LoadIdentityType.entries.firstOrNull { it.rawValue == stored.identityType } }
+        ?: LoadIdentityType.USER
 
 /**
- * The type a load writes: the [picked] one when the user picked it or no row is stored yet,
- * else the stored row's [storedType], so a reload with the form's default type keeps a
- * masternode or evonode a voter.
+ * The type a load writes: the [picked] one when the user picked it; otherwise the stored
+ * row's [storedType], so a reload with the form's default type keeps a masternode or evonode
+ * a voter, and User for a new row, so a type inferred for another id never carries over.
  */
 internal fun identityTypeToSave(
     storedType: String?,
     picked: LoadIdentityType,
     typePicked: Boolean,
-): String = if (typePicked || storedType == null) picked.rawValue else storedType
+): String = when {
+    typePicked -> picked.rawValue
+    else -> storedType ?: LoadIdentityType.USER.rawValue
+}
 
 /** The load error for an identity already stored for another network. */
 internal fun networkMismatchMessage(storedNetworkRaw: Int): String {
@@ -510,10 +534,19 @@ internal fun votingKeyNotReplacedMessage(reason: String?): String {
     return "The new voting private key could not be stored$because. The stored key was kept."
 }
 
+/** Shown when a replacement succeeded but the replaced entry could not be deleted yet. */
+internal const val PREVIOUS_VOTING_KEY_NOT_REMOVED_MESSAGE =
+    "The voting key was replaced, but the previous key could not be removed from secure " +
+        "storage yet. It is removed the next time this identity is loaded, or with Clear " +
+        "Identities & Keys."
+
 /** What a load or a confirmed replacement did. */
 internal sealed interface LoadSaveResult {
     /** Everything was saved; show the identity. */
     data object Saved : LoadSaveResult
+
+    /** Saved, but show [message] before showing the identity. */
+    data class SavedWithWarning(val message: String) : LoadSaveResult
 
     /** Show [message] and stay on the form. */
     data class Failed(val message: String) : LoadSaveResult
@@ -532,6 +565,9 @@ internal interface VotingKeyEntries {
 
     /** Delete the entry [identifier]. */
     suspend fun delete(identifier: String)
+
+    /** Delete every entry of [identityId] except [keep] (null: all of them). */
+    suspend fun deleteOtherEntriesOf(identityId: ByteArray, keep: String?)
 }
 
 /** [VotingKeyEntries] over [MasternodeVotingKeyStore]. */
@@ -543,6 +579,9 @@ internal class StoredVotingKeyEntries(private val keys: MasternodeVotingKeyStore
         keys.store(identityId, votingKey)
 
     override suspend fun delete(identifier: String) = keys.delete(identifier)
+
+    override suspend fun deleteOtherEntriesOf(identityId: ByteArray, keep: String?) =
+        keys.deleteOtherEntriesOf(identityId, keep)
 }
 
 /**
@@ -552,7 +591,9 @@ internal class StoredVotingKeyEntries(private val keys: MasternodeVotingKeyStore
  * current row, which must be on [networkRaw]. The voting key association then changes only
  * through a conditional update against the identifier the row names now, so a write made
  * meanwhile is never overwritten: the entry just written is discarded unless the row names
- * it, and the load reports the change. [votingKey] stays the caller's to zero.
+ * it, and the load reports the change. After a successful save, any other voting entry of
+ * the identity (left by an earlier replacement whose cleanup failed) is deleted; a failure
+ * there is retried by the next load. [votingKey] stays the caller's to zero.
  */
 internal suspend fun saveLoadedIdentity(
     dao: IdentityDao,
@@ -566,6 +607,26 @@ internal suspend fun saveLoadedIdentity(
     votingKey: ByteArray?,
     nowMillis: Long = System.currentTimeMillis(),
 ): LoadSaveResult {
+    val result = saveLoadedIdentityRow(
+        dao, entries, identityId, networkRaw, balance, alias, pickedType, typePicked, votingKey,
+        nowMillis,
+    )
+    if (result == LoadSaveResult.Saved) sweepStaleEntries(dao, entries, identityId)
+    return result
+}
+
+private suspend fun saveLoadedIdentityRow(
+    dao: IdentityDao,
+    entries: VotingKeyEntries,
+    identityId: ByteArray,
+    networkRaw: Int,
+    balance: Long,
+    alias: String?,
+    pickedType: LoadIdentityType,
+    typePicked: Boolean,
+    votingKey: ByteArray?,
+    nowMillis: Long,
+): LoadSaveResult {
     val existing = dao.getByIdentityId(identityId)
     if (existing != null && existing.networkRaw != networkRaw) {
         return LoadSaveResult.Failed(networkMismatchMessage(existing.networkRaw))
@@ -578,7 +639,7 @@ internal suspend fun saveLoadedIdentity(
             // LoadIdentityScreen header.
             isLocal = true,
             alias = alias,
-            identityType = pickedType.rawValue,
+            identityType = identityTypeToSave(null, pickedType, typePicked),
             networkRaw = networkRaw,
         ),
     ) != -1L
@@ -637,7 +698,9 @@ internal suspend fun saveLoadedIdentity(
 /**
  * Replace the identity's voting key with [votingKey] after the user confirmed replacing
  * [expectedIdentifier], the key the question showed: store the new entry, point the row at it
- * only while the row still names [expectedIdentifier], then delete that entry. When the row
+ * only while the row still names [expectedIdentifier], then delete the identity's other
+ * entries, the replaced one among them; when that fails, the result says so and the next
+ * load deletes them. When the row
  * changed meanwhile, the new entry is discarded unless the row names it, the current
  * association is kept, and the result says to load again, which asks again. An entry's name
  * contains its identity's id, so the replaced entry is only this row's. [votingKey] stays the
@@ -658,17 +721,30 @@ internal suspend fun replaceVotingKey(
         discardUnlessNamed(dao, entries, identityId, stored)
         return LoadSaveResult.Failed(VOTING_KEY_CHANGED_MESSAGE)
     }
-    if (expectedIdentifier != stored) {
-        try {
-            entries.delete(expectedIdentifier)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            // The replacement is done and the row names the new key; the old entry stays
-            // as unused ciphertext until the identities are cleared (DataManager).
-        }
+    // The row names the new key; the sweep deletes the replaced entry with any other
+    // leftover of this identity. If it fails, the next load sweeps again.
+    return if (sweepStaleEntries(dao, entries, identityId)) {
+        LoadSaveResult.Saved
+    } else {
+        LoadSaveResult.SavedWithWarning(PREVIOUS_VOTING_KEY_NOT_REMOVED_MESSAGE)
     }
-    return LoadSaveResult.Saved
+}
+
+/**
+ * Delete every voting entry of [identityId] but the one its row names now. Returns false
+ * when that failed (other than by cancellation, which propagates).
+ */
+private suspend fun sweepStaleEntries(
+    dao: IdentityDao,
+    entries: VotingKeyEntries,
+    identityId: ByteArray,
+): Boolean = try {
+    entries.deleteOtherEntriesOf(identityId, dao.getByIdentityId(identityId)?.votingPrivateKeyIdentifier)
+    true
+} catch (e: CancellationException) {
+    throw e
+} catch (_: Exception) {
+    false
 }
 
 /**

@@ -45,6 +45,7 @@ import org.dashfoundation.dashsdk.security.MnemonicResolverAndPersister
 import org.dashfoundation.dashsdk.security.WalletStorage
 import org.dashfoundation.dashsdk.tokens.ContactRequestRef
 import org.dashfoundation.dashsdk.tokens.EstablishedContactRef
+import org.dashfoundation.dashsdk.voting.MasternodeVotingSigner
 import java.util.concurrent.atomic.AtomicLong
 
 /** Effective native persistence contract exposed for initialization diagnostics. */
@@ -623,34 +624,24 @@ class PlatformWalletManager(
     val signerHandle: Long get() = signer.nativeHandle
 
     /**
-     * Runs [block] with [signerHandle] while keeping this manager's teardown from freeing
-     * the signer until [block] returns. For the SDK calls that take this manager rather than
-     * a raw handle and run outside the manager's own gated entry points, such as the
-     * masternode votes signed with a stored voting key (`VoteCasting.castVote`,
-     * `DecisionProposals.castVote` and `MultipleChoiceProposals.castVote` with a `manager`).
-     * Without it, a network switch during the vote could free the signer while Rust still
-     * calls into it.
-     *
-     * @throws IllegalStateException once the manager is closing.
-     */
-    internal suspend fun <T> withSignerHandle(block: suspend (signerHandle: Long) -> T): T =
-        teardownGate.withOp { block(signer.nativeHandle) }
-
-    /**
-     * Makes the masternode voting key stored under [identifier] signable by this manager's
-     * signer for the duration of [block], and hands [block] the masternode's 20-byte voting
-     * address. Port of Swift `KeychainSigner.withStoredMasternodeVotingKey(identityId:isolation:perform:)`
+     * Runs [block] with a signer that can sign with the masternode voting key stored under
+     * [identifier], and with nothing else. Port of Swift `MasternodeVoteCall.run`
+     * (`MasternodeVoterSection.swift`), which builds a `KeychainSigner` for each vote, and of
+     * `KeychainSigner.withStoredMasternodeVotingKey(identityId:isolation:perform:)`
      * (`FFI/KeychainSigner.swift`).
      *
      * A masternode vote is signed with the voting key Rust builds from the voting address
      * (ECDSA_HASH160, data = the address), so the signer is asked for exactly those 20
-     * bytes. While [block] runs, the signer resolves that address to the identity's own
-     * voting entry ([MasternodeVotingKeyStore]); before and after, nothing does. Pass the
-     * address and this manager to a signer vote, for example
-     * `sdk.decisionProposals.castVote(proposalId, choice, proTxHash, votingAddress, manager)`.
+     * bytes. This creates a [KeystoreSigner] for this call only, on this manager's
+     * [walletStorage], whose one alias maps the voting address to the identity's own voting
+     * entry ([MasternodeVotingKeyStore]); this manager's own signer never resolves the
+     * address to the voting key, so a vote cannot change what a concurrent wallet operation
+     * signs with. Pass the [MasternodeVotingSigner] to a signer vote, for example
+     * `sdk.decisionProposals.castVote(proposalId, choice, proTxHash, voter)`. When [block]
+     * returns or throws, votes still in flight are awaited and the dedicated signer is
+     * freed; the voter cannot be used afterwards.
      *
-     * The manager's teardown waits for the whole call, so the signer stays alive through the
-     * vote.
+     * The manager's teardown waits for the whole call.
      *
      * @param identifier the identity's `IdentityEntity.votingPrivateKeyIdentifier`, as
      *   [MasternodeVotingKeyStore.store] returned it.
@@ -660,7 +651,7 @@ class PlatformWalletManager(
      */
     suspend fun <T> withStoredMasternodeVotingKey(
         identifier: String,
-        block: suspend (votingAddress: ByteArray) -> T,
+        block: suspend (voter: MasternodeVotingSigner) -> T,
     ): T = teardownGate.withOp {
         val keys = MasternodeVotingKeyStore(walletStorage)
         val votingAddress = try {
@@ -669,10 +660,26 @@ class PlatformWalletManager(
             throw MasternodeVotingKeyNotStoredException()
         }
         if (!keys.isStored(identifier)) throw MasternodeVotingKeyNotStoredException()
-        signer.openScopedAlias(votingAddress.toHex(), identifier).use {
-            block(votingAddress.copyOf())
+        // No invalidation hook: that bookkeeping is for wallet identity keys, and this
+        // signer holds none.
+        val dedicated = KeystoreSigner(
+            walletStorage, network, biometricGate, database.platformAddressDao(),
+        )
+        try {
+            dedicated.registerAlias(votingAddress.toHex(), identifier)
+            val voter = MasternodeVotingSigner(votingAddress, dedicated)
+            try {
+                block(voter)
+            } finally {
+                withContext(NonCancellable) { voter.end() }
+            }
+        } finally {
+            dedicated.close()
         }
     }
+
+    /** This manager's own signer, for tests that check what it can sign. */
+    internal val signerForTesting: KeystoreSigner get() = signer
 
     /**
      * Re-derive the canonical identity-authentication private key for

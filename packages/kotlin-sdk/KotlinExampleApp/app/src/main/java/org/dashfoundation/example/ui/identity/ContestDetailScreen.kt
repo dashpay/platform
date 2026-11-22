@@ -281,7 +281,7 @@ fun ContestDetailScreen(
                     "dash",
                     ContestedIndexValue.text(currentSdk.dpns.normalizeLabel(contestName)),
                 )
-                val call = MasternodeVoteCall { proTxHash, votingAddress, manager ->
+                val call = MasternodeVoteCall { proTxHash, signer, manager ->
                     manager.voteCasting.castVote(
                         sdk = currentSdk,
                         dataContractId = DPNS_CONTRACT_ID_BASE58,
@@ -290,8 +290,7 @@ fun ContestDetailScreen(
                         indexValues = indexValues,
                         choice = choice,
                         proTxHash = proTxHash,
-                        votingAddress = votingAddress,
-                        manager = manager,
+                        voter = signer,
                     )
                 }.let { call ->
                     // Debug builds only: the raw-key call is not reachable in a release build.

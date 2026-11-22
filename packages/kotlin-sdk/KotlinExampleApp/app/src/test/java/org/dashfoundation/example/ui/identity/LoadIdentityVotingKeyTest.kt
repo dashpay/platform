@@ -5,6 +5,7 @@ import kotlinx.coroutines.runBlocking
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.dao.IdentityDao
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
 import org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -89,19 +90,40 @@ class LoadIdentityVotingKeyTest {
     // ── The type picker ──────────────────────────────────────────────────
 
     @Test
-    fun shouldStartThePickerFromAStoredRowOnThisNetworkOnly() {
+    fun shouldInferTheStoredTypeOnThisNetworkAndUserOtherwise() {
         val evonode = row(type = "Evonode")
-        assertEquals(LoadIdentityType.EVONODE, initialLoadIdentityType(evonode, testnet))
-        assertNull(initialLoadIdentityType(evonode, mainnet))
-        assertNull(initialLoadIdentityType(null, testnet))
-        assertNull(initialLoadIdentityType(row(type = "Something else"), testnet))
+        assertEquals(LoadIdentityType.EVONODE, inferredLoadIdentityType(evonode, testnet))
+        assertEquals(LoadIdentityType.USER, inferredLoadIdentityType(evonode, mainnet))
+        assertEquals(LoadIdentityType.USER, inferredLoadIdentityType(null, testnet))
+        assertEquals(LoadIdentityType.USER, inferredLoadIdentityType(row(type = "Something else"), testnet))
     }
 
     @Test
-    fun shouldWriteAnUnpickedTypeOnlyForANewRow() {
+    fun shouldWriteTheStoredTypeOrUserUnlessTheUserPickedOne() {
         assertEquals("Evonode", identityTypeToSave("Evonode", LoadIdentityType.USER, typePicked = false))
         assertEquals("User", identityTypeToSave("Evonode", LoadIdentityType.USER, typePicked = true))
-        assertEquals("User", identityTypeToSave(null, LoadIdentityType.USER, typePicked = false))
+        assertEquals("User", identityTypeToSave(null, LoadIdentityType.EVONODE, typePicked = false))
+        assertEquals("Evonode", identityTypeToSave(null, LoadIdentityType.EVONODE, typePicked = true))
+    }
+
+    /** S7: a known evonode's id, then an unseen id in the same form, saves the new one as User. */
+    @Test
+    fun shouldNotCarryAKnownIdentitysTypeIntoANewRow() = runBlocking {
+        dao.upsert(row(type = "Evonode"))
+        // The picker followed the known id...
+        val inferredForKnown = inferredLoadIdentityType(dao.getByIdentityId(identityId), testnet)
+        assertEquals(LoadIdentityType.EVONODE, inferredForKnown)
+        val unseenId = ByteArray(32) { 6 }
+
+        // ...and a save of an unseen id with that stale, unpicked type still writes User.
+        val stale = saveLoadedIdentity(
+            dao, entries, unseenId, testnet, 1L, null,
+            pickedType = inferredForKnown, typePicked = false, votingKey = null,
+        )
+        assertEquals(LoadSaveResult.Saved, stale)
+        assertEquals("User", dao.getByIdentityId(unseenId)!!.identityType)
+        // The picker itself returns to User for the unseen id.
+        assertEquals(LoadIdentityType.USER, inferredLoadIdentityType(dao.getByIdentityId(ByteArray(32) { 7 }), testnet))
     }
 
     // ── Saving a load ────────────────────────────────────────────────────
@@ -125,7 +147,7 @@ class LoadIdentityVotingKeyTest {
 
     @Test
     fun shouldInsertANewIdentityWithThePickedType() = runBlocking {
-        val result = save(pickedType = LoadIdentityType.MASTERNODE, typePicked = false)
+        val result = save(pickedType = LoadIdentityType.MASTERNODE, typePicked = true)
 
         assertEquals(LoadSaveResult.Saved, result)
         val saved = dao.getByIdentityId(identityId)!!
@@ -154,6 +176,31 @@ class LoadIdentityVotingKeyTest {
         assertEquals("kept", saved.dpnsName)
         assertEquals("main", saved.mainDpnsName)
         assertEquals(42L, saved.balance)
+    }
+
+    /** B4: an unlinked row takes the fetched balance. */
+    @Test
+    fun shouldTakeTheFetchedBalanceOnARowNoWalletOwns() = runBlocking {
+        dao.upsert(row(type = "Masternode").copy(balance = 7L))
+
+        save(pickedType = LoadIdentityType.MASTERNODE, typePicked = true)
+
+        assertEquals(42L, dao.getByIdentityId(identityId)!!.balance)
+    }
+
+    /** B4: a wallet's identity keeps the balance wallet sync wrote, newer than the fetch. */
+    @Test
+    fun shouldKeepTheSyncedBalanceOfAWalletsIdentity() = runBlocking {
+        val walletId = ByteArray(32) { 3 }
+        db.walletDao().upsert(WalletEntity(walletId = walletId, networkRaw = testnet))
+        dao.upsert(row(type = "User").copy(balance = 1_000L, walletId = walletId))
+
+        val result = save(alias = "mine", pickedType = LoadIdentityType.USER, typePicked = false)
+
+        assertEquals(LoadSaveResult.Saved, result)
+        val saved = dao.getByIdentityId(identityId)!!
+        assertEquals(1_000L, saved.balance)
+        assertEquals("mine", saved.alias)
     }
 
     @Test
@@ -252,12 +299,34 @@ class LoadIdentityVotingKeyTest {
     @Test
     fun shouldReplaceTheKeyTheQuestionShowedAndDeleteItsEntry() = runBlocking {
         dao.upsert(row(type = "Masternode", votingIdentifier = identifierOf(keyA)))
+        entries.live += identifierOf(keyA)
 
         val result = replaceVotingKey(dao, entries, identityId, identifierOf(keyA), keyB)
 
         assertEquals(LoadSaveResult.Saved, result)
         assertEquals(identifierOf(keyB), dao.getByIdentityId(identityId)!!.votingPrivateKeyIdentifier)
-        assertEquals(listOf(identifierOf(keyA)), entries.deletedIdentifiers)
+        assertEquals(setOf(identifierOf(keyB)), entries.live)
+    }
+
+    /** S6: the replacement stands, the leftover is reported, and the next load sweeps it. */
+    @Test
+    fun shouldReportAReplacedKeyThatCouldNotBeRemovedAndSweepItOnTheNextLoad() = runBlocking {
+        dao.upsert(row(type = "Masternode", votingIdentifier = identifierOf(keyA)))
+        entries.live += identifierOf(keyA)
+        entries.sweepFailure = IllegalStateException("secure storage unavailable")
+
+        val result = replaceVotingKey(dao, entries, identityId, identifierOf(keyA), keyB)
+
+        assertEquals(LoadSaveResult.SavedWithWarning(PREVIOUS_VOTING_KEY_NOT_REMOVED_MESSAGE), result)
+        assertEquals(identifierOf(keyB), dao.getByIdentityId(identityId)!!.votingPrivateKeyIdentifier)
+        assertEquals(setOf(identifierOf(keyA), identifierOf(keyB)), entries.live)
+
+        entries.sweepFailure = null
+        assertEquals(
+            LoadSaveResult.Saved,
+            save(alias = "again", pickedType = LoadIdentityType.USER, typePicked = false),
+        )
+        assertEquals(setOf(identifierOf(keyB)), entries.live)
     }
 
     /** F4: the row changed after the question was asked, so nothing is replaced. */
@@ -310,11 +379,16 @@ class LoadIdentityVotingKeyTest {
     private fun identifierOf(key: ByteArray): String =
         MasternodeVotingKeyStore.identifierFor(identityId, key.copyOf(20))
 
-    /** Records the entries written and deleted; no native library, no Keystore. */
+    /**
+     * Records the entries written and deleted and keeps the set of [live] ones; no native
+     * library, no Keystore.
+     */
     private inner class RecordedEntries : VotingKeyEntries {
         val storedIdentifiers = mutableListOf<String>()
         val deletedIdentifiers = mutableListOf<String>()
+        val live = mutableSetOf<String>()
         var failure: Exception? = null
+        var sweepFailure: Exception? = null
         var onStore: (suspend () -> Unit)? = null
 
         override fun identifierFor(identityId: ByteArray, votingKey: ByteArray): String =
@@ -324,12 +398,21 @@ class LoadIdentityVotingKeyTest {
             failure?.let { throw it }
             val identifier = identifierFor(identityId, votingKey)
             storedIdentifiers += identifier
+            live += identifier
             onStore?.invoke()
             return identifier
         }
 
         override suspend fun delete(identifier: String) {
             deletedIdentifiers += identifier
+            live -= identifier
+        }
+
+        override suspend fun deleteOtherEntriesOf(identityId: ByteArray, keep: String?) {
+            sweepFailure?.let { throw it }
+            val prefix = MasternodeVotingKeyStore.identifierFor(identityId, ByteArray(20))
+                .substringBeforeLast('.')
+            live.removeAll { it.startsWith("$prefix.") && it != keep }
         }
     }
 }

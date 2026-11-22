@@ -79,22 +79,6 @@ class KeystoreSigner(
         aliases[lookupHex.lowercase()] = storageKeyHex.lowercase()
     }
 
-    /**
-     * Lookups that resolve to another storage entry only while a scope is open, such as a
-     * masternode voting address resolving to its identity's voting key entry during one vote
-     * (`PlatformWalletManager.withStoredMasternodeVotingKey`). They take precedence over
-     * [registerAlias] and the direct lookup.
-     */
-    private val scopedAliases = ScopedSigningAliases()
-
-    /**
-     * Resolve [lookupHex] to the `WalletStorage` entry [storageKey] until the returned scope
-     * is closed. Port of the scoped registry of Swift `KeychainSigner.withAdditionalSigningKeys`
-     * (`FFI/KeychainSigner.swift`), keyed by entry name instead of holding key bytes.
-     */
-    internal fun openScopedAlias(lookupHex: String, storageKey: String): AutoCloseable =
-        scopedAliases.open(lookupHex, storageKey)
-
     override fun signAsync(
         pubkeyBytes: ByteArray,
         keyType: Int,
@@ -157,8 +141,7 @@ class KeystoreSigner(
     ) {
         var key: ByteArray? = null
         try {
-            val scopedStorageKey = scopedAliases.resolve(pubkeyBytes.toLowerHex())
-            val storageKey = scopedStorageKey ?: storageKeyFor(pubkeyBytes)
+            val storageKey = storageKeyFor(pubkeyBytes)
             key = try {
                 retrieveKeyWithAuth(storageKey)
             } catch (e: KeyPermanentlyInvalidatedException) {
@@ -178,9 +161,7 @@ class KeystoreSigner(
                 // best-effort: bookkeeping failure must not eat the typed
                 // completion.
                 try {
-                    // A scoped entry (a masternode voting key) has no public_keys row to
-                    // mark; the bookkeeping is for identity keys stored under their hex.
-                    if (scopedStorageKey == null) onSigningKeyInvalidated?.invoke(storageKey)
+                    onSigningKeyInvalidated?.invoke(storageKey)
                 } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
                     // The invalidation callback is suspend; runCatching would
                     // have swallowed its cancellation one layer too low and let
@@ -246,6 +227,26 @@ class KeystoreSigner(
         } finally {
             key?.fill(0)
         }
+    }
+
+    /** What one sign attempt completed with: the signature, or the error code and message. */
+    internal class SignCompletion(val signature: ByteArray?, val code: Int, val message: String?)
+
+    /**
+     * Test seam: run the identity-key sign path for [pubkeyBytes] over [data] exactly as
+     * [signAsync] does (lookup, decrypt, Rust signature, zeroing), and return what it
+     * completed with instead of handing it to a native completion token.
+     */
+    internal suspend fun signWithStoredKeyForTesting(
+        pubkeyBytes: ByteArray,
+        data: ByteArray,
+    ): SignCompletion {
+        var completion: SignCompletion? = null
+        signWithStoredKey(pubkeyBytes, data) { signature, code, message ->
+            if (completion == null) completion = SignCompletion(signature, code, message)
+        }
+        return completion
+            ?: SignCompletion(null, SignerNative.SIGNER_ERROR_CODE_GENERIC, "no completion")
     }
 
     /**
@@ -343,11 +344,9 @@ class KeystoreSigner(
     }
 
     private fun storageKeyFor(pubkeyBytes: ByteArray): String {
-        val hex = pubkeyBytes.toLowerHex()
-        return scopedAliases.resolve(hex) ?: aliases[hex] ?: hex
+        val hex = pubkeyBytes.joinToString("") { "%02x".format(it) }
+        return aliases[hex] ?: hex
     }
-
-    private fun ByteArray.toLowerHex(): String = joinToString("") { "%02x".format(it) }
 
     /**
      * Decrypt the key; on an expired auth window, run the biometric gate

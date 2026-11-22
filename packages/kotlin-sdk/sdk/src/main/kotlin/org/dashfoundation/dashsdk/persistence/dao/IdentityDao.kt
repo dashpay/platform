@@ -79,13 +79,17 @@ interface IdentityDao {
 
     /**
      * Load Identity's write to a row already on the device: only the fields a load owns, on
-     * the current row, and only while the row is on [networkRaw]. The alias changes only when
-     * one is given; every other column (wallet link, key identifiers, DPNS names) is left as
-     * the row has it. Returns the number of rows changed (0 when the row is gone or on
-     * another network).
+     * the current row, and only while the row is on [networkRaw]. The fetched [balance]
+     * replaces the stored one only on a row no wallet owns: a wallet's own identity has its
+     * balance kept current by wallet sync, which may have written a newer one than the fetch
+     * saw. The alias changes only when one is given; every other column (wallet link, key
+     * identifiers, DPNS names) is left as the row has it. Returns the number of rows changed
+     * (0 when the row is gone or on another network).
      */
     @Query(
-        "UPDATE identities SET balance = :balance, alias = COALESCE(:alias, alias), " +
+        "UPDATE identities SET " +
+            "balance = CASE WHEN walletId IS NULL THEN :balance ELSE balance END, " +
+            "alias = COALESCE(:alias, alias), " +
             "isLocal = :isLocal, identityType = :identityType, lastUpdated = :nowMillis " +
             "WHERE identityId = :identityId AND networkRaw = :networkRaw"
     )

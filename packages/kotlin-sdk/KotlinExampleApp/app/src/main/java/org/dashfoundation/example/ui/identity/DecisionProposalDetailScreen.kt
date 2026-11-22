@@ -501,13 +501,12 @@ private fun DecisionProposalVoteDialog(
                     val currentSdk = sdk ?: return@TextButton
                     val picked = voter ?: return@TextButton
                     val pickedChoice = choice
-                    val call = MasternodeVoteCall { proTxHash, votingAddress, manager ->
+                    val call = MasternodeVoteCall { proTxHash, signer, _ ->
                         currentSdk.decisionProposals.castVote(
                             proposalId = proposal.id,
                             choice = pickedChoice,
                             proTxHash = proTxHash,
-                            votingAddress = votingAddress,
-                            manager = manager,
+                            voter = signer,
                         )
                     }.let { call ->
                         // Debug builds only: the raw-key call is not reachable in a release

@@ -5,7 +5,6 @@ import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.DecisionProposalsNative
 import org.dashfoundation.dashsdk.persistence.toBase58String
-import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.dashsdk.wallet.TeardownGate
 import org.dashfoundation.dashsdk.wallet.op
 import org.dashfoundation.dashsdk.wallet.opReturningCompletedResult
@@ -149,32 +148,28 @@ class DecisionProposals internal constructor(private val sdk: Sdk) {
     }
 
     /**
-     * Vote on [proposalId] for a masternode with a host signer that holds the voting key,
+     * Vote on [proposalId] for a masternode with [voter], the signer of its stored voting key,
      * and wait for the response: the vote of the `votingPrivateKey` overload, for a key the
      * app stores ([org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore]). Kotlin
      * counterpart of the signer form of `SDK.castDecisionProposalVote` in Swift's
      * `SDK+DecisionProposals.swift`.
      *
-     * Rust builds the ECDSA_HASH160 voting key from [votingAddress] and asks the signer to
-     * sign with it. A signer that holds no key for that address fails the call with the
-     * signer's error.
+     * Call it inside `PlatformWalletManager.withStoredMasternodeVotingKey`, which supplies
+     * [voter]. Rust builds the ECDSA_HASH160 voting key from the voter's voting address and
+     * asks the signer to sign with it. The voter's signer and the SDK both stay alive until
+     * the call returns.
      *
      * @param proTxHash 32-byte pro_tx_hash in wire order, as for the `votingPrivateKey`
      *   overload.
-     * @param votingAddress 20-byte voting address: the hash160 of the compressed voting
-     *   public key ([org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore.votingAddressOf]).
-     * @param manager the wallet manager whose signer holds the voting key. Call this inside
-     *   [PlatformWalletManager.withStoredMasternodeVotingKey], which makes the stored key
-     *   signable and supplies [votingAddress]. The manager's teardown and the SDK's close
-     *   both wait for the call.
+     * @param voter the signer of the masternode's stored voting key.
+     * @throws IllegalStateException when [voter] is used after its call ended.
      */
     suspend fun castVote(
         proposalId: String,
         choice: YesNoAbstainVoteChoice,
         proTxHash: ByteArray,
-        votingAddress: ByteArray,
-        manager: PlatformWalletManager,
-    ): Unit = manager.withSignerHandle { signerHandle ->
+        voter: MasternodeVotingSigner,
+    ): Unit = voter.withSignerHandle { signerHandle ->
         sdk.queryGate.op {
             mapNativeErrors {
                 DecisionProposalsNative.castVoteWithSigner(
@@ -182,7 +177,7 @@ class DecisionProposals internal constructor(private val sdk: Sdk) {
                     proposalId,
                     choice.discriminant,
                     proTxHash,
-                    votingAddress,
+                    voter.votingAddress,
                     signerHandle,
                 )
             }
