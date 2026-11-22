@@ -459,6 +459,57 @@ mod test {
         assert!(!address_list.is_banned(&node), "the node is not banned");
     }
 
+    /// On a network proven to run a protocol version newer than this build knows, answers the
+    /// build cannot verify leave their nodes unbanned, and a request whose every attempt ends
+    /// so reads as a configuration error that names the update, not as a failed proof.
+    #[tokio::test]
+    async fn should_report_unverifiable_answers_of_a_newer_network_as_a_configuration_error() {
+        let mut address_list = AddressList::default();
+        let nodes: Vec<rs_dapi_client::Address> = (1..=3)
+            .map(|port| format!("http://localhost:{port}").parse().unwrap())
+            .collect();
+        for node in &nodes {
+            address_list.add(node.clone());
+        }
+        let settings = RequestSettings {
+            retries: Some(2),
+            ban_failed_address: Some(true),
+            ..Default::default()
+        };
+        let call_count = AtomicUsize::new(0);
+        let closure = |_settings: RequestSettings| {
+            let node = nodes[call_count.fetch_add(1, Ordering::Relaxed)].clone();
+            async move {
+                Err::<rs_dapi_client::ExecutionResponse<()>, _>(ExecutionError {
+                    possibly_accepted: false,
+                    inner: Error::StaleNode(StaleNodeError::NewerProtocolVersion {
+                        supported_protocol_version: 15,
+                        received_protocol_version: 16,
+                        error: Box::new(drive_proof_verifier::Error::ProtocolError {
+                            error: "unexpected variant".to_string(),
+                        }),
+                    }),
+                    retries: 0,
+                    address: Some(node),
+                })
+            }
+        };
+
+        let error = retry(&address_list, settings, closure)
+            .await
+            .expect_err("no answer can be verified");
+
+        assert!(
+            matches!(&error.inner, Error::Config(reason) if reason.contains("update the SDK")),
+            "{:?}",
+            error.inner
+        );
+        assert_eq!(call_count.load(Ordering::Relaxed), 3);
+        for node in &nodes {
+            assert!(!address_list.is_banned(node), "{node} is not banned");
+        }
+    }
+
     /// A request that also failed in other ways does not end as a configuration error: only
     /// a request whose every attempt was answered at an older protocol version does.
     #[tokio::test]

@@ -612,6 +612,10 @@ impl Sdk {
     /// An answer naming no protocol version is malformed, whatever the network runs: it stays
     /// [`Error::Proof`] and its node is banned.
     ///
+    /// Any other answer that fails verification is classified by whether this build can be
+    /// expected to read it ([`Self::classify_unverified_answer`]): on a network proven to run
+    /// a protocol version newer than this build knows, its node is not banned.
+    ///
     /// `metadata` is the response's, not yet verified, and `arrival` the SDK's anchors when
     /// it arrived.
     fn classify_verifier_error(
@@ -659,7 +663,54 @@ impl Sdk {
                 .into();
             }
         }
-        error.into()
+        match error.into() {
+            Error::Proof(error) => {
+                self.classify_unverified_answer(error, method_name, metadata, arrival)
+            }
+            error => error,
+        }
+    }
+
+    /// Classify an answer that failed verification by whether this build can be expected to
+    /// read it.
+    ///
+    /// A protocol upgrade can store and prove state in forms an older build cannot read: a
+    /// new stored contract format, a new GroveDB element type, a new proof layout. On a
+    /// network running a protocol version newer than this build knows, such an answer fails
+    /// alike from every node, and banning them would empty the pool for the requests this
+    /// build still reads. So once a verified answer has shown the network running a version
+    /// this build does not know, an unverifiable answer naming such a version is
+    /// [`StaleNodeError::NewerProtocolVersion`]: the request moves to another node and none
+    /// is banned, and a request whose every attempt ends so fails with [`Error::Config`].
+    ///
+    /// The answer's metadata is not verified, so it does not decide alone: before a verified
+    /// answer has shown the newer version, a node naming one is banned as for any unusable
+    /// proof. An answer naming a version this build knows comes from a node behind that
+    /// network, or is unusable for another reason, and an answer outside the height or time
+    /// tolerance is stale: their nodes are banned.
+    fn classify_unverified_answer(
+        &self,
+        error: drive_proof_verifier::Error,
+        method_name: &str,
+        metadata: Option<&ResponseMetadata>,
+        arrival: MetadataArrival,
+    ) -> Error {
+        let supported = PlatformVersion::latest().protocol_version;
+        let Some(metadata) = metadata.filter(|metadata| {
+            metadata.protocol_version > supported
+                && self.verified_protocol_version.load(Ordering::Relaxed) > supported
+        }) else {
+            return Error::Proof(error);
+        };
+        if let Err(stale) = self.check_unverified_freshness(method_name, metadata, arrival) {
+            return stale;
+        }
+        StaleNodeError::NewerProtocolVersion {
+            supported_protocol_version: supported,
+            received_protocol_version: metadata.protocol_version,
+            error: Box::new(error),
+        }
+        .into()
     }
 
     /// Check that metadata whose proof was not verified is fresh as of `arrival`, without

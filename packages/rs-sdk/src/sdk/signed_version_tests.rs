@@ -654,6 +654,124 @@ async fn should_not_warn_about_unauthenticated_protocol_versions() {
     assert_eq!(sdk.protocol_version_number(), 13);
 }
 
+/// The error of an epoch answer that names protocol version `signed` and fails verification
+/// (its signature does not cover the changed version), on an SDK whose verified answers have
+/// shown the network running `network`.
+async fn unverifiable_answer_error(sdk: &Sdk, network: Option<u32>, signed: u32) -> Error {
+    if let Some(network) = network {
+        sdk.record_verified_protocol_version(network);
+    }
+    let (request, response) = recorded_response(signed);
+    sdk.parse_proof_with_metadata_and_proof::<GetEpochsInfoRequest, ExtendedEpochInfo>(
+        request,
+        response,
+        "get_epochs_info",
+    )
+    .await
+    .expect_err("the signature does not cover the changed protocol version")
+}
+
+fn epoch_vector_sdk(height_tolerance: Option<u64>, trusted_height: u64) -> Sdk {
+    SdkBuilder::new_mock()
+        .with_dump_dir(
+            &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/test_epoch_fetch"),
+        )
+        .with_initial_version(PlatformVersion::latest())
+        .with_time_tolerance(None)
+        .with_height_tolerance(height_tolerance)
+        .with_trusted_initial_height(trusted_height)
+        .build()
+        .expect("sdk")
+}
+
+/// A protocol upgrade can store and prove state in forms a build from before it cannot read,
+/// and then every node's answer fails alike. Once a verified answer has shown the network
+/// running a protocol version this build does not know, an unverifiable answer naming such a
+/// version moves the request to another node without banning this one, and a request that
+/// runs out of attempts on such answers fails as a configuration error naming the update.
+#[tokio::test]
+async fn should_spare_nodes_whose_answers_fail_on_a_network_newer_than_the_sdk_knows() {
+    let latest = PlatformVersion::latest().protocol_version;
+    let sdk = epoch_vector_sdk(None, 1);
+    let error = unverifiable_answer_error(&sdk, Some(latest + 1), latest + 1).await;
+    assert!(
+        matches!(
+            &error,
+            Error::StaleNode(StaleNodeError::NewerProtocolVersion {
+                supported_protocol_version,
+                received_protocol_version,
+                error,
+            }) if *supported_protocol_version == latest
+                && *received_protocol_version == latest + 1
+                && matches!(**error, ProofError::InvalidSignature { .. })
+        ),
+        "{error:?}"
+    );
+    assert!(error.can_retry());
+    assert!(error.spares_responder());
+    let exhausted = error.into_exhausted_error();
+    assert!(
+        matches!(
+            &exhausted,
+            Error::Config(reason) if reason.contains("update the SDK")
+                && reason.contains(&format!("runs protocol version {}", latest + 1))
+                && reason.contains(&format!("versions up to {latest}"))
+        ),
+        "{exhausted:?}"
+    );
+    assert_eq!(
+        sdk.protocol_version_number(),
+        latest,
+        "nothing is learned from the answer"
+    );
+}
+
+/// The protocol version an unverifiable answer names is not verified, so it does not spare
+/// its node alone: a node naming a version this build does not know is banned as for any
+/// unusable proof until a verified answer has shown the network running such a version.
+#[tokio::test]
+async fn should_ban_nodes_naming_a_newer_version_the_network_has_not_shown() {
+    let latest = PlatformVersion::latest().protocol_version;
+    for network in [None, Some(latest)] {
+        let sdk = epoch_vector_sdk(None, 1);
+        let error = unverifiable_answer_error(&sdk, network, latest + 1).await;
+        assert!(
+            matches!(error, Error::Proof(ProofError::InvalidSignature { .. })),
+            "{network:?}: {error:?}"
+        );
+        assert!(error.can_retry(), "{network:?}");
+        assert!(!error.spares_responder(), "{network:?}");
+    }
+}
+
+/// On a network proven to run a protocol version this build does not know, a node whose
+/// unverifiable answer names a version the build knows is behind that network, or its answer
+/// is unusable for another reason, and one whose answer is outside the height tolerance has
+/// stopped following it: both are banned.
+#[tokio::test]
+async fn should_ban_nodes_behind_a_network_newer_than_the_sdk_knows() {
+    let latest = PlatformVersion::latest().protocol_version;
+
+    let sdk = epoch_vector_sdk(None, 1);
+    let error = unverifiable_answer_error(&sdk, Some(latest + 1), latest).await;
+    assert!(
+        matches!(error, Error::Proof(ProofError::InvalidSignature { .. })),
+        "{error:?}"
+    );
+    assert!(!error.spares_responder());
+
+    let (_, recorded) = recorded_epoch_response();
+    let recorded_height = recorded.metadata().expect("recorded metadata").height;
+    let sdk = epoch_vector_sdk(Some(1), recorded_height + 100);
+    let error = unverifiable_answer_error(&sdk, Some(latest + 1), latest + 1).await;
+    assert!(
+        matches!(error, Error::StaleNode(StaleNodeError::Height { .. })),
+        "{error:?}"
+    );
+    assert!(error.can_retry());
+    assert!(!error.spares_responder());
+}
+
 fn document_outcome_vector(name: &str) -> Vec<u8> {
     std::fs::read(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))

@@ -307,7 +307,10 @@ impl Error {
     pub(crate) fn spares_responder(&self) -> bool {
         matches!(
             self,
-            Self::StaleNode(StaleNodeError::ProtocolVersion { .. })
+            Self::StaleNode(
+                StaleNodeError::ProtocolVersion { .. }
+                    | StaleNodeError::NewerProtocolVersion { .. }
+            )
         )
     }
 
@@ -317,8 +320,22 @@ impl Error {
     /// When every node asked answered a document query at an older protocol version than the
     /// SDK's, while no verified answer has shown the network running the SDK's version, the
     /// request fails as a configuration error: the SDK may be set ahead of its network.
+    ///
+    /// When no answer could be verified on a network proven to run a protocol version newer
+    /// than this build knows, the request fails as a configuration error too: the SDK has to
+    /// be updated.
     pub(crate) fn into_exhausted_error(self) -> Self {
         match self {
+            Self::StaleNode(StaleNodeError::NewerProtocolVersion {
+                supported_protocol_version: supported,
+                received_protocol_version: signed,
+                error,
+            }) => Self::Config(format!(
+                "the network runs protocol version {signed}, and this SDK knows protocol \
+                 versions up to {supported}: it cannot read every answer of the newer version, \
+                 and could not verify this one ({error}); update the SDK to a release that \
+                 knows protocol version {signed}"
+            )),
             Self::StaleNode(StaleNodeError::ProtocolVersion {
                 received_protocol_version: signed,
                 expected_protocol_version: sdk,
@@ -678,6 +695,24 @@ pub enum StaleNodeError {
         expected_protocol_version: u32,
         /// Protocol version named in the server's response metadata
         received_protocol_version: u32,
+    },
+    /// Server's answer could not be verified, it names a protocol version newer than any this
+    /// SDK build knows, and a verified answer has shown the network running such a version
+    ///
+    /// A protocol upgrade can store and prove state in forms an older build cannot read, as
+    /// protocol version 15 does for data contracts, and then every node's answer fails alike.
+    /// So the node is not banned: the request moves to another node. A request whose every
+    /// attempt ends with this error fails with [`Error::Config`] instead, also when no node is
+    /// left to ask: the SDK has to be updated.
+    #[error("could not verify an answer at protocol version {received_protocol_version}, newer than this SDK knows ({supported_protocol_version}): {error}; try another server")]
+    NewerProtocolVersion {
+        /// Newest protocol version this SDK build knows
+        supported_protocol_version: u32,
+        /// Protocol version named in the server's response metadata
+        received_protocol_version: u32,
+        /// Why the answer could not be verified
+        #[source]
+        error: Box<drive_proof_verifier::Error>,
     },
     /// Server answered a request that needs a newer protocol version with a response
     /// signed at an older one: it is behind the network's protocol upgrade.

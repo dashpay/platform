@@ -166,6 +166,34 @@ Before a document query is sent, the result type checks that it can be verified 
 to it (`FromProof::check_request`), at the version the request is encoded with. A query no node
 serves, or none of whose answers can be verified as that type, is refused without being sent.
 
+## A network newer than the SDK
+
+A protocol upgrade can store and prove state in forms a build from before it cannot read: a
+new stored contract format, a new GroveDB element type, a new proof layout. [Updating Apps for
+Protocol Version 15](protocol-version-15-upgrade.md) lists what protocol version 15 changes
+this way. On a network that runs a version newer than the build knows, the SDK verifies with
+the newest rules it has. Answers those rules still read verify as before, and the others fail
+alike from every node.
+
+The SDK records the version of every verified answer, known to the build or not
+(`ProtocolVersionInfo::newer_protocol_available`). Once a verified answer has shown the network
+running a version the build does not know, an answer that fails verification and names such a
+version is not held against its node (`StaleNodeError::NewerProtocolVersion`): the request
+moves to another node, and none is banned, so the requests the build still reads keep their
+nodes. A request whose every attempt ends this way fails with `Error::Config`, which names both
+versions and says the SDK has to be updated.
+
+The version an unverified answer names is not evidence on its own. Before a verified answer
+has shown the newer version, a node whose answer fails verification is banned as for any
+unusable proof, whatever version it names. After it, a node is still banned when its failed
+answer names a version the build knows, since that node is behind its network or the answer is
+unusable for another reason, and when the answer is outside the height or time tolerance.
+
+A request version a protocol upgrade retired is refused by the nodes themselves, with
+`INVALID_ARGUMENT`: every node at that protocol version refuses it alike, so the request fails
+at once and no node is banned. A request version above the ones a node serves stays retryable
+on another node, which may be newer.
+
 ## Errors
 
 | Situation | Rust (`dash-sdk`) | JS (`wasm-sdk`, `evo-sdk`) | FFI (Swift, Kotlin) | Retried elsewhere / node banned |
@@ -175,6 +203,7 @@ serves, or none of whose answers can be verified as that type, is refused withou
 | An answer to a request that needs a version, signed below it | `StaleNodeError::BehindProtocolUpgrade` | kind `StaleNode` | `NetworkError` | yes / yes |
 | A document answer signed below the SDK's version, before the network is proven at it | `StaleNodeError::ProtocolVersion` per attempt; the request fails with `Error::Config` once no attempt is left | kind `Config` | `ProtocolError` | yes / no |
 | A document answer signed below the SDK's version, once the network is proven at it | `Error::Proof` | kind `Proof` | `ProtocolError` (its message names both versions) | yes / yes |
+| An answer that fails verification and names a version the build does not know, once the network is proven at such a version | `StaleNodeError::NewerProtocolVersion` per attempt; the request fails with `Error::Config` once no attempt is left | kind `Config` | `ProtocolError` | yes / no |
 
 `ProtocolVersionNotActive` names the method and, for a document query, the feature that needs
 the version, for example `get_documents needs Platform protocol version 14 for time-range
