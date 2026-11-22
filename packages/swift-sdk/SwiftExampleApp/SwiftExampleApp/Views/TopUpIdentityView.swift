@@ -96,16 +96,17 @@ enum ShieldedTopUpSubmitCheck: Equatable {
         "The spent notes were confirmed. Requested: \(formatCreditsAsDash(amount))."
     }
 
-    /// `listedBelow`: a matching pending row is shown under this result.
-    /// Without one, the text promises no visible entry.
-    static func unconfirmedText(amount: UInt64, listedBelow: Bool) -> String {
+    /// `pendingListedBelow`: this identity has pending top-ups shown under
+    /// this result. None of them is claimed to be this submission (two can
+    /// have the same amount), and without any the text promises no entry.
+    static func unconfirmedText(amount: UInt64, pendingListedBelow: Bool) -> String {
         let warning = "The top-up of \(formatCreditsAsDash(amount)) could not be "
-            + "confirmed. Do not retry: it may already be on chain."
-        if listedBelow {
-            return warning + " It is listed as pending below, and the wallet "
-                + "checks it on each shielded sync."
+            + "confirmed. Do not retry: it may already be on chain. The wallet "
+            + "checks it on each shielded sync."
+        if pendingListedBelow {
+            return warning + " Pending top-ups for this identity are listed below."
         }
-        return warning + " The wallet checks it on each shielded sync."
+        return warning
     }
 
     /// Wallet refusals of a top-up with wording for this screen; `nil` for
@@ -583,7 +584,7 @@ struct TopUpIdentityView: View {
                         .font(.headline)
                     Text(ShieldedTopUpSubmitCheck.unconfirmedText(
                         amount: amount,
-                        listedBelow: pendingShieldedTopUps.contains { $0.amount == amount }
+                        pendingListedBelow: !pendingShieldedTopUps.isEmpty
                     ))
                         .foregroundColor(.secondary)
                 }

@@ -397,6 +397,11 @@ struct SendTransactionView: View {
                 // version the builders will read at submission time.
                 resolveShieldedFees()
             }
+            // A manager swapped during an SDK rebuild: re-resolve against it
+            // so a sheet opened meanwhile recovers without being dismissed.
+            .onChange(of: ObjectIdentifier(walletManager)) { _, _ in
+                resolveShieldedFees()
+            }
             .sheet(isPresented: $showQRScanner) {
                 // Same network the view model was built with
                 // (`wallet.network ?? .testnet`) so the scanner validates

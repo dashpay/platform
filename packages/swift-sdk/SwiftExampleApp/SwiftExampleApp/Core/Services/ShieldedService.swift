@@ -626,7 +626,7 @@ class ShieldedService: ObservableObject {
         // publisher does flip first it simply no-ops there.
         beginSyncTimingIfNeeded()
         defer { isSyncing = false }
-        var outcome = ManualSyncOutcome.completed
+        var outcome = ManualSyncOutcome.requested
         do {
             try await walletManager.syncShieldedNow()
         } catch {
@@ -673,8 +673,11 @@ class ShieldedService: ObservableObject {
 
     /// Outcome of one `manualSync()` call.
     enum ManualSyncOutcome: Equatable {
-        /// The pass ran without a pass-level error.
-        case completed
+        /// `syncShieldedNow()` returned normally. That does not show that
+        /// any wallet's scan succeeded: the native call drops the pass
+        /// summary (a per-wallet scan failure still returns OK), and it
+        /// returns OK with nothing done when another pass holds the slot.
+        case requested
         case failed(String)
         /// Another pass was already running; this call did nothing.
         case alreadyRunning

@@ -103,13 +103,14 @@ typealias ShieldedIdentityDebitRecoveryReadState = RecoveryReadState<ShieldedIde
 enum ShieldedCheckNowStatus: Equatable {
     case idle
     case checking
-    case finished
+    /// The sync was requested; whether this wallet's scan succeeded is unknown.
+    case requested
     case failed(String)
     case didNotRun(String)
 
     static func after(_ outcome: ShieldedService.ManualSyncOutcome) -> ShieldedCheckNowStatus {
         switch outcome {
-        case .completed: return .finished
+        case .requested: return .requested
         case .failed(let message): return .failed(message)
         case .alreadyRunning:
             return .didNotRun("A shielded sync was already running. This list updates when it finishes.")
@@ -121,8 +122,9 @@ enum ShieldedCheckNowStatus: Equatable {
     var text: String? {
         switch self {
         case .idle, .checking: return nil
-        case .finished:
-            return "Check finished. Entries still listed are not resolved yet."
+        case .requested:
+            return "Sync requested. The list shows the wallet's current records; "
+                + "this screen cannot tell whether the scan for this wallet succeeded."
         case .failed(let message): return "Check failed: \(message)"
         case .didNotRun(let reason): return "Check did not run. \(reason)"
         }

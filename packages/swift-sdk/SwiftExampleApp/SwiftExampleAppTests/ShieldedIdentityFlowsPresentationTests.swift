@@ -141,7 +141,7 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
 
     func test_topUpResults_showAOneCreditAmountExactly() {
         XCTAssertTrue(ShieldedTopUpSubmitCheck.completedText(amount: 1).contains("Requested: \(oneCreditDash)."))
-        XCTAssertTrue(ShieldedTopUpSubmitCheck.unconfirmedText(amount: 1, listedBelow: true)
+        XCTAssertTrue(ShieldedTopUpSubmitCheck.unconfirmedText(amount: 1, pendingListedBelow: true)
             .contains("The top-up of \(oneCreditDash) "))
     }
 
@@ -178,25 +178,32 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         XCTAssertNotEqual(formatCreditsAsDash(100_000_000_000), formatCreditsAsDash(100_000_000_001))
     }
 
-    func test_unconfirmedText_withAListedRow_pointsAtIt() {
-        let text = ShieldedTopUpSubmitCheck.unconfirmedText(amount: 1, listedBelow: true)
+    func test_unconfirmedText_withPendingRows_pointsAtThemWithoutClaimingOne() {
+        let text = ShieldedTopUpSubmitCheck.unconfirmedText(amount: 1, pendingListedBelow: true)
         XCTAssertTrue(text.contains("Do not retry"))
-        XCTAssertTrue(text.contains("listed as pending below"))
+        XCTAssertTrue(text.contains("Pending top-ups for this identity are listed below."))
+        // Rows are not matched to this submission, so none is named as it.
+        XCTAssertFalse(text.contains("It is listed"))
     }
 
-    func test_unconfirmedText_withoutAListedRow_promisesNoVisibleEntry() {
-        let text = ShieldedTopUpSubmitCheck.unconfirmedText(amount: 1, listedBelow: false)
+    func test_unconfirmedText_withoutPendingRows_promisesNoVisibleEntry() {
+        let text = ShieldedTopUpSubmitCheck.unconfirmedText(amount: 1, pendingListedBelow: false)
         XCTAssertTrue(text.contains("Do not retry"))
         XCTAssertFalse(text.contains("listed"))
     }
 
     // MARK: - Check Now outcome
 
-    func test_checkNow_completedPass_isFinishedNotAFailure() {
-        let status = ShieldedCheckNowStatus.after(.completed)
-        XCTAssertEqual(status, .finished)
+    func test_checkNow_normalReturn_isRequestedWithAnUnknownOutcome() {
+        let status = ShieldedCheckNowStatus.after(.requested)
+        XCTAssertEqual(status, .requested)
         XCTAssertFalse(status.isFailure)
-        XCTAssertNotNil(status.text)
+        let text = status.text
+        XCTAssertTrue(text?.contains("Sync requested") == true)
+        XCTAssertTrue(text?.contains("cannot tell whether the scan for this wallet succeeded") == true)
+        // A normal return is never reported as a finished or successful check.
+        XCTAssertFalse(text?.lowercased().contains("finished") == true)
+        XCTAssertFalse(text?.lowercased().contains("success") == true)
     }
 
     func test_checkNow_failedPass_showsThisChecksError() {
