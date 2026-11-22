@@ -882,12 +882,17 @@ public class PlatformWalletManager: ObservableObject {
     /// can maintain it.
     var shieldedStopsInFlight = 0
 
+    /// Async shielded-tree rebuilds between admission and completion. Events
+    /// are held or dropped as for [`shieldedStopsInFlight`], so the pass that
+    /// reported the inconsistency cannot publish it over a successful repair.
+    var shieldedRebuildsInFlight = 0
+
     /// The latest shielded sync completion that reached the main actor while
-    /// an async stop was in flight, with its generation. The last stop to
-    /// return settles it: a stop that drained the pass has bumped the
-    /// generation, so the completion is stale and dropped; after a timed-out
-    /// stop the pass keeps running, so its completion is published. Internal
-    /// so the shielded-sync extension can maintain it.
+    /// an async stop or rebuild was in flight, with its generation. The last
+    /// of them to return settles it: one that drained the pass has bumped the
+    /// generation, so the completion is stale and dropped; after a timeout
+    /// or failure it is still current and published. Internal so the
+    /// shielded-sync extension can maintain it.
     var shieldedCompletionHeldByStop: (event: ShieldedSyncEvent, generation: UInt64)?
 
     // MARK: - Init

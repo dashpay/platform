@@ -128,12 +128,12 @@ extension PlatformWalletManager {
         // suppresses callbacks immediately, while leaving the generation
         // valid until admitted local reads finish their MainActor delivery.
         guard !shutdownRequested, generation == shieldedSyncGeneration.current() else { return }
-        // The main actor is free while an async stop drains, so a completion
-        // of the pass being stopped arrives with a current generation. Hold
-        // it for the stop to settle (`shieldedCompletionHeldByStop`): dropped
-        // if the stop drains that pass, published if the stop times out and
-        // the pass keeps running.
-        if shieldedStopsInFlight > 0 {
+        // The main actor is free while an async stop or rebuild drains, so a
+        // completion of the pass being drained arrives with a current
+        // generation. Hold it for them to settle
+        // (`shieldedCompletionHeldByStop`): dropped if the pass was drained,
+        // published if it keeps running or the rebuild failed.
+        if shieldedDrainsInFlight {
             shieldedCompletionHeldByStop = (event, generation)
             return
         }
@@ -143,6 +143,24 @@ extension PlatformWalletManager {
         // starts from nil. Also matches the false→true edge UI gating
         // in ShieldedService's currentSyncElapsed timer.
         resetCurrentShieldedProgress()
+    }
+
+    /// An async stop or rebuild is draining the sync loop.
+    private var shieldedDrainsInFlight: Bool {
+        shieldedStopsInFlight > 0 || shieldedRebuildsInFlight > 0
+    }
+
+    /// Called by an async stop or rebuild before its in-flight count drops:
+    /// the last one settles the held completion, stale after a bump and
+    /// still current otherwise.
+    private func settleHeldShieldedCompletion() {
+        guard shieldedStopsInFlight + shieldedRebuildsInFlight == 1,
+              let held = shieldedCompletionHeldByStop else { return }
+        shieldedCompletionHeldByStop = nil
+        if !shutdownRequested, held.generation == shieldedSyncGeneration.current() {
+            lastShieldedSyncEvent = held.event
+            resetCurrentShieldedProgress()
+        }
     }
 
     /// Clear the four per-pass live-progress mirrors so the next pass
@@ -169,14 +187,14 @@ extension PlatformWalletManager {
     /// progress hop delivered after a stop/clear bumped the generation
     /// must be dropped so it can't re-publish phantom progress over the
     /// `resetCurrentShieldedProgress()` mirrors the stop/clear just reset.
-    /// Dropped outright while an async stop is in flight, for the same
-    /// reason.
+    /// Dropped outright while an async stop or rebuild is in flight, for the
+    /// same reason.
     func handleShieldedSyncProgress(
         cumulativeScanned: UInt64,
         blockHeight: UInt64,
         generation: UInt64
     ) {
-        guard !shutdownRequested, shieldedStopsInFlight == 0,
+        guard !shutdownRequested, !shieldedDrainsInFlight,
               generation == shieldedSyncGeneration.current() else { return }
         currentShieldedSyncScanned = cumulativeScanned
         currentShieldedSyncBlockHeight = blockHeight
@@ -193,14 +211,14 @@ extension PlatformWalletManager {
     /// tree-progress hop delivered after a stop/clear bumped the
     /// generation must be dropped so it can't re-publish phantom progress
     /// over the `resetCurrentShieldedProgress()` mirrors the stop/clear
-    /// just reset. Dropped outright while an async stop is in flight, for
-    /// the same reason.
+    /// just reset. Dropped outright while an async stop or rebuild is in
+    /// flight, for the same reason.
     func handleShieldedTreeProgress(
         committed: UInt64,
         total: UInt64,
         generation: UInt64
     ) {
-        guard !shutdownRequested, shieldedStopsInFlight == 0,
+        guard !shutdownRequested, !shieldedDrainsInFlight,
               generation == shieldedSyncGeneration.current() else { return }
         currentShieldedTreeCommitted = committed
         currentShieldedTreeTotal = total
@@ -439,15 +457,7 @@ extension PlatformWalletManager {
             shieldedSyncGeneration.bump()
             resetCurrentShieldedProgress()
         }
-        // The last stop in flight settles the held completion: stale after
-        // the bump above, still current after a timeout.
-        if shieldedStopsInFlight == 1, let held = shieldedCompletionHeldByStop {
-            shieldedCompletionHeldByStop = nil
-            if !shutdownRequested, held.generation == shieldedSyncGeneration.current() {
-                lastShieldedSyncEvent = held.event
-                resetCurrentShieldedProgress()
-            }
-        }
+        settleHeldShieldedCompletion()
         if let failure {
             throw failure
         }
@@ -501,25 +511,37 @@ extension PlatformWalletManager {
     ///
     /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
     /// flight, for the same reason as [`clearShielded()`]. Admitted like the
-    /// async stop: `shutdown()` waits for an in-flight rebuild.
+    /// async stop: `shutdown()` waits for an in-flight rebuild. Sync events
+    /// reaching the main actor meanwhile are held like during an async stop:
+    /// dropped after a successful repair, published after a failure.
     public func rebuildShieldedTree() async throws {
         try ensureShieldedLifecycleAllowed("rebuildShieldedTree")
         try ensureNoShieldedStopInFlight(before: "rebuilding the shielded tree")
         try admitNativeOp("rebuildShieldedTree")
         defer { finishNativeOp() }
+        shieldedRebuildsInFlight += 1
+        defer { shieldedRebuildsInFlight -= 1 }
         // Invalidate local balance reads before entering native code, as
         // `withShieldedLocalBalanceMutation` does for synchronous calls.
         shieldedLocalBalanceGeneration.bump()
         let handle = self.handle
-        try await Task.detached(priority: .userInitiated) {
-            try platform_wallet_manager_shielded_rebuild_tree(handle).check()
+        // Map the result off the main actor: the raw result's Rust-owned
+        // message never crosses the await.
+        let failure = await Task.detached(priority: .userInitiated) { () -> PlatformWalletError? in
+            let result = PlatformWalletResult(platform_wallet_manager_shielded_rebuild_tree(handle))
+            return result.isSuccess ? nil : PlatformWalletError(result: result)
         }.value
-        // Drop a trailing completion from the pass that found the tree
-        // inconsistent, so it cannot re-surface the error after the repair.
-        // A shutdown draining admitted operations bumps it itself.
-        guard !shutdownRequested else { return }
-        shieldedSyncGeneration.bump()
-        resetCurrentShieldedProgress()
+        // Drop completions from the pass that found the tree inconsistent,
+        // so they cannot re-surface the error after the repair. A shutdown
+        // draining admitted operations bumps the generation itself.
+        if failure == nil, !shutdownRequested {
+            shieldedSyncGeneration.bump()
+            resetCurrentShieldedProgress()
+        }
+        settleHeldShieldedCompletion()
+        if let failure {
+            throw failure
+        }
     }
 
     public func isShieldedSyncRunning() throws -> Bool {
