@@ -39,6 +39,11 @@ struct UpdateContractView: View {
     /// One line under the source buttons: what a source filled in, or why
     /// it filled nothing.
     @State private var sourceMessage: String?
+    /// Whether the fields on screen came from an import that carried shared
+    /// definitions (`$defs`), which this screen does not send. Set by each
+    /// successful import and left alone by a failed one, so the warning
+    /// stays with the fields it is about rather than with the last message.
+    @State private var fieldsDropSharedDefinitions = false
     @State private var errorMessage: String?
     @State private var outcome: Outcome?
     /// Set once an update was sent and its outcome could not be confirmed.
@@ -167,11 +172,23 @@ struct UpdateContractView: View {
     private var documentsSection: some View {
         Section {
             jsonEditor(text: $documentsJSON, identifier: "updateContract.documentsJson")
+            if fieldsDropSharedDefinitions {
+                sharedDefinitionsWarning(identifier: "updateContract.sharedDefinitionsWarning")
+            }
         } header: {
             Text("Document Schemas (JSON)")
         } footer: {
             Text("Merged onto the live contract: new document types are added, existing ones replaced key by key, and omitted ones keep their on-chain definition. Use {} to leave document types unchanged.")
         }
+    }
+
+    /// Shown with the imported fields, and again above Update Contract, for
+    /// as long as they came from an import that carried shared definitions.
+    private func sharedDefinitionsWarning(identifier: String) -> some View {
+        Text("These fields were imported from a file with shared definitions ($defs). This screen does not send them: Platform keeps the live ones, and a document type that refers to one is checked against the live definition.")
+            .font(.caption)
+            .foregroundColor(.orange)
+            .accessibilityIdentifier(identifier)
     }
 
     @ViewBuilder
@@ -241,6 +258,9 @@ struct UpdateContractView: View {
     @ViewBuilder
     private var submitSection: some View {
         Section {
+            if fieldsDropSharedDefinitions {
+                sharedDefinitionsWarning(identifier: "updateContract.submitSharedDefinitionsWarning")
+            }
             Button {
                 Task { await submitUpdate() }
             } label: {
@@ -402,6 +422,7 @@ struct UpdateContractView: View {
         groupsJSON = fields.groups
         keywords = fields.keywords
         descriptionText = fields.description
+        fieldsDropSharedDefinitions = imported.carriesSharedDefinitions
         var message = "Filled from \(source)."
         if imported.carriesSharedDefinitions {
             message += " This file has shared definitions ($defs). This screen does not update them: Platform keeps the live ones."
