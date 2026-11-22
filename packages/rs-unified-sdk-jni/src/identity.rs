@@ -1291,6 +1291,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_update
                 opt_ptr(&keywords),
                 opt_ptr(&desc),
                 opt_ptr(&config),
+                // The Kotlin screen has no review step, so no version check.
+                0,
                 signer_handle as *mut SignerHandle,
                 out_contract_id.as_mut_ptr(),
             )

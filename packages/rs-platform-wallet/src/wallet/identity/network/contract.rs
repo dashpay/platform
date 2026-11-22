@@ -46,7 +46,6 @@ use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_contract::{
     ensure_private_document_entries_fit, PutContract,
 };
-use dash_sdk::platform::transition::waitable::Waitable;
 use dash_sdk::platform::Fetch;
 
 use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
@@ -352,6 +351,16 @@ impl IdentityWallet {
     ///      `DataContractUpdateTransition`, signs it via the external
     ///      signer, broadcasts, and waits for the confirmed contract.
     ///
+    /// `expected_current_version` binds the update to the contract a
+    /// caller reviewed (see `preview_data_contract_update`): when it is
+    /// `Some` and the contract Platform now holds is at another version,
+    /// the update is refused before any nonce is read, and the caller
+    /// should review again. `None` updates whatever version is live.
+    ///
+    /// A broadcast that may have reached Platform but whose result could
+    /// not be confirmed comes back as the SDK's
+    /// `StateTransitionResultUnconfirmed`: the update may have executed.
+    ///
     /// # JSON shapes
     ///
     /// Identical to `create_data_contract_with_signer`, but every
@@ -372,6 +381,7 @@ impl IdentityWallet {
         keywords_json: Option<&str>,
         description: Option<&str>,
         config_json: Option<&str>,
+        expected_current_version: Option<u32>,
         signer: &S,
     ) -> Result<DataContract, PlatformWalletError>
     where
@@ -417,7 +427,9 @@ impl IdentityWallet {
         //    update puts in its place. `preview_data_contract_update`
         //    builds it the same way, so what a preview reports is what
         //    this broadcasts.
-        let ContractUpdateDraft { updated, .. } = self
+        let ContractUpdateDraft {
+            existing, updated, ..
+        } = self
             .draft_data_contract_update(
                 owner_identity_id,
                 contract_id,
@@ -429,6 +441,18 @@ impl IdentityWallet {
                 config_json,
             )
             .await?;
+        // A contract that changed since the caller's review is refused
+        // before any nonce is read, so the update is never built on a
+        // contract the caller did not see.
+        if let Some(expected) = expected_current_version {
+            if existing.version() != expected {
+                return Err(PlatformWalletError::InvalidIdentityData(format!(
+                    "Data contract {contract_id} is at version {}, not the reviewed version \
+                     {expected}; review the update again",
+                    existing.version()
+                )));
+            }
+        }
         let platform_version = self.sdk.version();
 
         // 4. Build + broadcast the update transition. There's no
@@ -436,7 +460,10 @@ impl IdentityWallet {
         //    so assemble the `DataContractUpdateTransition` directly:
         //    fetch+bump the identity-contract nonce, sign via the
         //    external signer, broadcast on the platform-wallet 8 MB
-        //    worker stack, and wait for the confirmed contract.
+        //    worker stack, and wait for the contract. The SDK's combined
+        //    broadcast and wait marks a wait that fails after the
+        //    transition may have been accepted as unconfirmed, and waits
+        //    for the affected state, as an update proof requires.
         let new_identity_contract_nonce = self
             .sdk
             .get_identity_contract_nonce(*owner_identity_id, *contract_id, true, None)
@@ -472,12 +499,8 @@ impl IdentityWallet {
             ))
         })?;
 
-        transition
-            .broadcast(&self.sdk, None)
-            .await
-            .map_err(PlatformWalletError::Sdk)?;
-
-        let confirmed = DataContract::wait_for_response(&self.sdk, transition, None)
+        let confirmed = transition
+            .broadcast_and_wait_for_affected_state::<DataContract>(&self.sdk, None)
             .await
             .map_err(PlatformWalletError::Sdk)?;
 
@@ -522,7 +545,7 @@ impl IdentityWallet {
                 config_json,
             )
             .await?;
-        let updated_format = contract_format_json(&draft.updated, self.sdk.version())?;
+        let updated_format = contract_format_json(&draft.updated, "updated", self.sdk.version())?;
 
         Ok(DataContractUpdatePreview::between(
             draft.existing.version(),
@@ -593,7 +616,7 @@ impl IdentityWallet {
         //    its on-chain version, document/token/group sets are
         //    complete). We then overlay only what the caller supplied.
         let platform_version = self.sdk.version();
-        let base_value = contract_format_json(&existing, platform_version)?;
+        let base_value = contract_format_json(&existing, "existing", platform_version)?;
 
         let merged_value = merge_contract_update_payload(
             base_value.clone(),
@@ -765,20 +788,22 @@ fn section_changes(
 
 /// `contract` in its serialization-format JSON, the form the update merges
 /// the caller's sections onto.
+/// `which` names the contract in errors (`existing` or `updated`).
 fn contract_format_json(
     contract: &DataContract,
+    which: &str,
     platform_version: &PlatformVersion,
 ) -> Result<serde_json::Value, PlatformWalletError> {
     let format =
         DataContractInSerializationFormat::try_from_platform_versioned(contract, platform_version)
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to convert contract to serialization format: {e}"
+                    "Failed to convert {which} contract to serialization format: {e}"
                 ))
             })?;
     serde_json::to_value(&format).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!(
-            "Failed to serialize contract format: {e}"
+            "Failed to serialize {which} contract format: {e}"
         ))
     })
 }
@@ -1228,7 +1253,8 @@ mod tests {
             "description": "original description",
             "config": { "$formatVersion": latest_config_version().to_string() }
         }));
-        let existing_format = contract_format_json(&existing, platform_version).expect("format");
+        let existing_format =
+            contract_format_json(&existing, "existing", platform_version).expect("format");
 
         let rebuild = |documents: serde_json::Value| {
             let merged = merge_contract_update_payload(
@@ -1243,7 +1269,8 @@ mod tests {
             )
             .expect("merge");
             let updated = build_contract(merged);
-            let updated_format = contract_format_json(&updated, platform_version).expect("format");
+            let updated_format =
+                contract_format_json(&updated, "updated", platform_version).expect("format");
             DataContractUpdatePreview::between(
                 existing.version(),
                 updated.version(),

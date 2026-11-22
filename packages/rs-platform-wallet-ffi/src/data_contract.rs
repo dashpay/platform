@@ -90,6 +90,18 @@ pub unsafe extern "C" fn platform_wallet_create_data_contract_with_signer(
 /// key-by-key (omitted keys keep their on-chain definition), and
 /// `keywords` / `description` / `config` override only when supplied —
 /// so a single-section update never wipes the rest of the contract.
+///
+/// `expected_current_version` is the contract version the caller reviewed
+/// (the `currentVersion` of `platform_wallet_preview_data_contract_update`).
+/// When the contract Platform now holds is at another version the update is
+/// refused before any nonce is read, and the caller should review again.
+/// `0` means no check: contract versions start at 1
+/// (`INITIAL_DATA_CONTRACT_VERSION` in rs-dpp), so `0` is never a real
+/// version.
+///
+/// A broadcast that may have reached Platform but whose result could not be
+/// confirmed returns `ErrorTransactionBroadcastUnconfirmed`: the update may
+/// have executed.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_update_data_contract_with_signer(
@@ -102,6 +114,7 @@ pub unsafe extern "C" fn platform_wallet_update_data_contract_with_signer(
     keywords_json: *const c_char,
     description: *const c_char,
     config_json: *const c_char,
+    expected_current_version: u32,
     signer_handle: *mut SignerHandle,
     out_contract_id: *mut u8,
 ) -> PlatformWalletFFIResult {
@@ -119,6 +132,7 @@ pub unsafe extern "C" fn platform_wallet_update_data_contract_with_signer(
     let keywords_str = unwrap_result_or_return!(read_optional_str(keywords_json));
     let description_str = unwrap_result_or_return!(read_optional_str(description));
     let config_str = unwrap_result_or_return!(read_optional_str(config_json));
+    let expected_version = (expected_current_version != 0).then_some(expected_current_version);
 
     let signer_addr = signer_handle as usize;
     let owner_id_for_async = owner_id;
@@ -138,6 +152,7 @@ pub unsafe extern "C" fn platform_wallet_update_data_contract_with_signer(
                     keywords_str,
                     description_str,
                     config_str,
+                    expected_version,
                     signer,
                 )
                 .await
@@ -186,8 +201,8 @@ pub unsafe extern "C" fn platform_wallet_update_data_contract_with_signer(
 ///   bytes.
 /// - `documents_schema_json` must be a NUL-terminated UTF-8 string;
 ///   `tokens_schema_json`, `groups_schema_json`, `keywords_json`,
-///   `description` and `config_json` must each be null or one (an empty
-///   string counts as null).
+///   `description` and `config_json` must each be null or a NUL-terminated
+///   UTF-8 string (an empty string counts as null).
 /// - `out_preview_json` must be a valid, writable pointer.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
