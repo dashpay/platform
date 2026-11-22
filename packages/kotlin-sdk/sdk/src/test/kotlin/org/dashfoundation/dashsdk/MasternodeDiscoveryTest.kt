@@ -1,6 +1,7 @@
 package org.dashfoundation.dashsdk
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -112,6 +113,37 @@ class MasternodeDiscoveryTest {
             assertTrue("the request was not told to stop", aborted.await(2, TimeUnit.SECONDS))
         } finally {
             blocked.countDown()
+        }
+    }
+
+    @Test
+    fun shouldRefuseANewRequestWhileTooManyAbandonedOnesAreStillRunning() {
+        val blocked = CountDownLatch(1)
+        try {
+            repeat(Sdk.MAX_OUTSTANDING_REQUESTS) {
+                assertThrows(IOException::class.java) {
+                    Sdk.withDeadline(50, abort = {}) { blocked.await() }
+                }
+            }
+            // Every slot is held by a request its caller gave up on.
+            var ran = false
+            assertThrows(IOException::class.java) {
+                Sdk.withDeadline(5_000, abort = {}) { ran = true }
+            }
+            assertFalse(ran)
+        } finally {
+            blocked.countDown()
+        }
+        // The slots come back once those requests end.
+        val giveUpAt = System.nanoTime() + 5_000_000_000L
+        while (true) {
+            try {
+                assertEquals("body", Sdk.withDeadline(5_000, abort = {}) { "body" })
+                break
+            } catch (e: IOException) {
+                if (System.nanoTime() > giveUpAt) throw e
+                Thread.sleep(10)
+            }
         }
     }
 

@@ -277,7 +277,7 @@ fun SettingsScreen(navController: NavHostController) {
                     androidx.compose.material3.OutlinedTextField(
                         value = localPeers,
                         onValueChange = { appState.setLocalCorePeers(it) },
-                        label = { Text("Peers (host:port, comma-separated)") },
+                        label = { Text("Peers (IP:port, comma-separated; IPv6 as [address]:port)") },
                         placeholder = { Text("10.0.2.2:20301") },
                         modifier = Modifier
                             .fillMaxWidth()

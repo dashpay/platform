@@ -20,6 +20,7 @@ import java.net.URL
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.FutureTask
+import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicLong
@@ -687,10 +688,29 @@ class Sdk private constructor(
          * is then called to make [block] end soon, such as by disconnecting
          * the connection it reads from; its thread is left to finish.
          * [abort] runs on a thread of its own too, since it may block.
+         * Also throws when [MAX_OUTSTANDING_REQUESTS] blocks are running.
          */
         internal fun <T> withDeadline(timeoutMs: Long, abort: () -> Unit, block: () -> T): T {
-            val task = FutureTask(Callable { block() })
-            daemon("dash-sdk-bounded-request", task)
+            // A slot is held until [block] has really ended, not until the
+            // caller stopped waiting for it.
+            if (!requestSlots.tryAcquire()) {
+                throw IOException("$MAX_OUTSTANDING_REQUESTS earlier requests are still running")
+            }
+            val task = FutureTask(
+                Callable {
+                    try {
+                        block()
+                    } finally {
+                        requestSlots.release()
+                    }
+                },
+            )
+            try {
+                daemon("dash-sdk-bounded-request", task)
+            } catch (e: Throwable) {
+                requestSlots.release()
+                throw e
+            }
             try {
                 return task.get(timeoutMs, TimeUnit.MILLISECONDS)
             } catch (e: ExecutionException) {
@@ -704,6 +724,14 @@ class Sdk private constructor(
                 throw e
             }
         }
+
+        /**
+         * How many [withDeadline] blocks may be running at once, counting
+         * those whose caller already gave up on them: retries against a
+         * host that never answers cannot pile up threads.
+         */
+        internal const val MAX_OUTSTANDING_REQUESTS = 4
+        private val requestSlots = Semaphore(MAX_OUTSTANDING_REQUESTS)
 
         private fun daemon(name: String, task: Runnable) {
             Thread(task, name).apply { isDaemon = true }.start()

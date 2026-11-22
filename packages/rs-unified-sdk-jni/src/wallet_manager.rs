@@ -3432,8 +3432,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
         let (_peer_cstrings, peer_ptrs) = match read_cstring_array(env, &peers) {
             Ok(v) => v,
             Err(_) => {
-                let _ = env.exception_clear();
-                throw_sdk_exception(env, 1, "peers array was null/invalid");
+                // A pending JVM error (out of memory) is the caller's to
+                // see as it is; anything else is a bad argument.
+                if !env.exception_check().unwrap_or(false) {
+                    throw_sdk_exception(env, 1, "peers array was null/invalid");
+                }
                 return;
             }
         };

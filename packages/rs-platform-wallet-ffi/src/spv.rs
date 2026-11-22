@@ -550,14 +550,17 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
     // registration.
     config.enable_masternodes = true;
     config.restrict_to_configured_peers = restrict_to_configured_peers;
-    config.peers = usable_peers(&peer_list);
+    // Decoding only: every address that parses is passed on, so what the
+    // client does with a given list is decided in Rust, not here.
+    config.peers = decoded_peers(&peer_list);
     // Peers were given, none can be dialed, and the client may use no
     // others: it would never find a peer, so refuse the start instead of
     // running one that cannot sync. An empty list stays allowed: that is
     // how a host asks for an offline start. "Given" is the caller's count,
     // so entries skipped above (null, not UTF-8) still count as given.
     let peers_given = !peers.is_null() && peer_count > 0;
-    if restrict_to_configured_peers && peers_given && config.peers.is_empty() {
+    let any_usable = config.peers.iter().any(|addr| addr.port() != 0);
+    if restrict_to_configured_peers && peers_given && !any_usable {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
             format!(
@@ -603,13 +606,12 @@ fn peer_examples(peer_list: &[String]) -> String {
     }
 }
 
-/// The entries of `peer_list` an SPV client can dial: `IP:port` with a
-/// non-zero port. Hostnames and port 0 are skipped.
-fn usable_peers(peer_list: &[String]) -> Vec<SocketAddr> {
+/// The entries of `peer_list` that are an `IP:port` address. Hostnames are
+/// skipped: the SPV client takes socket addresses only.
+fn decoded_peers(peer_list: &[String]) -> Vec<SocketAddr> {
     peer_list
         .iter()
         .filter_map(|peer| peer.parse::<SocketAddr>().ok())
-        .filter(|addr| addr.port() != 0)
         .collect()
 }
 
@@ -788,7 +790,9 @@ mod spv_start_peer_tests {
     }
 
     #[test]
-    fn should_keep_only_peers_with_an_ip_and_a_non_zero_port() {
+    fn should_pass_on_every_peer_that_is_an_address() {
+        // Port 0 stays in the list: the refusal above reads it, but which
+        // peers a client dials is not decided while decoding.
         let peers = [
             "192.0.2.1:19999",
             "192.0.2.1:0",
@@ -797,9 +801,10 @@ mod spv_start_peer_tests {
         ]
         .map(String::from);
         assert_eq!(
-            usable_peers(&peers),
+            decoded_peers(&peers),
             vec![
                 "192.0.2.1:19999".parse::<SocketAddr>().expect("an address"),
+                "192.0.2.1:0".parse::<SocketAddr>().expect("an address"),
                 "[2001:db8::1]:19999"
                     .parse::<SocketAddr>()
                     .expect("an address"),
