@@ -18,11 +18,21 @@ import SwiftDashSDK
 /// orchestration of multi-step Rust pipelines.
 enum IdentityKeyRefresher {
     /// Re-fetch `identity`'s balance + public keys from Platform and
-    /// persist them, replacing the existing `PersistentPublicKey` rows.
+    /// persist them.
     ///
-    /// Carries over any `privateKeyKeychainIdentifier` we already knew
-    /// for a given keyId so a refresh doesn't orphan the matching
-    /// Keychain reference.
+    /// When `wallet` holds the identity, the refresh is the wallet's own
+    /// proved one (`refreshIdentity`): Rust folds the fetch into its copy
+    /// and upserts the changed key rows through the persister, keeping
+    /// each row's wallet id, derivation path and Keychain reference, and
+    /// never letting a lagging node roll back a raise or a disable. Swift
+    /// does not write those rows itself then, so the wallet stays their
+    /// only writer.
+    ///
+    /// Without a wallet (an identity only looked up, not held), the
+    /// identity is fetched and its rows are replaced from the response,
+    /// carrying over any `privateKeyKeychainIdentifier` already known for
+    /// a key id so a refresh doesn't orphan the matching Keychain
+    /// reference.
     ///
     /// Mutates SwiftData on the `modelContext`'s actor; call from the
     /// main actor (the SwiftData container the views use is main-actor
@@ -30,12 +40,32 @@ enum IdentityKeyRefresher {
     @MainActor
     static func refreshBalanceAndKeys(
         identity: PersistentIdentity,
+        wallet: ManagedPlatformWallet?,
         sdk: SDK,
         modelContext: ModelContext
     ) async throws {
+        if let wallet {
+            try await wallet.refreshIdentity(identityId: identity.identityId)
+            return
+        }
+        // Held by a wallet that is not loaded right now: its rows carry the
+        // wallet id and derivation path the signer needs, which a rebuild
+        // from a plain fetch would drop. Leave them to the wallet.
+        if identity.wallet != nil {
+            throw SDKError.invalidState("The wallet holding this identity is not loaded; open the wallet and refresh again.")
+        }
+
         let fetchedIdentity = try await sdk.identityGet(
             identityId: identity.identityIdBase58
         )
+        // Wallet discovery may have claimed the identity, and written its
+        // rows with their signing metadata, while the fetch was out. This
+        // check narrows that window but does not close it: the wallet's
+        // persister commits from its own context off the main actor, so a
+        // claim can still land before the save below. Tracked in #6074.
+        if identity.wallet != nil {
+            throw SDKError.invalidState("A wallet took over this identity during the refresh; refresh it again from the wallet.")
+        }
 
         // Balance — accept either the numeric or string-encoded form
         // the FFI may hand back depending on magnitude.
@@ -110,6 +140,16 @@ enum IdentityKeyRefresher {
                 return (key.keyId, identifier)
             }
         )
+        // Contract bounds are carried over the same way: the parse above
+        // does not read them, and a key's bounds never change after it is
+        // registered, so the row we already hold is right. Without this a
+        // refresh would persist a bound key as unbound.
+        let boundsByKeyId: [Int32: (data: Data?, documentTypeName: String?, kind: Int?)] = Dictionary(
+            identity.publicKeys.map { key in
+                (key.keyId, (key.contractBoundsData, key.contractBoundsDocumentTypeName, key.contractBoundsKind))
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
         identity.publicKeys.removeAll()
         let identityHex = identity.identityIdBase58
         for publicKey in parsedPublicKeys {
@@ -118,6 +158,11 @@ enum IdentityKeyRefresher {
             }
             if let identifier = identifierByKeyId[persistentKey.keyId] {
                 persistentKey.privateKeyKeychainIdentifier = identifier
+            }
+            if let bounds = boundsByKeyId[persistentKey.keyId] {
+                persistentKey.contractBoundsData = bounds.data
+                persistentKey.contractBoundsDocumentTypeName = bounds.documentTypeName
+                persistentKey.contractBoundsKind = bounds.kind
             }
             identity.addPublicKey(persistentKey)
         }

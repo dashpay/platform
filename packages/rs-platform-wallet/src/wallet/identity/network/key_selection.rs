@@ -33,12 +33,35 @@ pub(crate) fn usable_authentication_key<'a>(
     security_levels: &[SecurityLevel],
     key_types: &[KeyType],
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
+    usable_authentication_key_for_types(
+        identity,
+        signer,
+        contract_id,
+        &[document_type_name],
+        security_levels,
+        key_types,
+    )
+}
+
+/// [`usable_authentication_key`] for a transition that acts on documents of several types of
+/// `contract_id`, such as a create that consumes another type's document: the key's contract
+/// bounds must cover every one of `document_type_names`.
+pub(crate) fn usable_authentication_key_for_types<'a>(
+    identity: &'a Identity,
+    signer: &impl Signer<IdentityPublicKey>,
+    contract_id: Identifier,
+    document_type_names: &[&str],
+    security_levels: &[SecurityLevel],
+    key_types: &[KeyType],
+) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
     let now = now_ms();
     let qualifies = |key: &IdentityPublicKey| {
         key.purpose() == Purpose::AUTHENTICATION
             && security_levels.contains(&key.security_level())
             && key_types.contains(&key.key_type())
-            && bounds_cover(key.contract_bounds(), contract_id, document_type_name)
+            && document_type_names
+                .iter()
+                .all(|name| bounds_cover(key.contract_bounds(), contract_id, name))
             && !key.is_disabled()
             && !key.is_expired_at(now)
     };
@@ -319,5 +342,35 @@ mod tests {
             None,
             "unavailable but ineligible keys must not turn `None` into a signer error"
         );
+    }
+
+    /// A tombstone consumes the owner's `domain`: a key bound to either type alone can not
+    /// sign it, whichever comes first, and a later key covering both is chosen
+    #[test]
+    fn requires_a_key_covering_every_document_type_of_the_transition() {
+        for bound_to in ["domain", "tombstone"] {
+            let identity = identity(vec![
+                bound_key(
+                    1,
+                    SecurityLevel::HIGH,
+                    Some(ContractBounds::SingleContractDocumentType {
+                        id: Identifier::from(CONTRACT),
+                        document_type_name: bound_to.to_string(),
+                    }),
+                ),
+                key(2, SecurityLevel::HIGH),
+            ]);
+            let chosen = usable_authentication_key_for_types(
+                &identity,
+                &KeyFilter(|_| true),
+                Identifier::from(CONTRACT),
+                &["tombstone", "domain"],
+                &LEVELS,
+                &TYPES,
+            )
+            .unwrap()
+            .map(|key| key.id());
+            assert_eq!(chosen, Some(2), "first key bound to {bound_to}");
+        }
     }
 }

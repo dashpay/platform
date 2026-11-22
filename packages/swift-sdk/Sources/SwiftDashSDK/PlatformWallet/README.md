@@ -713,6 +713,27 @@ transition is signed by the identity's MASTER key or by a CRITICAL
 authentication key that carries no limits and no contract bounds. No identity
 revision is claimed.
 
+**Ask first what a raise would do:**
+```swift
+func previewIdentityKeyLimitsUpdate(
+    identityId: Identifier,
+    keyId: UInt32,
+    addBudget: UInt64? = nil,
+    expiresAt: UInt64? = nil,
+    signer: KeychainSigner
+) async throws -> IdentityKeyLimitsUpdatePreview
+```
+
+Signs and sends nothing. The result carries `signingKeyId`, the limits the key
+carries now (`currentTotalBudget` / `currentExpiresAt`) and the ones the update
+would set (`newTotalBudget` / `newExpiresAt`). With neither argument it answers
+whether the key can be raised at all; a refusal is thrown with Rust's reason as
+its `localizedDescription`. `updateIdentityKeyLimits` runs the same preview.
+`updateIdentityKeyLimits(asReviewed:signer:)` signs exactly
+what a preview showed, or throws before signing when the wallet's identity moved
+since. `refreshIdentity(identityId:)` folds a proved fetch of the identity into
+the wallet first, so a key added on another client is known.
+
 **Read what is left of a key's budget:**
 ```swift
 func fetchKeysRemainingBudgets(
