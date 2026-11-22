@@ -344,19 +344,16 @@ struct MasternodeVoterSection: View {
         if useTypedCredentials {
             // The pro_tx_hash alone is enough to read the masternode's
             // answer, so the voter is published without a key while the key
-            // field is empty. A key that is typed but invalid publishes
-            // nothing.
+            // field is empty or not a valid key; `canCast` keeps Submit
+            // disabled until it is.
             guard let proTxHash = Self.decode32(proTxHashHex) else {
                 voter = nil
                 return
             }
-            if votingKeyHex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                voter = .typedCredentials(proTxHash: proTxHash, votingPrivateKey: nil)
-            } else if let votingKey = Self.decode32(votingKeyHex) {
-                voter = .typedCredentials(proTxHash: proTxHash, votingPrivateKey: votingKey)
-            } else {
-                voter = nil
-            }
+            voter = .typedCredentials(
+                proTxHash: proTxHash,
+                votingPrivateKey: Self.decode32(votingKeyHex)
+            )
             return
         }
         #endif
