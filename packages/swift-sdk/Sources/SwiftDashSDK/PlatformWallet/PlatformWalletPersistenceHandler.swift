@@ -4277,11 +4277,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             let parentDescriptor = FetchDescriptor<PersistentIdentity>(
                 predicate: #Predicate { $0.identityId == identityIdData }
             )
-            let parent = try backgroundContext.fetch(parentDescriptor).first
+            let parent = try modelFetcher.fetch(parentDescriptor, in: backgroundContext).first
             if let linked = parent?.publicKeys.first(where: { $0.keyId == targetKeyId }) {
                 row = linked
-            } else if let existing = try backgroundContext.fetch(descriptor).first {
+            } else if let existing = try modelFetcher.fetch(descriptor, in: backgroundContext).first {
                 row = existing
+                // An unlinked row for a key its identity has no row for (a
+                // reload unlinked it): attach it, so the key screens and cold
+                // restore, which read the identity's keys, see it.
+                if let parent, existing.identity == nil {
+                    existing.identity = parent
+                    parent.addPublicKey(existing)
+                }
             } else {
                 let purposeEnum = KeyPurpose(rawValue: entry.purpose) ?? .authentication
                 let levelEnum = SecurityLevel(rawValue: entry.securityLevel) ?? .high

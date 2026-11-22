@@ -144,6 +144,65 @@ final class IdentityKeyLimitsPersistenceTests: XCTestCase {
                        "no third row, and the orphan is left alone")
     }
 
+    /// A reload can unlink a key row and leave its identity without one. A later
+    /// upsert of the key updates that row and attaches it to the identity, so
+    /// the key screens and cold restore see it, without adding a second row.
+    func testUpsertAttachesAnUnlinkedRowWhenItsIdentityHasNone() throws {
+        let container = try DashModelContainer.createInMemory()
+        let seed = ModelContext(container)
+        seed.insert(PersistentIdentity(identityId: identityId, network: .testnet))
+        seed.insert(PersistentPublicKey(
+            keyId: 3, purpose: .authentication, securityLevel: .high,
+            keyType: .ecdsaSecp256k1, publicKeyData: publicKeyData,
+            totalBudget: 100_000, identityId: identityId.toBase58String()))
+        try seed.save()
+
+        let handler = PlatformWalletPersistenceHandler(
+            modelContainer: container, network: .testnet)
+        persist(handler, snapshot(totalBudget: 350_000, expiresAt: nil))
+
+        let context = ModelContext(container)
+        let identityIdData = identityId
+        let stored = try XCTUnwrap(context.fetch(FetchDescriptor<PersistentIdentity>(
+            predicate: #Predicate { $0.identityId == identityIdData })).first)
+        XCTAssertEqual(stored.publicKeys.count, 1)
+        XCTAssertEqual(stored.publicKeys.first?.totalBudgetCredits, 350_000)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<PersistentPublicKey>()).count, 1)
+    }
+
+    /// A key lookup that fails rejects the round: nothing it staged, including
+    /// a sibling key written before the failure, is committed.
+    func testKeyLookupFailureRejectsTheWholeRound() throws {
+        final class FailingSecondKeyLookup: ModelFetching, @unchecked Sendable {
+            enum Failure: Error { case read }
+            private let lock = NSLock()
+            private var keyLookups = 0
+            func fetch<T: PersistentModel>(_ descriptor: FetchDescriptor<T>, in context: ModelContext) throws -> [T] {
+                if T.self == PersistentPublicKey.self {
+                    let count = lock.withLock { () -> Int in
+                        keyLookups += 1
+                        return keyLookups
+                    }
+                    if count == 2 { throw Failure.read }
+                }
+                return try context.fetch(descriptor)
+            }
+        }
+        let container = try DashModelContainer.createInMemory()
+        let handler = PlatformWalletPersistenceHandler(
+            modelContainer: container, network: .testnet, modelFetcher: FailingSecondKeyLookup())
+
+        handler.beginChangeset(walletId: walletId)
+        XCTAssertThrowsError(try handler.persistIdentityKeys(
+            walletId: walletId,
+            upserts: [snapshot(keyId: 3, totalBudget: 100_000, expiresAt: nil),
+                      snapshot(keyId: 4, totalBudget: 200_000, expiresAt: nil)],
+            removed: []))
+        XCTAssertFalse(handler.endChangeset(walletId: walletId, success: false))
+
+        XCTAssertTrue(try ModelContext(container).fetch(FetchDescriptor<PersistentPublicKey>()).isEmpty)
+    }
+
     /// Rust is the source of truth on every round, so a key re-emitted without
     /// limits clears the columns rather than leaving stale ones behind.
     func testUpsertWithoutLimitsClearsTheStoredOnes() throws {
