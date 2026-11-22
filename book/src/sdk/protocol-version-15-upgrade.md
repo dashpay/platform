@@ -85,8 +85,10 @@ case differently from 5.0.x:
   protocol version and the SDK has to be updated. Requests the build can still read keep
   working. [Protocol Versions in the SDK](protocol-versions.md#a-network-newer-than-the-sdk)
   has the details.
-- When the first answer an SDK gets is one it cannot read, it asks the network for its
-  protocol version before it decides about the node, so an app whose first request is a name
-  lookup does not lose its nodes either.
+- When an SDK that has not yet seen the newer version gets an answer it cannot read that
+  names a version the build does not know, it asks the network for its protocol version
+  before it decides about the node. If the network proves a newer version, the node is not
+  banned, so an app whose first request is a name lookup keeps its nodes. If the question
+  fails, or shows a version the build knows, the node is banned as for any bad proof.
 - A request version that a protocol upgrade retired is refused with `INVALID_ARGUMENT`: the
   request fails at once and no node is banned.

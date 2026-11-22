@@ -194,13 +194,14 @@ or one whose signature is refused, is its node's fault on any network, and that 
 The version an unverified answer names is a reason to ask, not evidence. When an answer the SDK
 could not read names a version the build does not know, and no verified answer has shown one,
 the SDK first asks the network for its version, with the probe described under [Requests only
-newer nodes serve](#requests-only-newer-nodes-serve). Here the probe bans no node, a pinned SDK
-asks too, and nothing is asked again while the epoch the last probe proved can still be
-running. Calls that get such an answer while one of them asks wait for its answer, so none
-bans a node before it is known. When the probe shows a version the build knows, or fails, the node is banned as for
-any unusable proof. A node is also banned when its unread answer names a version the build
-knows, since that node is behind its network or the answer is unusable for another reason, and
-when the answer is outside the height or time tolerance.
+newer nodes serve](#requests-only-newer-nodes-serve). Here the probe bans no node, and a pinned
+SDK asks too. An earlier probe's hold does not stand in for the question, since a hold can
+outlast its epoch: each such answer is asked about until a verified answer shows the newer
+version. Calls that get such an answer while one of them asks wait for its answer, so none
+bans a node before it is known. When the probe shows a version the build knows, or fails, the
+node is banned as for any unusable proof. A node is also banned when its unread answer names a
+version the build knows, since that node is behind its network or the answer is unusable for
+another reason, and when the answer is outside the height or time tolerance.
 
 A request version a protocol upgrade retired is refused by the nodes themselves, with
 `INVALID_ARGUMENT`: every node at that protocol version refuses it alike, so the request fails

@@ -71,9 +71,12 @@ pub(super) struct GateState<'a> {
     pub(super) now_ms: u64,
 }
 
-/// What a probe proved: the network ran protocol version `network` in an epoch that may not
-/// end before `until_ms`, on the local clock. The protocol version changes only when an epoch
-/// starts, so until then no answer can show the network serving a newer version.
+/// What a probe proved: the network ran protocol version `network` in an epoch that has ended
+/// by `until_ms` at the latest, on the local clock. The protocol version changes only when an
+/// epoch starts, so until that epoch ends no answer can show the network serving a newer
+/// version. The epoch can end before `until_ms`, by about how late its first block came
+/// ([`Self::from_epoch_starts`]), so the hold saves probes and is no proof of what the
+/// network runs now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct ProbeHold {
     /// The newest protocol version a verified answer was signed at when the probe ran.
@@ -445,9 +448,12 @@ impl Sdk {
     /// it this build cannot read says as little about its node.
     ///
     /// Nothing is asked when nothing can be learned: by an SDK without nodes or a context
-    /// provider, once a verified answer has shown a newer version, or while the last probe's
-    /// epoch has not ended ([`ProbeHold`]). Nor is it asked about an answer to a probe
-    /// itself, which would wait for the probe it belongs to.
+    /// provider, or once a verified answer has shown a newer version. Nor is it asked about
+    /// an answer to a probe itself, which would wait for the probe it belongs to.
+    ///
+    /// The last probe's epoch hold ([`ProbeHold`]) does not stand in for the question: it can
+    /// outlast its epoch, and a ban is not to rest on it. So each such answer costs a probe
+    /// while the network runs a version this build knows, and its node is then banned.
     ///
     /// While another call probes, this one waits for that answer, so that no node is banned
     /// before it is known, and asks only if that probe failed.
@@ -455,13 +461,9 @@ impl Sdk {
         let required = PlatformVersion::latest().protocol_version.saturating_add(1);
         let nothing_to_learn = || {
             let state = self.gate_state();
-            let verified = state.settings.verified_protocol_version;
             !state.enforced
                 || !state.has_context_provider
-                || verified >= required
-                || state
-                    .hold
-                    .is_some_and(|hold| hold.covers(required, verified, state.now_ms))
+                || state.settings.verified_protocol_version >= required
         };
         if self.inside_version_probe || nothing_to_learn() {
             return;

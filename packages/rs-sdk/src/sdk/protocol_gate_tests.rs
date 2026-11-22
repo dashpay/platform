@@ -809,6 +809,32 @@ async fn should_ban_a_node_for_an_unreadable_answer_when_the_network_proves_a_kn
     assert!(sdk.address_list().is_banned(&node()));
 }
 
+/// The hold of an earlier probe can outlast the epoch it proved, so it does not stand in for
+/// asking: an unreadable answer naming a newer version is asked about while a hold covers,
+/// and the node is not banned once the network proves the newer version.
+#[tokio::test]
+async fn should_ask_about_an_unreadable_answer_while_an_earlier_probe_holds() {
+    let latest = PlatformVersion::latest().protocol_version;
+    let sdk = mock_sdk(latest, false, latest);
+    sdk.probe_hold.set(ProbeHold {
+        network: latest,
+        epoch: 2,
+        until_ms: u64::MAX,
+    });
+    answer_probe(&sdk, "newer").await;
+    let (request, response) = unreadable_contract_answer(NEWER);
+    answer(&sdk, &request, Ok(response)).await;
+    let error = DataContract::fetch_with_settings(&sdk, Identifier::new([7; 32]), once())
+        .await
+        .expect_err("the answer cannot be read");
+    assert!(
+        matches!(&error, Error::Config(reason) if reason.contains("update the SDK")),
+        "{error:?}"
+    );
+    assert_eq!(probes(&sdk).await, 1);
+    assert!(!sdk.address_list().is_banned(&node()));
+}
+
 /// An unreadable answer that names a version this build knows gives no reason to ask.
 #[tokio::test]
 async fn should_not_ask_the_network_about_an_unreadable_answer_naming_a_known_version() {
