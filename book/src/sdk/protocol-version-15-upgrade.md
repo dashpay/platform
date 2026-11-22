@@ -87,8 +87,9 @@ case differently from 5.0.x:
   has the details.
 - When an SDK that has not yet seen the newer version gets an answer it cannot read that
   names a version the build does not know, it asks the network for its protocol version
-  before it decides about the node. If the network proves a newer version, the node is not
-  banned, so an app whose first request is a name lookup keeps its nodes. If the question
-  fails, or shows a version the build knows, the node is banned as for any bad proof.
+  before it decides about the node. If the network proves a newer version and the answer is
+  fresh (within the SDK's height and time tolerance), the node is not banned, so an app whose
+  first request is a name lookup keeps its nodes. If the question fails or shows a version
+  the build knows, or the answer is stale, the node is banned as for any bad proof.
 - A request version that a protocol upgrade retired is refused with `INVALID_ARGUMENT`: the
   request fails at once and no node is banned.
