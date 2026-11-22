@@ -277,16 +277,25 @@ unsafe fn get_entries_inner(
 ///                "moderatorId": "<base58>", "reason": {"code": null, "text": "off topic"},
 ///                "removedAt": 1700000000000, "documentHash": "<64 hex>",
 ///                "restoredBy": "<base58>", "restoredAt": 1700000100000,
-///                "keptFields": {"hashtag": "dash", "$createdAt": 1600000000000}}],
+///                "keptFields": {"hashtag": {"type": "string", "value": "dash"},
+///                               "$createdAt": {"type": "uint", "value": 1600000000000}}}],
 ///  "nextStartAfter": "<base58>"}
 /// ```
 ///
 /// `restoredBy` and `restoredAt` are present once a moderator restored the document.
 /// `keptFields` holds the values the record keeps by property path
 /// (`moderatorAbilities.deleteKeepsFields`), read by rs-sdk under the document's type (which
-/// fetches the contract when a record keeps any), each as JSON shows a platform value:
-/// identifiers as base58 strings, other bytes as base64 strings; a path the document held no
-/// value at is absent, and the object is empty when the type keeps none. `nextStartAfter` is
+/// fetches the contract when a record keeps any), each tagged with its kind as
+/// `{"type": ..., "value": ...}` so no kind is inferred from a JSON number:
+/// * `{"type": "null"}`; `bool`; `string`;
+/// * `int` (a signed integer up to 64 bits) and `uint` (an unsigned one), JSON integers;
+///   `int128` and `uint128` for a 128-bit value outside that range, as a decimal string;
+/// * `double`, a JSON number written with its fraction and sign (`1.0`, `-0.0`);
+/// * `identifier` (base58 string) and `bytes` (base64 string);
+/// * `array` of tagged values, and `object` of tagged values by member name.
+///
+/// A path the document held no value at is absent, and the object is empty when the type
+/// keeps none. `nextStartAfter` is
 /// rs-sdk's cursor and is absent on the last page. Free the string with
 /// `dash_sdk_string_free`.
 ///
@@ -664,6 +673,12 @@ mod tests {
     use crate::test_utils::test_utils::{create_mock_sdk_handle, destroy_mock_sdk_handle};
     use crate::{
         dash_sdk_error_free, dash_sdk_string_free, DashSDKErrorCode, DashSDKResultDataType,
+    };
+    use dash_sdk::dapi_grpc::platform::v0::get_contract_moderation_entries_request::{
+        self, GetContractModerationEntriesRequestV0,
+    };
+    use dash_sdk::dapi_grpc::platform::v0::{
+        ContractModerationList as ContractModerationListProto, GetContractModerationEntriesRequest,
     };
     use dash_sdk::dpp::data_contract::config::moderation::ContractModerationReason;
     use dash_sdk::dpp::platform_value::string_encoding::Encoding;
@@ -1151,24 +1166,29 @@ mod tests {
         }
     }
 
-    /// A pointer to a limit of 0 sends `limit: Some(0)` as it is, for the node to judge: the
-    /// mock answers only the request with that exact limit.
+    /// A pointer to a limit of 0 sends `limit: Some(0)` as it is, for the node to judge. The
+    /// expected request is written out as the wire proto, not lowered from a page query as the
+    /// call is, so a lowering that dropped the 0 would not match: the mock answers only that
+    /// exact request, and any other fails the call.
     #[test]
     fn should_send_a_limit_of_zero_as_it_is() {
-        let contract_id = Identifier::new([1; 32]);
         let handle = mock_handle_answering(|wrapper| {
             Box::pin(async move {
-                let query = ContractModerationEntriesPageQuery::new(
-                    contract_id,
-                    ContractModerationList::Banlist,
-                    wrapper.sdk.version(),
-                )
-                .with_limit(0);
-                assert_eq!(query.query.limit, 0);
+                let request = GetContractModerationEntriesRequest {
+                    version: Some(get_contract_moderation_entries_request::Version::V0(
+                        GetContractModerationEntriesRequestV0 {
+                            contract_id: vec![1; 32],
+                            list: ContractModerationListProto::Banlist as i32,
+                            start_after: None,
+                            limit: Some(0),
+                            prove: true,
+                        },
+                    )),
+                };
                 wrapper
                     .sdk
                     .mock()
-                    .expect_fetch(query, Some(ContractModerationEntries(vec![])))
+                    .expect_fetch(request, Some(ContractModerationEntries(vec![])))
                     .await
                     .expect("register the entries");
             })

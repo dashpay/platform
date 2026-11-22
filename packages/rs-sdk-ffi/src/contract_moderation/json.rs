@@ -7,7 +7,7 @@
 
 use crate::FFIError;
 use dash_sdk::dpp::data_contract::config::moderation::ContractModerationReason;
-use dash_sdk::dpp::platform_value::string_encoding::Encoding;
+use dash_sdk::dpp::platform_value::string_encoding::{encode, Encoding};
 use dash_sdk::dpp::platform_value::{Identifier, Value};
 use dash_sdk::platform::contract_fee_pots::{ContractFeePotState, ContractFeePots};
 use dash_sdk::platform::contract_moderation::{
@@ -18,7 +18,7 @@ use dash_sdk::platform::contract_moderation::{
     ContractTeamActionEvent, ContractTeamActionSigners, ContractTeamActions,
     ContractTeamActionsPageQuery, ContractWarning,
 };
-use serde_json::{json, Map, Value as JsonValue};
+use serde_json::{json, Map, Number, Value as JsonValue};
 use std::collections::BTreeMap;
 
 fn base58(id: Identifier) -> String {
@@ -137,19 +137,89 @@ pub(super) fn entries_json(
     JsonValue::Object(object)
 }
 
-/// The values a removal record keeps, by property path, each as JSON shows a platform value:
-/// identifiers as base58 strings, other bytes as base64 strings.
+/// The values a removal record keeps, by property path, each in the tagged form
+/// [`kept_value_json`] writes.
 fn kept_fields_json(kept_values: BTreeMap<String, Value>) -> Result<JsonValue, FFIError> {
     kept_values
         .into_iter()
         .map(|(path, value)| {
-            let value: JsonValue = value.try_into().map_err(|e| {
-                FFIError::InternalError(format!("Failed to write the kept field {path}: {e}"))
-            })?;
+            let value = kept_value_json(value)
+                .map_err(|e| FFIError::InternalError(format!("kept field {path}: {e}")))?;
             Ok((path, value))
         })
         .collect::<Result<Map<_, _>, FFIError>>()
         .map(JsonValue::Object)
+}
+
+/// A kept platform value in the tagged form `{"type": ..., "value": ...}`, its kind carried by
+/// the tag rather than inferred from the JSON number, so a reader keeps a signed and an
+/// unsigned integer apart and an integral or negative-zero float a float:
+/// * `null` (no `value`), `bool`, `string`;
+/// * `int` for a signed integer (`i8` to `i64`, and an `i128` within `i64`), `uint` for an
+///   unsigned one (`u8` to `u64`, and a `u128` within `u64`), each a JSON integer; `int128` and
+///   `uint128` for a 128-bit value outside that range, as a decimal string;
+/// * `double` for a float, a JSON number written with its fraction and sign (`1.0`, `-0.0`);
+/// * `identifier` (base58) and `bytes` (base64, for every byte-string variant);
+/// * `array` of tagged values, and `object` of tagged values by member name.
+fn kept_value_json(value: Value) -> Result<JsonValue, String> {
+    let tagged = |tag: &str, value: JsonValue| json!({"type": tag, "value": value});
+    Ok(match value {
+        Value::Null => json!({"type": "null"}),
+        Value::Bool(value) => tagged("bool", json!(value)),
+        Value::Text(value) => tagged("string", json!(value)),
+        Value::I8(value) => tagged("int", json!(value)),
+        Value::I16(value) => tagged("int", json!(value)),
+        Value::I32(value) => tagged("int", json!(value)),
+        Value::I64(value) => tagged("int", json!(value)),
+        Value::I128(value) => match i64::try_from(value) {
+            Ok(value) => tagged("int", json!(value)),
+            Err(_) => tagged("int128", json!(value.to_string())),
+        },
+        Value::U8(value) => tagged("uint", json!(value)),
+        Value::U16(value) => tagged("uint", json!(value)),
+        Value::U32(value) => tagged("uint", json!(value)),
+        Value::U64(value) => tagged("uint", json!(value)),
+        Value::U128(value) => match u64::try_from(value) {
+            Ok(value) => tagged("uint", json!(value)),
+            Err(_) => tagged("uint128", json!(value.to_string())),
+        },
+        Value::Float(value) => tagged(
+            "double",
+            JsonValue::Number(
+                Number::from_f64(value).ok_or_else(|| format!("{value} is not a finite float"))?,
+            ),
+        ),
+        Value::Identifier(bytes) => tagged("identifier", json!(encode(&bytes, Encoding::Base58))),
+        Value::Bytes(bytes) => tagged("bytes", json!(encode(&bytes, Encoding::Base64))),
+        Value::Bytes20(bytes) => tagged("bytes", json!(encode(&bytes, Encoding::Base64))),
+        Value::Bytes32(bytes) => tagged("bytes", json!(encode(&bytes, Encoding::Base64))),
+        Value::Bytes36(bytes) => tagged("bytes", json!(encode(&bytes, Encoding::Base64))),
+        Value::Array(items) => tagged(
+            "array",
+            items
+                .into_iter()
+                .map(kept_value_json)
+                .collect::<Result<Vec<_>, _>>()
+                .map(JsonValue::Array)?,
+        ),
+        Value::Map(members) => tagged(
+            "object",
+            members
+                .into_iter()
+                .map(|(key, value)| match key {
+                    Value::Text(key) => Ok((key, kept_value_json(value)?)),
+                    key => Err(format!("an object member is named by {key:?}, not by text")),
+                })
+                .collect::<Result<Map<_, _>, _>>()
+                .map(JsonValue::Object)?,
+        ),
+        // No document property is stored as an enum value, so no record keeps one
+        Value::EnumU8(_) | Value::EnumString(_) => {
+            return Err("an enum value is not a kept field".to_string())
+        }
+        // A variant added to platform values later is refused until it gets a tag here
+        other => return Err(format!("{other:?} has no kept field tag")),
+    })
 }
 
 fn removal_entry_json(
@@ -538,11 +608,15 @@ mod tests {
                         "removedAt": 1_700_000_000_000u64,
                         "documentHash": "ab".repeat(32),
                         "keptFields": {
-                            "$createdAt": 1_600_000_000_000u64,
-                            "author": b58(9),
-                            "hashtag": "dash",
-                            "meta": {"tags": ["privacy"]},
-                            "score": -3,
+                            "$createdAt": {"type": "uint", "value": 1_600_000_000_000u64},
+                            "author": {"type": "identifier", "value": b58(9)},
+                            "hashtag": {"type": "string", "value": "dash"},
+                            "meta": {"type": "object", "value": {
+                                "tags": {"type": "array", "value": [
+                                    {"type": "string", "value": "privacy"},
+                                ]},
+                            }},
+                            "score": {"type": "int", "value": -3},
                         },
                     },
                     {
@@ -693,5 +767,65 @@ mod tests {
                 },
             })
         );
+    }
+
+    /// The kept values the Swift decoding tests read
+    /// (`ContractModerationDecodingTests.keptFieldsFixture`): the same string there.
+    const KEPT_FIELDS_FIXTURE: &str = r#"{"bytes":{"type":"bytes","value":"AQID"},"flag":{"type":"bool","value":true},"i64min":{"type":"int","value":-9223372036854775808},"id":{"type":"identifier","value":"cGfHiC6Kgg3FpFZvgwGcswsCRtp4aBP2fzuXRQPizuN"},"int128":{"type":"int128","value":"-170141183460469231731687303715884105728"},"negativeZero":{"type":"double","value":-0.0},"nested":{"type":"object","value":{"list":{"type":"array","value":[{"type":"uint","value":7},{"type":"null"},{"type":"string","value":"a"}]}}},"u64max":{"type":"uint","value":18446744073709551615},"uint128":{"type":"uint128","value":"340282366920938463463374607431768211455"},"whole":{"type":"double","value":1.0}}"#;
+
+    #[test]
+    fn should_write_kept_values_tagged_with_their_kind() {
+        let kept = BTreeMap::from([
+            ("bytes".to_string(), Value::Bytes(vec![1, 2, 3])),
+            ("flag".to_string(), Value::Bool(true)),
+            ("i64min".to_string(), Value::I64(i64::MIN)),
+            ("id".to_string(), Value::Identifier([9; 32])),
+            ("int128".to_string(), Value::I128(i128::MIN)),
+            ("negativeZero".to_string(), Value::Float(-0.0)),
+            (
+                "nested".to_string(),
+                Value::Map(vec![(
+                    Value::Text("list".to_string()),
+                    Value::Array(vec![
+                        Value::U8(7),
+                        Value::Null,
+                        Value::Text("a".to_string()),
+                    ]),
+                )]),
+            ),
+            ("u64max".to_string(), Value::U64(u64::MAX)),
+            ("uint128".to_string(), Value::U128(u128::MAX)),
+            ("whole".to_string(), Value::Float(1.0)),
+        ]);
+        let written = kept_fields_json(kept).expect("writes");
+
+        // The fixture byte for byte: the keys sort, and the floats keep their fraction and sign
+        assert_eq!(
+            serde_json::to_string(&written).expect("serializes"),
+            KEPT_FIELDS_FIXTURE
+        );
+    }
+
+    #[test]
+    fn should_write_an_in_range_128_bit_value_by_its_signedness() {
+        assert_eq!(
+            kept_value_json(Value::I128(-5)).expect("writes"),
+            json!({"type": "int", "value": -5})
+        );
+        assert_eq!(
+            kept_value_json(Value::U128(5)).expect("writes"),
+            json!({"type": "uint", "value": 5})
+        );
+        // The same magnitude, signed and unsigned, stays apart
+        assert_eq!(
+            kept_value_json(Value::I64(5)).expect("writes"),
+            json!({"type": "int", "value": 5})
+        );
+        assert_eq!(
+            kept_value_json(Value::U64(5)).expect("writes"),
+            json!({"type": "uint", "value": 5})
+        );
+        assert!(kept_value_json(Value::Float(f64::NAN)).is_err());
+        assert!(kept_value_json(Value::EnumU8(vec![1])).is_err());
     }
 }

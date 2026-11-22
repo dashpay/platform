@@ -167,15 +167,18 @@ final class ContractModerationDecodingTests: XCTestCase {
             {"documentId":"\(id3)","documentOwnerId":"\(id20)","moderatorId":"\(id21)",\
             "reason":{"code":null,"text":"off topic"},"removedAt":1700000000000,\
             "documentHash":"\(hash)",\
-            "keptFields":{"$createdAt":1600000000000,"author":"\(id9)","hashtag":"dash",\
-            "meta":{"tags":["privacy"]},"score":-3}},\
+            "keptFields":{"$createdAt":{"type":"uint","value":1600000000000},\
+            "author":{"type":"identifier","value":"\(id9)"},\
+            "hashtag":{"type":"string","value":"dash"},\
+            "meta":{"type":"object","value":{"tags":{"type":"array","value":[{"type":"string","value":"privacy"}]}}},\
+            "score":{"type":"int","value":-3}}},\
             {"documentId":"\(id4)","documentOwnerId":"\(id20)","moderatorId":"\(id21)",\
             "reason":{"code":null,"text":"off topic"},"removedAt":1700000000000,\
             "documentHash":"\(hash)","restoredBy":"\(id22)","restoredAt":1700000100000,\
             "keptFields":{}}],\
             "nextStartAfter":"\(id4)"}
             """
-        let page = try ContractModerationJSON.decodeRemovalsPage(from: json)
+        let page = try decode(ContractDocumentRemovalsPage.self, json)
         let removed = page.removals[0]
         let restored = page.removals[1]
 
@@ -187,8 +190,8 @@ final class ContractModerationDecodingTests: XCTestCase {
         XCTAssertNil(removed.restoredBy)
         XCTAssertNil(removed.restoredAt)
         XCTAssertEqual(removed.keptFields, [
-            "$createdAt": .int(1_600_000_000_000),
-            "author": .string(id9),
+            "$createdAt": .uint(1_600_000_000_000),
+            "author": .identifier(id9),
             "hashtag": .string("dash"),
             "meta": .object(["tags": .array([.string("privacy")])]),
             "score": .int(-3),
@@ -199,41 +202,61 @@ final class ContractModerationDecodingTests: XCTestCase {
         XCTAssertEqual(page.nextStartAfter, id4)
     }
 
-    /// The FFI writes bare values, read with `JSONSerialization`.
-    func testShouldDecodeKeptValuesBeyondTheSignedRange() throws {
-        let object = try JSONSerialization.jsonObject(
-            with: Data(#"{"big":18446744073709551615,"flag":true,"none":null,"ratio":0.5}"#.utf8))
-        let values = try XCTUnwrap(object as? [Swift.String: Any])
-            .mapValues(ContractKeptFieldValue.init(jsonObject:))
-        XCTAssertEqual(values["big"], .uint(UInt64.max))
-        XCTAssertEqual(values["flag"], .bool(true))
-        XCTAssertEqual(values["none"], .null)
-        XCTAssertEqual(values["ratio"], .double(0.5))
-    }
+    /// The kept values the FFI's writer tests produce
+    /// (`packages/rs-sdk-ffi/src/contract_moderation/json.rs`,
+    /// `KEPT_FIELDS_FIXTURE`): the same string there.
+    static let keptFieldsFixture = #"{"bytes":{"type":"bytes","value":"AQID"},"flag":{"type":"bool","value":true},"i64min":{"type":"int","value":-9223372036854775808},"id":{"type":"identifier","value":"cGfHiC6Kgg3FpFZvgwGcswsCRtp4aBP2fzuXRQPizuN"},"int128":{"type":"int128","value":"-170141183460469231731687303715884105728"},"negativeZero":{"type":"double","value":-0.0},"nested":{"type":"object","value":{"list":{"type":"array","value":[{"type":"uint","value":7},{"type":"null"},{"type":"string","value":"a"}]}}},"u64max":{"type":"uint","value":18446744073709551615},"uint128":{"type":"uint128","value":"340282366920938463463374607431768211455"},"whole":{"type":"double","value":1.0}}"#
 
-    /// `JSONDecoder` reads `1.0` and `-0.0` as integers; the SDK reads kept
-    /// values with `JSONSerialization`, which keeps their kind and sign.
-    func testShouldKeepTheNumericKindOfKeptValues() throws {
-        let hash = String(repeating: "ab", count: 32)
-        let json = """
-            {"removals":[{"documentId":"\(id3)","documentOwnerId":"\(id20)","moderatorId":"\(id21)",\
-            "reason":{"code":null,"text":"x"},"removedAt":1,"documentHash":"\(hash)",\
-            "keptFields":{"whole":1.0,"negativeZero":-0.0,"int":1,"big":18446744073709551615,\
-            "min":-9223372036854775808,"flag":false,"nested":{"ratio":1.5,"list":[1e3,2]}}}]}
-            """
-        let kept = try XCTUnwrap(ContractModerationJSON.decodeRemovalsPage(from: json).removals.first).keptFields
+    /// The FFI tags each kept value with its kind, so no kind is inferred
+    /// from a JSON number.
+    func testShouldDecodeTheSharedKeptFieldsFixtureByItsTags() throws {
+        let kept = try decode([Swift.String: ContractKeptFieldValue].self, Self.keptFieldsFixture)
 
+        XCTAssertEqual(kept["bytes"], .bytes("AQID"))
+        XCTAssertEqual(kept["flag"], .bool(true))
+        XCTAssertEqual(kept["i64min"], .int(Int64.min))
+        XCTAssertEqual(kept["id"], .identifier(id9))
+        XCTAssertEqual(kept["int128"], .int128("-170141183460469231731687303715884105728"))
+        XCTAssertEqual(kept["u64max"], .uint(UInt64.max))
+        XCTAssertEqual(kept["uint128"], .uint128("340282366920938463463374607431768211455"))
         XCTAssertEqual(kept["whole"], .double(1.0))
         guard case .double(let negativeZero) = kept["negativeZero"] else {
             return XCTFail("expected a double, got \(String(describing: kept["negativeZero"]))")
         }
-        XCTAssertEqual(negativeZero, 0)
         XCTAssertEqual(negativeZero.sign, .minus)
-        XCTAssertEqual(kept["int"], .int(1))
-        XCTAssertEqual(kept["big"], .uint(UInt64.max))
-        XCTAssertEqual(kept["min"], .int(Int64.min))
-        XCTAssertEqual(kept["flag"], .bool(false))
-        XCTAssertEqual(kept["nested"], .object(["ratio": .double(1.5), "list": .array([.double(1000), .int(2)])]))
+        XCTAssertEqual(kept["nested"], .object(["list": .array([.uint(7), .null, .string("a")])]))
+    }
+
+    /// A signed and an unsigned integer of the same magnitude stay apart.
+    func testShouldKeepSignedAndUnsignedIntegersApart() throws {
+        let kept = try decode(
+            [Swift.String: ContractKeptFieldValue].self,
+            #"{"signed":{"type":"int","value":5},"unsigned":{"type":"uint","value":5}}"#
+        )
+        XCTAssertEqual(kept["signed"], .int(5))
+        XCTAssertEqual(kept["unsigned"], .uint(5))
+        XCTAssertNotEqual(kept["signed"], kept["unsigned"])
+    }
+
+    /// The marshalling the status wrapper hands the FFI: omitted and empty
+    /// selections must reach it apart.
+    func testShouldMarshalOmittedAndEmptyListSelectionsApart() {
+        withContractModerationLists(nil) { pointer, count in
+            XCTAssertNil(pointer)
+            XCTAssertEqual(count, 0)
+        }
+        withContractModerationLists([]) { pointer, count in
+            XCTAssertNotNil(pointer)
+            XCTAssertEqual(count, 0)
+        }
+        withContractModerationLists([.banlist]) { pointer, count in
+            XCTAssertEqual(count, 1)
+            XCTAssertEqual(pointer?.pointee, 0)
+        }
+        withContractModerationLists([.warnings, .suspensions]) { pointer, count in
+            XCTAssertEqual(count, 2)
+            XCTAssertEqual(pointer.map { [$0[0], $0[1]] }, [2, 1])
+        }
     }
 
     /// `Codable` writes the tagged form, which `JSONEncoder` and
@@ -256,6 +279,10 @@ final class ContractModerationDecodingTests: XCTestCase {
                 "none": .null,
                 "flag": .bool(true),
                 "text": .string("dash"),
+                "id": .identifier(id9),
+                "raw": .bytes("AQID"),
+                "huge": .uint128("340282366920938463463374607431768211455"),
+                "tiny": .int128("-170141183460469231731687303715884105728"),
                 "nested": .object([
                     "list": .array([.double(2.0), .int(-3), .object(["deep": .uint(7)])]),
                 ]),

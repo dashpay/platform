@@ -47,7 +47,6 @@ extension SDK {
         identityId: String,
         lists: [ContractModerationList]? = nil
     ) async throws -> ContractModerationStatus? {
-        let listBytes = lists.map { $0.map(\.ffiTag) }
         return try await performBlockingQuery { handle in
             let result = try withDecisionProposalCString(
                 contractId, field: "contractId", invalid: SDKError.invalidParameter
@@ -55,7 +54,7 @@ extension SDK {
                 try withDecisionProposalCString(
                     identityId, field: "identityId", invalid: SDKError.invalidParameter
                 ) { identityPtr in
-                    withContractModerationBytes(listBytes) { listsPtr, count in
+                    withContractModerationLists(lists) { listsPtr, count in
                         dash_sdk_contract_moderation_get_status(
                             handle, contractPtr, identityPtr, listsPtr, UInt(count))
                     }
@@ -142,7 +141,7 @@ extension SDK {
                     }
                 }
             }
-            return try ContractModerationFFI.decodeRemovals(result)
+            return try ContractModerationFFI.decode(ContractDocumentRemovalsPage.self, result)
         }
     }
 
@@ -177,7 +176,7 @@ extension SDK {
                     }
                 }
             }
-            return try ContractModerationFFI.decodeRemovals(result)
+            return try ContractModerationFFI.decode(ContractDocumentRemovalsPage.self, result)
         }
     }
 
@@ -313,13 +312,6 @@ extension SDK {
 /// Decodes the results of the contract moderation functions; the owned
 /// string and error are freed by ``DecisionProposalFFI/consumeString(_:)``.
 enum ContractModerationFFI {
-    /// The removal records the result carries, kept values read with their
-    /// numeric kind; `nil` for no data.
-    static func decodeRemovals(_ result: DashSDKResult) throws -> ContractDocumentRemovalsPage? {
-        try DecisionProposalFFI.consumeString(result).map {
-            try ContractModerationJSON.decodeRemovalsPage(from: $0)
-        }
-    }
 
     /// The JSON the result carries, decoded; `nil` for no data.
     static func decode<T: Decodable>(_ type: T.Type, _ result: DashSDKResult) throws -> T? {
@@ -336,81 +328,20 @@ enum ContractModerationJSON {
         try DecisionProposalJSON.decode(type, from: json)
     }
 
-    /// A page of removal records as the FFI writes it. The records are read
-    /// without their `keptFields` (``RemovalsPageWire``), whose bare values
-    /// `JSONDecoder` would turn into integers; those are read with
-    /// `JSONSerialization` (``ContractKeptFieldValue/init(jsonObject:)``),
-    /// which keeps each number's kind.
-    static func decodeRemovalsPage(from json: String) throws -> ContractDocumentRemovalsPage {
-        let page = try decode(RemovalsPageWire.self, from: json)
-        let object: Any
-        do {
-            object = try JSONSerialization.jsonObject(with: Data(json.utf8))
-        } catch {
-            throw SDKError.serializationError("Failed to read the removal records: \(error)")
-        }
-        guard let records = (object as? [String: Any])?["removals"] as? [[String: Any]],
-              records.count == page.removals.count else {
-            throw SDKError.serializationError("The removal records are not a list of objects")
-        }
-        let removals = try zip(page.removals, records).map { removal, record in
-            guard let keptFields = record["keptFields"] as? [String: Any] else {
-                throw SDKError.serializationError("A removal record has no keptFields object")
-            }
-            return ContractDocumentRemovalEntry(
-                documentId: removal.documentId,
-                documentOwnerId: removal.documentOwnerId,
-                moderatorId: removal.moderatorId,
-                reason: removal.reason,
-                removedAtMs: removal.removedAtMs,
-                documentHash: removal.documentHash,
-                restoredBy: removal.restoredBy,
-                restoredAtMs: removal.restoredAtMs,
-                keptFields: try keptFields.mapValues(ContractKeptFieldValue.init(jsonObject:))
-            )
-        }
-        return ContractDocumentRemovalsPage(removals: removals, nextStartAfter: page.nextStartAfter)
-    }
-
-    /// A removals page as the FFI writes it, its records without `keptFields`.
-    private struct RemovalsPageWire: Decodable {
-        let removals: [RemovalWire]
-        let nextStartAfter: String?
-    }
-
-    /// A removal record as the FFI writes it, without `keptFields`.
-    private struct RemovalWire: Decodable {
-        let documentId: String
-        let documentOwnerId: String
-        let moderatorId: String
-        let reason: ContractModerationReason
-        let removedAtMs: UInt64
-        let documentHash: String
-        let restoredBy: String?
-        let restoredAtMs: UInt64?
-
-        private enum CodingKeys: String, CodingKey {
-            case documentId
-            case documentOwnerId
-            case moderatorId
-            case reason
-            case removedAtMs = "removedAt"
-            case documentHash
-            case restoredBy
-            case restoredAtMs = "restoredAt"
-        }
-    }
 }
 
-/// Run `body` with `bytes` as a pointer and count: a null pointer for `nil`,
-/// and a non-null pointer with a count of 0 for `[]` (an empty array's buffer
-/// may have no base address, so a byte that is never read stands in), so the
-/// FFI tells an omitted selection from an empty one.
-func withContractModerationBytes<R>(
-    _ bytes: [UInt8]?,
+/// Run `body` with `lists` as the `lists` pointer and count
+/// `dash_sdk_contract_moderation_get_status` takes: a null pointer with a
+/// count of 0 for `nil` (no selection: every list the contract keeps), a
+/// non-null pointer with a count of 0 for `[]` (an explicit empty selection,
+/// for the node to judge; an empty array's buffer may have no base address, so
+/// a byte that is never read stands in), and the lists' bytes otherwise.
+func withContractModerationLists<R>(
+    _ lists: [ContractModerationList]?,
     _ body: (UnsafePointer<UInt8>?, Int) throws -> R
 ) rethrows -> R {
-    guard let bytes else { return try body(nil, 0) }
+    guard let lists else { return try body(nil, 0) }
+    let bytes = lists.map(\.ffiTag)
     if bytes.isEmpty {
         var placeholder: UInt8 = 0
         return try withUnsafePointer(to: &placeholder) { try body($0, 0) }

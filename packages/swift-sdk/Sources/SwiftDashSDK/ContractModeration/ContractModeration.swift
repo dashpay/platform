@@ -170,25 +170,31 @@ public struct ContractModerationEntriesPage: Codable, Sendable, Equatable {
 
 // MARK: - Document removals
 
-/// A value a removal record keeps of its document, as the FFI's JSON writes a
-/// platform value: identifiers as base58 strings, other bytes as base64
-/// strings.
+/// A value a removal record keeps of its document, in the tagged form the
+/// FFI writes and `Codable` reads and writes: `{"type": ..., "value": ...}`.
+/// The tag carries the platform value's kind, so nothing is inferred from a
+/// JSON number: a signed and an unsigned integer of the same magnitude stay
+/// apart, and `1.0` and `-0.0` stay doubles, sign included.
 ///
-/// It has two JSON forms:
-/// - The FFI writes bare values. The SDK reads them only with
-///   ``init(jsonObject:)`` over `JSONSerialization` output, which keeps a
-///   number's kind (`1.0` and `-0.0` stay doubles, sign included);
-///   `JSONDecoder` would read them as integers.
-/// - `Codable` uses a tagged form, `{"type": "double", "value": 1.0}`, with
-///   the types `null`, `bool`, `int`, `uint`, `double`, `string`, `array` and
-///   `object`, so `JSONEncoder` and `JSONDecoder` round-trip it without loss.
+/// The types: `null` (no `value`), `bool`, `int` (a signed integer up to 64
+/// bits), `uint` (an unsigned one), `int128` and `uint128` (a 128-bit value
+/// outside that range, as a decimal string), `double`, `string`,
+/// `identifier` (base58), `bytes` (base64), `array` and `object`.
 public indirect enum ContractKeptFieldValue: Codable, Sendable, Equatable, Hashable {
     case null
     case bool(Bool)
     case int(Int64)
     case uint(UInt64)
+    /// A signed 128-bit value outside `Int64`, in decimal.
+    case int128(String)
+    /// An unsigned 128-bit value outside `UInt64`, in decimal.
+    case uint128(String)
     case double(Double)
     case string(String)
+    /// An identifier, base58.
+    case identifier(String)
+    /// Bytes, base64.
+    case bytes(String)
     case array([ContractKeptFieldValue])
     case object([String: ContractKeptFieldValue])
 
@@ -206,6 +212,10 @@ public indirect enum ContractKeptFieldValue: Codable, Sendable, Equatable, Hasha
         case "bool": self = .bool(try container.decode(Bool.self, forKey: .value))
         case "int": self = .int(try container.decode(Int64.self, forKey: .value))
         case "uint": self = .uint(try container.decode(UInt64.self, forKey: .value))
+        case "int128": self = .int128(try container.decode(Swift.String.self, forKey: .value))
+        case "uint128": self = .uint128(try container.decode(Swift.String.self, forKey: .value))
+        case "identifier": self = .identifier(try container.decode(Swift.String.self, forKey: .value))
+        case "bytes": self = .bytes(try container.decode(Swift.String.self, forKey: .value))
         case "double": self = .double(try container.decode(Double.self, forKey: .value))
         case "string": self = .string(try container.decode(Swift.String.self, forKey: .value))
         case "array": self = .array(try container.decode([ContractKeptFieldValue].self, forKey: .value))
@@ -217,36 +227,6 @@ public indirect enum ContractKeptFieldValue: Codable, Sendable, Equatable, Hasha
                 in: container,
                 debugDescription: "Unknown kept field value type \(type)"
             )
-        }
-    }
-
-    /// The value `JSONSerialization` read, its numbers kept as they were
-    /// written: a boolean as ``bool(_:)``, a number written with a fraction or
-    /// an exponent as ``double(_:)`` (`-0.0` keeps its sign), an unsigned
-    /// 64-bit integer above `Int64.max` as ``uint(_:)`` and any other integer
-    /// as ``int(_:)``.
-    public init(jsonObject: Any) throws {
-        switch jsonObject {
-        case is NSNull:
-            self = .null
-        case let number as NSNumber:
-            if CFGetTypeID(number) == CFBooleanGetTypeID() {
-                self = .bool(number.boolValue)
-                return
-            }
-            switch String(cString: number.objCType) {
-            case "d", "f": self = .double(number.doubleValue)
-            case "Q": self = .uint(number.uint64Value)
-            default: self = .int(number.int64Value)
-            }
-        case let string as String:
-            self = .string(string)
-        case let array as [Any]:
-            self = .array(try array.map(ContractKeptFieldValue.init(jsonObject:)))
-        case let object as [String: Any]:
-            self = .object(try object.mapValues(ContractKeptFieldValue.init(jsonObject:)))
-        default:
-            throw SDKError.serializationError("Unsupported kept field value \(type(of: jsonObject))")
         }
     }
 
@@ -265,6 +245,18 @@ public indirect enum ContractKeptFieldValue: Codable, Sendable, Equatable, Hasha
             try container.encode(value, forKey: .value)
         case .uint(let value):
             try container.encode("uint", forKey: .type)
+            try container.encode(value, forKey: .value)
+        case .int128(let value):
+            try container.encode("int128", forKey: .type)
+            try container.encode(value, forKey: .value)
+        case .uint128(let value):
+            try container.encode("uint128", forKey: .type)
+            try container.encode(value, forKey: .value)
+        case .identifier(let value):
+            try container.encode("identifier", forKey: .type)
+            try container.encode(value, forKey: .value)
+        case .bytes(let value):
+            try container.encode("bytes", forKey: .type)
             try container.encode(value, forKey: .value)
         case .double(let value):
             try container.encode("double", forKey: .type)
