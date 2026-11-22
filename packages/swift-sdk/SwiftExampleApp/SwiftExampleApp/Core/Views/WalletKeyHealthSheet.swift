@@ -375,9 +375,13 @@ enum WalletKeyHealthChecker {
     ///     when it has to null such an inverse. A failed save rolls
     ///     the context back and throws, and the Keychain is not
     ///     touched.
-    ///  2. Only then wipe the Keychain (`identity_privkey.*` items
-    ///     whose metadata matches this identity). The sweep reads
-    ///     only the Base58 id captured before step 1, not the row.
+    ///  2. Only then wipe every private key of the identity from the
+    ///     Keychain with `KeychainManager.deleteAllPrivateKeys(ofIdentityId:identityIdBase58:publicKeys:)`,
+    ///     the same sweep Remove from Device runs: the direct
+    ///     `privkey_*` / `specialkey_*` accounts (an imported key) and
+    ///     the `identity_privkey.*` items whose metadata names the
+    ///     identity or one of its public keys. The sweep reads only
+    ///     values captured before step 1, not the row.
     ///
     /// Returns a per-side outcome so the caller can distinguish
     /// "fully clean" from "SwiftData clean, Keychain warning";
@@ -392,14 +396,18 @@ enum WalletKeyHealthChecker {
     ) throws -> OrphanDeleteOutcome {
         // Snapshot the base58 id BEFORE the delete: once the row
         // is removed its computed accessor is invalid.
+        let identityId = identity.identityId
         let identityIdBase58 = identity.identityIdBase58
+        let publicKeys = identity.publicKeys.map(\.publicKeyData)
 
         try PersistentIdentity.deleteChildrenFirst(identity, in: modelContext)
 
         var keychainError: Error?
         do {
-            try KeychainManager.shared.deleteAllIdentityPrivateKeys(
-                forIdentityIdBase58: identityIdBase58
+            try KeychainManager.shared.deleteAllPrivateKeys(
+                ofIdentityId: identityId,
+                identityIdBase58: identityIdBase58,
+                publicKeys: publicKeys
             )
         } catch {
             keychainError = error

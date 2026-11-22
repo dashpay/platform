@@ -81,7 +81,8 @@ final class IdentityLocalRemovalTests: XCTestCase {
         var specialKeyDeletes: [SpecialKeyType] = []
         var identifierDeletes: [String] = []
         var rowsLeftAtKeychainCall: [Int] = []
-        var sweeps: [(Data, String)] = []
+        var sweeps: [(Data, String, [Data])] = []
+        let expectedPublicKeys = doomed.publicKeys.map(\.publicKeyData)
         let expectedBase58 = doomed.identityIdBase58
         let identityRowCount = { [doomedId] () -> Int in
             let target = doomedId
@@ -105,15 +106,16 @@ final class IdentityLocalRemovalTests: XCTestCase {
                 identifierDeletes.append(identifier)
                 return true
             },
-            deleteAllForIdentity: { identityId, identityIdBase58 in
+            deleteAllForIdentity: { identityId, identityIdBase58, publicKeys in
                 rowsLeftAtKeychainCall.append(identityRowCount())
-                sweeps.append((identityId, identityIdBase58))
+                sweeps.append((identityId, identityIdBase58, publicKeys))
             }
         )
 
         XCTAssertEqual(keysLeft, [])
         XCTAssertEqual(sweeps.map { $0.0 }, [doomedId])
         XCTAssertEqual(sweeps.map { $0.1 }, [expectedBase58])
+        XCTAssertEqual(sweeps.map { Set($0.2) }, [Set(expectedPublicKeys)])
         XCTAssertEqual(specialKeyDeletes, [.voting, .owner, .payout])
         XCTAssertEqual(
             identifierDeletes,
@@ -137,7 +139,7 @@ final class IdentityLocalRemovalTests: XCTestCase {
             deleteKeyData: { identifier in
                 identifier != "privkey_key_1" && identifier != "specialkey_voting"
             },
-            deleteAllForIdentity: { _, _ in }
+            deleteAllForIdentity: { _, _, _ in }
         )
 
         // The refused voting slot and its row identifier are one key, named once.
@@ -157,7 +159,7 @@ final class IdentityLocalRemovalTests: XCTestCase {
             modelContext: context,
             deleteSpecialKey: { _, _ in true },
             deleteKeyData: { _ in true },
-            deleteAllForIdentity: { _, _ in throw Refused() }
+            deleteAllForIdentity: { _, _, _ in throw Refused() }
         )
 
         // Keys the row no longer references are still reported when the
@@ -166,7 +168,67 @@ final class IdentityLocalRemovalTests: XCTestCase {
         try assertNoRows(in: container)
     }
 
+    /// The removal sweep deletes every format a key of the identity can be
+    /// stored in, including a registration key whose metadata identity id is
+    /// still `pending`, and leaves another identity's key alone.
+    func testDeleteAllPrivateKeysOfIdentitySweepsEveryFormat() throws {
+        let manager = SwiftDashSDK.KeychainManager(serviceName: "org.dash.identity-removal-tests.\(UUID().uuidString)")
+        let identityId = doomedId
+        let identityIdBase58 = "doomedBase58"
+        let registrationKey = Data(repeating: 0x31, count: 33)
+        let taggedKey = Data(repeating: 0x32, count: 33)
+        let otherKey = Data(repeating: 0x33, count: 33)
+
+        XCTAssertNotNil(manager.storePrivateKey(Data(repeating: 0x01, count: 32), identityId: identityId, keyIndex: 3))
+        XCTAssertNotNil(manager.storeSpecialKey(Data(repeating: 0x02, count: 32), identityId: identityId, keyType: .voting))
+        storeDerivedKey(in: manager, path: "m/9'/1'/5'/0'/0'/0'/0'", identityId: "pending", publicKey: registrationKey)
+        storeDerivedKey(in: manager, path: "m/9'/1'/5'/0'/0'/0'/1'", identityId: identityIdBase58, publicKey: taggedKey)
+        storeDerivedKey(in: manager, path: "m/9'/1'/5'/0'/0'/1'/0'", identityId: "someoneElse", publicKey: otherKey)
+
+        try manager.deleteAllPrivateKeys(
+            ofIdentityId: identityId,
+            identityIdBase58: identityIdBase58,
+            publicKeys: [registrationKey]
+        )
+
+        XCTAssertNil(manager.retrievePrivateKey(identityId: identityId, keyIndex: 3))
+        XCTAssertNil(manager.retrieveSpecialKey(identityId: identityId, keyType: .voting))
+        XCTAssertNil(manager.retrieveIdentityPrivateKey(publicKeyHex: registrationKey.toHexString()))
+        XCTAssertNil(manager.retrieveIdentityPrivateKey(publicKeyHex: taggedKey.toHexString()))
+        XCTAssertNotNil(manager.retrieveIdentityPrivateKey(publicKeyHex: otherKey.toHexString()))
+
+        try manager.deleteAllIdentityPrivateKeys(forIdentityIdBase58: "someoneElse")
+    }
+
     // MARK: - Helpers
+
+    private func storeDerivedKey(
+        in manager: SwiftDashSDK.KeychainManager,
+        path: String,
+        identityId: String,
+        publicKey: Data
+    ) {
+        XCTAssertNotNil(
+            manager.storeIdentityPrivateKey(
+                Data(repeating: publicKey[0], count: 32),
+                derivationPath: path,
+                metadata: .init(
+                    identityId: identityId,
+                    keyId: 0,
+                    walletId: Data(repeating: 0xcc, count: 32).toHexString(),
+                    identityIndex: 0,
+                    keyIndex: 0,
+                    derivationPath: path,
+                    publicKey: publicKey.toHexString(),
+                    publicKeyHash: Data(repeating: publicKey[0], count: 20).toHexString(),
+                    keyType: 0,
+                    purpose: 0,
+                    securityLevel: 0
+                )
+            )
+        )
+    }
+
 
     /// Inserts an identity with a DPNS name, a DashPay profile, a contact
     /// request, a contact profile, a payment, an ignored sender and two

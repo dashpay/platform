@@ -495,9 +495,12 @@ struct IdentitiesContentView: View {
                 modelContext: modelContext,
                 deleteSpecialKey: { keychain.deleteSpecialKey(identityId: $0, keyType: $1) },
                 deleteKeyData: { keychain.deleteKeyData(identifier: $0) },
-                deleteAllForIdentity: { identityId, identityIdBase58 in
-                    try keychain.deleteAllKeychainItems(forIdentityId: identityId)
-                    try keychain.deleteAllIdentityPrivateKeys(forIdentityIdBase58: identityIdBase58)
+                deleteAllForIdentity: { identityId, identityIdBase58, publicKeys in
+                    try keychain.deleteAllPrivateKeys(
+                        ofIdentityId: identityId,
+                        identityIdBase58: identityIdBase58,
+                        publicKeys: publicKeys
+                    )
                 }
             )
         } catch {
@@ -537,15 +540,17 @@ struct IdentitiesContentView: View {
     ///     stored without a row reference (a load whose save failed) goes
     ///     too and a later load can store the key again, then delete the
     ///     snapshotted identifiers.
-    ///  4. Sweep the Keychain by identity id (`deleteAllForIdentity`: the
-    ///     `privkey_<identityHex>_*` and `specialkey_<identityHex>_*`
+    ///  4. Sweep the Keychain for this identity
+    ///     (`deleteAllForIdentity`, `KeychainManager.deleteAllPrivateKeys(ofIdentityId:identityIdBase58:publicKeys:)`):
+    ///     the `privkey_<identityHex>_*` and `specialkey_<identityHex>_*`
     ///     accounts, and the `identity_privkey.*` items whose metadata
-    ///     names this identity). This also deletes keys the row no longer
-    ///     references, for example a key left by an earlier removal the
-    ///     Keychain refused, which a reload can find by identity id and key
-    ///     index but does not overwrite (a reload stores a `privkey_*`
-    ///     account, not the old `identity_privkey.*` one). So removing the
-    ///     identity again cleans up what an earlier removal left behind.
+    ///     names this identity or one of its public keys (registration
+    ///     writes `pending` as the identity id). This also deletes keys
+    ///     the row no longer references, for example a key left by an
+    ///     earlier removal the Keychain refused, which a reload can find
+    ///     but does not overwrite (a reload stores a `privkey_*` account,
+    ///     not the old `identity_privkey.*` one). So removing the identity
+    ///     again cleans up what an earlier removal left behind.
     ///
     /// A failed Keychain delete in steps 3 and 4 (for example while the
     /// device is locked) is returned rather than ignored. Deleting the
@@ -556,10 +561,11 @@ struct IdentitiesContentView: View {
         modelContext: ModelContext,
         deleteSpecialKey: (Data, SpecialKeyType) -> Bool,
         deleteKeyData: (String) -> Bool,
-        deleteAllForIdentity: (Data, String) throws -> Void
+        deleteAllForIdentity: (Data, String, [Data]) throws -> Void
     ) throws -> [String] {
         let identityId = identity.identityId
         let identityIdBase58 = identity.identityIdBase58
+        let publicKeys = identity.publicKeys.map(\.publicKeyData)
         var referenced: [(name: String, identifier: String)] = []
         for publicKey in identity.publicKeys.sorted(by: { $0.keyId < $1.keyId }) {
             if let identifier = publicKey.privateKeyKeychainIdentifier {
@@ -592,7 +598,7 @@ struct IdentitiesContentView: View {
             }
         }
         do {
-            try deleteAllForIdentity(identityId, identityIdBase58)
+            try deleteAllForIdentity(identityId, identityIdBase58, publicKeys)
         } catch {
             keysLeft.append("other private keys")
         }
