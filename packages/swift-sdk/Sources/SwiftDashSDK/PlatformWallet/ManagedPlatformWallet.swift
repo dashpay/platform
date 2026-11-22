@@ -4051,9 +4051,9 @@ extension ManagedPlatformWallet {
     /// budget AND to what is left of it, in credits; `expiresAt` moves the
     /// key's expiry to that block time in milliseconds and must be later
     /// than the one the key carries. At least one of the two must be given.
-    /// A limit the key does not already have, a zero top-up and an expiry
-    /// that is not later are refused before anything is signed, because
-    /// Platform would refuse them and charge for it.
+    /// A disabled key, a limit the key does not already have, a zero top-up
+    /// and an expiry that is not later are refused before anything is
+    /// signed, because Platform would refuse them and charge for it.
     ///
     /// No identity revision is claimed or bumped. The cached key and its
     /// `PersistentPublicKey` row follow through the persist-identity-keys
@@ -4093,6 +4093,90 @@ extension ManagedPlatformWallet {
                 )
             }
             try result.check()
+        }.value
+    }
+
+    /// What `updateIdentityKeyLimits` would do for the same arguments, as
+    /// `previewIdentityKeyLimitsUpdate` reports it. All values come from
+    /// Rust; credits and block time milliseconds, as on the key.
+    public struct IdentityKeyLimitsUpdatePreview: Equatable, Sendable {
+        /// The key that would sign the update.
+        public let signingKeyId: UInt32
+        /// The total budget the key carries now, `nil` when it has none.
+        public let currentTotalBudget: UInt64?
+        /// The expiry the key carries now, `nil` when it has none.
+        public let currentExpiresAt: UInt64?
+        /// The total budget the update would set, `nil` when no budget
+        /// was asked to be added.
+        public let newTotalBudget: UInt64?
+        /// The expiry the update would set, `nil` when none was asked for.
+        public let newExpiresAt: UInt64?
+
+        public init(
+            signingKeyId: UInt32,
+            currentTotalBudget: UInt64?,
+            currentExpiresAt: UInt64?,
+            newTotalBudget: UInt64?,
+            newExpiresAt: UInt64?
+        ) {
+            self.signingKeyId = signingKeyId
+            self.currentTotalBudget = currentTotalBudget
+            self.currentExpiresAt = currentExpiresAt
+            self.newTotalBudget = newTotalBudget
+            self.newExpiresAt = newExpiresAt
+        }
+    }
+
+    /// Ask the wallet what raising the limits of one of an identity's keys
+    /// would do, without signing or sending anything: which key would sign,
+    /// the limits the key carries, and the limits `addBudget` (credits) and
+    /// `expiresAt` (block time in milliseconds) would set.
+    ///
+    /// With neither given it answers whether the key can be raised at all,
+    /// which is what a form asks before it offers the action. A refusal is
+    /// thrown with Rust's reason as `localizedDescription`. Every rule is
+    /// decided in `platform-wallet`
+    /// (`IdentityWallet::preview_identity_key_limits_update`), and
+    /// `updateIdentityKeyLimits` runs the same preview.
+    public func previewIdentityKeyLimitsUpdate(
+        identityId: Identifier,
+        keyId: UInt32,
+        addBudget: UInt64? = nil,
+        expiresAt: UInt64? = nil,
+        signer: KeychainSigner
+    ) async throws -> IdentityKeyLimitsUpdatePreview {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let budgetToAdd = addBudget
+        let newExpiresAt = expiresAt
+        return try await Task.detached(priority: .userInitiated) {
+            _ = signer
+            var out = IdentityKeyLimitsUpdatePreviewFFI()
+            let result = idBytes.withUnsafeBufferPointer {
+                idBp -> PlatformWalletFFIResult in
+                platform_wallet_preview_identity_key_limits_update(
+                    handle,
+                    idBp.baseAddress!,
+                    keyId,
+                    budgetToAdd != nil,
+                    budgetToAdd ?? 0,
+                    newExpiresAt != nil,
+                    newExpiresAt ?? 0,
+                    signerHandle,
+                    &out
+                )
+            }
+            try result.check()
+            return IdentityKeyLimitsUpdatePreview(
+                signingKeyId: out.signing_key_id,
+                currentTotalBudget: out.has_current_total_budget ? out.current_total_budget : nil,
+                currentExpiresAt: out.has_current_expires_at ? out.current_expires_at : nil,
+                newTotalBudget: out.has_new_total_budget ? out.new_total_budget : nil,
+                newExpiresAt: out.has_new_expires_at ? out.new_expires_at : nil
+            )
         }.value
     }
 
