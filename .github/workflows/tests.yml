@@ -502,28 +502,6 @@ jobs:
       target: ${{ matrix.target }}
       build_args: ${{ matrix.build_args }}
 
-  cleanup-images:
-    name: Delete old CI Docker images
-    needs:
-      - check-secrets
-    # GHCR keeps every image the build-images job pushes until it is deleted.
-    # Pull requests are left out: the dev branches are pushed to often enough,
-    # and each run spends API calls that all workflows of the repository share.
-    if: ${{ needs.check-secrets.outputs.can_build_images == 'true' && github.event_name != 'pull_request' }}
-    runs-on: ${{ vars.DASH_LIGHT_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 10
-    steps:
-      - name: Check out the cleanup script
-        uses: actions/checkout@v4
-        with:
-          sparse-checkout: .github/scripts
-          sparse-checkout-cone-mode: false
-
-      - name: Delete CI images older than three days
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: python3 .github/scripts/cleanup-ci-images.py
-
   rs-workspace-tests:
     name: Rust workspace tests
     needs:

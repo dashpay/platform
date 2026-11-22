@@ -20,6 +20,10 @@ jobs:
     runs-on: ubuntu-24.04
     # Cold helper-image pulls can consume most of 15 minutes before tests start.
     timeout-minutes: 30
+    # Pulls the CI images of this commit; only the image build may push them.
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Check out repo
         uses: actions/checkout@v4

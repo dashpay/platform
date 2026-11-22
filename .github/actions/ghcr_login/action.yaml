@@ -6,10 +6,9 @@ description: |
   commit and hands to its test jobs.
 
   The login uses the job's GITHUB_TOKEN, so no registry credentials are stored
-  in the repository. The token needs `packages: write` to push the images and
-  `packages: read` to pull them. The Tests workflow declares no permissions, so
-  its jobs get the repository's default token, which has both except in a pull
-  request from a fork.
+  in the repository. The job that pushes the images declares `packages: write`
+  and the jobs that pull them declare `packages: read`. A pull request from a
+  fork gets a read-only token whatever a job declares, so it cannot push.
 inputs:
   token:
     description: GITHUB_TOKEN of the calling job

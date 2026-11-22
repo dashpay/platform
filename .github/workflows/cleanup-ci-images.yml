@@ -1,0 +1,51 @@
+name: CI image cleanup
+
+# GHCR keeps every image the Tests workflow pushes until it is deleted. The
+# sweep is a workflow of its own, so a registry or API problem cannot change
+# the result of a Tests run.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "40 4 * * *"
+  # A scheduled run starts from the default branch only, so pushes keep the
+  # sweep going on a dev branch that is not the default one.
+  push:
+    branches:
+      - master
+      - "v*-dev"
+  # A pull request that changes the sweep dry-runs it: it reads the packages
+  # and the registry like a real run and deletes nothing.
+  pull_request:
+    paths:
+      - .github/workflows/cleanup-ci-images.yml
+      - .github/scripts/cleanup-ci-images.py
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || 'sweep' }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Delete old CI Docker images
+    # A pull request runs its own version of the script, so this stays on a
+    # GitHub-hosted runner.
+    runs-on: ubuntu-24.04
+    # The script stops itself after five minutes.
+    timeout-minutes: 10
+    steps:
+      - name: Check out the cleanup script
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Delete CI images older than three days
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ github.event_name == 'pull_request' && '--dry-run' || '' }}
+        run: python3 .github/scripts/cleanup-ci-images.py $DRY_RUN
