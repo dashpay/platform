@@ -226,7 +226,7 @@ pub trait ContextProvider: Send + Sync {
     /// The default, `None`, makes no claim. A provider wrapping another
     /// forwards this, `policy_revision`, `set_quorum_mode` and
     /// `spv_source_slot`, or the wrapped provider reads as one that says
-    /// nothing, never changes policy, has no mode and no SPV slot.
+    /// nothing, reports no policy revision, has no mode and no SPV slot.
     fn quorum_source(&self) -> Option<QuorumKeySource> {
         None
     }
@@ -240,7 +240,9 @@ pub trait ContextProvider: Send + Sync {
     ///
     /// The default, `None`, makes no claim, and no earlier result may be
     /// reused. A provider opts in only when it can report every change,
-    /// including those of the providers it delegates quorum lookups to.
+    /// including those of the providers it delegates quorum lookups to. An
+    /// SPV client published into an [`SpvSourceSlot`] is not tracked: it must
+    /// serve only SPV-verified keys.
     fn policy_revision(&self) -> Option<u64> {
         None
     }

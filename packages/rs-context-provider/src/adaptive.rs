@@ -299,11 +299,12 @@ impl ContextProvider for AdaptiveContextProvider {
         })
     }
 
-    /// Its own mode changes plus the trusted provider's revision. The SPV
-    /// route is strict SPV however the published client changes.
+    /// Its own mode changes plus the trusted provider's revision.
+    /// Publishing, replacing or withdrawing the SPV client is not a change:
+    /// Spv mode accepts only SPV keys, and Auto accepts either source.
     fn policy_revision(&self) -> Option<u64> {
         let own = self.mode_and_revision.load(Ordering::Acquire) >> 8;
-        Some(own.wrapping_add(self.trusted.policy_revision()?))
+        own.checked_add(self.trusted.policy_revision()?)
     }
 
     fn set_quorum_mode(&self, mode: ContextProviderMode) -> Result<(), ContextProviderError> {

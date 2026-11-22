@@ -35,7 +35,7 @@
 //! A third guard ties the set to how it was verified. A request records the
 //! SDK's context provider and its
 //! [`policy_revision`](ContextProvider::policy_revision), which advances on
-//! every quorum mode change, before it is sent. The set is stored only if
+//! every policy change, such as a quorum mode switch, before it is sent. The set is stored only if
 //! both are unchanged when it arrives, and returned only while they still
 //! match. A provider that reports no revision, which is the default, is
 //! never cached against, so a spend never reuses evidence that an earlier
@@ -75,7 +75,7 @@ pub struct RecordedAnchorCache {
 }
 
 /// What verifies the SDK's proofs: the installed context provider and its
-/// policy revision, which an adaptive provider advances on every mode change.
+/// policy revision, which advances on every policy change.
 #[derive(Debug, Clone)]
 struct ProofPolicy {
     provider: Weak<dyn ContextProvider>,
