@@ -3099,6 +3099,71 @@ async fn should_refuse_a_generic_broadcast_of_a_private_document_transition_unti
     }
 }
 
+/// A shield from an identity (type 21) or an identity top-up from the shielded pool (type 22)
+/// built elsewhere and sent through the generic broadcast is gated from protocol version 14:
+/// from an SDK at 14, seeded or pinned, on a network a verified answer shows at 13, it is
+/// refused locally instead of broadcast to be rejected.
+#[tokio::test]
+async fn should_refuse_a_generic_broadcast_of_identity_shielded_payments_until_14() {
+    use dpp::state_transition::identity_top_up_from_shielded_pool_transition::v0::IdentityTopUpFromShieldedPoolTransitionV0;
+    use dpp::state_transition::identity_top_up_from_shielded_pool_transition::IdentityTopUpFromShieldedPoolTransition;
+    use dpp::state_transition::shield_from_identity_transition::v0::ShieldFromIdentityTransitionV0;
+    use dpp::state_transition::shield_from_identity_transition::ShieldFromIdentityTransition;
+    use dpp::state_transition::StateTransition;
+
+    let action = SerializedAction {
+        nullifier: [1; 32],
+        rk: [2; 32],
+        cmx: [3; 32],
+        encrypted_note: vec![4; 216],
+        cv_net: [5; 32],
+        spend_auth_sig: [6; 64],
+    };
+    let shield = StateTransition::ShieldFromIdentity(ShieldFromIdentityTransition::V0(
+        ShieldFromIdentityTransitionV0 {
+            identity_id: Identifier::new([4; 32]),
+            amount: 1_000,
+            actions: vec![action.clone(), action.clone()],
+            anchor: [7; 32],
+            proof: vec![8; 64],
+            binding_signature: [9; 64],
+            nonce: 1,
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        },
+    ));
+    let top_up = StateTransition::IdentityTopUpFromShieldedPool(
+        IdentityTopUpFromShieldedPoolTransition::V0(IdentityTopUpFromShieldedPoolTransitionV0 {
+            identity_id: Identifier::new([4; 32]),
+            actions: vec![action.clone(), action],
+            top_up_amount: 1_000,
+            anchor: [7; 32],
+            proof: vec![8; 64],
+            binding_signature: [9; 64],
+        }),
+    );
+    for (kind, transition) in [("type 21", shield), ("type 22", top_up)] {
+        for pinned in [false, true] {
+            let sdk = mock_sdk(V14, pinned, V13);
+            answer_probe(&sdk, "pv13").await;
+            match transition.broadcast(&sdk, None).await {
+                Err(Error::ProtocolVersionNotActive {
+                    method: "broadcast_state_transition",
+                    required: V14,
+                    network: V13,
+                    cause: None,
+                    ..
+                }) => {}
+                other => {
+                    panic!("{kind}, pinned {pinned}: expected a local refusal, got {other:?}")
+                }
+            }
+            assert_eq!(probes(&sdk).await, 1, "{kind}, pinned {pinned}");
+        }
+    }
+}
+
 /// History reads choose their request version from what the gate's probe proves: request V0
 /// on a network below protocol 15, V1 at it.
 mod document_history {
