@@ -33,10 +33,13 @@ final class UpdateContractImportTests: XCTestCase {
         let groups = """
             {"0":{"$format_version":"0","members":{"4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF":1},"requiredPower":1}}
             """
+        let config = """
+            {"$formatVersion":"0","canBeDeleted":false,"readonly":false,"keepsHistory":false}
+            """
         let exported = """
             {"$formatVersion":"1","id":"GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",\
             "ownerId":"4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF","version":3,\
-            "config":{"$formatVersion":"0","canBeDeleted":false,"readonly":false,"keepsHistory":false},\
+            "config":\(config),\
             "schemaDefs":null,\
             "documentSchemas":\(documents),"tokens":\(tokens),"groups":\(groups),\
             "keywords":["alpha","beta"],"description":"A contract"}
@@ -49,6 +52,43 @@ final class UpdateContractImportTests: XCTestCase {
         XCTAssertEqual(fields.groups, try canonical(groups))
         XCTAssertEqual(fields.keywords, #"["alpha","beta"]"#)
         XCTAssertEqual(fields.description, "A contract")
+        XCTAssertEqual(fields.config, try canonical(config))
+    }
+
+    /// The config is written as given, every member kept (a `null` member
+    /// too), so an export that changes it is not dropped.
+    func testShouldImportAnExportedContractsConfigVerbatim() throws {
+        let config = """
+            {"$formatVersion":"1","canBeDeleted":false,"readonly":false,"keepsHistory":false,\
+            "documentsKeepHistoryContractDefault":false,"documentsMutableContractDefault":true,\
+            "documentsCanBeDeletedContractDefault":true,"requiresIdentityEncryptionBoundedKey":null,\
+            "requiresIdentityDecryptionBoundedKey":null,"sizedIntegerTypes":true}
+            """
+        let exported = """
+            {"$formatVersion":"1","id":"GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",\
+            "ownerId":"4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF","version":2,\
+            "config":\(config),"schemaDefs":null,\
+            "documentSchemas":{"note":{"type":"object","properties":{}}},"tokens":{},"groups":{},\
+            "keywords":[],"description":null}
+            """
+
+        let fields = try UpdateContractImport.fields(from: exported)
+
+        XCTAssertEqual(fields.config, try canonical(config))
+        XCTAssertEqual(try UpdateContractImport.WalletArguments(fields).config, try canonical(config))
+    }
+
+    /// A `null` config and no config both keep the live one.
+    func testShouldLeaveTheConfigEmptyWhenItIsNullOrAbsent() throws {
+        for text in [
+            #"{"config":null,"documentSchemas":{"note":{"type":"object","properties":{}}}}"#,
+            #"{"documentSchemas":{"note":{"type":"object","properties":{}}}}"#,
+        ] {
+            let fields = try UpdateContractImport.fields(from: text)
+
+            XCTAssertEqual(fields.config, "", text)
+            XCTAssertNil(try UpdateContractImport.WalletArguments(fields).config, text)
+        }
     }
 
     /// A contract without a description exports `"description": null`.
@@ -97,7 +137,8 @@ final class UpdateContractImportTests: XCTestCase {
                 tokens: "",
                 groups: #"{"1":{"members":{},"requiredPower":2}}"#,
                 keywords: "",
-                description: ""
+                description: "",
+                config: ""
             )
         )
     }
@@ -225,5 +266,70 @@ final class UpdateContractImportTests: XCTestCase {
         XCTAssertNil(try UpdateContractImport.WalletArguments(fields).description)
         fields.description = " "
         XCTAssertEqual(try UpdateContractImport.WalletArguments(fields).description, " ")
+    }
+
+    func testShouldPassANonEmptyConfigAndKeepTheLiveOneForAnEmptyField() throws {
+        var fields = UpdateContractImport.Fields.empty
+        XCTAssertNil(try UpdateContractImport.WalletArguments(fields).config)
+        fields.config = " \n "
+        XCTAssertNil(try UpdateContractImport.WalletArguments(fields).config)
+        fields.config = #"  {"readonly":true} "#
+        XCTAssertEqual(try UpdateContractImport.WalletArguments(fields).config, #"{"readonly":true}"#)
+    }
+
+    // MARK: - Field equality
+
+    /// `Fields` equality is by bytes: the wallet receives the bytes, so two
+    /// spellings Swift `String` calls equal must not share a review.
+    func testShouldNotEqualFieldsThatDifferOnlyByNormalizationForm() {
+        let precomposed = "caf\u{00E9}"
+        let decomposed = "cafe\u{0301}"
+        // The case this guards: Swift `String` equality calls them equal.
+        XCTAssertEqual(precomposed, decomposed)
+
+        var lhs = UpdateContractImport.Fields.empty
+        var rhs = UpdateContractImport.Fields.empty
+        lhs.description = precomposed
+        rhs.description = decomposed
+        XCTAssertNotEqual(lhs, rhs)
+
+        lhs = .empty
+        rhs = .empty
+        lhs.keywords = "\(precomposed), tea"
+        rhs.keywords = "\(decomposed), tea"
+        XCTAssertNotEqual(lhs, rhs)
+    }
+
+    func testShouldEqualFieldsWithIdenticalBytes() {
+        var lhs = UpdateContractImport.Fields.empty
+        var rhs = UpdateContractImport.Fields.empty
+        XCTAssertEqual(lhs, rhs)
+
+        lhs.description = "caf\u{00E9}"
+        rhs.description = "caf\u{00E9}"
+        lhs.keywords = "cafe\u{0301}, tea"
+        rhs.keywords = "cafe\u{0301}, tea"
+        lhs.config = #"{"readonly":true}"#
+        rhs.config = #"{"readonly":true}"#
+        XCTAssertEqual(lhs, rhs)
+
+        rhs.config = #"{"readonly":false}"#
+        XCTAssertNotEqual(lhs, rhs)
+    }
+
+    // MARK: - Input budget
+
+    func testShouldAcceptAnInputUpToTheBudget() {
+        XCTAssertNoThrow(try UpdateContractImport.checkSize(byteCount: 0))
+        XCTAssertNoThrow(try UpdateContractImport.checkSize(byteCount: UpdateContractImport.maxInputBytes))
+    }
+
+    func testShouldRefuseAnInputOverTheBudgetNamingTheLimit() {
+        XCTAssertThrowsError(
+            try UpdateContractImport.checkSize(byteCount: UpdateContractImport.maxInputBytes + 1)
+        ) { error in
+            XCTAssertEqual(error as? UpdateContractImport.ImportError, .tooLarge)
+            XCTAssertTrue(error.localizedDescription.contains("4 MiB"), error.localizedDescription)
+        }
     }
 }

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Fills the Update Contract screen's five fields from pasted or imported
+/// Fills the Update Contract screen's six fields from pasted or imported
 /// contract JSON, and turns the fields into the wallet's update arguments.
 ///
 /// Unlike the register flow's `PasteboardContractCandidate.classify`, the
@@ -10,17 +10,55 @@ import Foundation
 /// refused there. Nothing here checks what a section says; that is the
 /// wallet's and Platform's to decide.
 enum UpdateContractImport {
-    /// The five editor strings of the Update Contract screen.
+    /// The most bytes the screen reads from one source (a file or the
+    /// clipboard) before parsing it. A UI input budget that keeps a huge
+    /// file from being read whole into memory, not a Platform limit:
+    /// Platform decides how large a contract may be.
+    static let maxInputBytes = 4 * 1024 * 1024
+
+    /// Refuses a source of `byteCount` bytes when it is over
+    /// `maxInputBytes`.
+    static func checkSize(byteCount: Int) throws {
+        if byteCount > maxInputBytes {
+            throw ImportError.tooLarge
+        }
+    }
+
+    /// The six editor strings of the Update Contract screen.
+    ///
+    /// Equality compares the UTF-8 bytes of every field. Swift `String`
+    /// equality treats canonically equivalent spellings as equal (`café`
+    /// precomposed and decomposed), but the wallet receives the bytes, so an
+    /// edit that changes only the normalization form must still clear a
+    /// review made with the other bytes.
     struct Fields: Equatable {
         var documents: String
         var tokens: String
         var groups: String
         var keywords: String
         var description: String
+        /// The contract configuration JSON. Empty keeps the live one.
+        var config: String
 
         /// The fields as the screen opens: documents `{}` (no document type
         /// changes), everything else empty (keep the live value).
-        static let empty = Fields(documents: "{}", tokens: "", groups: "", keywords: "", description: "")
+        static let empty = Fields(
+            documents: "{}",
+            tokens: "",
+            groups: "",
+            keywords: "",
+            description: "",
+            config: ""
+        )
+
+        static func == (lhs: Fields, rhs: Fields) -> Bool {
+            Array(lhs.documents.utf8) == Array(rhs.documents.utf8)
+                && Array(lhs.tokens.utf8) == Array(rhs.tokens.utf8)
+                && Array(lhs.groups.utf8) == Array(rhs.groups.utf8)
+                && Array(lhs.keywords.utf8) == Array(rhs.keywords.utf8)
+                && Array(lhs.description.utf8) == Array(rhs.description.utf8)
+                && Array(lhs.config.utf8) == Array(rhs.config.utf8)
+        }
     }
 
     enum ImportError: Error, LocalizedError, Equatable {
@@ -36,6 +74,8 @@ enum UpdateContractImport {
         /// A section's value cannot be written to its field: keywords must be
         /// a JSON array and the description a JSON string.
         case unsupportedValue(section: String, expected: String)
+        /// The source is over `maxInputBytes`.
+        case tooLarge
 
         var errorDescription: String? {
             switch self {
@@ -47,16 +87,18 @@ enum UpdateContractImport {
                 if keys.isEmpty {
                     return "The JSON object is empty."
                 }
-                return "No contract sections found (documents, documentSchemas, tokens, tokenSchemas, groups, keywords, description). Top-level keys: \(keys.joined(separator: ", "))."
+                return "No contract sections found (documents, documentSchemas, tokens, tokenSchemas, groups, keywords, description, config). Top-level keys: \(keys.joined(separator: ", "))."
             case .sectionGivenTwice(let first, let second):
                 return "The JSON has both `\(first)` and `\(second)`; keep one."
             case .unsupportedValue(let section, let expected):
                 return "`\(section)` must be \(expected)."
+            case .tooLarge:
+                return "The input is larger than this screen's import limit of\(UpdateContractImport.maxInputBytes / (1024 * 1024)) MiB."
             }
         }
     }
 
-    /// What an import read: the five fields, and whether the source carries
+    /// What an import read: the six fields, and whether the source carries
     /// shared definitions the fields leave out. Kept outside `Fields`, whose
     /// equality the screen uses to clear a review on edit.
     struct Imported {
@@ -71,11 +113,13 @@ enum UpdateContractImport {
     /// value of `Fields.empty`.
     ///
     /// The text must be a JSON object. Read are `documents` or
-    /// `documentSchemas`, `tokens` or `tokenSchemas`, `groups`, `keywords` and
-    /// `description`; every other key (`id`, `ownerId`, `version`, `config`,
+    /// `documentSchemas`, `tokens` or `tokenSchemas`, `groups`, `keywords`,
+    /// `description` and `config` (a `null` config is ignored, so the live
+    /// one is kept); every other key (`id`, `ownerId`, `version`,
     /// `$formatVersion`, `schemaDefs`, ...) is ignored, so an exported
     /// contract imports as is. An object with none of those keys whose values
-    /// all look like document schemas is read as a bare document schemas map.
+    /// all look like document schemas is read as a bare document schemas
+    /// map, which has no config.
     static func fields(from text: String) throws -> Fields {
         try read(from: text).fields
     }
@@ -113,9 +157,13 @@ enum UpdateContractImport {
         let groups = object["groups"]
         let keywords = object["keywords"]
         let description = object["description"]
+        // A `null` config is the same as none: the live one is kept.
+        let config: Any? = object["config"].flatMap { value -> Any? in value is NSNull ? nil : value }
 
         var fields = Fields.empty
-        guard documents != nil || tokens != nil || groups != nil || keywords != nil || description != nil else {
+        guard documents != nil || tokens != nil || groups != nil || keywords != nil || description != nil
+            || config != nil
+        else {
             guard !object.isEmpty, object.values.allSatisfy(looksLikeDocumentSchema) else {
                 throw ImportError.noSections(topLevelKeys: object.keys.sorted())
             }
@@ -147,6 +195,11 @@ enum UpdateContractImport {
                 throw ImportError.unsupportedValue(section: "description", expected: "a JSON string")
             }
             fields.description = descriptionText
+        }
+        // Written as given: Platform decides which configuration changes it
+        // accepts.
+        if let config {
+            fields.config = try json(config)
         }
         return Imported(fields: fields, carriesSharedDefinitions: carriesSharedDefinitions)
     }
@@ -183,7 +236,7 @@ enum UpdateContractImport {
         return text
     }
 
-    /// The five fields in the form the wallet calls take. Converts text
+    /// The six fields in the form the wallet calls take. Converts text
     /// formats only; what the contents mean is the wallet's and Platform's
     /// to decide.
     struct WalletArguments {
@@ -192,6 +245,8 @@ enum UpdateContractImport {
         let groups: String?
         let keywords: String?
         let description: String?
+        /// The configuration JSON, or nil to keep the live configuration.
+        let config: String?
 
         init(_ fields: Fields) throws {
             let documents = fields.documents.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -202,6 +257,8 @@ enum UpdateContractImport {
             self.keywords = try Self.keywordsJSON(from: fields.keywords)
             // Verbatim: only an empty field keeps the live description.
             self.description = fields.description.isEmpty ? nil : fields.description
+            let config = fields.config.trimmingCharacters(in: .whitespacesAndNewlines)
+            self.config = config.isEmpty ? nil : config
         }
 
         /// The keywords field as the wallet's JSON array, or nil to keep the

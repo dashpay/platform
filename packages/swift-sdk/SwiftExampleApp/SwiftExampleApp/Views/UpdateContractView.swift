@@ -7,14 +7,14 @@ import UniformTypeIdentifiers
 /// counterpart of the Kotlin app's `UpdateContractScreen`, with a review step
 /// in front of the broadcast.
 ///
-/// The five inputs are the wallet's update arguments. The wallet fetches the
+/// The six inputs are the wallet's update arguments. The wallet fetches the
 /// live contract and merges them onto it: document types, tokens and groups
 /// are added or replaced key by key, omitted ones keep their on-chain
-/// definition, and keywords and description replace the live ones when
-/// given. "Review Changes" asks the wallet what the update would change
-/// (`previewDataContractUpdate`); "Update Contract" is offered only when that
-/// review reports a change, so a paid update that changes nothing is not
-/// sent. Whether Platform accepts the update is decided by the network when
+/// definition, and keywords, description and configuration replace the live
+/// ones when given. "Review Changes" asks the wallet what the update would
+/// change (`previewDataContractUpdate`); "Update Contract" is offered only
+/// when that review reports a change, so a paid update that changes nothing
+/// is not sent. Whether Platform accepts the update is decided by the network when
 /// it is broadcast; this screen checks no contract update rule.
 struct UpdateContractView: View {
     let contract: PersistentDataContract
@@ -29,6 +29,7 @@ struct UpdateContractView: View {
     @State private var groupsJSON = ""
     @State private var keywords = ""
     @State private var descriptionText = ""
+    @State private var configJSON = ""
 
     /// The review on screen and the wallet arguments it was made with. The
     /// update is sent with exactly these arguments.
@@ -68,6 +69,7 @@ struct UpdateContractView: View {
             tokensSection
             groupsSection
             metadataSection
+            configSection
             reviewSection
             submitSection
         }
@@ -232,6 +234,17 @@ struct UpdateContractView: View {
     }
 
     @ViewBuilder
+    private var configSection: some View {
+        Section {
+            jsonEditor(text: $configJSON, identifier: "updateContract.configJson")
+        } header: {
+            Text("Contract Configuration (JSON, optional)")
+        } footer: {
+            Text("Replaces the live configuration when given; left empty, the live configuration is kept. Platform decides which configuration changes it accepts.")
+        }
+    }
+
+    @ViewBuilder
     private var reviewSection: some View {
         Section {
             Button {
@@ -344,14 +357,16 @@ struct UpdateContractView: View {
         isReviewing || isSubmitting || isRefreshing
     }
 
-    /// The raw text of the five inputs. Any change clears the review.
+    /// The raw text of the six inputs. Any change clears the review,
+    /// including one to the bytes alone (`Fields` compares UTF-8 bytes).
     private var inputs: UpdateContractImport.Fields {
         UpdateContractImport.Fields(
             documents: documentsJSON,
             tokens: tokensJSON,
             groups: groupsJSON,
             keywords: keywords,
-            description: descriptionText
+            description: descriptionText,
+            config: configJSON
         )
     }
 
@@ -389,22 +404,40 @@ struct UpdateContractView: View {
                 if scoped { url.stopAccessingSecurityScopedResource() }
             }
             do {
-                let data = try Data(contentsOf: url)
+                // Refuse an oversized file before reading it whole: by the
+                // size it reports, and by reading at most one byte past the
+                // budget, which also covers a size that is not reported.
+                if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                    try UpdateContractImport.checkSize(byteCount: size)
+                }
+                let handle = try FileHandle(forReadingFrom: url)
+                defer { try? handle.close() }
+                let data = try handle.read(upToCount: UpdateContractImport.maxInputBytes + 1) ?? Data()
+                try UpdateContractImport.checkSize(byteCount: data.count)
                 guard let text = String(data: data, encoding: .utf8) else {
                     sourceMessage = "\(url.lastPathComponent) is not UTF-8 text."
                     return
                 }
                 fill(from: text, source: url.lastPathComponent)
+            } catch let error as UpdateContractImport.ImportError {
+                sourceMessage = "Nothing filled from \(url.lastPathComponent): \(Self.describe(error))"
             } catch {
                 sourceMessage = "Could not read \(url.lastPathComponent): \(error.localizedDescription)"
             }
         }
     }
 
-    /// Fill all five fields from `text` with `UpdateContractImport`, which
+    /// Fill all six fields from `text` with `UpdateContractImport`, which
     /// writes each supplied section as given; a field the source does not
-    /// carry is reset.
+    /// carry is reset. Every source passes through here, so text over the
+    /// input budget is refused before it is parsed.
     private func fill(from text: String, source: String) {
+        do {
+            try UpdateContractImport.checkSize(byteCount: text.utf8.count)
+        } catch {
+            sourceMessage = "Nothing filled from \(source): \(Self.describe(error))"
+            return
+        }
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             sourceMessage = "The \(source) holds no contract JSON."
             return
@@ -422,6 +455,7 @@ struct UpdateContractView: View {
         groupsJSON = fields.groups
         keywords = fields.keywords
         descriptionText = fields.description
+        configJSON = fields.config
         fieldsDropSharedDefinitions = imported.carriesSharedDefinitions
         var message = "Filled from \(source)."
         if imported.carriesSharedDefinitions {
@@ -456,7 +490,8 @@ struct UpdateContractView: View {
                 tokenSchemasJSON: arguments.tokens,
                 groupsJSON: arguments.groups,
                 keywordsJSON: arguments.keywords,
-                description: arguments.description
+                description: arguments.description,
+                contractConfigJSON: arguments.config
             )
             // An edit made while the review ran is not what was reviewed.
             if inputs == reviewedInputs {
@@ -486,6 +521,7 @@ struct UpdateContractView: View {
                 groupsJSON: arguments.groups,
                 keywordsJSON: arguments.keywords,
                 description: arguments.description,
+                contractConfigJSON: arguments.config,
                 // Bind the update to the reviewed contract: if the contract
                 // changed since the review, the wallet refuses the update.
                 expectedCurrentVersion: review.preview.currentVersion,
@@ -643,6 +679,7 @@ private struct UpdateContractPreviewSection: View {
                 sectionRows(title: "Groups", changes: preview.groups)
                 flagRow("Keywords", changed: preview.keywordsChanged)
                 flagRow("Description", changed: preview.descriptionChanged)
+                flagRow("Configuration", changed: preview.configChanged)
             } else {
                 Text("No changes")
                     .foregroundColor(.secondary)
