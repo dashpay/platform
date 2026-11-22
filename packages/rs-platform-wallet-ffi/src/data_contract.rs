@@ -218,9 +218,9 @@ pub unsafe extern "C" fn platform_wallet_preview_data_contract_update(
     config_json: *const c_char,
     out_preview_json: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
-    check_ptr!(documents_schema_json);
     check_ptr!(out_preview_json);
     *out_preview_json = ptr::null_mut();
+    check_ptr!(documents_schema_json);
 
     let owner_id = unwrap_result_or_return!(read_identifier(owner_identity_id));
     let contract_id_value = unwrap_result_or_return!(read_identifier(contract_id));
@@ -233,24 +233,25 @@ pub unsafe extern "C" fn platform_wallet_preview_data_contract_update(
     let description_str = unwrap_result_or_return!(read_optional_str(description));
     let config_str = unwrap_result_or_return!(read_optional_str(config_json));
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity_wallet = wallet.identity().clone();
-        block_on_worker(async move {
-            identity_wallet
-                .preview_data_contract_update(
-                    &owner_id,
-                    &contract_id_value,
-                    documents_str,
-                    tokens_str,
-                    groups_str,
-                    keywords_str,
-                    description_str,
-                    config_str,
-                )
-                .await
-        })
+    // Clone the identity wallet under the registry guard and fetch outside
+    // it, so a slow network read does not hold the registry lock.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity_wallet = unwrap_option_or_return!(option);
+    let result = block_on_worker(async move {
+        identity_wallet
+            .preview_data_contract_update(
+                &owner_id,
+                &contract_id_value,
+                documents_str,
+                tokens_str,
+                groups_str,
+                keywords_str,
+                description_str,
+                config_str,
+            )
+            .await
     });
-    let result = unwrap_option_or_return!(option);
     let preview = unwrap_result_or_return!(result);
 
     // A NUL byte inside the JSON would be a serializer bug; refuse it rather

@@ -427,9 +427,9 @@ impl IdentityWallet {
         //    update puts in its place. `preview_data_contract_update`
         //    builds it the same way, so what a preview reports is what
         //    this broadcasts.
-        let ContractUpdateDraft {
-            existing, updated, ..
-        } = self
+        //    A contract that changed since the caller's review is refused
+        //    there, before the draft is built and before any nonce is read.
+        let ContractUpdateDraft { updated, .. } = self
             .draft_data_contract_update(
                 owner_identity_id,
                 contract_id,
@@ -439,20 +439,9 @@ impl IdentityWallet {
                 keywords_json,
                 description,
                 config_json,
+                expected_current_version,
             )
             .await?;
-        // A contract that changed since the caller's review is refused
-        // before any nonce is read, so the update is never built on a
-        // contract the caller did not see.
-        if let Some(expected) = expected_current_version {
-            if existing.version() != expected {
-                return Err(PlatformWalletError::InvalidIdentityData(format!(
-                    "Data contract {contract_id} is at version {}, not the reviewed version \
-                     {expected}; review the update again",
-                    existing.version()
-                )));
-            }
-        }
         let platform_version = self.sdk.version();
 
         // 4. Build + broadcast the update transition. There's no
@@ -504,6 +493,11 @@ impl IdentityWallet {
             .await
             .map_err(PlatformWalletError::Sdk)?;
 
+        // The proof-verified contract replaces the SDK's resolver entry, so
+        // a document of a type this update added can be built and verified
+        // on this SDK without another fetch.
+        self.register_contract_for_proof_verification(&confirmed);
+
         Ok(confirmed)
     }
 
@@ -543,6 +537,7 @@ impl IdentityWallet {
                 keywords_json,
                 description,
                 config_json,
+                None,
             )
             .await?;
         let updated_format = contract_format_json(&draft.updated, "updated", self.sdk.version())?;
@@ -560,6 +555,10 @@ impl IdentityWallet {
     /// first half of `update_data_contract_with_signer` and
     /// `preview_data_contract_update`. Reads Platform, writes nothing and
     /// consumes no nonce.
+    ///
+    /// With `expected_current_version`, a contract Platform now holds at
+    /// another version is refused right after the ownership check, before
+    /// the sections are merged, so a build error cannot hide the mismatch.
     #[allow(clippy::too_many_arguments)]
     async fn draft_data_contract_update(
         &self,
@@ -571,6 +570,7 @@ impl IdentityWallet {
         keywords_json: Option<&str>,
         description: Option<&str>,
         config_json: Option<&str>,
+        expected_current_version: Option<u32>,
     ) -> Result<ContractUpdateDraft, PlatformWalletError> {
         // 2. Fetch the live contract. We seed the update payload from
         //    it (so omitted sections are preserved) and read its
@@ -600,6 +600,16 @@ impl IdentityWallet {
                  cannot update with this identity",
                 existing.owner_id()
             )));
+        }
+
+        if let Some(expected) = expected_current_version {
+            if existing.version() != expected {
+                return Err(PlatformWalletError::InvalidIdentityData(format!(
+                    "Data contract {contract_id} is at version {}, not the reviewed version \
+                     {expected}; review the update again",
+                    existing.version()
+                )));
+            }
         }
 
         let new_version = existing.version().checked_add(1).ok_or_else(|| {
@@ -1489,6 +1499,36 @@ mod tests {
 
         assert!(
             err.to_string().contains("cannot update with this identity"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_stale_reviewed_version_before_building_the_draft() {
+        let contract = registered_contract();
+        let wallet = wallet_answering_only_the_fetch_of(&contract).await;
+
+        // The documents section would fail to build; the stale version must
+        // be what the caller hears about.
+        let err = wallet
+            .identity()
+            .draft_data_contract_update(
+                &Identifier::from([1; 32]),
+                &contract.id(),
+                r#"{"broken": {"type": "not-a-type"}}"#,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(contract.version() + 7),
+            )
+            .await
+            .err()
+            .expect("a stale reviewed version must be refused");
+
+        assert!(
+            err.to_string().contains("not the reviewed version"),
             "unexpected error: {err}"
         );
     }
