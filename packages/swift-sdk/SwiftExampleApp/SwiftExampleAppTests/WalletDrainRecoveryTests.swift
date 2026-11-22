@@ -4,8 +4,9 @@ import SwiftDashSDK
 
 /// Tests the Swift side of Core-to-shielded Max transfers: the durable
 /// operation-id marker, the rule that decides when a marker is forgotten,
-/// the row action (resume only by a known outpoint), the progress lock
-/// match and steps, the filter that keeps one asset lock off two resume
+/// the row action (resume only by the outpoint of a `pending` report) and
+/// status line, the progress lock match and steps (a resume builds
+/// nothing), the filter that keeps one asset lock off two resume
 /// paths, and the rule that keeps a new Max off mainnet.
 final class WalletDrainRecoveryTests: XCTestCase {
 
@@ -17,6 +18,8 @@ final class WalletDrainRecoveryTests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
+        // A test may leave the directory read-only.
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
         try? FileManager.default.removeItem(at: directory)
     }
 
@@ -172,21 +175,23 @@ final class WalletDrainRecoveryTests: XCTestCase {
 
     private let outpoint = WalletDrainOutpoint(txidWire: Data(repeating: 0x11, count: 32), vout: 1)
 
+    private let idlePhases: [ShieldedFundFromAssetLockController.Phase?] = [nil, .idle, .completed, .failed("x")]
+
     func testShouldShowInProgressWhileTheControllerIsInFlight() {
         XCTAssertEqual(
-            WalletDrainCoordinator.rowAction(controllerPhase: .inFlight, outpoint: outpoint),
+            WalletDrainCoordinator.rowAction(controllerPhase: .inFlight, reportedState: .pending, outpoint: outpoint),
             .inProgress
         )
         XCTAssertEqual(
-            WalletDrainCoordinator.rowAction(controllerPhase: .inFlight, outpoint: nil),
+            WalletDrainCoordinator.rowAction(controllerPhase: .inFlight, reportedState: nil, outpoint: nil),
             .inProgress
         )
     }
 
-    func testShouldResumeTheExactOutpointWhenNoAttemptIsRunning() {
-        for phase: ShieldedFundFromAssetLockController.Phase? in [nil, .idle, .completed, .failed("x")] {
+    func testShouldResumeTheExactOutpointOfAPendingReportWhenNoAttemptIsRunning() {
+        for phase in idlePhases {
             XCTAssertEqual(
-                WalletDrainCoordinator.rowAction(controllerPhase: phase, outpoint: outpoint),
+                WalletDrainCoordinator.rowAction(controllerPhase: phase, reportedState: .pending, outpoint: outpoint),
                 .resume(outpoint),
                 "phase \(String(describing: phase))"
             )
@@ -194,13 +199,116 @@ final class WalletDrainRecoveryTests: XCTestCase {
     }
 
     func testShouldOnlyCheckAgainWithoutAnOutpoint() {
-        for phase: ShieldedFundFromAssetLockController.Phase? in [nil, .idle, .completed, .failed("x")] {
+        for phase in idlePhases {
             XCTAssertEqual(
-                WalletDrainCoordinator.rowAction(controllerPhase: phase, outpoint: nil),
+                WalletDrainCoordinator.rowAction(controllerPhase: phase, reportedState: .pending, outpoint: nil),
                 .checkAgain,
                 "phase \(String(describing: phase))"
             )
         }
+    }
+
+    /// A finished operation whose marker is left over, an unread marker and
+    /// a failed read never offer a spend, even with an outpoint.
+    func testShouldOnlyCheckAgainWithoutAPendingReport() {
+        let states: [WalletDrainOutcome.State?] = [nil, .completed, .notSent]
+        for phase in idlePhases {
+            for state in states {
+                XCTAssertEqual(
+                    WalletDrainCoordinator.rowAction(controllerPhase: phase, reportedState: state, outpoint: outpoint),
+                    .checkAgain,
+                    "phase \(String(describing: phase)), state \(String(describing: state))"
+                )
+            }
+        }
+    }
+
+    // MARK: - Row status
+
+    private func entry(
+        reportedState: WalletDrainOutcome.State? = nil,
+        outpoint: WalletDrainOutpoint? = nil,
+        readError: String? = nil,
+        removalError: String? = nil,
+        statusRead: Bool = true
+    ) -> WalletDrainCoordinator.Entry {
+        WalletDrainCoordinator.Entry(
+            record: record(),
+            outpoint: outpoint,
+            reportedState: reportedState,
+            readError: readError,
+            removalError: removalError,
+            statusRead: statusRead
+        )
+    }
+
+    private func status(
+        _ entry: WalletDrainCoordinator.Entry,
+        phase: ShieldedFundFromAssetLockController.Phase? = nil
+    ) -> WalletDrainCoordinator.RowStatus {
+        WalletDrainCoordinator.rowStatus(controllerPhase: phase, entry: entry)
+    }
+
+    func testShouldShowInProgressWhateverTheLastReadWhileAnAttemptRuns() {
+        for candidate in [
+            entry(statusRead: false),
+            entry(reportedState: .pending, outpoint: outpoint),
+            entry(readError: "offline"),
+            entry(reportedState: .completed, removalError: "disk full"),
+        ] {
+            XCTAssertEqual(status(candidate, phase: .inFlight), .inProgress)
+        }
+    }
+
+    func testShouldCallATransferUnfinishedOnlyWhenRustReportedItPending() {
+        let pending = status(entry(reportedState: .pending, outpoint: outpoint))
+        XCTAssertEqual(pending, .unfinished)
+        XCTAssertEqual(
+            pending.text,
+            "Unfinished: resume to finish it. A new Max cannot start until it does."
+        )
+        for phase in idlePhases {
+            XCTAssertEqual(
+                status(entry(reportedState: .pending, outpoint: outpoint), phase: phase),
+                .unfinished
+            )
+        }
+        // Pending without a lock: no Resume, so no "resume to finish it".
+        let noLock = status(entry(reportedState: .pending))
+        XCTAssertEqual(noLock, .unfinishedLockUnknown)
+        XCTAssertFalse(noLock.text.contains("resume to finish"))
+    }
+
+    func testShouldSayTheStatusIsBeingCheckedBeforeTheFirstRead() {
+        let unread = status(entry(statusRead: false))
+        XCTAssertEqual(unread, .checking)
+        XCTAssertEqual(unread.text, "Checking status…")
+    }
+
+    func testShouldShowTheReadErrorWhenTheStatusReadFailed() {
+        let failed = status(entry(readError: "offline"))
+        XCTAssertEqual(failed, .readFailed("offline"))
+        XCTAssertEqual(failed.text, "Status could not be read: offline")
+        XCTAssertFalse(failed.text.contains("Unfinished"))
+    }
+
+    func testShouldSayAFinishedTransferWhoseRecordCouldNotBeClearedIsFinished() {
+        for state: WalletDrainOutcome.State in [.completed, .notSent] {
+            let finished = status(entry(reportedState: state, outpoint: outpoint, removalError: "disk full"))
+            XCTAssertEqual(finished, .finishedNotCleared("disk full"), "state \(state)")
+            XCTAssertEqual(
+                finished.text,
+                "Finished; the saved record could not be cleared: disk full",
+                "state \(state)"
+            )
+        }
+    }
+
+    func testShouldNotCallANotSentReportKeptForAStartingAttemptUnfinished() {
+        let kept = status(entry(reportedState: .notSent))
+        XCTAssertEqual(kept, .notSentWhileAttemptStarted)
+        XCTAssertFalse(kept.text.contains("Unfinished"))
+        XCTAssertFalse(kept.text.contains("A new Max cannot start"))
     }
 
     /// Cold launch: the marker is on disk and no reconcile has read it yet.
@@ -220,13 +328,130 @@ final class WalletDrainRecoveryTests: XCTestCase {
         XCTAssertNil(entry.outpoint)
         XCTAssertNil(entry.readError)
         XCTAssertFalse(entry.statusRead)
-        for phase: ShieldedFundFromAssetLockController.Phase? in [nil, .idle, .completed, .failed("x")] {
-            let action = WalletDrainCoordinator.rowAction(controllerPhase: phase, outpoint: entry.outpoint)
+        XCTAssertNil(entry.reportedState)
+        XCTAssertEqual(WalletDrainCoordinator.rowStatus(controllerPhase: nil, entry: entry), .checking)
+        for phase in idlePhases {
+            let action = WalletDrainCoordinator.rowAction(
+                controllerPhase: phase,
+                reportedState: entry.reportedState,
+                outpoint: entry.outpoint
+            )
             if case .resume = action {
                 XCTFail("an unread marker must not offer Resume (phase \(String(describing: phase)))")
             }
             XCTAssertEqual(action, .checkAgain, "phase \(String(describing: phase))")
         }
+    }
+
+    // MARK: - Reconcile
+
+    @MainActor
+    func testShouldRecordAPendingReportWithItsOutpoint() async throws {
+        let store = WalletDrainOperationStore(directory: directory)
+        let stored = record()
+        try store.insert(stored)
+        let coordinator = WalletDrainCoordinator(store: store)
+        let lock = outpoint
+
+        await coordinator.reconcile(networkRaw: stored.networkRaw, walletIds: [stored.walletId]) { _ in
+            WalletDrainOutcome(state: .pending, outpoint: lock)
+        }
+
+        let entry = try XCTUnwrap(coordinator.unfinished.first { $0.id == stored.operationId })
+        XCTAssertEqual(entry.reportedState, .pending)
+        XCTAssertEqual(entry.outpoint, lock)
+        XCTAssertEqual(WalletDrainCoordinator.rowStatus(controllerPhase: nil, entry: entry), .unfinished)
+        XCTAssertEqual(
+            WalletDrainCoordinator.rowAction(
+                controllerPhase: nil,
+                reportedState: entry.reportedState,
+                outpoint: entry.outpoint
+            ),
+            .resume(lock)
+        )
+    }
+
+    /// A failed read keeps the marker but drops what an earlier read
+    /// reported, so the row neither claims the transfer is unfinished nor
+    /// offers the old outpoint.
+    @MainActor
+    func testShouldDropTheEarlierReportWhenALaterStatusReadFails() async throws {
+        let store = WalletDrainOperationStore(directory: directory)
+        let stored = record()
+        try store.insert(stored)
+        let coordinator = WalletDrainCoordinator(store: store)
+        let lock = outpoint
+        await coordinator.reconcile(networkRaw: stored.networkRaw, walletIds: [stored.walletId]) { _ in
+            WalletDrainOutcome(state: .pending, outpoint: lock)
+        }
+
+        await coordinator.reconcile(networkRaw: stored.networkRaw, walletIds: [stored.walletId]) { _ in
+            throw WalletDrainAttemptError(message: "offline")
+        }
+
+        let entry = try XCTUnwrap(coordinator.unfinished.first { $0.id == stored.operationId })
+        XCTAssertNil(entry.reportedState)
+        XCTAssertNil(entry.outpoint)
+        XCTAssertEqual(entry.readError, "offline")
+        XCTAssertEqual(
+            WalletDrainCoordinator.rowStatus(controllerPhase: nil, entry: entry),
+            .readFailed("offline")
+        )
+    }
+
+    /// Rust reported the transfer completed, but the marker file cannot be
+    /// rewritten (a read-only file in a read-only directory: it still
+    /// reads, but neither an atomic nor a direct rewrite can replace it).
+    /// The row keeps Rust's report, is not called unfinished and offers
+    /// Check again, which retries the removal.
+    @MainActor
+    func testShouldKeepRustsTerminalReportWhenTheSavedRecordCannotBeRemoved() async throws {
+        let store = WalletDrainOperationStore(directory: directory)
+        let stored = record()
+        try store.insert(stored)
+        let coordinator = WalletDrainCoordinator(store: store)
+        try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: store.fileURL.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        XCTAssertThrowsError(
+            try store.remove(operationId: stored.operationId),
+            "precondition: removal must fail in a read-only directory"
+        )
+        let lock = outpoint
+
+        await coordinator.reconcile(networkRaw: stored.networkRaw, walletIds: [stored.walletId]) { _ in
+            WalletDrainOutcome(state: .completed, outpoint: lock)
+        }
+
+        XCTAssertEqual(try store.records(), [stored])
+        let entry = try XCTUnwrap(coordinator.unfinished.first { $0.id == stored.operationId })
+        XCTAssertEqual(entry.reportedState, .completed)
+        XCTAssertNotNil(entry.removalError)
+        XCTAssertNil(entry.readError)
+        let rowStatus = WalletDrainCoordinator.rowStatus(controllerPhase: nil, entry: entry)
+        guard case .finishedNotCleared(let removalError?) = rowStatus else {
+            return XCTFail("expected a finished row, got \(rowStatus)")
+        }
+        XCTAssertEqual(removalError, entry.removalError)
+        XCTAssertTrue(rowStatus.text.hasPrefix("Finished; the saved record could not be cleared: "))
+        XCTAssertFalse(rowStatus.text.contains("Unfinished"))
+        XCTAssertFalse(rowStatus.text.contains("A new Max cannot start"))
+        for phase in idlePhases {
+            let action = WalletDrainCoordinator.rowAction(
+                controllerPhase: phase,
+                reportedState: entry.reportedState,
+                outpoint: entry.outpoint
+            )
+            XCTAssertEqual(action, .checkAgain, "phase \(String(describing: phase))")
+        }
+
+        // Check again, once the file can be written, clears it.
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: store.fileURL.path)
+        await coordinator.reconcile(networkRaw: stored.networkRaw, walletIds: [stored.walletId]) { _ in
+            WalletDrainOutcome(state: .completed, outpoint: lock)
+        }
+        XCTAssertEqual(coordinator.unfinished, [])
+        XCTAssertEqual(try store.records(), [])
     }
 
     // MARK: - Unreadable marker file
@@ -294,29 +519,30 @@ final class WalletDrainRecoveryTests: XCTestCase {
         XCTAssertEqual(coordinator.unfinished.map(\.record), [stored])
     }
 
-    func testShouldCountAndPromiseNothingLostOnlyAfterASuccessfulRead() throws {
+    /// The count is of saved records: a record can be listed before its
+    /// status is read or after Rust reported it finished, so the heading
+    /// does not call them unfinished.
+    func testShouldCountSavedRecordsOnlyAfterASuccessfulRead() throws {
         XCTAssertNil(UnfinishedWalletDrainsHeading.make(count: 0, storeErrorPresent: false))
 
         let read = try XCTUnwrap(UnfinishedWalletDrainsHeading.make(count: 2, storeErrorPresent: false))
-        XCTAssertEqual(read.title, "Unfinished Max Transfers (2)")
-        XCTAssertTrue(read.showsNothingLostNotice)
+        XCTAssertEqual(read.title, "Saved Max transfers (2)")
+        XCTAssertFalse(read.title.contains("Unfinished"))
         XCTAssertNil(read.lastKnownNotice)
         XCTAssertFalse(read.showsRetry)
     }
 
-    func testShouldGiveNoCountOrSafetyClaimWhileTheStoreCannotBeRead() throws {
+    func testShouldGiveNoCountWhileTheStoreCannotBeRead() throws {
         // Cold launch: nothing was ever read, so zero rows is not "none".
         let empty = try XCTUnwrap(UnfinishedWalletDrainsHeading.make(count: 0, storeErrorPresent: true))
-        XCTAssertEqual(empty.title, "Unfinished Max Transfers")
-        XCTAssertFalse(empty.showsNothingLostNotice)
+        XCTAssertEqual(empty.title, "Saved Max transfers")
         XCTAssertNil(empty.lastKnownNotice)
         XCTAssertTrue(empty.showsRetry)
 
         // Rows from an earlier read are labelled as last known.
         let stale = try XCTUnwrap(UnfinishedWalletDrainsHeading.make(count: 3, storeErrorPresent: true))
-        XCTAssertEqual(stale.title, "Unfinished Max Transfers")
+        XCTAssertEqual(stale.title, "Saved Max transfers")
         XCTAssertFalse(stale.title.contains("3"))
-        XCTAssertFalse(stale.showsNothingLostNotice)
         XCTAssertNotNil(stale.lastKnownNotice)
         XCTAssertTrue(stale.showsRetry)
     }
@@ -538,12 +764,14 @@ final class WalletDrainRecoveryTests: XCTestCase {
     private func steps(
         _ phase: ShieldedFundFromAssetLockController.Phase,
         lockStatusRaw: Int?,
-        seconds: TimeInterval = 0
+        seconds: TimeInterval = 0,
+        isResume: Bool = false
     ) -> [Progress.StepState] {
         let step = Progress.currentStep(
             phase: phase,
             lockStatusRaw: lockStatusRaw,
-            secondsSinceLockUpdate: seconds
+            secondsSinceLockUpdate: seconds,
+            isResumingExistingLock: isResume
         )
         let isFailed: Bool
         if case .failed = phase { isFailed = true } else { isFailed = false }
@@ -554,7 +782,12 @@ final class WalletDrainRecoveryTests: XCTestCase {
 
     func testShouldFailOnStepOneWhenAFailedAttemptHasNoLock() {
         XCTAssertEqual(
-            Progress.currentStep(phase: .failed("refused"), lockStatusRaw: nil, secondsSinceLockUpdate: 0),
+            Progress.currentStep(
+                phase: .failed("refused"),
+                lockStatusRaw: nil,
+                secondsSinceLockUpdate: 0,
+                isResumingExistingLock: false
+            ),
             1
         )
         XCTAssertEqual(
@@ -576,7 +809,12 @@ final class WalletDrainRecoveryTests: XCTestCase {
     func testShouldKeepAFailedBroadcastLockOnStepThreeWhateverTheElapsedTime() {
         for seconds: TimeInterval in [0, 1, 2, 10, 299, 300, 400, 86_400] {
             XCTAssertEqual(
-                Progress.currentStep(phase: .failed("x"), lockStatusRaw: 1, secondsSinceLockUpdate: seconds),
+                Progress.currentStep(
+                    phase: .failed("x"),
+                    lockStatusRaw: 1,
+                    secondsSinceLockUpdate: seconds,
+                    isResumingExistingLock: false
+                ),
                 3,
                 "seconds \(seconds)"
             )
@@ -616,7 +854,12 @@ final class WalletDrainRecoveryTests: XCTestCase {
     func testShouldWaitOnStepThreeForAnOldBroadcastLockWhileInFlight() {
         for seconds: TimeInterval in [300, 400, 86_400] {
             XCTAssertEqual(
-                Progress.currentStep(phase: .inFlight, lockStatusRaw: 1, secondsSinceLockUpdate: seconds),
+                Progress.currentStep(
+                    phase: .inFlight,
+                    lockStatusRaw: 1,
+                    secondsSinceLockUpdate: seconds,
+                    isResumingExistingLock: false
+                ),
                 3,
                 "seconds \(seconds)"
             )
@@ -638,7 +881,12 @@ final class WalletDrainRecoveryTests: XCTestCase {
     /// are passed with the proof kind unknown, never two green checks.
     func testShouldPointAtTheShieldForARecoveredLock() {
         XCTAssertEqual(
-            Progress.currentStep(phase: .inFlight, lockStatusRaw: 5, secondsSinceLockUpdate: 0),
+            Progress.currentStep(
+                phase: .inFlight,
+                lockStatusRaw: 5,
+                secondsSinceLockUpdate: 0,
+                isResumingExistingLock: false
+            ),
             5
         )
         XCTAssertEqual(
@@ -659,11 +907,21 @@ final class WalletDrainRecoveryTests: XCTestCase {
     /// is passed in any phase, and neither finality lane is named.
     func testShouldPassEveryStepWithoutNamingALaneForACompletedDrainLock() {
         XCTAssertEqual(
-            Progress.currentStep(phase: .inFlight, lockStatusRaw: 6, secondsSinceLockUpdate: 0),
+            Progress.currentStep(
+                phase: .inFlight,
+                lockStatusRaw: 6,
+                secondsSinceLockUpdate: 0,
+                isResumingExistingLock: false
+            ),
             6
         )
         XCTAssertEqual(
-            Progress.currentStep(phase: .failed("x"), lockStatusRaw: 6, secondsSinceLockUpdate: 0),
+            Progress.currentStep(
+                phase: .failed("x"),
+                lockStatusRaw: 6,
+                secondsSinceLockUpdate: 0,
+                isResumingExistingLock: false
+            ),
             6
         )
         let passed: [Progress.StepState] = [.done, .done, .finalityKindUnknown, .finalityKindUnknown, .done]
@@ -680,6 +938,91 @@ final class WalletDrainRecoveryTests: XCTestCase {
         XCTAssertEqual(steps(.completed, lockStatusRaw: nil), passed)
         XCTAssertEqual(steps(.completed, lockStatusRaw: 1), passed)
         XCTAssertEqual(steps(.completed, lockStatusRaw: 0), passed)
+    }
+
+    // MARK: - Resumed lock progress
+
+    func testShouldTreatAResumeIdOrAMarkedControllerAsAResume() {
+        let drainId = WalletDrainCoordinator.controllerOperationId(UUID())
+        XCTAssertTrue(Progress.isResumingExistingLock(controllerOperationId: "resume:aa:0", markedAsResume: false))
+        XCTAssertTrue(Progress.isResumingExistingLock(controllerOperationId: drainId, markedAsResume: true))
+        XCTAssertFalse(Progress.isResumingExistingLock(controllerOperationId: drainId, markedAsResume: false))
+        XCTAssertFalse(
+            Progress.isResumingExistingLock(controllerOperationId: "shield:\(UUID().uuidString)", markedAsResume: false)
+        )
+        XCTAssertFalse(Progress.isResumingExistingLock(controllerOperationId: nil, markedAsResume: false))
+    }
+
+    /// A resume builds nothing: its Built row is already past step 1, and
+    /// the stored transaction is being sent again (step 2).
+    func testShouldPointAResumeWithABuiltLockAtSendingItAgain() {
+        XCTAssertEqual(
+            Progress.currentStep(
+                phase: .inFlight,
+                lockStatusRaw: 0,
+                secondsSinceLockUpdate: 86_400,
+                isResumingExistingLock: true
+            ),
+            2
+        )
+        XCTAssertEqual(
+            steps(.inFlight, lockStatusRaw: 0, isResume: true),
+            [.done, .active, .pending, .pending, .pending]
+        )
+        XCTAssertEqual(
+            steps(.failed("x"), lockStatusRaw: 0, isResume: true),
+            [.done, .failed, .pending, .pending, .pending]
+        )
+        XCTAssertEqual(Progress.stepTitle(1, isResumingExistingLock: true), "Asset lock built")
+        let footer = Progress.footerText(
+            step: 2,
+            isFailed: false,
+            finalityKindUnknown: false,
+            isResumingExistingLock: true
+        )
+        XCTAssertTrue(footer.contains("existing asset-lock transaction again"))
+        XCTAssertTrue(footer.contains("No new asset lock is built"))
+        for step in 1...6 {
+            let text = Progress.footerText(
+                step: step,
+                isFailed: false,
+                finalityKindUnknown: false,
+                isResumingExistingLock: true
+            )
+            XCTAssertFalse(text.contains("from wallet funds"), "step \(step)")
+        }
+    }
+
+    func testShouldPointAFreshAttemptWithABuiltLockAtBuildingIt() {
+        XCTAssertEqual(
+            Progress.currentStep(
+                phase: .inFlight,
+                lockStatusRaw: 0,
+                secondsSinceLockUpdate: 0,
+                isResumingExistingLock: false
+            ),
+            1
+        )
+        XCTAssertEqual(
+            steps(.inFlight, lockStatusRaw: 0, isResume: false),
+            [.active, .pending, .pending, .pending, .pending]
+        )
+        XCTAssertEqual(Progress.stepTitle(1, isResumingExistingLock: false), "Building asset-lock transaction")
+        XCTAssertEqual(
+            Progress.footerText(step: 1, isFailed: false, finalityKindUnknown: false, isResumingExistingLock: false),
+            "Building a Core asset-lock transaction from wallet funds."
+        )
+    }
+
+    /// Past Built, a resume follows the same lanes as a fresh attempt.
+    func testShouldFollowTheSameStepsForAResumePastBuilt() {
+        for status in [1, 2, 3, 5, 6] {
+            XCTAssertEqual(
+                steps(.inFlight, lockStatusRaw: status, seconds: 10, isResume: true),
+                steps(.inFlight, lockStatusRaw: status, seconds: 10, isResume: false),
+                "status \(status)"
+            )
+        }
     }
 
     // MARK: - Resume errors

@@ -29,9 +29,19 @@ final class WalletDrainCoordinator: ObservableObject {
     struct Entry: Identifiable, Equatable {
         let record: WalletDrainOperationRecord
         /// The asset lock the last successful status read named. `nil`
-        /// when the read failed or named none, so the row offers no spend.
+        /// when the read failed or named none. Only a `pending` report's
+        /// outpoint allows a spend (`rowAction`).
         let outpoint: WalletDrainOutpoint?
+        /// What the last status read reported. `nil` before any read has
+        /// finished and when the last read failed: a marker is kept in
+        /// either case, so its presence alone says nothing about Rust.
+        let reportedState: WalletDrainOutcome.State?
+        /// The last status read's error, when it failed.
         let readError: String?
+        /// Set when Rust reported `completed` or `notSent` but removing the
+        /// marker failed. The marker is all that is left; reconcile retries
+        /// the removal.
+        let removalError: String?
         /// `false` until a status read for this operation has finished,
         /// successfully or not. A stored marker is listed before that (its
         /// lock is already hidden from the generic list), as a row that
@@ -41,7 +51,57 @@ final class WalletDrainCoordinator: ObservableObject {
 
         /// A stored marker no status read has reported on yet.
         static func unread(_ record: WalletDrainOperationRecord) -> Entry {
-            Entry(record: record, outpoint: nil, readError: nil, statusRead: false)
+            Entry(
+                record: record,
+                outpoint: nil,
+                reportedState: nil,
+                readError: nil,
+                removalError: nil,
+                statusRead: false
+            )
+        }
+    }
+
+    /// The status line a saved-transfer row shows. Each case claims only
+    /// what the entry's last read (or the running attempt) supports.
+    enum RowStatus: Equatable {
+        /// An attempt for this operation is running.
+        case inProgress
+        /// Rust reported `pending` with the lock to resume.
+        case unfinished
+        /// Rust reported `pending` without naming a lock.
+        case unfinishedLockUnknown
+        /// No status read has finished yet.
+        case checking
+        /// The last status read failed.
+        case readFailed(String)
+        /// Rust reported `completed` or `notSent`; the marker could not be
+        /// removed (`nil` only if no removal was tried, which reconcile
+        /// never leaves behind).
+        case finishedNotCleared(String?)
+        /// Rust reported `notSent` while an attempt was starting, so the
+        /// marker was kept: that attempt may have sent after the read.
+        case notSentWhileAttemptStarted
+
+        var text: String {
+            switch self {
+            case .inProgress:
+                return "In progress."
+            case .unfinished:
+                return "Unfinished: resume to finish it. A new Max cannot start until it does."
+            case .unfinishedLockUnknown:
+                return "Unfinished, but the status named no asset lock yet: check again."
+            case .checking:
+                return "Checking status…"
+            case .readFailed(let error):
+                return "Status could not be read: \(error)"
+            case .finishedNotCleared(let error?):
+                return "Finished; the saved record could not be cleared: \(error)"
+            case .finishedNotCleared(nil):
+                return "Finished; the saved record is not cleared yet."
+            case .notSentWhileAttemptStarted:
+                return "Nothing was sent when last read, but an attempt was starting: check again."
+            }
         }
     }
 
@@ -68,17 +128,19 @@ final class WalletDrainCoordinator: ObservableObject {
         case inProgress
         /// Resume the asset lock at this exact outpoint.
         case resume(WalletDrainOutpoint)
-        /// No outpoint is known: read the status again, never spend.
+        /// No `pending` report with an outpoint: read the status again,
+        /// never spend.
         case checkAgain
     }
 
     /// Every stored marker, on every network, with its last reported state
-    /// (`statusRead == false` before any read has reported on it).
+    /// (`statusRead == false` before any read has reported on it). A marker
+    /// is not by itself an unfinished transfer: see `Entry.reportedState`.
     @Published private(set) var unfinished: [Entry] = []
     /// Every operation id with a stored marker, read or not yet read.
     @Published private(set) var markedOperationIds: Set<UUID> = []
     /// Set when the marker file cannot be read, cleared by the next
-    /// successful read. Shown rather than treated as "no unfinished
+    /// successful read. Shown rather than treated as "no saved
     /// transfers". While set, `unfinished` is what the last successful
     /// read listed (empty if none has succeeded), so it may be stale.
     @Published private(set) var storeError: String?
@@ -137,19 +199,51 @@ final class WalletDrainCoordinator: ObservableObject {
     }
 
     /// The row rule. A running attempt wins; otherwise only an outpoint
-    /// from a status read allows a spend, and that spend is an exact-outpoint
-    /// resume. Without one the row can only read the status again.
+    /// from a `pending` report allows a spend, and that spend is an
+    /// exact-outpoint resume. Any other row can only read the status again,
+    /// which for a finished one also retries removing its marker.
     nonisolated static func rowAction(
         controllerPhase: ShieldedFundFromAssetLockController.Phase?,
+        reportedState: WalletDrainOutcome.State?,
         outpoint: WalletDrainOutpoint?
     ) -> RowAction {
         if case .inFlight? = controllerPhase {
             return .inProgress
         }
-        if let outpoint {
+        if reportedState == .pending, let outpoint {
             return .resume(outpoint)
         }
         return .checkAgain
+    }
+
+    /// The row's status line, from the entry and the live controller phase.
+    nonisolated static func rowStatus(
+        controllerPhase: ShieldedFundFromAssetLockController.Phase?,
+        entry: Entry
+    ) -> RowStatus {
+        if case .inFlight? = controllerPhase {
+            return .inProgress
+        }
+        guard entry.statusRead else {
+            return .checking
+        }
+        if let readError = entry.readError {
+            return .readFailed(readError)
+        }
+        switch entry.reportedState {
+        case .pending?:
+            return entry.outpoint == nil ? .unfinishedLockUnknown : .unfinished
+        case .completed?:
+            return .finishedNotCleared(entry.removalError)
+        case .notSent?:
+            if let removalError = entry.removalError {
+                return .finishedNotCleared(removalError)
+            }
+            return .notSentWhileAttemptStarted
+        case nil:
+            // A finished read always sets a state or an error.
+            return .checking
+        }
     }
 
     /// The marker rule. `completed` is done. `notSent` from a successful
@@ -195,12 +289,27 @@ final class WalletDrainCoordinator: ObservableObject {
         networkRaw: UInt32,
         walletIds: [Data]
     ) async {
+        await reconcile(networkRaw: networkRaw, walletIds: walletIds) { record in
+            try await walletManager.shieldedWalletDrainStatus(
+                walletId: record.walletId,
+                operationId: record.operationId
+            )
+        }
+    }
+
+    /// `reconcile` with Rust's status read passed in, so tests can supply
+    /// the report without a loaded wallet.
+    func reconcile(
+        networkRaw: UInt32,
+        walletIds: [Data],
+        readStatus: @MainActor (WalletDrainOperationRecord) async throws -> WalletDrainOutcome
+    ) async {
         let records: [WalletDrainOperationRecord]
         do {
             records = try store.records()
             storeError = nil
         } catch {
-            storeError = "Could not read unfinished Max transfers: \(error.localizedDescription)"
+            storeError = "Could not read saved Max transfers: \(error.localizedDescription)"
             return
         }
         let loaded = Set(walletIds)
@@ -209,14 +318,13 @@ final class WalletDrainCoordinator: ObservableObject {
             let attemptsBefore = attemptCounts[id, default: 0]
             let runningBefore = runningCounts[id, default: 0] > 0
             let read: StatusRead
+            var reportedState: WalletDrainOutcome.State?
             var outpoint: WalletDrainOutpoint?
             var readError: String?
             do {
-                let outcome = try await walletManager.shieldedWalletDrainStatus(
-                    walletId: record.walletId,
-                    operationId: id
-                )
+                let outcome = try await readStatus(record)
                 read = .reported(outcome.state)
+                reportedState = outcome.state
                 outpoint = outcome.outpoint
             } catch {
                 read = .failed
@@ -231,12 +339,15 @@ final class WalletDrainCoordinator: ObservableObject {
                     try store.remove(operationId: id)
                     latest.removeValue(forKey: id)
                 } catch {
-                    // Rust is done with it; only the marker is left, so the
-                    // row offers "Check again", never a spend.
+                    // Rust is done with it and only the marker is left. The
+                    // terminal report is kept, so `rowAction` offers "Check
+                    // again" (which retries this removal), never a spend.
                     latest[id] = Entry(
                         record: record,
-                        outpoint: nil,
-                        readError: "Could not clear the finished marker: \(error.localizedDescription)",
+                        outpoint: outpoint,
+                        reportedState: reportedState,
+                        readError: nil,
+                        removalError: error.localizedDescription,
                         statusRead: true
                     )
                 }
@@ -244,7 +355,9 @@ final class WalletDrainCoordinator: ObservableObject {
                 latest[id] = Entry(
                     record: record,
                     outpoint: outpoint,
+                    reportedState: reportedState,
                     readError: readError,
+                    removalError: nil,
                     statusRead: true
                 )
             }
@@ -276,7 +389,7 @@ final class WalletDrainCoordinator: ObservableObject {
                 "Could not save the transfer id, so nothing was sent: \(error.localizedDescription)"
             )
         }
-        let result = run(record, walletManager: walletManager) {
+        let result = run(record, isResume: false, walletManager: walletManager) {
             let outcome = await walletManager.shieldedFundFromWalletDrain(
                 walletId: record.walletId,
                 operationId: record.operationId,
@@ -314,7 +427,7 @@ final class WalletDrainCoordinator: ObservableObject {
         outpoint: WalletDrainOutpoint,
         walletManager: PlatformWalletManager
     ) -> ShieldedFundFromAssetLockCoordinator.StartFundingResult {
-        run(record, walletManager: walletManager) {
+        run(record, isResume: true, walletManager: walletManager) {
             do {
                 try await walletManager.shieldedResumeFundFromAssetLock(
                     walletId: record.walletId,
@@ -371,8 +484,11 @@ final class WalletDrainCoordinator: ObservableObject {
     /// Runs `attempt` for `record` through the shielded-funding coordinator
     /// under the operation's controller id, then reconciles the operation
     /// and rethrows the attempt's error for the controller to show.
+    /// `isResume` marks an attempt that only finishes an existing lock, so
+    /// its progress never shows that lock being built.
     private func run(
         _ record: WalletDrainOperationRecord,
+        isResume: Bool,
         walletManager: PlatformWalletManager,
         attempt: @escaping () async throws -> Void
     ) -> ShieldedFundFromAssetLockCoordinator.StartFundingResult {
@@ -404,10 +520,16 @@ final class WalletDrainCoordinator: ObservableObject {
         )
         // Undo the running count when the body was not scheduled, as the
         // funding coordinator reports it: a blocked start, or a re-tap that
-        // re-presents an existing controller.
+        // re-presents an existing controller. Only a scheduled body says
+        // what this controller now runs; the body cannot have started yet,
+        // since its task needs the main actor this code holds.
         switch result {
-        case .started(_, let bodyScheduled):
-            if !bodyScheduled { finishRunning(id) }
+        case .started(let controller, let bodyScheduled):
+            if bodyScheduled {
+                controller.isResumingExistingLock = isResume
+            } else {
+                finishRunning(id)
+            }
         case .blockedByOtherWalletFunding:
             finishRunning(id)
         }
@@ -431,7 +553,7 @@ final class WalletDrainCoordinator: ObservableObject {
         do {
             records = try store.records()
         } catch {
-            storeError = "Could not read unfinished Max transfers: \(error.localizedDescription)"
+            storeError = "Could not read saved Max transfers: \(error.localizedDescription)"
             return
         }
         storeError = nil

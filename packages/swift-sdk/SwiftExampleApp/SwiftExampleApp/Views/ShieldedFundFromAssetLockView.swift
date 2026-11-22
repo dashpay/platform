@@ -905,8 +905,12 @@ struct ShieldedFundFromAssetLockView: View {
             // keeps the recorder of the body it ran. The body cannot have
             // started yet: the controller's task is scheduled on the main
             // actor, which this code holds until it returns.
-            if bodyScheduled, let builtOutPoint {
-                controller.builtOutPoint = builtOutPoint
+            if bodyScheduled {
+                // A resume builds nothing; its progress must not say it does.
+                controller.isResumingExistingLock = resumeFromLock != nil
+                if let builtOutPoint {
+                    controller.builtOutPoint = builtOutPoint
+                }
             }
             activeController = controller
             activePhase = controller.phase

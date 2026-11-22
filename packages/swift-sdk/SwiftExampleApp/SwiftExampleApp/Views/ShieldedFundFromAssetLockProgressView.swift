@@ -25,10 +25,15 @@ extension PersistentAssetLock: ShieldedProgressLockRow {}
 ///
 ///   1. Building asset-lock tx        → no matching row yet, or
 ///                                      activeLock `statusRaw == 0`
+///                                      (a resume: "Asset lock built",
+///                                      done once a matching row exists)
 ///   2. Broadcasting                  → activeLock `statusRaw == 1`,
 ///                                      controller `.inFlight`, and
 ///                                      < `broadcastingWindow` since
-///                                      the row's `updatedAt`
+///                                      the row's `updatedAt`; on a
+///                                      resume also `statusRaw == 0`,
+///                                      whose stored transaction is
+///                                      sent again
 ///   3. Waiting for InstantSend or    → activeLock `statusRaw == 1`
 ///      ChainLock proof                 otherwise, whatever its age
 ///   4. ChainLock proof               → never the current step; done
@@ -99,10 +104,15 @@ struct ShieldedFundFromAssetLockProgressSection: View {
         TimelineView(.periodic(from: .now, by: 1.0)) { timeline in
             let lock = activeLock
             let lockStatusRaw = lock?.statusRaw
+            let isResume = Self.isResumingExistingLock(
+                controllerOperationId: controller.operationId,
+                markedAsResume: controller.isResumingExistingLock
+            )
             let step = Self.currentStep(
                 phase: controller.phase,
                 lockStatusRaw: lockStatusRaw,
-                secondsSinceLockUpdate: lock.map { timeline.date.timeIntervalSince($0.updatedAt) } ?? 0
+                secondsSinceLockUpdate: lock.map { timeline.date.timeIntervalSince($0.updatedAt) } ?? 0,
+                isResumingExistingLock: isResume
             )
             let isFailed = isFailed
             let errorMessage = failureMessage
@@ -115,7 +125,7 @@ struct ShieldedFundFromAssetLockProgressSection: View {
                 ForEach(1...5, id: \.self) { idx in
                     stepRow(
                         index: idx,
-                        title: stepTitle(idx),
+                        title: Self.stepTitle(idx, isResumingExistingLock: isResume),
                         state: states[idx - 1]
                     )
                     // Under the step that failed, which is step 1 when the
@@ -130,7 +140,14 @@ struct ShieldedFundFromAssetLockProgressSection: View {
             } header: {
                 Text("Shield Progress")
             } footer: {
-                Text(footerText(step: step, isFailed: isFailed, finalityKindUnknown: finalityKindUnknown))
+                Text(
+                    Self.footerText(
+                        step: step,
+                        isFailed: isFailed,
+                        finalityKindUnknown: finalityKindUnknown,
+                        isResumingExistingLock: isResume
+                    )
+                )
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
@@ -177,13 +194,24 @@ struct ShieldedFundFromAssetLockProgressSection: View {
                 row.operationId.flatMap(WalletDrainOperationRecord.uuid(fromOperationIdBytes:)) == drainId
             }
         }
-        // Same prefix `ShieldedFundFromAssetLockView` builds for a resume.
-        let resumePrefix = "resume:"
         if controllerOperationId.hasPrefix(resumePrefix) {
             let outPointHex = String(controllerOperationId.dropFirst(resumePrefix.count))
             return rows.first { $0.outPointHex == outPointHex }
         }
         return builtLock(builtOutPointHex: builtOutPointHex, newestFirst: rows)
+    }
+
+    /// Same prefix `ShieldedFundFromAssetLockView` builds for a resume.
+    nonisolated private static let resumePrefix = "resume:"
+
+    /// Whether the controller only finishes an asset lock that already
+    /// exists: a `"resume:"` operation, or one its caller marked (a Max
+    /// Resume shares the `"drain:"` id with the Max that built the lock).
+    nonisolated static func isResumingExistingLock(
+        controllerOperationId: String?,
+        markedAsResume: Bool
+    ) -> Bool {
+        markedAsResume || (controllerOperationId?.hasPrefix(resumePrefix) ?? false)
     }
 
     /// The row at the outpoint the attempt's lock was built with; none
@@ -208,10 +236,14 @@ struct ShieldedFundFromAssetLockProgressSection: View {
     /// A failed attempt with no lock was refused before anything was
     /// built (for example a second Max that Rust refuses), so its failure
     /// sits on step 1 and no later step is claimed.
+    ///
+    /// A resume builds nothing: a `Built` (0) row is past step 1, and the
+    /// step is re-sending that stored transaction (2).
     nonisolated static func currentStep(
         phase: ShieldedFundFromAssetLockController.Phase,
         lockStatusRaw: Int?,
-        secondsSinceLockUpdate: TimeInterval
+        secondsSinceLockUpdate: TimeInterval,
+        isResumingExistingLock: Bool
     ) -> Int {
         switch phase {
         case .idle:
@@ -223,6 +255,10 @@ struct ShieldedFundFromAssetLockProgressSection: View {
         case .inFlight, .failed:
             guard let lockStatusRaw else { return 1 }
             switch lockStatusRaw {
+            case 0:
+                // Built. A fresh attempt is still building it; a resume is
+                // sending the stored transaction again.
+                return isResumingExistingLock ? 2 : 1
             case 1:
                 // A failure stays where the lock was, so the clock must not
                 // move it once the attempt has stopped.
@@ -239,7 +275,7 @@ struct ShieldedFundFromAssetLockProgressSection: View {
                 // DrainCompleted: Rust recorded the shield as done.
                 return 6
             default:
-                // Built (0) and any other status.
+                // Any other status.
                 return 1
             }
         }
@@ -255,9 +291,9 @@ struct ShieldedFundFromAssetLockProgressSection: View {
         return nil
     }
 
-    private func stepTitle(_ idx: Int) -> String {
+    nonisolated static func stepTitle(_ idx: Int, isResumingExistingLock: Bool) -> String {
         switch idx {
-        case 1: return "Building asset-lock transaction"
+        case 1: return isResumingExistingLock ? "Asset lock built" : "Building asset-lock transaction"
         case 2: return "Broadcasting"
         case 3: return "Waiting for InstantSend or ChainLock proof"
         case 4: return "ChainLock proof"
@@ -373,13 +409,23 @@ struct ShieldedFundFromAssetLockProgressSection: View {
         }
     }
 
-    private func footerText(step: Int, isFailed: Bool, finalityKindUnknown: Bool) -> String {
+    /// A resume never uses the "from wallet funds" text: it builds nothing.
+    nonisolated static func footerText(
+        step: Int,
+        isFailed: Bool,
+        finalityKindUnknown: Bool,
+        isResumingExistingLock: Bool
+    ) -> String {
         let stepText: String
         if isFailed {
             stepText = "Tap Dismiss to clear this entry."
         } else {
             switch step {
+            case 1 where isResumingExistingLock:
+                stepText = "Resuming an existing asset lock. No new one is built."
             case 1: stepText = "Building a Core asset-lock transaction from wallet funds."
+            case 2 where isResumingExistingLock:
+                stepText = "Sending the existing asset-lock transaction again. No new asset lock is built."
             case 2: stepText = "Sending the asset-lock transaction to peers."
             case 3:
                 stepText = "Waiting for the asset-lock transaction to become final, by an "

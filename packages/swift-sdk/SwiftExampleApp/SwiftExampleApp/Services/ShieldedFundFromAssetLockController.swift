@@ -118,6 +118,13 @@ final class ShieldedFundFromAssetLockController: ObservableObject {
     /// progress section through its `@Query`.
     var builtOutPoint: BuiltOutPointRecorder?
 
+    /// `true` when the current operation only finishes an asset lock that
+    /// already exists (a generic resume or a Max Resume): nothing is built,
+    /// so the progress must not say so. Cleared by every accepted `submit`;
+    /// the caller sets it after a submit that scheduled a resume body. A
+    /// `"resume:"` id is read as a resume either way.
+    @Published var isResumingExistingLock = false
+
     /// Active funding task. Holds a reference so the coordinator's
     /// stash retains the work until completion; cancellation isn't
     /// wired today (the FFI call doesn't yet support clean abort).
@@ -158,6 +165,8 @@ final class ShieldedFundFromAssetLockController: ObservableObject {
             return false
         }
         self.operationId = operationId
+        // A reused controller must not carry the previous run's kind.
+        isResumingExistingLock = false
         phase = .inFlight
         lastSubmittedAt = Date()
         task = Task { [weak self] in

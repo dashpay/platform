@@ -1,11 +1,13 @@
 import SwiftUI
 import SwiftDashSDK
 
-/// Wallet Detail section listing this wallet's unfinished Max transfers
-/// (Core-to-shielded wallet drains) as `WalletDrainCoordinator` last read
-/// them from Rust. A row whose last status read named an asset lock
-/// resumes that exact outpoint, which can never build a second lock. A
-/// row without one only offers "Check again", which reads the status.
+/// Wallet Detail section listing this wallet's saved Max transfers
+/// (Core-to-shielded wallet drains), one per stored marker, each with the
+/// status `WalletDrainCoordinator` last read from Rust. A marker alone is
+/// not an unfinished transfer: only a `pending` report says so. A row whose
+/// `pending` report named an asset lock resumes that exact outpoint, which
+/// can never build a second lock. Any other row only offers "Check again",
+/// which reads the status (and retries clearing a finished one's marker).
 struct UnfinishedWalletDrainsList: View {
     @ObservedObject var drainCoordinator: WalletDrainCoordinator
     /// Observed so a row appears or disappears as controllers are added to
@@ -64,15 +66,6 @@ struct UnfinishedWalletDrainsList: View {
                     }
                 }
                 .padding(.horizontal)
-
-                if heading.showsNothingLostNotice {
-                    Text(
-                        "Nothing is lost. A new Max transfer cannot start until this one is finished."
-                    )
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal)
-                }
 
                 if let storeError {
                     Text(storeError)
@@ -144,7 +137,12 @@ struct UnfinishedWalletDrainsList: View {
         } else {
             DrainRowContent(
                 entry: entry,
-                action: WalletDrainCoordinator.rowAction(controllerPhase: nil, outpoint: entry.outpoint),
+                action: WalletDrainCoordinator.rowAction(
+                    controllerPhase: nil,
+                    reportedState: entry.reportedState,
+                    outpoint: entry.outpoint
+                ),
+                status: WalletDrainCoordinator.rowStatus(controllerPhase: nil, entry: entry),
                 controller: nil,
                 isChecking: isChecking,
                 onResume: { resume(entry.record, outpoint: $0) },
@@ -229,8 +227,10 @@ private struct ObservedDrainRow: View {
             entry: entry,
             action: WalletDrainCoordinator.rowAction(
                 controllerPhase: controller.phase,
+                reportedState: entry.reportedState,
                 outpoint: entry.outpoint
             ),
+            status: WalletDrainCoordinator.rowStatus(controllerPhase: controller.phase, entry: entry),
             controller: controller,
             isChecking: isChecking,
             onResume: onResume,
@@ -242,6 +242,7 @@ private struct ObservedDrainRow: View {
 private struct DrainRowContent: View {
     let entry: WalletDrainCoordinator.Entry
     let action: WalletDrainCoordinator.RowAction
+    let status: WalletDrainCoordinator.RowStatus
     let controller: ShieldedFundFromAssetLockController?
     let isChecking: Bool
     let onResume: (WalletDrainOutpoint) -> Void
@@ -260,25 +261,37 @@ private struct DrainRowContent: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                if let readError = entry.readError {
-                    Text(readError)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
-                // No read has reported yet, so there is no outpoint and the
-                // row offers no Resume. Check again stays: if no reconcile
-                // reaches this marker, it is the only way to read it.
-                if !entry.statusRead && action != .inProgress {
-                    Text("Checking status…")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .accessibilityIdentifier("walletDetail.unfinishedMaxTransfer.checkingStatus")
-                }
+                statusLine
             }
             Spacer(minLength: 8)
             actionView
         }
         .padding(.vertical, 2)
+    }
+
+    /// Before the first read the row offers no Resume. Check again stays:
+    /// if no reconcile reaches this marker, it is the only way to read it.
+    @ViewBuilder
+    private var statusLine: some View {
+        let text = Text(status.text)
+            .font(.caption)
+            .foregroundColor(statusColor)
+        if status == .checking {
+            text.accessibilityIdentifier("walletDetail.unfinishedMaxTransfer.checkingStatus")
+        } else {
+            text.accessibilityIdentifier("walletDetail.unfinishedMaxTransfer.status")
+        }
+    }
+
+    private var statusColor: Color {
+        switch status {
+        case .readFailed, .finishedNotCleared:
+            return .red
+        case .unfinished, .unfinishedLockUnknown:
+            return .orange
+        case .inProgress, .checking, .notSentWhileAttemptStarted:
+            return .secondary
+        }
     }
 
     @ViewBuilder
@@ -345,13 +358,12 @@ private struct DrainRowContent: View {
 }
 
 /// What the section's heading claims. Pure over plain values so it is
-/// testable. A failed marker-file read leaves the coordinator's list as an
-/// earlier read left it (empty on a cold launch), so while it is failed the
-/// heading gives no count and does not say nothing is lost.
+/// testable. It counts saved records, not unfinished transfers: each row
+/// says what Rust reported for it. A failed marker-file read leaves the
+/// coordinator's list as an earlier read left it (empty on a cold launch),
+/// so while it is failed the heading gives no count.
 struct UnfinishedWalletDrainsHeading: Equatable {
     let title: String
-    /// "Nothing is lost…": only after the marker file was read.
-    let showsNothingLostNotice: Bool
     /// Says that the rows listed come from an earlier successful read.
     let lastKnownNotice: String?
     /// Section-level "Try again", which works without any row.
@@ -361,8 +373,7 @@ struct UnfinishedWalletDrainsHeading: Equatable {
     static func make(count: Int, storeErrorPresent: Bool) -> UnfinishedWalletDrainsHeading? {
         if storeErrorPresent {
             return UnfinishedWalletDrainsHeading(
-                title: "Unfinished Max Transfers",
-                showsNothingLostNotice: false,
+                title: "Saved Max transfers",
                 lastKnownNotice: count > 0
                     ? "Last known from an earlier read. This list may be out of date."
                     : nil,
@@ -371,8 +382,7 @@ struct UnfinishedWalletDrainsHeading: Equatable {
         }
         guard count > 0 else { return nil }
         return UnfinishedWalletDrainsHeading(
-            title: "Unfinished Max Transfers (\(count))",
-            showsNothingLostNotice: true,
+            title: "Saved Max transfers (\(count))",
             lastKnownNotice: nil,
             showsRetry: false
         )
