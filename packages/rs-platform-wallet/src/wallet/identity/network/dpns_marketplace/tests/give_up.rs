@@ -10,6 +10,13 @@ use dpp::data_contracts::SystemDataContract;
 use dpp::system_data_contracts::load_system_data_contract;
 use dpp::version::PlatformVersion;
 
+use super::super::super::decision_proposal::tests::FixedSignatureSigner;
+use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+use dash_sdk::query_types::IdentityContractNonceFetcher;
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dpp::state_transition::batch_transition::BatchTransition;
+
 /// A name that is not contested: its normalized form (`a11ce7`) holds a digit the contest
 /// pattern does not.
 const PLAIN_LABEL: &str = "Alice7";
@@ -439,11 +446,11 @@ fn signer_with_every_key() -> KeyFilter<impl Fn(&IdentityPublicKey) -> bool + Se
     KeyFilter(|_| true)
 }
 
-/// Through the public entry point, each way of giving up reaches the network as its own
-/// transition (the delete of the checked document, the create of a tombstone). The mock
-/// answers no nonce, so neither is confirmed, and nothing stored changes.
+/// Through the public entry point, each way of giving up gets as far as reading the
+/// identity contract nonce of its transition, before anything is signed. The mock answers
+/// no nonce, so nothing is sent, nothing stored changes and nothing is held.
 #[tokio::test]
-async fn should_send_each_give_up_to_the_network_and_change_nothing_before_it_is_confirmed() {
+async fn should_change_nothing_and_hold_nothing_when_a_give_up_stops_before_signing() {
     let owner = Identifier::from(OWNER);
     for method in [
         DpnsNameGiveUpMethod::Delete,
@@ -694,5 +701,119 @@ async fn should_hold_a_give_up_only_once_it_is_signed() {
         let signed = wrapped.sign(&key, b"transition").await;
         assert_eq!(signed.is_ok(), signs);
         assert_eq!(held.load(std::sync::atomic::Ordering::SeqCst), signs);
+    }
+}
+
+/// The identity contract nonce the mock reports for [`OWNER`] on the DPNS contract.
+const STORED_NONCE: u64 = 4;
+
+/// Through the public entry point each way is sent as its own transition: a delete is the
+/// delete of the checked `domain` document, signed with the owner's first eligible key at
+/// the next nonce, and a tombstone sends no delete. The mock answers no broadcast, so
+/// neither is confirmed and nothing stored changes.
+#[tokio::test]
+async fn should_send_the_delete_of_the_checked_document_only_for_a_delete() {
+    let owner = Identifier::from(OWNER);
+    for method in [
+        DpnsNameGiveUpMethod::Delete,
+        DpnsNameGiveUpMethod::Tombstone,
+    ] {
+        let mut sdk = sdk_holding(
+            PLAIN_LABEL,
+            Some(domain_document(
+                PLAIN_LABEL,
+                Identifier::from(DOCUMENT),
+                owner,
+            )),
+        )
+        .await;
+        sdk.mock()
+            .expect_fetch(
+                (owner, dpns_contract_id()),
+                Some(IdentityContractNonceFetcher(STORED_NONCE)),
+            )
+            .await
+            .expect("expects the nonce read");
+        let (wallet, mirror) = wallet_holding(sdk.clone(), &[PLAIN_LABEL, KEPT_LABEL]).await;
+
+        let error = wallet
+            .give_up_dpns_name(
+                &owner,
+                PLAIN_LABEL,
+                &Identifier::from(DOCUMENT),
+                method,
+                &FixedSignatureSigner,
+            )
+            .await
+            .expect_err("the mock answers no broadcast");
+
+        // The delete exactly as the wallet would build it from the domain it checked
+        let checked = sdk
+            .dpns_name_give_up_options(PLAIN_LABEL)
+            .await
+            .expect("the options are read")
+            .expect("the name is registered")
+            .domain;
+        let contract =
+            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+                .expect("bundled DPNS contract");
+        let owner_identity = {
+            let wm = wallet.wallet_manager.read().await;
+            wm.get_wallet_info(&wallet.wallet_id)
+                .expect("wallet info")
+                .identity_manager
+                .wallet_identity(&wallet.wallet_id, &owner)
+                .expect("the owner")
+                .identity
+                .clone()
+        };
+        let first_key = owner_identity
+            .public_keys()
+            .values()
+            .next()
+            .expect("a key")
+            .clone();
+        let delete = BatchTransition::new_document_deletion_transition_from_document(
+            checked,
+            contract
+                .document_type_for_name(DPNS_DOCUMENT_TYPE)
+                .expect("the domain type"),
+            &first_key,
+            STORED_NONCE + 1,
+            0,
+            None,
+            &FixedSignatureSigner,
+            PlatformVersion::latest(),
+            None,
+        )
+        .await
+        .expect("the delete");
+        let delete_broadcast = delete
+            .broadcast_request_for_state_transition()
+            .expect("serializes");
+        let deletes_sent = sdk.mock().request_count(&delete_broadcast).await;
+        match method {
+            DpnsNameGiveUpMethod::Delete => {
+                assert_eq!(
+                    deletes_sent, 1,
+                    "the delete of the checked document is sent"
+                )
+            }
+            DpnsNameGiveUpMethod::Tombstone => {
+                assert_eq!(deletes_sent, 0, "a tombstone sends no delete");
+                assert!(
+                    error
+                        .to_string()
+                        .contains("BroadcastStateTransitionRequest"),
+                    "the tombstone is sent: {error}"
+                );
+            }
+        }
+        assert_eq!(
+            dpns_labels(&wallet, &owner).await,
+            vec![PLAIN_LABEL.to_string(), KEPT_LABEL.to_string()],
+            "{method:?}"
+        );
+        assert!(mirror.stored_dpns_removals().is_empty(), "{method:?}");
     }
 }

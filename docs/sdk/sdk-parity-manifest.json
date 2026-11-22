@@ -1288,8 +1288,8 @@
         "swift": {
           "sdk": "supported",
           "example_app": "partial",
-          "restart": "not_applicable",
-          "reason": "GiveUpNameView offers only the ways Rust reports (a contested name: tombstone only), refuses below protocol version 15 from the SDK's typed refusal, and drops the name through the persister after the network confirms it. The TEST_PLAN gates DPNS-09..13 are written but not yet run on a simulator or device. A give-up that is broadcast but not confirmed keeps the name until the next marketplace sync."
+          "restart": "required",
+          "reason": "GiveUpNameView offers only the ways Rust reports (a contested name: tombstone only), refuses below protocol version 15 from the SDK's typed refusal, and drops the name through the persister after the network confirms it. The TEST_PLAN gates DPNS-09..13 are written but not yet run on a simulator or device. Restart is required and not yet met: the hold on a give-up that was sent but not confirmed is session-scoped, so after a process restart such a give-up is offered again until the name is seen gone."
         },
         "kotlin": {
           "sdk": "unsupported",

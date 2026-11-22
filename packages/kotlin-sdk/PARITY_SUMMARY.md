@@ -17,7 +17,7 @@ Capabilities tracked: **31**
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 10 | 19 |
+| Swift | 2 | 11 | 18 |
 | Kotlin | 5 | 8 | 18 |
 
 ## Capability status
@@ -38,7 +38,7 @@ Capabilities tracked: **31**
 | `identity.asset_lock_resume` | supported / partial / required | partial / partial / required |
 | `core.compact_filter_rescan` | supported / partial / not_applicable | partial / partial / not_applicable |
 | `dpns.contested_names_by_identity` | supported / partial / not_applicable | partial / partial / required |
-| `dpns.give_up_name` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
+| `dpns.give_up_name` | supported / partial / required | unsupported / unsupported / not_applicable |
 | `persistence.sync_fault_latch` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
 | `persistence.dashpay_payment_history` | partial / not-applicable / required | not-applicable / not-applicable / not_applicable |
 | `network.masternode_discovery` | partial / not-applicable / not_applicable | partial / not-applicable / not_applicable |
