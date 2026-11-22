@@ -810,6 +810,31 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorIdentityLookupFailed` (native code 80). Platform could not be
+         * asked for an identity the operation names (the lookup failed, which
+         * is not Platform's answer that it does not exist, code 7). Nothing
+         * was signed, reserved or broadcast, so the operation may be retried
+         * as it is and is never a possibly delivered one.
+         * ← Swift `PlatformWalletError.identityLookupFailed`.
+         */
+        class IdentityLookupFailed(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * `ErrorIdentityBalanceUnavailable` (native code 58). Platform
+         * returned no balance for a managed identity (not yet visible, or a
+         * lagging node). Nothing was signed or broadcast, so the read may be
+         * retried as it is.
+         * ← Swift `PlatformWalletError.identityBalanceUnavailable`.
+         */
+        class IdentityBalanceUnavailable(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -1014,6 +1039,7 @@ sealed class DashSdkError(
             55 -> PlatformWallet.ShieldedIdentityDebitPending(message, cause)
             56 -> PlatformWallet.ShieldedRecoveryCorrupted(message, cause)
             57 -> PlatformWallet.ShieldedRecoveryKeysRequired(message, cause)
+            58 -> PlatformWallet.IdentityBalanceUnavailable(message, cause) // ErrorIdentityBalanceUnavailable
             59 -> PlatformWallet.SpvProcessRestartRequired(message, cause) // ErrorSpvProcessRestartRequired
             // ErrorPrivateContactRequestNeedsPrivateReply: the explicitly
             // public accept or send refused a contact that went private.
@@ -1026,6 +1052,7 @@ sealed class DashSdkError(
             74 -> PlatformWallet.PrivateContactStoreNotRead(message, cause) // ErrorPrivateContactStoreNotRead
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
+            80 -> PlatformWallet.IdentityLookupFailed(message, cause) // ErrorIdentityLookupFailed
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.
