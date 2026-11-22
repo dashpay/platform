@@ -3816,14 +3816,10 @@ fn read_cstring_array(
             if element.is_null() {
                 return Ok(std::ffi::CString::default());
             }
+            // A string the JVM cannot hand over (out of memory) fails the
+            // whole call: the caller must not start with part of the list.
             let jstr = JString::from(element);
-            let s: String = match env.get_string(&jstr) {
-                Ok(v) => v.into(),
-                Err(_) => {
-                    let _ = env.exception_clear();
-                    return Ok(std::ffi::CString::default());
-                }
-            };
+            let s: String = env.get_string(&jstr)?.into();
             Ok(std::ffi::CString::new(s).unwrap_or_default())
         })?;
         owned.push(entry);

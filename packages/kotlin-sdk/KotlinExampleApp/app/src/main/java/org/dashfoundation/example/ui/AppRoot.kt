@@ -12,7 +12,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -94,7 +97,23 @@ fun AppRoot() {
                 color = MaterialTheme.colorScheme.error,
                 textAlign = TextAlign.Center,
             )
-            Button(onClick = { scope.launch { container.bootstrap() } }) {
+            // One recovery at a time: a Retry tapped while "Start on
+            // Testnet" is still saving would run a second bootstrap.
+            var recovering by remember { mutableStateOf(false) }
+            Button(
+                onClick = {
+                    if (recovering) return@Button
+                    recovering = true
+                    scope.launch {
+                        try {
+                            container.bootstrap()
+                        } finally {
+                            recovering = false
+                        }
+                    }
+                },
+                enabled = !recovering,
+            ) {
                 Text("Retry")
             }
             // A saved network the app cannot start on (a devnet whose
@@ -104,12 +123,19 @@ fun AppRoot() {
             if (network != Network.DEFAULT) {
                 OutlinedButton(
                     onClick = {
+                        if (recovering) return@OutlinedButton
+                        recovering = true
                         scope.launch {
-                            val notSaved = container.appState.leaveSavedNetwork()
-                            container.bootstrap()
-                            notSaved?.let(container.appState::showError)
+                            try {
+                                val notSaved = container.appState.leaveSavedNetwork()
+                                container.bootstrap()
+                                notSaved?.let(container.appState::showError)
+                            } finally {
+                                recovering = false
+                            }
                         }
                     },
+                    enabled = !recovering,
                     modifier = Modifier.testTag("bootstrap.useDefaultNetwork"),
                 ) {
                     Text("Start on ${Network.DEFAULT.displayName} instead")

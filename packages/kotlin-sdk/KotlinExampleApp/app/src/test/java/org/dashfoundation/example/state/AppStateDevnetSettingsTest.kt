@@ -220,6 +220,9 @@ class AppStateDevnetSettingsTest {
                 // Endpoint paths are appended, so these would swallow them.
                 "https://quorums.example.org/base#notes",
                 "https://quorums.example.org/base?x=1",
+                // The URL is saved and shown as typed: no credentials in it.
+                "https://user:secret@quorums.example.org",
+                "https://user@quorums.example.org",
             )) {
                 appState.setDevnetQuorumUrl(noServer)
                 val refused = assertThrows(IllegalArgumentException::class.java) {

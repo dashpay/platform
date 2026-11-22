@@ -12,6 +12,7 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.URI
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
@@ -90,18 +91,25 @@ class MasternodeDiscoveryTest {
 
     @Test
     fun shouldReturnAtTheDeadlineWhenTheRequestCannotBeAborted() {
-        // A host name lookup has no socket to close: the caller must stop
-        // waiting at the deadline even though the abort does nothing.
-        val aborted = AtomicBoolean(false)
+        // A host name lookup has no socket to close, and disconnecting can
+        // wait for a read in progress: the caller must stop waiting at the
+        // deadline even though the abort neither works nor returns.
+        val aborted = CountDownLatch(1)
         val blocked = CountDownLatch(1)
         val started = System.nanoTime()
         try {
             assertThrows(IOException::class.java) {
-                Sdk.withDeadline(200, abort = { aborted.set(true) }) { blocked.await() }
+                Sdk.withDeadline(
+                    200,
+                    abort = {
+                        aborted.countDown()
+                        blocked.await()
+                    },
+                ) { blocked.await() }
             }
             val elapsedMs = (System.nanoTime() - started) / 1_000_000
             assertTrue("took $elapsedMs ms", elapsedMs < 2_000)
-            assertTrue("the request was not told to stop", aborted.get())
+            assertTrue("the request was not told to stop", aborted.await(2, TimeUnit.SECONDS))
         } finally {
             blocked.countDown()
         }

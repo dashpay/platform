@@ -644,20 +644,21 @@ class Sdk private constructor(
             val deadlineNanos = System.nanoTime() + deadlineMs * 1_000_000
             return try {
                 val connection = url.openConnection() as HttpURLConnection
-                try {
-                    connection.connectTimeout = 5_000
-                    connection.readTimeout = 5_000
-                    connection.requestMethod = "GET"
-                    // The read timeout bounds each read only, and opening
-                    // the stream resolves the host and waits for the
-                    // response headers before the body loop checks its
-                    // deadline: the caller stops waiting at the deadline
-                    // wherever the request is stuck.
-                    withDeadline(deadlineMs, abort = connection::disconnect) {
+                connection.connectTimeout = 5_000
+                connection.readTimeout = 5_000
+                connection.requestMethod = "GET"
+                // The read timeout bounds each read only, and opening the
+                // stream resolves the host and waits for the response
+                // headers before the body loop checks its deadline: the
+                // caller stops waiting at the deadline wherever the request
+                // is stuck. Disconnecting can itself wait for a read in
+                // progress, so it never runs on the caller's thread.
+                withDeadline(deadlineMs, abort = connection::disconnect) {
+                    try {
                         connection.inputStream.use { readBounded(it, maxBytes, deadlineNanos) }
+                    } finally {
+                        connection.disconnect()
                     }
-                } finally {
-                    connection.disconnect()
                 }
             } catch (_: Exception) {
                 null
@@ -685,22 +686,27 @@ class Sdk private constructor(
          * call nothing can interrupt, such as a host name lookup. [abort]
          * is then called to make [block] end soon, such as by disconnecting
          * the connection it reads from; its thread is left to finish.
+         * [abort] runs on a thread of its own too, since it may block.
          */
         internal fun <T> withDeadline(timeoutMs: Long, abort: () -> Unit, block: () -> T): T {
             val task = FutureTask(Callable { block() })
-            Thread(task, "dash-sdk-bounded-request").apply { isDaemon = true }.start()
+            daemon("dash-sdk-bounded-request", task)
             try {
                 return task.get(timeoutMs, TimeUnit.MILLISECONDS)
             } catch (e: ExecutionException) {
                 throw e.cause ?: e
             } catch (_: TimeoutException) {
-                abort()
+                daemon("dash-sdk-bounded-request-abort", abort)
                 throw IOException("the request did not finish in $timeoutMs ms")
             } catch (e: InterruptedException) {
-                abort()
+                daemon("dash-sdk-bounded-request-abort", abort)
                 Thread.currentThread().interrupt()
                 throw e
             }
+        }
+
+        private fun daemon(name: String, task: Runnable) {
+            Thread(task, name).apply { isDaemon = true }.start()
         }
 
         /**
