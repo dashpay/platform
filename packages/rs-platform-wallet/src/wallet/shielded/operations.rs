@@ -1565,6 +1565,8 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
     amount: u64,
     prover: &P,
 ) -> Result<(Option<Credits>, ResponseMetadata), PlatformWalletError> {
+    // A zero amount is refused before anything asks the network.
+    ensure_positive_amount(amount)?;
     // Nodes before the transition's activation reject it: establish that the network
     // serves it before any note is reserved or anything is proved or saved.
     sdk.ensure_protocol_requirement(identity_top_up_from_shielded_pool_requirement())
@@ -5306,6 +5308,47 @@ mod redrive_tests {
             }
             other => panic!("expected the pending debit, got {other:?}"),
         }
+    }
+
+    /// The public free function refuses a zero top-up before the activation check, so a
+    /// pinned SDK below 14 reports the amount, not the protocol version, and an unpinned
+    /// one asks the network nothing.
+    #[tokio::test]
+    async fn should_refuse_a_zero_pool_top_up_before_the_activation_check() {
+        let below =
+            PlatformVersion::get(IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION - 1)
+                .expect("the version before activation");
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_version(below)
+                .build()
+                .expect("mock sdk"),
+        );
+        let wallet_id = [0x7B; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let keys = OrchardKeySet::from_seed(&[0x45; 32], Network::Testnet, 0).expect("keys");
+
+        let result = identity_top_up_from_pool(
+            &sdk,
+            &store,
+            None,
+            wallet_id,
+            &keys,
+            0,
+            Identifier::from([0x7C; 32]),
+            0,
+            &UnreachableIdentityProver,
+        )
+        .await;
+
+        match result {
+            Err(PlatformWalletError::ShieldedBuildError(reason)) => {
+                assert!(reason.contains("amount must be > 0"), "{reason}")
+            }
+            other => panic!("expected the zero-amount refusal, got {other:?}"),
+        }
+        assert_nothing_armed_or_recorded(&store, id).await;
     }
 
     #[tokio::test]
