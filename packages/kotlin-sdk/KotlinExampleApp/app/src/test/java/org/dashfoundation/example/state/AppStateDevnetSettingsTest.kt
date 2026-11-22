@@ -212,7 +212,15 @@ class AppStateDevnetSettingsTest {
         val session = newSession(File(temporaryFolder.root, "app.preferences_pb"))
         try {
             val appState = session.appState
-            for (noServer in listOf("https://", "https:///masternodes", "https://:8443", "https://bad host")) {
+            for (noServer in listOf(
+                "https://",
+                "https:///masternodes",
+                "https://:8443",
+                "https://bad host",
+                // Endpoint paths are appended, so these would swallow them.
+                "https://quorums.example.org/base#notes",
+                "https://quorums.example.org/base?x=1",
+            )) {
                 appState.setDevnetQuorumUrl(noServer)
                 val refused = assertThrows(IllegalArgumentException::class.java) {
                     appState.resolvedDevnetQuorumUrl()

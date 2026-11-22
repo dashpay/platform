@@ -669,8 +669,8 @@ class AppState(
 
         /** Shown when the devnet quorum URL is not https. */
         const val DEVNET_QUORUM_URL_NOT_HTTPS =
-            "The devnet quorum URL must start with https:// and name a server; " +
-                "the app allows no cleartext traffic."
+            "The devnet quorum URL must start with https://, name a server and have no " +
+                "query or fragment; the app allows no cleartext traffic."
 
         /** Shown when SPV is started on devnet before a devnet SDK was built. */
         const val DEVNET_NOT_APPLIED =
@@ -682,7 +682,9 @@ class AppState(
 
         /**
          * Whether [url] is an https URL that names a server. A port and a
-         * base path are allowed; `https://` alone is not.
+         * base path are allowed; `https://` alone is not, and neither is a
+         * query or a fragment: endpoint paths are appended to this string,
+         * and would land inside either.
          */
         fun isHttpsUrlWithHost(url: String): Boolean {
             val uri = try {
@@ -690,7 +692,10 @@ class AppState(
             } catch (_: java.net.URISyntaxException) {
                 return false
             }
-            return uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank()
+            return uri.scheme.equals("https", ignoreCase = true) &&
+                !uri.host.isNullOrBlank() &&
+                uri.rawQuery == null &&
+                uri.rawFragment == null
         }
 
         private val KEY_NETWORK = stringPreferencesKey("currentNetwork")

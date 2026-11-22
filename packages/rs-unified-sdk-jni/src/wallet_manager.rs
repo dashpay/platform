@@ -3794,8 +3794,10 @@ fn read_cstring_opt(env: &mut JNIEnv, s: &JString) -> Result<Option<std::ffi::CS
 
 /// Read a Java `String[]` into owned `CString`s plus a parallel `*const
 /// c_char` pointer vec. The returned `Vec<CString>` OWNS the memory the
-/// pointer vec references — both must outlive the FFI call. Null / invalid
-/// elements are skipped (mirrors the FFI's per-peer tolerance).
+/// pointer vec references — both must outlive the FFI call. A null element,
+/// or one that cannot become a C string (an interior NUL), is passed as an
+/// empty string: the count the caller gave is kept, so the FFI can tell a
+/// list of unusable entries from an empty one.
 fn read_cstring_array(
     env: &mut JNIEnv,
     arr: &JObjectArray,
@@ -3808,6 +3810,7 @@ fn read_cstring_array(
     for i in 0..len {
         let element = env.get_object_array_element(arr, i as i32)?;
         if element.is_null() {
+            owned.push(std::ffi::CString::default());
             continue;
         }
         let jstr = JString::from(element);
@@ -3815,12 +3818,11 @@ fn read_cstring_array(
             Ok(v) => v.into(),
             Err(_) => {
                 let _ = env.exception_clear();
+                owned.push(std::ffi::CString::default());
                 continue;
             }
         };
-        if let Ok(c) = std::ffi::CString::new(s) {
-            owned.push(c);
-        }
+        owned.push(std::ffi::CString::new(s).unwrap_or_default());
     }
     let ptrs: Vec<*const std::os::raw::c_char> = owned.iter().map(|c| c.as_ptr()).collect();
     Ok((owned, ptrs))

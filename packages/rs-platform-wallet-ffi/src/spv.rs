@@ -554,8 +554,10 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
     // Peers were given, none can be dialed, and the client may use no
     // others: it would never find a peer, so refuse the start instead of
     // running one that cannot sync. An empty list stays allowed: that is
-    // how a host asks for an offline start.
-    if restrict_to_configured_peers && !peer_list.is_empty() && config.peers.is_empty() {
+    // how a host asks for an offline start. "Given" is the caller's count,
+    // so entries skipped above (null, not UTF-8) still count as given.
+    let peers_given = !peers.is_null() && peer_count > 0;
+    if restrict_to_configured_peers && peers_given && config.peers.is_empty() {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
             format!(
@@ -714,6 +716,35 @@ mod spv_start_peer_tests {
                 "{peers:?}: {message}"
             );
         }
+    }
+
+    #[test]
+    fn should_refuse_a_restricted_start_whose_peers_cannot_be_decoded() {
+        let data_dir = CString::new("/nonexistent").expect("no NUL");
+        // Not UTF-8, and a null entry: both are skipped while decoding, and
+        // must not turn a start with peers into an offline one.
+        let not_utf8: [u8; 3] = [0xff, 0xfe, 0];
+        let peers = [not_utf8.as_ptr() as *const c_char, std::ptr::null()];
+        let mut result = unsafe {
+            platform_wallet_manager_spv_start(
+                NULL_HANDLE,
+                data_dir.as_ptr(),
+                FFINetwork::Testnet,
+                std::ptr::null(),
+                peers.as_ptr(),
+                peers.len(),
+                true,
+                0,
+                std::ptr::null(),
+                0,
+                0,
+            )
+        };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
     }
 
     #[test]
