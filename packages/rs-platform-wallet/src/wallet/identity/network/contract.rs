@@ -31,6 +31,7 @@ use async_trait::async_trait;
 
 use dpp::address_funds::AddressWitness;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::data_contract::INITIAL_DATA_CONTRACT_VERSION;
 use dpp::identity::signer::Signer;
@@ -41,6 +42,7 @@ use dpp::state_transition::data_contract_update_transition::methods::DataContrac
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
 use dpp::ProtocolError;
+use std::collections::BTreeSet;
 
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_contract::{
@@ -540,14 +542,23 @@ impl IdentityWallet {
                 None,
             )
             .await?;
-        let updated_format = contract_format_json(&draft.updated, "updated", self.sdk.version())?;
+        let platform_version = self.sdk.version();
+        let existing_format = contract_format_json(&draft.existing, "existing", platform_version)?;
+        let updated_format = contract_format_json(&draft.updated, "updated", platform_version)?;
 
-        Ok(DataContractUpdatePreview::between(
+        let mut preview = DataContractUpdatePreview::between(
             draft.existing.version(),
             draft.updated.version(),
-            &draft.existing_format,
+            &existing_format,
             &updated_format,
-        ))
+        );
+        let (added, removed) = moderator_changes(
+            &named_moderators(&draft.existing),
+            &named_moderators(&draft.updated),
+        );
+        preview.moderators_added = added;
+        preview.moderators_removed = removed;
+        Ok(preview)
     }
 
     /// Fetch the contract `contract_id` as Platform holds it and build the
@@ -628,7 +639,7 @@ impl IdentityWallet {
         let base_value = contract_format_json(&existing, "existing", platform_version)?;
 
         let merged_value = merge_contract_update_payload(
-            base_value.clone(),
+            base_value,
             new_version,
             parse_required_json("documents_schema_json", documents_schema_json)?,
             parse_optional_json("tokens_schema_json", tokens_schema_json)?,
@@ -668,20 +679,13 @@ impl IdentityWallet {
         ensure_private_document_entries_fit(&updated, Some(&existing))
             .map_err(PlatformWalletError::Sdk)?;
 
-        Ok(ContractUpdateDraft {
-            existing_format: base_value,
-            existing,
-            updated,
-        })
+        Ok(ContractUpdateDraft { existing, updated })
     }
 }
 
 /// The contract Platform holds and the contract an update would put in its
 /// place, as `IdentityWallet::draft_data_contract_update` builds them.
 struct ContractUpdateDraft {
-    /// `existing` in its serialization-format JSON: the base the update's
-    /// sections were merged onto.
-    existing_format: serde_json::Value,
     existing: DataContract,
     updated: DataContract,
 }
@@ -726,6 +730,14 @@ pub struct DataContractUpdatePreview {
     pub description_changed: bool,
     /// Whether the contract configuration would differ.
     pub config_changed: bool,
+    /// The members of the contract configuration that would differ (for
+    /// example `readonly` or `moderation`), sorted.
+    pub config_changed_fields: Vec<String>,
+    /// Identities the configuration would newly name as moderators, base58,
+    /// sorted: the appointed set, or the interim set of an elected contract.
+    pub moderators_added: Vec<String>,
+    /// Identities the configuration would no longer name as moderators.
+    pub moderators_removed: Vec<String>,
 }
 
 impl DataContractUpdatePreview {
@@ -760,8 +772,86 @@ impl DataContractUpdatePreview {
             keywords_changed: differs("keywords"),
             description_changed: differs("description"),
             config_changed: differs("config"),
+            config_changed_fields: object_member_changes(
+                existing.get("config"),
+                updated.get("config"),
+            ),
+            moderators_added: Vec::new(),
+            moderators_removed: Vec::new(),
         }
     }
+}
+
+/// The members of two JSON objects whose values differ, sorted. A side that
+/// is absent or not an object counts as empty.
+fn object_member_changes(
+    existing: Option<&serde_json::Value>,
+    updated: Option<&serde_json::Value>,
+) -> Vec<String> {
+    let empty = serde_json::Map::new();
+    let existing = existing
+        .and_then(serde_json::Value::as_object)
+        .unwrap_or(&empty);
+    let updated = updated
+        .and_then(serde_json::Value::as_object)
+        .unwrap_or(&empty);
+    let names: BTreeSet<&String> = existing.keys().chain(updated.keys()).collect();
+    names
+        .into_iter()
+        .filter(|name| existing.get(*name) != updated.get(*name))
+        .cloned()
+        .collect()
+}
+
+/// The identities `contract`'s configuration names as moderators: the
+/// appointed set, or the interim set of an elected declaration. Empty when
+/// the contract has no moderation, or only its owner moderates.
+fn named_moderators(contract: &DataContract) -> BTreeSet<Identifier> {
+    contract
+        .config()
+        .moderation()
+        .and_then(|moderation| moderation.moderators.identity_ids())
+        .cloned()
+        .unwrap_or_default()
+}
+
+/// The identities `updated` names that `existing` does not, and the reverse,
+/// each base58 and sorted.
+fn moderator_changes(
+    existing: &BTreeSet<Identifier>,
+    updated: &BTreeSet<Identifier>,
+) -> (Vec<String>, Vec<String>) {
+    let base58 = |ids: std::collections::btree_set::Difference<'_, Identifier>| {
+        let mut names: Vec<String> = ids
+            .map(|id| bs58::encode(id.to_buffer()).into_string())
+            .collect();
+        names.sort();
+        names
+    };
+    (
+        base58(updated.difference(existing)),
+        base58(existing.difference(updated)),
+    )
+}
+
+/// A document type definition with its `indices` listed by name, so a
+/// reordering of unchanged indexes does not count as a change. Platform
+/// reads indexes by name; a changed index, or a changed property order
+/// within one, still differs.
+fn with_indices_by_name(definition: &serde_json::Value) -> serde_json::Value {
+    let mut definition = definition.clone();
+    if let Some(serde_json::Value::Array(indices)) = definition.get_mut("indices") {
+        indices.sort_by(|a, b| {
+            let name = |index: &serde_json::Value| {
+                index
+                    .get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned)
+            };
+            name(a).cmp(&name(b))
+        });
+    }
+    definition
 }
 
 /// The keys of the keyed section `section` that `updated` adds to, or
@@ -777,10 +867,17 @@ fn section_changes(
     let Some(updated_entries) = updated.get(section).and_then(serde_json::Value::as_object) else {
         return changes;
     };
+    let differs = |existing: &serde_json::Value, updated: &serde_json::Value| {
+        if section == "documentSchemas" {
+            with_indices_by_name(existing) != with_indices_by_name(updated)
+        } else {
+            existing != updated
+        }
+    };
     for (key, definition) in updated_entries {
         match existing_entries.and_then(|entries| entries.get(key)) {
             None => changes.added.push(key.clone()),
-            Some(existing_definition) if existing_definition != definition => {
+            Some(existing_definition) if differs(existing_definition, definition) => {
                 changes.changed.push(key.clone())
             }
             Some(_) => {}
@@ -1583,6 +1680,59 @@ mod tests {
             err.to_string().contains("not the reviewed version"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn should_not_count_a_reordering_of_unchanged_indexes_as_a_change() {
+        let note = |indices: serde_json::Value| json!({ "note": { "type": "object", "properties": {}, "indices": indices } });
+        let by_a = json!({ "name": "byA", "properties": [{ "a": "asc" }] });
+        let by_b = json!({ "name": "byB", "properties": [{ "b": "asc" }] });
+        let existing = json!({ "documentSchemas": note(json!([by_a.clone(), by_b.clone()])) });
+
+        let reordered = json!({ "documentSchemas": note(json!([by_b.clone(), by_a.clone()])) });
+        assert!(section_changes(&existing, &reordered, "documentSchemas").is_empty());
+
+        let changed_index = json!({ "documentSchemas": note(json!([
+            by_a,
+            { "name": "byB", "properties": [{ "b": "desc" }] }
+        ])) });
+        assert_eq!(
+            section_changes(&existing, &changed_index, "documentSchemas").changed,
+            vec!["note"]
+        );
+    }
+
+    #[test]
+    fn should_name_the_configuration_members_that_change() {
+        let existing =
+            json!({ "config": { "$formatVersion": "2", "readonly": false, "moderation": null } });
+        let updated = json!({ "config": {
+            "$formatVersion": "2", "readonly": false,
+            "moderation": { "moderators": { "$type": "contractOwner" } }
+        } });
+
+        let preview = DataContractUpdatePreview::between(1, 2, &existing, &updated);
+
+        assert!(preview.config_changed);
+        assert_eq!(preview.config_changed_fields, vec!["moderation"]);
+    }
+
+    #[test]
+    fn should_list_moderators_added_and_removed() {
+        let kept = Identifier::from([1; 32]);
+        let revoked = Identifier::from([2; 32]);
+        let granted = Identifier::from([3; 32]);
+        let existing = BTreeSet::from([kept, revoked]);
+        let updated = BTreeSet::from([kept, granted]);
+
+        let (added, removed) = moderator_changes(&existing, &updated);
+
+        assert_eq!(added, vec![bs58::encode(granted.to_buffer()).into_string()]);
+        assert_eq!(
+            removed,
+            vec![bs58::encode(revoked.to_buffer()).into_string()]
+        );
+        assert_eq!(moderator_changes(&existing, &existing), (vec![], vec![]));
     }
 
     /// The current default config version for the latest protocol — 1 on

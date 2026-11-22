@@ -189,11 +189,15 @@ pub unsafe extern "C" fn platform_wallet_update_data_contract_with_signer(
 ///  "documentTypes":{"added":["note"],"changed":[]},
 ///  "tokens":{"added":["0"],"changed":[]},
 ///  "groups":{"added":[],"changed":[]},
-///  "keywordsChanged":false,"descriptionChanged":false,"configChanged":false}
+///  "keywordsChanged":false,"descriptionChanged":false,"configChanged":true,
+///  "configChangedFields":["moderation"],
+///  "moderatorsAdded":["<base58 id>"],"moderatorsRemoved":[]}
 /// ```
 ///
 /// Document types are keyed by name, tokens and groups by contract position
-/// (decimal strings). `hasChanges` is false when the update would change
+/// (decimal strings). `configChangedFields` names the configuration members
+/// that differ; `moderatorsAdded` and `moderatorsRemoved` list the identities
+/// the configuration newly names, or stops naming, as moderators. `hasChanges` is false when the update would change
 /// nothing besides the version, which every update raises.
 ///
 /// # Safety
@@ -318,6 +322,9 @@ fn preview_to_json(preview: &DataContractUpdatePreview) -> serde_json::Value {
         "keywordsChanged": preview.keywords_changed,
         "descriptionChanged": preview.description_changed,
         "configChanged": preview.config_changed,
+        "configChangedFields": preview.config_changed_fields,
+        "moderatorsAdded": preview.moderators_added,
+        "moderatorsRemoved": preview.moderators_removed,
     })
 }
 
@@ -362,6 +369,9 @@ mod tests {
             keywords_changed: true,
             description_changed: false,
             config_changed: true,
+            config_changed_fields: vec!["moderation".to_string()],
+            moderators_added: vec!["Added".to_string()],
+            moderators_removed: vec!["Removed".to_string()],
         };
 
         assert_eq!(
@@ -376,6 +386,9 @@ mod tests {
                 "keywordsChanged": true,
                 "descriptionChanged": false,
                 "configChanged": true,
+                "configChangedFields": ["moderation"],
+                "moderatorsAdded": ["Added"],
+                "moderatorsRemoved": ["Removed"],
             })
         );
     }
@@ -391,6 +404,9 @@ mod tests {
             keywords_changed: false,
             description_changed: false,
             config_changed: false,
+            config_changed_fields: Vec::new(),
+            moderators_added: Vec::new(),
+            moderators_removed: Vec::new(),
         };
 
         let json = preview_to_json(&preview);
@@ -398,5 +414,33 @@ mod tests {
         assert_eq!(json["hasChanges"], json!(preview.has_changes()));
         assert_eq!(json["hasChanges"], json!(false));
         assert_eq!(json["documentTypes"], json!({ "added": [], "changed": [] }));
+    }
+
+    /// The export clears a caller's output slot before it refuses a null
+    /// documents argument, so a reused slot never holds a stale pointer.
+    #[test]
+    fn should_clear_the_preview_output_before_refusing_null_documents() {
+        let owner = [1u8; 32];
+        let contract = [2u8; 32];
+        let mut sentinel: c_char = 0;
+        let mut out: *mut c_char = &mut sentinel;
+
+        let result = unsafe {
+            platform_wallet_preview_data_contract_update(
+                0,
+                owner.as_ptr(),
+                contract.as_ptr(),
+                ptr::null(),
+                ptr::null(),
+                ptr::null(),
+                ptr::null(),
+                ptr::null(),
+                ptr::null(),
+                &mut out,
+            )
+        };
+
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert!(out.is_null());
     }
 }
