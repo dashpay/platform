@@ -785,6 +785,15 @@ pub enum PlatformWalletFFIResultCode {
     /// managed ones.
     ErrorIdentityLookupFailed = 80,
 
+    /// Maps `IdentityCreationKeysError::InactiveKeyFormat`: a creation key
+    /// uses a format (a version 1 key, or one bound to a contract group) the
+    /// wallet's protocol version does not admit. Nothing was funded, signed or
+    /// broadcast. An unpinned SDK first learns the network's version, so there
+    /// the network runs a version that refuses the format, and the refusal
+    /// lifts when the network upgrades; a pinned SDK keeps its pin. Register
+    /// with keys that version admits, such as the Rust identity key layout's.
+    ErrorIdentityKeyFormatNotActive = 82,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1333,6 +1342,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::IdentityCreationKeys(
                 IdentityCreationKeysError::ValidationUnavailable(..),
             ) => PlatformWalletFFIResultCode::ErrorUnknown,
+            // A key format the wallet's protocol version does not admit: the
+            // keys may be well formed, so not a malformed argument.
+            PlatformWalletError::IdentityCreationKeys(
+                IdentityCreationKeysError::InactiveKeyFormat { .. },
+            ) => PlatformWalletFFIResultCode::ErrorIdentityKeyFormatNotActive,
             // A key set the creation pre-flight refused (authentication
             // levels or structure): a caller-input error the host fixes by
             // passing the Rust layout's keys. The typed Display names the
@@ -3220,6 +3234,36 @@ mod private_contact_request_error_tests {
             PlatformWalletFFIResultCode::ErrorIdentityLookupFailed
         );
         assert_eq!(result.code as u32, 80);
+    }
+
+    /// Creation keys whose format the wallet's protocol version does not admit
+    /// reach the host by their own code, not as a malformed argument.
+    #[test]
+    fn should_report_an_inactive_identity_key_format_by_its_own_code() {
+        let result = PlatformWalletFFIResult::from(PlatformWalletError::from(
+            IdentityCreationKeysError::InactiveKeyFormat {
+                protocol_version: 13,
+                active_range: 14..=u32::MAX,
+            },
+        ));
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorIdentityKeyFormatNotActive
+        );
+        assert_eq!(result.code as u32, 82);
+    }
+
+    /// A key set the pre-flight refuses on its levels stays a caller-input
+    /// error: only an inactive format takes its own code.
+    #[test]
+    fn should_keep_a_refused_creation_key_set_as_an_invalid_parameter() {
+        let result = PlatformWalletFFIResult::from(PlatformWalletError::from(
+            IdentityCreationKeysError::KeyZeroNotMasterAuthentication,
+        ));
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
     }
 
     /// A public contact request a loaded wallet refuses until its private

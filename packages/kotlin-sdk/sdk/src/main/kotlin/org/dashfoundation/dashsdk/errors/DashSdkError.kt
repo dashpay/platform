@@ -824,6 +824,18 @@ sealed class DashSdkError(
         }
 
         /**
+         * `ErrorIdentityKeyFormatNotActive` (native code 82). A creation key
+         * uses a format (a version 1 key, or one bound to a contract group)
+         * the wallet's protocol version does not admit. Nothing was funded,
+         * signed or broadcast. On an unpinned SDK the network refuses the
+         * format and it lifts when the network upgrades; meanwhile register
+         * with the Rust identity key layout's keys.
+         * ← Swift `PlatformWalletError.identityKeyFormatNotActive`.
+         */
+        class IdentityKeyFormatNotActive(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * `ErrorIdentityBalanceUnavailable` (native code 58). Platform
          * returned no balance for a managed identity (not yet visible, or a
          * lagging node). Nothing was signed or broadcast, so the read may be
@@ -1046,6 +1058,7 @@ sealed class DashSdkError(
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
             80 -> PlatformWallet.IdentityLookupFailed(message, cause) // ErrorIdentityLookupFailed
+            82 -> PlatformWallet.IdentityKeyFormatNotActive(message, cause) // ErrorIdentityKeyFormatNotActive
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

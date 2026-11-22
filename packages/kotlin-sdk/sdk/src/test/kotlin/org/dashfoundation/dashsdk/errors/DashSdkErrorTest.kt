@@ -414,6 +414,20 @@ class DashSdkErrorTest {
         assertTrue("nothing was sent, so it may be retried as it is", mapped.isRetryable)
     }
 
+    /**
+     * Creation keys in a format the wallet's protocol version does not admit:
+     * their own code, not a malformed argument, and not retryable as they are.
+     */
+    @Test
+    fun shouldReportAnInactiveIdentityKeyFormatByItsOwnCode() {
+        val detail = "identity key formats are not active at protocol version 13"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 82, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.IdentityKeyFormatNotActive)
+        assertEquals(detail, mapped.message)
+        assertFalse("the same keys fail again until the version admits them", mapped.isRetryable)
+    }
+
     @Test
     fun shouldReportAMissingIdentityBalanceAsRetryable() {
         val detail = "Platform returned no balance for the identity"
