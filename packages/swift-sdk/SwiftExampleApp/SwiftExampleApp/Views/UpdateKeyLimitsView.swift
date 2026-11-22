@@ -422,10 +422,19 @@ struct UpdateKeyLimitsView: View {
                 submitError = "\(error.localizedDescription)\nThe update may have landed. Close this sheet and check the key before trying again."
                 return
             }
-            // Preview again if the form still shows what was submitted: if
-            // the wallet's copy moved (the update landed but was not stored,
-            // or another client raised the key), the sheet shows what would
-            // be signed now. An edit made meanwhile has its own preview.
+            // If the wallet's copy of the key moved while this submission was
+            // out (the raise was proved but its row failed to store, or
+            // another client raised the key), the outcome is unknown: offering
+            // the same inputs again would sign the increment on top of it.
+            if case .answered(let now) = await preview(addBudget: nil, expiresAt: nil),
+               now.currentTotalBudget != reviewed.currentTotalBudget
+                || now.currentExpiresAt != reviewed.currentExpiresAt {
+                outcomeUnknown = true
+                submitError = "\(error.localizedDescription)\nThe key's limits changed while this update was being sent, so it may have landed. Close this sheet and check the key before trying again."
+                return
+            }
+            // Otherwise nothing landed: preview again if the form still shows
+            // what was submitted. An edit made meanwhile has its own preview.
             if change == inputs {
                 await previewInputs(change)
             }
