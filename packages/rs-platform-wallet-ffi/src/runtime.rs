@@ -8,8 +8,7 @@
 //! `verify_state_transition_was_executed_with_proof`'s function
 //! prologue, which is the classic fingerprint of a stack-guard hit.
 //! Android is the same case: a Kotlin `Dispatchers.IO` thread has about
-//! 1 MiB, and the wide frames of an unoptimized build overflow it in the
-//! first DashPay contract parse a wallet create reaches
+//! 1 MiB, and an unoptimized wallet create polled on one overflowed it
 //! (dashpay/platform#6020).
 //!
 //! Two mitigations together:

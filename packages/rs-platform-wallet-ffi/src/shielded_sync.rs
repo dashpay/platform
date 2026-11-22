@@ -415,6 +415,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_sync_now(
 /// shielded wallet on the same `wallet_id`. The wallet stays on the
 /// manager's coordinator; a bind on another one is refused.
 ///
+/// The mnemonic resolver is called on the calling thread. The persistence
+/// callbacks of the bind are not: they run on the thread the bind is polled
+/// on (see `PersistenceCallbacks`).
+///
 /// # Safety
 /// - `wallet_id_bytes` must point at 32 readable bytes.
 /// - `accounts_ptr` must point at `accounts_len` readable `u32`s.
@@ -481,11 +485,10 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
     // mnemonic resolved. Persisted-key load/restore errors propagate without
     // resolving the seed; fallback must not mask a persistence failure.
     //
-    // Both binds are polled on the big-stack thread, not the caller's: the
-    // install restores the wallet's private payments, which parses the
-    // DashPay contract, and its unoptimized frames overflow a ~1 MiB host
-    // thread (dashpay/platform#6020). The resolver between them stays on
-    // the caller's thread.
+    // Both binds are polled on the big-stack thread, not the caller's, as
+    // the wallet creates are (dashpay/platform#6020): the install restores
+    // the wallet's private payments. The resolver between them stays on the
+    // caller's thread.
     let from_persisted = run_on_big_stack_thread(|| {
         runtime()
             .block_on(wallet_arc.bind_shielded_from_persisted(accounts.as_slice(), &coordinator))
@@ -562,7 +565,7 @@ pub unsafe extern "C" fn platform_wallet_manager_configure_shielded(
     };
 
     // Big-stack polling: configuring restores the held wallets' private
-    // payments, which parses the DashPay contract (see the bind above).
+    // payments (see the bind above).
     let spawned = run_on_big_stack_thread(|| {
         PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
             runtime().block_on(manager.configure_shielded(&db_path))

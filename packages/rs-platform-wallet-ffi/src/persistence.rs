@@ -862,10 +862,18 @@ impl RoundOutcome {
 ///
 /// # Reentrancy contract (required of every callback)
 ///
-/// A persistence callback runs **synchronously on the calling native thread**,
-/// which is frequently a wallet-manager task **holding the manager's write
-/// lock**. That lock is non-reentrant. Therefore a callback MUST NOT call back
-/// into any wallet-manager / platform-wallet FFI (`dash_sdk_*` /
+/// A persistence callback runs **synchronously on the native thread that
+/// polls the wallet operation**, which is frequently a wallet-manager task
+/// **holding the manager's write lock**. That thread is not always the one
+/// that called the export: it may be a runtime worker, or the
+/// `pw-ffi-bigstack` thread an export runs its work on while its caller
+/// stays blocked (wallet create, persistor load, shielded configure and
+/// bind, wallet startup). So the callback context must be usable from any
+/// native thread, and a callback must not dispatch synchronously to the
+/// thread blocked in the export.
+///
+/// The manager's write lock is non-reentrant. Therefore a callback MUST NOT
+/// call back into any wallet-manager / platform-wallet FFI (`dash_sdk_*` /
 /// `platform_wallet_*` and friends), directly or indirectly — doing so
 /// deadlocks. Write the changeset to your storage backend and return; do not
 /// query live wallet state to enrich a row, and do not synchronously drive an
