@@ -587,6 +587,55 @@ struct PasteboardContractCandidate {
         return parts.isEmpty ? "valid contract JSON" : parts.joined(separator: " · ")
     }
 
+    /// The groups JSON a wallet contract call takes, a map keyed by group
+    /// position, from either shape the forms hold: that map itself, or the
+    /// array `classify` flattens it into, each entry carrying its position
+    /// in an injected `id`. Returns nil for empty input.
+    ///
+    /// - Throws: `SDKError.serializationError` for text that is not UTF-8,
+    ///   an entry without an `id` or with an `id` that is neither an
+    ///   integer nor a string, two entries with the same position, or a
+    ///   top-level value that is neither shape; a JSON parse error as
+    ///   `JSONSerialization` throws it.
+    static func positionKeyedGroupsJSON(from raw: String) throws -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard let data = trimmed.data(using: .utf8) else {
+            throw SDKError.serializationError("Invalid groups JSON")
+        }
+        let byPosition: [String: Any]
+        switch try JSONSerialization.jsonObject(with: data) {
+        case let map as [String: Any]:
+            byPosition = map
+        case let entries as [[String: Any]]:
+            var rekeyed: [String: Any] = [:]
+            for var entry in entries {
+                guard let rawId = entry.removeValue(forKey: "id") else {
+                    throw SDKError.serializationError("Group entry is missing an `id` field")
+                }
+                let key: String
+                if let intId = rawId as? Int {
+                    key = String(intId)
+                } else if let strId = rawId as? String {
+                    key = strId
+                } else {
+                    throw SDKError.serializationError("Group entry has unsupported `id` type, expected Int or String")
+                }
+                guard rekeyed[key] == nil else {
+                    throw SDKError.serializationError("Duplicate group position `\(key)` in groups payload")
+                }
+                rekeyed[key] = entry
+            }
+            byPosition = rekeyed
+        default:
+            throw SDKError.serializationError("Invalid groups JSON")
+        }
+        guard let json = jsonString(from: byPosition) else {
+            throw SDKError.serializationError("Invalid groups JSON")
+        }
+        return json
+    }
+
     /// Round-trip a value back to its compact JSON-string form.
     private static func jsonString(from value: Any) -> String? {
         guard let data = try? JSONSerialization.data(
