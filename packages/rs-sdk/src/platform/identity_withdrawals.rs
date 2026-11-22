@@ -234,8 +234,12 @@ impl Sdk {
 /// First every page is read in turn and the rows merged by id, which lists a withdrawal that
 /// moved to an earlier page once. A withdrawal that moved during that walk took the newest
 /// `$updatedAt`, so it now sits at the top of the listing. When the walk read more than one
-/// page, the listing is therefore read again from the top until a page holds nothing new or
-/// changed: that catches every withdrawal that moved during the walk, however many did.
+/// page, the listing is therefore read again from the top, page by page until a page holds
+/// nothing new or changed. A withdrawal can move again during that pass and land above
+/// where the pass has reached, so passes repeat until one finds nothing new or changed on
+/// its first page: the top of the listing is then unchanged, so no withdrawal moved since
+/// the pass before, and the list is complete as of that read. Each further pass needs
+/// another status change on the chain, so the passes end.
 async fn read_all_withdrawals<F, Fut>(mut fetch_page: F) -> Result<Vec<IdentityWithdrawal>, Error>
 where
     F: FnMut(DocumentsPage) -> Fut,
@@ -251,13 +255,20 @@ where
         page = fetched.next;
     }
     if pages_read > 1 {
-        let mut page = Some(DocumentsPage::default());
-        while let Some(current) = page {
-            let fetched = fetch_page(current).await?;
-            if !merge_withdrawals(&mut withdrawals, fetched.withdrawals) {
+        loop {
+            let mut changed = false;
+            let mut page = Some(DocumentsPage::default());
+            while let Some(current) = page {
+                let fetched = fetch_page(current).await?;
+                if !merge_withdrawals(&mut withdrawals, fetched.withdrawals) {
+                    break;
+                }
+                changed = true;
+                page = fetched.next;
+            }
+            if !changed {
                 break;
             }
-            page = fetched.next;
         }
     }
     Ok(withdrawals)
@@ -632,7 +643,9 @@ mod tests {
             vec![f.clone(), e.clone()],
             vec![d.clone(), a.clone()],
             vec![b.clone(), c.clone()],
-            // Never asked for: the re-read stops at the first unchanged page.
+            // The next pass finds its first page unchanged, so the read is complete.
+            vec![f.clone(), e.clone()],
+            // Never asked for.
             vec![row_updated(9, 0, 1)],
         ];
         let calls = Rc::new(Cell::new(0));
@@ -642,7 +655,7 @@ mod tests {
 
         let ids: Vec<_> = withdrawals.iter().map(|w| w.id).collect();
         assert_eq!(ids, vec![f.id, e.id, d.id, a.id, b.id, c.id]);
-        assert_eq!(calls.get(), 5);
+        assert_eq!(calls.get(), 6);
     }
 
     #[tokio::test]
@@ -660,6 +673,7 @@ mod tests {
             vec![c.clone()],
             vec![b_pooled.clone(), a.clone()],
             vec![c.clone()],
+            vec![b_pooled.clone(), a.clone()],
         ];
         let fetch = scripted(pages, 2, Rc::new(Cell::new(0)));
 
@@ -667,5 +681,41 @@ mod tests {
 
         assert_eq!(withdrawals.len(), 3);
         assert_eq!(withdrawals[0], b_pooled);
+    }
+
+    #[tokio::test]
+    async fn should_find_a_withdrawal_missed_by_the_walk_that_moves_again_during_the_re_read() {
+        // Listing A..F, two per page. During the walk D, E and F move to the top, so the walk
+        // misses them. The first re-read pass reads F, E, then D moves again, above the pass,
+        // which reads A, B next and stops there without D. The second pass finds D.
+        let (a, b, c) = (
+            row_updated(1, 0, 10),
+            row_updated(2, 0, 9),
+            row_updated(3, 0, 8),
+        );
+        let (e, f) = (row_updated(5, 1, 21), row_updated(6, 1, 22));
+        let d_broadcast = row_updated(4, 2, 30);
+        let pages = vec![
+            // The walk.
+            vec![a.clone(), b.clone()],
+            vec![c.clone()],
+            // The first re-read pass: F, E new; then A, B unchanged.
+            vec![f.clone(), e.clone()],
+            vec![a.clone(), b.clone()],
+            // The second pass: D new at the top; then E, A unchanged.
+            vec![d_broadcast.clone(), f.clone()],
+            vec![e.clone(), a.clone()],
+            // The third pass: the top is unchanged, so the read is complete.
+            vec![d_broadcast.clone(), f.clone()],
+        ];
+        let calls = Rc::new(Cell::new(0));
+        let fetch = scripted(pages, 2, calls.clone());
+
+        let withdrawals = read_all_withdrawals(fetch).await.expect("reads");
+
+        let ids: Vec<_> = withdrawals.iter().map(|w| w.id).collect();
+        assert_eq!(ids, vec![d_broadcast.id, f.id, e.id, a.id, b.id, c.id]);
+        assert_eq!(withdrawals[0].status, WithdrawalStatus::BROADCASTED);
+        assert_eq!(calls.get(), 7);
     }
 }
