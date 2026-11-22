@@ -98,3 +98,10 @@ func formatTokenAmount(_ raw: UInt64, decimals: Int) -> String {
     formatter.usesGroupingSeparator = false
     return formatter.string(from: scaled as NSNumber) ?? "\(raw)"
 }
+
+/// Exact DASH text for a Platform credit amount (1 DASH = 1e11 credits),
+/// down to one credit. Payment surfaces use this so a one-credit amount or
+/// a one-credit shortfall never reads as zero or as two equal amounts.
+func formatCreditsAsDash(_ credits: UInt64) -> String {
+    formatTokenAmount(credits, decimals: 11) + " DASH"
+}

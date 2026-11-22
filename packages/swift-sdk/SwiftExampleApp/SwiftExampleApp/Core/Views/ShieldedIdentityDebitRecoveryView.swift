@@ -50,7 +50,7 @@ enum ShieldedIdentityDebitRecoveryDisplay {
     }
 
     static func amountText(_ credits: UInt64) -> String {
-        String(format: "%.8f DASH", Double(credits) / 100_000_000_000.0)
+        formatCreditsAsDash(credits)
     }
 
     static let stopRetryingWarning =

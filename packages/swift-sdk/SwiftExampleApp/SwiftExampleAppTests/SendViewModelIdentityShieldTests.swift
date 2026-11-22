@@ -285,10 +285,43 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
             ),
             flow: .identityToShielded
         )
-        XCTAssertTrue(vm.error?.contains("1.50000000 DASH") == true)
-        XCTAssertTrue(vm.error?.contains("0.50000000 DASH") == true)
+        XCTAssertTrue(vm.error?.contains(formatCreditsAsDash(150_000_000_000)) == true)
+        XCTAssertTrue(vm.error?.contains(formatCreditsAsDash(50_000_000_000)) == true)
         XCTAssertTrue(vm.error?.contains("Nothing was sent") == true)
         XCTAssertNil(vm.unconfirmedMessage)
+    }
+
+    func test_insufficientIdentityCredits_oneCreditShortfall_showsDifferentAmounts() {
+        let required: UInt64 = 100_000_000_001
+        let available: UInt64 = 100_000_000_000
+        let message = SendViewModel.identityShieldRefusalMessage(
+            .insufficientIdentityCredits(identityId: "id", required: required, available: available)
+        )
+        XCTAssertNotEqual(formatCreditsAsDash(required), formatCreditsAsDash(available))
+        XCTAssertTrue(message?.contains(formatCreditsAsDash(required)) == true)
+        XCTAssertTrue(message?.contains(formatCreditsAsDash(available)) == true)
+    }
+
+    func test_insufficientIdentityCredits_oneCreditAvailable_isNotShownAsZero() {
+        let message = SendViewModel.identityShieldRefusalMessage(
+            .insufficientIdentityCredits(identityId: "id", required: 2, available: 1)
+        )
+        XCTAssertTrue(message?.contains("has \(formatCreditsAsDash(1)).") == true)
+        XCTAssertFalse(message?.contains("has \(formatCreditsAsDash(0)).") == true)
+    }
+
+    func test_protocolVersionNotActive_isReadable() {
+        let message = SendViewModel.identityShieldRefusalMessage(.protocolVersionNotActive("x"))
+        XCTAssertEqual(
+            message,
+            "This network has not activated shielding from an identity yet. Nothing was sent."
+        )
+    }
+
+    func test_sdkPinnedBelowProtocolVersion_isReadable() {
+        let message = SendViewModel.identityShieldRefusalMessage(.sdkPinnedBelowProtocolVersion("x"))
+        XCTAssertTrue(message?.contains("pinned below") == true)
+        XCTAssertTrue(message?.contains("Nothing was sent") == true)
     }
 
     func test_identityBalanceUnavailable_saysNothingWasSent() {

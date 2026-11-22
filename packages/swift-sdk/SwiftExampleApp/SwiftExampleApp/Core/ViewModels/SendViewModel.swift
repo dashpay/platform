@@ -957,13 +957,19 @@ class SendViewModel: ObservableObject {
         case .identityBalanceUnavailable:
             return "The identity's balance could not be read from Platform, so "
                 + "the shield was not attempted. Nothing was sent."
+        case .protocolVersionNotActive:
+            return "This network has not activated shielding from an identity yet. "
+                + "Nothing was sent."
+        case .sdkPinnedBelowProtocolVersion:
+            return "This app's SDK is pinned below the protocol version that "
+                + "shields from an identity. Nothing was sent."
         default:
             return nil
         }
     }
 
     nonisolated static func formatCredits(_ credits: UInt64) -> String {
-        String(format: "%.8f DASH", Double(credits) / 100_000_000_000.0)
+        formatCreditsAsDash(credits)
     }
 
     /// Whether a shielded operation's error means it may already be on

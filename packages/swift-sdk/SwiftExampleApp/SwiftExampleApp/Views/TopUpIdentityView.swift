@@ -62,6 +62,63 @@ struct ShieldedTopUpRequest: Equatable {
     }
 }
 
+/// Whether a captured top-up may be sent, decided only from the read taken
+/// at submit for the captured wallet. A cached display value never lets a
+/// payment through: a failed, invalidated (`nil`), unbound or incomplete
+/// submit read refuses it.
+enum ShieldedTopUpSubmitCheck: Equatable {
+    case send
+    case refuse(String)
+
+    static func decide(
+        request: ShieldedTopUpRequest,
+        minimumFee: UInt64?,
+        submitRead: ShieldedSpendableCredits.Read?
+    ) -> ShieldedTopUpSubmitCheck {
+        let fresh = submitRead.map {
+            ShieldedSpendableCredits.after($0, previous: .unknown(reason: nil))
+        }
+        guard let spendable = fresh?.credits else {
+            var message = "Could not read the shielded balance, so nothing was sent."
+            if let reason = fresh?.unavailableReason { message += " " + reason }
+            return .refuse(message)
+        }
+        guard request.isAffordable(minimumFee: minimumFee, spendable: spendable) else {
+            return .refuse("The amount plus the minimum fee must fit the spendable "
+                + "shielded balance. Nothing was sent.")
+        }
+        return .send
+    }
+
+    /// Result text after the wallet confirmed the spent notes. The proof does
+    /// not show that this transition added the amount, so it is "requested".
+    static func completedText(amount: UInt64) -> String {
+        "The spent notes were confirmed. Requested: \(formatCreditsAsDash(amount))."
+    }
+
+    static func unconfirmedText(amount: UInt64) -> String {
+        "The top-up of \(formatCreditsAsDash(amount)) could not be confirmed. "
+            + "Do not retry: it may already be on chain. It is listed as pending "
+            + "on this screen and in Shielded Activity, and the wallet checks it "
+            + "on each shielded sync."
+    }
+
+    /// Wallet refusals of a top-up with wording for this screen; `nil` for
+    /// any other error, whose own description is shown.
+    static func refusalMessage(_ error: PlatformWalletError) -> String? {
+        switch error {
+        case .protocolVersionNotActive:
+            return "This network has not activated topping up an identity from "
+                + "the shielded pool yet. Nothing was sent."
+        case .sdkPinnedBelowProtocolVersion:
+            return "This app's SDK is pinned below the protocol version that tops "
+                + "up an identity from the shielded pool. Nothing was sent."
+        default:
+            return nil
+        }
+    }
+}
+
 /// What the top-up screen knows about the wallet's spendable shielded
 /// credits on account 0 (notes reserved for a pending spend excluded), read
 /// from the wallet's local balance snapshot. "Unknown" is kept distinct
@@ -281,7 +338,7 @@ struct TopUpIdentityView: View {
                                 .accessibilityIdentifier("topup.fundingSource.account.\(option.accountIndex)")
                         }
                         if showShielded {
-                            Text("Shielded Balance: \(Self.formatDash(raw: shieldedSpendable.credits ?? 0, divisor: Double(Self.creditsPerDash)))")
+                            Text("Shielded Balance: \(formatCreditsAsDash(shieldedSpendable.credits ?? 0))")
                                 .tag(Optional(FundingSelection.shieldedBalance))
                                 .accessibilityIdentifier("topup.fundingSource.shielded")
                         }
@@ -329,10 +386,7 @@ struct TopUpIdentityView: View {
                     HStack {
                         Label("Top-up from shielded pool", systemImage: "clock")
                         Spacer()
-                        Text(Self.formatDash(
-                            raw: entry.amount,
-                            divisor: Double(Self.creditsPerDash)
-                        ))
+                        Text(formatCreditsAsDash(entry.amount))
                         .monospacedDigit()
                     }
                     .accessibilityIdentifier("topup.shielded.pendingRow")
@@ -403,14 +457,12 @@ struct TopUpIdentityView: View {
             }
             LabeledContent(
                 "Spendable shielded",
-                value: shieldedSpendable.credits.map {
-                    Self.formatDash(raw: $0, divisor: Double(Self.creditsPerDash))
-                } ?? "Unknown"
+                value: shieldedSpendable.credits.map(formatCreditsAsDash) ?? "Unknown"
             )
             LabeledContent(
                 "Fee",
                 value: shieldedTopUpFee.map {
-                    "at least " + Self.formatDash(raw: $0, divisor: Double(Self.creditsPerDash))
+                    "at least " + formatCreditsAsDash($0)
                 } ?? "Not available"
             )
             .accessibilityIdentifier("topup.shielded.fee")
@@ -467,22 +519,14 @@ struct TopUpIdentityView: View {
                     Label("Top-up submitted", systemImage: "checkmark.seal.fill")
                         .foregroundColor(.green)
                         .font(.headline)
-                    Text(
-                        "The spent notes were confirmed. Requested: "
-                        + "\(Self.formatDash(raw: amount, divisor: Double(Self.creditsPerDash)))."
-                    )
-                    .foregroundColor(.secondary)
+                    Text(ShieldedTopUpSubmitCheck.completedText(amount: amount))
+                        .foregroundColor(.secondary)
                 case .mayHaveGoneThrough(let amount):
                     Label("May have gone through", systemImage: "clock.badge.questionmark")
                         .foregroundColor(.orange)
                         .font(.headline)
-                    Text(
-                        "The top-up of \(Self.formatDash(raw: amount, divisor: Double(Self.creditsPerDash))) "
-                        + "could not be confirmed. Do not retry: it may already be on "
-                        + "chain. It is listed as pending on this screen and in "
-                        + "Shielded Activity, and the wallet checks it on each shielded sync."
-                    )
-                    .foregroundColor(.secondary)
+                    Text(ShieldedTopUpSubmitCheck.unconfirmedText(amount: amount))
+                        .foregroundColor(.secondary)
                 }
                 HStack {
                     Text("Identity balance:")
@@ -603,24 +647,27 @@ struct TopUpIdentityView: View {
     /// value. A rebind during the read makes one fresh read safe.
     private func refreshShieldedSpendable() async {
         guard let walletId = identity.wallet?.walletId else { return }
+        // An invalidated read (`nil`) keeps the displayed value.
+        guard let read = await readShieldedSpendable(walletId: walletId) else { return }
+        shieldedSpendable = .after(read, previous: shieldedSpendable)
+    }
+
+    /// One snapshot read for `walletId`. `nil` when the SDK invalidated it
+    /// with `CancellationError` (Clear, stop, a failed bind, or the view
+    /// going away). A rebind during the read makes one fresh read safe.
+    private func readShieldedSpendable(walletId: Data) async -> ShieldedSpendableCredits.Read? {
         for attempt in 0..<2 {
             do {
-                let state = try await walletManager.localShieldedBalanceSnapshot(walletId: walletId)
-                shieldedSpendable = .after(.state(state), previous: shieldedSpendable)
-                return
+                return .state(try await walletManager.localShieldedBalanceSnapshot(walletId: walletId))
             } catch ShieldedLocalBalanceReadError.bindingChanged where attempt == 0 {
                 continue
             } catch is CancellationError {
-                // Obsolete read (Clear, stop, view gone): keep what we have.
-                return
+                return nil
             } catch {
-                shieldedSpendable = .after(
-                    .failed(error.localizedDescription),
-                    previous: shieldedSpendable
-                )
-                return
+                return .failed(error.localizedDescription)
             }
         }
+        return .failed(ShieldedLocalBalanceReadError.bindingChanged.localizedDescription)
     }
 
     private func resolveShieldedTopUpFee() {
@@ -724,14 +771,19 @@ struct TopUpIdentityView: View {
         isToppingUp = true
 
         Task {
-            // Re-read both right before the final gate check.
+            // The send is gated on a fresh read for the captured wallet only,
+            // never on the cached display value.
             resolveShieldedTopUpFee()
-            await refreshShieldedSpendable()
-            guard request.isAffordable(
+            let read = await readShieldedSpendable(walletId: request.walletId)
+            if let read, request.walletId == identity.wallet?.walletId {
+                shieldedSpendable = .after(read, previous: shieldedSpendable)
+            }
+            if case .refuse(let message) = ShieldedTopUpSubmitCheck.decide(
+                request: request,
                 minimumFee: shieldedTopUpFee,
-                spendable: shieldedSpendable.credits
-            ) else {
-                submitError = .init(message: "The amount plus the minimum fee must fit the spendable shielded balance.")
+                submitRead: read
+            ) {
+                submitError = .init(message: message)
                 isToppingUp = false
                 return
             }
@@ -757,8 +809,11 @@ struct TopUpIdentityView: View {
                     self.isToppingUp = false
                 }
             } catch {
+                let message = (error as? PlatformWalletError)
+                    .flatMap(ShieldedTopUpSubmitCheck.refusalMessage)
+                    ?? error.localizedDescription
                 await MainActor.run {
-                    self.submitError = .init(message: error.localizedDescription)
+                    self.submitError = .init(message: message)
                     self.isToppingUp = false
                 }
             }

@@ -122,6 +122,106 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         XCTAssertFalse(request.isAffordable(minimumFee: nil, spendable: 2_000))
     }
 
+    // MARK: - Exact credit amounts
+
+    /// One credit in the formatter's own locale-aware output.
+    private var oneCreditDash: String { formatTokenAmount(1, decimals: 11) + " DASH" }
+
+    func test_oneCredit_isShownExactlyNotAsZero() {
+        XCTAssertEqual(formatCreditsAsDash(1), oneCreditDash)
+        XCTAssertNotEqual(formatCreditsAsDash(1), formatCreditsAsDash(0))
+        XCTAssertTrue(formatCreditsAsDash(1).hasSuffix("1 DASH"))
+    }
+
+    func test_topUpResults_showAOneCreditAmountExactly() {
+        XCTAssertTrue(ShieldedTopUpSubmitCheck.completedText(amount: 1).contains("Requested: \(oneCreditDash)."))
+        XCTAssertTrue(ShieldedTopUpSubmitCheck.unconfirmedText(amount: 1).contains("The top-up of \(oneCreditDash) "))
+    }
+
+    func test_recoveryRowAmount_showsAOneCreditAmountExactly() {
+        XCTAssertEqual(ShieldedIdentityDebitRecoveryDisplay.amountText(1), oneCreditDash)
+    }
+
+    func test_amountsOneCreditApart_readDifferently() {
+        // One DASH and one DASH plus one credit.
+        XCTAssertNotEqual(formatCreditsAsDash(100_000_000_000), formatCreditsAsDash(100_000_000_001))
+    }
+
+    // MARK: - Submit-time balance read
+
+    private var request: ShieldedTopUpRequest {
+        ShieldedTopUpRequest(walletId: walletId, identityId: identityId, amount: 1_000)
+    }
+
+    private func readyRead(_ credits: UInt64) -> ShieldedSpendableCredits.Read {
+        ready(credits: credits)
+    }
+
+    func test_submitCheck_freshAffordableRead_sends() {
+        XCTAssertEqual(
+            ShieldedTopUpSubmitCheck.decide(request: request, minimumFee: 10, submitRead: readyRead(2_000)),
+            .send
+        )
+    }
+
+    func test_submitCheck_freshReadTooLow_refuses() {
+        guard case .refuse(let message) = ShieldedTopUpSubmitCheck.decide(
+            request: request, minimumFee: 10, submitRead: readyRead(1_009)
+        ) else { return XCTFail("expected a refusal") }
+        XCTAssertTrue(message.contains("Nothing was sent"))
+    }
+
+    func test_submitCheck_failedReadAfterAGoodDisplayRead_makesNoPayment() {
+        // The screen showed an affordable balance earlier...
+        let display = ShieldedSpendableCredits.after(readyRead(2_000), previous: .unknown(reason: nil))
+        XCTAssertTrue(request.isAffordable(minimumFee: 10, spendable: display.credits))
+        // ...but the submit read fails: no payment, whatever the display says.
+        guard case .refuse(let message) = ShieldedTopUpSubmitCheck.decide(
+            request: request, minimumFee: 10, submitRead: .failed("busy")
+        ) else { return XCTFail("expected a refusal") }
+        XCTAssertTrue(message.contains("Could not read the shielded balance"))
+        XCTAssertTrue(message.contains("nothing was sent"))
+    }
+
+    func test_submitCheck_invalidatedReadAfterAGoodDisplayRead_makesNoPayment() {
+        guard case .refuse(let message) = ShieldedTopUpSubmitCheck.decide(
+            request: request, minimumFee: 10, submitRead: nil
+        ) else { return XCTFail("expected a refusal") }
+        XCTAssertTrue(message.contains("Could not read the shielded balance"))
+    }
+
+    func test_submitCheck_unboundOrIncompleteRead_makesNoPayment() {
+        for read: ShieldedSpendableCredits.Read in [.state(.unbound), .state(.restoreIncomplete)] {
+            guard case .refuse = ShieldedTopUpSubmitCheck.decide(
+                request: request, minimumFee: 10, submitRead: read
+            ) else { return XCTFail("expected a refusal for \(read)") }
+        }
+    }
+
+    func test_submitCheck_unresolvedFee_makesNoPayment() {
+        guard case .refuse = ShieldedTopUpSubmitCheck.decide(
+            request: request, minimumFee: nil, submitRead: readyRead(2_000)
+        ) else { return XCTFail("expected a refusal") }
+    }
+
+    // MARK: - Top-up refusals
+
+    func test_topUpRefusal_protocolVersionNotActive_isReadable() {
+        let message = ShieldedTopUpSubmitCheck.refusalMessage(.protocolVersionNotActive("x"))
+        XCTAssertTrue(message?.contains("has not activated") == true)
+        XCTAssertTrue(message?.contains("Nothing was sent") == true)
+    }
+
+    func test_topUpRefusal_sdkPinnedBelowVersion_isReadable() {
+        let message = ShieldedTopUpSubmitCheck.refusalMessage(.sdkPinnedBelowProtocolVersion("x"))
+        XCTAssertTrue(message?.contains("pinned below") == true)
+        XCTAssertTrue(message?.contains("Nothing was sent") == true)
+    }
+
+    func test_topUpRefusal_otherError_usesItsOwnDescription() {
+        XCTAssertNil(ShieldedTopUpSubmitCheck.refusalMessage(.walletOperation("x")))
+    }
+
     // MARK: - Spendable shielded credits
 
     private func ready(
