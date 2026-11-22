@@ -213,6 +213,13 @@ struct IdentityDetailView: View {
                         }
                     }
                     .buttonStyle(.plain)
+
+                    // Where this identity's withdrawals to Core stand,
+                    // read from the withdrawals system contract.
+                    NavigationLink(destination: IdentityWithdrawalsView(identity: identity)) {
+                        Label("Withdrawals", systemImage: "list.bullet.rectangle")
+                    }
+                    .accessibilityIdentifier("identity.withdrawals")
                 }
 
                 HStack {
