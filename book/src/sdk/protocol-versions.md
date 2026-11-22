@@ -177,8 +177,8 @@ alike from every node.
 
 The SDK records the version of every verified answer, known to the build or not
 (`ProtocolVersionInfo::newer_protocol_available`). Once a verified answer has shown the network
-running a version the build does not know, an answer the SDK could not read that names such a
-version is not held against its node (`StaleNodeError::NewerProtocolVersion`): the request
+running a version the build does not know, a fresh answer the SDK could not read that names
+such a version is not held against its node (`StaleNodeError::NewerProtocolVersion`): the request
 moves to another node, and none is banned, so the requests the build still reads keep their
 nodes. A request whose every attempt ends this way fails with `Error::Config`, which names the
 version verified answers have shown and the newest one the build knows, and says the SDK has

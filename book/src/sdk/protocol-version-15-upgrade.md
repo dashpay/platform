@@ -79,8 +79,9 @@ case differently from 5.0.x:
   version the build does not know, `Sdk::protocol_version_info()` reports
   `newer_protocol_available` (Swift: `ProtocolVersionInfo`). An app can show an update notice
   from it.
-- From then on, an answer the SDK cannot read that names such a version does not ban its
-  node. The request moves to another node, and when every attempt ends that way it fails with
+- From then on, a fresh answer the SDK cannot read that names such a version does not ban
+  its node (one outside the SDK's height or time tolerance still does). The request moves to
+  another node, and when every attempt ends that way it fails with
   a configuration error (`Error::Config`, JS kind `Config`) that says the network runs a newer
   protocol version and the SDK has to be updated. Requests the build can still read keep
   working. [Protocol Versions in the SDK](protocol-versions.md#a-network-newer-than-the-sdk)
