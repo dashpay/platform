@@ -21,7 +21,7 @@
 //! whether the sender it names wrote it, is its type's rule; DashPay's is in
 //! [`DashPayView::sync_private_contact_requests`](super::DashPayView::sync_private_contact_requests).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use dash_sdk::platform::private_document_entries::PrivateDocumentEntries;
@@ -381,15 +381,17 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let mut paths = PrivateDocumentKeyPaths::default();
         let mut registered = RegisteredKeys::new();
         let mut keys_without_slot = Vec::new();
-        for identity in info.identity_manager.all_identities() {
-            let identity_id = identity.id();
-            let Some(identity_index) = info
-                .identity_manager
-                .managed_identity(&identity_id)
-                .and_then(|managed| managed.identity_index)
-            else {
+        // The identities this wallet owns, not those of another wallet the
+        // manager holds or the contacts it observes.
+        for managed in info
+            .identity_manager
+            .wallet_managed_identities(&self.wallet_id)
+        {
+            let Some(identity_index) = managed.identity_index else {
                 continue;
             };
+            let identity = &managed.identity;
+            let identity_id = identity.id();
             for (key_id, key) in identity.public_keys() {
                 if scanning_key(key) {
                     registered.insert((identity_id, *key_id), key.data().to_vec());
@@ -445,6 +447,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         }
         let mut public_keys = public_keys.into_iter();
         let mut derived = PrivateDocumentKeyPaths::default();
+        let mut scanned: BTreeSet<(Identifier, KeyID)> = BTreeSet::new();
         for (identity_id, keys) in paths.recipients {
             let mut kept = Vec::with_capacity(keys.len());
             for (key_id, path) in keys {
@@ -457,6 +460,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     .and_then(|data| PublicKey::from_slice(data).ok())
                     .is_some_and(|registered| registered.serialize()[..] == derived_key[..]);
                 if matches {
+                    scanned.insert((identity_id, key_id));
                     kept.push((key_id, path));
                 }
             }
@@ -464,21 +468,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 derived.recipients.push((identity_id, kept));
             }
         }
-        let scanned = |identity_id: &Identifier, key_id: &KeyID| {
-            derived
-                .recipients
-                .iter()
-                .any(|(id, keys)| id == identity_id && keys.iter().any(|(kept, _)| kept == key_id))
-        };
         let unscanned: Vec<(Identifier, KeyID)> = registered
             .keys()
-            .filter(|(identity_id, key_id)| !scanned(identity_id, key_id))
+            .filter(|key| !scanned.contains(key))
             .copied()
             .collect();
         derived.senders = paths
             .senders
             .into_iter()
-            .filter(|(identity_id, key_id, _)| scanned(identity_id, key_id))
+            .filter(|(identity_id, key_id, _)| scanned.contains(&(*identity_id, *key_id)))
             .collect();
         Ok((derived, unscanned))
     }

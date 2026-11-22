@@ -139,7 +139,7 @@ struct PrivateDocumentEntriesView: View {
         } header: {
             Text("Wallet")
         } footer: {
-            Text("Entries name nobody: the wallet finds its identities' entries by trying to open each one with their keys, and recovers the ones they sent.")
+            Text("Entries name nobody: the wallet finds its identities' entries by trying to open each one with their keys, and recovers the ones their keys sealed.")
         }
     }
 
@@ -385,7 +385,7 @@ private struct PrivateDocumentEntryRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Label(
-                    entry.direction == .received ? "Received" : "Sent",
+                    entry.direction == .received ? "Received" : "Recovered (outgoing)",
                     systemImage: entry.direction == .received ? "tray.and.arrow.down" : "paperplane"
                 )
                 .font(.headline)
@@ -396,13 +396,17 @@ private struct PrivateDocumentEntryRow: View {
                     .foregroundColor(.secondary)
             }
 
-            Text(entry.blockTime.formatted(date: .abbreviated, time: .standard)
+            Text("Appended "
+                + entry.blockTime.formatted(date: .abbreviated, time: .standard)
                 + " · block \(entry.blockHeight)")
                 .font(.caption2)
                 .foregroundColor(.secondary)
 
             detail(
-                entry.direction == .received ? "Opened by" : "Sent by",
+                // Recovery with an outgoing viewing key shows only that one
+                // of the wallet's keys can recover this ciphertext, not that
+                // the wallet appended it: a later copy recovers too.
+                entry.direction == .received ? "Opened by" : "Recovered with",
                 "\(identityName(entry.walletIdentityId)) (key \(entry.walletKeyId))"
             )
             detail("Recipient", identityName(entry.recipientIdentityId))
