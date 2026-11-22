@@ -15,12 +15,16 @@ struct ContractTeamActionDetailView: View {
 
     var body: some View {
         List {
-            Section("Action") {
+            Section {
                 ModerationFieldRow(label: "Action ID", value: action.actionId, monospaced: true)
-                ModerationFieldRow(label: "Status", value: status == .active ? "Active" : "Closed")
+                ModerationFieldRow(label: "Status when listed", value: status == .active ? "Active" : "Closed")
                 ModerationFieldRow(label: "Proposer", value: action.proposerId, monospaced: true)
                 ModerationFieldRow(label: "Proposed", value: moderationDate(ms: action.proposedAtMs))
-                ModerationFieldRow(label: "Approvals", value: "\(action.approvalCount)")
+                ModerationFieldRow(label: "Approvals when listed", value: "\(action.approvalCount)")
+            } header: {
+                Text("Action")
+            } footer: {
+                Text("The status and approval count are a snapshot from the listing, taken when the action was listed.")
             }
 
             Section("Event") {
@@ -39,7 +43,7 @@ struct ContractTeamActionDetailView: View {
             } header: {
                 Text("Signers")
             } footer: {
-                Text("An active action's approval count is an upper bound; the signers are who approved it.")
+                Text("The signers are read separately, by the status the action was listed under, possibly at a later block than the listing: an approval since then can show more signers than the count, and an action that has closed since shows no active signers. An active action's count is also an upper bound, as a member who left the team keeps their approval in it until a later approval drops it.")
             }
         }
         .navigationTitle("Team Action")

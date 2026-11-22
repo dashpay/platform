@@ -140,7 +140,9 @@ struct ModerationWarningsView: View {
 }
 
 extension ContractKeptFieldValue {
-    /// The value as one line of text.
+    /// The value as one line of JSON-like text: strings and member names quoted
+    /// and escaped as JSON escapes them, so text a document held cannot read as
+    /// another field.
     var displayText: String {
         switch self {
         case .null: return "null"
@@ -148,11 +150,24 @@ extension ContractKeptFieldValue {
         case .int(let value): return String(value)
         case .uint(let value): return String(value)
         case .double(let value): return String(value)
-        case .string(let value): return value
+        case .string(let value): return Self.quoted(value)
         case .array(let values): return "[" + values.map(\.displayText).joined(separator: ", ") + "]"
         case .object(let members):
-            let fields = members.keys.sorted().map { "\($0): \(members[$0]?.displayText ?? "")" }
+            let fields = members.keys.sorted().map { key in
+                "\(Self.quoted(key)): \(members[key]?.displayText ?? "null")"
+            }
             return "{" + fields.joined(separator: ", ") + "}"
         }
+    }
+
+    /// `text` as a JSON string literal.
+    static func quoted(_ text: String) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .withoutEscapingSlashes
+        guard let data = try? encoder.encode(text),
+              let literal = String(data: data, encoding: .utf8) else {
+            return "\"" + text + "\""
+        }
+        return literal
     }
 }

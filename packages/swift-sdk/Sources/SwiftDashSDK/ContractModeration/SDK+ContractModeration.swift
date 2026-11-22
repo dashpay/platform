@@ -16,8 +16,15 @@ import DashSDKFFI
 // Every read parks its thread inside Rust until DAPI answers, so it runs on
 // the shared Platform query queue (``SDK/performBlockingQuery(_:)``) and the
 // caller only awaits. A refusal from the node (a list the contract does not
-// keep, a type that keeps no removal records, a network below protocol
-// version 14) is thrown as the `SDKError` the FFI reports.
+// keep, a type that keeps no removal records, a contract that is not
+// elected) is thrown as the `SDKError` the FFI reports.
+//
+// Below protocol version 14 no request is sent: the SDK's protocol gate
+// refuses it first, and every method below throws. The error tells why:
+// - `SDKError.protocolError` when the network is proven below 14, or the SDK
+//   is pinned below 14: check the pin, or wait for the network to activate 14;
+// - `SDKError.networkError` when the query for the network's version failed
+//   for a reason that can pass: retry.
 
 extension SDK {
 
@@ -32,6 +39,9 @@ extension SDK {
     ///     them); `[]` is an explicit empty selection, sent for the node to
     ///     judge.
     /// - Returns: The status, or `nil` when the FFI returns no data.
+    /// - Throws: The FFI's `SDKError`; below protocol version 14 a refusal
+    ///   of the SDK's protocol gate, before any request (see the top of this
+    ///   file for telling its causes apart).
     public nonisolated func contractModerationStatus(
         contractId: String,
         identityId: String,
@@ -66,6 +76,9 @@ extension SDK {
     ///   - limit: The most entries to return, passed as it is (0 included,
     ///     which the node judges); `nil` for the page cap of the network
     ///     queried.
+    /// - Throws: The FFI's `SDKError`; below protocol version 14 a refusal
+    ///   of the SDK's protocol gate, before any request (see the top of this
+    ///   file for telling its causes apart).
     public nonisolated func contractModerationEntries(
         contractId: String,
         list: ContractModerationList,
@@ -103,6 +116,9 @@ extension SDK {
     ///   - limit: The most records to return, passed as it is (0 included,
     ///     which the node judges); `nil` for the page cap of the network
     ///     queried.
+    /// - Throws: The FFI's `SDKError`; below protocol version 14 a refusal
+    ///   of the SDK's protocol gate, before any request (see the top of this
+    ///   file for telling its causes apart).
     public nonisolated func contractDocumentRemovals(
         contractId: String,
         documentTypeName: String,
@@ -140,6 +156,9 @@ extension SDK {
     ///     keeps no records.
     ///   - documentIds: The documents' ids, base58. How many the node takes is
     ///     the node's to judge.
+    /// - Throws: The FFI's `SDKError`; below protocol version 14 a refusal
+    ///   of the SDK's protocol gate, before any request (see the top of this
+    ///   file for telling its causes apart).
     public nonisolated func contractDocumentRemovals(
         contractId: String,
         documentTypeName: String,
@@ -179,6 +198,9 @@ extension SDK {
     ///   - limit: The most actions to return, passed as it is (0 included,
     ///     which the node judges); `nil` for the page cap of the network
     ///     queried.
+    /// - Throws: The FFI's `SDKError`; below protocol version 14 a refusal
+    ///   of the SDK's protocol gate, before any request (see the top of this
+    ///   file for telling its causes apart).
     public nonisolated func contractTeamActions(
         contractId: String,
         status: ContractTeamActionStatus,
@@ -212,6 +234,9 @@ extension SDK {
     ///   - contractId: The elected contract's id, base58.
     ///   - status: Whether the action is active or closed.
     ///   - actionId: The action's id, base58.
+    /// - Throws: The FFI's `SDKError`; below protocol version 14 a refusal
+    ///   of the SDK's protocol gate, before any request (see the top of this
+    ///   file for telling its causes apart).
     public nonisolated func contractTeamActionSigners(
         contractId: String,
         status: ContractTeamActionStatus,
@@ -238,6 +263,9 @@ extension SDK {
     /// out (`dash_sdk_contract_moderation_get_action_counts`).
     ///
     /// - Parameter contractId: The elected contract's id, base58.
+    /// - Throws: The FFI's `SDKError`; below protocol version 14 a refusal
+    ///   of the SDK's protocol gate, before any request (see the top of this
+    ///   file for telling its causes apart).
     public nonisolated func contractModerationActionCounts(
         contractId: String
     ) async throws -> ContractModerationActionCounts? {
@@ -256,6 +284,9 @@ extension SDK {
     /// (`dash_sdk_contract_get_fee_pots`).
     ///
     /// - Parameter contractId: The contract's id, base58.
+    /// - Throws: The FFI's `SDKError`; below protocol version 14 a refusal
+    ///   of the SDK's protocol gate, before any request (see the top of this
+    ///   file for telling its causes apart).
     public nonisolated func contractFeePots(contractId: String) async throws -> ContractFeePots? {
         try await performBlockingQuery { handle in
             let result = try withDecisionProposalCString(

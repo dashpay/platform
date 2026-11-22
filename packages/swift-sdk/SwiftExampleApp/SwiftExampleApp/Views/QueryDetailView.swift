@@ -9,10 +9,11 @@ struct QueryDetailView: View {
     @State private var result: String = ""
     @State private var error: String = ""
     @State private var showResult = false
-    /// Bumped when an input of a route that ties its result to its inputs is
-    /// edited (``resultFollowsInputs``), so a running read's completion, which
-    /// answers the inputs it was submitted with, is dropped.
-    @State private var submission = 0
+    /// The token of each Execute; editing an input of a route that ties its
+    /// result to its inputs (``resultFollowsInputs``) invalidates it, so a
+    /// running read's completion, which answers the inputs it was submitted
+    /// with, is dropped.
+    @State private var submissions = InputBoundSubmissions()
 
     var body: some View {
         ScrollView {
@@ -141,7 +142,7 @@ struct QueryDetailView: View {
                 queryInputs[key] = newValue
                 if resultFollowsInputs {
                     // The result shown, and the read running, answer the old inputs
-                    submission += 1
+                    submissions.invalidate()
                     result = ""
                     error = ""
                     showResult = false
@@ -152,11 +153,21 @@ struct QueryDetailView: View {
     }
 
     /// Whether the result shown names the inputs it answers and is cleared
-    /// when they change: the moderation status read, whose answer names
-    /// neither the contract nor the identity.
+    /// when they change: the contract moderation and fee pot reads, whose
+    /// answers name neither the contract nor most of what was asked.
     private var resultFollowsInputs: Bool {
-        query.name == "getContractModerationStatus"
+        Self.inputBoundQueries.contains(query.name)
     }
+
+    private static let inputBoundQueries: Set<String> = [
+        "getContractModerationStatus",
+        "getContractModerationEntries",
+        "getContractDocumentRemovals",
+        "getContractTeamActions",
+        "getContractTeamActionSigners",
+        "getContractModerationActionCounts",
+        "getContractFeePots",
+    ]
 
     private func hasRequiredInputs() -> Bool {
         let fields = inputFields(for: query.name)
@@ -184,7 +195,7 @@ struct QueryDetailView: View {
         error = ""
         result = ""
         showResult = false
-        let current = submission
+        let token = submissions.submit()
 
         Task {
             do {
@@ -194,7 +205,7 @@ struct QueryDetailView: View {
                 print("🔵 QueryDetailView: Query result type: \(type(of: queryResult))")
 
                 await MainActor.run {
-                    guard current == submission else { return }
+                    guard submissions.isCurrent(token) else { return }
                     result = formatResult(queryResult)
                     showResult = true
                     isLoading = false
@@ -203,7 +214,7 @@ struct QueryDetailView: View {
             } catch let sdkError as SDKError {
                 print("❌ QueryDetailView: SDK error occurred: \(sdkError)")
                 await MainActor.run {
-                    guard current == submission else { return }
+                    guard submissions.isCurrent(token) else { return }
                     // Handle SDK errors with more detail
                     switch sdkError {
                     case .invalidParameter(let message):
@@ -239,7 +250,7 @@ struct QueryDetailView: View {
             } catch {
                 print("❌ QueryDetailView: General error occurred: \(error)")
                 await MainActor.run {
-                    guard current == submission else { return }
+                    guard submissions.isCurrent(token) else { return }
                     // For non-SDK errors, try to get more information
                     let nsError = error as NSError
                     var errorMessage = ""
@@ -372,27 +383,20 @@ struct QueryDetailView: View {
             let idsOnly = Bool(queryInputs["idsOnly"] ?? "") ?? false
             return try await sdk.getDataContractsByRange(limit: limit, startAfter: startAfter, startAt: startAt, idsOnly: idsOnly)
 
-        // Contract Moderation Queries (protocol version 14)
+        // Contract Moderation Queries (protocol version 14). Each result names
+        // the inputs it was read for (``submittedInputs()``).
         case "getContractModerationStatus":
-            let contractId = queryInputs["contractId"] ?? ""
-            let identityId = queryInputs["identityId"] ?? ""
+            let inputs = submittedInputs()
             let lists = try moderationInput("lists").map { try parseModerationLists($0) }
-            let status = try await sdk.contractModerationStatus(
-                contractId: contractId,
-                identityId: identityId,
+            return try moderationResult(inputs, await sdk.contractModerationStatus(
+                contractId: queryInputs["contractId"] ?? "",
+                identityId: queryInputs["identityId"] ?? "",
                 lists: lists
-            )
-            // The answer names neither the contract nor the identity: show the
-            // inputs it answers with it, an empty answer included
-            return try moderationJSON(ModerationStatusCatalogResult(
-                contractId: contractId,
-                identityId: identityId,
-                lists: lists,
-                status: status
             ))
 
         case "getContractModerationEntries":
-            return try moderationJSON(await sdk.contractModerationEntries(
+            let inputs = submittedInputs()
+            return try moderationResult(inputs, await sdk.contractModerationEntries(
                 contractId: queryInputs["contractId"] ?? "",
                 list: try parseModerationList(queryInputs["list"] ?? ""),
                 startAfter: moderationInput("startAfter"),
@@ -400,6 +404,7 @@ struct QueryDetailView: View {
             ))
 
         case "getContractDocumentRemovals":
+            let inputs = submittedInputs()
             let contractId = queryInputs["contractId"] ?? ""
             let documentTypeName = queryInputs["documentTypeName"] ?? ""
             // Two reads: the records of the ids named, or one page of them all.
@@ -407,13 +412,13 @@ struct QueryDetailView: View {
                 if moderationInput("startAfter") != nil || moderationInput("limit") != nil {
                     throw SDKError.invalidParameter("Give either Document IDs or Start After and Limit")
                 }
-                return try moderationJSON(await sdk.contractDocumentRemovals(
+                return try moderationResult(inputs, await sdk.contractDocumentRemovals(
                     contractId: contractId,
                     documentTypeName: documentTypeName,
                     documentIds: documentIds.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
                 ))
             }
-            return try moderationJSON(await sdk.contractDocumentRemovals(
+            return try moderationResult(inputs, await sdk.contractDocumentRemovals(
                 contractId: contractId,
                 documentTypeName: documentTypeName,
                 startAfter: moderationInput("startAfter"),
@@ -421,7 +426,8 @@ struct QueryDetailView: View {
             ))
 
         case "getContractTeamActions":
-            return try moderationJSON(await sdk.contractTeamActions(
+            let inputs = submittedInputs()
+            return try moderationResult(inputs, await sdk.contractTeamActions(
                 contractId: queryInputs["contractId"] ?? "",
                 status: try parseTeamActionStatus(queryInputs["status"] ?? ""),
                 startAtActionId: moderationInput("startAtActionId"),
@@ -430,19 +436,24 @@ struct QueryDetailView: View {
             ))
 
         case "getContractTeamActionSigners":
-            return try moderationJSON(await sdk.contractTeamActionSigners(
+            let inputs = submittedInputs()
+            return try moderationResult(inputs, await sdk.contractTeamActionSigners(
                 contractId: queryInputs["contractId"] ?? "",
                 status: try parseTeamActionStatus(queryInputs["status"] ?? ""),
                 actionId: queryInputs["actionId"] ?? ""
             ))
 
         case "getContractModerationActionCounts":
-            return try moderationJSON(await sdk.contractModerationActionCounts(
+            let inputs = submittedInputs()
+            return try moderationResult(inputs, await sdk.contractModerationActionCounts(
                 contractId: queryInputs["contractId"] ?? ""
             ))
 
         case "getContractFeePots":
-            return try moderationJSON(await sdk.contractFeePots(contractId: queryInputs["contractId"] ?? ""))
+            let inputs = submittedInputs()
+            return try moderationResult(inputs, await sdk.contractFeePots(
+                contractId: queryInputs["contractId"] ?? ""
+            ))
 
         // Document Queries
         case "getDocuments":
@@ -1007,15 +1018,28 @@ struct QueryDetailView: View {
         return status
     }
 
-    /// A moderation result as JSON re-encoded from the decoded value, shown as
-    /// `JSONEncoder` writes it: the models' `Codable` form, so a removal
-    /// record's kept values appear tagged (`{"type": "double", "value": 1}`).
-    /// "No data" when the FFI returned none.
-    private func moderationJSON<T: Encodable>(_ value: T?) throws -> Any {
-        guard let value else { return "No data" }
+    /// The inputs of this query as submitted, by name, each trimmed; an
+    /// empty input is left out.
+    private func submittedInputs() -> [String: String] {
+        var inputs: [String: String] = [:]
+        for field in inputFields(for: query.name) {
+            if let value = moderationInput(field.name) {
+                inputs[field.name] = value
+            }
+        }
+        return inputs
+    }
+
+    /// A moderation result as JSON: `{"inputs": ..., "result": ...}`, the
+    /// inputs it was read for beside the answer, `null` when the FFI returned
+    /// none. The answer is re-encoded from the decoded value as `JSONEncoder`
+    /// writes it, the models' `Codable` form, so a removal record's kept
+    /// values appear tagged (`{"type": "double", "value": 1}`).
+    private func moderationResult<T: Encodable>(_ inputs: [String: String], _ answer: T?) throws -> Any {
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return PreformattedJSON(text: String(decoding: try encoder.encode(value), as: UTF8.self))
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        let data = try encoder.encode(ModerationCatalogResult(inputs: inputs, result: answer))
+        return PreformattedJSON(text: String(decoding: data, as: UTF8.self))
     }
 
     private func inputFields(for queryName: String) -> [QueryInput] {
@@ -1430,25 +1454,20 @@ struct QueryDetailView: View {
     }
 }
 
-/// The catalog's moderation status result: the inputs the read answered and
-/// its answer, `null` when the FFI returned none, and `lists` `null` when no
-/// list was named (every list the contract keeps).
-private struct ModerationStatusCatalogResult: Encodable {
-    let contractId: String
-    let identityId: String
-    let lists: [ContractModerationList]?
-    let status: ContractModerationStatus?
+/// A moderation result of the catalog: the inputs the read answered and its
+/// answer, `null` when the FFI returned none.
+private struct ModerationCatalogResult<Answer: Encodable>: Encodable {
+    let inputs: [String: String]
+    let result: Answer?
 
     private enum CodingKeys: String, CodingKey {
-        case contractId, identityId, lists, status
+        case inputs, result
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(contractId, forKey: .contractId)
-        try container.encode(identityId, forKey: .identityId)
-        try container.encode(lists, forKey: .lists)
-        try container.encode(status, forKey: .status)
+        try container.encode(inputs, forKey: .inputs)
+        try container.encode(result, forKey: .result)
     }
 }
 
