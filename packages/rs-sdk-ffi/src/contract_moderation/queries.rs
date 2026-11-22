@@ -24,9 +24,8 @@ use dash_sdk::platform::contract_fee_pots::ContractFeePots;
 use dash_sdk::platform::contract_moderation::{
     ContractDocumentRemovalsPageQuery, ContractDocumentRemovalsSelection,
     ContractModerationActionCounts, ContractModerationEntries, ContractModerationEntriesPageQuery,
-    ContractModerationList, ContractModerationListStatuses, ContractModerationStatusQuery,
-    ContractTeamActionSigners, ContractTeamActionSignersQuery, ContractTeamActions,
-    ContractTeamActionsPageQuery,
+    ContractModerationList, ContractTeamActionSigners, ContractTeamActionSignersQuery,
+    ContractTeamActions, ContractTeamActionsPageQuery,
 };
 use dash_sdk::platform::Fetch;
 use serde_json::Value as JsonValue;
@@ -108,7 +107,8 @@ unsafe fn identifiers(
 /// * `identity_id` - The identity's id, base58.
 /// * `lists` - The lists to read, each a `ContractModerationListFFI` byte (0 banlist,
 ///   1 suspensions, 2 warnings) that must be a list the contract keeps. The selection is
-///   resolved by `ContractModerationStatusQuery::resolve`:
+///   resolved by `ContractModerationStatusQuery::resolve`, inside
+///   `Sdk::fetch_contract_moderation_status`, which this calls:
 ///   - null with a `lists_count` of 0: no selection; every list the contract keeps is read,
 ///     which fetches the contract first (refused by the SDK's protocol gate, before the
 ///     contract is fetched, below the status read's protocol version 14);
@@ -170,12 +170,13 @@ unsafe fn get_status_inner(
     let contract_id = required_identifier(contract_id, "contract_id")?;
     let identity_id = required_identifier(identity_id, "identity_id")?;
     let lists = moderation_lists(lists, lists_count)?;
-    let sdk = &wrapper.sdk;
-    let statuses = wrapper.runtime.block_on(async {
-        let query =
-            ContractModerationStatusQuery::resolve(sdk, contract_id, identity_id, lists).await?;
-        ContractModerationListStatuses::fetch(sdk, query).await
-    })?;
+    let statuses = wrapper
+        .runtime
+        .block_on(
+            wrapper
+                .sdk
+                .fetch_contract_moderation_status(contract_id, identity_id, lists),
+        )?;
     Ok(statuses.as_ref().map(status_json))
 }
 
@@ -410,6 +411,10 @@ unsafe fn get_document_removals_by_ids_inner(
 /// gathering approvals) or closed (their approvals met the rule and they ran), in action id
 /// order.
 ///
+/// The node refuses the query unless at least one of the contract's document types sets
+/// `moderatorAbilities.deleteSettled` (which only an elected contract may set): such a refusal
+/// is an error, while a contract that keeps team actions but has none answers an empty page.
+///
 /// # Parameters
 /// * `sdk_handle` - Handle to the SDK instance.
 /// * `contract_id` - The elected contract's id, base58.
@@ -506,6 +511,9 @@ unsafe fn get_team_actions_inner(
 /// order. The action is looked up among the actions of `status` alone: one that closed is no
 /// longer among the active ones.
 ///
+/// The node refuses the query unless at least one of the contract's document types sets
+/// `moderatorAbilities.deleteSettled` (which only an elected contract may set).
+///
 /// # Parameters
 /// * `sdk_handle` - Handle to the SDK instance.
 /// * `contract_id` - The elected contract's id, base58.
@@ -559,8 +567,10 @@ unsafe fn get_team_action_signers_inner(
 
 /// How many counted moderation actions (a ban, a suspension, a warning or a document deletion)
 /// each member of an elected contract's seated team signed since the moderators pot was last
-/// paid out, which resets every count, in identity id order. A member that did not act since
-/// has no count. Only an elected contract keeps counts; the node refuses any other.
+/// claimed or settled, in identity id order. A claim resets every count, and so does a
+/// moderators pot settlement (a membership change of the team), even one that pays nothing
+/// out. A member that did not act since has no count. Only an elected contract keeps counts;
+/// the node refuses any other.
 ///
 /// # Parameters
 /// * `sdk_handle` - Handle to the SDK instance.
@@ -659,7 +669,8 @@ mod tests {
     use dash_sdk::dpp::platform_value::string_encoding::Encoding;
     use dash_sdk::platform::contract_moderation::{
         ContractDocumentRemoval, ContractDocumentRemovalEntry, ContractDocumentRemovals,
-        ContractTeamAction, ContractTeamActionEntry, ContractTeamActionEvent, GroupActionStatus,
+        ContractModerationListStatuses, ContractModerationStatusQuery, ContractTeamAction,
+        ContractTeamActionEntry, ContractTeamActionEvent, GroupActionStatus,
     };
     use std::ffi::{CStr, CString};
 
@@ -1096,6 +1107,83 @@ mod tests {
             assert_eq!(json["actions"][1]["actionId"], b58(4));
             assert_eq!(json["nextStartAtActionId"], b58(4));
             assert_eq!(json["nextStartAtActionIdIncluded"], false);
+            destroy_mock_sdk_handle(handle);
+        }
+    }
+
+    /// A non-null list pointer with a count of 0 is an explicit empty selection: the status
+    /// request goes out with no list and no contract request is made (the mock answers only
+    /// that exact status request, so any other request fails the call).
+    #[test]
+    fn should_send_an_explicit_empty_list_selection_as_it_is() {
+        let contract_id = Identifier::new([1; 32]);
+        let identity_id = Identifier::new([2; 32]);
+        let handle = mock_handle_answering(|wrapper| {
+            Box::pin(async move {
+                wrapper
+                    .sdk
+                    .mock()
+                    .expect_fetch(
+                        ContractModerationStatusQuery {
+                            contract_id,
+                            identity_id,
+                            lists: vec![],
+                        },
+                        Some(ContractModerationListStatuses(vec![])),
+                    )
+                    .await
+                    .expect("register the status");
+            })
+        });
+        let contract = CString::new(b58(1)).expect("no NUL");
+        let identity = CString::new(b58(2)).expect("no NUL");
+        let lists = [0u8];
+        unsafe {
+            let json = json_of(dash_sdk_contract_moderation_get_status(
+                handle,
+                contract.as_ptr(),
+                identity.as_ptr(),
+                lists.as_ptr(),
+                0,
+            ));
+            assert_eq!(json, serde_json::json!({"lists": []}));
+            destroy_mock_sdk_handle(handle);
+        }
+    }
+
+    /// A pointer to a limit of 0 sends `limit: Some(0)` as it is, for the node to judge: the
+    /// mock answers only the request with that exact limit.
+    #[test]
+    fn should_send_a_limit_of_zero_as_it_is() {
+        let contract_id = Identifier::new([1; 32]);
+        let handle = mock_handle_answering(|wrapper| {
+            Box::pin(async move {
+                let query = ContractModerationEntriesPageQuery::new(
+                    contract_id,
+                    ContractModerationList::Banlist,
+                    wrapper.sdk.version(),
+                )
+                .with_limit(0);
+                assert_eq!(query.query.limit, 0);
+                wrapper
+                    .sdk
+                    .mock()
+                    .expect_fetch(query, Some(ContractModerationEntries(vec![])))
+                    .await
+                    .expect("register the entries");
+            })
+        });
+        let contract = CString::new(b58(1)).expect("no NUL");
+        let limit = 0u32;
+        unsafe {
+            let json = json_of(dash_sdk_contract_moderation_get_entries(
+                handle,
+                contract.as_ptr(),
+                0,
+                std::ptr::null(),
+                &limit,
+            ));
+            assert_eq!(json, serde_json::json!({"entries": []}));
             destroy_mock_sdk_handle(handle);
         }
     }

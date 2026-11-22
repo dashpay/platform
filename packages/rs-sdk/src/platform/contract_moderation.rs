@@ -267,6 +267,26 @@ impl Fetch for ContractModerationListStatuses {
     type Request = GetContractModerationStatusRequest;
 }
 
+impl Sdk {
+    /// The status of `identity_id` on the contract `contract_id`: resolves the query
+    /// ([`ContractModerationStatusQuery::resolve`]: over `lists` when named, an empty selection
+    /// included, else over every list the contract keeps) and fetches it
+    /// ([`ContractModerationListStatuses::fetch`]).
+    ///
+    /// # Errors
+    /// Those of [`ContractModerationStatusQuery::resolve`] and of the fetch.
+    pub async fn fetch_contract_moderation_status(
+        &self,
+        contract_id: Identifier,
+        identity_id: Identifier,
+        lists: Option<Vec<ContractModerationList>>,
+    ) -> Result<Option<ContractModerationListStatuses>, Error> {
+        let query =
+            ContractModerationStatusQuery::resolve(self, contract_id, identity_id, lists).await?;
+        ContractModerationListStatuses::fetch(self, query).await
+    }
+}
+
 impl FetchUnproved for ContractModerationListStatuses {
     type Request = GetContractModerationStatusRequest;
 }
@@ -357,14 +377,21 @@ impl ContractDocumentRemovalsPageQuery {
     /// A compatible contract update can add members to a kept object, and the values read
     /// only the members the type they are read under declares. So the contract must be
     /// answered at a block no older than the records: an older answer is asked again, three
-    /// attempts in all ([`read_not_older_than`]).
+    /// attempts in all ([`read_not_older_than`]). That budget, and the
+    /// [`StaleNodeError::Height`](crate::error::StaleNodeError::Height) it ends in, apply only
+    /// to contract answers that pass the contract fetch's own verification. An answer further
+    /// behind than the SDK's height tolerance already fails inside that fetch, under the
+    /// fetch's own retry policy, and surfaces as the fetch's error (an exhaustion wrapping a
+    /// stale error, for example) instead.
     ///
     /// # Errors
     /// Those of [`ContractDocumentRemovals::fetch`], and, when a record keeps values:
     /// * [`Error::MissingDependency`] when the network holds no such contract;
-    /// * [`Error::StaleNode`] when every contract answer is from a block older than the
-    ///   records' ([`StaleNodeError::Height`](crate::error::StaleNodeError::Height),
-    ///   `expected_height` the records' block);
+    /// * [`Error::StaleNode`] when every contract answer that passed the fetch's verification
+    ///   is from a block older than the records'
+    ///   ([`StaleNodeError::Height`](crate::error::StaleNodeError::Height), `expected_height`
+    ///   the records' block); an answer beyond the SDK's height tolerance fails inside the
+    ///   fetch with that fetch's error;
     /// * [`Error::Protocol`] when the contract declares no such document type, or the record's
     ///   values do not read under it.
     pub async fn fetch_with_kept_values(
@@ -418,7 +445,8 @@ impl ContractDocumentRemovalsPageQuery {
     /// The contract as answered at a block no older than `records_height`, asked again while
     /// an answer is older ([`read_not_older_than`]). An absence is proved at a height too, so
     /// it follows the same rule: only an absence no older than the records means the contract
-    /// is gone.
+    /// is gone. The attempts count only answers the fetch verified: one beyond the SDK's height
+    /// tolerance fails inside the fetch, with its own retries and error.
     async fn contract_at_or_after(
         &self,
         sdk: &Sdk,

@@ -823,3 +823,81 @@ async fn should_refuse_kept_values_as_stale_when_every_contract_absence_is_older
         "{refused:?}"
     );
 }
+
+#[tokio::test]
+/// Given a moderated contract and an identity's status on the lists it keeps, when I fetch the
+/// identity's status without naming lists, then rs-sdk resolves the lists from the
+/// contract and fetches the status over them; naming lists sends them as they are
+async fn should_fetch_an_identitys_moderation_status_over_the_lists_resolved_or_named() {
+    use dash_sdk::platform::contract_moderation::{
+        ContractModerationList, ContractModerationListStatus, ContractModerationListStatuses,
+        ContractModerationStatusQuery,
+    };
+    use dpp::data_contract::config::moderation::{
+        ContractBan, ContractModerationConfig, ContractModerationReason, ContractModerators,
+    };
+
+    let mut sdk = Sdk::new_mock();
+    bootstrap_mock_sdk_to_latest(&mut sdk).await;
+    let contract = mock_contract_with_moderation(Some(ContractModerationConfig {
+        banlist: true,
+        suspensions: false,
+        moderators: ContractModerators::ContractOwner,
+        warnings: true,
+    }));
+    let contract_id = contract.id();
+    let identity_id = Identifier::from([3u8; 32]);
+    let every_list = ContractModerationStatusQuery {
+        contract_id,
+        identity_id,
+        lists: vec![
+            ContractModerationList::Banlist,
+            ContractModerationList::Warnings,
+        ],
+    };
+    let resolved = ContractModerationListStatuses(vec![
+        ContractModerationListStatus::Banlist {
+            ban: Some(ContractBan {
+                reason: ContractModerationReason::from_text("spam"),
+            }),
+        },
+        ContractModerationListStatus::Warnings { warnings: vec![] },
+    ]);
+    let named = ContractModerationStatusQuery {
+        contract_id,
+        identity_id,
+        lists: vec![ContractModerationList::Warnings],
+    };
+    let named_statuses =
+        ContractModerationListStatuses(vec![ContractModerationListStatus::Warnings {
+            warnings: vec![],
+        }]);
+    sdk.mock()
+        .expect_fetch(contract_id, Some(contract))
+        .await
+        .unwrap();
+    sdk.mock()
+        .expect_fetch(every_list, Some(resolved.clone()))
+        .await
+        .unwrap();
+    sdk.mock()
+        .expect_fetch(named, Some(named_statuses.clone()))
+        .await
+        .unwrap();
+
+    let fetched = sdk
+        .fetch_contract_moderation_status(contract_id, identity_id, None)
+        .await
+        .expect("fetches over every list the contract keeps");
+    assert_eq!(fetched, Some(resolved));
+
+    let fetched = sdk
+        .fetch_contract_moderation_status(
+            contract_id,
+            identity_id,
+            Some(vec![ContractModerationList::Warnings]),
+        )
+        .await
+        .expect("fetches over the lists named");
+    assert_eq!(fetched, Some(named_statuses));
+}
