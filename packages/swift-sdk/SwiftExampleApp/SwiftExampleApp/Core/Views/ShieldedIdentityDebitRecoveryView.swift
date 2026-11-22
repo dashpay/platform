@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import SwiftData
 import SwiftDashSDK
@@ -373,6 +374,45 @@ final class ShieldedIdentityDebitRecoveryModel: ObservableObject {
     func resetSnapshot() {
         state = ShieldedIdentityDebitRecoveryReadState()
         tracker.reset()
+    }
+
+    private var changeSubscription: AnyCancellable?
+
+    /// Re-read whenever `service` publishes a recovery-records change (Stop
+    /// Retrying in any window, or an identity shield from Send). A change
+    /// for another wallet is ignored by `invalidate`. Calling it again
+    /// replaces the subscription; the value present when subscribing is old
+    /// and is skipped.
+    func observeRecoveryChanges(from service: ShieldedService) {
+        changeSubscription = service.$lastRecoveryRecordsChange
+            .dropFirst()
+            .compactMap { $0 }
+            .sink { [weak self] change in
+                Task { @MainActor in
+                    await self?.invalidate(walletId: change.walletId)
+                }
+            }
+    }
+
+    /// Stop retrying one record and, only if that succeeded, publish the
+    /// change through `publish` so every open list for the wallet, this one
+    /// included, re-reads once from it. A failed abandon publishes nothing.
+    func stopRetryingAndPublish(
+        accountIndex: UInt32,
+        activityId: Data,
+        walletManager: PlatformWalletManager,
+        walletId: Data,
+        publish: @MainActor (Data) -> Void
+    ) async {
+        let abandoned = await stopRetrying(
+            accountIndex: accountIndex,
+            activityId: activityId,
+            walletManager: walletManager,
+            walletId: walletId
+        )
+        if abandoned {
+            publish(walletId)
+        }
     }
 
     /// Call only after the user confirmed `stopRetryingWarning`. Returns

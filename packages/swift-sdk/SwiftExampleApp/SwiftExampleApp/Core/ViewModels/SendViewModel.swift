@@ -468,6 +468,7 @@ class SendViewModel: ObservableObject {
     /// the user abandons it. An unresolved floor keeps the gate closed.
     var identityShieldIsAffordable: Bool {
         guard selectedIdentityId != nil,
+              !identityShieldAmountTooPrecise,
               let feeFloor = shieldedFeeEstimates[.shieldFromIdentity],
               let amount = amountCredits, amount > 0
         else { return false }
@@ -484,6 +485,13 @@ class SendViewModel: ObservableObject {
             platformBalance: balances.platformAddresses,
             identityBalance: balances.largestIdentity
         )
+    }
+
+    /// The typed amount has a nonzero digit beyond one credit, which the
+    /// credits parser would round down. Only the identity shield refuses it;
+    /// the other flows keep their existing parsing.
+    var identityShieldAmountTooPrecise: Bool {
+        hasDigitsBeyondPrecision(amountString, decimals: 11)
     }
 
     /// Determine which fund sources are available based on destination and balances.
@@ -582,6 +590,17 @@ class SendViewModel: ObservableObject {
 
     static let routeChangedMessage =
         "The payment route or recipient changed after Send was tapped. Review it and tap Send again."
+
+    static let identityChangedMessage =
+        "The source identity changed after Send was tapped. Review it and tap Send again."
+
+    /// The identity an identity shield debits: the one selected when Send
+    /// was tapped, and only while it is still the selected one, so a pick
+    /// made after the tap never changes which identity pays.
+    func identityToSend(tappedIdentityId: Data?) -> Data? {
+        guard let tappedIdentityId, tappedIdentityId == selectedIdentityId else { return nil }
+        return tappedIdentityId
+    }
 
     /// Whether `flow` may be dispatched given the account-0 shielded
     /// balance read from the published wallet state at dispatch time. A
@@ -688,7 +707,8 @@ class SendViewModel: ObservableObject {
         senderAccountIndex: UInt32,
         modelContext: ModelContext,
         tappedFlow: SendFlow?,
-        tappedRecipient: String
+        tappedRecipient: String,
+        tappedIdentityId: Data?
     ) async {
         guard let flow = flowToSend(tappedFlow: tappedFlow, tappedRecipient: tappedRecipient),
               Self.mayDispatch(
@@ -1013,11 +1033,14 @@ class SendViewModel: ObservableObject {
                     + "the recipient's next shielded sync."
 
             case .identityToShielded:
+                guard let identityId = identityToSend(tappedIdentityId: tappedIdentityId) else {
+                    error = Self.identityChangedMessage
+                    return
+                }
                 // Re-checked here so a stale enabled tap cannot reach the
                 // wallet with an amount the identity cannot cover.
                 guard identityShieldIsAffordable,
-                      let amountCredits,
-                      let identityId = selectedIdentityId
+                      let amountCredits
                 else {
                     error = "Select an identity whose balance covers the "
                         + "amount plus the estimated fee"

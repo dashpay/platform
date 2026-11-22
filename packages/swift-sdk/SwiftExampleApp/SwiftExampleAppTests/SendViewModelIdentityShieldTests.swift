@@ -325,6 +325,59 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
         XCTAssertNil(vm.unconfirmedMessage)
     }
 
+    // MARK: - Identity captured at the Send tap
+
+    func test_unchangedIdentity_sendsFromTheTappedIdentity() {
+        let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
+        let tapped = vm.selectedIdentityId
+        XCTAssertEqual(vm.identityToSend(tappedIdentityId: tapped), identityId)
+    }
+
+    func test_identityChangedAfterTheTap_isRefused() {
+        let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
+        let tapped = vm.selectedIdentityId
+        // The user picks another identity before the send starts.
+        vm.selectedIdentityId = Data(repeating: 0x22, count: 32)
+        XCTAssertNil(vm.identityToSend(tappedIdentityId: tapped))
+    }
+
+    func test_identityClearedAfterTheTap_orNoneTapped_isRefused() {
+        let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
+        let tapped = vm.selectedIdentityId
+        vm.selectedIdentityId = nil
+        XCTAssertNil(vm.identityToSend(tappedIdentityId: tapped))
+        vm.selectedIdentityId = identityId
+        XCTAssertNil(vm.identityToSend(tappedIdentityId: nil))
+    }
+
+    func test_identityChangedMessage_asksToReviewAndTapAgain() {
+        XCTAssertTrue(SendViewModel.identityChangedMessage.contains("identity changed"))
+        XCTAssertTrue(SendViewModel.identityChangedMessage.contains("tap Send again"))
+    }
+
+    // MARK: - Identity shield amount precision
+
+    func test_identityShield_tooPreciseAmount_closesTheGate() {
+        let vm = makeIdentityShieldViewModel(amount: "0.000000000019", balance: 1_000_000_000)
+        XCTAssertTrue(vm.identityShieldAmountTooPrecise)
+        XCTAssertFalse(vm.canSend)
+    }
+
+    func test_identityShield_oneCreditWithTrailingZero_staysSendable() {
+        let vm = makeIdentityShieldViewModel(amount: "0.000000000010", balance: 1_000_000_000)
+        XCTAssertFalse(vm.identityShieldAmountTooPrecise)
+        XCTAssertTrue(vm.canSend)
+    }
+
+    func test_tooPreciseAmount_doesNotAffectOtherFlows() {
+        // Platform to shielded keeps its existing parsing.
+        let vm = makeViewModel(recipient: orchardAddress)
+        vm.amountString = "0.000000000019"
+        offerAndPick(.platform, on: vm, balances: balances(platformAddresses: 1, largestIdentity: 1))
+        XCTAssertEqual(vm.detectedFlow, .platformToShielded)
+        XCTAssertTrue(vm.canSend)
+    }
+
     // MARK: - Which identity-shield outcomes may have saved a debit
 
     func test_identityShieldReturnedNormally_mayHaveSavedADebit() {

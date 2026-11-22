@@ -270,6 +270,7 @@ struct SendTransactionView: View {
                         // between.
                         let tappedFlow = viewModel.detectedFlow
                         let tappedRecipient = viewModel.recipientAddress
+                        let tappedIdentityId = viewModel.selectedIdentityId
                         Task {
                             guard let sdk = platformState.sdk else { return }
                             // Look up the managed wallet by the
@@ -331,7 +332,8 @@ struct SendTransactionView: View {
                                 senderAccountIndex: senderAccountIndex,
                                 modelContext: modelContext,
                                 tappedFlow: tappedFlow,
-                                tappedRecipient: tappedRecipient
+                                tappedRecipient: tappedRecipient,
+                                tappedIdentityId: tappedIdentityId
                             )
                             // The wallet saves an identity debit before it
                             // broadcasts; open Shielded Activity lists for
@@ -455,6 +457,15 @@ struct SendTransactionView: View {
                 }
             }
             .accessibleFormPicker("send.identitySourcePicker")
+            // The identity that pays is captured at the tap; no new pick
+            // while a send runs.
+            .disabled(viewModel.isSending)
+            if viewModel.identityShieldAmountTooPrecise {
+                Text("Use at most 11 decimal places: the smallest amount is 0.00000000001 DASH.")
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .accessibilityIdentifier("send.identitySource.amountProblem")
+            }
             if viewModel.shieldedFeeEstimates[.shieldFromIdentity] == nil {
                 Text("The fee floor is not available yet, so Send stays disabled.")
                     .font(.caption)

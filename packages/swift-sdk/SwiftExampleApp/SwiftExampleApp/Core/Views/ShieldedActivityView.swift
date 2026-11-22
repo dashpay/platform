@@ -186,17 +186,15 @@ struct ShieldedActivityListView: View {
                 onCheckNow: { Task { await checkNow() } },
                 onStopRetrying: { record in
                     Task {
-                        let abandoned = await recovery.stopRetrying(
+                        // Every open list for this wallet, this one included,
+                        // re-reads once from the published change.
+                        await recovery.stopRetryingAndPublish(
                             accountIndex: record.accountIndex,
                             activityId: record.activityId,
                             walletManager: walletManager,
-                            walletId: walletId
+                            walletId: walletId,
+                            publish: shieldedService.noteRecoveryRecordsChanged
                         )
-                        // Every open list for this wallet, this one included,
-                        // re-reads once from the published change.
-                        if abandoned {
-                            shieldedService.noteRecoveryRecordsChanged(walletId: walletId)
-                        }
                     }
                 }
             )
@@ -239,11 +237,8 @@ struct ShieldedActivityListView: View {
             Task { await loadRecoveryRecords() }
         }
         // Stop Retrying (in any window) or an identity shield from Send
-        // changed a wallet's records; the model ignores other wallets.
-        .onReceive(shieldedService.$lastRecoveryRecordsChange.dropFirst()) { change in
-            guard let change else { return }
-            Task { await recovery.invalidate(walletId: change.walletId) }
-        }
+        // changes a wallet's records; the model re-reads on the change.
+        .onAppear { recovery.observeRecoveryChanges(from: shieldedService) }
         .alert(
             "Could not stop retrying",
             isPresented: Binding(

@@ -115,3 +115,15 @@ func formatCreditsAsDash(_ credits: UInt64, locale: Locale? = nil) -> String {
 func formatIdentityBalanceAsDash(_ balance: Int64) -> String {
     formatCreditsAsDash(balance < 0 ? 0 : UInt64(balance))
 }
+
+/// Whether `text` has a nonzero digit beyond `decimals` fraction digits,
+/// which `parseTokenAmount` would round down. Trailing zeros do not count
+/// ("0.000000000010" fits 11 decimals); "," is read as "." as the parser does.
+func hasDigitsBeyondPrecision(_ text: String, decimals: Int) -> Bool {
+    let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        .replacingOccurrences(of: ",", with: ".")
+    guard let dot = normalized.firstIndex(of: ".") else { return false }
+    let fraction = normalized[normalized.index(after: dot)...]
+    let significantDigits = fraction.reversed().drop(while: { $0 == "0" }).count
+    return significantDigits > max(0, decimals)
+}

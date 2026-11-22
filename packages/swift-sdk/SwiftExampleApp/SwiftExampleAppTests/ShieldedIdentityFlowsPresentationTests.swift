@@ -122,6 +122,62 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         XCTAssertFalse(request.isAffordable(minimumFee: nil, spendable: 2_000))
     }
 
+    // MARK: - Amount precision (one credit = 11 decimal places)
+
+    func test_precision_oneCreditAndTrailingZeros_areAccepted() {
+        XCTAssertFalse(hasDigitsBeyondPrecision("1.00000000001", decimals: 11))
+        XCTAssertFalse(hasDigitsBeyondPrecision("0.000000000010", decimals: 11))
+        XCTAssertFalse(hasDigitsBeyondPrecision("0.00000000001", decimals: 11))
+        XCTAssertFalse(hasDigitsBeyondPrecision("2", decimals: 11))
+        XCTAssertFalse(hasDigitsBeyondPrecision("", decimals: 11))
+    }
+
+    func test_precision_aNonzeroDigitBeyondOneCredit_isRejected() {
+        XCTAssertTrue(hasDigitsBeyondPrecision("0.000000000019", decimals: 11))
+        XCTAssertTrue(hasDigitsBeyondPrecision("1.000000000001", decimals: 11))
+        // A decimal comma is read as the parser reads it.
+        XCTAssertTrue(hasDigitsBeyondPrecision("0,000000000019", decimals: 11))
+    }
+
+    func test_topUpAmountProblem_explainsOnlyTooPreciseAmounts() {
+        XCTAssertNil(ShieldedTopUpRequest.amountProblem("1.00000000001"))
+        XCTAssertNil(ShieldedTopUpRequest.amountProblem("0.000000000010"))
+        XCTAssertNil(ShieldedTopUpRequest.amountProblem(""))
+        XCTAssertNotNil(ShieldedTopUpRequest.amountProblem("0.000000000019"))
+    }
+
+    func test_topUpCapture_tooPreciseAmount_isNotRoundedToOneCredit() {
+        // parseTokenAmount alone would round this down to 1 credit.
+        XCTAssertEqual(parseTokenAmount("0.000000000019", decimals: 11), 1)
+        XCTAssertNil(ShieldedTopUpRequest.capture(
+            fundingIsShielded: true,
+            amountText: "0.000000000019",
+            walletId: walletId,
+            identityId: identityId
+        ))
+    }
+
+    func test_topUpCapture_oneCreditWithTrailingZero_isCaptured() {
+        XCTAssertEqual(
+            ShieldedTopUpRequest.capture(
+                fundingIsShielded: true,
+                amountText: "0.000000000010",
+                walletId: walletId,
+                identityId: identityId
+            )?.amount,
+            1
+        )
+        XCTAssertEqual(
+            ShieldedTopUpRequest.capture(
+                fundingIsShielded: true,
+                amountText: "1.00000000001",
+                walletId: walletId,
+                identityId: identityId
+            )?.amount,
+            100_000_000_001
+        )
+    }
+
     // MARK: - Exact credit amounts
 
     /// One credit in the formatter's own locale-aware output.
@@ -643,10 +699,17 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
 
     // MARK: - Recovery model: re-reads on a published change
 
-    /// Counts the reads one list (window) makes.
+    /// Counts the reads one list (window) makes and fulfils the expectation
+    /// registered for a given read count.
     @MainActor
     private final class ReadCount {
         var value = 0
+        var expectations: [Int: XCTestExpectation] = [:]
+
+        func record() {
+            value += 1
+            expectations[value]?.fulfill()
+        }
     }
 
     @MainActor
@@ -656,83 +719,110 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
     ) -> ShieldedIdentityDebitRecoveryModel {
         ShieldedIdentityDebitRecoveryModel(
             readRecords: { _, _ in
-                reads.value += 1
+                reads.record()
                 return []
             },
             abandon: abandon
         )
     }
 
+    /// Expect read number `count`, or with `inverted` expect it never happens.
+    @MainActor
+    private func expectRead(_ count: Int, on reads: ReadCount, inverted: Bool = false) -> XCTestExpectation {
+        let readExpectation = expectation(description: "read \(count)")
+        readExpectation.isInverted = inverted
+        reads.expectations[count] = readExpectation
+        return readExpectation
+    }
+
     @MainActor
     func test_recoveryModel_emptyList_reReadsOnAChangeForItsWalletWithoutASync() async {
         let manager = PlatformWalletManager()
+        let service = ShieldedService()
         let reads = ReadCount()
         let list = window(counting: reads)
+        list.observeRecoveryChanges(from: service)
         await list.load(walletManager: manager, walletId: walletId)
         XCTAssertEqual(reads.value, 1)
         XCTAssertTrue(list.state.isKnownEmpty)
 
-        // Send published a change for this wallet after an identity shield.
-        let service = ShieldedService()
+        // Send publishes a change for this wallet after an identity shield.
+        let reRead = expectRead(2, on: reads)
         service.noteRecoveryRecordsChanged(walletId: walletId)
-        XCTAssertEqual(service.lastRecoveryRecordsChange?.walletId, walletId)
-        await list.invalidate(walletId: service.lastRecoveryRecordsChange?.walletId ?? Data())
-        XCTAssertEqual(reads.value, 2)
+        await fulfillment(of: [reRead], timeout: 2)
 
         // A change for another wallet does not read.
-        await list.invalidate(walletId: otherWalletId)
+        let noRead = expectRead(3, on: reads, inverted: true)
+        service.noteRecoveryRecordsChanged(walletId: otherWalletId)
+        await fulfillment(of: [noRead], timeout: 0.5)
         XCTAssertEqual(reads.value, 2)
     }
 
     @MainActor
     func test_recoveryModel_stopRetrying_causesExactlyOneReadPerWindow() async {
         let manager = PlatformWalletManager()
+        let service = ShieldedService()
         let readsA = ReadCount()
         let readsB = ReadCount()
         let windowA = window(counting: readsA)
         let windowB = window(counting: readsB)
+        windowA.observeRecoveryChanges(from: service)
+        windowB.observeRecoveryChanges(from: service)
         await windowA.load(walletManager: manager, walletId: walletId)
         await windowB.load(walletManager: manager, walletId: walletId)
         XCTAssertEqual(readsA.value, 1)
         XCTAssertEqual(readsB.value, 1)
 
-        // Window A stops retrying: the abandon itself reads nothing.
-        let abandoned = await windowA.stopRetrying(
+        let secondA = expectRead(2, on: readsA)
+        let secondB = expectRead(2, on: readsB)
+        let thirdA = expectRead(3, on: readsA, inverted: true)
+        let thirdB = expectRead(3, on: readsB, inverted: true)
+
+        // Window A stops retrying through the production action.
+        await windowA.stopRetryingAndPublish(
             accountIndex: 0,
             activityId: Data(repeating: 0x09, count: 32),
             walletManager: manager,
-            walletId: walletId
+            walletId: walletId,
+            publish: service.noteRecoveryRecordsChanged
         )
-        XCTAssertTrue(abandoned)
-        XCTAssertEqual(readsA.value, 1)
+        XCTAssertEqual(service.lastRecoveryRecordsChange?.walletId, walletId)
 
-        // The one published change reaches every open list, the tapping
-        // one included, and each re-reads once.
-        let service = ShieldedService()
-        service.noteRecoveryRecordsChanged(walletId: walletId)
-        let changedWallet = service.lastRecoveryRecordsChange?.walletId ?? Data()
-        await windowA.invalidate(walletId: changedWallet)
-        await windowB.invalidate(walletId: changedWallet)
+        // Each window, the tapping one included, reads exactly once more.
+        await fulfillment(of: [secondA, secondB], timeout: 2)
+        await fulfillment(of: [thirdA, thirdB], timeout: 0.5)
         XCTAssertEqual(readsA.value, 2)
         XCTAssertEqual(readsB.value, 2)
     }
 
     @MainActor
-    func test_recoveryModel_failedStopRetrying_readsNothingAndReportsTheError() async {
+    func test_recoveryModel_failedStopRetrying_publishesNothingAndReadsNothing() async {
         struct Refused: Error {}
         let manager = PlatformWalletManager()
-        let reads = ReadCount()
-        let list = window(counting: reads, abandon: { _, _, _, _ in throw Refused() })
-        await list.load(walletManager: manager, walletId: walletId)
-        let abandoned = await list.stopRetrying(
+        let service = ShieldedService()
+        let readsA = ReadCount()
+        let readsB = ReadCount()
+        let windowA = window(counting: readsA, abandon: { _, _, _, _ in throw Refused() })
+        let windowB = window(counting: readsB)
+        windowA.observeRecoveryChanges(from: service)
+        windowB.observeRecoveryChanges(from: service)
+        await windowA.load(walletManager: manager, walletId: walletId)
+        await windowB.load(walletManager: manager, walletId: walletId)
+
+        let noReadA = expectRead(2, on: readsA, inverted: true)
+        let noReadB = expectRead(2, on: readsB, inverted: true)
+        await windowA.stopRetryingAndPublish(
             accountIndex: 0,
             activityId: Data(repeating: 0x09, count: 32),
             walletManager: manager,
-            walletId: walletId
+            walletId: walletId,
+            publish: service.noteRecoveryRecordsChanged
         )
-        XCTAssertFalse(abandoned)
-        XCTAssertNotNil(list.actionError)
-        XCTAssertEqual(reads.value, 1)
+        XCTAssertNil(service.lastRecoveryRecordsChange)
+        XCTAssertNotNil(windowA.actionError)
+        await fulfillment(of: [noReadA, noReadB], timeout: 0.5)
+        XCTAssertEqual(readsA.value, 1)
+        XCTAssertEqual(readsB.value, 1)
     }
 
     @MainActor

@@ -49,10 +49,18 @@ struct ShieldedTopUpRequest: Equatable {
     ) -> ShieldedTopUpRequest? {
         guard fundingIsShielded,
               let walletId,
+              amountProblem(amountText) == nil,
               let amount = parseTokenAmount(amountText, decimals: 11),
               amount > 0
         else { return nil }
         return ShieldedTopUpRequest(walletId: walletId, identityId: identityId, amount: amount)
+    }
+
+    /// Why `text` cannot be sent as written, or `nil`. A digit beyond one
+    /// credit (11 decimal places) is refused rather than rounded down.
+    static func amountProblem(_ text: String) -> String? {
+        guard hasDigitsBeyondPrecision(text, decimals: 11) else { return nil }
+        return "Use at most 11 decimal places: the smallest amount is 0.00000000001 DASH."
     }
 
     /// Whether this captured request may be sent against the balance and
@@ -451,6 +459,12 @@ struct TopUpIdentityView: View {
                     .accessibilityIdentifier("topup.shielded.amount")
                 Text("DASH")
                     .foregroundColor(.secondary)
+            }
+            if let problem = ShieldedTopUpRequest.amountProblem(amountDash) {
+                Text(problem)
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .accessibilityIdentifier("topup.shielded.amountProblem")
             }
             LabeledContent(
                 "Spendable shielded",
