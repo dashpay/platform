@@ -271,7 +271,32 @@ struct RemovalEntryView<'a> {
     restored_by: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     restored_at: Option<u64>,
-    kept_fields: BTreeMap<&'a str, KeptValue<'a>>,
+    kept_fields: KeptFieldsView<'a>,
+}
+
+/// The values one record keeps, by property path, in path order. A value that refuses to
+/// serialize is refused with the record's document id and the kept path it sits under, so
+/// the error says which record and which field; on success nothing is built besides the
+/// output.
+struct KeptFieldsView<'a> {
+    document_id: Identifier,
+    kept_values: &'a BTreeMap<String, Value>,
+}
+
+impl Serialize for KeptFieldsView<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(self.kept_values.len()))?;
+        for (path, value) in self.kept_values {
+            map.serialize_entry(path, &KeptValue(value))
+                .map_err(|error| {
+                    S::Error::custom(format!(
+                        "removal of document {}, kept field {path}: {error}",
+                        base58(self.document_id)
+                    ))
+                })?;
+        }
+        map.end()
+    }
 }
 
 impl Serialize for RemovalsPageJson {
@@ -317,10 +342,10 @@ fn removal_entry_view<'a>(
             .restoration
             .as_ref()
             .map(|restoration| restoration.restored_at),
-        kept_fields: kept_values
-            .iter()
-            .map(|(path, value)| (path.as_str(), KeptValue(value)))
-            .collect(),
+        kept_fields: KeptFieldsView {
+            document_id: entry.document_id,
+            kept_values,
+        },
     }
 }
 
@@ -944,5 +969,28 @@ mod tests {
             };
         }
         assert_eq!(written, expected);
+    }
+
+    /// A kept value that refuses to serialize names its record and kept field.
+    #[test]
+    fn should_name_the_record_and_field_of_a_kept_value_that_refuses_to_serialize() {
+        let removals = ContractDocumentRemovalsWithKeptValues {
+            removals: vec![(
+                removal_entry(3, false),
+                BTreeMap::from([("score".to_string(), Value::Float(f64::NAN))]),
+            )],
+            next: None,
+        };
+        let error = serde_json::to_string(&removals_json(removals))
+            .expect_err("NaN is not JSON")
+            .to_string();
+        assert!(
+            error.contains(&format!(
+                "removal of document {}, kept field score:",
+                b58(3)
+            )),
+            "{error}"
+        );
+        assert!(error.contains("not a finite float"), "{error}");
     }
 }

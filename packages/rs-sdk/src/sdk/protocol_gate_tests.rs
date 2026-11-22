@@ -691,9 +691,15 @@ async fn should_refuse_a_status_over_every_list_below_protocol_14_without_a_cont
     assert_eq!(probes(&sdk).await, 0);
 }
 
-/// The positive counterpart: an unpinned SDK that starts below 14 learns 14 from the probe,
-/// then reads the status over every list the contract keeps. It fetches the contract and
-/// sends the status request over the lists the contract keeps.
+/// The positive counterpart: an unpinned SDK that starts below 14, with nothing verified,
+/// reads the status over every list the contract keeps through the public call alone. The
+/// call asks the network for its version (the probe answers 14), then fetches the contract,
+/// then sends the status request over the lists the contract keeps.
+///
+/// The fixtures are protocol 14 answers, encoded without advancing the SDK under test. The
+/// mock keeps no request log, only counts, so the order is shown by a twin SDK whose probe
+/// gets no answer: it sends the probe and is refused without any contract request, so the
+/// contract request waits on the probe's outcome and comes after it.
 #[tokio::test]
 async fn should_resolve_and_send_a_status_over_every_list_once_the_probe_shows_protocol_14() {
     use crate::platform::contract_moderation::ContractModerationList;
@@ -704,22 +710,24 @@ async fn should_resolve_and_send_a_status_over_every_list_once_the_probe_shows_p
     use dpp::data_contract::DataContractFactory;
     use dpp::platform_value::platform_value;
 
+    // The contract request waits on the probe: unanswered, the probe goes out and the read
+    // is refused before the contract is asked for
+    let unanswered = mock_sdk(V13, false, 0);
+    let refused = unanswered
+        .fetch_contract_moderation_status(Identifier::new([7; 32]), Identifier::new([8; 32]), None)
+        .await;
+    assert!(
+        matches!(refused, Err(Error::ProtocolVersionNotActive { .. })),
+        "{refused:?}"
+    );
+    assert_eq!(probes(&unanswered).await, 1);
+    let unanswered_contract: GetDataContractRequest = Identifier::new([7; 32])
+        .query(&unanswered.query_settings())
+        .unwrap();
+    assert_eq!(sent(&unanswered, &unanswered_contract).await, 0);
+
     let mut sdk = mock_sdk(V13, false, 0);
     answer_probe(&sdk, "pv14").await;
-    // The probe answers the gate's question for the status request: the network runs 14,
-    // and the unpinned SDK moves up to it. (The mock encodes the expectations below at the
-    // SDK's version, which must therefore already be 14.)
-    let status_requirement = ContractModerationStatusQuery {
-        contract_id: Identifier::new([1; 32]),
-        identity_id: Identifier::new([1; 32]),
-        lists: vec![],
-    }
-    .protocol_requirement(&sdk.query_settings())
-    .unwrap();
-    sdk.ensure_network_serves(status_requirement, None)
-        .await
-        .expect("the probe shows protocol 14");
-    assert!(sdk.protocol_version_number() >= V14);
     let mut contract = DataContractFactory::new(V14)
         .unwrap()
         .create_with_value_config(
@@ -761,6 +769,9 @@ async fn should_resolve_and_send_a_status_over_every_list_once_the_probe_shows_p
         ContractModerationListStatus::Banlist { ban: None },
         ContractModerationListStatus::Warnings { warnings: vec![] },
     ]);
+    // The fixtures are protocol 14 answers; the SDK under test stays at 13 until the probe
+    sdk.mock()
+        .encode_expectations_at(Some(PlatformVersion::get(V14).unwrap()));
     sdk.mock()
         .expect_fetch(contract_id, Some(contract))
         .await
@@ -769,6 +780,9 @@ async fn should_resolve_and_send_a_status_over_every_list_once_the_probe_shows_p
         .expect_fetch(resolved.clone(), Some(statuses.clone()))
         .await
         .unwrap();
+    sdk.mock().encode_expectations_at(None);
+    assert_eq!(verified(&sdk), 0);
+    assert_eq!(sdk.protocol_version_number(), V13);
 
     let fetched = sdk
         .fetch_contract_moderation_status(contract_id, identity_id, None)
