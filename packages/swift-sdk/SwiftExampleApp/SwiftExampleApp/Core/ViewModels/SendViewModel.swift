@@ -180,6 +180,12 @@ class SendViewModel: ObservableObject {
     /// a block). Shown in its own "Submitted" alert, never as a success.
     @Published var submittedMessage: String?
 
+    /// Whether the last send was an identity shield call after which the
+    /// wallet may have saved a debit record (it saves one before it
+    /// broadcasts). The screen then tells every open recovery list for the
+    /// wallet to re-read the Rust records.
+    private(set) var identityDebitMayHaveBeenSaved = false
+
     /// Per-output minimum credit amount (`min_output_amount`) the chain
     /// enforces for address-funds transitions, resolved on the Rust side from
     /// the wallet's current platform version and pushed in by the VIEW
@@ -699,6 +705,7 @@ class SendViewModel: ObservableObject {
         successMessage = nil
         unconfirmedMessage = nil
         submittedMessage = nil
+        identityDebitMayHaveBeenSaved = false
         defer { isSending = false }
 
         do {
@@ -1025,18 +1032,42 @@ class SendViewModel: ObservableObject {
                 }
                 // Signs with the identity's TRANSFER key.
                 let identitySigner = KeychainSigner(modelContainer: modelContext.container)
-                try await walletManager.shieldedShieldFromIdentity(
-                    walletId: wallet.walletId,
-                    shieldedAccount: 0,
-                    identityId: identityId,
-                    amount: amountCredits,
-                    identitySigner: identitySigner
-                )
+                do {
+                    try await walletManager.shieldedShieldFromIdentity(
+                        walletId: wallet.walletId,
+                        shieldedAccount: 0,
+                        identityId: identityId,
+                        amount: amountCredits,
+                        identitySigner: identitySigner
+                    )
+                    identityDebitMayHaveBeenSaved = Self.identityShieldMayHaveSavedDebit(after: nil)
+                } catch {
+                    identityDebitMayHaveBeenSaved = Self.identityShieldMayHaveSavedDebit(after: error)
+                    throw error
+                }
                 applyIdentityShieldSubmitted()
             }
 
         } catch {
             applySendFailure(error, flow: flow)
+        }
+    }
+
+    /// Whether the wallet may have saved an identity debit record after a
+    /// `shieldedShieldFromIdentity` call that threw `error` (`nil`: it
+    /// returned normally, so a record was saved). Only the refusals the
+    /// wallet makes before saving anything say no; every other outcome may
+    /// follow a saved record, so the recovery lists must re-read.
+    nonisolated static func identityShieldMayHaveSavedDebit(after error: Error?) -> Bool {
+        guard let error else { return true }
+        guard let walletError = error as? PlatformWalletError else { return true }
+        switch walletError {
+        case .shieldedIdentityDebitPending, .insufficientIdentityCredits,
+             .identityBalanceUnavailable, .protocolVersionNotActive,
+             .sdkPinnedBelowProtocolVersion, .invalidParameter:
+            return false
+        default:
+            return true
         }
     }
 

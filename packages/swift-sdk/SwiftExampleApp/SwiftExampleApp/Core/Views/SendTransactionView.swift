@@ -6,6 +6,9 @@ struct SendTransactionView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
+    /// Only to tell open recovery lists that an identity shield may have
+    /// saved a debit record.
+    @EnvironmentObject var shieldedService: ShieldedService
     let wallet: PersistentWallet
 
     @StateObject private var viewModel: SendViewModel
@@ -330,6 +333,12 @@ struct SendTransactionView: View {
                                 tappedFlow: tappedFlow,
                                 tappedRecipient: tappedRecipient
                             )
+                            // The wallet saves an identity debit before it
+                            // broadcasts; open Shielded Activity lists for
+                            // this wallet re-read the records.
+                            if viewModel.identityDebitMayHaveBeenSaved {
+                                shieldedService.noteRecoveryRecordsChanged(walletId: wallet.walletId)
+                            }
                         }
                     }
                     .disabled(!viewModel.canSend)

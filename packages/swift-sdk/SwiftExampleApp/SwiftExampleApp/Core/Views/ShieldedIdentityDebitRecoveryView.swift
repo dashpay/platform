@@ -317,6 +317,33 @@ final class ShieldedIdentityDebitRecoveryModel: ObservableObject {
     /// included, runs on this one, not on the one an earlier read captured.
     private var manager: PlatformWalletManager?
 
+    typealias RecordsReader = @MainActor (PlatformWalletManager, Data) async throws
+        -> [ShieldedIdentityDebitRecoveryRecord]
+    /// Reads a wallet's records from Rust. Injected by tests to count reads.
+    private let readRecords: RecordsReader
+
+    typealias Abandoner = @MainActor (PlatformWalletManager, Data, UInt32, Data) async throws -> Void
+    /// Stops automatic retry of one record (wallet, account, activity id),
+    /// always with the user's acknowledgement. Injected by tests.
+    private let abandon: Abandoner
+
+    init(
+        readRecords: @escaping RecordsReader = { manager, walletId in
+            try await manager.shieldedIdentityDebitRecoveryRecords(walletId: walletId)
+        },
+        abandon: @escaping Abandoner = { manager, walletId, accountIndex, activityId in
+            try await manager.abandonShieldedIdentityDebit(
+                walletId: walletId,
+                accountIndex: accountIndex,
+                activityId: activityId,
+                acknowledgePossibleExecution: true
+            )
+        }
+    ) {
+        self.readRecords = readRecords
+        self.abandon = abandon
+    }
+
     var records: [ShieldedIdentityDebitRecoveryRecord] { state.records }
 
     func load(walletManager: PlatformWalletManager, walletId: Data) async {
@@ -349,11 +376,13 @@ final class ShieldedIdentityDebitRecoveryModel: ObservableObject {
     }
 
     /// Call only after the user confirmed `stopRetryingWarning`. Returns
-    /// whether the record was abandoned, so the caller can tell other lists
-    /// for this wallet.
+    /// whether the record was abandoned. This does not re-read: the caller
+    /// publishes the change and every open list for the wallet, this one
+    /// included, re-reads once from that event.
     @discardableResult
     func stopRetrying(
-        _ record: ShieldedIdentityDebitRecoveryRecord,
+        accountIndex: UInt32,
+        activityId: Data,
         walletManager: PlatformWalletManager,
         walletId: Data
     ) async -> Bool {
@@ -361,18 +390,11 @@ final class ShieldedIdentityDebitRecoveryModel: ObservableObject {
         defer { isAbandoning = false }
         var abandoned = false
         do {
-            try await walletManager.abandonShieldedIdentityDebit(
-                walletId: walletId,
-                accountIndex: record.accountIndex,
-                activityId: record.activityId,
-                acknowledgePossibleExecution: true
-            )
+            try await abandon(walletManager, walletId, accountIndex, activityId)
             abandoned = true
         } catch {
             actionError = error.localizedDescription
         }
-        // A read started before the abandon must not overwrite this one.
-        await invalidate(walletId: walletId)
         return abandoned
     }
 
@@ -382,9 +404,7 @@ final class ShieldedIdentityDebitRecoveryModel: ObservableObject {
             let result: Result<[ShieldedIdentityDebitRecoveryRecord], Error>
             if let manager {
                 do {
-                    result = .success(try await manager.shieldedIdentityDebitRecoveryRecords(
-                        walletId: walletId
-                    ))
+                    result = .success(try await readRecords(manager, walletId))
                 } catch {
                     result = .failure(error)
                 }

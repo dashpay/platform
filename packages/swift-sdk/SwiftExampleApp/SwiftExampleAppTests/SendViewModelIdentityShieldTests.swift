@@ -325,6 +325,51 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
         XCTAssertNil(vm.unconfirmedMessage)
     }
 
+    // MARK: - Which identity-shield outcomes may have saved a debit
+
+    func test_identityShieldReturnedNormally_mayHaveSavedADebit() {
+        // The submitted outcome: the wallet saved the record before broadcasting.
+        XCTAssertTrue(SendViewModel.identityShieldMayHaveSavedDebit(after: nil))
+    }
+
+    func test_identityShieldUnconfirmed_mayHaveSavedADebit() {
+        XCTAssertTrue(SendViewModel.identityShieldMayHaveSavedDebit(
+            after: PlatformWalletError.shieldedSpendUnconfirmed("x")))
+        XCTAssertTrue(SendViewModel.identityShieldMayHaveSavedDebit(
+            after: PlatformWalletError.transactionBroadcastUnconfirmed("x")))
+    }
+
+    func test_identityShieldOtherErrors_mayHaveSavedADebit() {
+        XCTAssertTrue(SendViewModel.identityShieldMayHaveSavedDebit(
+            after: PlatformWalletError.walletOperation("x")))
+        XCTAssertTrue(SendViewModel.identityShieldMayHaveSavedDebit(
+            after: PlatformWalletError.signingKeyUnavailable("x")))
+        XCTAssertTrue(SendViewModel.identityShieldMayHaveSavedDebit(
+            after: NSError(domain: "test", code: 1)))
+    }
+
+    func test_identityShieldPreSaveRefusals_saveNoDebit() {
+        let refusals: [PlatformWalletError] = [
+            .shieldedIdentityDebitPending("x"),
+            .insufficientIdentityCredits(identityId: "id", required: 2, available: 1),
+            .identityBalanceUnavailable("x"),
+            .protocolVersionNotActive("x"),
+            .sdkPinnedBelowProtocolVersion("x"),
+            .invalidParameter("x"),
+        ]
+        for refusal in refusals {
+            XCTAssertFalse(
+                SendViewModel.identityShieldMayHaveSavedDebit(after: refusal),
+                "\(refusal)"
+            )
+        }
+    }
+
+    func test_identityDebitFlag_startsUnset() {
+        let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
+        XCTAssertFalse(vm.identityDebitMayHaveBeenSaved)
+    }
+
     func test_identityDebitPendingMessage_isWalletScoped() {
         // An unreadable record blocks every identity and the error names the
         // requested identity, so the message must not blame it.

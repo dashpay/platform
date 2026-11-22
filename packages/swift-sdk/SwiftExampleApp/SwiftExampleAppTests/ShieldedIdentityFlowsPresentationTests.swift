@@ -641,6 +641,110 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         XCTAssertFalse(tracker.request(for: scope(manager, walletId)).scopeChanged)
     }
 
+    // MARK: - Recovery model: re-reads on a published change
+
+    /// Counts the reads one list (window) makes.
+    @MainActor
+    private final class ReadCount {
+        var value = 0
+    }
+
+    @MainActor
+    private func window(
+        counting reads: ReadCount,
+        abandon: @escaping ShieldedIdentityDebitRecoveryModel.Abandoner = { _, _, _, _ in }
+    ) -> ShieldedIdentityDebitRecoveryModel {
+        ShieldedIdentityDebitRecoveryModel(
+            readRecords: { _, _ in
+                reads.value += 1
+                return []
+            },
+            abandon: abandon
+        )
+    }
+
+    @MainActor
+    func test_recoveryModel_emptyList_reReadsOnAChangeForItsWalletWithoutASync() async {
+        let manager = PlatformWalletManager()
+        let reads = ReadCount()
+        let list = window(counting: reads)
+        await list.load(walletManager: manager, walletId: walletId)
+        XCTAssertEqual(reads.value, 1)
+        XCTAssertTrue(list.state.isKnownEmpty)
+
+        // Send published a change for this wallet after an identity shield.
+        let service = ShieldedService()
+        service.noteRecoveryRecordsChanged(walletId: walletId)
+        XCTAssertEqual(service.lastRecoveryRecordsChange?.walletId, walletId)
+        await list.invalidate(walletId: service.lastRecoveryRecordsChange?.walletId ?? Data())
+        XCTAssertEqual(reads.value, 2)
+
+        // A change for another wallet does not read.
+        await list.invalidate(walletId: otherWalletId)
+        XCTAssertEqual(reads.value, 2)
+    }
+
+    @MainActor
+    func test_recoveryModel_stopRetrying_causesExactlyOneReadPerWindow() async {
+        let manager = PlatformWalletManager()
+        let readsA = ReadCount()
+        let readsB = ReadCount()
+        let windowA = window(counting: readsA)
+        let windowB = window(counting: readsB)
+        await windowA.load(walletManager: manager, walletId: walletId)
+        await windowB.load(walletManager: manager, walletId: walletId)
+        XCTAssertEqual(readsA.value, 1)
+        XCTAssertEqual(readsB.value, 1)
+
+        // Window A stops retrying: the abandon itself reads nothing.
+        let abandoned = await windowA.stopRetrying(
+            accountIndex: 0,
+            activityId: Data(repeating: 0x09, count: 32),
+            walletManager: manager,
+            walletId: walletId
+        )
+        XCTAssertTrue(abandoned)
+        XCTAssertEqual(readsA.value, 1)
+
+        // The one published change reaches every open list, the tapping
+        // one included, and each re-reads once.
+        let service = ShieldedService()
+        service.noteRecoveryRecordsChanged(walletId: walletId)
+        let changedWallet = service.lastRecoveryRecordsChange?.walletId ?? Data()
+        await windowA.invalidate(walletId: changedWallet)
+        await windowB.invalidate(walletId: changedWallet)
+        XCTAssertEqual(readsA.value, 2)
+        XCTAssertEqual(readsB.value, 2)
+    }
+
+    @MainActor
+    func test_recoveryModel_failedStopRetrying_readsNothingAndReportsTheError() async {
+        struct Refused: Error {}
+        let manager = PlatformWalletManager()
+        let reads = ReadCount()
+        let list = window(counting: reads, abandon: { _, _, _, _ in throw Refused() })
+        await list.load(walletManager: manager, walletId: walletId)
+        let abandoned = await list.stopRetrying(
+            accountIndex: 0,
+            activityId: Data(repeating: 0x09, count: 32),
+            walletManager: manager,
+            walletId: walletId
+        )
+        XCTAssertFalse(abandoned)
+        XCTAssertNotNil(list.actionError)
+        XCTAssertEqual(reads.value, 1)
+    }
+
+    @MainActor
+    func test_shieldedService_eachRecoveryChangeIsANewValue() {
+        let service = ShieldedService()
+        service.noteRecoveryRecordsChanged(walletId: walletId)
+        let first = service.lastRecoveryRecordsChange
+        service.noteRecoveryRecordsChanged(walletId: walletId)
+        XCTAssertNotEqual(first, service.lastRecoveryRecordsChange)
+        XCTAssertEqual(service.lastRecoveryRecordsChange?.walletId, walletId)
+    }
+
     // MARK: - Recovery read ordering
 
     func test_readCoordinator_firstRequest_startsARead() {
