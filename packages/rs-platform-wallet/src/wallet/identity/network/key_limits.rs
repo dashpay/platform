@@ -30,6 +30,7 @@ use super::contact_requests::{GatedSigner, SigningGate};
 use super::update::SignerRef;
 use super::*;
 use crate::error::PlatformWalletError;
+use crate::wallet::identity::state::managed_identity::with_raised_limits;
 
 /// What a key limits update of one key would do, worked out from the identity as the wallet
 /// holds it and before anything is signed: see
@@ -285,17 +286,27 @@ impl IdentityWallet {
         {
             let mut wm = self.wallet_manager.write().await;
             let info = self.current_wallet_info_mut(&mut wm)?;
-            if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                let merged = merge_proved_key(
-                    managed.identity.public_keys().get(&key_id),
-                    updated_key.clone(),
-                );
-                managed.replace_key(merged, &self.persister).map_err(|e| {
+            // The identity can have been removed from the wallet while the update waited for
+            // its proof. The raise landed on Platform all the same, so this is not reported as
+            // success, and not as a refusal that invites sending it again.
+            let managed = info
+                .identity_manager
+                .managed_identity_mut(identity_id)
+                .ok_or_else(|| {
                     PlatformWalletError::Persistence(format!(
-                        "identity key not persisted after the key limits update: {e}"
+                        "the key limits update of key {key_id} landed, but identity {identity_id} \
+                         is no longer held by this wallet: nothing was applied locally"
                     ))
                 })?;
-            }
+            let merged = merge_proved_key(
+                managed.identity.public_keys().get(&key_id),
+                updated_key.clone(),
+            );
+            managed.replace_key(merged, &self.persister).map_err(|e| {
+                PlatformWalletError::Persistence(format!(
+                    "identity key not persisted after the key limits update: {e}"
+                ))
+            })?;
         }
 
         Ok(updated_key)
@@ -336,10 +347,10 @@ fn merge_proved_key(
     let Some(held) = held else {
         return proved;
     };
-    let total_budget = held.total_budget().max(proved.total_budget());
-    let expires_at = held.expires_at().max(proved.expires_at());
+    // The limits follow the refresh fold's rule (`with_raised_limits`); the disable keeps
+    // the later stamp, where the fold keeps the cache's.
     let disabled_at = held.disabled_at().max(proved.disabled_at());
-    let mut merged = proved.with_limits(total_budget, expires_at);
+    let mut merged = with_raised_limits(proved, held);
     if let Some(disabled_at) = disabled_at {
         merged.set_disabled_at(disabled_at);
     }
