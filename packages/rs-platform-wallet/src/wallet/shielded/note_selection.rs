@@ -52,13 +52,13 @@ const ORCHARD_PROOF_BASE_BYTES: usize = 2720;
 /// Bytes an Orchard Halo 2 proof grows by per action ([`ORCHARD_PROOF_BASE_BYTES`]).
 const ORCHARD_PROOF_BYTES_PER_ACTION: usize = 2272;
 
-/// Refuse a `TokenPurchaseFromShieldedPool` token count its basic structure validation refuses:
-/// zero, or above [`MAX_DISTRIBUTION_PARAM`], the bound that validation applies. Store- and
+/// Refuse a `TokenPurchaseFromShieldedPool` token count its basic structure validation refuses
+/// (DPP's `is_valid_token_count`: zero, or above [`MAX_DISTRIBUTION_PARAM`]). Store- and
 /// network-free, so a purchase is refused with it before anything is reserved or asked.
 pub(crate) fn ensure_token_purchase_count(
     token_count: TokenAmount,
 ) -> Result<(), PlatformWalletError> {
-    if token_count == 0 || token_count > MAX_DISTRIBUTION_PARAM {
+    if !TokenPurchaseFromShieldedPoolTransitionV0::is_valid_token_count(token_count) {
         return Err(PlatformWalletError::InvalidParameter(format!(
             "a shielded token purchase buys from 1 to {MAX_DISTRIBUTION_PARAM} tokens, not \
              {token_count}"

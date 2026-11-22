@@ -37,7 +37,7 @@ impl StateTransitionStructureValidation for TokenPurchaseFromShieldedPoolTransit
                 .into(),
             );
         }
-        if self.token_count == 0 || self.token_count > MAX_DISTRIBUTION_PARAM {
+        if !Self::is_valid_token_count(self.token_count) {
             return SimpleConsensusValidationResult::new_with_error(
                 BasicError::InvalidTokenAmountError(InvalidTokenAmountError::new(
                     MAX_DISTRIBUTION_PARAM,
