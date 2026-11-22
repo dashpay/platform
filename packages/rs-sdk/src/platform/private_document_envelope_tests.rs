@@ -2,6 +2,7 @@
 //! together: both count the envelope's bytes alike, and a type whose entries take its minimum
 //! size carries its largest payload, sealed and opened, in exactly one entry.
 
+use crate::platform::private_document_scan::read_private_document_payload;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
@@ -158,4 +159,49 @@ fn should_carry_the_largest_payload_in_an_entry_of_the_minimum_size() {
         decoded, properties,
         "every property reads back as it was sealed"
     );
+}
+
+/// A recipient reads an opened entry's payload against the type's schema: properties the schema
+/// admits read back as they were written, and a payload that decodes but holds a value the
+/// schema refuses is refused with the reason, as is a payload cut short and a type the contract
+/// does not hold.
+#[test]
+fn should_read_a_payload_against_its_type_s_schema() {
+    let platform_version = PlatformVersion::latest();
+    let contract = contract(4096);
+    let request = contract
+        .document_type_for_name("request")
+        .expect("the type");
+    let properties = BTreeMap::from([
+        ("accountReference".to_string(), Value::U32(7)),
+        ("extendedPublicKey".to_string(), Value::Bytes(vec![1; 69])),
+        ("autoAcceptProof".to_string(), Value::Bytes(vec![2; 38])),
+    ]);
+    let payload = encode_private_document_payload(request, properties.clone()).expect("encodes");
+    assert_eq!(
+        read_private_document_payload(&contract, "request", &payload, platform_version),
+        Ok(properties.clone())
+    );
+
+    // One byte short of the schema's `minItems`: the codec writes and reads it, the schema
+    // refuses it.
+    let mut short_proof = properties;
+    short_proof.insert("autoAcceptProof".to_string(), Value::Bytes(vec![2; 37]));
+    let refused_payload = encode_private_document_payload(request, short_proof.clone())
+        .expect("the codec checks no bounds");
+    assert_eq!(
+        decode_private_document_payload(request, &refused_payload, platform_version)
+            .expect("decodes"),
+        short_proof
+    );
+    let refusal =
+        read_private_document_payload(&contract, "request", &refused_payload, platform_version)
+            .expect_err("a proof shorter than the schema allows");
+    assert!(refusal.contains("autoAcceptProof"), "{refusal}");
+
+    // Cut inside the required `extendedPublicKey`.
+    read_private_document_payload(&contract, "request", &payload[..40], platform_version)
+        .expect_err("a payload cut short");
+    read_private_document_payload(&contract, "missing", &payload, platform_version)
+        .expect_err("a type the contract does not hold");
 }

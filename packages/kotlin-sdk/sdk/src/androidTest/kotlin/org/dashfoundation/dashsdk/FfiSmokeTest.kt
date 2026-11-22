@@ -51,6 +51,45 @@ class FfiSmokeTest {
     }
 
     @Test
+    fun devnetQuorumBaseUrlResolvesANameAndRefusesAReservedOne() {
+        NativeLoader.ensureLoaded()
+        assertEquals(
+            "https://quorums.palmatum.networks.dash.org",
+            SdkNative.devnetQuorumBaseUrl("palmatum"),
+        )
+        assertThrows(DashSDKException::class.java) {
+            SdkNative.devnetQuorumBaseUrl("mainnet")
+        }
+    }
+
+    @Test
+    fun spvStartTellsAnEmptyPeerListFromOneWithNoUsablePeer() {
+        NativeLoader.ensureLoaded()
+        // No manager (handle 0), so nothing starts: the peer check runs
+        // before the handle is looked up.
+        fun restrictedStart(peers: Array<String>) = assertThrows(DashSDKException::class.java) {
+            WalletManagerNative.spvStart(
+                managerHandle = 0,
+                dataDir = "/nonexistent",
+                network = 1,
+                userAgent = null,
+                peers = peers,
+                restrictToConfiguredPeers = true,
+                startFromHeight = 0,
+                devnetName = null,
+                llmqDevnetSize = 0,
+                llmqDevnetThreshold = 0,
+            )
+        }
+        // An empty list is an offline start: it passes the peer check and
+        // fails on the missing manager (platform-wallet NotFound, 98).
+        assertEquals(1098, restrictedStart(emptyArray()).code)
+        // A peer that cannot cross as a C string still counts as given, so
+        // the start is refused (platform-wallet ErrorInvalidParameter, 2).
+        assertEquals(1002, restrictedStart(arrayOf("192.0.2.1:19\u0000999")).code)
+    }
+
+    @Test
     fun sdkHandleRoundTrip() {
         NativeLoader.ensureLoaded()
         // Testnet, default DAPI address list, trusted quorum defaults.

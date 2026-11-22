@@ -679,6 +679,32 @@ impl MnemonicResolverCoreSigner {
         })
     }
 
+    /// The BIP-32 extended public key at each of `paths`, in order, as
+    /// [`ExtendedPubKeySigner::extended_public_key`] derives it at one: the
+    /// mnemonic is resolved once for all of them, so a wallet checking many
+    /// keys reads the Keychain once, not once per path. An empty `paths`
+    /// resolves nothing. Only public material leaves; each derived private
+    /// key self-wipes inside [`Self::resolve_master`].
+    pub fn extended_public_keys(
+        &self,
+        paths: &[DerivationPath],
+    ) -> Result<Vec<ExtendedPubKey>, MnemonicResolverSignerError> {
+        if paths.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.resolve_master(|master| {
+            paths
+                .iter()
+                .map(|path| {
+                    let derived = master.derive_priv(path).map_err(|e| {
+                        MnemonicResolverSignerError::DerivationFailed(format!("path: {e}"))
+                    })?;
+                    Ok(ExtendedPubKey::from_priv(&derived))
+                })
+                .collect()
+        })
+    }
+
     /// Seal `request` from `sender`, whose encryption key
     /// `sender_encryption_key_id` is the one at `sender_encryption_key_path`,
     /// to the key `recipient_key_id` of `recipient`, with `signature`, the
@@ -2051,6 +2077,51 @@ mod tests {
             );
             assert_eq!(scans[1].received.len(), 1);
             assert_eq!(scans[1].next_position, 3);
+
+            unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+        }
+
+        /// The public keys at several paths come from one Keychain read, each
+        /// equal to the one derived at its path alone, in path order; an empty
+        /// batch does not read the Keychain at all.
+        #[tokio::test]
+        async fn should_resolve_the_mnemonic_once_per_batch_of_public_keys() {
+            let resolves = AtomicUsize::new(0);
+            let resolver = unsafe {
+                dash_sdk_mnemonic_resolver_create(
+                    &resolves as *const AtomicUsize as *mut c_void,
+                    counting_resolve,
+                    noop_destroy,
+                )
+            };
+            let signer =
+                unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
+            let paths = [sender_key_path(), recipient_key_path(), test_path()];
+
+            let public_keys = signer
+                .extended_public_keys(&paths)
+                .expect("the signer derives the batch");
+            assert_eq!(resolves.load(Ordering::SeqCst), 1, "one Keychain read");
+            assert_eq!(public_keys.len(), paths.len());
+            for (path, public_key) in paths.iter().zip(&public_keys) {
+                let alone = signer
+                    .extended_public_key(path)
+                    .await
+                    .expect("the signer derives one key");
+                assert_eq!(public_key, &alone, "the key at {path}");
+            }
+            assert_ne!(public_keys[0], public_keys[1]);
+
+            resolves.store(0, Ordering::SeqCst);
+            let none = signer
+                .extended_public_keys(&[])
+                .expect("no paths derive nothing");
+            assert!(none.is_empty());
+            assert_eq!(
+                resolves.load(Ordering::SeqCst),
+                0,
+                "no paths, no Keychain read"
+            );
 
             unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
         }
