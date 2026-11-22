@@ -61,7 +61,12 @@ pub enum Error {
     ExecutionNotProved(String),
     /// A state transition may have been submitted but its outcome is unresolved.
     /// The cause is diagnostic, not permission to create a replacement operation.
-    #[error("state transition outcome is unconfirmed; reconcile the original operation before submitting a replacement: {0}")]
+    ///
+    /// The cause is the last error the submission or its result check ended on. It does
+    /// not have to be why the outcome is unknown: after an attempt that may have reached a
+    /// node, later attempts can all fail before connecting, and the last of them is the
+    /// cause.
+    #[error("state transition outcome is unconfirmed: a node accepted it or may have received it; reconcile the original operation before submitting a replacement; last error: {0}")]
     StateTransitionResultUnconfirmed(#[source] Box<Error>),
     /// DAPI client error, for example, connection error
     #[error("Dapi client error: {0}")]
@@ -228,21 +233,6 @@ impl Error {
             self
         } else {
             Self::StateTransitionResultUnconfirmed(Box::new(self))
-        }
-    }
-
-    /// Whether the request this error ended reached no node: its reported attempt failed
-    /// before a connection was established, or no node was left to ask. Such an error says
-    /// nothing about what a node did with an earlier request.
-    pub(crate) fn reached_no_node(&self) -> bool {
-        match self {
-            Self::DapiClientError(DapiClientError::Transport(error)) => error.is_connect_failure(),
-            Self::DapiClientError(DapiClientError::NoAvailableAddressesToRetry(error)) => {
-                error.is_connect_failure()
-            }
-            Self::DapiClientError(DapiClientError::NoAvailableAddresses) => true,
-            Self::NoAvailableAddressesToRetry(inner) => inner.reached_no_node(),
-            _ => false,
         }
     }
 

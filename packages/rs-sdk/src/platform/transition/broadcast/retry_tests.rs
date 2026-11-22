@@ -339,97 +339,46 @@ async fn should_fail_plainly_when_every_attempt_fails_to_connect() {
     ));
 }
 
-/// Whether `error` is an unconfirmed outcome whose cause is the connection that broke
-/// under the broadcast, and names no failure to connect.
-fn names_the_broken_connection(error: &Error) -> bool {
-    matches!(
-        error,
-        Error::StateTransitionResultUnconfirmed(cause) if matches!(
-            cause.as_ref(),
-            Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(status)))
-                if status.code() == Code::Unknown
-        )
-    ) && !error.to_string().contains("Network is unreachable")
-}
-
-/// The ways a result wait ends without reaching a node.
-fn waits_that_reach_no_node() -> [Error; 4] {
-    let never_connected = || TransportError::Grpc(connect_failure());
-    [
-        Error::DapiClientError(DapiClientError::Transport(never_connected())),
-        Error::DapiClientError(DapiClientError::NoAvailableAddressesToRetry(Box::new(
-            never_connected(),
-        ))),
-        Error::NoAvailableAddressesToRetry(Box::new(Error::DapiClientError(
-            DapiClientError::Transport(never_connected()),
-        ))),
-        Error::DapiClientError(DapiClientError::NoAvailableAddresses),
-    ]
-}
-
 /// A transfer sent on an open connection that then broke, with every later node
-/// unreachable, for the result wait too (the palmatum upgrade rehearsal,
+/// unreachable, for the result check too (the palmatum upgrade rehearsal,
 /// dashpay/platform#6020 item 7). The first node may have received the transition, so the
-/// outcome is unconfirmed, and the error names that attempt. The later attempts and the
-/// wait never connected and say nothing about the transition: reported as the cause, they
-/// read as if nothing had been sent.
+/// outcome is unconfirmed. The error still ends on the last failure, a failure to connect,
+/// so its text says a node may have received the transition and marks that failure as the
+/// last error: on its own it reads as if nothing had been sent.
 #[tokio::test(start_paused = true)]
-async fn should_name_the_possibly_delivered_attempt_when_later_attempts_fail_to_connect() {
-    for wait_error in waits_that_reach_no_node() {
-        let (outcome, sent, executions) = retrying_broadcast(
-            &signed_transition(),
-            vec![
-                Attempt::Error(Status::unknown("transport error")),
-                Attempt::Error(connect_failure()),
-                Attempt::Error(connect_failure()),
-                Attempt::Error(connect_failure()),
-            ],
-            3,
-        )
-        .await;
-        assert_eq!(sent.len(), 4);
-        assert_eq!(executions, 1);
-        let broadcast_error = outcome.as_ref().unwrap_err();
-        assert!(
-            names_the_broken_connection(broadcast_error),
-            "unexpected broadcast error: {broadcast_error}"
-        );
-
-        let result: Result<(), Error> =
-            wait_after_broadcast(outcome, async { Err(wait_error) }).await;
-        let error = result.unwrap_err();
-        assert!(
-            names_the_broken_connection(&error),
-            "unexpected error: {error}"
-        );
-    }
-}
-
-/// A wait that reached a node and failed is still the reported cause, and so is a wait
-/// that reached no node after a broadcast a node acknowledged: the transition was sent,
-/// and the wait's failure is why its outcome is unknown.
-#[tokio::test(start_paused = true)]
-async fn should_keep_the_wait_failure_as_the_cause_when_it_explains_the_unknown_outcome() {
-    let (uncertain, _, _) = retrying_broadcast(
+async fn should_say_a_node_may_have_received_a_transition_whose_last_error_is_a_connect_failure() {
+    const UNCONFIRMED: &str = "state transition outcome is unconfirmed: a node accepted it or may have received it; reconcile the original operation before submitting a replacement; last error: ";
+    let last_broadcast_error = Error::DapiClientError(DapiClientError::Transport(
+        TransportError::Grpc(connect_failure()),
+    ));
+    let (outcome, sent, executions) = retrying_broadcast(
         &signed_transition(),
-        vec![Attempt::Error(Status::unknown("transport error"))],
-        0,
+        vec![
+            Attempt::Error(Status::unknown("transport error")),
+            Attempt::Error(connect_failure()),
+            Attempt::Error(connect_failure()),
+            Attempt::Error(connect_failure()),
+        ],
+        3,
     )
     .await;
-    let result: Result<(), Error> = wait_after_broadcast(uncertain, async {
-        Err(Error::DapiClientError(DapiClientError::Transport(
-            TransportError::Grpc(Status::unavailable("node is syncing")),
-        )))
-    })
-    .await;
-    assert!(result.unwrap_err().to_string().contains("node is syncing"));
+    assert_eq!(sent.len(), 4);
+    assert_eq!(executions, 1);
+    let broadcast_error = outcome.as_ref().unwrap_err();
+    assert!(broadcast_error.is_state_transition_result_unconfirmed());
+    assert_eq!(
+        broadcast_error.to_string(),
+        format!("{UNCONFIRMED}{last_broadcast_error}")
+    );
 
-    for wait_error in waits_that_reach_no_node() {
-        let expected = format!("state transition outcome is unconfirmed; reconcile the original operation before submitting a replacement: {wait_error}");
-        let result: Result<(), Error> =
-            wait_after_broadcast(Ok(()), async { Err(wait_error) }).await;
-        assert_eq!(result.unwrap_err().to_string(), expected);
-    }
+    let wait_error = Error::NoAvailableAddressesToRetry(Box::new(Error::DapiClientError(
+        DapiClientError::Transport(TransportError::Grpc(connect_failure())),
+    )));
+    let expected = format!("{UNCONFIRMED}{wait_error}");
+    let result: Result<(), Error> = wait_after_broadcast(outcome, async { Err(wait_error) }).await;
+    let error = result.unwrap_err();
+    assert!(error.is_state_transition_result_unconfirmed());
+    assert_eq!(error.to_string(), expected);
 }
 
 #[tokio::test(start_paused = true)]

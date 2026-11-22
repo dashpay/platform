@@ -125,7 +125,7 @@ mod tests {
     use crate::transport::{ProxyEndpoint, Socks5Auth, Socks5Proxy};
     use crate::RequestSettings;
     use dapi_grpc::platform::v0::BroadcastStateTransitionRequest;
-    use dapi_grpc::tonic::Code;
+    use dapi_grpc::tonic::{Code, ConnectError};
     use hyper_util::rt::TokioIo;
     use std::io;
     use tokio::io::DuplexStream;
@@ -150,8 +150,17 @@ mod tests {
                 .await
                 .unwrap_err();
             assert_eq!(status.code(), Code::Unavailable);
+            let mut source = status.source();
+            let mut found = false;
+            while let Some(error) = source {
+                if error.is::<ConnectError>() {
+                    found = true;
+                    break;
+                }
+                source = error.source();
+            }
             assert!(
-                TransportError::Grpc(status.clone()).is_connect_failure(),
+                found,
                 "the SDK can distinguish establishment from a lost ACK: {status:?}"
             );
         }
