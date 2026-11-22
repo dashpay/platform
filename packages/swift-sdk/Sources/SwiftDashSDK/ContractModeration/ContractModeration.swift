@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - Contract moderation and fee pots (protocol version 15)
+// MARK: - Contract moderation and fee pots (protocol version 14)
 //
 // The values the `dash_sdk_contract_moderation_*` and
 // `dash_sdk_contract_get_fee_pots` reads of `rs-sdk-ffi` return, decoded from
@@ -173,6 +173,11 @@ public struct ContractModerationEntriesPage: Codable, Sendable, Equatable {
 /// A value a removal record keeps of its document, as the JSON writes a
 /// platform value: identifiers as base58 strings, other bytes as base64
 /// strings.
+///
+/// The SDK reads these with ``init(jsonObject:)`` from `JSONSerialization`,
+/// which keeps a number's kind (`1.0` and `-0.0` stay doubles, sign
+/// included). `JSONDecoder`, which ``init(from:)`` goes through, reads `1.0`
+/// and `-0.0` as integers, so it is only a fallback for generic decoding.
 public indirect enum ContractKeptFieldValue: Codable, Sendable, Equatable, Hashable {
     case null
     case bool(Bool)
@@ -206,6 +211,36 @@ public indirect enum ContractKeptFieldValue: Codable, Sendable, Equatable, Hasha
                 in: container,
                 debugDescription: "Unsupported kept field value"
             )
+        }
+    }
+
+    /// The value `JSONSerialization` read, its numbers kept as they were
+    /// written: a boolean as ``bool(_:)``, a number written with a fraction or
+    /// an exponent as ``double(_:)`` (`-0.0` keeps its sign), an unsigned
+    /// 64-bit integer above `Int64.max` as ``uint(_:)`` and any other integer
+    /// as ``int(_:)``.
+    public init(jsonObject: Any) throws {
+        switch jsonObject {
+        case is NSNull:
+            self = .null
+        case let number as NSNumber:
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                self = .bool(number.boolValue)
+                return
+            }
+            switch String(cString: number.objCType) {
+            case "d", "f": self = .double(number.doubleValue)
+            case "Q": self = .uint(number.uint64Value)
+            default: self = .int(number.int64Value)
+            }
+        case let string as String:
+            self = .string(string)
+        case let array as [Any]:
+            self = .array(try array.map(ContractKeptFieldValue.init(jsonObject:)))
+        case let object as [String: Any]:
+            self = .object(try object.mapValues(ContractKeptFieldValue.init(jsonObject:)))
+        default:
+            throw SDKError.serializationError("Unsupported kept field value \(type(of: jsonObject))")
         }
     }
 
@@ -369,9 +404,13 @@ public struct ContractTeamActionEntry: Codable, Sendable, Equatable, Hashable, I
 /// (`dash_sdk_contract_moderation_get_team_actions`).
 public struct ContractTeamActionsPage: Codable, Sendable, Equatable {
     public let actions: [ContractTeamActionEntry]
-    /// The cursor of the next page, to pass back as `startAtActionId` (not
-    /// included); `nil` on the last page.
+    /// The cursor of the next page, to pass back as `startAtActionId`;
+    /// `nil` on the last page.
     public let nextStartAtActionId: String?
+    /// Whether the next page includes the ``nextStartAtActionId`` action, to
+    /// pass back as `startAtActionIdIncluded`; set with
+    /// ``nextStartAtActionId``.
+    public let nextStartAtActionIdIncluded: Bool?
 }
 
 /// The members that approved a team action, in identity id order
@@ -404,18 +443,22 @@ public struct ContractModerationActionCounts: Codable, Sendable, Equatable {
 
 /// What one fee pot of a contract holds.
 public struct ContractFeePotState: Codable, Sendable, Equatable {
-    /// The credits in the pot: what a claim would pay out.
+    /// The credits in the pot: its balance, not a promise of what a claim
+    /// will distribute.
     public let credits: UInt64
-    /// The epoch the pot was last paid out in; `nil` when it never was.
+    /// The epoch of the pot's last explicit claim; `nil` when it was never
+    /// claimed. Not the last payout: a membership change of an elected team
+    /// can also pay out the moderators pot (a moderators pot settlement),
+    /// which leaves these fields as they were.
     public let lastClaimEpoch: UInt16?
-    /// The time of the block that last paid it out, milliseconds; set with
-    /// ``lastClaimEpoch``.
+    /// The time of the block of the last explicit claim, milliseconds; set
+    /// with ``lastClaimEpoch``.
     public let lastClaimTimeMs: UInt64?
     /// The identity that signed the last claim, base58; set with
     /// ``lastClaimEpoch``.
     public let lastClaimantId: String?
 
-    /// When the pot was last paid out, if it ever was.
+    /// When the pot was last claimed, if it ever was.
     public var lastClaimTime: Date? { lastClaimTimeMs.map(Date.init(millisecondsSince1970:)) }
 }
 

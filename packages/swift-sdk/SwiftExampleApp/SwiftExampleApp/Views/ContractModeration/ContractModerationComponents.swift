@@ -22,7 +22,7 @@ enum ModerationLoad<Value> {
 
 /// The message a failed read shows: the SDK's description of the refusal
 /// (a list the contract does not keep, a type that keeps no records, a
-/// network below protocol version 15), word for word.
+/// network below protocol version 14), word for word.
 func moderationErrorText(_ error: Error) -> String {
     error.localizedDescription
 }

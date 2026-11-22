@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftDashSDK
 
-/// Contract moderation and fee pots (protocol version 15) for one contract:
+/// Contract moderation and fee pots (protocol version 14) for one contract:
 /// its fee pots, its banlist, suspension list and warning list, one
 /// identity's status, the removal records of its document types, its team
 /// actions and the moderation action counts.

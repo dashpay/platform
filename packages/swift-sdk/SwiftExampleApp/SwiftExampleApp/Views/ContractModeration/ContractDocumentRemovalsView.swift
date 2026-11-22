@@ -15,11 +15,7 @@ struct ContractDocumentRemovalsView: View {
     @State private var documentIdsInput = ""
     /// The ids the shown records were looked up by; `nil` while paging.
     @State private var lookedUpIds: [String]?
-    @State private var removals: [ContractDocumentRemovalEntry] = []
-    @State private var nextStartAfter: String?
-    @State private var isLoading = false
-    @State private var errorMessage: String?
-    @State private var loadedOnce = false
+    @StateObject private var loader = ModerationPagedLoader<ContractDocumentRemovalEntry, String>()
 
     var body: some View {
         List {
@@ -32,13 +28,12 @@ struct ContractDocumentRemovalsView: View {
                 Button("Look Up These Documents") {
                     Task { await lookUp() }
                 }
-                .disabled(parsedIds.isEmpty || isLoading)
+                .disabled(parsedIds.isEmpty)
                 .accessibilityIdentifier("contractModeration.removals.lookup")
                 if lookedUpIds != nil {
                     Button("Show Every Record") {
                         Task { await reload() }
                     }
-                    .disabled(isLoading)
                     .accessibilityIdentifier("contractModeration.removals.showAll")
                 }
             } header: {
@@ -47,7 +42,7 @@ struct ContractDocumentRemovalsView: View {
                 Text("A document with no record is left out of the answer.")
             }
 
-            if let errorMessage {
+            if let errorMessage = loader.errorMessage {
                 ModerationMessageRow(
                     kind: .error,
                     text: errorMessage,
@@ -56,14 +51,14 @@ struct ContractDocumentRemovalsView: View {
             }
 
             Section(lookedUpIds == nil ? "Records" : "Records of the Documents Named") {
-                if removals.isEmpty {
-                    if isLoading {
+                if loader.items.isEmpty {
+                    if loader.isLoading {
                         ModerationMessageRow(
                             kind: .loading,
                             text: "Loading records…",
                             identifier: "contractModeration.removals.loading"
                         )
-                    } else if loadedOnce && errorMessage == nil {
+                    } else if loader.loadedOnce && loader.errorMessage == nil {
                         ModerationMessageRow(
                             kind: .empty,
                             text: "No records.",
@@ -71,28 +66,28 @@ struct ContractDocumentRemovalsView: View {
                         )
                     }
                 }
-                ForEach(removals) { removal in
+                ForEach(loader.items) { removal in
                     ContractDocumentRemovalRow(removal: removal)
                         .accessibilityIdentifier("contractModeration.removals.row.\(removal.documentId)")
                 }
-                if let nextStartAfter, !removals.isEmpty {
+                if loader.nextCursor != nil, !loader.items.isEmpty {
                     Button {
-                        Task { await loadPage(startAfter: nextStartAfter) }
+                        Task { await loader.loadMore() }
                     } label: {
                         HStack {
-                            if isLoading { ProgressView().controlSize(.small) }
+                            if loader.isLoading { ProgressView().controlSize(.small) }
                             Text("Load More")
                         }
                         .frame(maxWidth: .infinity)
                     }
-                    .disabled(isLoading)
+                    .disabled(loader.isLoading)
                     .accessibilityIdentifier("contractModeration.removals.loadMore")
                 }
             }
         }
         .navigationTitle(documentTypeName)
         .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await reload() }
+        .refreshable { await refresh() }
         .task { await reload() }
     }
 
@@ -103,55 +98,56 @@ struct ContractDocumentRemovalsView: View {
             .filter { !$0.isEmpty }
     }
 
-    private func reload() async {
-        lookedUpIds = nil
-        removals = []
-        nextStartAfter = nil
-        await loadPage(startAfter: nil)
+    /// Read again what is shown: the ids looked up, or the pages.
+    private func refresh() async {
+        if let lookedUpIds {
+            await read(ids: lookedUpIds)
+        } else {
+            await reload()
+        }
     }
 
-    private func loadPage(startAfter: String?) async {
-        await read {
-            try await $0.contractDocumentRemovals(
+    /// Every record, a page at a time.
+    private func reload() async {
+        lookedUpIds = nil
+        guard let sdk = appState.sdk else {
+            loader.fail("SDK not initialized")
+            return
+        }
+        let contractId = contractId
+        let documentTypeName = documentTypeName
+        let pageSize = Self.pageSize
+        await loader.reload { startAfter in
+            try await sdk.contractDocumentRemovals(
                 contractId: contractId,
                 documentTypeName: documentTypeName,
                 startAfter: startAfter,
-                limit: Self.pageSize
+                limit: pageSize
             )
+            .map { ModerationPage(items: $0.removals, nextCursor: $0.nextStartAfter) }
         }
     }
 
     private func lookUp() async {
-        let ids = parsedIds
+        await read(ids: parsedIds)
+    }
+
+    /// The records of `ids` alone; a read by ids has no page after it.
+    private func read(ids: [String]) async {
         lookedUpIds = ids
-        removals = []
-        nextStartAfter = nil
-        await read {
-            try await $0.contractDocumentRemovals(
+        guard let sdk = appState.sdk else {
+            loader.fail("SDK not initialized")
+            return
+        }
+        let contractId = contractId
+        let documentTypeName = documentTypeName
+        await loader.reload { _ in
+            try await sdk.contractDocumentRemovals(
                 contractId: contractId,
                 documentTypeName: documentTypeName,
                 documentIds: ids
             )
-        }
-    }
-
-    private func read(_ fetch: (SDK) async throws -> ContractDocumentRemovalsPage?) async {
-        guard let sdk = appState.sdk else {
-            errorMessage = "SDK not initialized"
-            return
-        }
-        isLoading = true
-        errorMessage = nil
-        defer {
-            isLoading = false
-            loadedOnce = true
-        }
-        do {
-            let page = try await fetch(sdk)
-            removals.append(contentsOf: page?.removals ?? [])
-            nextStartAfter = page?.nextStartAfter
-        } catch {
-            errorMessage = moderationErrorText(error)
+            .map { ModerationPage(items: $0.removals, nextCursor: $0.nextStartAfter) }
         }
     }
 }

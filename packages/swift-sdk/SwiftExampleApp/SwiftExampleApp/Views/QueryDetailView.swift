@@ -346,7 +346,7 @@ struct QueryDetailView: View {
             let idsOnly = Bool(queryInputs["idsOnly"] ?? "") ?? false
             return try await sdk.getDataContractsByRange(limit: limit, startAfter: startAfter, startAt: startAt, idsOnly: idsOnly)
 
-        // Contract Moderation Queries (protocol version 15)
+        // Contract Moderation Queries (protocol version 14)
         case "getContractModerationStatus":
             let lists = try moderationInput("lists").map { try parseModerationLists($0) }
             return try moderationJSON(await sdk.contractModerationStatus(
@@ -877,6 +877,10 @@ struct QueryDetailView: View {
     }
 
     private func formatResult(_ result: Any) -> String {
+        // JSON already written for display
+        if let json = result as? PreformattedJSON {
+            return json.text
+        }
         // Handle primitive types that can't be directly serialized as JSON
         if result is String || result is NSNumber || result is Bool ||
            result is Int || result is Int32 || result is Int64 ||
@@ -967,13 +971,14 @@ struct QueryDetailView: View {
         return status
     }
 
-    /// A moderation result as the JSON object the FFI returned (re-encoded
-    /// from the decoded value), for the result view; "No data" when the FFI
-    /// returned none.
+    /// A moderation result as JSON (re-encoded from the decoded value), shown
+    /// as `JSONEncoder` writes it so a kept value keeps its sign; "No data"
+    /// when the FFI returned none.
     private func moderationJSON<T: Encodable>(_ value: T?) throws -> Any {
         guard let value else { return "No data" }
-        let data = try JSONEncoder().encode(value)
-        return try JSONSerialization.jsonObject(with: data)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return PreformattedJSON(text: String(decoding: try encoder.encode(value), as: UTF8.self))
     }
 
     private func inputFields(for queryName: String) -> [QueryInput] {
@@ -1386,6 +1391,11 @@ struct QueryDetailView: View {
             return []
         }
     }
+}
+
+/// A query result already written as JSON text, shown as it is.
+struct PreformattedJSON {
+    let text: String
 }
 
 struct QueryInput {

@@ -196,13 +196,13 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "getDataContractHistory", label: "Get Data Contract History", description: "Get the version history of a data contract"),
                 QueryDefinition(name: "getDataContracts", label: "Get Data Contracts", description: "Fetch multiple data contracts by their identifiers"),
                 QueryDefinition(name: "getDataContractsByRange", label: "Get Data Contracts by Range", description: "Enumerate data contracts one page at a time, ordered by id"),
-                QueryDefinition(name: "getContractModerationStatus", label: "Get Contract Moderation Status", description: "One identity's status on a moderated contract's banlist, suspension list and warning list (protocol version 15)"),
-                QueryDefinition(name: "getContractModerationEntries", label: "Get Contract Moderation Entries", description: "One page of a moderated contract's banlist, suspension list or warning list (protocol version 15)"),
-                QueryDefinition(name: "getContractDocumentRemovals", label: "Get Contract Document Removals", description: "The records of documents a contract's moderators deleted, a page or the ids named (protocol version 15)"),
-                QueryDefinition(name: "getContractTeamActions", label: "Get Contract Team Actions", description: "One page of the actions an elected contract's moderation team votes on (protocol version 15)"),
-                QueryDefinition(name: "getContractTeamActionSigners", label: "Get Contract Team Action Signers", description: "Who approved one team action of an elected contract (protocol version 15)"),
-                QueryDefinition(name: "getContractModerationActionCounts", label: "Get Contract Moderation Action Counts", description: "Moderation actions each team member signed since the moderators pot was last paid out (protocol version 15)"),
-                QueryDefinition(name: "getContractFeePots", label: "Get Contract Fee Pots", description: "The owner and moderators fee pots of a contract and their last claims (protocol version 15)")
+                QueryDefinition(name: "getContractModerationStatus", label: "Get Contract Moderation Status", description: "One identity's status on a moderated contract's banlist, suspension list and warning list (protocol version 14)"),
+                QueryDefinition(name: "getContractModerationEntries", label: "Get Contract Moderation Entries", description: "One page of a moderated contract's banlist, suspension list or warning list (protocol version 14)"),
+                QueryDefinition(name: "getContractDocumentRemovals", label: "Get Contract Document Removals", description: "The records of documents a contract's moderators deleted, a page or the ids named (protocol version 14)"),
+                QueryDefinition(name: "getContractTeamActions", label: "Get Contract Team Actions", description: "One page of the actions an elected contract's moderation team votes on (protocol version 14)"),
+                QueryDefinition(name: "getContractTeamActionSigners", label: "Get Contract Team Action Signers", description: "Who approved one team action of an elected contract (protocol version 14)"),
+                QueryDefinition(name: "getContractModerationActionCounts", label: "Get Contract Moderation Action Counts", description: "Moderation actions each team member signed since the moderators pot was last paid out (protocol version 14)"),
+                QueryDefinition(name: "getContractFeePots", label: "Get Contract Fee Pots", description: "The owner and moderators fee pots of a contract and their last claims (protocol version 14)")
             ]
 
         case .documents:

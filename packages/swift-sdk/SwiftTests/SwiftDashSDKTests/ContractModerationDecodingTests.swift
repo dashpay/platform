@@ -175,7 +175,7 @@ final class ContractModerationDecodingTests: XCTestCase {
             "keptFields":{}}],\
             "nextStartAfter":"\(id4)"}
             """
-        let page = try decode(ContractDocumentRemovalsPage.self, json)
+        let page = try ContractModerationJSON.decodeRemovalsPage(from: json)
         let removed = page.removals[0]
         let restored = page.removals[1]
 
@@ -210,6 +210,38 @@ final class ContractModerationDecodingTests: XCTestCase {
         XCTAssertEqual(values["ratio"], .double(0.5))
     }
 
+    /// `JSONDecoder` reads `1.0` and `-0.0` as integers; the SDK reads kept
+    /// values with `JSONSerialization`, which keeps their kind and sign.
+    func testShouldKeepTheNumericKindOfKeptValues() throws {
+        let hash = String(repeating: "ab", count: 32)
+        let json = """
+            {"removals":[{"documentId":"\(id3)","documentOwnerId":"\(id20)","moderatorId":"\(id21)",\
+            "reason":{"code":null,"text":"x"},"removedAt":1,"documentHash":"\(hash)",\
+            "keptFields":{"whole":1.0,"negativeZero":-0.0,"int":1,"big":18446744073709551615,\
+            "min":-9223372036854775808,"flag":false,"nested":{"ratio":1.5,"list":[1e3,2]}}}]}
+            """
+        let kept = try XCTUnwrap(ContractModerationJSON.decodeRemovalsPage(from: json).removals.first).keptFields
+
+        XCTAssertEqual(kept["whole"], .double(1.0))
+        guard case .double(let negativeZero) = kept["negativeZero"] else {
+            return XCTFail("expected a double, got \(String(describing: kept["negativeZero"]))")
+        }
+        XCTAssertEqual(negativeZero, 0)
+        XCTAssertEqual(negativeZero.sign, .minus)
+        XCTAssertEqual(kept["int"], .int(1))
+        XCTAssertEqual(kept["big"], .uint(UInt64.max))
+        XCTAssertEqual(kept["min"], .int(Int64.min))
+        XCTAssertEqual(kept["flag"], .bool(false))
+        XCTAssertEqual(kept["nested"], .object(["ratio": .double(1.5), "list": .array([.double(1000), .int(2)])]))
+    }
+
+    /// The catalog re-encodes a page with `JSONEncoder`, which keeps the sign
+    /// of a negative zero.
+    func testShouldEncodeANegativeZeroWithItsSign() throws {
+        let data = try JSONEncoder().encode(ContractKeptFieldValue.double(-0.0))
+        XCTAssertEqual(String(decoding: data, as: UTF8.self), "-0")
+    }
+
     // MARK: - Team actions
 
     func testShouldDecodeATeamActionsPageWithItsCursor() throws {
@@ -223,7 +255,7 @@ final class ContractModerationDecodingTests: XCTestCase {
             "event":{"type":"deleteSettledDocument","documentTypeName":"post","documentId":"\(id31)",\
             "documentLastModifiedAt":10,"reason":{"code":null,"text":"spam"}},\
             "approvalCount":2}],\
-            "nextStartAtActionId":"\(id4)"}
+            "nextStartAtActionId":"\(id4)","nextStartAtActionIdIncluded":false}
             """
         let page = try decode(ContractTeamActionsPage.self, json)
 
@@ -246,6 +278,7 @@ final class ContractModerationDecodingTests: XCTestCase {
         }
         XCTAssertNil(second.documentRevision)
         XCTAssertEqual(page.nextStartAtActionId, id4)
+        XCTAssertEqual(page.nextStartAtActionIdIncluded, false)
     }
 
     func testShouldRefuseAnUnknownTeamActionEvent() {

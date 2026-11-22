@@ -11,6 +11,11 @@ struct ContractModerationStatusView: View {
     @State private var identityId = ""
     @State private var chosenLists: Set<ContractModerationList> = []
     @State private var load: ModerationLoad<ContractModerationStatus?> = .idle
+    /// The identity the shown result (or the read running) is for.
+    @State private var submittedIdentityId: String?
+    /// Bumped on every submission and edit, so the completion of a superseded
+    /// one is dropped.
+    @State private var submission = 0
 
     var body: some View {
         Form {
@@ -20,6 +25,7 @@ struct ContractModerationStatusView: View {
                     .autocorrectionDisabled()
                     .font(.system(.body, design: .monospaced))
                     .accessibilityIdentifier("contractModeration.status.identityId")
+                    .onChange(of: identityId) { _, _ in clearResult() }
             } header: {
                 Text("Identity")
             }
@@ -60,6 +66,24 @@ struct ContractModerationStatusView: View {
         switch load {
         case .idle:
             EmptyView()
+        case .loading, .failed, .loaded:
+            Section {
+                if let submittedIdentityId {
+                    ModerationFieldRow(label: "Identity", value: submittedIdentityId, monospaced: true)
+                        .accessibilityIdentifier("contractModeration.status.submittedIdentityId")
+                }
+                resultBody
+            } header: {
+                Text("Status")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var resultBody: some View {
+        switch load {
+        case .idle:
+            EmptyView()
         case .loading:
             ModerationMessageRow(
                 kind: .loading,
@@ -97,8 +121,17 @@ struct ContractModerationStatusView: View {
             get: { chosenLists.contains(list) },
             set: { isOn in
                 if isOn { chosenLists.insert(list) } else { chosenLists.remove(list) }
+                clearResult()
             }
         )
+    }
+
+    /// Drop the result shown, and whatever a running read brings back: it no
+    /// longer answers what the form asks.
+    private func clearResult() {
+        submission += 1
+        submittedIdentityId = nil
+        load = .idle
     }
 
     private func lookUp() async {
@@ -106,17 +139,23 @@ struct ContractModerationStatusView: View {
             load = .failed("SDK not initialized")
             return
         }
+        submission += 1
+        let current = submission
+        let identityId = trimmedIdentityId
+        submittedIdentityId = identityId
         load = .loading
-        // In the order the lists are offered; none means every list.
+        // In the order the lists are offered; none chosen reads every list.
         let lists = ContractModerationList.allCases.filter { chosenLists.contains($0) }
         do {
             let status = try await sdk.contractModerationStatus(
                 contractId: contractId,
-                identityId: trimmedIdentityId,
+                identityId: identityId,
                 lists: lists.isEmpty ? nil : lists
             )
+            guard current == submission else { return }
             load = .loaded(status)
         } catch {
+            guard current == submission else { return }
             load = .failed(moderationErrorText(error))
         }
     }
@@ -128,7 +167,7 @@ private struct ContractModerationStatusResult: View {
     let status: ContractModerationStatus
 
     var body: some View {
-        Section {
+        Group {
             ModerationFieldRow(label: "Lists read", value: status.lists.map(\.title).joined(separator: ", "))
                 .accessibilityIdentifier("contractModeration.status.result")
 
@@ -162,8 +201,6 @@ private struct ContractModerationStatusResult: View {
                     .accessibilityIdentifier("contractModeration.status.warnings")
                 ModerationWarningsView(warnings: warnings, identifierPrefix: "contractModeration.status")
             }
-        } header: {
-            Text("Status")
         }
     }
 }

@@ -291,7 +291,7 @@ struct DataContractDetailsView: View {
         }
     }
 
-    /// Contract moderation and fee pots (protocol version 15). Offered for
+    /// Contract moderation and fee pots (protocol version 14). Offered for
     /// every contract: whether it is moderated, which lists it keeps and
     /// what its pots hold are the node's to answer on the next screen.
     @ViewBuilder

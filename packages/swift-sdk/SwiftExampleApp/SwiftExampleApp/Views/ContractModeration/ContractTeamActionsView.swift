@@ -1,6 +1,13 @@
 import SwiftUI
 import SwiftDashSDK
 
+/// Where the next page of team actions starts: the action and whether the
+/// page includes it, both as the last page returned them.
+struct ContractTeamActionsCursor: Sendable, Equatable {
+    let actionId: String
+    let included: Bool
+}
+
 /// The actions an elected contract's seated moderation team votes on,
 /// active or closed, a page at a time in action id order. Each drills into
 /// ``ContractTeamActionDetailView`` for its event and signers.
@@ -12,14 +19,11 @@ struct ContractTeamActionsView: View {
     private static let pageSize: UInt32 = 20
 
     @State private var status: ContractTeamActionStatus = .active
-    @State private var actions: [ContractTeamActionEntry] = []
-    @State private var nextStartAtActionId: String?
-    @State private var isLoading = false
-    @State private var errorMessage: String?
-    @State private var loadedOnce = false
-    /// Bumped on every fresh load so a page that arrives late for the other
-    /// status is dropped instead of mixed in.
-    @State private var generation = 0
+    /// The status the rows shown were listed under, which their signers are
+    /// read with.
+    @State private var listedStatus: ContractTeamActionStatus = .active
+    @StateObject private var loader =
+        ModerationPagedLoader<ContractTeamActionEntry, ContractTeamActionsCursor>()
 
     var body: some View {
         List {
@@ -36,7 +40,7 @@ struct ContractTeamActionsView: View {
                      : "Actions whose approvals met the rule and ran.")
             }
 
-            if let errorMessage {
+            if let errorMessage = loader.errorMessage {
                 ModerationMessageRow(
                     kind: .error,
                     text: errorMessage,
@@ -45,14 +49,14 @@ struct ContractTeamActionsView: View {
             }
 
             Section("Actions") {
-                if actions.isEmpty {
-                    if isLoading {
+                if loader.items.isEmpty {
+                    if loader.isLoading {
                         ModerationMessageRow(
                             kind: .loading,
                             text: "Loading actions…",
                             identifier: "contractModeration.teamActions.loading"
                         )
-                    } else if loadedOnce && errorMessage == nil {
+                    } else if loader.loadedOnce && loader.errorMessage == nil {
                         ModerationMessageRow(
                             kind: .empty,
                             text: "No actions.",
@@ -60,23 +64,23 @@ struct ContractTeamActionsView: View {
                         )
                     }
                 }
-                ForEach(actions) { action in
-                    NavigationLink(value: ContractModerationRoute.teamAction(action, status)) {
+                ForEach(loader.items) { action in
+                    NavigationLink(value: ContractModerationRoute.teamAction(action, listedStatus)) {
                         ContractTeamActionRow(action: action)
                     }
                     .accessibilityIdentifier("contractModeration.teamActions.row.\(action.actionId)")
                 }
-                if let nextStartAtActionId, !actions.isEmpty {
+                if loader.nextCursor != nil, !loader.items.isEmpty {
                     Button {
-                        Task { await load(startAt: nextStartAtActionId, generation: generation) }
+                        Task { await loader.loadMore() }
                     } label: {
                         HStack {
-                            if isLoading { ProgressView().controlSize(.small) }
+                            if loader.isLoading { ProgressView().controlSize(.small) }
                             Text("Load More")
                         }
                         .frame(maxWidth: .infinity)
                     }
-                    .disabled(isLoading)
+                    .disabled(loader.isLoading)
                     .accessibilityIdentifier("contractModeration.teamActions.loadMore")
                 }
             }
@@ -88,41 +92,34 @@ struct ContractTeamActionsView: View {
     }
 
     private func reload() async {
-        generation += 1
-        actions = []
-        nextStartAtActionId = nil
-        errorMessage = nil
-        await load(startAt: nil, generation: generation)
-    }
-
-    private func load(startAt: String?, generation: Int) async {
         guard let sdk = appState.sdk else {
-            errorMessage = "SDK not initialized"
+            loader.fail("SDK not initialized")
             return
         }
-        isLoading = true
-        errorMessage = nil
-        defer {
-            isLoading = false
-            loadedOnce = true
-        }
+        let contractId = contractId
         let status = status
-        do {
-            // The page's cursor is the action to start after, so it is not
-            // included.
-            let page = try await sdk.contractTeamActions(
+        let pageSize = Self.pageSize
+        listedStatus = status
+        await loader.reload { cursor in
+            // The cursor goes back as the last page returned it
+            try await sdk.contractTeamActions(
                 contractId: contractId,
                 status: status,
-                startAtActionId: startAt,
-                startAtActionIdIncluded: false,
-                limit: Self.pageSize
+                startAtActionId: cursor?.actionId,
+                startAtActionIdIncluded: cursor?.included ?? false,
+                limit: pageSize
             )
-            guard generation == self.generation else { return }
-            actions.append(contentsOf: page?.actions ?? [])
-            nextStartAtActionId = page?.nextStartAtActionId
-        } catch {
-            guard generation == self.generation else { return }
-            errorMessage = moderationErrorText(error)
+            .map { page in
+                ModerationPage(
+                    items: page.actions,
+                    nextCursor: page.nextStartAtActionId.map {
+                        ContractTeamActionsCursor(
+                            actionId: $0,
+                            included: page.nextStartAtActionIdIncluded ?? false
+                        )
+                    }
+                )
+            }
         }
     }
 }

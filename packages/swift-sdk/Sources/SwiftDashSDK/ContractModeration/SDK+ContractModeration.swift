@@ -1,7 +1,7 @@
 import Foundation
 import DashSDKFFI
 
-// MARK: - Contract moderation and fee pots (protocol version 15)
+// MARK: - Contract moderation and fee pots (protocol version 14)
 //
 // Thin bridges over the `dash_sdk_contract_moderation_*` and
 // `dash_sdk_contract_get_fee_pots` functions of `rs-sdk-ffi`, which call
@@ -17,7 +17,7 @@ import DashSDKFFI
 // the shared Platform query queue (``SDK/performBlockingQuery(_:)``) and the
 // caller only awaits. A refusal from the node (a list the contract does not
 // keep, a type that keeps no removal records, a network below protocol
-// version 15) is thrown as the `SDKError` the FFI reports.
+// version 14) is thrown as the `SDKError` the FFI reports.
 
 extension SDK {
 
@@ -27,16 +27,17 @@ extension SDK {
     /// - Parameters:
     ///   - contractId: The moderated contract's id, base58.
     ///   - identityId: The identity's id, base58.
-    ///   - lists: The lists to read, each one the contract keeps; `nil` or
-    ///     empty reads every list the contract keeps (rs-sdk fetches the
-    ///     contract to find them).
+    ///   - lists: The lists to read, each one the contract keeps. `nil` reads
+    ///     every list the contract keeps (rs-sdk fetches the contract to find
+    ///     them); `[]` is an explicit empty selection, sent for the node to
+    ///     judge.
     /// - Returns: The status, or `nil` when the FFI returns no data.
     public nonisolated func contractModerationStatus(
         contractId: String,
         identityId: String,
         lists: [ContractModerationList]? = nil
     ) async throws -> ContractModerationStatus? {
-        let listBytes = (lists ?? []).map(\.ffiTag)
+        let listBytes = lists.map { $0.map(\.ffiTag) }
         return try await performBlockingQuery { handle in
             let result = try withDecisionProposalCString(
                 contractId, field: "contractId", invalid: SDKError.invalidParameter
@@ -44,9 +45,9 @@ extension SDK {
                 try withDecisionProposalCString(
                     identityId, field: "identityId", invalid: SDKError.invalidParameter
                 ) { identityPtr in
-                    listBytes.withUnsafeBufferPointer { buffer in
+                    withContractModerationBytes(listBytes) { listsPtr, count in
                         dash_sdk_contract_moderation_get_status(
-                            handle, contractPtr, identityPtr, buffer.baseAddress, UInt(buffer.count))
+                            handle, contractPtr, identityPtr, listsPtr, UInt(count))
                     }
                 }
             }
@@ -62,8 +63,9 @@ extension SDK {
     ///   - list: The list; the contract must keep it.
     ///   - startAfter: The previous page's ``ContractModerationEntriesPage/nextStartAfter``;
     ///     `nil` for the first page.
-    ///   - limit: The most entries to return; `nil` for the page cap of the
-    ///     network queried.
+    ///   - limit: The most entries to return, passed as it is (0 included,
+    ///     which the node judges); `nil` for the page cap of the network
+    ///     queried.
     public nonisolated func contractModerationEntries(
         contractId: String,
         list: ContractModerationList,
@@ -78,8 +80,10 @@ extension SDK {
                 try withDecisionProposalCString(
                     startAfter, field: "startAfter", invalid: SDKError.invalidParameter
                 ) { startAfterPtr in
-                    dash_sdk_contract_moderation_get_entries(
-                        handle, contractPtr, listByte, startAfterPtr, limit ?? 0)
+                    withContractModerationLimit(limit) { limitPtr in
+                        dash_sdk_contract_moderation_get_entries(
+                            handle, contractPtr, listByte, startAfterPtr, limitPtr)
+                    }
                 }
             }
             return try ContractModerationFFI.decode(ContractModerationEntriesPage.self, result)
@@ -96,8 +100,9 @@ extension SDK {
     ///     keeps no records.
     ///   - startAfter: The previous page's ``ContractDocumentRemovalsPage/nextStartAfter``;
     ///     `nil` for the first page.
-    ///   - limit: The most records to return; `nil` for the page cap of the
-    ///     network queried.
+    ///   - limit: The most records to return, passed as it is (0 included,
+    ///     which the node judges); `nil` for the page cap of the network
+    ///     queried.
     public nonisolated func contractDocumentRemovals(
         contractId: String,
         documentTypeName: String,
@@ -114,12 +119,14 @@ extension SDK {
                     try withDecisionProposalCString(
                         startAfter, field: "startAfter", invalid: SDKError.invalidParameter
                     ) { startAfterPtr in
-                        dash_sdk_contract_moderation_get_document_removals(
-                            handle, contractPtr, typePtr, startAfterPtr, limit ?? 0)
+                        withContractModerationLimit(limit) { limitPtr in
+                            dash_sdk_contract_moderation_get_document_removals(
+                                handle, contractPtr, typePtr, startAfterPtr, limitPtr)
+                        }
                     }
                 }
             }
-            return try ContractModerationFFI.decode(ContractDocumentRemovalsPage.self, result)
+            return try ContractModerationFFI.decodeRemovals(result)
         }
     }
 
@@ -151,7 +158,7 @@ extension SDK {
                     }
                 }
             }
-            return try ContractModerationFFI.decode(ContractDocumentRemovalsPage.self, result)
+            return try ContractModerationFFI.decodeRemovals(result)
         }
     }
 
@@ -163,12 +170,15 @@ extension SDK {
     ///   - contractId: The elected contract's id, base58.
     ///   - status: Active (still gathering approvals) or closed (they ran).
     ///   - startAtActionId: Start the page at this action, base58: the
-    ///     previous page's ``ContractTeamActionsPage/nextStartAtActionId`` with
-    ///     `startAtActionIdIncluded` false; `nil` for the first page.
+    ///     previous page's ``ContractTeamActionsPage/nextStartAtActionId``;
+    ///     `nil` for the first page.
     ///   - startAtActionIdIncluded: Whether the page includes that action
-    ///     itself; the FFI refuses it without `startAtActionId`.
-    ///   - limit: The most actions to return; `nil` for the page cap of the
-    ///     network queried.
+    ///     itself: the previous page's
+    ///     ``ContractTeamActionsPage/nextStartAtActionIdIncluded``. The FFI
+    ///     refuses it without `startAtActionId`.
+    ///   - limit: The most actions to return, passed as it is (0 included,
+    ///     which the node judges); `nil` for the page cap of the network
+    ///     queried.
     public nonisolated func contractTeamActions(
         contractId: String,
         status: ContractTeamActionStatus,
@@ -184,8 +194,10 @@ extension SDK {
                 try withDecisionProposalCString(
                     startAtActionId, field: "startAtActionId", invalid: SDKError.invalidParameter
                 ) { startPtr in
-                    dash_sdk_contract_moderation_get_team_actions(
-                        handle, contractPtr, statusByte, startPtr, startAtActionIdIncluded, limit ?? 0)
+                    withContractModerationLimit(limit) { limitPtr in
+                        dash_sdk_contract_moderation_get_team_actions(
+                            handle, contractPtr, statusByte, startPtr, startAtActionIdIncluded, limitPtr)
+                    }
                 }
             }
             return try ContractModerationFFI.decode(ContractTeamActionsPage.self, result)
@@ -240,7 +252,7 @@ extension SDK {
     }
 
     /// What the document action fees of a contract have collected for its
-    /// owner and its moderation team, and the last claim of each pot
+    /// owner and its moderation team, and the last explicit claim of each pot
     /// (`dash_sdk_contract_get_fee_pots`).
     ///
     /// - Parameter contractId: The contract's id, base58.
@@ -261,6 +273,14 @@ extension SDK {
 /// Decodes the results of the contract moderation functions; the owned
 /// string and error are freed by ``DecisionProposalFFI/consumeString(_:)``.
 enum ContractModerationFFI {
+    /// The removal records the result carries, kept values read with their
+    /// numeric kind; `nil` for no data.
+    static func decodeRemovals(_ result: DashSDKResult) throws -> ContractDocumentRemovalsPage? {
+        try DecisionProposalFFI.consumeString(result).map {
+            try ContractModerationJSON.decodeRemovalsPage(from: $0)
+        }
+    }
+
     /// The JSON the result carries, decoded; `nil` for no data.
     static func decode<T: Decodable>(_ type: T.Type, _ result: DashSDKResult) throws -> T? {
         try DecisionProposalFFI.consumeString(result).map {
@@ -275,6 +295,67 @@ enum ContractModerationJSON {
     static func decode<T: Decodable>(_ type: T.Type, from json: String) throws -> T {
         try DecisionProposalJSON.decode(type, from: json)
     }
+
+    /// A page of removal records, each record's `keptFields` read with
+    /// `JSONSerialization` (``ContractKeptFieldValue/init(jsonObject:)``),
+    /// which keeps the kind of a number `JSONDecoder` would turn into an
+    /// integer.
+    static func decodeRemovalsPage(from json: String) throws -> ContractDocumentRemovalsPage {
+        let page = try decode(ContractDocumentRemovalsPage.self, from: json)
+        let object: Any
+        do {
+            object = try JSONSerialization.jsonObject(with: Data(json.utf8))
+        } catch {
+            throw SDKError.serializationError("Failed to read the removal records: \(error)")
+        }
+        guard let records = (object as? [String: Any])?["removals"] as? [[String: Any]],
+              records.count == page.removals.count else {
+            throw SDKError.serializationError("The removal records are not a list of objects")
+        }
+        let removals = try zip(page.removals, records).map { removal, record in
+            guard let keptFields = record["keptFields"] as? [String: Any] else {
+                throw SDKError.serializationError("A removal record has no keptFields object")
+            }
+            return ContractDocumentRemovalEntry(
+                documentId: removal.documentId,
+                documentOwnerId: removal.documentOwnerId,
+                moderatorId: removal.moderatorId,
+                reason: removal.reason,
+                removedAtMs: removal.removedAtMs,
+                documentHash: removal.documentHash,
+                restoredBy: removal.restoredBy,
+                restoredAtMs: removal.restoredAtMs,
+                keptFields: try keptFields.mapValues(ContractKeptFieldValue.init(jsonObject:))
+            )
+        }
+        return ContractDocumentRemovalsPage(removals: removals, nextStartAfter: page.nextStartAfter)
+    }
+}
+
+/// Run `body` with `bytes` as a pointer and count: a null pointer for `nil`,
+/// and a non-null pointer with a count of 0 for `[]` (an empty array's buffer
+/// may have no base address, so a byte that is never read stands in), so the
+/// FFI tells an omitted selection from an empty one.
+func withContractModerationBytes<R>(
+    _ bytes: [UInt8]?,
+    _ body: (UnsafePointer<UInt8>?, Int) throws -> R
+) rethrows -> R {
+    guard let bytes else { return try body(nil, 0) }
+    if bytes.isEmpty {
+        var placeholder: UInt8 = 0
+        return try withUnsafePointer(to: &placeholder) { try body($0, 0) }
+    }
+    return try bytes.withUnsafeBufferPointer { try body($0.baseAddress, $0.count) }
+}
+
+/// Run `body` with a pointer to `limit`, or a null pointer for `nil` (the
+/// page cap of the network queried).
+func withContractModerationLimit<R>(
+    _ limit: UInt32?,
+    _ body: (UnsafePointer<UInt32>?) throws -> R
+) rethrows -> R {
+    guard var limit else { return try body(nil) }
+    return try withUnsafePointer(to: &limit) { try body($0) }
 }
 
 /// Run `body` with `strings` as an array of NUL-terminated C strings and its

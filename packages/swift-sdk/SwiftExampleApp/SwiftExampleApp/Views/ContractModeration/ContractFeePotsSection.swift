@@ -1,7 +1,8 @@
 import SwiftUI
 import SwiftDashSDK
 
-/// The two fee pots of a contract: the credits in each and its last claim.
+/// The two fee pots of a contract: the balance of each and its last explicit
+/// claim.
 struct ContractFeePotsSection: View {
     @EnvironmentObject var appState: AppState
     let contractId: String
@@ -43,7 +44,7 @@ struct ContractFeePotsSection: View {
         } header: {
             Text("Fee Pots")
         } footer: {
-            Text("What the contract's document action fees collected. A pot is paid out at most once per epoch.")
+            Text("Each pot's balance from the contract's document action fees. The last claim is the last explicit claim, at most one per epoch; a membership change of an elected team can also pay out the moderators pot without changing it.")
         }
         .task(id: contractId) {
             await reload()
@@ -69,7 +70,7 @@ struct ContractFeePotsSection: View {
     }
 }
 
-/// One pot: its credits and, once it was paid out, the last claim.
+/// One pot: its balance and, once it was claimed, the last explicit claim.
 private struct FeePotRow: View {
     let title: String
     let pot: ContractFeePotState
@@ -78,7 +79,7 @@ private struct FeePotRow: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.headline)
-            ModerationFieldRow(label: "Credits", value: "\(pot.credits)")
+            ModerationFieldRow(label: "Balance (credits)", value: "\(pot.credits)")
             if let epoch = pot.lastClaimEpoch {
                 ModerationFieldRow(label: "Last claim epoch", value: "\(epoch)")
                 if let timeMs = pot.lastClaimTimeMs {

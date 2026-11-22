@@ -12,15 +12,11 @@ struct ContractModerationEntriesView: View {
     /// Entries per page.
     private static let pageSize: UInt32 = 20
 
-    @State private var entries: [ContractModerationEntry] = []
-    @State private var nextStartAfter: String?
-    @State private var isLoading = false
-    @State private var errorMessage: String?
-    @State private var loadedOnce = false
+    @StateObject private var loader = ModerationPagedLoader<ContractModerationEntry, String>()
 
     var body: some View {
         List {
-            if let errorMessage {
+            if let errorMessage = loader.errorMessage {
                 ModerationMessageRow(
                     kind: .error,
                     text: errorMessage,
@@ -29,14 +25,14 @@ struct ContractModerationEntriesView: View {
             }
 
             Section(list.title) {
-                if entries.isEmpty {
-                    if isLoading {
+                if loader.items.isEmpty {
+                    if loader.isLoading {
                         ModerationMessageRow(
                             kind: .loading,
                             text: "Loading entries…",
                             identifier: "contractModeration.entries.loading"
                         )
-                    } else if loadedOnce && errorMessage == nil {
+                    } else if loader.loadedOnce && loader.errorMessage == nil {
                         ModerationMessageRow(
                             kind: .empty,
                             text: "Nobody is on this list.",
@@ -44,21 +40,20 @@ struct ContractModerationEntriesView: View {
                         )
                     }
                 }
-                ForEach(entries) { entry in
+                ForEach(loader.items) { entry in
                     ContractModerationEntryRow(entry: entry)
-                        .accessibilityIdentifier("contractModeration.entries.row.\(entry.identityId)")
                 }
-                if let nextStartAfter, !entries.isEmpty {
+                if loader.nextCursor != nil, !loader.items.isEmpty {
                     Button {
-                        Task { await load(startAfter: nextStartAfter) }
+                        Task { await loader.loadMore() }
                     } label: {
                         HStack {
-                            if isLoading { ProgressView().controlSize(.small) }
+                            if loader.isLoading { ProgressView().controlSize(.small) }
                             Text("Load More")
                         }
                         .frame(maxWidth: .infinity)
                     }
-                    .disabled(isLoading)
+                    .disabled(loader.isLoading)
                     .accessibilityIdentifier("contractModeration.entries.loadMore")
                 }
             }
@@ -70,41 +65,31 @@ struct ContractModerationEntriesView: View {
     }
 
     private func reload() async {
-        entries = []
-        nextStartAfter = nil
-        await load(startAfter: nil)
-    }
-
-    private func load(startAfter: String?) async {
         guard let sdk = appState.sdk else {
-            errorMessage = "SDK not initialized"
+            loader.fail("SDK not initialized")
             return
         }
-        isLoading = true
-        errorMessage = nil
-        defer {
-            isLoading = false
-            loadedOnce = true
-        }
-        do {
-            let page = try await sdk.contractModerationEntries(
+        let contractId = contractId
+        let list = list
+        let pageSize = Self.pageSize
+        await loader.reload { startAfter in
+            try await sdk.contractModerationEntries(
                 contractId: contractId,
                 list: list,
                 startAfter: startAfter,
-                limit: Self.pageSize
+                limit: pageSize
             )
-            entries.append(contentsOf: page?.entries ?? [])
-            nextStartAfter = page?.nextStartAfter
-        } catch {
-            errorMessage = moderationErrorText(error)
+            .map { ModerationPage(items: $0.entries, nextCursor: $0.nextStartAfter) }
         }
     }
 }
 
 /// One entry: the identity, why it is on the list, and the end of a
-/// suspension or the warnings it carries.
+/// suspension or, for a warning list entry, every warning it carries.
 private struct ContractModerationEntryRow: View {
     let entry: ContractModerationEntry
+
+    private var identifier: String { "contractModeration.entries.row.\(entry.identityId)" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -113,17 +98,16 @@ private struct ContractModerationEntryRow: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
+                .accessibilityIdentifier(identifier)
             if let untilMs = entry.untilMs {
                 ModerationFieldRow(label: "Suspended until", value: moderationDate(ms: untilMs))
             }
-            ModerationReasonView(reason: entry.reason)
-            if let warnings = entry.warnings, warnings.count > 1 {
-                Text("\(warnings.count) warnings")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+            if let warnings = entry.warnings, !warnings.isEmpty {
+                ModerationWarningsView(warnings: warnings, identifierPrefix: identifier)
+            } else {
+                ModerationReasonView(reason: entry.reason)
             }
         }
         .padding(.vertical, 2)
-        .accessibilityElement(children: .combine)
     }
 }
