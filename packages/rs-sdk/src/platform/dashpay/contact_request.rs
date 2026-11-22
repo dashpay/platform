@@ -61,8 +61,9 @@ where
 pub enum RecipientIdentity {
     /// Recipient identity ID - the full identity will be fetched from the platform
     Identifier(Identifier),
-    /// Complete recipient identity - no fetch required. Its keys are checked as
-    /// given, so it must be current: a key disabled since it was read passes.
+    /// Complete recipient identity - no fetch required. Building and signing
+    /// check its keys as given; [`Sdk::send_contact_request`] also checks them
+    /// against Platform.
     Identity(Identity),
 }
 
@@ -90,8 +91,9 @@ impl From<Identity> for RecipientIdentity {
 
 /// Input for creating a contact request document
 pub struct ContactRequestInput {
-    /// The identity sending the contact request (owner). Its keys are checked
-    /// as given, so it must be current: a key disabled since it was read passes.
+    /// The identity sending the contact request (owner). Building and signing
+    /// check its keys as given; [`Sdk::send_contact_request`] also checks them
+    /// against Platform.
     pub sender_identity: Identity,
     /// The recipient - can be either an Identifier (will be fetched) or a complete Identity
     pub recipient: RecipientIdentity,
@@ -254,19 +256,38 @@ fn contact_request_keys<'a>(
         )));
     }
 
-    for (side, key_index, key) in [
-        ("Sender", sender_key_index, sender_key),
-        ("Recipient", recipient_key_index, recipient_key),
-    ] {
-        if let Some(disabled_at) = key.disabled_at() {
-            return Err(Error::Generic(format!(
-                "{side} key at index {key_index} is disabled (at timestamp {disabled_at}); a new \
-                 contact request needs a valid key"
-            )));
-        }
-    }
+    refuse_disabled_key("Sender", sender_key_index, sender_key)?;
+    refuse_disabled_key("Recipient", recipient_key_index, recipient_key)?;
 
     Ok((sender_key, recipient_key))
+}
+
+/// Refuse `key`, named by a new contact request's `side` key index, when it is
+/// disabled.
+fn refuse_disabled_key(side: &str, key_index: u32, key: &IdentityPublicKey) -> Result<(), Error> {
+    match key.disabled_at() {
+        Some(disabled_at) => Err(Error::Generic(format!(
+            "{side} key at index {key_index} is disabled (at timestamp {disabled_at}); a new \
+             contact request needs a valid key"
+        ))),
+        None => Ok(()),
+    }
+}
+
+/// Refuse the key `identity`, as Platform holds it now, has at `key_index`
+/// when it is absent or disabled.
+fn refuse_key_not_current_on_platform(
+    side: &str,
+    identity: &Identity,
+    key_index: u32,
+) -> Result<(), Error> {
+    let key = identity.public_keys().get(&key_index).ok_or_else(|| {
+        Error::Generic(format!(
+            "{side} key at index {key_index} is not on identity {} on Platform",
+            identity.id()
+        ))
+    })?;
+    refuse_disabled_key(side, key_index, key)
 }
 
 impl Sdk {
@@ -495,9 +516,18 @@ impl Sdk {
     ///
     /// Returns a `SendContactRequestResult` containing the submitted document
     ///
+    /// Unlike [`Self::create_contact_request`] and [`Self::sign_contact_request`],
+    /// which judge the identities as supplied, the send first fetches the
+    /// sender, and the recipient when it is supplied as an identity, and
+    /// refuses a named key that Platform holds absent or disabled: a snapshot
+    /// read before another device disabled the key would otherwise hand the
+    /// payment xpub to whoever holds it.
+    ///
     /// # Errors
     ///
     /// Returns an error if:
+    /// - The sender, or a recipient supplied as an identity, cannot be fetched,
+    ///   or the key the request names is absent or disabled on Platform
     /// - Document creation fails (including ECDH encryption)
     /// - State transition submission fails
     pub async fn send_contact_request<S: Signer<IdentityPublicKey>, F, Fut, G, Gut, H, Hut>(
@@ -514,6 +544,8 @@ impl Sdk {
         H: FnOnce(u32) -> Hut,
         Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
     {
+        self.refuse_keys_not_current_on_platform(&input.contact_request)
+            .await?;
         let SignedContactRequest {
             state_transition,
             recipient_id,
@@ -539,13 +571,38 @@ impl Sdk {
         })
     }
 
+    /// The keys `input` names, checked against the identities as Platform holds
+    /// them now: the sender, and the recipient when it is supplied as an
+    /// identity (one supplied by id is fetched by `create_contact_request`).
+    async fn refuse_keys_not_current_on_platform(
+        &self,
+        input: &ContactRequestInput,
+    ) -> Result<(), Error> {
+        use crate::platform::Fetch;
+        let sender_id = input.sender_identity.id();
+        let sender = Identity::fetch(self, sender_id)
+            .await?
+            .ok_or_else(|| Error::Generic(format!("Sender identity {sender_id} not found")))?;
+        refuse_key_not_current_on_platform("Sender", &sender, input.sender_key_index)?;
+        if let RecipientIdentity::Identity(snapshot) = &input.recipient {
+            let recipient_id = snapshot.id();
+            let recipient = Identity::fetch(self, recipient_id).await?.ok_or_else(|| {
+                Error::Generic(format!("Recipient identity {recipient_id} not found"))
+            })?;
+            refuse_key_not_current_on_platform("Recipient", &recipient, input.recipient_key_index)?;
+        }
+        Ok(())
+    }
+
     /// Sign a contact request without broadcasting it: what
     /// [`Self::send_contact_request`] submits, for a caller that keeps the
     /// signed transition so that a retry broadcasts the same bytes again
     /// rather than signing a second request.
     ///
     /// The transition takes the sender's next identity contract nonce for
-    /// DashPay, as a send does.
+    /// DashPay, as a send does. The keys are judged in the identities as
+    /// supplied, without the send's check against Platform: a caller signing
+    /// from a cache refreshes it first.
     pub async fn sign_contact_request<S: Signer<IdentityPublicKey>, F, Fut, G, Gut, H, Hut>(
         &self,
         input: SendContactRequestInput<S>,
@@ -841,6 +898,111 @@ mod tests {
                 .contains("Recipient key at index 0 is disabled"),
             "{error}"
         );
+    }
+
+    /// A send of `sender` to `recipient`, both snapshots, over a mock SDK
+    /// whose Platform holds `on_platform`. The ECDH callback fails, so a send
+    /// that got past the key checks reports `"ECDH reached"`.
+    #[cfg(feature = "mocks")]
+    async fn send_from_snapshots(
+        sender: Identity,
+        recipient: Identity,
+        on_platform: &[Identity],
+    ) -> Error {
+        use crate::sdk::put_test_support::CountingSigner;
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        let mut sdk = crate::SdkBuilder::new_mock().build().expect("mock sdk");
+        for identity in on_platform {
+            sdk.mock()
+                .expect_fetch(identity.id(), Some(identity.clone()))
+                .await
+                .expect("identity expectation");
+        }
+        let identity_public_key = sender.public_keys()[&0].clone();
+        assert_eq!(identity_public_key.id(), 0);
+        let input = SendContactRequestInput {
+            contact_request: ContactRequestInput {
+                sender_identity: sender,
+                recipient: RecipientIdentity::Identity(recipient),
+                sender_key_index: 0,
+                recipient_key_index: 0,
+                account_reference: 0,
+                account_label: None,
+                auto_accept_proof: None,
+            },
+            identity_public_key,
+            signer: CountingSigner::default(),
+        };
+        type NoSecret = fn(&PublicKey) -> std::future::Ready<Result<[u8; 32], Error>>;
+        let ecdh: EcdhProvider<_, _, NoSecret, _> = EcdhProvider::SdkSide {
+            get_private_key: |_: &IdentityPublicKey, _: u32| async {
+                Err::<SecretKey, _>(Error::Generic("ECDH reached".to_string()))
+            },
+        };
+        sdk.send_contact_request(input, ecdh, |_| async { Ok(vec![0; COMPACT_XPUB_LEN]) })
+            .await
+            .expect_err("the send must fail")
+    }
+
+    fn with_id(identity: Identity, id: u8) -> Identity {
+        use dpp::identity::accessors::IdentitySettersV0;
+        let mut identity = identity;
+        identity.set_id(Identifier::from([id; 32]));
+        identity
+    }
+
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_refuse_a_send_whose_sender_key_platform_holds_disabled() {
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+        let sender = identity_with_key(Purpose::ENCRYPTION, None);
+        let mut disabled = sender.clone();
+        let mut key = disabled.public_keys()[&0].clone();
+        key.set_disabled_at(1_700_000_000_000);
+        disabled.add_public_key(key);
+        let recipient = with_id(identity_with_key(Purpose::DECRYPTION, None), 3);
+
+        let error = send_from_snapshots(sender, recipient.clone(), &[disabled, recipient]).await;
+
+        assert!(
+            error
+                .to_string()
+                .contains("Sender key at index 0 is disabled"),
+            "{error}"
+        );
+    }
+
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_refuse_a_send_whose_recipient_key_platform_holds_disabled() {
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+        let sender = identity_with_key(Purpose::ENCRYPTION, None);
+        let recipient = with_id(identity_with_key(Purpose::DECRYPTION, None), 3);
+        let mut disabled = recipient.clone();
+        let mut key = disabled.public_keys()[&0].clone();
+        key.set_disabled_at(1_700_000_000_000);
+        disabled.add_public_key(key);
+
+        let error = send_from_snapshots(sender.clone(), recipient, &[sender, disabled]).await;
+
+        assert!(
+            error
+                .to_string()
+                .contains("Recipient key at index 0 is disabled"),
+            "{error}"
+        );
+    }
+
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_send_past_the_key_checks_when_platform_holds_the_keys_enabled() {
+        let sender = identity_with_key(Purpose::ENCRYPTION, None);
+        let recipient = with_id(identity_with_key(Purpose::DECRYPTION, None), 3);
+
+        let error =
+            send_from_snapshots(sender.clone(), recipient.clone(), &[sender, recipient]).await;
+
+        assert!(error.to_string().contains("ECDH reached"), "{error}");
     }
 
     #[test]
