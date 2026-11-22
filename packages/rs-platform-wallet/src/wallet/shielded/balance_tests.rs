@@ -5,11 +5,12 @@ use std::sync::Arc;
 use std::task::Poll;
 
 use super::balance::{
-    ShieldedBalanceSource, ShieldedLocalBalanceSnapshot, ShieldedLocalBalanceState,
+    ShieldedBalanceSource, ShieldedLocalAccountBalance, ShieldedLocalBalanceSnapshot,
+    ShieldedLocalBalanceState, ShieldedOrdinaryBalance,
 };
 use super::{
-    FileBackedShieldedStore, NetworkShieldedCoordinator, OrchardKeySet, ShieldedNote,
-    ShieldedStore, SubwalletId,
+    shielded_identity_account_index, FileBackedShieldedStore, NetworkShieldedCoordinator,
+    OrchardKeySet, ShieldedNote, ShieldedStore, SubwalletId,
 };
 use crate::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
 use crate::error::PlatformWalletError;
@@ -575,5 +576,140 @@ async fn should_reject_restored_local_balance_overflow() {
     assert_eq!(
         ready(&coordinator, wallet).await.accounts[&0].spendable_credits,
         u64::MAX
+    );
+}
+
+fn snapshot_of(spendable: &[(u32, u64)]) -> ShieldedLocalBalanceSnapshot {
+    snapshot_with_sources(
+        &spendable
+            .iter()
+            .map(|(account, credits)| (*account, *credits, ShieldedBalanceSource::Restored))
+            .collect::<Vec<_>>(),
+    )
+}
+
+fn snapshot_with_sources(
+    accounts: &[(u32, u64, ShieldedBalanceSource)],
+) -> ShieldedLocalBalanceSnapshot {
+    ShieldedLocalBalanceSnapshot {
+        accounts: accounts
+            .iter()
+            .map(|(account, spendable_credits, source)| {
+                (
+                    *account,
+                    ShieldedLocalAccountBalance {
+                        spendable_credits: *spendable_credits,
+                        source: *source,
+                        ..ShieldedLocalAccountBalance::default()
+                    },
+                )
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn should_leave_identity_accounts_out_of_the_ordinary_balance() {
+    let identity_account = shielded_identity_account_index(0).unwrap();
+    let snapshot = snapshot_of(&[(0, 100), (1, 50), (identity_account, 900)]);
+    assert_eq!(
+        snapshot.ordinary_balance().unwrap(),
+        ShieldedOrdinaryBalance {
+            spendable_credits: 150,
+            established: true,
+        }
+    );
+}
+
+#[test]
+fn should_report_an_established_zero_ordinary_balance_without_an_ordinary_account() {
+    let zero = ShieldedOrdinaryBalance {
+        spendable_credits: 0,
+        established: true,
+    };
+    assert_eq!(snapshot_of(&[]).ordinary_balance().unwrap(), zero);
+    let identity_account = shielded_identity_account_index(7).unwrap();
+    assert_eq!(
+        snapshot_with_sources(&[(identity_account, 900, ShieldedBalanceSource::NoHistory)])
+            .ordinary_balance()
+            .unwrap(),
+        zero,
+        "an identity account without history does not unsettle the ordinary balance"
+    );
+}
+
+#[test]
+fn should_refuse_an_ordinary_balance_past_u64() {
+    let identity_account = shielded_identity_account_index(0).unwrap();
+    // The identity account's balance does not count toward the overflow.
+    let fits = snapshot_of(&[(0, u64::MAX - 1), (identity_account, u64::MAX)]);
+    assert_eq!(
+        fits.ordinary_balance().unwrap().spendable_credits,
+        u64::MAX - 1
+    );
+    let overflows = snapshot_of(&[(0, u64::MAX - 1), (1, 2), (identity_account, u64::MAX)]);
+    assert!(matches!(
+        overflows.ordinary_balance(),
+        Err(PlatformWalletError::ShieldedStoreError(message))
+            if message == "wallet-wide shielded balance exceeds u64"
+    ));
+}
+
+#[test]
+fn should_not_establish_the_ordinary_balance_while_an_ordinary_account_has_no_history() {
+    let identity_account = shielded_identity_account_index(0).unwrap();
+    let snapshot = snapshot_with_sources(&[
+        (0, 100, ShieldedBalanceSource::ScannedThisSession),
+        (1, 0, ShieldedBalanceSource::NoHistory),
+        (
+            identity_account,
+            900,
+            ShieldedBalanceSource::ScannedThisSession,
+        ),
+    ]);
+    assert_eq!(
+        snapshot.ordinary_balance().unwrap(),
+        ShieldedOrdinaryBalance {
+            spendable_credits: 100,
+            established: false,
+        }
+    );
+}
+
+#[tokio::test]
+async fn should_not_establish_a_hydrated_empty_ledger_until_an_empty_scan_completes() {
+    let path = tree_path();
+    let coordinator = NetworkShieldedCoordinator::new(
+        Arc::new(empty_pool_sdk().await),
+        dashcore::Network::Testnet,
+        path.clone(),
+        FileBackedShieldedStore::open_path(path, 100).unwrap(),
+    );
+    let wallet = [16; 32];
+    register(&coordinator, wallet, &[0]).await;
+    coordinator.mark_hydrated(wallet, true).await;
+    assert_eq!(
+        ready(&coordinator, wallet)
+            .await
+            .ordinary_balance()
+            .unwrap(),
+        ShieldedOrdinaryBalance {
+            spendable_credits: 0,
+            established: false,
+        },
+        "a hydrated ledger with no notes and no scan is not a known zero"
+    );
+    let outcome = coordinator.sync(true, &CancellationToken::new()).await;
+    assert_eq!(outcome.success_count(), 1, "{outcome:?}");
+    assert_eq!(
+        ready(&coordinator, wallet)
+            .await
+            .ordinary_balance()
+            .unwrap(),
+        ShieldedOrdinaryBalance {
+            spendable_credits: 0,
+            established: true,
+        },
+        "a completed empty scan makes the zero known"
     );
 }

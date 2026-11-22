@@ -11,8 +11,9 @@
 //! A scan only opens entries. What an entry claims about its sender is checked against the
 //! sender identity's keys: a deniable MAC with [`PrivateDocumentScanKeys::verify_sender`], a
 //! signature with [`OpenedPrivateDocumentEntry::recover_signer`]. The payload is the type's to
-//! decode and validate. `crate::platform::dashpay` does both for DashPay's private contact
-//! requests.
+//! decode and validate: [`read_private_document_payload`] does both against the type's schema,
+//! for any private type. `crate::platform::dashpay` reads DashPay's private contact requests
+//! with the same check.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -25,8 +26,15 @@ use crate::platform::private_document_entries::{
 };
 use crate::platform::{Fetch, Identifier};
 use crate::{Error, Sdk};
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::decode_private_document_payload;
+use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
+use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
+use dpp::data_contract::DataContract;
 use dpp::identity::KeyID;
+use dpp::platform_value::Value;
 use dpp::secp256k1::{PublicKey, SecretKey};
+use dpp::version::PlatformVersion;
 use futures::stream::{self, Stream, StreamExt};
 use platform_encryption::{
     private_document_outgoing_viewing_key, recover_sent_private_document_entry,
@@ -420,6 +428,55 @@ impl PrivateDocumentScanKeys {
             }
         }
     }
+}
+
+/// Checks `properties` against the schema of the private type `document_type_name` of
+/// `contract` as dpp checks a document's properties: the schema's bounds and types, its required
+/// properties, and the rest it says. The payload codec leaves this to the sender before encoding
+/// and to the recipient after decoding. The reason is given when they are refused.
+pub fn validate_private_document_properties(
+    contract: &DataContract,
+    document_type_name: &str,
+    properties: &BTreeMap<String, Value>,
+    platform_version: &PlatformVersion,
+) -> Result<(), String> {
+    let result = contract
+        .validate_document_properties(
+            document_type_name,
+            Value::from(properties.clone()),
+            &DocumentSystemValues::default(),
+            platform_version,
+        )
+        .map_err(|error| error.to_string())?;
+    match result.errors.first() {
+        None => Ok(()),
+        Some(error) => Err(error.to_string()),
+    }
+}
+
+/// The properties the `payload` of an opened entry of the private type `document_type_name` of
+/// `contract` holds: decoded as the type's properties
+/// (`dpp::data_contract::document_type::decode_private_document_payload`), then checked against
+/// its schema ([`validate_private_document_properties`]), as a recipient does before trusting
+/// them. The reason is given when the payload does not decode or its properties are refused.
+pub fn read_private_document_payload(
+    contract: &DataContract,
+    document_type_name: &str,
+    payload: &[u8],
+    platform_version: &PlatformVersion,
+) -> Result<BTreeMap<String, Value>, String> {
+    let document_type = contract
+        .document_type_for_name(document_type_name)
+        .map_err(|error| error.to_string())?;
+    let properties = decode_private_document_payload(document_type, payload, platform_version)
+        .map_err(|error| error.to_string())?;
+    validate_private_document_properties(
+        contract,
+        document_type_name,
+        &properties,
+        platform_version,
+    )?;
+    Ok(properties)
 }
 
 /// How many pages of a private document type's store [`Sdk::private_document_pages`] keeps in

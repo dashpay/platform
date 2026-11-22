@@ -101,6 +101,12 @@ class AppState: ObservableObject {
     private var dataManager: DataManager?
     private var modelContext: ModelContext?
 
+    /// The device's model context, set by `initializeSDK`; nil before it.
+    /// For a screen that must read the device's wallets and identities when
+    /// it is presented from a contract-search preview, whose environment
+    /// holds a throwaway in-memory store instead.
+    var deviceModelContext: ModelContext? { modelContext }
+
     /// Every SDK `makeSdk` built that is still alive: the published one, one a
     /// rebuild is moving the wallet manager onto, and the wallet managers'
     /// background SDKs. `applyQuorumMode` applies the user's mode to all of
@@ -281,7 +287,7 @@ class AppState: ObservableObject {
         // serves one.
         try newSDK.setQuorumMode(sdkQuorumMode)
         if let modelContext {
-            loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
+            loadKnownContractsIntoSDK(sdk: newSDK, network: network, modelContext: modelContext)
         }
         builtSdks.add(newSDK)
         return newSDK
@@ -367,18 +373,23 @@ class AppState: ObservableObject {
 
     // MARK: - Contract Loading
 
-    private func loadKnownContractsIntoSDK(sdk: SDK, modelContext: ModelContext) {
+    /// Load the contracts stored for `network`, the network `sdk` is built
+    /// for, into its trusted provider. The provider caches by contract id
+    /// alone, so a contract stored for another network under the same id
+    /// would shadow this network's copy; only `network`'s rows are loaded.
+    private func loadKnownContractsIntoSDK(sdk: SDK, network: Network, modelContext: ModelContext) {
         do {
-            // Fetch all stored contracts from SwiftData
-            let descriptor = FetchDescriptor<PersistentDataContract>()
+            let descriptor = FetchDescriptor<PersistentDataContract>(
+                predicate: PersistentDataContract.predicate(network: network)
+            )
             let storedContracts = try modelContext.fetch(descriptor)
 
             guard !storedContracts.isEmpty else {
-                NSLog("📦 No stored contracts to load into SDK")
+                NSLog("📦 No stored \(network.displayName) contracts to load into SDK")
                 return
             }
 
-            NSLog("📦 Loading \(storedContracts.count) known contracts into SDK...")
+            NSLog("📦 Loading \(storedContracts.count) known \(network.displayName) contracts into SDK...")
 
             // Prepare contracts for loading
             var contractsToLoad: [(id: String, data: Data)] = []

@@ -16,7 +16,11 @@ struct DocumentTypeDetailsView: View {
 
     var body: some View {
         List {
-            newDocumentSection
+            if documentType.isPrivate {
+                privateTypeSection
+            } else {
+                newDocumentSection
+            }
             documentInfoSection
             documentSettingsSection
             propertyConstraintsSection
@@ -31,13 +35,17 @@ struct DocumentTypeDetailsView: View {
             loadPropertyConstraints()
         }
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    showingCreateDocument = true
-                } label: {
-                    Image(systemName: "plus")
+            // A private type takes no ordinary document: its entries are
+            // appended by an anonymous shielded transition.
+            if !documentType.isPrivate {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showingCreateDocument = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityIdentifier("documentType.newDocumentButton")
                 }
-                .accessibilityIdentifier("documentType.newDocumentButton")
             }
         }
         .sheet(isPresented: $showingCreateDocument) {
@@ -56,6 +64,62 @@ struct DocumentTypeDetailsView: View {
                 Label("New Document", systemImage: "doc.badge.plus")
             }
             .accessibilityIdentifier("documentType.newDocumentRow")
+        }
+    }
+
+    /// Protocol version 15: a private type's store holds encrypted entries,
+    /// not documents. What that means, and the way to read the entries this
+    /// app's wallets can open.
+    @ViewBuilder
+    private var privateTypeSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Private document type", systemImage: "lock.fill")
+                    .foregroundColor(.indigo)
+                    .font(.headline)
+                if let entrySize = documentType.privateEntrySize {
+                    InfoRow(label: "Entry size:", value: "\(entrySize) bytes")
+                        .accessibilityIdentifier("documentType.privateEntrySize")
+                }
+                Text("Each entry is a fixed-size encrypted blob, appended by an anonymous transition paid from the shielded pool. Nobody owns, replaces or deletes an entry, and nothing on chain says who it is for: a reader finds its own by trying to open each one.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text("The type takes no ordinary documents and refuses document queries.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.vertical, 4)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("documentType.privateSection")
+
+            NavigationLink {
+                privateDocumentEntriesDestination
+            } label: {
+                Label("Read Entries", systemImage: "envelope.open")
+            }
+            .accessibilityIdentifier("documentType.privateEntriesLink")
+        } header: {
+            Text("Private")
+        }
+    }
+
+    /// The entries screen, reading the device's wallets and identities. A
+    /// contract-search preview presents this view against a throwaway
+    /// in-memory store holding only the previewed contract, where `@Query`
+    /// finds no wallet, so the screen gets the device's model context and
+    /// plain values rather than this preview-store model.
+    @ViewBuilder
+    private var privateDocumentEntriesDestination: some View {
+        let entries = PrivateDocumentEntriesView(
+            contractId: documentType.contractId,
+            documentTypeName: documentType.name
+        )
+        .environmentObject(appState)
+        .environmentObject(walletManager)
+        if let deviceContext = appState.deviceModelContext {
+            entries.environment(\.modelContext, deviceContext)
+        } else {
+            entries
         }
     }
 

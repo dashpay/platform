@@ -41,8 +41,7 @@ use dash_sdk::platform::dashpay::{
 };
 use dash_sdk::platform::private_document_entries::{PrivateDocumentEntries, PrivateDocumentEntry};
 use dash_sdk::platform::private_document_scan::{
-    PrivateDocumentPageHeights, PrivateDocumentScanKeys,
-    MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+    PrivateDocumentPageHeights, MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::decode_private_document_payload;
@@ -55,9 +54,9 @@ use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
 use dpp::secp256k1::rand::rngs::StdRng;
 use dpp::secp256k1::rand::{RngCore, SeedableRng};
-use dpp::secp256k1::{PublicKey, SecretKey};
+use dpp::secp256k1::PublicKey;
 use futures::StreamExt;
-use key_wallet::bip32::{DerivationPath, KeyDerivationType};
+use key_wallet::bip32::KeyDerivationType;
 use key_wallet_manager::WalletManager;
 use platform_encryption::{encrypt_account_label, encrypt_extended_public_key, COMPACT_XPUB_LEN};
 use tokio::sync::RwLock;
@@ -68,6 +67,7 @@ use super::contact_requests::{
     newest_sent_per_recipient, predates, records_or_supersedes, tear_down_stale_external_accounts,
     AutoAcceptProofSource, ContactCryptoProvider, PreparedContactRequest, ReplyOutcome,
 };
+use super::private_documents::PrivateDocumentKeyPaths;
 use super::signing_key::first_available;
 use super::{dashpay_contract, DashPayView, IdentityWallet};
 use crate::broadcaster::TransactionBroadcaster;
@@ -79,31 +79,6 @@ use crate::wallet::identity::types::dashpay::established_contact::EstablishedCon
 use crate::wallet::identity::ManagedIdentity;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
-
-/// The paths of the keys a wallet's identities read DashPay's private contact
-/// request store with, for a [`ContactCryptoProvider`] to derive inside the
-/// signer.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct PrivateDocumentKeyPaths {
-    /// Each identity entries may be sealed to, with the path of each of its
-    /// keys an entry may be sealed to, by key id.
-    pub recipients: Vec<(Identifier, Vec<(KeyID, DerivationPath)>)>,
-    /// Each identity that may have sealed entries, with the id and path of
-    /// each of its encryption keys: one outgoing viewing key each.
-    pub senders: Vec<(Identifier, KeyID, DerivationPath)>,
-}
-
-impl PrivateDocumentKeyPaths {
-    /// The scan keys these paths derive to, `derive` deriving the secret key at
-    /// a path: for a provider implementation to build inside the signer and
-    /// drop there.
-    pub fn scan_keys<E>(
-        &self,
-        derive: impl FnMut(&DerivationPath) -> Result<SecretKey, E>,
-    ) -> Result<PrivateDocumentScanKeys, E> {
-        PrivateDocumentScanKeys::derive(&self.recipients, &self.senders, derive)
-    }
-}
 
 /// What a contact request from one of the wallet's identities waits for, as
 /// the wallet decides it ([`DashPayView::private_contact_readiness`]), so a
@@ -2800,6 +2775,7 @@ mod tests {
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::{IdentityPublicKey, SecurityLevel};
     use dpp::platform_value::Value;
+    use dpp::secp256k1::SecretKey;
     use dpp::state_transition::batch_transition::BatchTransition;
     use dpp::state_transition::StateTransition;
     use dpp::version::PlatformVersion;
@@ -15168,5 +15144,56 @@ mod tests {
                 .expect("the xpub opens"),
             vec![0x33; COMPACT_XPUB_LEN]
         );
+    }
+
+    /// An identity holding a key an entry can be sealed to whose id names no
+    /// hardened slot is refused by the private sync rather than read past: a
+    /// request sealed to that key would go unseen while the read to the end
+    /// clears the identity's sends and replies. (The generic private document
+    /// read lists such a key as not scanned instead.)
+    #[tokio::test]
+    async fn should_refuse_to_sync_an_identity_holding_a_key_with_no_slot() {
+        let mut alice = identity(ALICE_PHRASE, ALICE);
+        let far_key_id: KeyID = 0x8000_0000;
+        alice.public_keys_mut().insert(
+            far_key_id,
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: far_key_id,
+                purpose: Purpose::DECRYPTION,
+                security_level: SecurityLevel::MEDIUM,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(
+                    PublicKey::from_secret_key(&identity_secret_key(BOB_PHRASE, DECRYPTION_KEY_ID))
+                        .serialize()
+                        .to_vec(),
+                ),
+                disabled_at: None,
+            }),
+        );
+        let (_manager, wallet) = wallet(ALICE_PHRASE, &alice, &[&alice], vec![]).await;
+        let crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+
+        let error = wallet
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&crypto, usize::MAX)
+            .await
+            .expect_err("a key the sync cannot scan with");
+
+        assert!(
+            matches!(&error, PlatformWalletError::InvalidIdentityData(_)),
+            "{error:?}"
+        );
+        let wm = wallet.identity().wallet_manager.read().await;
+        let managed = wm
+            .get_wallet_info(&wallet.wallet_id())
+            .expect("wallet info")
+            .identity_manager
+            .managed_identity(&alice.id())
+            .expect("alice");
+        assert_eq!(managed.dashpay().private_contact_requests_position(), 0);
+        assert!(!managed.dashpay().private_contact_requests_read());
     }
 }
