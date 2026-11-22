@@ -36,6 +36,9 @@ pub use wallet_drain::{WalletDrainPreview, WalletDrainPreviewStatus};
 pub mod activity;
 pub mod activity_recorder;
 pub mod balance;
+pub(crate) mod balance_emitter;
+#[cfg(test)]
+mod balance_emitter_tests;
 #[cfg(test)]
 mod balance_tests;
 #[cfg(test)]
@@ -70,8 +73,8 @@ pub use activity::{
     ShieldedDirection,
 };
 pub use balance::{
-    ShieldedBalanceSource, ShieldedLocalAccountBalance, ShieldedLocalBalanceSnapshot,
-    ShieldedLocalBalanceState,
+    ShieldedBalanceSource, ShieldedBalanceUpdate, ShieldedLocalAccountBalance,
+    ShieldedLocalBalanceSnapshot, ShieldedLocalBalanceState, ShieldedOrdinaryBalance,
 };
 pub(crate) use contact_address::ContactShieldedAddresses;
 pub use coordinator::NetworkShieldedCoordinator;

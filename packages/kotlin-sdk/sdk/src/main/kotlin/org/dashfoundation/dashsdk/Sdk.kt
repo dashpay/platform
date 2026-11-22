@@ -10,9 +10,20 @@ import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
 import org.dashfoundation.dashsdk.wallet.op
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URI
+import java.net.URL
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.FutureTask
+import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -618,16 +629,154 @@ class Sdk private constructor(
             } catch (_: Exception) {
                 return null
             }
-            val body = try {
+            val body = fetchBounded(url) ?: return null
+            return parseActiveMasternodes(body, defaultDapiPort)
+        }
+
+        /**
+         * GET [url] and return the body as UTF-8, or null on any failure, a
+         * body over [maxBytes], or a request not finished [deadlineMs] after
+         * it started (headers included).
+         */
+        internal fun fetchBounded(
+            url: URL,
+            deadlineMs: Long = MASTERNODES_DEADLINE_MS,
+            maxBytes: Int = MASTERNODES_MAX_BYTES,
+        ): String? {
+            val deadlineNanos = System.nanoTime() + deadlineMs * 1_000_000
+            return try {
                 val connection = url.openConnection() as HttpURLConnection
                 connection.connectTimeout = 5_000
                 connection.readTimeout = 5_000
                 connection.requestMethod = "GET"
-                connection.inputStream.use { it.readBytes().decodeToString() }
+                // The read timeout bounds each read only, and opening the
+                // stream resolves the host and waits for the response
+                // headers before the body loop checks its deadline: the
+                // caller stops waiting at the deadline wherever the request
+                // is stuck. Disconnecting can itself wait for a read in
+                // progress, so it never runs on the caller's thread.
+                withDeadline(deadlineMs, abort = connection::disconnect) {
+                    try {
+                        connection.inputStream.use { readBounded(it, maxBytes, deadlineNanos) }
+                    } finally {
+                        connection.disconnect()
+                    }
+                }
             } catch (_: Exception) {
-                return null
+                null
             }
-            return parseActiveMasternodes(body, defaultDapiPort)
+        }
+
+        /**
+         * Largest `/masternodes` body read, far above a mainnet-sized list.
+         * The endpoint may be a user-entered devnet URL, so a larger body is
+         * refused rather than buffered.
+         */
+        private const val MASTERNODES_MAX_BYTES = 16 * 1024 * 1024
+
+        /**
+         * Overall time allowed for a `/masternodes` lookup. The read timeout
+         * bounds each read only, so a server trickling bytes would otherwise
+         * keep the lookup open indefinitely.
+         */
+        private const val MASTERNODES_DEADLINE_MS = 15_000L
+
+        /**
+         * Run [block] and return its result, or throw an [IOException] once
+         * [timeoutMs] have passed. [block] runs on its own daemon thread, so
+         * the caller returns at the deadline even when [block] is stuck in a
+         * call nothing can interrupt, such as a host name lookup. [abort]
+         * is then called to make [block] end soon, such as by disconnecting
+         * the connection it reads from; its thread is left to finish.
+         * [abort] runs on a thread of its own too, since it may block.
+         * Also throws when [MAX_OUTSTANDING_REQUESTS] blocks are running.
+         */
+        internal fun <T> withDeadline(timeoutMs: Long, abort: () -> Unit, block: () -> T): T {
+            // A slot is held until [block], and an [abort] started for it,
+            // have really ended, not until the caller stopped waiting.
+            if (!requestSlots.tryAcquire()) {
+                throw IOException("$MAX_OUTSTANDING_REQUESTS earlier requests are still running")
+            }
+            val threads = AtomicInteger(1)
+            fun leave() {
+                if (threads.decrementAndGet() == 0) requestSlots.release()
+            }
+            fun startAbort() {
+                // Nothing is left to abort once the request has ended.
+                while (true) {
+                    val running = threads.get()
+                    if (running == 0) return
+                    if (threads.compareAndSet(running, running + 1)) break
+                }
+                startOrLeave("dash-sdk-bounded-request-abort", ::leave) { abort() }
+            }
+            val task = FutureTask(Callable { block() })
+            startOrLeave("dash-sdk-bounded-request", ::leave, task)
+            try {
+                return task.get(timeoutMs, TimeUnit.MILLISECONDS)
+            } catch (e: ExecutionException) {
+                throw e.cause ?: e
+            } catch (_: TimeoutException) {
+                startAbort()
+                throw IOException("the request did not finish in $timeoutMs ms")
+            } catch (e: InterruptedException) {
+                startAbort()
+                Thread.currentThread().interrupt()
+                throw e
+            }
+        }
+
+        /**
+         * How many [withDeadline] requests may be running at once, counting
+         * those whose caller already gave up on them and their aborts:
+         * retries against a host that never answers cannot pile up threads.
+         */
+        internal const val MAX_OUTSTANDING_REQUESTS = 4
+        private val requestSlots = Semaphore(MAX_OUTSTANDING_REQUESTS)
+
+        /**
+         * Run [task] on a daemon thread and call [leave] when it ends, or at
+         * once if the thread cannot be started.
+         */
+        private fun startOrLeave(name: String, leave: () -> Unit, task: Runnable) {
+            val thread = Thread(
+                {
+                    try {
+                        task.run()
+                    } finally {
+                        leave()
+                    }
+                },
+                name,
+            ).apply { isDaemon = true }
+            try {
+                thread.start()
+            } catch (e: Throwable) {
+                leave()
+                throw e
+            }
+        }
+
+        /**
+         * [input] as UTF-8, or null once it passes [maxBytes] or a read
+         * returns after [deadlineNanos] (on the [System.nanoTime] clock).
+         * A read in progress is bounded by the connection's read timeout.
+         */
+        internal fun readBounded(
+            input: InputStream,
+            maxBytes: Int,
+            deadlineNanos: Long,
+            nanoTime: () -> Long = System::nanoTime,
+        ): String? {
+            val out = ByteArrayOutputStream()
+            val buffer = ByteArray(8 * 1024)
+            while (true) {
+                if (nanoTime() - deadlineNanos > 0) return null
+                val read = input.read(buffer)
+                if (read < 0) return out.toByteArray().decodeToString()
+                if (out.size() + read > maxBytes) return null
+                out.write(buffer, 0, read)
+            }
         }
 
         /**
@@ -677,6 +826,21 @@ class Sdk private constructor(
         fun hasShielded(): Boolean {
             initialize()
             return SdkNative.hasShielded()
+        }
+
+        /**
+         * The quorum service base URL of the devnet named [devnetName],
+         * `https://quorums.<name>.networks.dash.org`, as the Rust trusted
+         * context provider resolves it.
+         *
+         * @throws org.dashfoundation.dashsdk.errors.DashSdkError for a name
+         *   the provider refuses: empty, characters other than letters,
+         *   digits and hyphens, a leading or trailing hyphen, or a reserved
+         *   network name such as `mainnet`
+         */
+        fun devnetQuorumBaseUrl(devnetName: String): String {
+            initialize()
+            return mapNativeErrors { SdkNative.devnetQuorumBaseUrl(devnetName) }
         }
 
         /** Native SDK version string. */

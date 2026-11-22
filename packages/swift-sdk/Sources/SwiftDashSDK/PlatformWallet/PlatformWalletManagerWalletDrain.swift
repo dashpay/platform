@@ -119,7 +119,7 @@ extension PlatformWalletManager {
         fundingAccountIndex: UInt32 = 0
     ) async throws -> WalletDrainPreview {
         try walletDrainReadPreflight(walletId: walletId)
-        return try await withWalletDrainNativeOperation("shieldedWalletDrainPreview") { handle in
+        return try await withAdmittedNativeOperation("shieldedWalletDrainPreview") { handle in
             try Self.withWalletDrainID(walletId) { walletPtr in
                 var preview = WalletDrainPreviewFFI()
                 try platform_wallet_manager_shielded_wallet_drain_preview(
@@ -212,7 +212,7 @@ extension PlatformWalletManager {
         let callIdentity = WalletDrainCallIdentity(
             manager: handle, walletId: walletId, operationId: operationId)
         let callActive = Self.walletDrainCalls[callIdentity] != nil
-        let native = try await withWalletDrainNativeOperation("shieldedWalletDrainStatus") { handle in
+        let native = try await withAdmittedNativeOperation("shieldedWalletDrainStatus") { handle in
             try Self.withWalletDrainIDs(walletId, operationId: operationId) { walletPtr, operationPtr in
                 var outcome = WalletDrainOutcomeFFI()
                 outcome.state = WalletDrainOutcome.State.pending.rawValue
@@ -233,19 +233,6 @@ extension PlatformWalletManager {
     /// dispatch is never mistaken for "never sent".
     nonisolated static func walletDrainStatusDuringActiveCall(native: WalletDrainOutcome) -> WalletDrainOutcome {
         native.state == .notSent ? WalletDrainOutcome(state: .pending, outpoint: nil) : native
-    }
-
-    /// Retain admission through detached native execution and result conversion.
-    /// Cancellation of the awaiting task does not release the captured handle early.
-    func withWalletDrainNativeOperation<T: Sendable>(
-        _ name: String, body: @escaping @Sendable (Handle) throws -> T
-    ) async throws -> T {
-        try admitNativeOp(name)
-        defer { finishNativeOp() }
-        let handle = self.handle
-        return try await Task.detached(priority: .userInitiated) {
-            try body(handle)
-        }.value
     }
 
     private func walletDrainReadPreflight(walletId: Data) throws {

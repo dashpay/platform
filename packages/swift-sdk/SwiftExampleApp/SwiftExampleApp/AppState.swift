@@ -50,8 +50,20 @@ class AppState: ObservableObject {
 
     /// Whether an SDK rebuild is running, started from any window. Options
     /// disables its rebuild controls on it; `rebuildSdk` refuses a second
-    /// rebuild by itself.
+    /// rebuild by itself. Every asset-lock funding and every identity
+    /// registration start refuses on it (`fundingRefusal`): the rebuild
+    /// has stopped, or is about to stop, the SPV client a funding needs.
     @Published private(set) var isRebuildingSdk = false
+
+    /// Why a funding (a shield, a Max or its Resume, a Platform address
+    /// top-up, or an identity registration from any source, fresh or
+    /// resumed) may not start now, or `nil` when it may. A rebuild reserves
+    /// `isRebuildingSdk` before it checks for running fundings and
+    /// registrations and then stops SPV, so one started after that
+    /// reservation would run beside the shutdown it was not counted in.
+    nonisolated static func fundingRefusal(isRebuildingSdk: Bool) -> String? {
+        isRebuildingSdk ? WalletDrainCoordinator.rebuildInProgressMessage : nil
+    }
 
     @Published var useDockerSetup: Bool {
         didSet {
@@ -106,6 +118,12 @@ class AppState: ObservableObject {
     // construction effectively free.
     private var dataManager: DataManager?
     private var modelContext: ModelContext?
+
+    /// The device's model context, set by `initializeSDK`; nil before it.
+    /// For a screen that must read the device's wallets and identities when
+    /// it is presented from a contract-search preview, whose environment
+    /// holds a throwaway in-memory store instead.
+    var deviceModelContext: ModelContext? { modelContext }
 
     /// Every SDK `makeSdk` built that is still alive: the published one, one a
     /// rebuild is moving the wallet manager onto, and the wallet managers'
@@ -235,13 +253,17 @@ class AppState: ObservableObject {
     /// first suspension and released after its publish or rollback. This is
     /// the only way the SDK and its network change after the bootstrap.
     ///
-    /// The steps this object does not own are injected: `stopSpv` (the
-    /// wallet manager's), `prepare` and `rollBack` (the settings the flow
-    /// changes), `activateManager` (the wallet manager store's) and
-    /// `beforePublish` (the flow's own state).
+    /// The steps this object does not own are injected: `fundingInFlight`
+    /// and `stopSpv` (the wallet manager's), `prepare` and `rollBack` (the
+    /// settings the flow changes), `activateManager` (the wallet manager
+    /// store's) and `beforePublish` (the flow's own state). The sequence
+    /// checks `fundingInFlight` before its first suspension, and every
+    /// funding and identity registration checks `isRebuildingSdk` before
+    /// it starts (`fundingRefusal`), so neither starts beside the other.
     func rebuildSdk(
         from network: Network,
         to target: Network,
+        fundingInFlight: @MainActor () -> Bool,
         stopSpv: @MainActor () async -> Bool,
         prepare: @MainActor () -> Void,
         activateManager: @MainActor (Network, SDK) async -> Bool,
@@ -263,6 +285,7 @@ class AppState: ObservableObject {
             to: target,
             stopSpv: stopSpv,
             currentNetwork: { self.currentNetwork },
+            fundingInFlight: fundingInFlight,
             prepare: prepare,
             buildSdk: { self.buildSdk(for: $0) },
             activateManager: activateManager,
@@ -287,7 +310,7 @@ class AppState: ObservableObject {
         // serves one.
         try newSDK.setQuorumMode(sdkQuorumMode)
         if let modelContext {
-            loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
+            loadKnownContractsIntoSDK(sdk: newSDK, network: network, modelContext: modelContext)
         }
         builtSdks.add(newSDK)
         return newSDK
@@ -373,18 +396,23 @@ class AppState: ObservableObject {
 
     // MARK: - Contract Loading
 
-    private func loadKnownContractsIntoSDK(sdk: SDK, modelContext: ModelContext) {
+    /// Load the contracts stored for `network`, the network `sdk` is built
+    /// for, into its trusted provider. The provider caches by contract id
+    /// alone, so a contract stored for another network under the same id
+    /// would shadow this network's copy; only `network`'s rows are loaded.
+    private func loadKnownContractsIntoSDK(sdk: SDK, network: Network, modelContext: ModelContext) {
         do {
-            // Fetch all stored contracts from SwiftData
-            let descriptor = FetchDescriptor<PersistentDataContract>()
+            let descriptor = FetchDescriptor<PersistentDataContract>(
+                predicate: PersistentDataContract.predicate(network: network)
+            )
             let storedContracts = try modelContext.fetch(descriptor)
 
             guard !storedContracts.isEmpty else {
-                NSLog("📦 No stored contracts to load into SDK")
+                NSLog("📦 No stored \(network.displayName) contracts to load into SDK")
                 return
             }
 
-            NSLog("📦 Loading \(storedContracts.count) known contracts into SDK...")
+            NSLog("📦 Loading \(storedContracts.count) known \(network.displayName) contracts into SDK...")
 
             // Prepare contracts for loading
             var contractsToLoad: [(id: String, data: Data)] = []

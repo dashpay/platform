@@ -30,6 +30,7 @@ struct ContestDetailView: View {
 
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @Environment(\.modelContext) private var modelContext
     @Query private var identities: [PersistentIdentity]
 
     @State private var voteState: ContestVoteState?
@@ -133,14 +134,11 @@ struct ContestDetailView: View {
                 contenders: sortedContenders,
                 currentIdentityData: currentIdentityData,
                 isCasting: isCastingVote,
-                onSubmit: { choice, proTxHashHex, votingKeyHex in
-                    await castVote(
-                        choice: choice,
-                        proTxHashHex: proTxHashHex,
-                        votingKeyHex: votingKeyHex
-                    )
+                onSubmit: { choice, voter in
+                    await castVote(choice: choice, voter: voter)
                 }
             )
+            .environmentObject(appState)
         }
     }
 
@@ -322,10 +320,10 @@ struct ContestDetailView: View {
             .disabled(appState.sdk == nil || isCastingVote)
 
             // Contested-resource votes are masternode-only. Spell that
-            // out so a regular-wallet user understands why a broadcast
-            // is expected to be rejected, and what credentials make it
-            // succeed.
-            Text("Only masternodes can vote on contested names, using a masternode voting key tied to a pro_tx_hash. A regular wallet has no voting key, so a vote here will be rejected by Platform. Supply real masternode credentials in the sheet to cast an accepted vote.")
+            // out so a regular-wallet user understands what the sheet
+            // needs: a masternode or evonode identity loaded with its
+            // voting key.
+            Text("Only masternodes can vote on contested names, using a masternode voting key tied to a pro_tx_hash. Load a masternode or evonode identity with its voting private key (Identities, Load Identity) to vote with it here.")
                 .font(.caption2)
                 .foregroundColor(.secondary)
         }
@@ -475,55 +473,58 @@ struct ContestDetailView: View {
 
     /// Broadcast a masternode contested-resource vote through the SDK.
     ///
-    /// Marshals the hex inputs into `Data` and forwards to
-    /// `SDK.castContestedResourceVote`, which bridges straight to the
-    /// rs-sdk `PutVote` path. The transition is fully assembled, signed
-    /// and broadcast; a non-masternode caller reaches a deterministic
-    /// authorization rejection (surfaced here as an error banner).
+    /// `MasternodeVoteCall` signs with the picked masternode's stored
+    /// voting key through `KeychainSigner` and
+    /// `SDK.castContestedResourceVote(...votingAddress:signer:)`, which
+    /// bridges straight to the rs-sdk `PutVote` path. A refused vote is
+    /// surfaced here as an error banner.
     private func castVote(
         choice: ContestedResourceVoteChoice,
-        proTxHashHex: String,
-        votingKeyHex: String
+        voter: MasternodeVoter
     ) async {
         guard let sdk = appState.sdk else {
             voteResultMessage = "SDK not initialized"
             voteResultIsError = true
             return
         }
-        // `Data(hexString:)` decodes `count / 2` bytes stepping by two, so an
-        // odd-length (e.g. 65-char) string silently drops its trailing nibble
-        // and still yields 32 bytes — the `count == 32` guard alone would pass
-        // a malformed key. Validate the trimmed hex length is exactly 64 (and
-        // therefore even) before decoding so a wrong key can't slip through.
-        let normalizedProTxHashHex = proTxHashHex.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard normalizedProTxHashHex.count == 64,
-              let proTxHash = Data(hexString: normalizedProTxHashHex),
-              proTxHash.count == 32 else {
-            voteResultMessage = "pro_tx_hash must be 32 bytes (64 hex characters)."
-            voteResultIsError = true
-            return
+        let contractId = Self.dpnsContractId
+        let documentType = Self.dpnsDocumentType
+        let indexName = Self.dpnsIndexName
+        let indexValues = dpnsIndexValues
+        let call = MasternodeVoteCall { proTxHash, votingAddress, signer in
+            try await sdk.castContestedResourceVote(
+                dataContractId: contractId,
+                documentTypeName: documentType,
+                indexName: indexName,
+                indexValues: indexValues,
+                choice: choice,
+                proTxHash: proTxHash,
+                votingAddress: votingAddress,
+                signer: signer
+            )
         }
-        let normalizedVotingKeyHex = votingKeyHex.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard normalizedVotingKeyHex.count == 64,
-              let votingKey = Data(hexString: normalizedVotingKeyHex),
-              votingKey.count == 32 else {
-            voteResultMessage = "Voting private key must be 32 bytes (64 hex characters)."
-            voteResultIsError = true
-            return
+        #if DEBUG
+        .allowingTypedKey { proTxHash, votingPrivateKey in
+            try await sdk.castContestedResourceVote(
+                dataContractId: contractId,
+                documentTypeName: documentType,
+                indexName: indexName,
+                indexValues: indexValues,
+                choice: choice,
+                proTxHash: proTxHash,
+                votingPrivateKey: votingPrivateKey
+            )
         }
+        #endif
 
         isCastingVote = true
         defer { isCastingVote = false }
 
         do {
-            try await sdk.castContestedResourceVote(
-                dataContractId: Self.dpnsContractId,
-                documentTypeName: Self.dpnsDocumentType,
-                indexName: Self.dpnsIndexName,
-                indexValues: dpnsIndexValues,
-                choice: choice,
-                proTxHash: proTxHash,
-                votingPrivateKey: votingKey
+            try await call.run(
+                as: voter,
+                modelContainer: modelContext.container,
+                network: appState.currentNetwork
             )
             voteResultMessage = "Vote accepted by Platform."
             voteResultIsError = false
@@ -538,18 +539,17 @@ struct ContestDetailView: View {
     }
 }
 
-/// Modal for picking a vote choice and entering masternode credentials.
+/// Modal for picking a vote choice and the masternode that votes.
 ///
-/// Kept deliberately explicit about the masternode-key requirement —
-/// the example app's regular wallets cannot satisfy it, so the inputs
-/// are where a masternode operator would paste their pro_tx_hash and
-/// voting private key (both hex).
+/// The voter is a masternode or evonode identity loaded with its voting
+/// key, picked in the shared `MasternodeVoterSection`; the key signs
+/// through `KeychainSigner` and is never typed here.
 private struct CastVoteSheet: View {
     let contestName: String
     let contenders: [ContestContender]
     let currentIdentityData: Data?
     let isCasting: Bool
-    let onSubmit: (ContestedResourceVoteChoice, String, String) async -> Void
+    let onSubmit: (ContestedResourceVoteChoice, MasternodeVoter) async -> Void
 
     @Environment(\.dismiss) private var dismiss
 
@@ -561,8 +561,7 @@ private struct CastVoteSheet: View {
     }
 
     @State private var selection: Selection = .abstain
-    @State private var proTxHashHex = ""
-    @State private var votingKeyHex = ""
+    @State private var voter: MasternodeVoter?
     /// Surfaced when the selected contender's hex id fails to decode, so we
     /// never pass un-decodable hex downstream to the FFI as if it were base58.
     @State private var choiceError: String?
@@ -593,21 +592,10 @@ private struct CastVoteSheet: View {
                         Text("Lock (no winner)").tag(Selection.lock)
                     }
                     .pickerStyle(.inline)
+                    .accessibilityIdentifier("contestVote.choice")
                 }
 
-                Section("Masternode Credentials") {
-                    TextField("pro_tx_hash (64 hex chars)", text: $proTxHashHex)
-                        .font(.system(.caption, design: .monospaced))
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                    SecureField("voting private key (64 hex chars)", text: $votingKeyHex)
-                        .font(.system(.caption, design: .monospaced))
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                    Text("These belong to a masternode. The voting public key (ECDSA_HASH160) and signer are derived from the private key on the Rust side; the key bytes are not stored.")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
+                MasternodeVoterSection(accessibilityPrefix: "contestVote", voter: $voter)
 
                 Section {
                     Button {
@@ -618,9 +606,10 @@ private struct CastVoteSheet: View {
                             choiceError = "Could not decode the selected contender's identity id."
                             return
                         }
+                        guard let voter else { return }
                         choiceError = nil
                         Task {
-                            await onSubmit(choice, proTxHashHex, votingKeyHex)
+                            await onSubmit(choice, voter)
                         }
                     } label: {
                         if isCasting {
@@ -632,7 +621,8 @@ private struct CastVoteSheet: View {
                             Text("Submit Vote")
                         }
                     }
-                    .disabled(isCasting || proTxHashHex.isEmpty || votingKeyHex.isEmpty)
+                    .disabled(isCasting || voter?.canCast != true)
+                    .accessibilityIdentifier("contestVote.submit")
 
                     if let choiceError {
                         Text(choiceError)
@@ -649,6 +639,8 @@ private struct CastVoteSheet: View {
                         .disabled(isCasting)
                 }
             }
+            // A swipe would hide the broadcast in flight; keep the sheet up.
+            .interactiveDismissDisabled(isCasting)
         }
     }
 

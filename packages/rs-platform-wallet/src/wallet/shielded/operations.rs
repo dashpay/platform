@@ -3543,7 +3543,7 @@ async fn reserve_notes_covering<S: ShieldedStore>(
 /// Mark `notes` pending under the held store lock, returning the guard that
 /// releases them unless handed over. A failure part way releases those
 /// already marked.
-fn mark_notes_pending<S: ShieldedStore>(
+pub(super) fn mark_notes_pending<S: ShieldedStore>(
     locked: &mut S,
     store: &Arc<RwLock<S>>,
     id: SubwalletId,

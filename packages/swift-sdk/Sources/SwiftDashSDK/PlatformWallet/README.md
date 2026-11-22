@@ -593,6 +593,38 @@ do {
 
 ---
 
+## Shielded balances pushed by Rust
+
+Rust reads each wallet's shielded balance state at points such as a first
+bind, a scan ending (also when it fails), a spend, a rebind, a Clear or
+unregister, and emits an update when what it read differs from what it last
+emitted. Rust counts an update as emitted once it has called the host
+callback; it does not know whether the host accepted it, and it does not
+resend an unchanged state. An update carries the latest state Rust read, not
+every transition: a spend that reserves notes and releases them again before
+Rust next reads produces no update. `manager.shieldedBalances[walletId]`
+holds the latest `ShieldedBalanceUpdate` the manager accepted for each
+wallet. Its `revision` identifies an emitted state, not a ledger change; the
+manager accepts an update only when its revision is higher than the held
+one's, and drops updates once shutdown has started. Hosts show this and hold no
+balance of their own; do not add up `PersistentShieldedNote` rows or
+snapshot accounts.
+
+- `update.ordinaryBalance` is what the wallet holds (its ordinary accounts;
+  identity accounts left out), or `nil` when it is not a known balance: the
+  state is `unbound` or `restoreIncomplete`, or the ready ledger is not
+  established yet (a wallet restored without history reads 0 before its
+  first scan).
+- `update.accountBalance(account)` is what one account can spend, or `nil`
+  when the account is not bound or Rust did not establish its amount. Rust
+  sends that decision per account (`ShieldedBalanceAccount.established`);
+  the account's `source` is for diagnostics only. A screen that spends from
+  one account shows this.
+- `unbound` means Rust read nothing for the wallet; it is not a known zero.
+
+Stopping shielded sync and Clear do not touch the dictionary (Clear's outcome
+arrives as an update). Shutdown empties it and drops any update still queued.
+
 ## Local shielded balance snapshots
 
 After configuring and binding shielded state, call
