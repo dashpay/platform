@@ -36,7 +36,7 @@ final class RemovalsPreviewFormatterTests: XCTestCase {
             page: page(records: 50, cursor: "doc49"),
             maxBytes: 2_000
         )
-        XCTAssertLessThanOrEqual(text.utf8.count, 2_600)
+        XCTAssertLessThanOrEqual(text.utf8.count, 2_000)
         let parsed = try parse(text)
         XCTAssertEqual((parsed["inputs"] as? [Swift.String: Swift.String])?["contractId"], "c")
         let result = try XCTUnwrap(parsed["result"] as? [Swift.String: Any])

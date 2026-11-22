@@ -1542,7 +1542,10 @@ private struct ModerationCatalogResult<Answer: Encodable>: Encodable {
 /// controls as JSON escapes (``BidiControls/jsonEscaped(_:)``).
 ///
 /// It encodes record by record and stops once ``maxBytes`` would be passed, so
-/// a large page is never formatted whole just to be cut. When records are left
+/// a large page is never formatted whole just to be cut. The budget counts the
+/// text as emitted: each record with its indentation and separator, and the
+/// text around the records (the inputs and the cursor or the note), which is
+/// always shown even when it alone passes the limit. When records are left
 /// out, `nextStartAfter` is dropped (it is the full page's cursor: paging from
 /// it would skip the hidden records) and `preview` says so. Not isolated to the
 /// main actor: the catalog runs it in a detached task.
@@ -1552,42 +1555,63 @@ enum RemovalsPreviewFormatter {
     /// and a smaller limit shows it whole.
     static let maxBytes = 64 * 1024
 
+    /// How far a record's lines are indented in the output.
+    private static let recordIndent = 6
+
     static func format(
         inputs: [String: String],
         page: ContractDocumentRemovalsPage,
         maxBytes: Int = maxBytes
     ) throws -> String {
         let inputsText = try encode(inputs)
-        var records: [String] = []
-        var used = inputsText.utf8.count
-        for removal in page.removals {
-            let record = try encode(removal)
-            if used + record.utf8.count > maxBytes {
-                break
-            }
-            used += record.utf8.count
-            records.append(record)
-        }
-        let truncated = records.count < page.removals.count
-
-        var result: [String] = []
-        if !truncated, let next = page.nextStartAfter {
-            result.append("\"nextStartAfter\" : " + (try encode(next)))
-        }
-        if truncated {
-            let note = "Preview truncated (\(records.count) of \(page.removals.count) records shown). "
+        let total = page.removals.count
+        let cursorLine = try page.nextStartAfter.map { "\"nextStartAfter\" : " + (try encode($0)) }
+        func noteLine(shown: Int) throws -> String {
+            let note = "Preview truncated (\(shown) of \(total) records shown). "
                 + "Reduce Limit and rerun from the same Start After to see every record; "
                 + "in by-id mode submit fewer ids."
-            result.append("\"preview\" : " + (try encode(note)))
+            return "\"preview\" : " + (try encode(note))
         }
+
+        // The text around the records, with the longer of the cursor and the
+        // note (counted at `total`, its most digits) and the brackets of a
+        // non-empty list, so it is never less than what is emitted.
+        let longerHeader = [cursorLine, try noteLine(shown: total)]
+            .compactMap { $0 }
+            .max { $0.utf8.count < $1.utf8.count }
+        var used = assemble(inputsText: inputsText, header: longerHeader, records: [""]).utf8.count
+
+        var records: [String] = []
+        for removal in page.removals {
+            let record = indent(try encode(removal), by: recordIndent)
+            let cost = record.utf8.count + (records.isEmpty ? 0 : ",\n".utf8.count)
+            if used + cost > maxBytes {
+                break
+            }
+            used += cost
+            records.append(record)
+        }
+        let truncated = records.count < total
+
+        let header = truncated ? try noteLine(shown: records.count) : cursorLine
+        return assemble(inputsText: inputsText, header: header, records: records)
+    }
+
+    /// The preview text: `inputsText` under `inputs`, and under `result` the
+    /// `header` line (`nextStartAfter` or `preview`, when there is one) and the
+    /// `records`, which are already indented by ``recordIndent``.
+    private static func assemble(inputsText: String, header: String?, records: [String]) -> String {
         let removals = records.isEmpty
             ? "[]"
-            : "[\n" + records.map { indent($0, by: 2) }.joined(separator: ",\n") + "\n]"
-        result.append("\"removals\" : " + removals)
-        let resultText = "{\n" + result.map { indent($0, by: 2) }.joined(separator: ",\n") + "\n}"
+            : "[\n" + records.joined(separator: ",\n") + "\n    ]"
+        var result: [String] = []
+        if let header {
+            result.append(indent(header, by: 4))
+        }
+        result.append("    \"removals\" : " + removals)
         return "{\n"
             + indent("\"inputs\" : " + inputsText, by: 2) + ",\n"
-            + indent("\"result\" : " + resultText, by: 2)
+            + "  \"result\" : {\n" + result.joined(separator: ",\n") + "\n  }"
             + "\n}"
     }
 
