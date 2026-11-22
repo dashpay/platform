@@ -533,11 +533,17 @@ struct IdentitiesContentView: View {
             }
         }
         guard uncleared.isEmpty else {
-            try? modelContext.save()
             let names = ListFormatter.localizedString(byJoining: uncleared.map(\.rawValue))
-            platformState.showError(
-                message: "The identity was not removed: the Keychain refused to delete its \(names) key. Unlock the device and try again."
-            )
+            var message = "The identity was not removed: the Keychain refused to delete its \(names) key. Unlock the device and try again."
+            do {
+                // Persist the references cleared above for the deleted slots.
+                try modelContext.save()
+            } catch {
+                // The cleared references may come back on relaunch while
+                // their keys are gone; say so instead of hiding it.
+                message += " Saving the identity also failed (\(error.localizedDescription)), so it may still list keys that were deleted; remove it again to finish."
+            }
+            platformState.showError(message: message)
             return
         }
 
