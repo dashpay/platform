@@ -108,6 +108,9 @@ fun SyncStatusScreen() {
                 // Liveness poll — `spvProgress` alone can't distinguish
                 // "synced and running" from "stopped".
                 var isRunning by remember { mutableStateOf(false) }
+                // One Start or Pause at a time: a second Start waiting on its
+                // peer lookup would otherwise restart a client paused meanwhile.
+                var spvActionInFlight by remember { mutableStateOf(false) }
                 var rescanHeightText by remember { mutableStateOf("0") }
                 var rescanInFlight by remember { mutableStateOf(false) }
                 var rescanResult by remember { mutableStateOf<CompactFilterRescanResult?>(null) }
@@ -144,6 +147,8 @@ fun SyncStatusScreen() {
                 ) {
                     Button(
                         onClick = {
+                            if (spvActionInFlight) return@Button
+                            spvActionInFlight = true
                             scope.launch {
                                 try {
                                     if (isRunning) {
@@ -196,9 +201,12 @@ fun SyncStatusScreen() {
                                     }
                                 } catch (e: Exception) {
                                     error = e.message ?: "SPV operation failed"
+                                } finally {
+                                    spvActionInFlight = false
                                 }
                             }
                         },
+                        enabled = !spvActionInFlight,
                         modifier = Modifier.testTag("sync.spvStartStop"),
                     ) { Text(if (isRunning) "Pause" else "Start") }
 

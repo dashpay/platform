@@ -184,6 +184,13 @@ class AppState(
      */
     private var savedAppliedDevnet: AppliedDevnet? = null
 
+    /**
+     * The network of a published SDK whose save as the launch network
+     * failed; the next save writes it too, so a later launch does not
+     * silently come back on the previous network.
+     */
+    private var unsavedNetwork: Network? = null
+
     /** Restore persisted preferences; called once from bootstrap. */
     suspend fun restorePreferences() {
         val prefs = dataStore.data.first()
@@ -351,11 +358,13 @@ class AppState(
      * [errorMessage]: this session already runs on them.
      */
     internal suspend fun savePublished(network: Network?, devnet: AppliedDevnet?) {
+        // A network choice whose save failed is tried again with this one.
+        val networkToSave = network ?: unsavedNetwork
         val newDevnet = devnet?.takeIf { it != savedAppliedDevnet }
-        if (network == null && newDevnet == null) return
+        if (networkToSave == null && newDevnet == null) return
         try {
             dataStore.edit { prefs ->
-                network?.let { prefs[KEY_NETWORK] = it.networkName }
+                networkToSave?.let { prefs[KEY_NETWORK] = it.networkName }
                 newDevnet?.let {
                     prefs[KEY_APPLIED_DEVNET_NAME] = it.name.orEmpty()
                     prefs[KEY_APPLIED_DEVNET_QUORUM_URL] = it.quorumUrl
@@ -363,8 +372,10 @@ class AppState(
             }
             // Only once written, so a failed save is tried again by the
             // next Apply of the same settings.
+            unsavedNetwork = null
             if (newDevnet != null) savedAppliedDevnet = newDevnet
         } catch (e: Exception) {
+            unsavedNetwork = networkToSave
             _errorMessage.value = if (network != null) {
                 "Switched to ${network.displayName}, but could not save it: ${e.message}"
             } else {
@@ -422,10 +433,12 @@ class AppState(
             _currentNetwork.value = Network.DEFAULT
             try {
                 dataStore.edit { it[KEY_NETWORK] = Network.DEFAULT.networkName }
+                unsavedNetwork = null
                 null
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                unsavedNetwork = Network.DEFAULT
                 "Started on ${Network.DEFAULT.displayName} for now, but could not save it: ${e.message}"
             }
         }

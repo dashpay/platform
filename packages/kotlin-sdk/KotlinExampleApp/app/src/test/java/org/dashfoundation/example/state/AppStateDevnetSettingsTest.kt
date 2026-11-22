@@ -328,6 +328,42 @@ class AppStateDevnetSettingsTest {
     }
 
     @Test
+    fun shouldSaveANetworkChoiceThatFailedWithTheNextApply() = runTest {
+        val file = File(temporaryFolder.root, "app.preferences_pb")
+        val job = SupervisorJob()
+        val scope = CoroutineScope(job + StandardTestDispatcher(testScheduler))
+        val real = PreferenceDataStoreFactory.create(scope = scope, produceFile = { file })
+        var diskFull = true
+        val flaky = object : DataStore<Preferences> {
+            override val data = real.data
+            override suspend fun updateData(
+                transform: suspend (t: Preferences) -> Preferences,
+            ): Preferences {
+                if (diskFull) throw IOException("disk full")
+                return real.updateData(transform)
+            }
+        }
+        val appState = AppState(flaky, scope, ::fakeDevnetQuorumBaseUrl)
+        try {
+            val palmatum = AppState.AppliedDevnet("palmatum", PALMATUM_URL)
+            // The switch to Devnet publishes its SDK, but the save fails.
+            appState.savePublished(Network.DEVNET, palmatum)
+            assertNull(real.data.first()[stringPreferencesKey("currentNetwork")])
+
+            // Storage recovers and the user presses Apply.
+            diskFull = false
+            appState.savePublished(null, palmatum)
+            advanceUntilIdle()
+
+            val relaunched = AppState(real, scope, ::fakeDevnetQuorumBaseUrl)
+            relaunched.restorePreferences()
+            assertEquals(Network.DEVNET, relaunched.currentNetwork.value)
+        } finally {
+            job.cancelAndJoin()
+        }
+    }
+
+    @Test
     fun shouldLeaveASavedNetworkForThisSessionWhenSavingFails() = runTest {
         val job = SupervisorJob()
         val scope = CoroutineScope(job + StandardTestDispatcher(testScheduler))
