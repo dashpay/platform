@@ -15,14 +15,69 @@ import SwiftUI
 import SwiftDashSDK
 import SwiftData
 
-/// Submit gate for a shielded-pool top-up (Type 22): amount > 0, the flat
-/// fee resolved, and amount + fee within the pool balance (overflow-checked).
-/// The fee is spent from the notes on top of the amount.
+/// Submit gate for a shielded-pool top-up (Type 22): amount > 0, the
+/// minimum fee resolved, the spendable credits known, and amount + minimum
+/// fee within them (overflow-checked). The fee is spent from the notes on
+/// top of the amount. The wallet may charge more than the minimum when it
+/// combines more than two notes; it then refuses before building anything.
 enum ShieldedTopUpAmountGate {
-    static func canSubmit(amount: UInt64?, fee: UInt64?, poolBalance: UInt64) -> Bool {
-        guard let amount, amount > 0, let fee else { return false }
-        let (total, overflow) = amount.addingReportingOverflow(fee)
-        return !overflow && total <= poolBalance
+    static func canSubmit(amount: UInt64?, minimumFee: UInt64?, spendable: UInt64?) -> Bool {
+        guard let amount, amount > 0, let minimumFee, let spendable else { return false }
+        let (total, overflow) = amount.addingReportingOverflow(minimumFee)
+        return !overflow && total <= spendable
+    }
+}
+
+/// What the top-up screen knows about the wallet's spendable shielded
+/// credits on account 0 (notes reserved for a pending spend excluded), read
+/// from the wallet's local balance snapshot. "Unknown" is kept distinct
+/// from a known zero: an unknown balance never offers the shielded source.
+enum ShieldedSpendableCredits: Equatable {
+    /// No usable value. `reason` is shown to the user when present; `nil`
+    /// means nothing worth saying (not read yet, or no shielded pool).
+    case unknown(reason: String?)
+    case known(UInt64)
+
+    /// Outcome of one snapshot read.
+    enum Read {
+        case state(ShieldedLocalBalanceState)
+        case failed(String)
+    }
+
+    /// The value after `read`. A failed read keeps an earlier known value.
+    static func after(_ read: Read, previous: ShieldedSpendableCredits) -> ShieldedSpendableCredits {
+        switch read {
+        case .state(.unbound):
+            return .unknown(reason: nil)
+        case .state(.restoreIncomplete):
+            return .unknown(reason: "The shielded balance is still being restored. "
+                + "Wait for the shielded sync to finish.")
+        case .state(.ready(let snapshot)):
+            guard let account = snapshot.accounts[0] else {
+                return .unknown(reason: "Shielded account 0 is not bound on this wallet.")
+            }
+            // With no persisted ledger or completed scan, zero does not
+            // mean the wallet has no shielded funds.
+            if account.source == .noHistory {
+                return .unknown(reason: "The shielded balance has not been scanned yet.")
+            }
+            return .known(account.spendableCredits)
+        case .failed(let message):
+            if case .known = previous { return previous }
+            return .unknown(reason: "The shielded balance could not be read: \(message)")
+        }
+    }
+
+    var credits: UInt64? {
+        if case .known(let credits) = self { return credits }
+        return nil
+    }
+
+    var offersShieldedSource: Bool { (credits ?? 0) > 0 }
+
+    var unavailableReason: String? {
+        if case .unknown(let reason) = self { return reason }
+        return nil
     }
 }
 
@@ -45,9 +100,6 @@ struct TopUpIdentityView: View {
     /// wallet inside `accountOptions`.
     @Query private var allAccounts: [PersistentAccount]
 
-    /// The identity's wallet's unspent account-0 shielded notes.
-    @Query private var shieldedNotes: [PersistentShieldedNote]
-
     /// This identity's shielded top-ups (kind 9) still pending, so an
     /// interrupted or unconfirmed one is visible when the screen reopens.
     @Query private var pendingShieldedTopUps: [PersistentShieldedActivity]
@@ -57,9 +109,6 @@ struct TopUpIdentityView: View {
         // An identity without a wallet matches no rows.
         let walletId = identity.wallet?.walletId ?? Data()
         let identityId = identity.identityId
-        _shieldedNotes = Query(
-            filter: SendTransactionView.shieldedSourcePredicate(walletId: walletId)
-        )
         _pendingShieldedTopUps = Query(
             filter: #Predicate<PersistentShieldedActivity> {
                 $0.walletId == walletId && $0.kindTag == 9 && $0.status == 0
@@ -74,9 +123,14 @@ struct TopUpIdentityView: View {
     @State private var fundingSelection: FundingSelection? = nil
     @State private var amountDash: String = ""
 
-    /// Flat fee of a shielded top-up (`.identityTopUpFromPool`, 2 actions),
-    /// resolved on appear and again at submit. `nil` keeps submit closed.
+    /// Minimum fee of a shielded top-up (`.identityTopUpFromPool` at 2
+    /// actions; the wallet prices max(notes selected, 2) actions), resolved
+    /// on appear and again at submit. `nil` keeps submit closed.
     @State private var shieldedTopUpFee: UInt64? = nil
+
+    /// Spendable shielded credits from the wallet's local snapshot. Read on
+    /// appear, after each shielded sync, and again at submit.
+    @State private var shieldedSpendable: ShieldedSpendableCredits = .unknown(reason: nil)
 
     // MARK: - Submit state
 
@@ -97,7 +151,9 @@ struct TopUpIdentityView: View {
                     pendingShieldedTopUpsSection
                     fundingSection
                     amountSection
-                    if canSubmit {
+                    // Kept while submitting: the spend reserves notes, so a
+                    // re-read can close the gate mid-proof.
+                    if canSubmit || isToppingUp {
                         submitSection
                     }
                 }
@@ -118,6 +174,20 @@ struct TopUpIdentityView: View {
                 )
             }
             .onAppear { resolveShieldedTopUpFee() }
+            .task { await refreshShieldedSpendable() }
+            .onChange(of: shieldedService.isSyncing) { _, syncing in
+                if !syncing { Task { await refreshShieldedSpendable() } }
+            }
+            .onChange(of: shieldedSpendable) { _, spendable in
+                // Drop a shielded selection the wallet can no longer fund.
+                if fundingSelection == .shieldedBalance, !isToppingUp,
+                   !spendable.offersShieldedSource {
+                    fundingSelection = nil
+                }
+            }
+            // A swipe-dismissed and reopened sheet would reset `isToppingUp`
+            // and allow a second top-up while the first is still proving.
+            .interactiveDismissDisabled(isToppingUp)
         }
     }
 
@@ -155,7 +225,7 @@ struct TopUpIdentityView: View {
     private var fundingSection: some View {
         if let walletId = identity.wallet?.walletId {
             let options = accountOptions(for: walletId)
-            let showShielded = shieldedOptionAvailable(for: walletId)
+            let showShielded = shieldedSpendable.offersShieldedSource
             Section {
                 if options.isEmpty && !showShielded {
                     Text("No funded Platform Payment accounts on this wallet.")
@@ -172,7 +242,7 @@ struct TopUpIdentityView: View {
                                 .accessibilityIdentifier("topup.fundingSource.account.\(option.accountIndex)")
                         }
                         if showShielded {
-                            Text("Shielded Balance: \(Self.formatDash(raw: shieldedPoolBalance, divisor: Double(Self.creditsPerDash)))")
+                            Text("Shielded Balance: \(Self.formatDash(raw: shieldedSpendable.credits ?? 0, divisor: Double(Self.creditsPerDash)))")
                                 .tag(Optional(FundingSelection.shieldedBalance))
                                 .accessibilityIdentifier("topup.fundingSource.shielded")
                         }
@@ -181,6 +251,12 @@ struct TopUpIdentityView: View {
                     .onChange(of: fundingSelection) { _, newValue in
                         amountDash = defaultAmountString(for: newValue)
                     }
+                }
+                if let reason = shieldedSpendable.unavailableReason {
+                    Text("Shielded Balance unavailable. \(reason)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .accessibilityIdentifier("topup.fundingSource.shieldedUnavailable")
                 }
             } header: {
                 Text("Funding Source")
@@ -202,7 +278,7 @@ struct TopUpIdentityView: View {
     }
 
     /// Pending shielded top-ups of this identity. Rust keeps their notes
-    /// reserved and resolves them on a later shielded sync.
+    /// reserved and checks them on each shielded sync.
     @ViewBuilder
     private var pendingShieldedTopUpsSection: some View {
         if !pendingShieldedTopUps.isEmpty {
@@ -236,9 +312,9 @@ struct TopUpIdentityView: View {
                 Text("Pending Shielded Top-Ups")
             } footer: {
                 Text(
-                    "Not confirmed yet. They may already have gone through, so "
-                    + "do not submit them again. The wallet resolves them on a "
-                    + "later shielded sync."
+                    "Not confirmed. They may already have gone through, so do "
+                    + "not submit them again. The wallet checks them on each "
+                    + "shielded sync."
                 )
             }
         }
@@ -284,13 +360,15 @@ struct TopUpIdentityView: View {
                     .foregroundColor(.secondary)
             }
             LabeledContent(
-                "Shielded balance",
-                value: Self.formatDash(raw: shieldedPoolBalance, divisor: Double(Self.creditsPerDash))
+                "Spendable shielded",
+                value: shieldedSpendable.credits.map {
+                    Self.formatDash(raw: $0, divisor: Double(Self.creditsPerDash))
+                } ?? "Unknown"
             )
             LabeledContent(
-                "Estimated fee",
+                "Fee",
                 value: shieldedTopUpFee.map {
-                    Self.formatDash(raw: $0, divisor: Double(Self.creditsPerDash))
+                    "at least " + Self.formatDash(raw: $0, divisor: Double(Self.creditsPerDash))
                 } ?? "Not available"
             )
             .accessibilityIdentifier("topup.shielded.fee")
@@ -298,9 +376,10 @@ struct TopUpIdentityView: View {
             Text("Amount")
         } footer: {
             Text(
-                "The identity receives the amount. The fee is spent from the "
-                + "shielded notes on top of it, so amount plus fee must fit the "
-                + "shielded balance. Building the proof takes tens of seconds."
+                "The fee is spent from the shielded notes on top of the amount, "
+                + "so amount plus fee must fit the spendable shielded balance. "
+                + "The fee is more than the minimum if the wallet has to combine "
+                + "more than two notes. Building the proof takes tens of seconds."
             )
         }
     }
@@ -335,18 +414,22 @@ struct TopUpIdentityView: View {
     }
 
     /// Result of a shielded top-up. Replaces the form so the user cannot
-    /// resubmit straight away; the call returns no balance, so this shows
-    /// the amount and the identity row's balance as the persister updates it.
+    /// resubmit straight away. The wallet's proof covers the spent notes and
+    /// the identity's balance at a block, not that this transition added the
+    /// amount, so the identity balance is shown on its own line.
     private func shieldedOutcomeSection(_ outcome: ShieldedTopUpOutcome) -> some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
                 switch outcome {
                 case .completed(let amount):
-                    Label("Top-up complete", systemImage: "checkmark.seal.fill")
+                    Label("Top-up submitted", systemImage: "checkmark.seal.fill")
                         .foregroundColor(.green)
                         .font(.headline)
-                    Text("Added \(Self.formatDash(raw: amount, divisor: Double(Self.creditsPerDash))) from the shielded pool.")
-                        .foregroundColor(.secondary)
+                    Text(
+                        "The spent notes were confirmed. Requested: "
+                        + "\(Self.formatDash(raw: amount, divisor: Double(Self.creditsPerDash)))."
+                    )
+                    .foregroundColor(.secondary)
                 case .mayHaveGoneThrough(let amount):
                     Label("May have gone through", systemImage: "clock.badge.questionmark")
                         .foregroundColor(.orange)
@@ -355,7 +438,7 @@ struct TopUpIdentityView: View {
                         "The top-up of \(Self.formatDash(raw: amount, divisor: Double(Self.creditsPerDash))) "
                         + "could not be confirmed. Do not retry: it may already be on "
                         + "chain. It is listed as pending on this screen and in "
-                        + "Shielded Activity until a later shielded sync resolves it."
+                        + "Shielded Activity, and the wallet checks it on each shielded sync."
                     )
                     .foregroundColor(.secondary)
                 }
@@ -416,8 +499,8 @@ struct TopUpIdentityView: View {
             return identity.wallet?.walletId != nil
                 && ShieldedTopUpAmountGate.canSubmit(
                     amount: parsedShieldedAmountCredits,
-                    fee: shieldedTopUpFee,
-                    poolBalance: shieldedPoolBalance
+                    minimumFee: shieldedTopUpFee,
+                    spendable: shieldedSpendable.credits
                 )
         }
         guard
@@ -469,20 +552,29 @@ struct TopUpIdentityView: View {
         return String(format: "%g", dash)
     }
 
-    /// Whether "Shielded Balance" is offered: the wallet is bound to the
-    /// shielded pool (its default Orchard address resolves) and holds
-    /// unspent account-0 notes.
-    private func shieldedOptionAvailable(for walletId: Data) -> Bool {
-        let engineBound = (try? walletManager.shieldedDefaultAddress(
-            walletId: walletId,
-            account: 0
-        )) != nil
-        return engineBound && shieldedPoolBalance > 0
-    }
-
-    /// Sum of the identity's wallet's unspent account-0 notes.
-    private var shieldedPoolBalance: UInt64 {
-        shieldedNotes.reduce(0) { $0 + $1.value }
+    /// Read the wallet's spendable shielded credits. The snapshot can fail
+    /// (busy during a scan, for example); a failed read keeps the last known
+    /// value. A rebind during the read makes one fresh read safe.
+    private func refreshShieldedSpendable() async {
+        guard let walletId = identity.wallet?.walletId else { return }
+        for attempt in 0..<2 {
+            do {
+                let state = try await walletManager.localShieldedBalanceSnapshot(walletId: walletId)
+                shieldedSpendable = .after(.state(state), previous: shieldedSpendable)
+                return
+            } catch ShieldedLocalBalanceReadError.bindingChanged where attempt == 0 {
+                continue
+            } catch is CancellationError {
+                // Obsolete read (Clear, stop, view gone): keep what we have.
+                return
+            } catch {
+                shieldedSpendable = .after(
+                    .failed(error.localizedDescription),
+                    previous: shieldedSpendable
+                )
+                return
+            }
+        }
     }
 
     /// Shielded amount in credits through the exact `Decimal` parser.
@@ -575,25 +667,31 @@ struct TopUpIdentityView: View {
     /// selection, the fee and the proof are all Rust-side; Rust also
     /// applies the proven balance to the identity row through the persister.
     private func submitShielded() {
-        // Re-read the fee at submit, as the Send screen does.
-        resolveShieldedTopUpFee()
-        guard
-            let walletId = identity.wallet?.walletId,
-            let amount = parsedShieldedAmountCredits,
-            ShieldedTopUpAmountGate.canSubmit(
-                amount: amount,
-                fee: shieldedTopUpFee,
-                poolBalance: shieldedPoolBalance
-            )
-        else {
-            submitError = .init(message: "The amount plus the estimated fee must fit the shielded balance.")
+        guard let walletId = identity.wallet?.walletId else {
+            submitError = .init(message: "Selection is incomplete.")
             return
         }
-
+        // Set first so a second tap cannot start another top-up while the
+        // fee and spendable balance are re-read below.
         isToppingUp = true
         let identityId = identity.identityId
 
         Task {
+            // Re-read both right before the final gate check.
+            resolveShieldedTopUpFee()
+            await refreshShieldedSpendable()
+            guard
+                let amount = parsedShieldedAmountCredits,
+                ShieldedTopUpAmountGate.canSubmit(
+                    amount: amount,
+                    minimumFee: shieldedTopUpFee,
+                    spendable: shieldedSpendable.credits
+                )
+            else {
+                submitError = .init(message: "The amount plus the minimum fee must fit the spendable shielded balance.")
+                isToppingUp = false
+                return
+            }
             do {
                 try await walletManager.shieldedIdentityTopUpFromPool(
                     walletId: walletId,

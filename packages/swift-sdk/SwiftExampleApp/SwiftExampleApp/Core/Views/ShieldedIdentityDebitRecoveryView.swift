@@ -59,26 +59,71 @@ enum ShieldedIdentityDebitRecoveryDisplay {
         + "new shield from this identity may become an additional debit."
 }
 
+// MARK: - Read state
+
+/// Result of reading the records: never read, last read succeeded, or last
+/// read failed. A failed refresh keeps the last successful records, so an
+/// in-progress shield never disappears because one read failed.
+/// Generic over the record so the transitions are testable without FFI rows.
+struct RecoveryReadState<Record: Equatable>: Equatable {
+    enum Status: Equatable {
+        case notLoaded
+        case loaded
+        case failed(String)
+    }
+
+    private(set) var status: Status = .notLoaded
+    private(set) var records: [Record] = []
+
+    mutating func applySuccess(_ records: [Record]) {
+        self.records = records
+        status = .loaded
+    }
+
+    mutating func applyFailure(_ message: String) {
+        status = .failed(message)
+    }
+
+    /// The latest read succeeded and found nothing.
+    var isKnownEmpty: Bool { status == .loaded && records.isEmpty }
+
+    var failureMessage: String? {
+        if case .failed(let message) = status { return message }
+        return nil
+    }
+}
+
+typealias ShieldedIdentityDebitRecoveryReadState = RecoveryReadState<ShieldedIdentityDebitRecoveryRecord>
+
 // MARK: - Model
 
 /// Loads and abandons the per-wallet identity-funded shield records.
 /// Failures stay local to this model so the activity list keeps working.
 @MainActor
 final class ShieldedIdentityDebitRecoveryModel: ObservableObject {
-    @Published private(set) var records: [ShieldedIdentityDebitRecoveryRecord] = []
-    @Published private(set) var loadError: String?
+    @Published private(set) var state = ShieldedIdentityDebitRecoveryReadState()
     @Published var actionError: String?
     @Published private(set) var isAbandoning = false
 
+    private var walletId: Data?
+
+    var records: [ShieldedIdentityDebitRecoveryRecord] { state.records }
+
     func load(walletManager: PlatformWalletManager, walletId: Data) async {
+        // Another wallet's records must never show under this one.
+        if self.walletId != walletId {
+            self.walletId = walletId
+            state = ShieldedIdentityDebitRecoveryReadState()
+        }
         do {
-            records = try await walletManager.shieldedIdentityDebitRecoveryRecords(
+            let records = try await walletManager.shieldedIdentityDebitRecoveryRecords(
                 walletId: walletId
             )
-            loadError = nil
+            guard self.walletId == walletId else { return }
+            state.applySuccess(records)
         } catch {
-            records = []
-            loadError = error.localizedDescription
+            guard self.walletId == walletId else { return }
+            state.applyFailure(error.localizedDescription)
         }
     }
 
@@ -122,9 +167,10 @@ struct ShieldedIdentityDebitRecoverySection: View {
     var body: some View {
         if !model.records.isEmpty {
             recordsSection
-        } else if let loadError = model.loadError {
+        }
+        if let loadError = model.state.failureMessage {
             Section {
-                Text("In-progress identity shields could not be loaded: \(loadError)")
+                Text("In-progress identity shields could not be read: \(loadError)")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .accessibilityIdentifier("shieldedActivity.identityShields.loadError")

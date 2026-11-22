@@ -357,6 +357,15 @@ struct SendTransactionView: View {
                     Text(msg)
                 }
             }
+            .alert("Not Confirmed Yet", isPresented: .constant(viewModel.unconfirmedMessage != nil)) {
+                Button("Done") { dismiss() }
+            } message: {
+                if let msg = viewModel.unconfirmedMessage {
+                    Text(msg)
+                }
+            }
+            // A swipe-dismissed and reopened sheet would allow a second send.
+            .interactiveDismissDisabled(viewModel.isSending)
             .onAppear {
                 // Resolve the version-locked address-funds limits once from
                 // the wallet's current platform version (read Rust-side), the
@@ -597,8 +606,9 @@ struct SendTransactionView: View {
     /// landed; before that, fall back to summing identity credits
     /// so a freshly-restored wallet still shows something
     /// approximate.
+    /// Display only: the Platform send source uses `platformAddressBalance`.
     private var platformBalance: UInt64 {
-        let blastBalance = addressBalances.reduce(UInt64(0)) { $0 + $1.balance }
+        let blastBalance = platformAddressBalance
         let hasSynced = syncStates.first.map { $0.syncHeight > 0 || $0.syncTimestamp > 0 }
             ?? false
         if blastBalance > 0 || hasSynced {
@@ -785,19 +795,25 @@ struct SendTransactionView: View {
     }
 
     private func availableSources(coreBalance: UInt64) -> [FundSource] {
-        viewModel.availableSources(
-            coreBalance: coreBalance,
-            shieldedBalance: shieldedBalance,
-            platformBalance: platformBalance,
-            identityBalance: largestIdentityBalance
-        )
+        viewModel.availableSources(SendSourceBalances(
+            core: coreBalance,
+            shielded: shieldedBalance,
+            platformAddresses: platformAddressBalance,
+            largestIdentity: largestIdentityBalance
+        ))
+    }
+
+    /// Platform-address funds only, without `platformBalance`'s fallback to
+    /// identity credits: what the Platform send source can actually spend.
+    private var platformAddressBalance: UInt64 {
+        addressBalances.reduce(UInt64(0)) { $0 + $1.balance }
     }
 
     private func balance(for source: FundSource, coreBalance: UInt64) -> UInt64 {
         switch source {
         case .core: return coreBalance
         case .shielded: return shieldedBalance
-        case .platform: return platformBalance
+        case .platform: return platformAddressBalance
         case .identity:
             // The selected identity once one is picked, else the largest.
             return viewModel.selectedIdentityId == nil

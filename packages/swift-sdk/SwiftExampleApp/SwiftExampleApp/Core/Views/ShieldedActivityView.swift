@@ -168,7 +168,7 @@ struct ShieldedActivityListView: View {
 
     var body: some View {
         List {
-            if entries.isEmpty && recovery.records.isEmpty {
+            if entries.isEmpty && recovery.state.isKnownEmpty {
                 ContentUnavailableView(
                     "No Shielded Activity",
                     systemImage: "lock.rectangle.stack",
@@ -211,7 +211,7 @@ struct ShieldedActivityListView: View {
         .navigationTitle("Shielded Activity")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selected) { ShieldedActivityDetailView(entry: $0) }
-        .task { await loadRecoveryRecords() }
+        .task(id: walletId) { await loadRecoveryRecords() }
         .refreshable { await loadRecoveryRecords() }
         // A finished sync pass is what resends and resolves the records.
         .onChange(of: shieldedService.isSyncing) { _, syncing in

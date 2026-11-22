@@ -208,6 +208,32 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
         XCTAssertTrue(vm.canSend)
     }
 
+    // MARK: - Platform source counts address funds only
+
+    func test_identityCreditsWithoutAddressFunds_offerIdentityNotPlatform() {
+        // Before the first address sync the screen's Platform balance row
+        // falls back to identity credits; the sources must not.
+        let vm = makeViewModel(recipient: orchardAddress)
+        let sources = vm.availableSources(SendSourceBalances(
+            core: 0,
+            shielded: 0,
+            platformAddresses: 0,
+            largestIdentity: 1_000
+        ))
+        XCTAssertEqual(sources, [.identity])
+    }
+
+    func test_addressFunds_offerPlatform() {
+        let vm = makeViewModel(recipient: orchardAddress)
+        let sources = vm.availableSources(SendSourceBalances(
+            core: 0,
+            shielded: 0,
+            platformAddresses: 1_000,
+            largestIdentity: 0
+        ))
+        XCTAssertEqual(sources, [.platform])
+    }
+
     // MARK: - Error routing
 
     func test_unconfirmedErrors_mayHaveGoneThrough() {
@@ -215,5 +241,71 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
         XCTAssertTrue(SendViewModel.mayHaveGoneThrough(.transactionBroadcastUnconfirmed("x")))
         // A pending earlier debit means nothing was sent: not "may have gone through".
         XCTAssertFalse(SendViewModel.mayHaveGoneThrough(.shieldedIdentityDebitPending("x")))
+    }
+
+    func test_unconfirmedIdentityShield_setsUnconfirmedNotSuccess() {
+        let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
+        vm.applySendFailure(
+            PlatformWalletError.shieldedSpendUnconfirmed("x"),
+            flow: .identityToShielded
+        )
+        XCTAssertEqual(vm.unconfirmedMessage, SendViewModel.identityShieldMayHaveGoneThroughMessage)
+        XCTAssertNil(vm.successMessage)
+        XCTAssertNil(vm.error)
+    }
+
+    func test_unconfirmedOtherShieldedSend_setsUnconfirmedNotSuccess() {
+        let vm = makeViewModel(recipient: orchardAddress)
+        vm.applySendFailure(
+            PlatformWalletError.transactionBroadcastUnconfirmed("x"),
+            flow: .shieldedToShielded
+        )
+        XCTAssertTrue(vm.unconfirmedMessage?.contains("Do not retry") == true)
+        XCTAssertNil(vm.successMessage)
+        XCTAssertNil(vm.error)
+    }
+
+    func test_identityDebitPending_isAnErrorNotUnconfirmed() {
+        let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
+        vm.applySendFailure(
+            PlatformWalletError.shieldedIdentityDebitPending("x"),
+            flow: .identityToShielded
+        )
+        XCTAssertEqual(vm.error, SendViewModel.identityDebitPendingMessage)
+        XCTAssertNil(vm.unconfirmedMessage)
+    }
+
+    func test_insufficientIdentityCredits_showsRequiredAndAvailableInDash() {
+        let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
+        vm.applySendFailure(
+            PlatformWalletError.insufficientIdentityCredits(
+                identityId: "id",
+                required: 150_000_000_000,
+                available: 50_000_000_000
+            ),
+            flow: .identityToShielded
+        )
+        XCTAssertTrue(vm.error?.contains("1.50000000 DASH") == true)
+        XCTAssertTrue(vm.error?.contains("0.50000000 DASH") == true)
+        XCTAssertTrue(vm.error?.contains("Nothing was sent") == true)
+        XCTAssertNil(vm.unconfirmedMessage)
+    }
+
+    func test_identityBalanceUnavailable_saysNothingWasSent() {
+        let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
+        vm.applySendFailure(
+            PlatformWalletError.identityBalanceUnavailable("x"),
+            flow: .identityToShielded
+        )
+        XCTAssertTrue(vm.error?.contains("could not be read") == true)
+        XCTAssertTrue(vm.error?.contains("Nothing was sent") == true)
+    }
+
+    func test_otherWalletError_showsItsOwnDescription() {
+        let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
+        let failure = PlatformWalletError.walletOperation("refused below protocol version 14")
+        vm.applySendFailure(failure, flow: .identityToShielded)
+        XCTAssertEqual(vm.error, failure.localizedDescription)
+        XCTAssertNil(vm.unconfirmedMessage)
     }
 }

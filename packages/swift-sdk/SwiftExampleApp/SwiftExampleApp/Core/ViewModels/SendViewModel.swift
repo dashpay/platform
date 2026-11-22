@@ -103,6 +103,18 @@ struct CoreRecipient: Identifiable, Equatable {
     var amountString: String = ""
 }
 
+/// Per-source balances of the Send screen. `platformAddresses` is the sum of
+/// the wallet's platform-address balances only. The screen's "Platform"
+/// balance row may fall back to identity credits before the first address
+/// sync, but those credits can only be sent through the Identity source.
+struct SendSourceBalances: Equatable {
+    var core: UInt64
+    var shielded: UInt64
+    var platformAddresses: UInt64
+    /// Largest balance of any one identity: one identity funds a shield.
+    var largestIdentity: UInt64
+}
+
 /// ViewModel for the Send Transaction screen.
 @MainActor
 class SendViewModel: ObservableObject {
@@ -126,6 +138,9 @@ class SendViewModel: ObservableObject {
     @Published var isSending = false
     @Published var error: String?
     @Published var successMessage: String?
+    /// The send may already be on chain but is not proved: neither a success
+    /// nor a retryable error. Shown in its own alert.
+    @Published var unconfirmedMessage: String?
 
     /// Per-output minimum credit amount (`min_output_amount`) the chain
     /// enforces for address-funds transitions, resolved on the Rust side from
@@ -413,6 +428,17 @@ class SendViewModel: ObservableObject {
         return !overflow && total <= selectedIdentityBalance
     }
 
+    /// Sources offered for the screen's balances. The Platform source counts
+    /// platform-address funds only: identity credits fund the Identity source.
+    func availableSources(_ balances: SendSourceBalances) -> [FundSource] {
+        availableSources(
+            coreBalance: balances.core,
+            shieldedBalance: balances.shielded,
+            platformBalance: balances.platformAddresses,
+            identityBalance: balances.largestIdentity
+        )
+    }
+
     /// Determine which fund sources are available based on destination and balances.
     /// `identityBalance` is the largest balance of any one identity of the
     /// wallet, since a single identity funds an identity shield.
@@ -543,6 +569,7 @@ class SendViewModel: ObservableObject {
         isSending = true
         error = nil
         successMessage = nil
+        unconfirmedMessage = nil
         defer { isSending = false }
 
         do {
@@ -881,27 +908,62 @@ class SendViewModel: ObservableObject {
                 successMessage = Self.identityShieldSubmittedMessage
             }
 
-        } catch PlatformWalletError.shieldedIdentityDebitPending(_) {
-            // Nothing was built or broadcast for this request.
-            error = Self.identityDebitPendingMessage
-        } catch let unconfirmed as PlatformWalletError
-                    where flow == .identityToShielded && SendViewModel.mayHaveGoneThrough(unconfirmed) {
-            successMessage = Self.identityShieldMayHaveGoneThroughMessage
-        } catch let unconfirmed as PlatformWalletError where SendViewModel.mayHaveGoneThrough(unconfirmed) {
-            // The shielded operation (shield / unshield / transfer / withdraw)
-            // may have reached a node and its result is not proved (a node's
-            // refusal or verdict included, code 18), or the SDK could not
-            // confirm a transition it may have accepted (code 20), so it may
-            // already be on chain. Rust intentionally KEEPS any spent notes'
-            // reservations, so this must NOT be presented as a retryable
-            // failure: a retry signs a second transition. Surface it through
-            // the non-error (success) path so the UI doesn't invite a retry;
-            // the next shielded sync reconciles the outcome.
-            successMessage = "Transaction may have gone through — waiting for "
-                + "the next shielded sync to confirm. Do not retry."
         } catch {
-            self.error = error.localizedDescription
+            applySendFailure(error, flow: flow)
         }
+    }
+
+    /// Route a failed send to the right outcome.
+    ///
+    /// A shielded operation that may have reached a node with its result not
+    /// proved (code 18), or a transition the SDK could not confirm after it
+    /// may have been accepted (code 20), may already be on chain. Rust keeps
+    /// any spent notes reserved, so it must not read as a retryable failure
+    /// (a retry signs a second transition) nor as a success: it goes to
+    /// `unconfirmedMessage`, and the next shielded sync reconciles it.
+    func applySendFailure(_ failure: Error, flow: SendFlow) {
+        successMessage = nil
+        unconfirmedMessage = nil
+        guard let walletError = failure as? PlatformWalletError else {
+            error = failure.localizedDescription
+            return
+        }
+        if Self.mayHaveGoneThrough(walletError) {
+            unconfirmedMessage = flow == .identityToShielded
+                ? Self.identityShieldMayHaveGoneThroughMessage
+                : "Transaction may have gone through. Waiting for "
+                    + "the next shielded sync to confirm. Do not retry."
+            return
+        }
+        if flow == .identityToShielded,
+           let message = Self.identityShieldRefusalMessage(walletError) {
+            error = message
+            return
+        }
+        error = walletError.localizedDescription
+    }
+
+    /// Wallet refusals of an identity shield that happen before anything is
+    /// saved, built or sent, with wording for this flow. `nil` for any other
+    /// error, whose own description is shown.
+    nonisolated static func identityShieldRefusalMessage(_ error: PlatformWalletError) -> String? {
+        switch error {
+        case .shieldedIdentityDebitPending:
+            return identityDebitPendingMessage
+        case .insufficientIdentityCredits(_, let required, let available):
+            return "The identity's balance on Platform is too low for this shield: "
+                + "it needs \(formatCredits(required)) including the fee and has "
+                + "\(formatCredits(available)). Nothing was sent."
+        case .identityBalanceUnavailable:
+            return "The identity's balance could not be read from Platform, so "
+                + "the shield was not attempted. Nothing was sent."
+        default:
+            return nil
+        }
+    }
+
+    nonisolated static func formatCredits(_ credits: UInt64) -> String {
+        String(format: "%.8f DASH", Double(credits) / 100_000_000_000.0)
     }
 
     /// Whether a shielded operation's error means it may already be on
@@ -947,16 +1009,16 @@ class SendViewModel: ObservableObject {
 
     // MARK: - Identity shield messages
 
-    static let identityShieldSubmittedMessage =
+    nonisolated static let identityShieldSubmittedMessage =
         "Shield from identity submitted. Its Shielded Activity row stays "
         + "pending until the shielded sync sees the new note."
 
-    static let identityShieldMayHaveGoneThroughMessage =
+    nonisolated static let identityShieldMayHaveGoneThroughMessage =
         "The shield from this identity may have gone through. Do not retry. "
         + "It is listed under In-Progress Identity Shields in Shielded "
         + "Activity, and the wallet keeps checking it on each shielded sync."
 
-    static let identityDebitPendingMessage =
+    nonisolated static let identityDebitPendingMessage =
         "An earlier shield from this identity is still unresolved, so a new "
         + "one was not sent. See In-Progress Identity Shields in Shielded "
         + "Activity: the wallet resolves it on a shielded sync, or you can "
