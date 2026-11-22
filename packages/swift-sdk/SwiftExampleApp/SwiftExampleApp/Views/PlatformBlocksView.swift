@@ -110,10 +110,11 @@ struct PlatformBlocksView: View {
         .navigationTitle("Block Explorer")
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: appState.sdkGeneration) { _, _ in
-            // A read still running answers for the replaced SDK; blocks already shown stay,
-            // marked as read from it
+            // A read still running, or an error shown, answers for the replaced SDK; blocks
+            // already shown stay, marked as read from it
             submissions.invalidate()
             isRunning = false
+            errorMessage = nil
         }
     }
 

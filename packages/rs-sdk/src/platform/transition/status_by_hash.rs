@@ -38,9 +38,9 @@ pub enum TransitionStatusByHash {
         /// The transition, with the result of its execution.
         transaction: Box<BlockTransaction>,
     },
-    /// The node says the transition is in the block at `height`, and no block came back for that
-    /// height (the node asked answered that it holds none), so nothing proves it. Unproved; asking again
-    /// later, or another node, may prove it.
+    /// The status lookup reports a commit at `height`, but the block lookup returned no block
+    /// there, so nothing proves it. Unproved; asking again later, or another node, may return the
+    /// block needed to check it.
     CommittedNotProved {
         /// The height of the block the node says holds it.
         height: u64,
@@ -284,8 +284,8 @@ mod tests {
 #[cfg(all(test, feature = "mocks"))]
 mod mock_tests {
     use super::*;
-    use crate::platform::Query;
     use crate::SdkBuilder;
+    use dapi_grpc::platform::v0::get_blocks_request::{self, GetBlocksRequestV0};
     use dapi_grpc::platform::v0::get_blocks_response::{self, GetBlocksResponseV0};
     use dapi_grpc::platform::v0::get_recent_state_transition_status_request::{
         GetRecentStateTransitionStatusRequestV0, Version as RequestVersion,
@@ -375,12 +375,15 @@ mod mock_tests {
                 },
             )),
         };
-        let blocks_request: GetBlocksRequest = BlocksQuery {
-            start_height: HEIGHT,
-            count: 1,
-        }
-        .query(&sdk.query_settings())
-        .expect("encode the blocks request");
+        // Built by hand, not with `BlocksQuery`, so that a request that stops asking for a
+        // proof no longer matches this expectation.
+        let blocks_request = GetBlocksRequest {
+            version: Some(get_blocks_request::Version::V0(GetBlocksRequestV0 {
+                start_height: HEIGHT,
+                count: 1,
+                prove: true,
+            })),
+        };
         let blocks = match blocks {
             Ok(response) => Ok(ExecutionResponse {
                 inner: response,
