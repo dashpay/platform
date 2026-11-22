@@ -23,7 +23,7 @@ impl Drive {
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<(i64, FeeResult), Error> {
+    ) -> Result<(i128, FeeResult), Error> {
         if document_type.documents_summable().is_none() {
             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "only a document type that sums its documents keeps a total to fetch",
@@ -64,7 +64,12 @@ impl Drive {
                 | Element::ProvableSumTree(_, total, _)
                 | Element::CountSumTree(_, _, total, _)
                 | Element::ProvableCountSumTree(_, _, total, _)
-                | Element::ProvableCountProvableSumTree(_, _, total, _) => *total,
+                | Element::ProvableCountProvableSumTree(_, _, total, _) => i128::from(*total),
+                // The 128-bit counterparts, of a type that keeps big sums
+                Element::BigSumTree(_, total, _)
+                | Element::ProvableBigSumTree(_, total, _)
+                | Element::CountBigSumTree(_, _, total, _)
+                | Element::ProvableCountProvableBigSumTree(_, _, total, _) => *total,
                 _ => return Err(Error::Drive(DriveError::CorruptedElementType(
                     "the primary tree of a document type that sums its documents is not a sum tree",
                 ))),

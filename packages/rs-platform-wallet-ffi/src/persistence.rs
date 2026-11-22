@@ -862,10 +862,18 @@ impl RoundOutcome {
 ///
 /// # Reentrancy contract (required of every callback)
 ///
-/// A persistence callback runs **synchronously on the calling native thread**,
-/// which is frequently a wallet-manager task **holding the manager's write
-/// lock**. That lock is non-reentrant. Therefore a callback MUST NOT call back
-/// into any wallet-manager / platform-wallet FFI (`dash_sdk_*` /
+/// A persistence callback runs **synchronously on the native thread that
+/// polls the wallet operation**, which is frequently a wallet-manager task
+/// **holding the manager's write lock**. That thread is not always the one
+/// that called the export: it may be a runtime worker, or the
+/// `pw-ffi-bigstack` thread an export runs its work on while its caller
+/// stays blocked (wallet create, persistor load, shielded configure and
+/// bind, wallet startup). So the callback context must be usable from any
+/// native thread, and a callback must not dispatch synchronously to the
+/// thread blocked in the export.
+///
+/// The manager's write lock is non-reentrant. Therefore a callback MUST NOT
+/// call back into any wallet-manager / platform-wallet FFI (`dash_sdk_*` /
 /// `platform_wallet_*` and friends), directly or indirectly — doing so
 /// deadlocks. Write the changeset to your storage backend and return; do not
 /// query live wallet state to enrich a row, and do not synchronously drive an
@@ -8403,6 +8411,8 @@ mod tests {
         addresses: std::sync::Mutex<Vec<PrivateShieldedAddressFFI>>,
         removed: std::sync::Mutex<Vec<([u8; 32], [u8; 32])>>,
         cleared: std::sync::Mutex<Vec<[u8; 32]>>,
+        /// The name of the thread each `persist_scan_state` ran on.
+        persisted_on: std::sync::Mutex<Vec<Option<String>>>,
         /// What `load_scan_state` answers: 0 rows as stored, 1 an error,
         /// 2 a count without a buffer.
         load_mode: u8,
@@ -8464,6 +8474,10 @@ mod tests {
         }
         assert_eq!(std::slice::from_raw_parts(wallet, 32), &[42; 32]);
         let host = &*(ctx as *const ScanStateHost);
+        host.persisted_on
+            .lock()
+            .unwrap()
+            .push(std::thread::current().name().map(str::to_owned));
         host.positions
             .lock()
             .unwrap()
@@ -8865,6 +8879,89 @@ mod tests {
                 "{what} fails the load"
             );
         }
+    }
+
+    /// Configuring a shielded store restores the private payments of the
+    /// wallets loaded before it. For an identity whose unresolved-payment
+    /// marker the store's journal clears, that stores the identity's
+    /// position, and the host receives it on the big-stack thread the export
+    /// polls on, not on the caller's (dashpay/platform#6020).
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_poll_the_shielded_configure_on_the_big_stack_thread() {
+        use crate::error::PlatformWalletFFIResultCode;
+        use crate::handle::{Handle, PLATFORM_WALLET_MANAGER_STORAGE};
+        use crate::manager::{
+            platform_wallet_manager_destroy, platform_wallet_manager_load_from_persistor,
+        };
+        use crate::shielded_sync::platform_wallet_manager_configure_shielded;
+        use crate::test_fixtures::mock_manager_with;
+        use platform_wallet::wallet::shielded::{FileBackedShieldedStore, ShieldedStore};
+        use std::ffi::CString;
+
+        /// Releases the reference to the host the persister owns.
+        unsafe extern "C" fn release_host(context: *mut c_void) {
+            drop(std::sync::Arc::from_raw(context as *const ScanStateHost));
+        }
+
+        /// Destroys the manager when dropped, on a failed assertion too, and
+        /// before the store's directory.
+        struct Destroyed(Handle);
+        impl Drop for Destroyed {
+            fn drop(&mut self) {
+                unsafe { platform_wallet_manager_destroy(self.0) };
+            }
+        }
+
+        let host = std::sync::Arc::new(ScanStateHost::default());
+        host.positions
+            .lock()
+            .unwrap()
+            .push(position_row(7, 12, true));
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let path = dir.path().join("shielded.sqlite");
+        // The journal an earlier process opened: it holds no payment of the
+        // wallet, which is what clears the marker.
+        FileBackedShieldedStore::open_path(&path, 100)
+            .expect("the store")
+            .open_private_payment_journal([42; 32])
+            .expect("the journal opened");
+
+        // The persister lives in a manager whose workers may outlast its
+        // destruction, so it owns a reference to the host, released with its
+        // last owner, where the other scan-state tests lend it a local.
+        let mut persister = scan_state_persister(
+            &host,
+            PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+            scan_state_trio(),
+        );
+        persister.callbacks.context =
+            std::sync::Arc::into_raw(std::sync::Arc::clone(&host)) as *mut c_void;
+        persister.callbacks.release_fn = Some(release_host);
+        let manager =
+            Destroyed(PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager_with(persister)));
+        let loaded = unsafe { platform_wallet_manager_load_from_persistor(manager.0) };
+        assert_eq!(loaded.code, PlatformWalletFFIResultCode::Success);
+        assert!(
+            host.persisted_on.lock().unwrap().is_empty(),
+            "the load stores no scan state"
+        );
+        host.positions.lock().unwrap().clear();
+
+        let path = CString::new(path.to_str().expect("utf-8 temp path")).expect("no NUL");
+        let configured =
+            unsafe { platform_wallet_manager_configure_shielded(manager.0, path.as_ptr()) };
+        assert_eq!(configured.code, PlatformWalletFFIResultCode::Success);
+
+        assert_eq!(
+            *host.persisted_on.lock().unwrap(),
+            vec![Some("pw-ffi-bigstack".to_string())],
+            "configure stores the cleared marker once, on the thread it is polled on"
+        );
+        let stored = host.positions.lock().unwrap();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].identity_id, [7; 32]);
+        assert!(!stored[0].private_payments_unresolved);
     }
 
     /// A host that does not declare the capability, wires only part of the
@@ -10603,7 +10700,9 @@ mod tests {
     /// - a host that hands back no record registers normally either way.
     #[test]
     fn a_recreated_wallet_must_clear_coverage_the_ffi_host_handed_back() {
-        use crate::event_handler::{EventHandlerCallbacks, FFIEventHandler};
+        use crate::event_handler::{
+            EventExtensionCallbacks, EventHandlerCallbacks, FFIEventHandler,
+        };
         use crate::runtime::runtime;
         use crate::wallet_restore_types::WalletRestoreEntryFFI;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
@@ -10722,7 +10821,7 @@ mod tests {
                     on_shielded_tree_progress_fn: None,
                     release_fn: None,
                 },
-                None,
+                EventExtensionCallbacks::default(),
             );
             let _runtime_guard = runtime().enter();
             PlatformWalletManager::new(

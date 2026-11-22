@@ -3,10 +3,11 @@
 //! format prefix recording the data contract version the bytes conform to
 //! (0 = unstamped: a pre-format-3 document re-serialized in the new
 //! envelope). Introduced so contract updates can add required properties
-//! via `requiredSince`: the stamp selects each annotated property's byte
-//! layout (raw once the stamp reaches the annotation, presence-flagged
+//! via `requiredSince`: the stamp selects each annotated top-level property's
+//! byte layout (raw once the stamp reaches the annotation, presence-flagged
 //! before it), letting the latest contract alone decode every stored
-//! document.
+//! document. An annotated member of an object is presence-flagged at every
+//! stamp.
 //!
 //! The timestamp flags also mark `$moderatedAt` (512) and `$moderatedBy` (1024), the block
 //! time and the identity of the last moderator to write the fields a document type keeps

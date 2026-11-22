@@ -8,6 +8,9 @@ mod expand_property_type_shorthands;
 
 mod find_identifier_and_binary_paths;
 
+mod member_position_order;
+pub use member_position_order::*;
+
 #[cfg(feature = "validation-schema")]
 pub mod validation_schema;
 

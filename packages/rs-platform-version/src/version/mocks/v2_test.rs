@@ -610,6 +610,9 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_index_property_name_bytes: 255,
         max_contract_schema_patterns: 32,
         max_schema_pattern_compiled_size: 131_072,
+        max_schema_pattern_bytes: 256,
+        max_contract_schema_pattern_bytes: 4096,
+        max_schema_pattern_case_folded_code_points: 4096,
         max_compiled_contract_size: None,
         max_private_document_entry_size: None,
         private_document_store_target_chunk_bytes: None,
@@ -680,11 +683,13 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_contested_summed_value_magnitude: None,
         max_expiring_signed_summed_value_magnitude: None,
         max_summed_value_magnitude_without_type_total: None,
+        max_summed_value_magnitude_in_64_bit_sums: None,
         max_indexed_array_items: None,
         max_windowed_indexed_array_items: None,
         max_index_entries_per_document: None,
         max_choose_first_candidates: 1_000, // read only by document reference validation 0 at v14
         max_rekey_batch_moves: None,
+        max_history_migration_batch_operations: None,
     },
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 0,

@@ -13,8 +13,14 @@ pub(in crate::execution::validation::state_transition) use state::v0::fetch_docu
 // A moderator's field change (protocol version 15) also reads who holds the document's storage.
 pub(in crate::execution::validation::state_transition) use state::v0::fetch_documents::fetch_document_with_id_and_storage_flags;
 // Check tx reserves, for a create it does not validate the state of, what the block's
-// `chooseFirst` check may bill it: its two hashes and the competitor scan's budget.
-pub(in crate::execution::validation::state_transition) use action_validation::document::document_reference_validation::v0::choose_first_reservation;
+// `chooseFirst` check may bill it: its hashes and the competitor scan's budget.
+pub(in crate::execution::validation::state_transition) use action_validation::document::document_reference_validation::choose_first_reservation::choose_first_reservation;
+// And what the block's `refersTo` lookups may bill it: their hashes, their queries and the
+// deletes of the documents they consume.
+pub(in crate::execution::validation::state_transition) use action_validation::document::document_reference_validation::reference_lookup_reservation::reference_lookup_reservation;
+// Check tx reserves, for an erase it does not validate the state of, the work its refunds cause
+// for other identities, which the block's state validation bills.
+pub(in crate::execution::validation::state_transition) use action_validation::document::document_erase_transition_action::erase_refund_recipient_reservation;
 // Moderator field changes and restores judge the document's `propertyConstraints`, with
 // the totals after the replace or insertion respectively.
 pub(in crate::execution::validation::state_transition) use transformer::v0::property_constraint_aggregates::{

@@ -149,7 +149,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// Background context for writing from callback threads.
     ///
     /// `ModelContext` is not thread-safe — touching it from the
-    /// Tokio worker threads that drive the Rust persistence
+    /// Rust-owned native threads that drive the persistence
     /// callbacks corrupts SwiftData's internal state and crashes
     /// inside `fetch`/`save`. The context is therefore confined to
     /// `serialQueue`: every public entry point wraps its body in
@@ -368,8 +368,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// recursive entry. The internal helpers in this file all
     /// assume they are already on the queue and call
     /// `backgroundContext` directly.
-    /// Every caller arrives from a Rust-owned tokio worker thread, and such a
-    /// thread has no autorelease pool: nothing on it ever drains, because the
+    /// Every caller arrives from a Rust-owned native thread (a tokio worker,
+    /// or the `pw-ffi-bigstack` thread some FFI calls run their work on), and
+    /// such a thread has no autorelease pool: nothing on it ever drains, because the
     /// drain is normally done by the run loop or by GCD's own worker wrapper,
     /// and `serialQueue.sync` can execute the block right on the calling
     /// thread rather than hopping to a GCD worker.

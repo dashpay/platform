@@ -210,6 +210,10 @@ pub(super) fn no_ranked_index_structure_check(
 #[derive(Clone, Copy)]
 pub(super) struct ParserGeneration {
     pub admit_lifecycle: bool,
+    /// Whether full validation checks the `position`s of an object's members: integers from 0
+    /// that follow one another from the object's lowest. An object's members are stored in the
+    /// schema's map order whatever this says.
+    pub check_nested_member_positions: bool,
     // ---- present in every generation ----
     /// The `document_type_schema` table value to select the document
     /// meta-schema with. Read by the *driver*, not down here.
@@ -1047,6 +1051,12 @@ fn parse_document_properties(
         property_names::TRANSIENT,
     );
 
+    #[cfg(feature = "validation")]
+    let check_member_positions =
+        ctx.generation.check_nested_member_positions && ctx.full_validation;
+    #[cfg(not(feature = "validation"))]
+    let check_member_positions = false;
+
     // Based on the property name, determine the type
     for (property_key, property_value) in property_values {
         // TODO: It's very inefficient. It must be done in one iteration and flattened properties
@@ -1073,6 +1083,7 @@ fn parse_document_properties(
             property_value,
             root_schema,
             &mut Vec::new(),
+            check_member_positions,
             ctx.data_contact_config,
             ctx.platform_version,
         )
@@ -3878,26 +3889,7 @@ pub(super) fn apply_private_document(
     }
 
     if full_validation {
-        let entry_size = private_document.entry_size();
-        let Some(max_entry_size) = platform_version
-            .system_limits
-            .max_private_document_entry_size
-        else {
-            // A table selecting `parse_private_document` without the limit is a fault of this
-            // build, not of the contract
-            return Err(ProtocolError::CorruptedCodeExecution(format!(
-                "protocol version {} parses private document types but sets no \
-                 max_private_document_entry_size",
-                platform_version.protocol_version,
-            )));
-        };
-        if entry_size > max_entry_size {
-            return Err(structure_error(format!(
-                "declares `{}: {entry_size}`, above the largest entry a private document type \
-                 may declare, {max_entry_size} bytes",
-                property_names::ENTRY_SIZE,
-            )));
-        }
+        private_document.ensure_entry_size_within_limit(name, platform_version)?;
     }
 
     document_type.private_document = Some(private_document);

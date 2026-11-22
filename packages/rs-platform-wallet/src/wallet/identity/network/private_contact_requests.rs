@@ -41,8 +41,7 @@ use dash_sdk::platform::dashpay::{
 };
 use dash_sdk::platform::private_document_entries::{PrivateDocumentEntries, PrivateDocumentEntry};
 use dash_sdk::platform::private_document_scan::{
-    PrivateDocumentPageHeights, PrivateDocumentScanKeys,
-    MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+    PrivateDocumentPageHeights, MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::decode_private_document_payload;
@@ -55,9 +54,9 @@ use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
 use dpp::secp256k1::rand::rngs::StdRng;
 use dpp::secp256k1::rand::{RngCore, SeedableRng};
-use dpp::secp256k1::{PublicKey, SecretKey};
+use dpp::secp256k1::PublicKey;
 use futures::StreamExt;
-use key_wallet::bip32::{DerivationPath, KeyDerivationType};
+use key_wallet::bip32::KeyDerivationType;
 use key_wallet_manager::WalletManager;
 use platform_encryption::{encrypt_account_label, encrypt_extended_public_key, COMPACT_XPUB_LEN};
 use tokio::sync::RwLock;
@@ -68,6 +67,7 @@ use super::contact_requests::{
     newest_sent_per_recipient, predates, records_or_supersedes, tear_down_stale_external_accounts,
     AutoAcceptProofSource, ContactCryptoProvider, PreparedContactRequest, ReplyOutcome,
 };
+use super::private_documents::PrivateDocumentKeyPaths;
 use super::signing_key::first_available;
 use super::{dashpay_contract, DashPayView, IdentityWallet};
 use crate::broadcaster::TransactionBroadcaster;
@@ -79,31 +79,6 @@ use crate::wallet::identity::types::dashpay::established_contact::EstablishedCon
 use crate::wallet::identity::ManagedIdentity;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
-
-/// The paths of the keys a wallet's identities read DashPay's private contact
-/// request store with, for a [`ContactCryptoProvider`] to derive inside the
-/// signer.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct PrivateDocumentKeyPaths {
-    /// Each identity entries may be sealed to, with the path of each of its
-    /// keys an entry may be sealed to, by key id.
-    pub recipients: Vec<(Identifier, Vec<(KeyID, DerivationPath)>)>,
-    /// Each identity that may have sealed entries, with the id and path of
-    /// each of its encryption keys: one outgoing viewing key each.
-    pub senders: Vec<(Identifier, KeyID, DerivationPath)>,
-}
-
-impl PrivateDocumentKeyPaths {
-    /// The scan keys these paths derive to, `derive` deriving the secret key at
-    /// a path: for a provider implementation to build inside the signer and
-    /// drop there.
-    pub fn scan_keys<E>(
-        &self,
-        derive: impl FnMut(&DerivationPath) -> Result<SecretKey, E>,
-    ) -> Result<PrivateDocumentScanKeys, E> {
-        PrivateDocumentScanKeys::derive(&self.recipients, &self.senders, derive)
-    }
-}
 
 /// What a contact request from one of the wallet's identities waits for, as
 /// the wallet decides it ([`DashPayView::private_contact_readiness`]), so a
@@ -1660,7 +1635,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // request's is (`IdentityWallet::contact_shielded_address`): the address
         // the sender's shielded account gives this request alone, or none.
         let shielded_address = self
-            .contact_shielded_address(sender_identity_id, recipient_identity_id, account_reference)
+            .contact_shielded_address(
+                sender_identity_id,
+                recipient_identity_id,
+                account_reference,
+                crypto,
+            )
             .await?;
         let extended_public_key: [u8; COMPACT_XPUB_LEN] =
             xpub_bytes.as_slice().try_into().map_err(|_| {
@@ -1674,7 +1654,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             extended_public_key,
             account_label,
             auto_accept_proof,
-            shielded_address,
+            shielded_address: shielded_address.as_ref().map(|derived| derived.address),
         };
 
         // The request is signed as a public request's transition is: by the
@@ -1772,6 +1752,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             &shared_secret,
             0,
         );
+
+        // The last step before the request is paid for: its shielded address was
+        // derived from the key the account is still bound to, or nothing is paid, the
+        // reservation is released as for any refusal before the payment, and the
+        // send can be made again. A check, not a fence: a re-key that completes
+        // before it is caught; one that completes while the payment is built and
+        // broadcast is not, and no lock can be held across the payment, which
+        // reads the key map itself.
+        if let Some(shielded_address) = &shielded_address {
+            self.check_contact_shielded_address(shielded_address)
+                .await?;
+        }
 
         // `pay` marks the payment started right before it may reach the
         // network: from then on the reservation is the sync's to settle,
@@ -2783,6 +2775,7 @@ mod tests {
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::{IdentityPublicKey, SecurityLevel};
     use dpp::platform_value::Value;
+    use dpp::secp256k1::SecretKey;
     use dpp::state_transition::batch_transition::BatchTransition;
     use dpp::state_transition::StateTransition;
     use dpp::version::PlatformVersion;
@@ -9038,17 +9031,22 @@ mod tests {
         (entry, received)
     }
 
-    /// A private request sent with no address handed to it carries the one the
-    /// sender's wallet derives. Alice's identity shielded account is prepared
-    /// against her seed, and Bob reads from the store the address that account
-    /// derives for this request: its sender, its recipient and its account
-    /// reference.
+    /// Alice's wallet bound to account 0 and to her identity's shielded account, with Bob
+    /// known: her identity carries the MASTER key her seed derives at identity index 0,
+    /// so a send proves her slot and its request carries her derived address. The
+    /// returned store directory and coordinator keep the bind alive.
     #[cfg(feature = "shielded")]
-    #[tokio::test]
-    async fn should_carry_the_derived_shielded_address_in_a_private_contact_request() {
+    async fn alice_bound_at_her_slot() -> (
+        PlatformWalletManager<RecordingPersistence>,
+        Arc<PlatformWallet>,
+        Identity,
+        Identity,
+        tempfile::TempDir,
+        Arc<NetworkShieldedCoordinator>,
+    ) {
         let mut alice = identity(ALICE_PHRASE, ALICE);
         // The key the seed derives for identity index 0, as the identity's
-        // MASTER key: what preparing the identity's shielded account proves.
+        // MASTER key: what the send proves through Alice's crypto provider.
         let master =
             key_wallet::bip32::ExtendedPrivKey::new_master(Network::Testnet, &seed(ALICE_PHRASE))
                 .expect("master key");
@@ -9070,15 +9068,13 @@ mod tests {
             disabled_at: None,
         }));
         let bob = identity(BOB_PHRASE, BOB);
-        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
-        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
 
         // A backend that keeps the viewing key, so the wallet binds.
         let persistence = RecordingPersistence::attesting(
             PersistenceCapabilities::SHIELDED_FVK_RESTART
                 .union(PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART),
         );
-        let (_alice_manager, alice_wallet) =
+        let (manager, alice_wallet) =
             wallet_on(persistence, ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
         let dir = tempfile::tempdir().expect("temporary shielded store");
         let db_path = dir.path().join("tree.sqlite");
@@ -9092,10 +9088,224 @@ mod tests {
             .bind_shielded(&seed(ALICE_PHRASE), &[0], &coordinator)
             .await
             .expect("bound");
-        alice_wallet
-            .prepare_shielded_identity_address(&seed(ALICE_PHRASE), &alice.id(), &coordinator)
+        (manager, alice_wallet, alice, bob, dir, coordinator)
+    }
+
+    /// A signer that, the first time it signs, binds Bob's seed's keys as the keys of
+    /// Alice's identity shielded account, as a Clear and a bind with another seed
+    /// would while the request is signed: after the address is derived and before the
+    /// request leaves the wallet.
+    #[cfg(feature = "shielded")]
+    struct RekeyingSigner {
+        inner: simple_signer::signer::SimpleSigner,
+        wallet: Arc<PlatformWallet>,
+        rekeyed: AtomicBool,
+    }
+
+    #[cfg(feature = "shielded")]
+    impl std::fmt::Debug for RekeyingSigner {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("RekeyingSigner").finish_non_exhaustive()
+        }
+    }
+
+    #[cfg(feature = "shielded")]
+    #[async_trait::async_trait]
+    impl Signer<IdentityPublicKey> for RekeyingSigner {
+        async fn sign(
+            &self,
+            key: &IdentityPublicKey,
+            data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
+            if !self.rekeyed.swap(true, Ordering::SeqCst) {
+                let account = shielded_identity_account_index(0).expect("identity account");
+                let other = OrchardKeySet::from_seed(&seed(BOB_PHRASE), Network::Testnet, account)
+                    .expect("other keys")
+                    .viewing_keys();
+                self.wallet
+                    .shielded_keys
+                    .write()
+                    .await
+                    .as_mut()
+                    .expect("bound")
+                    .insert(account, other);
+            }
+            self.inner.sign(key, data).await
+        }
+        async fn sign_create_witness(
+            &self,
+            key: &IdentityPublicKey,
+            data: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            self.inner.sign_create_witness(key, data).await
+        }
+        fn can_sign_with(&self, key: &IdentityPublicKey) -> bool {
+            self.inner.can_sign_with(key)
+        }
+    }
+
+    /// Whether `error` is the refusal of a request whose shielded address was derived
+    /// from keys the account is no longer bound to.
+    #[cfg(feature = "shielded")]
+    fn refused_for_rekeyed_address(error: &PlatformWalletError) -> bool {
+        matches!(error, PlatformWalletError::InvalidIdentityData(message)
+            if message.contains("no longer bound to that key"))
+    }
+
+    /// The keys of Alice's identity shielded account are replaced with another seed's
+    /// while her public request is signed. The send is refused before the broadcast:
+    /// nothing is recorded or held as unconfirmed and the pair is free again. A send
+    /// made again derives its address from the keys bound now and is broadcast.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_refuse_a_public_request_whose_address_keys_were_replaced_while_signing() {
+        use dash_sdk::query_types::IdentityContractNonceFetcher;
+
+        let (_manager, alice_wallet, alice, bob, _dir, _coordinator) =
+            alice_bound_at_her_slot().await;
+        let mut sdk = (*alice_wallet.identity().sdk).clone();
+        sdk.mock()
+            .expect_fetch(
+                (
+                    alice.id(),
+                    dashpay_contract().expect("bundled DashPay").id(),
+                ),
+                Some(IdentityContractNonceFetcher(3)),
+            )
             .await
-            .expect("the identity's shielded account is prepared");
+            .expect("the nonce read");
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let rekeying = RekeyingSigner {
+            inner: signer(ALICE_PHRASE, &alice),
+            wallet: Arc::clone(&alice_wallet),
+            rekeyed: AtomicBool::new(false),
+        };
+
+        let sent = alice_wallet
+            .identity()
+            .dashpay()
+            .send_contact_request_with_external_signer(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &rekeying,
+                &alice_crypto,
+            )
+            .await;
+        assert!(
+            rekeying.rekeyed.load(Ordering::SeqCst),
+            "the send was signed"
+        );
+        assert!(
+            sent.as_ref().is_err_and(refused_for_rekeyed_address),
+            "{sent:?}"
+        );
+        managed(&alice_wallet, ALICE, |managed| {
+            assert!(managed.dashpay().outgoing_request(&bob.id()).is_none());
+            assert!(managed
+                .dashpay()
+                .unconfirmed_public_request(&bob.id())
+                .is_none());
+            assert!(!managed.dashpay().public_contact_request_claimed(&bob.id()));
+        })
+        .await;
+
+        let again = alice_wallet
+            .identity()
+            .dashpay()
+            .send_contact_request_with_external_signer(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &signer(ALICE_PHRASE, &alice),
+                &alice_crypto,
+            )
+            .await;
+        // Broadcast: the mock answers no wait for its result, so it is unconfirmed.
+        assert!(
+            matches!(&again, Err(PlatformWalletError::Sdk(error))
+                if error.is_state_transition_result_unconfirmed()),
+            "{again:?}"
+        );
+    }
+
+    /// The keys of Alice's identity shielded account are replaced with another seed's
+    /// after her private request's address is derived and before it is paid for: the
+    /// send is refused, nothing is paid, and the reservation is released, so the next
+    /// send pays.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_refuse_a_private_request_whose_address_keys_were_replaced_before_paying() {
+        let (_manager, alice_wallet, alice, bob, _dir, _coordinator) =
+            alice_bound_at_her_slot().await;
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let rekeying = RekeyingSigner {
+            inner: signer(ALICE_PHRASE, &alice),
+            wallet: Arc::clone(&alice_wallet),
+            rekeyed: AtomicBool::new(false),
+        };
+        let view = alice_wallet.identity().dashpay();
+
+        let paid = Arc::new(Mutex::new(Vec::new()));
+        let sent = view
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &rekeying,
+                &alice_crypto,
+                keep_entry(&paid),
+            )
+            .await;
+        assert!(
+            rekeying.rekeyed.load(Ordering::SeqCst),
+            "the send was signed"
+        );
+        assert!(
+            sent.as_ref().is_err_and(refused_for_rekeyed_address),
+            "{sent:?}"
+        );
+        assert!(paid.lock().expect("paid").is_empty(), "nothing is paid");
+        assert!(!pending_to(&alice_wallet, ALICE, &bob).await);
+
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        let next = view
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &signer(ALICE_PHRASE, &alice),
+                &alice_crypto,
+                keep_entry(&kept),
+            )
+            .await;
+        // Paid for, and pending until a sync reads it back.
+        assert!(
+            matches!(
+                next,
+                Err(PlatformWalletError::PrivateContactRequestPending(_))
+            ),
+            "{next:?}"
+        );
+        assert_eq!(kept.lock().expect("kept").len(), 1, "the next send pays");
+    }
+
+    /// A private request sent with no address handed to it carries the one the
+    /// sender's wallet derives, with nothing prepared beforehand: the send
+    /// proves Alice's slot through her crypto provider, and Bob reads from the
+    /// store the address her identity shielded account derives for this
+    /// request: its sender, its recipient and its account reference.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_carry_the_derived_shielded_address_in_a_private_contact_request() {
+        let (_alice_manager, alice_wallet, alice, bob, _dir, _coordinator) =
+            alice_bound_at_her_slot().await;
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
 
         let kept = Arc::new(Mutex::new(Vec::new()));
         let sent = alice_wallet
@@ -14934,5 +15144,56 @@ mod tests {
                 .expect("the xpub opens"),
             vec![0x33; COMPACT_XPUB_LEN]
         );
+    }
+
+    /// An identity holding a key an entry can be sealed to whose id names no
+    /// hardened slot is refused by the private sync rather than read past: a
+    /// request sealed to that key would go unseen while the read to the end
+    /// clears the identity's sends and replies. (The generic private document
+    /// read lists such a key as not scanned instead.)
+    #[tokio::test]
+    async fn should_refuse_to_sync_an_identity_holding_a_key_with_no_slot() {
+        let mut alice = identity(ALICE_PHRASE, ALICE);
+        let far_key_id: KeyID = 0x8000_0000;
+        alice.public_keys_mut().insert(
+            far_key_id,
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: far_key_id,
+                purpose: Purpose::DECRYPTION,
+                security_level: SecurityLevel::MEDIUM,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(
+                    PublicKey::from_secret_key(&identity_secret_key(BOB_PHRASE, DECRYPTION_KEY_ID))
+                        .serialize()
+                        .to_vec(),
+                ),
+                disabled_at: None,
+            }),
+        );
+        let (_manager, wallet) = wallet(ALICE_PHRASE, &alice, &[&alice], vec![]).await;
+        let crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+
+        let error = wallet
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&crypto, usize::MAX)
+            .await
+            .expect_err("a key the sync cannot scan with");
+
+        assert!(
+            matches!(&error, PlatformWalletError::InvalidIdentityData(_)),
+            "{error:?}"
+        );
+        let wm = wallet.identity().wallet_manager.read().await;
+        let managed = wm
+            .get_wallet_info(&wallet.wallet_id())
+            .expect("wallet info")
+            .identity_manager
+            .managed_identity(&alice.id())
+            .expect("alice");
+        assert_eq!(managed.dashpay().private_contact_requests_position(), 0);
+        assert!(!managed.dashpay().private_contact_requests_read());
     }
 }

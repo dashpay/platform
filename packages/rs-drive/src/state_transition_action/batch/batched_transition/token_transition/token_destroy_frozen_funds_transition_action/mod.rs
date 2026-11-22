@@ -108,6 +108,7 @@ mod tests {
             storage_flags: None,
             cost: Default::default(),
             fee: None,
+            parsed_under_protocol_version: PlatformVersion::latest().protocol_version,
         });
         TokenBaseTransitionAction::V0(TokenBaseTransitionActionV0 {
             token_id: Identifier::from(TEST_TOKEN_ID),

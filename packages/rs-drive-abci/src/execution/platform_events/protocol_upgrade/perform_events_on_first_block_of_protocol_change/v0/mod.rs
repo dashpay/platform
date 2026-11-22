@@ -956,7 +956,8 @@ where
 
         // DPNS contract v3 (v15 note 1): its preorders are unsalted, one per owner and name,
         // which no contract update can turn a unique index into, so the `preorder` type is
-        // rebuilt and every preorder made before this block is deleted, unrefunded.
+        // rebuilt and every preorder made before this block is deleted, unrefunded. The
+        // `tombstone` type v3 adds is created as a contract update creates a type it adds.
         let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)?;
 
         self.drive.apply_contract_rebuilding_document_types(

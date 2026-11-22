@@ -70,6 +70,23 @@ pub trait ContactCryptoProvider {
         path: &key_wallet::bip32::DerivationPath,
     ) -> Result<key_wallet::bip32::ExtendedPubKey, PlatformWalletError>;
 
+    /// Extended public keys at each of `paths`, in their order: what
+    /// [`Self::receiving_xpub`] derives, for several paths at once. A provider
+    /// backed by a seed it must resolve resolves it once for all of them.
+    ///
+    /// Defaulted to one [`Self::receiving_xpub`] call per path, so adding this
+    /// method is not a source-breaking change.
+    async fn extended_public_keys(
+        &self,
+        paths: &[key_wallet::bip32::DerivationPath],
+    ) -> Result<Vec<key_wallet::bip32::ExtendedPubKey>, PlatformWalletError> {
+        let mut keys = Vec::with_capacity(paths.len());
+        for path in paths {
+            keys.push(self.receiving_xpub(path).await?);
+        }
+        Ok(keys)
+    }
+
     /// ECDH shared secret between our key at `path` and the contact's `peer`
     /// pubkey. Returned in [`zeroize::Zeroizing`] so the DIP-15 friendship AES
     /// key is scrubbed on drop — it stays wrapped through the send / accept /
@@ -283,6 +300,8 @@ pub(crate) struct SeedCryptoProvider {
     /// How many times the private document scan keys were derived: once per scan call, a
     /// page's or a batch's.
     pub(crate) scan_key_derivations: std::sync::atomic::AtomicUsize,
+    /// How many `extended_public_keys` calls it answered, each for all its paths at once.
+    pub(crate) public_key_batches: std::sync::atomic::AtomicUsize,
 }
 
 #[cfg(test)]
@@ -294,6 +313,7 @@ impl SeedCryptoProvider {
             wallet: Wallet::from_seed_bytes(seed, network, WalletAccountCreationOptions::None)
                 .expect("test seed wallet"),
             scan_key_derivations: std::sync::atomic::AtomicUsize::new(0),
+            public_key_batches: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 }
@@ -308,6 +328,25 @@ impl ContactCryptoProvider for SeedCryptoProvider {
         self.wallet.derive_extended_public_key(path).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!("test receiving_xpub: {e}"))
         })
+    }
+
+    async fn extended_public_keys(
+        &self,
+        paths: &[key_wallet::bip32::DerivationPath],
+    ) -> Result<Vec<key_wallet::bip32::ExtendedPubKey>, PlatformWalletError> {
+        // Once for the batch, as a signer-backed provider resolves its seed once.
+        self.public_key_batches
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        paths
+            .iter()
+            .map(|path| {
+                self.wallet.derive_extended_public_key(path).map_err(|e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "test extended_public_keys: {e}"
+                    ))
+                })
+            })
+            .collect()
     }
 
     async fn ecdh_shared_secret(
@@ -1121,12 +1160,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             ),
         }
 
-        // 4e. The sender's shielded payment address for this contact, when the
-        //     identity's shielded account was proven against the seed in this
-        //     session and the network's contact requests carry one; the request
-        //     goes without it otherwise.
+        // 4e. The sender's shielded payment address for this contact, when
+        //     `crypto` proves the identity's slot (the identity carries the master
+        //     key the seed derives there), the slot's shielded account is bound
+        //     and the network's contact requests carry one; the request goes
+        //     without it otherwise.
         let shielded_address = self
-            .contact_shielded_address(sender_identity_id, recipient_identity_id, account_reference)
+            .contact_shielded_address(
+                sender_identity_id,
+                recipient_identity_id,
+                account_reference,
+                crypto,
+            )
             .await?;
 
         // 5. Build the signing key reference for document signing.
@@ -1184,7 +1229,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 account_reference,
                 account_label,
                 auto_accept_proof,
-                shielded_address,
+                shielded_address: shielded_address.as_ref().map(|derived| derived.address),
                 shared_secret,
                 expected_recipient_pubkey: recipient_enc_pubkey,
                 xpub_bytes,
@@ -1212,6 +1257,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let SignedContactRequest {
             state_transition, ..
         } = signed;
+        // The last step before the request leaves the wallet, under the gate the
+        // signature took: its shielded address was derived from the key the account
+        // is still bound to, or nothing is broadcast and the send can be made again. A check,
+        // not a fence: a re-key that completes before it is caught; one that completes
+        // between it and the node accepting the request is not, as that window is the
+        // broadcast itself.
+        if let Some(shielded_address) = &shielded_address {
+            self.check_contact_shielded_address(shielded_address)
+                .await?;
+        }
         let delivery = Box::pin(broadcast_tracking_delivery(&self.sdk, &state_transition)).await;
         let confirmed = match delivery {
             BroadcastDelivery::NeverDelivered(error) => {

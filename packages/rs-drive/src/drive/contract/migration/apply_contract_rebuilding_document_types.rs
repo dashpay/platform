@@ -191,11 +191,24 @@ mod tests {
             )
             .expect("DPNS v2 is stored");
         let dpns_id = dpns_v2.id().to_buffer();
-        // A committed-state read puts DPNS v2 in the global cache
+        // A committed-state read at the block's protocol version puts DPNS v2 in the global
+        // cache, where a read in the block would find it unless the rebuild keeps it from
+        // falling back there
         drive
-            .get_contract_with_fetch_info(dpns_id, true, None, platform_version_14)
+            .get_contract_with_fetch_info(dpns_id, true, None, platform_version)
             .expect("DPNS is read")
             .expect("DPNS is stored");
+        let cached = drive
+            .cache
+            .data_contracts
+            .get_parsed_under(dpns_id, true, platform_version)
+            .expect("a read in the block would be served the cached DPNS v2");
+        assert!(cached
+            .contract
+            .document_type_for_name("preorder")
+            .expect("DPNS has a preorder type")
+            .indexes()
+            .contains_key("saltedHash"));
 
         let dpns_v3 = load_system_data_contract(SystemDataContract::DPNS, platform_version)
             .expect("DPNS v3 loads");

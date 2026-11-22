@@ -32,6 +32,11 @@ impl Drive {
             TreeType::ProvableCountProvableSumTree => {
                 Element::empty_provable_count_provable_sum_tree()
             }
+            TreeType::ProvableCountProvableBigSumTree => {
+                Element::empty_provable_count_provable_big_sum_tree()
+            }
+            TreeType::CountBigSumTree => Element::empty_count_big_sum_tree(),
+            TreeType::ProvableBigSumTree => Element::empty_provable_big_sum_tree(),
             TreeType::ProvableSumTree => Element::empty_provable_sum_tree(),
             TreeType::CommitmentTree(chunk_power) => Element::empty_commitment_tree(chunk_power)?,
             TreeType::MmrTree => Element::empty_mmr_tree(),
@@ -44,6 +49,7 @@ impl Drive {
             // `fees::op`'s `empty_tree_operation_for_known_path_key`.
             TreeType::ProvableSumIndexedTree => Element::empty_provable_sum_indexed_tree(),
             TreeType::ProvableCountIndexedTree => Element::empty_provable_count_indexed_tree(),
+            TreeType::ProvableBigSumIndexedTree => Element::empty_provable_big_sum_indexed_tree(),
             // The multi-axis variant's axes TLV is not carried by `TreeType`,
             // so this generic path cannot describe the `Element` to insert.
             // Ranked index creation uses the axis-taking helpers instead
@@ -54,6 +60,15 @@ impl Drive {
                      ProvableCountProvableSumIndexedTree — the ranked axis set is not carried \
                      by TreeType; use \
                      batch_insert_empty_provable_count_provable_sum_indexed_tree instead.",
+                )))
+            }
+            // Like the variant above, its axes are not carried by `TreeType`,
+            // and Drive creates none yet.
+            TreeType::ProvableCountProvableBigSumIndexedTree => {
+                return Err(Error::Drive(DriveError::NotSupported(
+                    "grove_insert_empty_tree cannot create a \
+                     ProvableCountProvableBigSumIndexedTree — the ranked axis set is not \
+                     carried by TreeType",
                 )))
             }
             // The private document store's entry size is not carried by

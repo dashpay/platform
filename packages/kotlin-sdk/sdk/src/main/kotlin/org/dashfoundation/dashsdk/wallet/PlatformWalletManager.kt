@@ -287,6 +287,34 @@ class PlatformWalletManager(
     /** Hot stream of Rust-owned sync events for the services to reduce. */
     val syncEvents: SharedFlow<WalletSyncEvent> = _syncEvents.asSharedFlow()
 
+    private val _shieldedBalances =
+        MutableStateFlow<Map<String, ShieldedBalanceUpdate>>(emptyMap())
+
+    /**
+     * The latest shielded balance update of each wallet, by hex wallet id,
+     * as Rust announced it (`on_shielded_balance_changed_fn`). Rust sends an
+     * update whenever a wallet's balance state changes, so this is the
+     * balance to show: nothing reads or adds one up on the Kotlin side. A
+     * wallet without an entry has not been announced yet. A state, not an
+     * event stream, so a collector that starts late still sees the latest.
+     * Each update is the latest state Rust read, not one per ledger change.
+     * Emptied when the manager closes: a closed manager's balances are no
+     * longer anyone's.
+     */
+    val shieldedBalances: StateFlow<Map<String, ShieldedBalanceUpdate>> =
+        _shieldedBalances.asStateFlow()
+
+    /**
+     * Guards [shieldedBalances] together with [shieldedBalancesClosed]: an
+     * update is published and teardown empties the map under it, so an
+     * update that arrives while the manager closes cannot refill the map,
+     * also when the map was empty before and after.
+     */
+    private val shieldedBalancesLock = Any()
+
+    /** Set when teardown starts. Read and written under [shieldedBalancesLock]. */
+    private var shieldedBalancesClosed = false
+
     // ── Children (retained for the manager's lifetime) ────────────────
     //
     // NOTE: [persistenceHandler] is declared below, after [mnemonicResolver],
@@ -413,6 +441,37 @@ class PlatformWalletManager(
 
         override fun onShieldedTreeProgress(leavesCommitted: Long, totalTarget: Long) {
             _syncEvents.tryEmit(WalletSyncEvent.ShieldedTreeProgress(leavesCommitted, totalTarget))
+        }
+
+        override fun onShieldedBalanceChanged(
+            walletId: ByteArray,
+            revision: Long,
+            status: Int,
+            ordinarySpendableCredits: Long,
+            ordinaryBalanceEstablished: Boolean,
+            accounts: LongArray,
+        ) {
+            // Runs on a native thread: an exception must not travel back
+            // into Rust. An update that cannot be read is dropped, and the
+            // wallet keeps the last one that could.
+            val update = try {
+                decodeShieldedBalanceUpdate(
+                    walletId,
+                    revision,
+                    status,
+                    ordinarySpendableCredits,
+                    ordinaryBalanceEstablished,
+                    accounts,
+                )
+            } catch (e: IllegalStateException) {
+                android.util.Log.w("PlatformWalletManager", "Dropped a shielded balance update: ${e.message}")
+                return
+            }
+            synchronized(shieldedBalancesLock) {
+                if (!shieldedBalancesClosed) {
+                    _shieldedBalances.value = latestShieldedBalances(_shieldedBalances.value, update)
+                }
+            }
         }
     }
 
@@ -2968,6 +3027,12 @@ class PlatformWalletManager(
     }
 
     private suspend fun closeInternal(bundle: Long) {
+        // The native emitter stops with the manager, so what it last sent
+        // would otherwise stay on screen for good.
+        synchronized(shieldedBalancesLock) {
+            shieldedBalancesClosed = true
+            _shieldedBalances.value = emptyMap()
+        }
         // Stop the progress poll loops + event fan-out scope before teardown
         // so no collector touches a destroyed handle.
         progressPollJob?.cancel()

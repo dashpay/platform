@@ -1197,12 +1197,14 @@ mod tests {
             proof_root, live_root,
             "the depth proof authenticates the state holding the orders"
         );
-        let sums: Vec<i64> = elements
+        // The ask type's `remaining` declares no bound past which a 64-bit sum could not
+        // hold it, so its sums are kept in 128 bits: read at that width
+        let sums: Vec<i128> = elements
             .iter()
             .filter_map(|(_, _, element)| {
                 element
                     .as_ref()
-                    .map(|element| element.sum_value_or_default())
+                    .map(|element| element.big_sum_value_or_default())
             })
             .collect();
         assert_eq!(

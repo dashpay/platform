@@ -364,6 +364,7 @@ mod owner_reference_tests {
                     &DocumentSystemValues::default(),
                     changed_fields.as_ref(),
                     None,
+                    false,
                     &platform_ref,
                     &BlockInfo::default(),
                     &mut Vec::new(),

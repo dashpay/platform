@@ -1345,3 +1345,25 @@ fn should_pass_a_byte_array_holding_integers_that_are_not_bytes_at_protocol_vers
         assert!(errors.is_empty(), "{properties:?}: {errors:?}");
     }
 }
+
+/// An identifier written as text is refused by the field size check past 5 KiB (10417) and by
+/// the schema check below it (10101), whether it is base 58 or not. The byte array reading tells
+/// whether the serializer could read the text, which for a text is whether it is base 58,
+/// without decoding it: a full decode of a text of a million characters takes minutes, as base
+/// 58 decoding takes time quadratic in a text's length.
+#[test]
+fn should_refuse_an_identifier_written_as_a_long_text_without_decoding_it() {
+    let contract = byte_array_contract();
+    let latest = PlatformVersion::latest();
+    for (owner, code) in [
+        ("2".repeat(1_000_000), 10417),
+        (format!("{}0", "2".repeat(999_999)), 10417),
+        ("2".repeat(5_000), 10101),
+        (format!("{}0", "2".repeat(4_999)), 10101),
+    ] {
+        let properties = platform_value!({ "owner": owner });
+        let errors = document_errors(&contract, properties, latest);
+        let codes: Vec<u32> = errors.iter().map(|error| error.code()).collect();
+        assert_eq!(codes, vec![code], "{errors:?}");
+    }
+}

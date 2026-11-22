@@ -25,8 +25,8 @@
 //! exactly as the ranked equivalents live in `ranked_proof_helpers` —
 //! it needs the data contract, which this crate does not carry.
 
-use crate::error::MapGroveDbError;
 use crate::proof::document_ranked::{ranked_entry_from_proto, result_variant_name};
+use crate::verify::MapProvedSumError;
 use crate::verify::{document_query_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::get_documents_response::get_documents_response_v1::{
@@ -182,7 +182,7 @@ pub fn verify_having_range_proof(
             document_query_proof_bytes(proof, mtd, platform_version)?,
             platform_version,
         )
-        .map_drive_error(proof, mtd)?;
+        .map_proved_sum_error(proof, mtd, provider)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 

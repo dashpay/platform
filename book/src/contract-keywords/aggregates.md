@@ -155,6 +155,7 @@ A range total costs more on each write than a per-value total, since every node 
 - From protocol version 14, on a type with a [contested index](contested.md), the summed property declares a `minimum` of at least -134217728 and a `maximum` of at most 134217728 (±2^27).
 - From protocol version 14, on a type with a [`ttl`](ttl.md), the summed property declares a `minimum` of at least 0, or a `minimum` of at least -134217728 and a `maximum` of at most 134217728 (±2^27).
 - From protocol version 15, a summed property declares a `minimum` of at least -134217728 and a `maximum` of at most 134217728 (±2^27), or a `minimum` of at least 0 on a type that declares `documentsSummable` or `documentsAverageable` on it. See [Writes past a sum](#writes-past-a-sum). Before protocol version 15, on other types each value only has to fit a signed 64-bit integer.
+- From protocol version 15, the summed property is not listed in [`transient`](transient.md). A transient value is never stored, and the type's sums read the stored value of each document. A contract registered earlier may hold such a type; a document create on it is refused with the same error.
 - The shorthands agree with their longhand where both are written, and no explicit `false` or `"notCountable"` contradicts them.
 - Each `range*` flag has its prerequisite, as listed above.
 - The meta-schema refuses a malformed value (`JsonSchemaError`, 10101).

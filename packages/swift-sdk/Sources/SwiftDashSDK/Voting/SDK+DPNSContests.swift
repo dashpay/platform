@@ -71,7 +71,8 @@ extension SDK {
   // MARK: - Label normalization
 
   /// Homograph-normalize a DPNS label the way Platform does before indexing
-  /// it (`o` → `0`, `i`/`l` → `1`, lowercased): `"Alice"` → `"a11ce"`.
+  /// it (`o` → `0`, `i`/`l` → `1`, lowercased): `"Alice"` → `"a11ce"`. It
+  /// takes a bare label, not a full name: `"alice.dash"` is not stripped.
   ///
   /// Every read and write that addresses a vote poll by label must use the
   /// normalized form — Platform stores nothing under the raw form.

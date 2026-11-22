@@ -7,6 +7,10 @@ enum SdkRebuildOutcome: Equatable {
     case busy
     /// The app had left the network the rebuild was started on; nothing ran.
     case networkChanged
+    /// An asset-lock funding or an identity registration was in progress;
+    /// nothing ran. Stopping SPV would starve one still waiting for a
+    /// ChainLock, and a manager shutdown would then wait for it forever.
+    case fundingInFlight
     /// SPV did not stop; nothing changed.
     case stopFailed
     /// The SDK build or the wallet manager's move failed and was reported.
@@ -25,23 +29,29 @@ enum SdkRebuildOutcome: Equatable {
 ///
 /// 1. The app must still be on `network`. A rebuild started before another
 ///    one published a different network changes nothing.
-/// 2. `stopSpv`. A running SPV client must never disagree with the settings
+/// 2. `fundingInFlight` must be false. A funding waiting for a ChainLock
+///    cannot get it once SPV has stopped, and it holds the wallet manager's
+///    native-operation admission, so a manager shutdown in step 6 would wait
+///    for it forever. The check runs before the first suspension, and
+///    `AppState.rebuildSdk` reserves the rebuild before it too, so on the
+///    main actor no funding can start between the check and the stop.
+/// 3. `stopSpv`. A running SPV client must never disagree with the settings
 ///    the new SDK is built from.
-/// 3. `prepare` writes settings the build reads, such as the Docker
+/// 4. `prepare` writes settings the build reads, such as the Docker
 ///    endpoints.
-/// 4. `buildSdk` builds the SDK for `target` without publishing it, or
+/// 5. `buildSdk` builds the SDK for `target` without publishing it, or
 ///    returns `nil` after reporting its failure.
-/// 5. `activateManager` moves the wallet manager onto that SDK, or returns
+/// 6. `activateManager` moves the wallet manager onto that SDK, or returns
 ///    false after reporting a failure. The manager takes its SDK clone, and
 ///    the adaptive provider's SPV source slot, from this SDK. It may suspend
 ///    while the manager it replaces shuts down, and swaps the active manager
 ///    only after its last suspension.
-/// 6. `publish` makes `target` and the SDK current. The manager already
+/// 7. `publish` makes `target` and the SDK current. The manager already
 ///    runs on that SDK, so the selected network, the published SDK and the
 ///    active manager change in the same main-actor turn.
-/// 7. `rebindWalletScopedServices` binds the services to the active manager.
+/// 8. `rebindWalletScopedServices` binds the services to the active manager.
 ///
-/// If step 4 or 5 fails, `rollBack` undoes `prepare`. Nothing was published,
+/// If step 5 or 6 fails, `rollBack` undoes `prepare`. Nothing was published,
 /// so the selected network, the published SDK and the active manager still
 /// match.
 ///
@@ -52,6 +62,7 @@ func rebuildSdkAndMoveWalletManager<Sdk>(
     to target: Network,
     stopSpv: @MainActor () async -> Bool,
     currentNetwork: @MainActor () -> Network,
+    fundingInFlight: @MainActor () -> Bool,
     prepare: @MainActor () -> Void,
     buildSdk: @MainActor (Network) async -> Sdk?,
     activateManager: @MainActor (Network, Sdk) async -> Bool,
@@ -60,6 +71,7 @@ func rebuildSdkAndMoveWalletManager<Sdk>(
     rebindWalletScopedServices: @MainActor () -> Void
 ) async -> SdkRebuildOutcome {
     guard currentNetwork() == network else { return .networkChanged }
+    guard !fundingInFlight() else { return .fundingInFlight }
     guard await stopSpv() else { return .stopFailed }
     prepare()
     guard let sdk = await buildSdk(target), await activateManager(target, sdk) else {

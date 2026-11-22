@@ -48,11 +48,21 @@ pub struct DataContractMethodVersions {
     pub equal_ignoring_time_fields: FeatureVersion,
     pub registration_cost: FeatureVersion,
     /// `DataContract::validate_schema_patterns`: refuses a contract whose document schemas and
-    /// `$defs` hold more patterns than `max_contract_schema_patterns`, or one that does not
-    /// compile within `max_schema_pattern_compiled_size`. `None` on versions that predate the
+    /// `$defs` hold more patterns than `max_contract_schema_patterns`, patterns of more than
+    /// `max_contract_schema_pattern_bytes` bytes together, or one longer than
+    /// `max_schema_pattern_bytes`, folding more than `max_schema_pattern_case_folded_code_points`
+    /// code points, or not compiling within `max_schema_pattern_compiled_size`, each read
+    /// before any is compiled. `None` on versions that predate the
     /// rule: the method refuses nothing there, so the shipped
     /// `create_document_types_from_document_schemas` 1 that calls it is inert.
     pub validate_schema_patterns: OptionalFeatureVersion,
+    /// `DataContract::validate_no_transient_summed_property` and the same method of a
+    /// `DocumentTypeRef`: refuses a document type that sums a property it lists as transient.
+    /// Contract registration and update run it on the contract they would store, and a document
+    /// create on the type it writes. `None` on versions that predate the rule: the method refuses
+    /// nothing there, so the shipped contract create and update and batch transformers that call
+    /// it are inert.
+    pub validate_no_transient_summed_property: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -15,6 +15,7 @@ use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::array::ArrayItemType;
 use crate::data_contract::document_type::{DocumentProperty, DocumentPropertyType};
 use indexmap::IndexMap;
+use platform_value::system_bytes::MAX_BASE58_IDENTIFIER_LENGTH;
 use platform_value::{platform_value, Value};
 use std::collections::BTreeSet;
 
@@ -44,11 +45,15 @@ enum BytesReading {
 }
 
 impl BytesReading {
-    /// Whether the serializer reads `value` as bytes, as it reads this kind.
+    /// Whether the serializer reads `value` as bytes, as it reads this kind. A text it reads
+    /// as an identifier when it is base 58, which is told without decoding a long one: base 58
+    /// decoding takes time quadratic in the text's length.
     fn reads(self, value: &Value) -> bool {
         match self {
             BytesReading::Binary => value.to_binary_bytes().is_ok(),
-            BytesReading::Identifier => value.to_identifier_bytes().is_ok(),
+            BytesReading::Identifier => value
+                .to_identifier_bytes_unless_text_longer_than(MAX_BASE58_IDENTIFIER_LENGTH)
+                .is_ok(),
         }
     }
 }

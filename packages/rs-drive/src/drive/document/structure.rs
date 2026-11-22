@@ -15,7 +15,7 @@ const RETAINED_REVISION: &str =
     "contracts.contract.documents.document_type.history.document.revision";
 const INDEX_PROPERTY: &str = "contracts.contract.documents.document_type.index_property";
 
-const PRIMARY_KEY_TREES: [ElementKind; 9] = [
+const PRIMARY_KEY_TREES: [ElementKind; 13] = [
     ElementKind::Tree,
     ElementKind::CountTree,
     ElementKind::ProvableCountTree,
@@ -25,9 +25,14 @@ const PRIMARY_KEY_TREES: [ElementKind; 9] = [
     ElementKind::ProvableCountSumTree,
     ElementKind::ProvableCountProvableSumTree,
     ElementKind::PrivateDocumentStore,
+    // A type that keeps its sums in 128 bits (protocol version 15)
+    ElementKind::BigSumTree,
+    ElementKind::ProvableBigSumTree,
+    ElementKind::CountBigSumTree,
+    ElementKind::ProvableCountProvableBigSumTree,
 ];
 
-const INDEX_PROPERTY_TREES: [ElementKind; 10] = [
+const INDEX_PROPERTY_TREES: [ElementKind; 14] = [
     ElementKind::Tree,
     ElementKind::CountTree,
     ElementKind::ProvableCountTree,
@@ -38,6 +43,11 @@ const INDEX_PROPERTY_TREES: [ElementKind; 10] = [
     ElementKind::ProvableCountIndexedTree,
     ElementKind::ProvableSumIndexedTree,
     ElementKind::ProvableCountProvableSumIndexedTree,
+    // A type that keeps its sums in 128 bits (protocol version 15)
+    ElementKind::ProvableBigSumTree,
+    ElementKind::ProvableCountProvableBigSumTree,
+    ElementKind::ProvableBigSumIndexedTree,
+    ElementKind::ProvableCountProvableBigSumIndexedTree,
 ];
 const INDEX_PROPERTY_NOTE: &str = "A plain tree unless the index is range \
                                    countable, range summable or ranked, or the \
@@ -222,6 +232,10 @@ fn index_value() -> StructureNode {
             ElementKind::ProvableCountSumTree,
             ElementKind::ProvableCountProvableSumTree,
             ElementKind::SumItem,
+            // A type that keeps its sums in 128 bits (protocol version 15)
+            ElementKind::BigSumTree,
+            ElementKind::CountBigSumTree,
+            ElementKind::ProvableCountProvableBigSumTree,
         ],
         "A plain tree unless the index is countable or \
          summable, so each value carries its count or \
@@ -249,6 +263,11 @@ fn index_value() -> StructureNode {
                     ElementKind::ProvableCountProvableSumTree,
                     ElementKind::Reference,
                     ElementKind::ReferenceWithSumItem,
+                    // A type that keeps its sums in 128 bits (protocol version 15)
+                    ElementKind::BigSumTree,
+                    ElementKind::ProvableBigSumTree,
+                    ElementKind::CountBigSumTree,
+                    ElementKind::ProvableCountProvableBigSumTree,
                 ],
                 "The end of an index: a tree of members, or for a \
                  unique index the one reference itself.",

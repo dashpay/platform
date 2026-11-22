@@ -929,6 +929,58 @@ mod tests {
         assert_eq!(ext_doc.document.owner_id(), recovered.document.owner_id());
     }
 
+    /// A contract registered before protocol version 15 may hold a type that sums a property it
+    /// lists as transient, which registration and update refuse from 15. Decoding a document
+    /// together with such a contract is not a registration: it decodes at the latest protocol
+    /// version, its contract checked as a contract read from the network is.
+    #[cfg(feature = "validation")]
+    #[test]
+    fn extended_document_round_trip_with_a_contract_summing_a_transient_property() {
+        use crate::data_contract::schema::DataContractSchemaMethodsV0;
+        use platform_value::platform_value;
+
+        let platform_version = PlatformVersion::latest();
+        let mut contract = load_dashpay_contract(platform_version);
+        contract
+            .set_document_schema(
+                "tip",
+                platform_value!({
+                    "type": "object",
+                    "documentsSummable": "amount",
+                    "properties": {
+                        "amount": { "type": "integer", "minimum": 0, "maximum": 1000, "position": 0 },
+                    },
+                    "required": ["amount"],
+                    "transient": ["amount"],
+                    "additionalProperties": false,
+                }),
+                false,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("expected a contract stored with the type to load");
+        let document = contract
+            .document_type_for_name("tip")
+            .expect("expected the tip document type")
+            .random_document(Some(7), platform_version)
+            .expect("expected a random tip");
+        let ext_doc = ExtendedDocumentV0::from_document_with_additional_info(
+            document,
+            contract,
+            "tip".to_string(),
+            None,
+        );
+
+        let serialized = ext_doc
+            .serialize_to_bytes(platform_version)
+            .expect("serialize_to_bytes should succeed");
+        let recovered = ExtendedDocumentV0::from_bytes(&serialized, platform_version)
+            .expect("a document of a contract registered before the rule must decode");
+
+        assert_eq!(recovered.document_type_name, "tip");
+        assert_eq!(ext_doc.document.id(), recovered.document.id());
+    }
+
     // ================================================================
     //  validate
     // ================================================================

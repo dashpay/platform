@@ -225,7 +225,7 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "multipleChoiceProposals", label: "Multiple Choice Proposals", description: "Browse, file, edit, enter choices for and vote on questions with several answers (protocol version 15)"),
                 QueryDefinition(name: "getContestedResources", label: "Get Contested Resources", description: "Get list of contested resources"),
                 QueryDefinition(name: "getContestedResourceVoteState", label: "Get Contested Resource Vote State", description: "Get the current vote state for a contested resource"),
-                QueryDefinition(name: "getContestedResourceVotersForIdentity", label: "Get Contested Resource Voters for Identity", description: "Get voters who voted for a specific identity in a contested resource"),
+                QueryDefinition(name: "getContestedResourceVotersForIdentity", label: "Get Contested Resource Voters for Identity", description: "Get voters who voted for a specific identity in a contested resource. Live votes only: an ended contest returns none, so empty does not mean nobody voted"),
                 QueryDefinition(name: "getContestedResourceIdentityVotes", label: "Get Contested Resource Identity Votes", description: "Get all votes cast by a specific identity"),
                 QueryDefinition(name: "getVotePollsByEndDate", label: "Get Vote Polls by End Date", description: "Get vote polls within a time range")
             ]

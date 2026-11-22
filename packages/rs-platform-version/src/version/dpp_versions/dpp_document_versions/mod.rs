@@ -4,6 +4,7 @@ pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPDocumentVersions {
@@ -31,4 +32,9 @@ pub struct DocumentMethodVersions {
     /// the array keys the document by (protocol version 14). `None` before: no index can
     /// name a typed array there.
     pub get_raw_array_elements_for_document_type: OptionalFeatureVersion,
+    /// Reads a serialized document's id and revision from the fields its serialization format
+    /// writes ahead of its properties, without decoding them (`Document::id_and_revision_from_bytes`),
+    /// as the protocol version 15 migration of retained document histories does. `None` before:
+    /// nothing reads them that way.
+    pub id_and_revision_from_bytes: OptionalFeatureVersion,
 }

@@ -29,7 +29,11 @@ use super::{
 ///   (`SYSTEM_DATA_CONTRACT_VERSIONS_V4`) declares their checks as schema keywords; and with a
 ///   refusal of a document transition's replace or delete of a token market contract order
 ///   (`ask` and `bid`), as only the token marketplace transitions write them. That contract
-///   exists from protocol version 16, so nothing matches these bindings before it.
+///   exists from protocol version 16, so nothing matches these bindings before it. Bindings 3
+///   also bind the delete of a DPNS `domain` to `delete_domain_data_trigger` (`Some(0)`, `None`
+///   in every earlier table), where v2 rejected it: the DPNS contract v3 lets a name's owner
+///   delete it, and the trigger refuses the delete of a contested name alone, which can only be
+///   tombstoned.
 /// - the batch `advanced_structure` 2: v1, then the structure checks of token actions protocol
 ///   v15 introduces, which read only the contract the action carries and so run in check_tx too.
 ///   A `TokenConfigUpdate` can make a token tradeable only if it is transferable. A document
@@ -37,6 +41,10 @@ use super::{
 ///   unpaid, where every other advanced structure failure bumps the signer's nonce.
 /// - the masternode vote `transform_into_action`, 1 rather than 0: a vote on a yes/no poll looks up
 ///   the masternode's previous answer on that poll.
+/// - the masternode vote `state`, 2 rather than 1: a vote on a contest its end left open
+///   (`check_for_ended_vote_polls` 2), which the end date `VOTE_POLLS_LEFT_OPEN_END_DATE` lists,
+///   is refused as a vote on a finished contest is, so no vote on it is cast or changed after
+///   its end.
 /// - the contract update `transform_into_action` 1: v0, then in check_tx and recheck, which run no
 ///   state validation, the updated contract is held to the compiled size cap with its time fields
 ///   at their widest, a bound on what a block measures once it restores the stored contract's
@@ -55,7 +63,16 @@ use super::{
 ///   lookup, so a DPNS domain create costs what it did.
 /// - `document_reference_validation` 1: v0, but the `refersTo` lookup of a reference declaring
 ///   `consume` keeps the commitment it finds in the `ConsumedDocument`, so the create conversion 1
-///   deletes the commitment from it without reading it again. Every lookup reads as v0's does.
+///   deletes the commitment from it without reading it again, and a create that opens or joins
+///   a contest reads no competitors of a `chooseFirst` the contest decides: the contest is
+///   decided by its index values, `validWhen` (as the `findBy` function) reads exactly those
+///   values' properties, `by` is `$createdAtBlockHeight` ascending alone, and the reference
+///   declares `minimumAgeBlocks`, which the writer's own commitment must still meet. A
+///   descending or longer `by`, or no `minimumAgeBlocks`, keeps the scan. Every other lookup
+///   reads as v0's does.
+/// - `choose_first_reservation` 1: v0, and for each competitor the `chooseFirst` scan may read,
+///   the double SHA-256 of the create's `validWhen` preimage, which `document_reference_validation`
+///   1 bills in full for every competitor it hashes. Mempool admission only.
 /// - the contract user moderation `transform_into_action`, 1 rather than 0: a moderator's
 ///   document field change reads the stored document with its stored element's storage flags
 ///   (`query_documents_with_flags`), and the action carries the owner they name, so that the
@@ -79,12 +96,23 @@ use super::{
 ///   `document_erase_transition_structure_validation` and
 ///   `document_erase_transition_state_validation` are `Some(0)`: an erase must name an
 ///   erasable type and a deleted document, with its owner's authorization to begin.
+///   `document_erase_transition_refund_recipient_reservation` is `Some(0)`: check tx reserves,
+///   for each erase of a batch whose state it does not validate, the refund work erase state
+///   validation bills in the block.
 ///
 /// - document create `state_validation` 3 and document replace `state_validation` 2 (1 before)
 ///   hold a write to the total its type keeps of its summed property (`documentsSummable` or
 ///   `documentsAverageable`): a create outside a contest, or a replace raising the property,
 ///   that would take the total past the most the type's sums hold is refused
 ///   (`DocumentSumOverflowError`, 40154).
+/// - `validate_shielded_proof` 2: v1, except that the token bundle of
+///   `TokenShieldedTransferWithShieldedFee`, `TokenUnshieldWithShieldedFee` and
+///   `TokenPurchaseFromShieldedPool` is verified over its kind's preimage followed by the fee
+///   bundle's Orchard commitment (`dpp.methods.token_pool_paid_fee_binding`), the fee bundle being
+///   rebuilt first.
+/// - contract create `basic_structure` 3: v2, then every object of the contract's document
+///   schemas and `$defs` must list its members in position order (`InvalidContractStructure`),
+///   so the order its members are stored in, the map's, is their position order (v15 note 49).
 ///
 /// v10 remains unchanged for `PROTOCOL_VERSION_14` chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
@@ -111,6 +139,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
             },
             masternode_vote_state_transition: DriveAbciStateTransitionValidationVersion {
                 transform_into_action: 1, // a vote on a yes/no poll looks up the masternode's previous answer
+                state: 2,                 // refuses a vote on a contest its end left open
                 ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
                     .state_transitions
                     .masternode_vote_state_transition
@@ -120,6 +149,12 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                 ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
                     .state_transitions
                     .contract_user_moderation_state_transition
+            },
+            contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: Some(3), // every object of a new contract lists its members in position order
+                ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
+                    .state_transitions
+                    .contract_create_state_transition
             },
             contract_update_state_transition: DriveAbciStateTransitionValidationVersion {
                 transform_into_action: 1, // check_tx holds the update to the compiled size cap
@@ -132,15 +167,19 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                 document_delete_transition_state_validation: 1, // the upstream owner, nonce and constraint checks also cover a history delete
                 document_erase_transition_structure_validation: Some(0), // an erase requires a permanent erasable history type
                 document_erase_transition_state_validation: Some(0), // a deleted document needs owner authorization to start erasure
+                document_erase_transition_refund_recipient_reservation: Some(0), // check tx reserves the refund work an erase is billed for
                 advanced_structure: 2, // a tradeable token must be transferable, checked in check_tx too
-                document_reference_validation: 1, // a consumed commitment keeps what its lookup read
+                document_reference_validation: 1, // a consumed commitment keeps what its lookup read; a create its contest decides reads no chooseFirst competitors
+                choose_first_reservation: 1, // also each competitor's validWhen hash, which document_reference_validation 1 bills in full
+                reference_lookup_reservation: 0,
                 document_create_transition_structure_validation: 2, // a decision proposal states its fund, a rule within the limits and an end date one to four weeks away; the poll a contested create names is compared with the expected one by what names the index
                 document_create_transition_state_validation: 3, // a non-contested create cannot take the values of a live contest its index values do not decide, nor raise the total its type keeps of its summed property past what the type's sums hold
                 document_replace_transition_state_validation: 2, // a replace cannot raise the total its type keeps of its summed property past what the type's sums hold
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
-                    bindings: 3, // no DashPay bindings (DashPay v3 declares their checks); also lists the token market order rejects, unreachable before that contract exists (protocol version 16)
+                    bindings: 3, // no DashPay bindings (DashPay v3 declares their checks); the DPNS domain delete runs delete_domain_data_trigger, which refuses a contested name alone; also lists the token market order rejects, unreachable before that contract exists (protocol version 16)
                     triggers: DriveAbciValidationDataTriggerVersions {
                         create_domain_data_trigger: 2,
+                        delete_domain_data_trigger: Some(0),
                         ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
                             .state_transitions
                             .batch_state_transition
@@ -161,5 +200,6 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                 },
             ..DRIVE_ABCI_VALIDATION_VERSIONS_V10.state_transitions
         },
+        validate_shielded_proof: 2, // the token bundle of a token pool transition paid from the credit pool binds its fee bundle
         ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
     };

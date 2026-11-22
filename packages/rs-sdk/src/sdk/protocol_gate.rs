@@ -71,9 +71,12 @@ pub(super) struct GateState<'a> {
     pub(super) now_ms: u64,
 }
 
-/// What a probe proved: the network ran protocol version `network` in an epoch that may not
-/// end before `until_ms`, on the local clock. The protocol version changes only when an epoch
-/// starts, so until then no answer can show the network serving a newer version.
+/// What a probe proved: the network ran protocol version `network` in an epoch that has ended
+/// by `until_ms` at the latest, on the local clock. The protocol version changes only when an
+/// epoch starts, so until that epoch ends no answer can show the network serving a newer
+/// version. The epoch can end before `until_ms`, by about how late its first block came
+/// ([`Self::from_epoch_starts`]), so the hold saves probes and is no proof of what the
+/// network runs now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct ProbeHold {
     /// The newest protocol version a verified answer was signed at when the probe ran.
@@ -291,6 +294,17 @@ impl Sdk {
     /// one ([`Self::mock_verified_protocol_version`]). A version verified earlier, by this SDK
     /// or a clone, shows nothing then without a hold: the network may have upgraded since.
     pub async fn network_proven_below(&self, protocol_version: u32) -> Result<bool, Error> {
+        self.network_proven_below_with_settings(protocol_version, None)
+            .await
+    }
+
+    /// [`Self::network_proven_below`], with the probe sent under the caller's request
+    /// `settings` (the SDK's own when `None`), as the gate's probe is.
+    pub(crate) async fn network_proven_below_with_settings(
+        &self,
+        protocol_version: u32,
+        settings: Option<RequestSettings>,
+    ) -> Result<bool, Error> {
         let state = self.gate_state();
         let verified = state.settings.verified_protocol_version;
         if verified >= protocol_version {
@@ -305,10 +319,62 @@ impl Sdk {
         if !state.enforced || !state.has_context_provider {
             return Ok(false);
         }
-        self.probe_network_protocol_version(protocol_version, None)
-            .await?;
-        let verified = self.query_settings().verified_protocol_version;
+        // One probe for every call asking at once, as the gate's own: a pinned SDK asks too,
+        // since the question is the network's version, not what this SDK speaks.
+        let failure = self
+            .probe_once_while(protocol_version, settings, |sdk| {
+                let state = sdk.gate_state();
+                let verified = state.settings.verified_protocol_version;
+                verified < protocol_version
+                    && !state
+                        .hold
+                        .is_some_and(|hold| hold.covers(protocol_version, verified, state.now_ms))
+            })
+            .await;
+        // Another call may have proven the version meanwhile, whatever this probe did.
+        let state = self.gate_state();
+        let verified = state.settings.verified_protocol_version;
+        if verified >= protocol_version {
+            return Ok(false);
+        }
+        if let Some(failure) = failure {
+            return Err(*failure);
+        }
         Ok(verified != 0 && verified < protocol_version)
+    }
+
+    /// Whether a verified answer shows the network at or above `protocol_version` after
+    /// asking it once more, past the probe hold ([`ProbeHold`]), under the caller's request
+    /// `settings`: for a call that sent what the network served before `protocol_version`
+    /// and was refused, as the network may have reached it since. A hold can outlast its
+    /// epoch (when the epoch's first block came late), and the network can reach the
+    /// version between a probe and the request.
+    ///
+    /// The hold itself is kept: a refusal is one node's word, not a verified answer. An
+    /// answer that shows `protocol_version` makes the hold moot, and one that shows the
+    /// network still below it renews the hold. The probe's failure is the error, unless
+    /// another call proved the version meanwhile.
+    pub(crate) async fn network_reached_past_hold(
+        &self,
+        protocol_version: u32,
+        settings: Option<RequestSettings>,
+    ) -> Result<bool, Error> {
+        let state = self.gate_state();
+        let failure = if state.enforced && state.has_context_provider {
+            self.probe_once_while(protocol_version, settings, |sdk| {
+                sdk.query_settings().verified_protocol_version < protocol_version
+            })
+            .await
+        } else {
+            None
+        };
+        if self.query_settings().verified_protocol_version >= protocol_version {
+            return Ok(true);
+        }
+        match failure {
+            Some(failure) => Err(*failure),
+            None => Ok(false),
+        }
     }
 
     /// Take `protocol_version` as the network's verified version, as if a proved answer had
@@ -418,15 +484,28 @@ impl Sdk {
         required: u32,
         settings: Option<RequestSettings>,
     ) -> Option<Box<Error>> {
+        self.probe_once_while(required, settings, |sdk| {
+            decide(required, &sdk.gate_state()) == Gate::Probe
+        })
+        .await
+    }
+
+    /// [`Self::probe_unless_probing`], for a call that still needs to ask while `needed`
+    /// says so: it does not ask when a probe answered while it waited, or `needed` no
+    /// longer holds.
+    async fn probe_once_while(
+        &self,
+        required: u32,
+        settings: Option<RequestSettings>,
+        needed: impl Fn(&Self) -> bool,
+    ) -> Option<Box<Error>> {
         let answered = self.probe_hold.answered();
         let probing = self.probe_hold.probing.try_lock();
         if probing.is_err() {
             drop(self.probe_hold.probing.lock().await);
         }
         // A probe answered since this call decided to ask, or another answer decided it.
-        if self.probe_hold.answered() != answered
-            || decide(required, &self.gate_state()) != Gate::Probe
-        {
+        if self.probe_hold.answered() != answered || !needed(self) {
             return None;
         }
         let probed = self
@@ -437,6 +516,65 @@ impl Sdk {
         }
         drop(probing);
         probed.err().map(Box::new)
+    }
+
+    /// Ask the network for its protocol version before a node is banned for an answer this
+    /// build could not read that names a version newer than the build knows
+    /// ([`Self::classify_refused_answer`]).
+    ///
+    /// The question is the gate's probe query, the genesis epoch, without the epoch hold that
+    /// may follow it there: a hold can outlast its epoch, and a ban is not to rest on it. It
+    /// is kept short, since it runs inside the caller's request: one attempt, which bans no
+    /// node, as an answer to it this build cannot read says as little about its node.
+    ///
+    /// Nothing is asked when nothing can be learned: by an SDK without nodes or a context
+    /// provider, or once a verified answer has shown a newer version. Nor is it asked about
+    /// an answer to a probe itself, which would wait for the probe it belongs to.
+    ///
+    /// While another call probes, this one waits for that probe and decides from what it
+    /// showed, also when it failed: a call asks or waits once, never both, so calls made
+    /// together cost one question.
+    pub(super) async fn probe_for_newer_network(&self) {
+        let required = PlatformVersion::latest().protocol_version.saturating_add(1);
+        let state = self.gate_state();
+        if self.inside_version_probe
+            || !state.enforced
+            || !state.has_context_provider
+            || state.settings.verified_protocol_version >= required
+        {
+            return;
+        }
+        let Ok(_probing) = self.probe_hold.probing.try_lock() else {
+            drop(self.probe_hold.probing.lock().await);
+            return;
+        };
+        let sdk = &self.probing();
+        let Ok(request) = current_epoch_probe_query().query(&QuerySettings {
+            prove: true,
+            ..sdk.query_settings()
+        }) else {
+            return;
+        };
+        let settings = RequestSettings {
+            ban_failed_address: Some(false),
+            retries: Some(0),
+            ..Default::default()
+        };
+        if ExtendedEpochInfo::fetch_with_metadata(sdk, request, Some(settings))
+            .await
+            .is_ok()
+        {
+            self.probe_hold.answered.fetch_add(1, Ordering::AcqRel);
+        }
+    }
+
+    /// A clone that knows it probes: an answer to one of its requests that cannot be read is
+    /// classified as it is ([`Self::probe_for_newer_network`]).
+    fn probing(&self) -> Sdk {
+        Sdk {
+            inside_version_probe: true,
+            ..self.clone()
+        }
     }
 
     /// Learn the network's protocol version from the genesis epoch, which every node serves
@@ -450,24 +588,25 @@ impl Sdk {
         required: u32,
         settings: Option<RequestSettings>,
     ) -> Result<(), Error> {
+        let sdk = &self.probing();
         let request = current_epoch_probe_query().query(&QuerySettings {
             prove: true,
-            ..self.query_settings()
+            ..sdk.query_settings()
         })?;
         let mut settings = settings.unwrap_or_default();
-        if !self.prove() {
+        if !sdk.prove() {
             // An SDK that does not ask for proofs may hold a context provider that cannot
             // give quorum keys. Its probe then fails on every node, which says nothing
             // about the nodes, so it bans none of them.
             settings.ban_failed_address = Some(false);
         }
         let (genesis, metadata) =
-            ExtendedEpochInfo::fetch_with_metadata(self, request, Some(settings)).await?;
+            ExtendedEpochInfo::fetch_with_metadata(sdk, request, Some(settings)).await?;
         if let (Some(genesis), true) = (
             genesis.filter(|genesis| genesis.index() == GENESIS_EPOCH_INDEX),
-            self.query_settings().network_protocol_basis() < required,
+            sdk.query_settings().network_protocol_basis() < required,
         ) {
-            self.hold_probes(
+            sdk.hold_probes(
                 genesis.first_block_time(),
                 epoch_hint_from_metadata(&metadata),
                 settings,

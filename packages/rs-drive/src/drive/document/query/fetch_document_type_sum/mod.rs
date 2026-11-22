@@ -38,7 +38,7 @@ impl Drive {
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<(i64, FeeResult), Error> {
+    ) -> Result<(i128, FeeResult), Error> {
         match platform_version
             .drive
             .methods

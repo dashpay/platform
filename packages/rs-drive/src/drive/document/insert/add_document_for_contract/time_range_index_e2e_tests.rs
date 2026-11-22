@@ -22,7 +22,7 @@ use crate::util::storage_flags::StorageFlags;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{DocumentTypeRef, IndexBucketing};
 use dpp::data_contract::DataContractFactory;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -3464,6 +3464,20 @@ fn build_time_range_contract_with_index_keys(
     ttl_seconds: Option<u64>,
     extra_index_keys: Vec<(Value, Value)>,
 ) -> DataContract {
+    build_time_range_contract_with_amount(seed, ttl_seconds, extra_index_keys, 100_000_000, false)
+}
+
+/// The same contract with `amount` declared up to `amount_maximum`, and, when
+/// `sums_documents`, the type keeping the total of `amount` over its documents
+/// (`documentsSummable`). An `amount_maximum` past 2^27 makes the type keep its
+/// sums in 128 bits from protocol version 15, which takes the type total.
+fn build_time_range_contract_with_amount(
+    seed: u8,
+    ttl_seconds: Option<u64>,
+    extra_index_keys: Vec<(Value, Value)>,
+    amount_maximum: u64,
+    sums_documents: bool,
+) -> DataContract {
     let factory =
         DataContractFactory::new(PlatformVersion::latest().protocol_version).expect("factory");
     let mut index_map = vec![
@@ -3503,18 +3517,26 @@ fn build_time_range_contract_with_index_keys(
         time_range_map.push((Value::Text("ttl".to_string()), Value::U64(ttl)));
     }
     index_map.extend(extra_index_keys);
-    let document_schema = platform_value!({
+    let mut document_schema = platform_value!({
         "type": "object",
         "properties": {
             // 59: the Avg axis's 16-byte sort key tightens the ranked
             // group-key cap below the Count axis's 61.
             "hashtag": {"type": "string", "maxLength": 59, "position": 0},
-            "amount": {"type": "integer", "minimum": 0, "maximum": 100000000u64, "position": 1},
+            "amount": {"type": "integer", "minimum": 0, "maximum": amount_maximum, "position": 1},
         },
         "required": ["hashtag", "amount", "$createdAt"],
         "indices": Value::Array(vec![Value::Map(index_map)]),
         "additionalProperties": false,
     });
+    if sums_documents {
+        document_schema
+            .insert(
+                "documentsSummable".to_string(),
+                Value::Text("amount".to_string()),
+            )
+            .expect("expected to set documentsSummable");
+    }
     let schemas = platform_value!({ "post": document_schema });
     factory
         .create_with_value_config(Identifier::from([seed; 32]), 0, schemas, None, None)
@@ -3664,6 +3686,57 @@ fn ttl_drainage_covers_every_parent_layout() {
     // ProvableCountProvableSumIndexedTree parent (rankedAverageable).
     run_ttl_drain_cycle(&build_ttl_contract_with_index_keys(
         213,
+        vec![
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("amount".to_string()),
+            ),
+            (
+                Value::Text("rangeAverageable".to_string()),
+                Value::Bool(true),
+            ),
+            (
+                Value::Text("rankedAverageable".to_string()),
+                Value::Bool(true),
+            ),
+        ],
+    ));
+}
+
+/// The two indexed parents of a type that keeps its sums in 128 bits
+/// (protocol version 15): a group under each leaves through the indexed-tree
+/// delete of its parent's width, and a later write finds the bucket gone.
+#[test]
+fn ttl_drainage_covers_the_parent_layouts_of_128_bit_sums() {
+    let wide = |seed: u8, keys: Vec<(Value, Value)>| {
+        let contract = build_time_range_contract_with_amount(
+            seed,
+            Some(4 * HOUR_SECONDS),
+            keys,
+            u64::from(u32::MAX),
+            true,
+        );
+        assert!(contract
+            .document_type_for_name("post")
+            .expect("post")
+            .uses_big_sums());
+        contract
+    };
+    // ProvableBigSumIndexedTree parent (rankedSummable over `amount`).
+    run_ttl_drain_cycle(&wide(
+        216,
+        vec![
+            (
+                Value::Text("summable".to_string()),
+                Value::Text("amount".to_string()),
+            ),
+            (Value::Text("rangeSummable".to_string()), Value::Bool(true)),
+            (Value::Text("rankedSummable".to_string()), Value::Bool(true)),
+        ],
+    ));
+    // ProvableCountProvableBigSumIndexedTree parent (rankedAverageable).
+    run_ttl_drain_cycle(&wide(
+        217,
         vec![
             (
                 Value::Text("averageable".to_string()),
