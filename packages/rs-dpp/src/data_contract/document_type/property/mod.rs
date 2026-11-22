@@ -21,6 +21,7 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::{property_names, DocumentTypeRef};
 use crate::data_contract::DataContract;
 use crate::document::property_names::{CREATOR_ID, ID, OWNER_ID};
+use crate::document::{Document, DocumentV0Getters};
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::identity_public_key::contract_bounds::ContractBounds;
 use crate::identity::{IdentityPublicKey, Purpose};
@@ -273,8 +274,8 @@ pub const DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET: usize = 262_144;
 ///
 /// Each decoded property value — scalar, object map, array, or array element —
 /// consumes one unit before it is decoded. Exhausting the budget stops decoding
-/// with [`DataContractError::CorruptedSerialization`] so a crafted payload or a
-/// protocol-version-14 schema with zero-width typed-array elements cannot
+/// with [`DataContractError::DecodedValueBudgetExceeded`] so a crafted payload
+/// or a protocol-version-14 schema with zero-width typed-array elements cannot
 /// expand a small byte slice into unbounded memory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DecodedValueBudget {
@@ -305,22 +306,62 @@ impl DecodedValueBudget {
     }
 
     /// Consumes `count` units from the budget, failing with
-    /// [`DataContractError::CorruptedSerialization`] when fewer remain.
+    /// [`DataContractError::DecodedValueBudgetExceeded`] when fewer remain.
     pub fn consume(&mut self, count: usize) -> Result<(), DataContractError> {
         if count > self.remaining {
-            return Err(DataContractError::CorruptedSerialization(format!(
-                "decoded value budget exhausted: needed {count} more value(s), {} remaining",
+            return Err(DataContractError::DecodedValueBudgetExceeded(format!(
+                "needed {count} more value(s), {} remaining",
                 self.remaining
             )));
         }
         self.remaining -= count;
         Ok(())
     }
+
+    /// Charges every value node inside an already-decoded [`Value`] (arrays,
+    /// objects, and scalars) against this budget.
+    pub fn charge_value(&mut self, value: &Value) -> Result<(), DataContractError> {
+        self.consume(count_value_nodes(value))
+    }
+
+    /// Charges every decoded property value already retained by `document`
+    /// against this budget.
+    pub fn charge_document(&mut self, document: &Document) -> Result<(), DataContractError> {
+        for value in document.properties().values() {
+            self.charge_value(value)?;
+        }
+        Ok(())
+    }
+
+    /// Charges every decoded property value already retained by `documents`
+    /// against this budget.
+    pub fn charge_documents(&mut self, documents: &[Document]) -> Result<(), DataContractError> {
+        for document in documents {
+            self.charge_document(document)?;
+        }
+        Ok(())
+    }
+}
+
+/// Counts every value node in an already-decoded [`Value`] iteratively,
+/// matching the units consumed during property decoding.
+fn count_value_nodes(root: &Value) -> usize {
+    let mut count = 0usize;
+    let mut stack = vec![root];
+    while let Some(value) = stack.pop() {
+        count = count.saturating_add(1);
+        match value {
+            Value::Array(items) => stack.extend(items.iter()),
+            Value::Map(entries) => stack.extend(entries.iter().map(|(_, value)| value)),
+            _ => {}
+        }
+    }
+    count
 }
 
 /// Counts every property node declared by `properties`, recursively through
 /// nested objects.
-pub fn count_property_nodes(properties: &IndexMap<String, DocumentProperty>) -> usize {
+fn count_property_nodes(properties: &IndexMap<String, DocumentProperty>) -> usize {
     let mut count = 0usize;
     for property in properties.values() {
         count = count.saturating_add(1);
@@ -7412,11 +7453,7 @@ mod tests {
             .read_optionally_from_with_budget(&mut reader, true, Some(&mut short_budget))
             .expect_err("budget short by one unit must refuse");
         assert!(
-            matches!(
-                error,
-                DataContractError::CorruptedSerialization(ref message)
-                    if message.contains("decoded value budget exhausted")
-            ),
+            matches!(error, DataContractError::DecodedValueBudgetExceeded(_)),
             "{error}"
         );
 
@@ -7429,11 +7466,7 @@ mod tests {
             .read_optionally_from_with_budget(&mut reader, true, Some(&mut bool_budget))
             .expect_err("non-zero-width typed array exceeding budget must refuse");
         assert!(
-            matches!(
-                error,
-                DataContractError::CorruptedSerialization(ref message)
-                    if message.contains("decoded value budget exhausted")
-            ),
+            matches!(error, DataContractError::DecodedValueBudgetExceeded(_)),
             "{error}"
         );
     }

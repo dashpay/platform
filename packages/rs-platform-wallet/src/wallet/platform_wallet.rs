@@ -66,6 +66,7 @@ use {
     dash_sdk::dapi_grpc::platform::v0::ResponseMetadata,
     dash_sdk::platform::dashpay::PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
     dpp::data_contract::accessors::v0::DataContractV0Getters,
+    dpp::data_contracts::SystemDataContract,
     dpp::platform_value::BinaryData,
     dpp::serialization::PlatformDeserializableTrusted,
     dpp::shielded::builder::OrchardProver,
@@ -873,7 +874,7 @@ impl PlatformWallet {
                 crate::wallet::identity::network::sdk_writer::SdkWriter::new(Arc::clone(&sdk)),
             ),
             document_erase_gate: Default::default(),
-            dpns_operation_gate: Arc::new(tokio::sync::Mutex::new(())),
+            dpns_operation_gate: Default::default(),
             dpns_sync_progress: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
             #[cfg(feature = "shielded")]
             contact_shielded_addresses: super::shielded::ContactShieldedAddresses::new(Arc::clone(
@@ -3606,7 +3607,10 @@ impl PrivatePaymentRestore {
                 self.wallet_id,
             )));
         }
-        let dashpay_id = dashpay_contract()?.id();
+        // DashPay's published id, without loading the contract: the journal
+        // only compares ids, and the first load of the contract parses its
+        // schema, which takes about 1 MiB of stack in an unoptimized build.
+        let dashpay_id = SystemDataContract::Dashpay.id();
         // Read-backs whose flush failed transiently are noted once a flush
         // succeeds now, so the journal read below discharges their records.
         self.persister
@@ -3935,6 +3939,17 @@ mod private_contact_request_redrive_tests {
             identity_user_abandoned: false,
             anchor_height: None,
         }
+    }
+
+    /// A restoration compares its journal against DashPay's published id
+    /// without loading the contract (`PrivatePaymentRestore::restore`), so
+    /// that id must be the one the bundled contract loads under.
+    #[test]
+    fn should_load_the_bundled_dashpay_contract_under_its_published_id() {
+        assert_eq!(
+            dashpay_contract().expect("bundled DashPay").id(),
+            SystemDataContract::Dashpay.id()
+        );
     }
 
     /// Only the entries of type 29 transitions to DashPay's private contact

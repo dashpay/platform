@@ -3,6 +3,9 @@ use crate::error::Error;
 use crate::query::composite_document_query::{PresentTrio, ProvedTrio};
 use crate::query::{CompositeDocumentsResult, DriveDocumentQuery};
 use crate::verify::RootHash;
+use dpp::data_contract::document_type::{
+    DecodedValueBudget, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
+};
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
@@ -51,8 +54,14 @@ impl DriveDocumentQuery<'_> {
         let page_path_query = self.page_path_query(platform_version)?;
         let direction = page_path_query.query.query.left_to_right;
         let (_, page_trios) = GroveDb::verify_subset_query(proof, &page_path_query, grove_version)?;
-        let bootstrap_page =
-            Self::decode_document_trios(self, present(page_trios), platform_version)?;
+        let mut bootstrap_budget =
+            DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
+        let bootstrap_page = Self::decode_document_trios(
+            self,
+            present(page_trios),
+            Some(&mut bootstrap_budget),
+            platform_version,
+        )?;
 
         // Derive every sub-query in order. A sub-query that feeds a later
         // binding is itself bootstrapped by a subset pass, so the later
@@ -83,6 +92,7 @@ impl DriveDocumentQuery<'_> {
                         &values,
                         direction,
                         present(trios),
+                        Some(&mut bootstrap_budget),
                         platform_version,
                     )?
                 };
@@ -105,6 +115,8 @@ impl DriveDocumentQuery<'_> {
         )?;
         let (root_hash, proved_trios) = GroveDb::verify_query(proof, &merged_query, grove_version)?;
 
+        let mut authoritative_budget =
+            DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
         let result = self.assemble_from_trios(
             &derived,
             &page_path_query,
@@ -112,6 +124,7 @@ impl DriveDocumentQuery<'_> {
             &removal_path_queries,
             proved_trios,
             sum_bearing_items_are_documents,
+            Some(&mut authoritative_budget),
             platform_version,
         )?;
 

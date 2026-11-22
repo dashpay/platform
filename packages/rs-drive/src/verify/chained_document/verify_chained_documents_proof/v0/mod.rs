@@ -110,7 +110,7 @@ impl DriveDocumentQuery<'_> {
             }
             match path.get(3).map(|segment| segment.as_slice()) {
                 Some(segment) if segment == inner_type_name => {
-                    inner_documents.push(synthesize_index_only_document(
+                    let document = synthesize_index_only_document(
                         self.contract.id(),
                         self.document_type,
                         index,
@@ -118,7 +118,11 @@ impl DriveDocumentQuery<'_> {
                         &key,
                         Some(&element),
                         platform_version,
-                    )?);
+                    )?;
+                    budget
+                        .charge_document(&document)
+                        .map_err(|e| Error::Protocol(Box::new(e.into())))?;
+                    inner_documents.push(document);
                 }
                 Some(segment) if segment == outer_type_name => {
                     // A stored document is any item, the sum-bearing one of a

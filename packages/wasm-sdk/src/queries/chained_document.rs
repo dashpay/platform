@@ -22,9 +22,6 @@ use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dash_sdk::dpp::data_contract::document_type::{
-    DecodedValueBudget, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
-};
 use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::documents::chained_document_query::ChainedDocumentQuery;
 use dash_sdk::platform::{ChainedDocuments, Fetch};
@@ -239,14 +236,15 @@ fn chained_result_to_js(
             .data_contract
             .document_type_for_name(&query.outer_document_type_name)
             .map_err(ProtocolError::from)?;
-        let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
-        for entry in &chained.removed_outer_documents {
-            removed_outer_documents.push(&removal_entry_to_js(
-                entry,
-                outer_type,
-                &mut budget,
-                |id| IdentifierWasm::from(id).into(),
-            )?);
+        let kept_values_list = chained.decode_removed_outer_kept_values(outer_type)?;
+        for (entry, kept_values) in chained
+            .removed_outer_documents
+            .iter()
+            .zip(kept_values_list.iter())
+        {
+            removed_outer_documents.push(&removal_entry_to_js(entry, kept_values, |id| {
+                IdentifierWasm::from(id).into()
+            })?);
         }
     }
     Reflect::set(

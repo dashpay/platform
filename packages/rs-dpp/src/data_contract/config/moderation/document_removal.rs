@@ -115,9 +115,21 @@ pub fn encode_kept_fields(
 
 /// Reads the values [`encode_kept_fields`] wrote, under `document_type`: each kept path to its
 /// value, typed as reading the document gives it, a path the document held no value at left
-/// out. Refuses bytes that end before the last path or run past it, and enforces
-/// [`DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET`] on the decoded values.
+/// out. Refuses bytes that end before the last path or run past it.
+///
+/// Unbounded for consensus callers (state-transition validation and Drive index updates), which
+/// must replay historical protocol-version-14 removal records identically. Client-side readers
+/// should use [`decode_kept_fields_with_budget`] or [`decode_kept_fields_with_default_budget`].
 pub fn decode_kept_fields(
+    encoded: &[u8],
+    document_type: DocumentTypeRef,
+) -> Result<BTreeMap<String, Value>, ProtocolError> {
+    decode_kept_fields_internal(encoded, document_type, None)
+}
+
+/// Like [`decode_kept_fields`], enforcing [`DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET`] on the
+/// decoded values of a single removal record for client-side readers.
+pub fn decode_kept_fields_with_default_budget(
     encoded: &[u8],
     document_type: DocumentTypeRef,
 ) -> Result<BTreeMap<String, Value>, ProtocolError> {
@@ -134,6 +146,14 @@ pub fn decode_kept_fields_with_budget(
     document_type: DocumentTypeRef,
     budget: &mut DecodedValueBudget,
 ) -> Result<BTreeMap<String, Value>, ProtocolError> {
+    decode_kept_fields_internal(encoded, document_type, Some(budget))
+}
+
+fn decode_kept_fields_internal(
+    encoded: &[u8],
+    document_type: DocumentTypeRef,
+    mut budget: Option<&mut DecodedValueBudget>,
+) -> Result<BTreeMap<String, Value>, ProtocolError> {
     let corrupted = |message: String| {
         ProtocolError::DataContractError(DataContractError::CorruptedSerialization(message))
     };
@@ -149,9 +169,11 @@ pub fn decode_kept_fields_with_budget(
                     match marker {
                         KEPT_VALUE_ABSENT => None,
                         KEPT_VALUE_PRESENT => {
-                            budget
-                                .consume(1)
-                                .map_err(ProtocolError::DataContractError)?;
+                            if let Some(budget) = budget.as_deref_mut() {
+                                budget
+                                    .consume(1)
+                                    .map_err(ProtocolError::DataContractError)?;
+                            }
                             Some(read_system_property(&mut buf, property).map_err(|_| {
                                 corrupted(format!("kept fields end inside \"{path}\""))
                             })?)
@@ -165,7 +187,7 @@ pub fn decode_kept_fields_with_budget(
                 }
                 None => {
                     let (value, finished) = kept_property_type(&document_type, path)?
-                        .read_optionally_from_with_budget(&mut buf, false, Some(budget))
+                        .read_optionally_from_with_budget(&mut buf, false, budget.as_deref_mut())
                         .map_err(ProtocolError::DataContractError)?;
                     if finished {
                         return Err(corrupted(format!("kept fields end before \"{path}\"")));
@@ -291,6 +313,18 @@ impl ContractDocumentRemoval {
             return Ok(BTreeMap::new());
         }
         decode_kept_fields(&self.kept_fields, document_type)
+    }
+
+    /// Like [`Self::kept_values`], enforcing [`DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET`] for
+    /// single-record client reads (see [`decode_kept_fields_with_default_budget`]).
+    pub fn kept_values_with_default_budget(
+        &self,
+        document_type: DocumentTypeRef,
+    ) -> Result<BTreeMap<String, Value>, ProtocolError> {
+        if self.kept_fields.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+        decode_kept_fields_with_default_budget(&self.kept_fields, document_type)
     }
 
     /// Like [`Self::kept_values`], charging every decoded value against `budget`
@@ -599,8 +633,102 @@ mod tests {
             .kept_values_with_budget(document_type.as_ref(), &mut budget)
             .expect_err("second record must exhaust shared budget");
         assert!(
-            error.to_string().contains("decoded value budget exhausted"),
+            matches!(
+                error,
+                ProtocolError::DataContractError(DataContractError::DecodedValueBudgetExceeded(_))
+            ),
             "unexpected error: {error}"
+        );
+    }
+
+    /// Consensus callers (`kept_values` / `decode_kept_fields`) must keep decoding historical
+    /// protocol-version-14 removal records even when their decoded value count exceeds the
+    /// client page ceiling, while bounded client readers refuse the same stored record.
+    #[test]
+    fn should_keep_consensus_kept_values_unbounded_while_client_budget_refuses_same_record() {
+        let pv14 = PlatformVersion::get(14).expect("PV14 exists");
+        let config = DataContractConfig::default_for_version(pv14)
+            .expect("default config")
+            .with_moderation(Some(ContractModerationConfig {
+                banlist: false,
+                suspensions: false,
+                moderators: ContractModerators::ContractOwner,
+                warnings: false,
+            }));
+        // 257 kept fields × (1 array + 1024 zero-width elements) = 263,425 > 262,144
+        let field_count = 257usize;
+        let mut properties = Vec::with_capacity(field_count);
+        let mut kept_names = Vec::with_capacity(field_count);
+        let mut doc_properties = BTreeMap::new();
+        for i in 0..field_count {
+            let name = format!("f{i:03}");
+            properties.push((
+                Value::Text(name.clone()),
+                platform_value!({
+                    "type": "array",
+                    "maxItems": 1024,
+                    "items": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 0,
+                        "maxItems": 0,
+                    },
+                    "position": i as u32,
+                }),
+            ));
+            kept_names.push(Value::Text(name.clone()));
+            doc_properties.insert(name, Value::Array(vec![Value::Bytes(vec![]); 1024]));
+        }
+        let doc_type = DocumentType::try_from_schema(
+            Identifier::new([9; 32]),
+            1,
+            config.version(),
+            "post",
+            platform_value!({
+                "type": "object",
+                "properties": Value::Map(properties),
+                "additionalProperties": false,
+                "moderatorAbilities": {
+                    "delete": true,
+                    "deleteKeepsFields": Value::Array(kept_names),
+                },
+            }),
+            None,
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut vec![],
+            pv14,
+        )
+        .expect("oversized PV14 document type parses");
+
+        let document = Document::V0(DocumentV0 {
+            id: Identifier::new([2; 32]),
+            owner_id: Identifier::new([3; 32]),
+            properties: doc_properties,
+            ..Default::default()
+        });
+        let removal = ContractDocumentRemoval {
+            kept_fields: encode_kept_fields(&document, doc_type.as_ref()).expect("encodes"),
+            ..Default::default()
+        };
+
+        // Consensus read succeeds on the stored record.
+        let decoded = removal
+            .kept_values(doc_type.as_ref())
+            .expect("consensus kept_values must stay unbounded for PV14 replay");
+        assert_eq!(decoded.len(), field_count);
+
+        // Client bounded read refuses the exact same stored record with the typed error.
+        let error = removal
+            .kept_values_with_default_budget(doc_type.as_ref())
+            .expect_err("client bounded read must refuse oversized record");
+        assert!(
+            matches!(
+                error,
+                ProtocolError::DataContractError(DataContractError::DecodedValueBudgetExceeded(_))
+            ),
+            "expected DecodedValueBudgetExceeded, got: {error}"
         );
     }
 }

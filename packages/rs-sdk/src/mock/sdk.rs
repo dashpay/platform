@@ -58,6 +58,9 @@ pub struct MockDashPlatformSdk {
     /// expectation reports, by the request's key ([Self::set_response_height_for]), over
     /// `response_heights_of`.
     response_heights_for: BTreeMap<Key, u64>,
+    /// The protocol version expectations registered now are encoded at, over the SDK's
+    /// ([Self::encode_expectations_at]); `None` for the SDK's.
+    encoding_version: Option<&'static PlatformVersion>,
 }
 
 impl MockDashPlatformSdk {
@@ -93,7 +96,21 @@ impl MockDashPlatformSdk {
             response_height: 0,
             response_heights_of: BTreeMap::new(),
             response_heights_for: BTreeMap::new(),
+            encoding_version: None,
         }
+    }
+
+    /// Encodes the expectations registered from now on at `version` instead of the SDK's own,
+    /// until called again with `None`; their answers are still decoded at the SDK's version
+    /// when a fetch reads them. For a test that prepares answers of a protocol version the
+    /// SDK under test has not reached yet, without advancing it.
+    #[cfg(test)]
+    pub(crate) fn encode_expectations_at(
+        &mut self,
+        version: Option<&'static PlatformVersion>,
+    ) -> &mut Self {
+        self.encoding_version = version;
+        self
     }
 
     /// Sets the block time, in milliseconds, the metadata of every response answered from an
@@ -173,6 +190,9 @@ impl MockDashPlatformSdk {
     ///
     /// Panics when sdk is not set during initialization.
     pub(crate) fn version<'v>(&self) -> &'v PlatformVersion {
+        if let Some(version) = self.encoding_version {
+            return version;
+        }
         if let Some(sdk) = self.sdk.load().as_ref() {
             sdk.version()
         } else {

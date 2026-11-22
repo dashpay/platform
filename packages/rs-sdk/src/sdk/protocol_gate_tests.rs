@@ -18,7 +18,8 @@ use crate::platform::contract_groups::{
 };
 use crate::platform::contract_moderation::{
     ContractDocumentRemovals, ContractModerationActionCounts, ContractModerationEntries,
-    ContractModerationListStatuses, ContractTeamActionSigners, ContractTeamActions,
+    ContractModerationListStatuses, ContractModerationStatusQuery, ContractTeamActionSigners,
+    ContractTeamActions,
 };
 use crate::platform::data_contracts_by_range::DataContractsByRange;
 use crate::platform::data_contracts_latest_versions::{
@@ -663,6 +664,144 @@ async fn should_refuse_when_the_network_proves_protocol_13() {
     assert_eq!(probes(&sdk).await, 1);
     assert_eq!(sent(&sdk, &fee_pots()).await, 0);
     assert!(!sdk.address_list().is_banned(&node()));
+}
+
+/// A status read over every list the contract keeps, on a network proven at 13, is refused
+/// as the status fetch would refuse it, before the contract is asked for: not taken for a
+/// contract that is not moderated.
+#[tokio::test]
+async fn should_refuse_a_status_over_every_list_below_protocol_14_without_a_contract_request() {
+    let sdk = mock_sdk(V13, false, 0);
+    sdk.mock_verified_protocol_version(V13).unwrap();
+    let contract_id = Identifier::new([7; 32]);
+    let result =
+        ContractModerationStatusQuery::resolve(&sdk, contract_id, Identifier::new([8; 32]), None)
+            .await;
+    match result {
+        Err(Error::ProtocolVersionNotActive {
+            method, required, ..
+        }) => {
+            assert_eq!((method, required), ("get_contract_moderation_status", V14));
+        }
+        other => panic!("expected the status read refused below 14, got {other:?}"),
+    }
+    let contract_request: GetDataContractRequest =
+        contract_id.query(&sdk.query_settings()).unwrap();
+    assert_eq!(sent(&sdk, &contract_request).await, 0);
+    assert_eq!(probes(&sdk).await, 0);
+}
+
+/// The positive counterpart: an unpinned SDK that starts below 14, with nothing verified,
+/// reads the status over every list the contract keeps through the public call alone. The
+/// call asks the network for its version (the probe answers 14), then fetches the contract,
+/// then sends the status request over the lists the contract keeps.
+///
+/// The fixtures are protocol 14 answers, encoded without advancing the SDK under test. The
+/// mock keeps no request log, only counts, so the order is shown by a twin SDK whose probe
+/// gets no answer: it sends the probe and is refused without any contract request, so the
+/// contract request waits on the probe's outcome and comes after it.
+#[tokio::test]
+async fn should_resolve_and_send_a_status_over_every_list_once_the_probe_shows_protocol_14() {
+    use crate::platform::contract_moderation::ContractModerationList;
+    use dapi_grpc::platform::v0::get_contract_moderation_status_request;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::config::moderation::ContractModerationListStatus;
+    use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+    use dpp::data_contract::DataContractFactory;
+    use dpp::platform_value::platform_value;
+
+    // The contract request waits on the probe: unanswered, the probe goes out and the read
+    // is refused before the contract is asked for
+    let unanswered = mock_sdk(V13, false, 0);
+    let refused = unanswered
+        .fetch_contract_moderation_status(Identifier::new([7; 32]), Identifier::new([8; 32]), None)
+        .await;
+    assert!(
+        matches!(refused, Err(Error::ProtocolVersionNotActive { .. })),
+        "{refused:?}"
+    );
+    assert_eq!(probes(&unanswered).await, 1);
+    let unanswered_contract: GetDataContractRequest = Identifier::new([7; 32])
+        .query(&unanswered.query_settings())
+        .unwrap();
+    assert_eq!(sent(&unanswered, &unanswered_contract).await, 0);
+
+    let mut sdk = mock_sdk(V13, false, 0);
+    answer_probe(&sdk, "pv14").await;
+    let mut contract = DataContractFactory::new(V14)
+        .unwrap()
+        .create_with_value_config(
+            Identifier::new([7; 32]),
+            1,
+            platform_value!({
+                "note": {
+                    "type": "object",
+                    "properties": { "text": { "type": "string", "maxLength": 10, "position": 0 } },
+                    "additionalProperties": false,
+                },
+            }),
+            None,
+            None,
+        )
+        .unwrap()
+        .data_contract_owned();
+    let config = contract
+        .config()
+        .clone()
+        .with_moderation(Some(ContractModerationConfig {
+            banlist: true,
+            suspensions: false,
+            moderators: ContractModerators::ContractOwner,
+            warnings: true,
+        }));
+    contract.set_config(config);
+    let contract_id = contract.id();
+    let identity_id = Identifier::new([8; 32]);
+    let resolved = ContractModerationStatusQuery {
+        contract_id,
+        identity_id,
+        lists: vec![
+            ContractModerationList::Banlist,
+            ContractModerationList::Warnings,
+        ],
+    };
+    let statuses = ContractModerationListStatuses(vec![
+        ContractModerationListStatus::Banlist { ban: None },
+        ContractModerationListStatus::Warnings { warnings: vec![] },
+    ]);
+    // The fixtures are protocol 14 answers; the SDK under test stays at 13 until the probe
+    sdk.mock()
+        .encode_expectations_at(Some(PlatformVersion::get(V14).unwrap()));
+    sdk.mock()
+        .expect_fetch(contract_id, Some(contract))
+        .await
+        .unwrap();
+    sdk.mock()
+        .expect_fetch(resolved.clone(), Some(statuses.clone()))
+        .await
+        .unwrap();
+    sdk.mock().encode_expectations_at(None);
+    assert_eq!(verified(&sdk), 0);
+    assert_eq!(sdk.protocol_version_number(), V13);
+
+    let fetched = sdk
+        .fetch_contract_moderation_status(contract_id, identity_id, None)
+        .await
+        .expect("the network serves the status read once the probe shows 14");
+
+    assert_eq!(fetched, Some(statuses));
+    assert_eq!(probes(&sdk).await, 1);
+    assert_eq!(verified(&sdk), V14);
+    let contract_request: GetDataContractRequest =
+        contract_id.query(&sdk.query_settings()).unwrap();
+    assert_eq!(sent(&sdk, &contract_request).await, 1);
+    let status_request: GetContractModerationStatusRequest =
+        resolved.query(&sdk.query_settings()).unwrap();
+    assert!(matches!(
+        status_request.version,
+        Some(get_contract_moderation_status_request::Version::V0(_))
+    ));
+    assert_eq!(sent(&sdk, &status_request).await, 1);
 }
 
 /// A proved contract request and an answer to it that this build cannot read: its proof is
@@ -2907,6 +3046,93 @@ fn unbuilt_bundle() -> OrchardBundleParams {
     }
 }
 
+/// A signer the direct identity-shield send must not reach when the gate refuses it.
+#[derive(Debug)]
+struct UnreachableSigner;
+
+#[async_trait::async_trait]
+impl dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> for UnreachableSigner {
+    async fn sign(
+        &self,
+        _: &dpp::identity::IdentityPublicKey,
+        _: &[u8],
+    ) -> Result<BinaryData, dpp::ProtocolError> {
+        panic!("the refused send must not sign")
+    }
+
+    async fn sign_create_witness(
+        &self,
+        _: &dpp::identity::IdentityPublicKey,
+        _: &[u8],
+    ) -> Result<dpp::address_funds::AddressWitness, dpp::ProtocolError> {
+        panic!("the refused send must not sign")
+    }
+
+    fn can_sign_with(&self, _: &dpp::identity::IdentityPublicKey) -> bool {
+        true
+    }
+}
+
+/// The direct identity-shield send refuses an SDK pinned below protocol version 14 before it
+/// fetches or bumps the identity nonce or asks the signer: the mock has no nonce answer and
+/// the signer panics, so either step would end the test differently.
+#[tokio::test]
+async fn should_refuse_a_direct_identity_shield_before_the_nonce_and_signer() {
+    use crate::platform::transition::shield_from_identity::ShieldFromIdentity;
+    use dpp::identity::v0::IdentityV0;
+
+    let sdk = mock_sdk(V13, true, 0);
+    let identity = Identity::V0(IdentityV0 {
+        id: Identifier::new([4; 32]),
+        public_keys: Default::default(),
+        balance: 1_000_000_000,
+        revision: 0,
+    });
+    let result = identity
+        .shield_from_identity(
+            &sdk,
+            1_000,
+            unbuilt_bundle(),
+            None,
+            &UnreachableSigner,
+            None,
+        )
+        .await;
+    match result {
+        Err(Error::ProtocolVersionNotActive {
+            method: "broadcast_state_transition",
+            required: V14,
+            pinned: true,
+            ..
+        }) => {}
+        other => panic!("expected the pinned refusal, got {other:?}"),
+    }
+    assert_eq!(probes(&sdk).await, 0, "a pinned SDK below 14 asks nothing");
+}
+
+/// The direct pool top-up send refuses an SDK pinned below protocol version 14 before it
+/// builds or structure-checks the transition: the bundle is empty, so building first would
+/// end in a structure error instead.
+#[tokio::test]
+async fn should_refuse_a_direct_identity_top_up_from_the_pool_before_building_it() {
+    use crate::platform::transition::identity_top_up_from_shielded_pool::IdentityTopUpFromShieldedPool;
+
+    let sdk = mock_sdk(V13, true, 0);
+    let result = sdk
+        .identity_top_up_from_shielded_pool(Identifier::new([4; 32]), 1_000, unbuilt_bundle(), None)
+        .await;
+    match result {
+        Err(Error::ProtocolVersionNotActive {
+            method: "broadcast_state_transition",
+            required: V14,
+            pinned: true,
+            ..
+        }) => {}
+        other => panic!("expected the pinned refusal, got {other:?}"),
+    }
+    assert_eq!(probes(&sdk).await, 0, "a pinned SDK below 14 asks nothing");
+}
+
 /// An unpinned SDK below protocol version 15 that asks for no proofs still learns the
 /// network's version before refusing a private document send: the gate's probe asks for a
 /// proof whatever the SDK's setting, and the refusal is of the network proven at 14, not of
@@ -3096,6 +3322,71 @@ async fn should_refuse_a_generic_broadcast_of_a_private_document_transition_unti
             other => panic!("pinned {pinned}: expected a local refusal, got {other:?}"),
         }
         assert_eq!(probes(&sdk).await, 1, "pinned {pinned}");
+    }
+}
+
+/// A shield from an identity (type 21) or an identity top-up from the shielded pool (type 22)
+/// built elsewhere and sent through the generic broadcast is gated from protocol version 14:
+/// from an SDK at 14, seeded or pinned, on a network a verified answer shows at 13, it is
+/// refused locally instead of broadcast to be rejected.
+#[tokio::test]
+async fn should_refuse_a_generic_broadcast_of_identity_shielded_payments_until_14() {
+    use dpp::state_transition::identity_top_up_from_shielded_pool_transition::v0::IdentityTopUpFromShieldedPoolTransitionV0;
+    use dpp::state_transition::identity_top_up_from_shielded_pool_transition::IdentityTopUpFromShieldedPoolTransition;
+    use dpp::state_transition::shield_from_identity_transition::v0::ShieldFromIdentityTransitionV0;
+    use dpp::state_transition::shield_from_identity_transition::ShieldFromIdentityTransition;
+    use dpp::state_transition::StateTransition;
+
+    let action = SerializedAction {
+        nullifier: [1; 32],
+        rk: [2; 32],
+        cmx: [3; 32],
+        encrypted_note: vec![4; 216],
+        cv_net: [5; 32],
+        spend_auth_sig: [6; 64],
+    };
+    let shield = StateTransition::ShieldFromIdentity(ShieldFromIdentityTransition::V0(
+        ShieldFromIdentityTransitionV0 {
+            identity_id: Identifier::new([4; 32]),
+            amount: 1_000,
+            actions: vec![action.clone(), action.clone()],
+            anchor: [7; 32],
+            proof: vec![8; 64],
+            binding_signature: [9; 64],
+            nonce: 1,
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        },
+    ));
+    let top_up = StateTransition::IdentityTopUpFromShieldedPool(
+        IdentityTopUpFromShieldedPoolTransition::V0(IdentityTopUpFromShieldedPoolTransitionV0 {
+            identity_id: Identifier::new([4; 32]),
+            actions: vec![action.clone(), action],
+            top_up_amount: 1_000,
+            anchor: [7; 32],
+            proof: vec![8; 64],
+            binding_signature: [9; 64],
+        }),
+    );
+    for (kind, transition) in [("type 21", shield), ("type 22", top_up)] {
+        for pinned in [false, true] {
+            let sdk = mock_sdk(V14, pinned, V13);
+            answer_probe(&sdk, "pv13").await;
+            match transition.broadcast(&sdk, None).await {
+                Err(Error::ProtocolVersionNotActive {
+                    method: "broadcast_state_transition",
+                    required: V14,
+                    network: V13,
+                    cause: None,
+                    ..
+                }) => {}
+                other => {
+                    panic!("{kind}, pinned {pinned}: expected a local refusal, got {other:?}")
+                }
+            }
+            assert_eq!(probes(&sdk).await, 1, "{kind}, pinned {pinned}");
+        }
     }
 }
 

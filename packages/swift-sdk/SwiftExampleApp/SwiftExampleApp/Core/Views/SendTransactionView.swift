@@ -6,6 +6,9 @@ struct SendTransactionView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
+    /// Only to tell open recovery lists that an identity shield may have
+    /// saved a debit record.
+    @EnvironmentObject var shieldedService: ShieldedService
     let wallet: PersistentWallet
 
     @StateObject private var viewModel: SendViewModel
@@ -179,10 +182,7 @@ struct SendTransactionView: View {
                                     Text(source.rawValue)
                                         .foregroundColor(.primary)
                                     Spacer()
-                                    Text(formatBalance(
-                                        balance(for: source, coreBalance: coreBalance),
-                                        unit: unit(for: source)
-                                    ))
+                                    Text(sourceBalanceText(source, coreBalance: coreBalance))
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                     if viewModel.selectedSource == source {
@@ -191,6 +191,7 @@ struct SendTransactionView: View {
                                     }
                                 }
                             }
+                            .accessibilityIdentifier("send.source.\(source.rawValue.lowercased())")
                         }
                         if viewModel.chosenSourceUnavailable {
                             // The explicit choice is never swapped for
@@ -208,6 +209,11 @@ struct SendTransactionView: View {
                     }
                 }
 
+                // Source identity (identity to shielded only).
+                if viewModel.detectedFlow == .identityToShielded {
+                    identitySourceSection
+                }
+
                 // Transaction Type
                 if let flow = viewModel.detectedFlow {
                     Section("Transaction Type") {
@@ -220,9 +226,13 @@ struct SendTransactionView: View {
 
                         if let fee = viewModel.estimatedFee {
                             HStack {
-                                Text("Estimated Fee:")
+                                // The identity shield's value is the exact
+                                // consensus floor, not an estimate.
+                                Text(flow == .identityToShielded ? "Minimum fee:" : "Estimated Fee:")
                                 Spacer()
-                                Text("~\(formatBalance(fee, unit: feeUnit(for: flow)))")
+                                Text(flow == .identityToShielded
+                                     ? feeText(fee, flow: flow)
+                                     : "~\(feeText(fee, flow: flow))")
                                     .foregroundColor(.secondary)
                             }
                         }
@@ -264,6 +274,8 @@ struct SendTransactionView: View {
                         // between.
                         let tappedFlow = viewModel.detectedFlow
                         let tappedRecipient = viewModel.recipientAddress
+                        let tappedIdentityId = viewModel.selectedIdentityId
+                        let tappedAmountText = viewModel.amountString
                         Task {
                             guard let sdk = platformState.sdk else { return }
                             // Look up the managed wallet by the
@@ -325,8 +337,16 @@ struct SendTransactionView: View {
                                 senderAccountIndex: senderAccountIndex,
                                 modelContext: modelContext,
                                 tappedFlow: tappedFlow,
-                                tappedRecipient: tappedRecipient
+                                tappedRecipient: tappedRecipient,
+                                tappedIdentityId: tappedIdentityId,
+                                tappedAmountText: tappedAmountText
                             )
+                            // The wallet saves an identity debit before it
+                            // broadcasts; open Shielded Activity lists for
+                            // this wallet re-read the records.
+                            if viewModel.identityDebitMayHaveBeenSaved {
+                                shieldedService.noteRecoveryRecordsChanged(walletId: wallet.walletId)
+                            }
                         }
                     }
                     .disabled(!viewModel.canSend)
@@ -355,6 +375,22 @@ struct SendTransactionView: View {
                     Text(msg)
                 }
             }
+            .alert("Submitted", isPresented: .constant(viewModel.submittedMessage != nil)) {
+                Button("Done") { dismiss() }
+            } message: {
+                if let msg = viewModel.submittedMessage {
+                    Text(msg)
+                }
+            }
+            .alert("Not Confirmed Yet", isPresented: .constant(viewModel.unconfirmedMessage != nil)) {
+                Button("Done") { dismiss() }
+            } message: {
+                if let msg = viewModel.unconfirmedMessage {
+                    Text(msg)
+                }
+            }
+            // A swipe-dismissed and reopened sheet would allow a second send.
+            .interactiveDismissDisabled(viewModel.isSending)
             .onAppear {
                 // Resolve the version-locked address-funds limits once from
                 // the wallet's current platform version (read Rust-side), the
@@ -385,6 +421,11 @@ struct SendTransactionView: View {
                 // version the builders will read at submission time.
                 resolveShieldedFees()
             }
+            // A manager swapped during an SDK rebuild: re-resolve against it
+            // so a sheet opened meanwhile recovers without being dismissed.
+            .onChange(of: ObjectIdentifier(walletManager)) { _, _ in
+                resolveShieldedFees()
+            }
             .sheet(isPresented: $showQRScanner) {
                 // Same network the view model was built with
                 // (`wallet.network ?? .testnet`) so the scanner validates
@@ -399,6 +440,99 @@ struct SendTransactionView: View {
                     }
                 }
             }
+        }
+    }
+
+    // MARK: - Identity source (identity to shielded)
+
+    /// Picker over the wallet's identities with a positive balance. The
+    /// selection binds straight to the view model; the balance is pushed
+    /// by `syncSelectedIdentity()` so the Send gate tracks the live row.
+    @ViewBuilder
+    private var identitySourceSection: some View {
+        let identities = eligibleIdentities
+        Section {
+            Picker("Identity", selection: $viewModel.selectedIdentityId) {
+                Text("Select…")
+                    .tag(Optional<Data>.none)
+                    .accessibilityIdentifier("send.identitySource.none")
+                ForEach(identities, id: \.identityId) { identity in
+                    Text(identityOptionLabel(identity))
+                        .tag(Optional(identity.identityId))
+                        .accessibilityIdentifier("send.identitySource.identity.\(identity.identityIdBase58)")
+                }
+            }
+            .accessibleFormPicker("send.identitySourcePicker")
+            // The identity that pays is captured at the tap; no new pick
+            // while a send runs.
+            .disabled(viewModel.isSending)
+            if viewModel.identityShieldAmountTooPrecise {
+                Text("Use at most 11 decimal places: the smallest amount is 0.00000000001 DASH.")
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .accessibilityIdentifier("send.identitySource.amountProblem")
+            }
+            if viewModel.shieldedFeeEstimates[.shieldFromIdentity] == nil {
+                Text("The fee floor is not available yet, so Send stays disabled.")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            }
+        } header: {
+            Text("Source Identity")
+        } footer: {
+            Text(
+                "The identity's transfer key signs. It must hold the amount "
+                + "plus the estimated fee. The note goes to this wallet's own "
+                + "shielded address, so enter that as the recipient."
+            )
+        }
+        .onAppear { syncSelectedIdentity() }
+        .onChange(of: viewModel.selectedIdentityId) { _, _ in syncSelectedIdentity() }
+        .onChange(of: identityBalancesById) { _, _ in syncSelectedIdentity() }
+    }
+
+    private func identityOptionLabel(_ identity: PersistentIdentity) -> String {
+        let balance = formatIdentityBalanceAsDash(identity.balance)
+        return "\(identity.displayName): \(balance)"
+    }
+
+    /// `PersistentIdentity.balance` is `Int64`; clamp a negative to zero
+    /// (same as `TransferCreditsView`).
+    private static func clampedBalance(_ identity: PersistentIdentity) -> UInt64 {
+        identity.balance < 0 ? 0 : UInt64(identity.balance)
+    }
+
+    /// This wallet's identities that can fund an identity shield.
+    private var eligibleIdentities: [PersistentIdentity] {
+        wallet.identities
+            .filter { Self.clampedBalance($0) > 0 }
+            .sorted { $0.identityIndex < $1.identityIndex }
+    }
+
+    /// Largest single identity balance: one identity funds the shield.
+    private var largestIdentityBalance: UInt64 {
+        eligibleIdentities.map(Self.clampedBalance).max() ?? 0
+    }
+
+    private var identityBalancesById: [Data: Int64] {
+        Dictionary(
+            wallet.identities.map { ($0.identityId, $0.balance) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    /// Push the selected identity's current balance into the view model,
+    /// and drop a selection whose identity no longer has a positive balance.
+    private func syncSelectedIdentity() {
+        guard let selectedId = viewModel.selectedIdentityId else {
+            viewModel.selectedIdentityBalance = 0
+            return
+        }
+        if let identity = eligibleIdentities.first(where: { $0.identityId == selectedId }) {
+            viewModel.selectedIdentityBalance = Self.clampedBalance(identity)
+        } else {
+            viewModel.selectedIdentityId = nil
+            viewModel.selectedIdentityBalance = 0
         }
     }
 
@@ -520,8 +654,9 @@ struct SendTransactionView: View {
     /// landed; before that, fall back to summing identity credits
     /// so a freshly-restored wallet still shows something
     /// approximate.
+    /// Display only: the Platform send source uses `platformAddressBalance`.
     private var platformBalance: UInt64 {
-        let blastBalance = addressBalances.reduce(UInt64(0)) { $0 + $1.balance }
+        let blastBalance = platformAddressBalance
         let hasSynced = syncStates.first.map { $0.syncHeight > 0 || $0.syncTimestamp > 0 }
             ?? false
         if blastBalance > 0 || hasSynced {
@@ -575,7 +710,9 @@ struct SendTransactionView: View {
     /// lookup — no caching guard needed).
     private func resolveShieldedFees() {
         var fees: [PlatformWalletManager.ShieldedFeeKind: UInt64] = [:]
-        for kind: PlatformWalletManager.ShieldedFeeKind in [.transfer, .unshield, .withdrawal] {
+        for kind: PlatformWalletManager.ShieldedFeeKind in [
+            .transfer, .unshield, .withdrawal, .shieldFromIdentity,
+        ] {
             fees[kind] = try? walletManager.estimateShieldedFee(kind: kind, numActions: 2)
         }
         viewModel.shieldedFeeEstimates = fees
@@ -706,18 +843,30 @@ struct SendTransactionView: View {
     }
 
     private func availableSources(coreBalance: UInt64) -> [FundSource] {
-        viewModel.availableSources(
-            coreBalance: coreBalance,
-            shieldedBalance: shieldedBalance,
-            platformBalance: platformBalance
-        )
+        viewModel.availableSources(SendSourceBalances(
+            core: coreBalance,
+            shielded: shieldedBalance,
+            platformAddresses: platformAddressBalance,
+            largestIdentity: largestIdentityBalance
+        ))
+    }
+
+    /// Platform-address funds only, without `platformBalance`'s fallback to
+    /// identity credits: what the Platform send source can actually spend.
+    private var platformAddressBalance: UInt64 {
+        addressBalances.reduce(UInt64(0)) { $0 + $1.balance }
     }
 
     private func balance(for source: FundSource, coreBalance: UInt64) -> UInt64 {
         switch source {
         case .core: return coreBalance
         case .shielded: return shieldedBalance
-        case .platform: return platformBalance
+        case .platform: return platformAddressBalance
+        case .identity:
+            // The selected identity once one is picked, else the largest.
+            return viewModel.selectedIdentityId == nil
+                ? largestIdentityBalance
+                : viewModel.selectedIdentityBalance
         }
     }
 
@@ -732,6 +881,7 @@ struct SendTransactionView: View {
         case .shieldedToShielded: return .purple
         case .shieldedToPlatform: return .blue
         case .shieldedToCore: return .green
+        case .identityToShielded: return .purple
         }
     }
 
@@ -754,10 +904,25 @@ struct SendTransactionView: View {
         return String(format: "%.8f DASH", dash)
     }
 
+    /// Identity credits are shown exactly (one credit can decide whether an
+    /// identity shield fits); the other sources keep the screen's formatter.
+    private func sourceBalanceText(_ source: FundSource, coreBalance: UInt64) -> String {
+        let amount = balance(for: source, coreBalance: coreBalance)
+        if source == .identity { return formatCreditsAsDash(amount) }
+        return formatBalance(amount, unit: unit(for: source))
+    }
+
+    /// The identity shield's fee floor is shown exactly, since the Send gate
+    /// compares it to the balance credit for credit.
+    private func feeText(_ fee: UInt64, flow: SendFlow) -> String {
+        if flow == .identityToShielded { return formatCreditsAsDash(fee) }
+        return formatBalance(fee, unit: feeUnit(for: flow))
+    }
+
     private func unit(for source: FundSource) -> SendBalanceUnit {
         switch source {
         case .core: return .duffs
-        case .platform, .shielded: return .credits
+        case .platform, .shielded, .identity: return .credits
         }
     }
 
@@ -771,7 +936,8 @@ struct SendTransactionView: View {
         switch flow {
         case .coreToCore: return .duffs
         case .coreToShielded, .platformToPlatform, .platformToShielded,
-             .shieldedToShielded, .shieldedToPlatform, .shieldedToCore:
+             .shieldedToShielded, .shieldedToPlatform, .shieldedToCore,
+             .identityToShielded:
             return .credits
         }
     }

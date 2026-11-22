@@ -115,8 +115,8 @@ use crate::query::{
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
-    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
-    DocumentReferenceKind, DocumentTypeRef, Index,
+    DecodedValueBudget, DocumentPropertyReferenceTarget, DocumentPropertyType,
+    DocumentReferenceDeclaration, DocumentReferenceKind, DocumentTypeRef, Index,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -1499,10 +1499,12 @@ impl<'a> DriveDocumentQuery<'a> {
 
     /// Decodes the proved entries of a documents component: stored
     /// documents from item elements, indexOnly projections synthesized
-    /// from their proved positions.
+    /// from their proved positions. When `budget` is `Some`, every decoded
+    /// value is charged against it.
     pub(crate) fn decode_document_trios(
         query: &DriveDocumentQuery<'a>,
         trios: Vec<PresentTrio>,
+        mut budget: Option<&mut DecodedValueBudget>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
         if query.document_type.index_only() {
@@ -1513,7 +1515,7 @@ impl<'a> DriveDocumentQuery<'a> {
             return trios
                 .into_iter()
                 .map(|(path, key, element)| {
-                    synthesize_index_only_document(
+                    let document = synthesize_index_only_document(
                         query.contract.id(),
                         query.document_type,
                         index,
@@ -1521,7 +1523,13 @@ impl<'a> DriveDocumentQuery<'a> {
                         &key,
                         Some(&element),
                         platform_version,
-                    )
+                    )?;
+                    if let Some(budget) = budget.as_deref_mut() {
+                        budget
+                            .charge_document(&document)
+                            .map_err(|e| Error::Protocol(Box::new(e.into())))?;
+                    }
+                    Ok(document)
                 })
                 .collect();
         }
@@ -1529,8 +1537,20 @@ impl<'a> DriveDocumentQuery<'a> {
             .into_iter()
             .map(|(_, _, element)| {
                 let serialized = element.into_item_bytes().map_err(Error::from)?;
-                Document::from_bytes(serialized.as_slice(), query.document_type, platform_version)
-                    .map_err(|e| Error::Protocol(Box::new(e)))
+                match budget.as_deref_mut() {
+                    Some(budget) => Document::from_bytes_with_budget(
+                        serialized.as_slice(),
+                        query.document_type,
+                        budget,
+                        platform_version,
+                    ),
+                    None => Document::from_bytes(
+                        serialized.as_slice(),
+                        query.document_type,
+                        platform_version,
+                    ),
+                }
+                .map_err(|e| Error::Protocol(Box::new(e)))
             })
             .collect()
     }
@@ -1544,6 +1564,7 @@ impl<'a> DriveDocumentQuery<'a> {
         values: &[Identifier],
         direction: bool,
         trios: Vec<PresentTrio>,
+        budget: Option<&mut DecodedValueBudget>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
         let query = self.sub_query_document_query_with_direction(
@@ -1552,7 +1573,7 @@ impl<'a> DriveDocumentQuery<'a> {
             direction,
             platform_version,
         )?;
-        let documents = Self::decode_document_trios(&query, trios, platform_version)?;
+        let documents = Self::decode_document_trios(&query, trios, budget, platform_version)?;
         self.assemble_documents(sub_query, values, &documents)
     }
 
@@ -1805,6 +1826,7 @@ impl<'a> DriveDocumentQuery<'a> {
         removal_path_queries: &[PathQuery],
         trios: Vec<ProvedTrio>,
         sum_bearing_items_are_documents: bool,
+        mut budget: Option<&mut DecodedValueBudget>,
         platform_version: &PlatformVersion,
     ) -> Result<CompositeDocumentsResult, Error> {
         // Group documents by base path. Counts instead route by their
@@ -1917,9 +1939,12 @@ impl<'a> DriveDocumentQuery<'a> {
             // Every documents member of a group addresses the same
             // type, so any member's query decodes the group.
             let documents = match documents_members[0] {
-                Component::Page => {
-                    Self::decode_document_trios(self, document_trios, platform_version)?
-                }
+                Component::Page => Self::decode_document_trios(
+                    self,
+                    document_trios,
+                    budget.as_deref_mut(),
+                    platform_version,
+                )?,
                 Component::Sub(index) => {
                     let query = self.sub_query_document_query_with_direction(
                         &self.sub_queries[index],
@@ -1927,7 +1952,12 @@ impl<'a> DriveDocumentQuery<'a> {
                         direction,
                         platform_version,
                     )?;
-                    Self::decode_document_trios(&query, document_trios, platform_version)?
+                    Self::decode_document_trios(
+                        &query,
+                        document_trios,
+                        budget.as_deref_mut(),
+                        platform_version,
+                    )?
                 }
             };
             let mut claimed: BTreeSet<usize> = BTreeSet::new();
@@ -2144,6 +2174,7 @@ impl<'a> DriveDocumentQuery<'a> {
             return Self::decode_document_trios(
                 query,
                 results.to_path_key_elements(),
+                None,
                 platform_version,
             );
         }

@@ -1785,7 +1785,12 @@ mod tests {
             .decode_kept_values_with_budget(doc_type.as_ref(), &mut tight)
             .expect_err("page exceeding shared budget must be refused");
         assert!(
-            error.to_string().contains("decoded value budget exhausted"),
+            matches!(
+                error,
+                ProtocolError::DataContractError(
+                    dpp::data_contract::errors::DataContractError::DecodedValueBudgetExceeded(_)
+                )
+            ),
             "unexpected error: {error}"
         );
     }

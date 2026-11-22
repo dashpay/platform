@@ -1,5 +1,8 @@
 //! Error handling for FFI layer
 
+use dash_sdk::dapi_client::transport::TransportError;
+use dash_sdk::dapi_client::DapiClientError;
+use dash_sdk::dapi_grpc::tonic::Code;
 use dash_sdk::dpp::consensus::codes::ErrorWithCode;
 use dash_sdk::dpp::ProtocolError;
 use std::ffi::{CString, NulError};
@@ -265,6 +268,12 @@ impl From<FFIError> for DashSDKError {
                     // emit only the inner Drive message so downstream FFI consumers
                     // don't double-render the "Drive internal error: " prefix.
                     (DashSDKErrorCode::DriveInternalError, inner.clone())
+                } else if matches!(sdk_err, dash_sdk::Error::MissingDependency(..)) {
+                    // A proved absence of something the request needs. Its message names
+                    // the missing object by its id, a base58 string that can hold
+                    // "dapi", "timeout" or "connection", so it is classified by its
+                    // variant before the substring fallbacks below.
+                    (DashSDKErrorCode::NotFound, error_str)
                 } else if let dash_sdk::Error::InvalidRequest(reason) = sdk_err {
                     // The caller's request has to change: no node answers it as the
                     // requested result type, whatever words its message holds.
@@ -284,6 +293,10 @@ impl From<FFIError> for DashSDKError {
                         Some(cause) => (code, format!("{error_str}: {cause}")),
                         None => (code, error_str),
                     }
+                } else if let Some(code) = node_refusal_code(sdk_err) {
+                    // The request itself was refused as invalid: the caller has to change
+                    // it. Not a network failure, and never an empty result.
+                    (code, error_str)
                 } else if matches!(
                     sdk_err,
                     dash_sdk::Error::DapiClientError(_)
@@ -405,6 +418,22 @@ macro_rules! ffi_result {
     };
 }
 
+/// The error code of a refusal of the request itself, read from a gRPC `InvalidArgument`
+/// status (for example a moderation list the contract does not keep): the caller has to change
+/// the request. `None` for every other status and every transport failure, which stay network
+/// failures. A gRPC `NotFound` among them: a node's word that something is absent is not
+/// proved, and `NotFound` is kept for an absence a proof showed (`Error::MissingDependency`).
+fn node_refusal_code(error: &dash_sdk::Error) -> Option<DashSDKErrorCode> {
+    let dash_sdk::Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(status))) =
+        error
+    else {
+        return None;
+    };
+    match status.code() {
+        Code::InvalidArgument => Some(DashSDKErrorCode::InvalidParameter),
+        _ => None,
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -913,6 +942,61 @@ mod tests {
         };
         assert_eq!(dash_sdk_error.code, DashSDKErrorCode::DriveInternalError);
         assert_eq!(message, "storage layer constraint");
+    }
+
+    fn grpc_error(status: dash_sdk::dapi_grpc::tonic::Status) -> dash_sdk::Error {
+        dash_sdk::Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(status)))
+    }
+
+    #[test]
+    fn should_map_a_refused_request_to_the_callers_error_and_not_to_a_network_failure() {
+        use dash_sdk::dapi_grpc::tonic::Status;
+
+        // A list the contract does not keep: the request has to change
+        assert_eq!(
+            classify(grpc_error(Status::invalid_argument(
+                "contract does not keep a suspension list"
+            ))),
+            DashSDKErrorCode::InvalidParameter
+        );
+    }
+
+    #[test]
+    fn should_keep_transport_failures_and_unproved_absences_as_network_errors() {
+        use dash_sdk::dapi_grpc::tonic::Status;
+
+        // A node's NotFound is its word, not a proof: NotFound is kept for a proved absence
+        // (MissingDependency), so the node's status stays a network failure.
+        for status in [
+            Status::unavailable("node is down"),
+            Status::deadline_exceeded("too slow"),
+            Status::internal("boom"),
+            Status::not_found("data contract not found"),
+        ] {
+            let code = status.code();
+            assert_eq!(
+                classify(grpc_error(status)),
+                DashSDKErrorCode::NetworkError,
+                "{code:?}"
+            );
+        }
+        assert_eq!(
+            classify(dash_sdk::Error::DapiClientError(
+                DapiClientError::NoAvailableAddresses
+            )),
+            DashSDKErrorCode::NetworkError
+        );
+    }
+
+    #[test]
+    fn missing_dependency_maps_to_not_found_whatever_its_id_spells() {
+        // A base58 id can spell words the substring fallbacks look for; a proved absence
+        // stays NotFound rather than surfacing as a timeout or a network failure.
+        for id in ["3dapiXk9", "7timeoutQ2", "connection8Zz", "DAPItimeout"] {
+            let err =
+                dash_sdk::Error::MissingDependency("DataContract".to_string(), id.to_string());
+            assert_eq!(classify(err), DashSDKErrorCode::NotFound, "{id}");
+        }
     }
 
     #[test]

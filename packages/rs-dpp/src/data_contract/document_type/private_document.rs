@@ -383,7 +383,8 @@ pub fn decode_private_document_payload(
     platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<String, Value>, ProtocolError> {
     refuse_a_public_type(document_type)?;
-    let mut check_budget = DecodedValueBudget::for_encoded_payload(payload.len(), document_type);
+    let mut decode_budget = DecodedValueBudget::for_encoded_payload(payload.len(), document_type);
+    let mut check_budget = decode_budget;
     refuse_unread_object_bytes(
         document_type.properties(),
         &mut BufReader::new(payload),
@@ -392,7 +393,6 @@ pub fn decode_private_document_payload(
     )?;
     let mut serialized = private_document_payload_prefix().to_vec();
     serialized.extend_from_slice(payload);
-    let mut decode_budget = DecodedValueBudget::for_encoded_payload(payload.len(), document_type);
     Ok(DocumentV0::from_bytes_with_budget(
         &serialized,
         document_type,
@@ -1193,7 +1193,10 @@ mod tests {
         let error = decode_private_document_payload(secret, &payload, platform_version)
             .expect_err("2-byte payload must not decode into 1024 values");
         assert!(
-            error.to_string().contains("decoded value budget exhausted"),
+            matches!(
+                error,
+                ProtocolError::DataContractError(DataContractError::DecodedValueBudgetExceeded(_))
+            ),
             "unexpected error: {error}"
         );
     }

@@ -43,8 +43,9 @@
 //!
 //! Every type also implements [`FetchUnproved`] for the unverified fast path.
 
+use crate::platform::documents::contest_vote_state::read_not_older_than;
 use crate::platform::{Fetch, FetchUnproved, Identifier, Query, QuerySettings};
-use crate::Error;
+use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::get_contract_document_removals_request::get_contract_document_removals_request_v0::Selection;
 use dapi_grpc::platform::v0::get_contract_document_removals_request::{
     DocumentIds, GetContractDocumentRemovalsRequestV0, Page,
@@ -69,7 +70,9 @@ use dapi_grpc::platform::v0::{
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::DataContract;
+use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 pub use drive_proof_verifier::types::contract_moderation::{
     default_contract_document_removals_limit, default_contract_moderation_entries_limit,
     list_to_request, ContractDocumentRemoval, ContractDocumentRemovalEntry,
@@ -80,6 +83,7 @@ pub use drive_proof_verifier::types::contract_moderation::{
     ContractTeamActionSigners, ContractTeamActions, ContractTeamActionsQuery, ContractWarning,
     GroupActionStatus,
 };
+use std::collections::BTreeMap;
 
 /// Query for one identity's status on a moderated contract.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,6 +105,75 @@ impl ContractModerationStatusQuery {
             contract_id: contract.id(),
             identity_id,
             lists,
+        })
+    }
+
+    /// The status query of `identity_id` on the contract `contract_id`: over `lists` when the
+    /// caller names them (an empty selection included, which the node judges), else over
+    /// every list the contract keeps ([`for_contract_id`](Self::for_contract_id)).
+    ///
+    /// # Errors
+    /// Those of [`for_contract_id`](Self::for_contract_id) when `lists` is `None`; none
+    /// otherwise.
+    pub async fn resolve(
+        sdk: &Sdk,
+        contract_id: Identifier,
+        identity_id: Identifier,
+        lists: Option<Vec<ContractModerationList>>,
+    ) -> Result<Self, Error> {
+        match lists {
+            Some(lists) => Ok(Self {
+                contract_id,
+                identity_id,
+                lists,
+            }),
+            None => Self::for_contract_id(sdk, contract_id, identity_id).await,
+        }
+    }
+
+    /// The status of `identity_id` on every list the contract `contract_id` keeps, for a
+    /// caller that holds only the contract's id: fetches the contract and reads its lists with
+    /// [`for_contract`](Self::for_contract). Which lists a contract keeps is fixed when it is
+    /// created, so the query stays valid for as long as the contract exists.
+    ///
+    /// The status request's own protocol requirement is checked first, through the gate the
+    /// fetch paths use, so a network that does not serve the status read refuses it as the
+    /// fetch would, before the contract is fetched.
+    ///
+    /// # Errors
+    /// * [`Error::ProtocolVersionNotActive`] when the network is not proven to serve the
+    ///   status request;
+    /// * [`Error::MissingDependency`] when the network holds no such contract;
+    /// * [`Error::InvalidRequest`] when the contract is not moderated, or is moderated and
+    ///   keeps no list (its moderators only delete documents): no identity has a status on it,
+    ///   and the node would refuse the query.
+    pub async fn for_contract_id(
+        sdk: &Sdk,
+        contract_id: Identifier,
+        identity_id: Identifier,
+    ) -> Result<Self, Error> {
+        // The requirement is the request's, whatever lists it names
+        let unresolved = Self {
+            contract_id,
+            identity_id,
+            lists: Vec::new(),
+        };
+        let requirement = Query::<GetContractModerationStatusRequest>::protocol_requirement(
+            &unresolved,
+            &sdk.query_settings(),
+        )?;
+        sdk.ensure_network_serves(requirement, None).await?;
+        let contract = DataContract::fetch(sdk, contract_id)
+            .await?
+            .ok_or_else(|| {
+                Error::MissingDependency("DataContract".to_string(), format!("{contract_id}"))
+            })?;
+        Self::for_contract(&contract, identity_id).ok_or_else(|| {
+            let reason = match contract.config().moderation() {
+                Some(_) => "keeps no moderation list, so no identity has a status on it",
+                None => "is not moderated",
+            };
+            Error::InvalidRequest(format!("contract {contract_id} {reason}"))
         })
     }
 }
@@ -194,6 +267,26 @@ impl Fetch for ContractModerationListStatuses {
     type Request = GetContractModerationStatusRequest;
 }
 
+impl Sdk {
+    /// The status of `identity_id` on the contract `contract_id`: resolves the query
+    /// ([`ContractModerationStatusQuery::resolve`]: over `lists` when named, an empty selection
+    /// included, else over every list the contract keeps) and fetches it
+    /// ([`ContractModerationListStatuses::fetch`]).
+    ///
+    /// # Errors
+    /// Those of [`ContractModerationStatusQuery::resolve`] and of the fetch.
+    pub async fn fetch_contract_moderation_status(
+        &self,
+        contract_id: Identifier,
+        identity_id: Identifier,
+        lists: Option<Vec<ContractModerationList>>,
+    ) -> Result<Option<ContractModerationListStatuses>, Error> {
+        let query =
+            ContractModerationStatusQuery::resolve(self, contract_id, identity_id, lists).await?;
+        ContractModerationListStatuses::fetch(self, query).await
+    }
+}
+
 impl FetchUnproved for ContractModerationListStatuses {
     type Request = GetContractModerationStatusRequest;
 }
@@ -274,6 +367,116 @@ impl ContractDocumentRemovalsPageQuery {
             query,
         })
     }
+
+    /// Reads the records this query names, each with the values it keeps of its document
+    /// ([`ContractDocumentRemovals::decode_kept_values`], sharing
+    /// `DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET` across the whole page), and the query of the
+    /// page after them. The kept values are encoded under the document's type, so the contract is
+    /// fetched when a record keeps any; a read whose records keep none costs the records' request
+    /// alone. `None` when [`ContractDocumentRemovals::fetch`] returns none.
+    ///
+    /// A compatible contract update can add members to a kept object, and the values read
+    /// only the members the type they are read under declares. So the contract must be
+    /// answered at a block no older than the records: an older answer is asked again, three
+    /// attempts in all ([`read_not_older_than`]). That budget, and the
+    /// [`StaleNodeError::Height`](crate::error::StaleNodeError::Height) it ends in, apply only
+    /// to contract answers that pass the contract fetch's own verification. An answer further
+    /// behind than the SDK's height tolerance already fails inside that fetch, under the
+    /// fetch's own retry policy, and surfaces as the fetch's error (an exhaustion wrapping a
+    /// stale error, for example) instead.
+    ///
+    /// The values are read under the document type as the contract holds it now, as Drive and
+    /// every other reader read them: a record stores the members of a kept object by position,
+    /// not by name, and no layout of its own. So on a contract whose protocol 14 update
+    /// reordered the members of a kept object (protocol 15 refuses such an update), a record
+    /// written before the update reads its values under the new order's names.
+    ///
+    /// # Errors
+    /// Those of [`ContractDocumentRemovals::fetch`], and, when a record keeps values:
+    /// * [`Error::MissingDependency`] when the network holds no such contract;
+    /// * [`Error::StaleNode`] when every contract answer that passed the fetch's verification
+    ///   is from a block older than the records'
+    ///   ([`StaleNodeError::Height`](crate::error::StaleNodeError::Height), `expected_height`
+    ///   the records' block); an answer beyond the SDK's height tolerance fails inside the
+    ///   fetch with that fetch's error;
+    /// * [`Error::Protocol`] when the contract declares no such document type, or the record's
+    ///   values do not read under it.
+    pub async fn fetch_with_kept_values(
+        &self,
+        sdk: &Sdk,
+    ) -> Result<Option<ContractDocumentRemovalsWithKeptValues>, Error> {
+        let (page, removals_metadata) =
+            ContractDocumentRemovals::fetch_with_metadata(sdk, self.clone(), None).await?;
+        let Some(page) = page else {
+            return Ok(None);
+        };
+        let next = self.after(&page);
+        let keeps_values = page
+            .removals()
+            .iter()
+            .any(|entry| !entry.removal.kept_fields.is_empty());
+        let contract = if keeps_values {
+            Some(
+                self.contract_at_or_after(sdk, removals_metadata.height)
+                    .await?,
+            )
+        } else {
+            None
+        };
+        let document_type = contract
+            .as_ref()
+            .map(|contract| {
+                contract
+                    .document_type_for_name(&self.query.document_type_name)
+                    .map_err(ProtocolError::from)
+            })
+            .transpose()?;
+        // Share one decoded-value budget across every removal record in the page; a page
+        // whose records keep nothing skips contract fetching and reads as empty maps.
+        let kept_values_list = match document_type {
+            Some(document_type) => page.decode_kept_values(document_type)?,
+            None => vec![BTreeMap::new(); page.0.len()],
+        };
+        let removals = page.0.into_iter().zip(kept_values_list).collect();
+        Ok(Some(ContractDocumentRemovalsWithKeptValues {
+            removals,
+            next,
+        }))
+    }
+
+    /// The contract as answered at a block no older than `records_height`, asked again while
+    /// an answer is older ([`read_not_older_than`]). An absence is proved at a height too, so
+    /// it follows the same rule: only an absence no older than the records means the contract
+    /// is gone. The attempts count only answers the fetch verified: one beyond the SDK's height
+    /// tolerance fails inside the fetch, with its own retries and error.
+    async fn contract_at_or_after(
+        &self,
+        sdk: &Sdk,
+        records_height: u64,
+    ) -> Result<DataContract, Error> {
+        let (contract, _) = read_not_older_than(
+            records_height,
+            |_| false,
+            || DataContract::fetch_with_metadata(sdk, self.contract_id, None),
+        )
+        .await?;
+        contract.ok_or_else(|| {
+            Error::MissingDependency("DataContract".to_string(), format!("{}", self.contract_id))
+        })
+    }
+}
+
+/// Removal records of one document type, each with the values it keeps read under that type:
+/// what [`ContractDocumentRemovalsPageQuery::fetch_with_kept_values`] returns.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContractDocumentRemovalsWithKeptValues {
+    /// The records, in document id order, each with the values it keeps by property path
+    /// (`moderatorAbilities.deleteKeepsFields`): empty when it keeps none, and a path the
+    /// document held no value at left out.
+    pub removals: Vec<(ContractDocumentRemovalEntry, BTreeMap<String, Value>)>,
+    /// The query of the next page; `None` when the page held fewer records than the limit and
+    /// so was the last, and for a read by ids, which has no page after it.
+    pub next: Option<ContractDocumentRemovalsPageQuery>,
 }
 
 impl Query<GetContractDocumentRemovalsRequest> for ContractDocumentRemovalsPageQuery {

@@ -306,8 +306,8 @@ impl TypedArrayProperty {
         if self.has_zero_encoded_width_element() {
             if let Some(budget) = budget.as_deref() {
                 if count > budget.remaining() {
-                    return Err(DataContractError::CorruptedSerialization(format!(
-                        "decoded value budget exhausted: typed array claims {count} element(s), {} remaining",
+                    return Err(DataContractError::DecodedValueBudgetExceeded(format!(
+                        "typed array claims {count} element(s), {} remaining",
                         budget.remaining()
                     )));
                 }

@@ -2,7 +2,6 @@ import SwiftUI
 import SwiftDashSDK
 import SwiftData
 import DashSDKFFI
-import LocalAuthentication
 
 /// Routes for value-based navigation from the wallets tab. All
 /// pushes go through `.navigationDestination(for:)` modifiers
@@ -36,6 +35,9 @@ struct WalletDetailView: View {
     @State private var showSeedShieldedPool = false
     /// Set by `PendingPlatformFundFromAssetLocksList`'s Resume tap.
     @State private var resumingAssetLock: PersistentAssetLock?
+    /// Operation ids with a stored Max-transfer marker, mirrored from
+    /// `walletDrainCoordinator` so the generic list can hide their locks.
+    @State private var drainMarkedOperationIds: Set<UUID> = []
 
     @Query private var walletAssetLocks: [PersistentAssetLock]
 
@@ -157,10 +159,17 @@ struct WalletDetailView: View {
                 .accessibilityIdentifier("walletDetail.seedPoolNotesButton")
             }
 
+            UnfinishedWalletDrainsList(
+                drainCoordinator: walletManager.walletDrainCoordinator,
+                fundingCoordinator: walletManager.shieldedFundFromAssetLockCoordinator,
+                walletId: wallet.walletId
+            )
+
             PendingPlatformFundFromAssetLocksList(
                 coordinator: walletManager.addressFundFromAssetLockCoordinator,
                 walletId: wallet.walletId,
                 assetLocks: walletAssetLocks,
+                drainMarkedOperationIds: drainMarkedOperationIds,
                 resumingAssetLock: $resumingAssetLock
             )
             .padding(.top, 8)
@@ -310,6 +319,18 @@ struct WalletDetailView: View {
         }
         .onChange(of: wallet.walletId) { _, newId in
             shieldedService.switchTo(walletId: newId)
+        }
+        .onReceive(walletManager.walletDrainCoordinator.$markedOperationIds) { ids in
+            drainMarkedOperationIds = ids
+        }
+        .task(id: wallet.walletId) {
+            // Read this wallet's unfinished Max transfers, so one cut off by
+            // process death is listed with what Rust reports for it.
+            await walletManager.walletDrainCoordinator.reconcile(
+                walletManager: walletManager,
+                networkRaw: platformState.currentNetwork.rawValue,
+                walletIds: [wallet.walletId]
+            )
         }
     }
 }
@@ -698,36 +719,29 @@ struct WalletInfoView: View {
         .animation(.easeInOut(duration: 0.2), value: isUpdatingNetworks)
     }
 
-    /// Prompt the user via biometric / passcode, then pull the
-    /// wallet's mnemonic out of the keychain for display. On failure
-    /// surfaces the error via `errorMessage`/`showError`.
+    /// Prompt the user via biometric / passcode (`DeviceOwnerAuthentication`),
+    /// then pull the wallet's mnemonic out of the keychain for display. A
+    /// cancelled prompt shows nothing; other failures surface via
+    /// `errorMessage`/`showError`.
     @MainActor
     private func authorizeAndRevealMnemonic() async {
         guard !isAuthorizingSeedPhrase else { return }
         isAuthorizingSeedPhrase = true
         defer { isAuthorizingSeedPhrase = false }
 
-        let context = LAContext()
-        context.localizedCancelTitle = "Cancel"
-        var policyError: NSError?
-        guard context.canEvaluatePolicy(
-            .deviceOwnerAuthentication,
-            error: &policyError
-        ) else {
-            errorMessage = "Authentication is unavailable on this device: "
-                + (policyError?.localizedDescription ?? "unknown")
+        switch await DeviceOwnerAuthentication.authorize(
+            reason: "Reveal your wallet's recovery phrase."
+        ) {
+        case .authorized:
+            break
+        case .cancelled:
+            return
+        case .unavailable(let detail):
+            errorMessage = "Authentication is unavailable on this device: \(detail)"
             showError = true
             return
-        }
-
-        do {
-            let authorized = try await context.evaluatePolicy(
-                .deviceOwnerAuthentication,
-                localizedReason: "Reveal your wallet's recovery phrase."
-            )
-            guard authorized else { return }
-        } catch {
-            errorMessage = "Authorization failed: \(error.localizedDescription)"
+        case .failed(let detail):
+            errorMessage = "Authorization failed: \(detail)"
             showError = true
             return
         }
@@ -978,6 +992,18 @@ struct WalletInfoView: View {
                 isDeleting = false
             }
             return
+        }
+
+        // Max-transfer markers are app-side, so the SDK wipe above does not
+        // reach them; a re-imported wallet with the same id would list them.
+        // The wallet is already gone, so a failure is logged and the screen
+        // still closes: keeping it up would render a deleted SwiftData row.
+        do {
+            try walletManager.walletDrainCoordinator.forgetWallet(walletId: walletId)
+        } catch {
+            SDKLogger.error(
+                "Wallet deleted, but its Max transfer markers were not removed: \(error.localizedDescription)"
+            )
         }
 
         await MainActor.run {

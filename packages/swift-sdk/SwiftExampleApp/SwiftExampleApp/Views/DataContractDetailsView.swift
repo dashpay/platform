@@ -16,9 +16,12 @@ struct DataContractDetailsView: View {
     /// (the persist call lives there); we just toggle the spinner.
     var isSaving: Bool = false
     @Environment(\.dismiss) var dismiss
+    /// Read for the connection the moderation screens are opened on.
+    @EnvironmentObject var appState: AppState
     @Environment(\.modelContext) private var modelContext
     @State private var showingShareSheet = false
     @State private var showCopiedAlert = false
+    @State private var showingUpdateContract = false
 
     var displayName: String {
         // Check if this is a token-only contract
@@ -56,6 +59,7 @@ struct DataContractDetailsView: View {
                 groupsSection
                 documentTypesSection
                 documentsSection
+                moderationSection
                 actionsSection
             }
             .navigationTitle("Contract Details")
@@ -79,6 +83,18 @@ struct DataContractDetailsView: View {
             }
             .navigationDestination(for: OwnerRoute.self) { route in
                 IdentityDetailView(identityId: route.identityId)
+            }
+            .navigationDestination(for: ModerationRoute.self) { route in
+                ContractModerationView(
+                    scope: route.scope,
+                    documentTypeNames: route.documentTypeNames
+                )
+            }
+            // A boolean route on the stack itself, not a link inside a
+            // section, so a re-render of this list cannot pop it (see the
+            // comment above).
+            .navigationDestination(isPresented: $showingUpdateContract) {
+                UpdateContractView(contract: contract)
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -284,6 +300,30 @@ struct DataContractDetailsView: View {
         }
     }
 
+    /// Contract moderation and fee pots (protocol version 14). Offered for
+    /// every contract: whether it is moderated, which lists it keeps and
+    /// what its pots hold are the node's to answer on the next screen.
+    @ViewBuilder
+    private var moderationSection: some View {
+        Section("Moderation") {
+            NavigationLink(
+                value: ModerationRoute(
+                    // The connection is captured as the hub is opened: once it is
+                    // replaced, the hub shows a notice rather than read this id
+                    // through the new SDK, which may hold another chain's contract
+                    scope: ModerationScope(
+                        contractId: contract.idBase58,
+                        generation: appState.sdkGeneration
+                    ),
+                    documentTypeNames: (contract.documentTypes ?? []).map(\.name).sorted()
+                )
+            ) {
+                Label("Moderation and Fee Pots", systemImage: "shield.lefthalf.filled")
+            }
+            .accessibilityIdentifier("contractModeration.link")
+        }
+    }
+
     @ViewBuilder
     private var actionsSection: some View {
         Section {
@@ -303,6 +343,18 @@ struct DataContractDetailsView: View {
                     }
                 }
                 .disabled(isSaving)
+            }
+
+            // Only the owner can sign an update, so the action is offered
+            // when a local identity owns the contract, and never for a
+            // preview-only contract (`onSave != nil`). Whether Platform
+            // accepts the update is decided when it is broadcast.
+            if onSave == nil, contract.ownerIdentity != nil {
+                Button(action: { showingUpdateContract = true }) {
+                    Label("Update Contract", systemImage: "square.and.pencil")
+                        .foregroundColor(.blue)
+                }
+                .accessibilityIdentifier("contractDetails.updateContract")
             }
 
             Button(action: { showingShareSheet = true }) {
@@ -338,6 +390,12 @@ struct DataContractDetailsView: View {
     /// `Data` value could collide with any other `Data`-keyed route).
     private struct OwnerRoute: Hashable {
         let identityId: Data
+    }
+
+    /// Value-based navigation route for the moderation screen.
+    private struct ModerationRoute: Hashable {
+        let scope: ModerationScope
+        let documentTypeNames: [String]
     }
 
     /// Decode `contract.groups` (`[String: Any]?`) into a sorted

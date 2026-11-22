@@ -14,6 +14,8 @@ use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::v0::DocumentV0;
 use crate::version::PlatformVersion;
 use integer_encoding::VarIntReader;
+use platform_value::Identifier;
+use std::io::Read;
 
 use platform_version::version::FeatureVersion;
 
@@ -111,6 +113,47 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
 }
 
 impl DocumentV0 {
+    /// Reads only the document `$id` from the header of a serialized document
+    /// (formats 0 through 3) without decoding any document properties.
+    pub fn id_from_bytes(mut serialized_document: &[u8]) -> Result<Identifier, ProtocolError> {
+        let format: FeatureVersion = serialized_document.read_varint().map_err(|_| {
+            DataContractError::DecodingDocumentError(DecodingError::new(
+                "error reading serialization format from serialized document".to_string(),
+            ))
+        })?;
+        match format {
+            0..=2 => {}
+            3 => {
+                let stamp: u64 = serialized_document.read_varint().map_err(|_| {
+                    DataContractError::DecodingDocumentError(DecodingError::new(
+                        "error reading contract version stamp from serialized document".to_string(),
+                    ))
+                })?;
+                if stamp > u32::MAX as u64 {
+                    return Err(ProtocolError::DataContractError(
+                        DataContractError::CorruptedSerialization(
+                            "contract version stamp does not fit in a u32".to_string(),
+                        ),
+                    ));
+                }
+            }
+            version => {
+                return Err(ProtocolError::UnknownVersionMismatch {
+                    method: "Document::id_from_bytes (serialization format)".to_string(),
+                    known_versions: vec![0, 1, 2, 3],
+                    received: version,
+                });
+            }
+        }
+        let mut id = [0u8; 32];
+        serialized_document.read_exact(&mut id).map_err(|_| {
+            DataContractError::DecodingDocumentError(DecodingError::new(
+                "error reading id from serialized document header".to_string(),
+            ))
+        })?;
+        Ok(Identifier::new(id))
+    }
+
     /// Reads a serialized document while enforcing `budget` on decoded property
     /// values. Used by client-side proof verification and private-document
     /// payload decoding so zero-width typed-array elements on protocol-version-14
@@ -134,10 +177,14 @@ impl DocumentV0 {
                     document_type,
                     Some(budget),
                     platform_version,
-                )
-                .map_err(ProtocolError::DataContractError)
-                {
+                ) {
                     Ok(document) => Ok(document),
+                    // Budget exhaustion is terminal: retrying format 1 could parse
+                    // legacy format-0 integer bytes at narrower widths and return an
+                    // altered document instead of a budget error.
+                    Err(first_err @ DataContractError::DecodedValueBudgetExceeded(_)) => {
+                        Err(ProtocolError::DataContractError(first_err))
+                    }
                     Err(first_err) => {
                         *budget = saved_budget;
                         match DocumentV0::from_bytes_v1_with_budget(
@@ -149,7 +196,10 @@ impl DocumentV0 {
                             Ok(document_from_version_1_deserialization) => {
                                 Ok(document_from_version_1_deserialization)
                             }
-                            Err(_) => Err(first_err),
+                            Err(budget_err @ DataContractError::DecodedValueBudgetExceeded(_)) => {
+                                Err(ProtocolError::DataContractError(budget_err))
+                            }
+                            Err(_) => Err(ProtocolError::DataContractError(first_err)),
                         }
                     }
                 }

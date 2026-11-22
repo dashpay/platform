@@ -4,7 +4,13 @@ import SwiftDashSDK
 
 @MainActor
 class AppState: ObservableObject {
-    @Published var sdk: SDK?
+    @Published var sdk: SDK? {
+        didSet { sdkGeneration &+= 1 }
+    }
+    /// Advanced every time `sdk` is set, so a result read through one SDK can
+    /// tell it no longer answers for the current one: a stable identity for
+    /// the connection, unlike the network, which a devnet edit keeps.
+    @Published private(set) var sdkGeneration = 0
     @Published var isLoading = false
     @Published var showError = false
     @Published var errorMessage = ""
@@ -44,8 +50,20 @@ class AppState: ObservableObject {
 
     /// Whether an SDK rebuild is running, started from any window. Options
     /// disables its rebuild controls on it; `rebuildSdk` refuses a second
-    /// rebuild by itself.
+    /// rebuild by itself. Every asset-lock funding and every identity
+    /// registration start refuses on it (`fundingRefusal`): the rebuild
+    /// has stopped, or is about to stop, the SPV client a funding needs.
     @Published private(set) var isRebuildingSdk = false
+
+    /// Why a funding (a shield, a Max or its Resume, a Platform address
+    /// top-up, or an identity registration from any source, fresh or
+    /// resumed) may not start now, or `nil` when it may. A rebuild reserves
+    /// `isRebuildingSdk` before it checks for running fundings and
+    /// registrations and then stops SPV, so one started after that
+    /// reservation would run beside the shutdown it was not counted in.
+    nonisolated static func fundingRefusal(isRebuildingSdk: Bool) -> String? {
+        isRebuildingSdk ? WalletDrainCoordinator.rebuildInProgressMessage : nil
+    }
 
     @Published var useDockerSetup: Bool {
         didSet {
@@ -235,13 +253,17 @@ class AppState: ObservableObject {
     /// first suspension and released after its publish or rollback. This is
     /// the only way the SDK and its network change after the bootstrap.
     ///
-    /// The steps this object does not own are injected: `stopSpv` (the
-    /// wallet manager's), `prepare` and `rollBack` (the settings the flow
-    /// changes), `activateManager` (the wallet manager store's) and
-    /// `beforePublish` (the flow's own state).
+    /// The steps this object does not own are injected: `fundingInFlight`
+    /// and `stopSpv` (the wallet manager's), `prepare` and `rollBack` (the
+    /// settings the flow changes), `activateManager` (the wallet manager
+    /// store's) and `beforePublish` (the flow's own state). The sequence
+    /// checks `fundingInFlight` before its first suspension, and every
+    /// funding and identity registration checks `isRebuildingSdk` before
+    /// it starts (`fundingRefusal`), so neither starts beside the other.
     func rebuildSdk(
         from network: Network,
         to target: Network,
+        fundingInFlight: @MainActor () -> Bool,
         stopSpv: @MainActor () async -> Bool,
         prepare: @MainActor () -> Void,
         activateManager: @MainActor (Network, SDK) async -> Bool,
@@ -263,6 +285,7 @@ class AppState: ObservableObject {
             to: target,
             stopSpv: stopSpv,
             currentNetwork: { self.currentNetwork },
+            fundingInFlight: fundingInFlight,
             prepare: prepare,
             buildSdk: { self.buildSdk(for: $0) },
             activateManager: activateManager,
