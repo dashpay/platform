@@ -58,6 +58,10 @@ use crate::wallet::identity::types::key_storage::DpnsNameInfo;
 use super::document::allowed_signing_security_levels;
 use super::*;
 
+mod give_up;
+
+pub use give_up::{DpnsNameGiveUpChoices, DpnsNameGiveUpMethod, DpnsNameGivenUp};
+
 /// DPNS document type carrying registered names.
 const DPNS_DOCUMENT_TYPE: &str = "domain";
 /// The only DPNS parent domain in production.
@@ -958,11 +962,30 @@ impl IdentityWallet {
         signer: &impl Signer<IdentityPublicKey>,
     ) -> Result<IdentityPublicKey, PlatformWalletError> {
         let contract = self.dpns_contract().await?;
+        self.select_signing_key_for_document_type(
+            identity_id,
+            &contract,
+            DPNS_DOCUMENT_TYPE,
+            signer,
+        )
+        .await
+    }
+
+    /// [`Self::select_dpns_signing_key`] for any document type of
+    /// `contract`: the key must satisfy the security level
+    /// `document_type_name` requires.
+    async fn select_signing_key_for_document_type(
+        &self,
+        identity_id: &Identifier,
+        contract: &DataContract,
+        document_type_name: &str,
+        signer: &impl Signer<IdentityPublicKey>,
+    ) -> Result<IdentityPublicKey, PlatformWalletError> {
         let required_level = contract
-            .document_type_for_name(DPNS_DOCUMENT_TYPE)
+            .document_type_for_name(document_type_name)
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
-                    "DPNS contract has no {DPNS_DOCUMENT_TYPE:?} document type: {e}"
+                    "DPNS contract has no {document_type_name:?} document type: {e}"
                 ))
             })?
             .security_level_requirement();
@@ -992,7 +1015,7 @@ impl IdentityWallet {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "No ECDSA authentication key at a security level satisfying \
                      {required_level} found on identity {identity_id} \
-                     (required to sign a DPNS domain state transition)"
+                     (required to sign a DPNS {document_type_name} state transition)"
                 ))
             })
     }
@@ -2276,6 +2299,8 @@ fn required_purchase_credits(expected_price: Credits) -> Result<Credits, Platfor
 
 #[cfg(test)]
 mod tests {
+    mod give_up;
+
     use super::super::signing_key::tests::{identity, lock_checking_signer};
     use super::*;
     use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
