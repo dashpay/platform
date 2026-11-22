@@ -24,7 +24,7 @@ use dpp::util::hash::hash_single;
 use dpp::version::feature_initial_protocol_versions::{
     IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
     PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
-    SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION,
+    SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION, TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
 };
 use dpp::version::PlatformVersion;
 use rs_dapi_client::AddressList;
@@ -79,6 +79,18 @@ pub fn identity_top_up_from_shielded_pool_requirement() -> ProtocolRequirement {
     }
 }
 
+/// What a token purchase paid from the shielded credit pool (type 28) needs: every node serves
+/// it from protocol version 14, with the token shielded pools. Wallets check it before they
+/// reserve notes or prove the transition ([`Sdk::ensure_protocol_requirement`]); the broadcast
+/// checks it again.
+pub fn token_purchase_from_shielded_pool_requirement() -> ProtocolRequirement {
+    ProtocolRequirement {
+        protocol_version: TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+        method: BROADCAST_STATE_TRANSITION_METHOD,
+        feature: Some("token purchase from shielded pool transitions"),
+    }
+}
+
 /// The protocol version `transition`'s kind needs before every node serves it, for a kind
 /// newer than every node may run: nodes of an older release reject it, which the client would
 /// take for the transition's own rejection. The broadcast gate applies it; a caller that keeps
@@ -98,6 +110,9 @@ pub fn transition_protocol_requirement(
         StateTransition::ShieldFromIdentity(_) => Some(shield_from_identity_requirement()),
         StateTransition::IdentityTopUpFromShieldedPool(_) => {
             Some(identity_top_up_from_shielded_pool_requirement())
+        }
+        StateTransition::TokenPurchaseFromShieldedPool(_) => {
+            Some(token_purchase_from_shielded_pool_requirement())
         }
         _ => None,
     }

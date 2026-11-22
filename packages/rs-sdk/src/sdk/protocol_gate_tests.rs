@@ -98,6 +98,9 @@ use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::shielded::{OrchardBundleParams, SerializedAction};
 use dpp::state_transition::private_document_create_from_shielded_pool_transition::methods::PrivateDocumentCreateFromShieldedPoolTransitionMethodsV0;
 use dpp::state_transition::private_document_create_from_shielded_pool_transition::PrivateDocumentCreateFromShieldedPoolTransition;
+use dpp::state_transition::token_purchase_from_shielded_pool_transition::v0::TokenPurchaseFromShieldedPoolTransitionV0;
+use dpp::state_transition::token_purchase_from_shielded_pool_transition::TokenPurchaseFromShieldedPoolTransition;
+use dpp::state_transition::StateTransition;
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::version::v13::PROTOCOL_VERSION_13;
 use dpp::version::v14::PROTOCOL_VERSION_14;
@@ -3387,6 +3390,55 @@ async fn should_refuse_a_generic_broadcast_of_identity_shielded_payments_until_1
             }
             assert_eq!(probes(&sdk).await, 1, "{kind}, pinned {pinned}");
         }
+    }
+}
+
+/// A token purchase paid from the shielded pool (type 28) built elsewhere and sent through the
+/// generic broadcast is gated from protocol version 14, when token shielded pools activate:
+/// from an SDK at 14, seeded or pinned, on a network a verified answer shows at 13, it is
+/// refused locally instead of broadcast to be rejected.
+#[tokio::test]
+async fn should_refuse_a_generic_broadcast_of_a_shielded_token_purchase_until_14() {
+    let action = SerializedAction {
+        nullifier: [1; 32],
+        rk: [2; 32],
+        cmx: [3; 32],
+        encrypted_note: vec![4; 216],
+        cv_net: [5; 32],
+        spend_auth_sig: [6; 64],
+    };
+    let purchase = StateTransition::TokenPurchaseFromShieldedPool(
+        TokenPurchaseFromShieldedPoolTransition::V0(TokenPurchaseFromShieldedPoolTransitionV0 {
+            data_contract_id: Identifier::new([4; 32]),
+            token_contract_position: 0,
+            token_id: Identifier::new([5; 32]),
+            token_count: 10,
+            total_agreed_price: 1_000,
+            token_actions: vec![action.clone(), action.clone()],
+            token_anchor: [7; 32],
+            token_proof: vec![8; 64],
+            token_binding_signature: [9; 64],
+            fee_actions: vec![action.clone(), action],
+            fee_anchor: [7; 32],
+            fee_proof: vec![8; 64],
+            fee_binding_signature: [9; 64],
+            credit_amount: 2_000,
+        }),
+    );
+    for pinned in [false, true] {
+        let sdk = mock_sdk(V14, pinned, V13);
+        answer_probe(&sdk, "pv13").await;
+        match purchase.broadcast(&sdk, None).await {
+            Err(Error::ProtocolVersionNotActive {
+                method: "broadcast_state_transition",
+                required: V14,
+                network: V13,
+                cause: None,
+                ..
+            }) => {}
+            other => panic!("pinned {pinned}: expected a local refusal, got {other:?}"),
+        }
+        assert_eq!(probes(&sdk).await, 1, "pinned {pinned}");
     }
 }
 

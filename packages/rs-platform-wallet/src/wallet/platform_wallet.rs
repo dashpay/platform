@@ -51,6 +51,7 @@ use {
     },
     super::shielded::operations::{
         discharge_read_back_private_payments, private_document_create_from_pool_with_metadata,
+        token_purchase_from_pool, ShieldedTokenPurchaseOutcome,
     },
     super::shielded::store::{
         PendingRedrive, PrivateContactPayment, PrivatePaymentEntry, PrivatePaymentRecord,
@@ -2070,11 +2071,21 @@ impl PlatformWallet {
     /// pool. The wallet does not sync token pool notes yet, so that note is not
     /// tracked or shown. `seed` supplies the transient spend authority (see
     /// [`shielded_transfer_to`](Self::shielded_transfer_to)).
+    ///
+    /// An accepted purchase stays pending until a shielded sync confirms it
+    /// ([`ShieldedTokenPurchaseOutcome::Submitted`]); the manager's
+    /// [`shielded_token_purchase_from_pool`](crate::PlatformWalletManager::shielded_token_purchase_from_pool)
+    /// requests that sync. This generation's lifecycle gate is held across the
+    /// liveness check and the whole purchase, through its settlement, so a
+    /// removal of the wallet waits for a purchase in flight, and a handle to a
+    /// wallet removed, or re-created under the same id, since it was taken is
+    /// refused with [`PlatformWalletError::WalletRemovedBeforeSend`] with
+    /// nothing reserved, recorded or sent. A caller must not hold the gate.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
-    pub async fn shielded_token_purchase_from_pool<P: dpp::shielded::builder::OrchardProver>(
+    pub async fn shielded_token_purchase_from_pool<P: OrchardProver>(
         &self,
-        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
         seed: &[u8],
         account: u32,
         data_contract_id: &Identifier,
@@ -2082,9 +2093,19 @@ impl PlatformWallet {
         token_count: TokenAmount,
         total_agreed_price: Credits,
         prover: P,
-    ) -> Result<(), PlatformWalletError> {
+    ) -> Result<ShieldedTokenPurchaseOutcome, PlatformWalletError> {
+        // Taken before the wallet manager lock the liveness check reads, as
+        // the teardown takes them, and held until the purchase is settled: a
+        // removal cannot complete in between, so a removed wallet's purchase
+        // never reserves notes, records activity or reaches the network.
+        let _lifecycle = self.core().generation_payment_guard().await;
+        if !self.core().is_current_generation().await {
+            return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
+                self.wallet_id,
+            )));
+        }
         let keyset = self.derive_spend_keyset(seed, account).await?;
-        super::shielded::operations::token_purchase_from_pool(
+        token_purchase_from_pool(
             &self.sdk,
             coordinator.store(),
             Some(&self.persister),
@@ -4367,6 +4388,104 @@ mod private_contact_request_payment_tests {
         );
         assert_eq!(queued(), 1, "and queues nothing");
         drop(store);
+    }
+
+    /// Buy a token from `wallet`'s account 0 shielded notes.
+    async fn buy_token(
+        wallet: &PlatformWallet,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+    ) -> Result<ShieldedTokenPurchaseOutcome, PlatformWalletError> {
+        wallet
+            .shielded_token_purchase_from_pool(
+                coordinator,
+                &SEED,
+                0,
+                &Identifier::from([0x44; 32]),
+                0,
+                10,
+                1_000,
+                UnreachableProver,
+            )
+            .await
+    }
+
+    /// A handle to a wallet removed, or re-created under the same id, since
+    /// it was taken buys nothing from the shielded pool: it is refused at the
+    /// liveness check, before anything is checked, reserved or sent.
+    #[tokio::test]
+    async fn should_refuse_a_shielded_token_purchase_from_a_wallet_no_longer_current() {
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let coordinator = coordinator_at(dir.path());
+        let (manager, removed) = manager_with_wallet().await;
+        let wallet_id = removed.wallet_id();
+        manager.remove_wallet(&wallet_id).await.expect("removed");
+        let refused = buy_token(&removed, &coordinator).await;
+        assert!(
+            matches!(&refused, Err(PlatformWalletError::WalletRemovedBeforeSend(id))
+                if *id == hex::encode(wallet_id)),
+            "{refused:?}"
+        );
+
+        let recreated = add_wallet(&manager).await;
+        assert_eq!(recreated.wallet_id(), wallet_id);
+        let refused = buy_token(&removed, &coordinator).await;
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::WalletRemovedBeforeSend(_))
+            ),
+            "{refused:?}"
+        );
+        let current = buy_token(&recreated, &coordinator).await;
+        assert!(
+            !matches!(
+                current,
+                Err(PlatformWalletError::WalletRemovedBeforeSend(_))
+            ),
+            "the current wallet's purchase goes on: {current:?}"
+        );
+    }
+
+    /// A removal waits for a shielded token purchase that entered its fenced
+    /// section, here held at the wallet's shielded keys, and completes once
+    /// it returns.
+    #[tokio::test]
+    async fn should_hold_a_wallets_removal_until_its_shielded_token_purchase_returns() {
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let coordinator = coordinator_at(dir.path());
+        let (manager, wallet) = manager_with_wallet().await;
+        let wallet_id = wallet.wallet_id();
+
+        let keys = wallet.shielded_keys.write().await;
+        let purchase = {
+            let wallet = Arc::clone(&wallet);
+            let coordinator = Arc::clone(&coordinator);
+            tokio::spawn(async move { buy_token(&wallet, &coordinator).await })
+        };
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let removal = {
+            let manager = Arc::clone(&manager);
+            tokio::spawn(async move { manager.remove_wallet(&wallet_id).await.map(|_| ()) })
+        };
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(!purchase.is_finished(), "the purchase waits at the keys");
+        assert!(
+            !removal.is_finished(),
+            "the removal waits for the purchase in flight"
+        );
+        assert!(wallet.core().is_current_generation().await);
+
+        drop(keys);
+        let bought = purchase.await.expect("purchase task");
+        assert!(
+            !matches!(bought, Err(PlatformWalletError::WalletRemovedBeforeSend(_))),
+            "the wallet was current when it was checked: {bought:?}"
+        );
+        removal
+            .await
+            .expect("removal task")
+            .expect("the removal completes");
+        assert!(!wallet.core().is_current_generation().await);
     }
 }
 
