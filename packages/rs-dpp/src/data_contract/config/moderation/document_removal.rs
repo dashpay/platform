@@ -4,7 +4,8 @@ use crate::data_contract::document_type::accessors::{
 };
 use crate::data_contract::document_type::property_constraints::SystemProperty;
 use crate::data_contract::document_type::{
-    property_at_path, DocumentPropertyType, DocumentTypeRef,
+    property_at_path, DecodedValueBudget, DocumentPropertyType, DocumentTypeRef,
+    DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::document::{Document, DocumentV0Getters};
@@ -114,10 +115,24 @@ pub fn encode_kept_fields(
 
 /// Reads the values [`encode_kept_fields`] wrote, under `document_type`: each kept path to its
 /// value, typed as reading the document gives it, a path the document held no value at left
-/// out. Refuses bytes that end before the last path or run past it.
+/// out. Refuses bytes that end before the last path or run past it, and enforces
+/// [`DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET`] on the decoded values.
 pub fn decode_kept_fields(
     encoded: &[u8],
     document_type: DocumentTypeRef,
+) -> Result<BTreeMap<String, Value>, ProtocolError> {
+    let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
+    decode_kept_fields_with_budget(encoded, document_type, &mut budget)
+}
+
+/// Reads the values [`encode_kept_fields`] wrote, under `document_type`, charging every decoded
+/// value against `budget`. Callers reading a page of removal records share one budget across
+/// the page so zero-width typed-array elements on protocol-version-14 contracts or large
+/// moderator-merged records cannot exhaust memory.
+pub fn decode_kept_fields_with_budget(
+    encoded: &[u8],
+    document_type: DocumentTypeRef,
+    budget: &mut DecodedValueBudget,
 ) -> Result<BTreeMap<String, Value>, ProtocolError> {
     let corrupted = |message: String| {
         ProtocolError::DataContractError(DataContractError::CorruptedSerialization(message))
@@ -125,34 +140,39 @@ pub fn decode_kept_fields(
     let mut buf = BufReader::new(encoded);
     let mut values = BTreeMap::new();
     for path in document_type.moderator_deletion_kept_fields() {
-        let value = match SystemProperty::from_name(path) {
-            Some(property) => {
-                let marker = buf
-                    .read_u8()
-                    .map_err(|_| corrupted(format!("kept fields end before \"{path}\"")))?;
-                match marker {
-                    KEPT_VALUE_ABSENT => None,
-                    KEPT_VALUE_PRESENT => Some(
-                        read_system_property(&mut buf, property)
-                            .map_err(|_| corrupted(format!("kept fields end inside \"{path}\"")))?,
-                    ),
-                    marker => {
-                        return Err(corrupted(format!(
-                            "kept field \"{path}\" has unknown marker {marker}"
-                        )))
+        let value =
+            match SystemProperty::from_name(path) {
+                Some(property) => {
+                    let marker = buf
+                        .read_u8()
+                        .map_err(|_| corrupted(format!("kept fields end before \"{path}\"")))?;
+                    match marker {
+                        KEPT_VALUE_ABSENT => None,
+                        KEPT_VALUE_PRESENT => {
+                            budget
+                                .consume(1)
+                                .map_err(ProtocolError::DataContractError)?;
+                            Some(read_system_property(&mut buf, property).map_err(|_| {
+                                corrupted(format!("kept fields end inside \"{path}\""))
+                            })?)
+                        }
+                        marker => {
+                            return Err(corrupted(format!(
+                                "kept field \"{path}\" has unknown marker {marker}"
+                            )))
+                        }
                     }
                 }
-            }
-            None => {
-                let (value, finished) = kept_property_type(&document_type, path)?
-                    .read_optionally_from(&mut buf, false)
-                    .map_err(ProtocolError::DataContractError)?;
-                if finished {
-                    return Err(corrupted(format!("kept fields end before \"{path}\"")));
+                None => {
+                    let (value, finished) = kept_property_type(&document_type, path)?
+                        .read_optionally_from_with_budget(&mut buf, false, Some(budget))
+                        .map_err(ProtocolError::DataContractError)?;
+                    if finished {
+                        return Err(corrupted(format!("kept fields end before \"{path}\"")));
+                    }
+                    value
                 }
-                value
-            }
-        };
+            };
         if let Some(value) = value {
             values.insert(path.clone(), value);
         }
@@ -271,6 +291,19 @@ impl ContractDocumentRemoval {
             return Ok(BTreeMap::new());
         }
         decode_kept_fields(&self.kept_fields, document_type)
+    }
+
+    /// Like [`Self::kept_values`], charging every decoded value against `budget`
+    /// (see [`decode_kept_fields_with_budget`]).
+    pub fn kept_values_with_budget(
+        &self,
+        document_type: DocumentTypeRef,
+        budget: &mut DecodedValueBudget,
+    ) -> Result<BTreeMap<String, Value>, ProtocolError> {
+        if self.kept_fields.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+        decode_kept_fields_with_budget(&self.kept_fields, document_type, budget)
     }
 }
 
@@ -529,5 +562,45 @@ mod tests {
         let mut unknown_marker = encoded;
         unknown_marker[0] = 7;
         decode_kept_fields(&unknown_marker, document_type.as_ref()).expect_err("an unknown marker");
+    }
+
+    #[test]
+    fn should_enforce_a_shared_decoded_value_budget_across_removal_records() {
+        let document_type = post_type();
+        let document = post(BTreeMap::from([
+            ("hashtag".to_string(), Value::Text("dash".to_string())),
+            (
+                "meta".to_string(),
+                Value::Map(vec![(
+                    Value::Text("tags".to_string()),
+                    Value::Array(vec![
+                        Value::Text("a".to_string()),
+                        Value::Text("b".to_string()),
+                    ]),
+                )]),
+            ),
+        ]));
+        let removal = ContractDocumentRemoval {
+            kept_fields: encode_kept_fields(&document, document_type.as_ref())
+                .expect("expected to encode"),
+            ..Default::default()
+        };
+
+        // One record holds: $createdAt (1), $createdAtCoreBlockHeight (1), hashtag (1),
+        // meta object (1), tags array (1), 2 tag strings (2) = 7 decoded values.
+        let mut budget = DecodedValueBudget::new(10);
+        removal
+            .kept_values_with_budget(document_type.as_ref(), &mut budget)
+            .expect("first record fits in budget");
+        assert_eq!(budget.remaining(), 3);
+
+        // A second record sharing the same budget exhausts the remaining 3 units.
+        let error = removal
+            .kept_values_with_budget(document_type.as_ref(), &mut budget)
+            .expect_err("second record must exhaust shared budget");
+        assert!(
+            error.to_string().contains("decoded value budget exhausted"),
+            "unexpected error: {error}"
+        );
     }
 }

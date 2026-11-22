@@ -256,6 +256,81 @@ impl DocumentProperty {
     }
 }
 
+/// Default ceiling on decoded [`Value`]s across one client-side query page
+/// (documents, document history, chained documents, or moderator removal
+/// records).
+///
+/// Ordinary pages hold far fewer values than this, while capping at 262,144
+/// decoded values keeps client memory bounded even when reading contracts
+/// registered at protocol version 14 that declare zero-width typed-array
+/// elements (`minItems: 0, maxItems: 0`), or pages of removal records grown by
+/// moderator field changes.
+pub const DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET: usize = 262_144;
+
+/// Remaining budget of decoded [`Value`]s across one or more serialized
+/// property reads (a document, a private document payload, a removal record's
+/// kept fields, or a whole page of them).
+///
+/// Each decoded property value — scalar, object map, array, or array element —
+/// consumes one unit before it is decoded. Exhausting the budget stops decoding
+/// with [`DataContractError::CorruptedSerialization`] so a crafted payload or a
+/// protocol-version-14 schema with zero-width typed-array elements cannot
+/// expand a small byte slice into unbounded memory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecodedValueBudget {
+    remaining: usize,
+}
+
+impl DecodedValueBudget {
+    /// Creates a budget admitting at most `limit` decoded values.
+    pub const fn new(limit: usize) -> Self {
+        Self { remaining: limit }
+    }
+
+    /// Creates a budget sized to an encoded payload of `encoded_len` bytes
+    /// under `document_type`: the number of declared property nodes plus
+    /// `encoded_len`.
+    ///
+    /// Every non-zero-width typed-array element consumes at least one encoded
+    /// byte and every non-array property node produces at most one value, so
+    /// any valid payload without zero-width typed-array elements stays within
+    /// this budget while keeping decoded values proportional to encoded size.
+    pub fn for_encoded_payload(encoded_len: usize, document_type: DocumentTypeRef) -> Self {
+        Self::new(count_property_nodes(document_type.properties()).saturating_add(encoded_len))
+    }
+
+    /// How many decoded values remain in the budget.
+    pub const fn remaining(&self) -> usize {
+        self.remaining
+    }
+
+    /// Consumes `count` units from the budget, failing with
+    /// [`DataContractError::CorruptedSerialization`] when fewer remain.
+    pub fn consume(&mut self, count: usize) -> Result<(), DataContractError> {
+        if count > self.remaining {
+            return Err(DataContractError::CorruptedSerialization(format!(
+                "decoded value budget exhausted: needed {count} more value(s), {} remaining",
+                self.remaining
+            )));
+        }
+        self.remaining -= count;
+        Ok(())
+    }
+}
+
+/// Counts every property node declared by `properties`, recursively through
+/// nested objects.
+pub fn count_property_nodes(properties: &IndexMap<String, DocumentProperty>) -> usize {
+    let mut count = 0usize;
+    for property in properties.values() {
+        count = count.saturating_add(1);
+        if let DocumentPropertyType::Object(members) = &property.property_type {
+            count = count.saturating_add(count_property_nodes(members));
+        }
+    }
+    count
+}
+
 /// The typed array property `name` names among a document type's
 /// `flattened_properties` (protocol version 14), or `None` when it names no
 /// property or a property of another type. The one reading of "is this a
@@ -2668,6 +2743,18 @@ impl DocumentPropertyType {
         buf: &mut BufReader<&[u8]>,
         required: bool,
     ) -> Result<(Option<Value>, bool), DataContractError> {
+        self.read_optionally_from_with_budget(buf, required, None)
+    }
+
+    /// Reads an optional value from the buffer while enforcing an optional
+    /// [`DecodedValueBudget`]. When `budget` is `None`, behavior is identical
+    /// to [`Self::read_optionally_from`].
+    pub fn read_optionally_from_with_budget(
+        &self,
+        buf: &mut BufReader<&[u8]>,
+        required: bool,
+        mut budget: Option<&mut DecodedValueBudget>,
+    ) -> Result<(Option<Value>, bool), DataContractError> {
         if !required {
             let marker = buf.read_u8().ok();
             match marker {
@@ -2675,6 +2762,9 @@ impl DocumentPropertyType {
                 Some(0) => return Ok((None, false)),
                 _ => {}
             }
+        }
+        if let Some(budget) = budget.as_deref_mut() {
+            budget.consume(1)?;
         }
         match self {
             DocumentPropertyType::U128 => {
@@ -2856,9 +2946,11 @@ impl DocumentPropertyType {
                             };
                         }
 
-                        let read_value = field
-                            .property_type
-                            .read_optionally_from(&mut object_buf_reader, required);
+                        let read_value = field.property_type.read_optionally_from_with_budget(
+                            &mut object_buf_reader,
+                            required,
+                            budget.as_deref_mut(),
+                        );
 
                         match read_value {
                             Ok(read_value) => {
@@ -2878,7 +2970,7 @@ impl DocumentPropertyType {
                 }
             }
             DocumentPropertyType::TypedArray(typed_array) => {
-                Ok((Some(typed_array.read_from(buf)?), false))
+                Ok((Some(typed_array.read_from_with_budget(buf, budget)?), false))
             }
             DocumentPropertyType::Array(item_type) => {
                 // Mirrors the encoding: a varint element count, then the
@@ -2893,6 +2985,9 @@ impl DocumentPropertyType {
                 })?;
                 let mut items = Vec::new();
                 for _ in 0..count {
+                    if let Some(budget) = budget.as_deref_mut() {
+                        budget.consume(1)?;
+                    }
                     items.push(item_type.read_from(buf)?);
                 }
                 Ok((Some(Value::Array(items)), false))
@@ -7290,6 +7385,57 @@ mod tests {
             .read_optionally_from(&mut reader, true)
             .expect("maxItems elements decode");
         assert_eq!(value, Some(Value::Array(vec![Value::Bytes(vec![]); 8])));
+    }
+
+    #[test]
+    fn should_stop_decoding_a_typed_array_when_the_decoded_value_budget_is_exhausted() {
+        use std::io::BufReader;
+        let empties = typed_array(DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: Some(0),
+            max_size: Some(0),
+        }));
+        let data: &[u8] = &[8];
+
+        // 1 value for the array + 8 values for its elements = 9 units total
+        let mut exact_budget = DecodedValueBudget::new(9);
+        let mut reader = BufReader::new(data);
+        let (value, _) = empties
+            .read_optionally_from_with_budget(&mut reader, true, Some(&mut exact_budget))
+            .expect("exact budget succeeds");
+        assert_eq!(value, Some(Value::Array(vec![Value::Bytes(vec![]); 8])));
+        assert_eq!(exact_budget.remaining(), 0);
+
+        // One unit short refuses before allocating the 8 zero-width elements
+        let mut short_budget = DecodedValueBudget::new(8);
+        let mut reader = BufReader::new(data);
+        let error = empties
+            .read_optionally_from_with_budget(&mut reader, true, Some(&mut short_budget))
+            .expect_err("budget short by one unit must refuse");
+        assert!(
+            matches!(
+                error,
+                DataContractError::CorruptedSerialization(ref message)
+                    if message.contains("decoded value budget exhausted")
+            ),
+            "{error}"
+        );
+
+        // Non-zero-width elements also charge the budget across elements
+        let bools = typed_array(DocumentPropertyType::Boolean);
+        let bool_data: &[u8] = &[4, 1, 0, 1, 0];
+        let mut bool_budget = DecodedValueBudget::new(4);
+        let mut reader = BufReader::new(bool_data);
+        let error = bools
+            .read_optionally_from_with_budget(&mut reader, true, Some(&mut bool_budget))
+            .expect_err("non-zero-width typed array exceeding budget must refuse");
+        assert!(
+            matches!(
+                error,
+                DataContractError::CorruptedSerialization(ref message)
+                    if message.contains("decoded value budget exhausted")
+            ),
+            "{error}"
+        );
     }
 
     #[test]

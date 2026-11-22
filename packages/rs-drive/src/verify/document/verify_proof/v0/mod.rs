@@ -2,7 +2,9 @@ use crate::verify::RootHash;
 
 use crate::error::Error;
 use crate::query::DriveDocumentQuery;
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use dpp::data_contract::document_type::{
+    DecodedValueBudget, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
+};
 use dpp::document::Document;
 
 use dpp::version::PlatformVersion;
@@ -48,12 +50,14 @@ impl DriveDocumentQuery<'_> {
 
         self.verify_proof_keep_serialized(proof, platform_version)
             .map(|(root_hash, documents)| {
+                let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
                 let documents = documents
                     .into_iter()
                     .map(|serialized| {
-                        Document::from_bytes(
+                        Document::from_bytes_with_budget(
                             serialized.as_slice(),
                             self.document_type,
+                            &mut budget,
                             platform_version,
                         )
                         .map_err(Error::from)

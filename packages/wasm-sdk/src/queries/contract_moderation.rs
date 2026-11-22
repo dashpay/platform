@@ -11,7 +11,9 @@ use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::config::v2::DataContractConfigGettersV2;
-use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
+use dash_sdk::dpp::data_contract::document_type::{
+    DecodedValueBudget, DocumentTypeRef, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
+};
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::contract_moderation::{
@@ -793,6 +795,17 @@ pub(crate) fn set_removal_fields(
     document_type: DocumentTypeRef,
     id_to_js: impl Fn(Identifier) -> JsValue,
 ) -> Result<(), WasmSdkError> {
+    let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
+    set_removal_fields_with_budget(target, removal, document_type, &mut budget, id_to_js)
+}
+
+pub(crate) fn set_removal_fields_with_budget(
+    target: &js_sys::Object,
+    removal: &ContractDocumentRemoval,
+    document_type: DocumentTypeRef,
+    budget: &mut DecodedValueBudget,
+    id_to_js: impl Fn(Identifier) -> JsValue,
+) -> Result<(), WasmSdkError> {
     let set = |key: &str, value: JsValue| {
         js_sys::Reflect::set(target, &key.into(), &value)
             .map(|_| ())
@@ -813,10 +826,11 @@ pub(crate) fn set_removal_fields(
             js_sys::BigInt::from(restoration.restored_at).into(),
         )?;
     }
-    // Read under the document's type, as its documents are
+    // Read under the document's type, as its documents are, sharing the caller's decoded-value
+    // budget across the page
     set(
         "keptFields",
-        kept_fields_to_js(&removal.kept_values(document_type)?)?,
+        kept_fields_to_js(&removal.kept_values_with_budget(document_type, budget)?)?,
     )?;
     Ok(())
 }
@@ -827,6 +841,7 @@ pub(crate) fn set_removal_fields(
 pub(crate) fn removal_entry_to_js(
     entry: &ContractDocumentRemovalEntry,
     document_type: DocumentTypeRef,
+    budget: &mut DecodedValueBudget,
     id_to_js: impl Fn(Identifier) -> JsValue,
 ) -> Result<JsValue, WasmSdkError> {
     let js_entry = js_sys::Object::new();
@@ -836,7 +851,7 @@ pub(crate) fn removal_entry_to_js(
         &id_to_js(entry.document_id),
     )
     .map_err(|_| WasmSdkError::generic("failed to set `documentId` on the removal"))?;
-    set_removal_fields(&js_entry, &entry.removal, document_type, id_to_js)?;
+    set_removal_fields_with_budget(&js_entry, &entry.removal, document_type, budget, id_to_js)?;
     Ok(js_entry.into())
 }
 
@@ -852,10 +867,14 @@ fn removals_to_js(
     };
     let id_to_js = |id: Identifier| JsValue::from_str(&IdentifierWasm::from(id).to_base58());
     let removals = Array::new();
+    let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
     for entry in page.removals() {
-        removals.push(&removal_entry_to_js(entry, document_type, |id| {
-            JsValue::from_str(&IdentifierWasm::from(id).to_base58())
-        })?);
+        removals.push(&removal_entry_to_js(
+            entry,
+            document_type,
+            &mut budget,
+            |id| JsValue::from_str(&IdentifierWasm::from(id).to_base58()),
+        )?);
     }
     set(&result, "removals", removals.into())?;
     // A page shorter than the limit is the last one, and a read by ids has no page after it:

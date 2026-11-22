@@ -1,4 +1,4 @@
-use crate::data_contract::document_type::property::DocumentPropertyType;
+use crate::data_contract::document_type::property::{DecodedValueBudget, DocumentPropertyType};
 use crate::data_contract::errors::DataContractError;
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
 use crate::serialization::JsonConvertible;
@@ -157,6 +157,13 @@ impl TypedArrayProperty {
         }
     }
 
+    /// Whether one element encodes to zero bytes: a fixed-size byte array
+    /// pinned to zero bytes (`minItems == maxItems == 0`), the one element
+    /// type that writes neither a length prefix nor any payload bytes.
+    pub fn has_zero_encoded_width_element(&self) -> bool {
+        self.element_raw_width() == Some(0)
+    }
+
     /// An element's encoded size for its scalar byte bound: the bound, plus
     /// the varint length in front of a length-prefixed element.
     fn element_encoded_size(&self, element_bytes: u16) -> u64 {
@@ -274,7 +281,15 @@ impl TypedArrayProperty {
     /// a count above `maxItems` is refused before anything is read: that
     /// bounds the loop even for elements of zero width (a byte array pinned
     /// to zero bytes).
-    pub(super) fn read_from(&self, buf: &mut BufReader<&[u8]>) -> Result<Value, DataContractError> {
+    ///
+    /// When `budget` is `Some`, each decoded element consumes one unit from
+    /// it; for zero-width elements the check runs before allocating so a
+    /// crafted count cannot expand beyond the remaining budget.
+    pub(super) fn read_from_with_budget(
+        &self,
+        buf: &mut BufReader<&[u8]>,
+        mut budget: Option<&mut DecodedValueBudget>,
+    ) -> Result<Value, DataContractError> {
         let count: usize = buf.read_varint().map_err(|_| {
             DataContractError::CorruptedSerialization(
                 "error reading varint of typed array element count".to_string(),
@@ -286,9 +301,25 @@ impl TypedArrayProperty {
                 self.max_items
             )));
         }
+        // Fail before allocating when a zero-width element would exhaust the
+        // budget (zero-width elements consume no bytes and never hit EOF).
+        if self.has_zero_encoded_width_element() {
+            if let Some(budget) = budget.as_deref() {
+                if count > budget.remaining() {
+                    return Err(DataContractError::CorruptedSerialization(format!(
+                        "decoded value budget exhausted: typed array claims {count} element(s), {} remaining",
+                        budget.remaining()
+                    )));
+                }
+            }
+        }
         let mut elements = Vec::new();
         for _ in 0..count {
-            let (element, _) = self.item_type.read_optionally_from(buf, true)?;
+            let (element, _) = self.item_type.read_optionally_from_with_budget(
+                buf,
+                true,
+                budget.as_deref_mut(),
+            )?;
             let Some(element) = element else {
                 return Err(DataContractError::CorruptedSerialization(
                     "a typed array element read back as absent".to_string(),

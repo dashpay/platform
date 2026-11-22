@@ -3,7 +3,9 @@ use crate::verify::RootHash;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::DriveDocumentQuery;
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use dpp::data_contract::document_type::{
+    DecodedValueBudget, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
+};
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
 use grovedb::{GroveDb, PathQuery};
@@ -83,9 +85,12 @@ impl DriveDocumentQuery<'_> {
                 let document = maybe_element
                     .map(|element| {
                         let document_bytes = element.into_item_bytes().map_err(Error::from)?;
-                        Document::from_bytes(
+                        let mut budget =
+                            DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
+                        Document::from_bytes_with_budget(
                             document_bytes.as_slice(),
                             self.document_type,
+                            &mut budget,
                             platform_version,
                         )
                         .map_err(Error::from)

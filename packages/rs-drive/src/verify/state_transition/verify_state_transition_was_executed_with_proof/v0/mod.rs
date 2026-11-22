@@ -13,11 +13,12 @@ use dpp::data_contract::associated_token::token_configuration::accessors::v0::To
 use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
-use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::document_type::{
+    DecodedValueBudget, DocumentTypeRef, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
+};
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::document::document_methods::DocumentMethodsV0;
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::util::hash::hash_double;
 use dpp::document::property_names::PRICE;
 use dpp::fee::Credits;
@@ -468,9 +469,13 @@ impl Drive {
                                 .map(|element| element.into_item_bytes().map_err(Error::from))
                                 .transpose()?
                                 .map(|serialized| {
-                                    Document::from_bytes(
+                                    let mut budget = DecodedValueBudget::new(
+                                        DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
+                                    );
+                                    Document::from_bytes_with_budget(
                                         serialized.as_slice(),
                                         document_type,
+                                        &mut budget,
                                         platform_version,
                                     )
                                     .map_err(Error::from)
@@ -2219,7 +2224,6 @@ impl Drive {
                 use crate::drive::shielded::paths::shielded_credit_pool_nullifiers_path_vec;
                 use dpp::data_contracts::withdrawals_contract;
                 use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
-                use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
                 use dpp::document::Document;
                 use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedShieldedNullifiersWithWithdrawalDocument;
                 use dpp::state_transition::shielded_withdrawal_transition::accessors::ShieldedWithdrawalTransitionAccessorsV0;
@@ -2331,11 +2335,16 @@ impl Drive {
                 })?;
 
                 let doc = match document_element {
-                    Some(Element::Item(serialized, _)) => Document::from_bytes(
-                        serialized.as_slice(),
-                        document_type,
-                        platform_version,
-                    )?,
+                    Some(Element::Item(serialized, _)) => {
+                        let mut budget =
+                            DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
+                        Document::from_bytes_with_budget(
+                            serialized.as_slice(),
+                            document_type,
+                            &mut budget,
+                            platform_version,
+                        )?
+                    }
                     Some(_) => {
                         return Err(Error::Proof(ProofError::CorruptedProof(
                             "expected an item element for withdrawal document".to_string(),
@@ -3570,7 +3579,13 @@ fn verify_contract_document_restore_execution(
         )),
     ))?;
     let document_type = contract.document_type_for_name(document_type_name)?;
-    let document = Document::from_bytes(document_bytes, document_type, platform_version)?;
+    let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
+    let document = Document::from_bytes_with_budget(
+        document_bytes,
+        document_type,
+        &mut budget,
+        platform_version,
+    )?;
     let document_id = document.id();
     let document_hash = hash_double(document_bytes);
     let (root_hash, mut entries) = Drive::verify_contract_document_removals(

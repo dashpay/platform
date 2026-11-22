@@ -13,9 +13,10 @@ use crate::data_contract::document_type::accessors::{
 };
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
 use crate::data_contract::document_type::property::DocumentProperty;
-use crate::data_contract::document_type::{property_names, DocumentPropertyType, DocumentTypeRef};
+use crate::data_contract::document_type::{
+    property_names, DecodedValueBudget, DocumentPropertyType, DocumentTypeRef,
+};
 use crate::data_contract::errors::DataContractError;
-use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::DocumentV0;
 use crate::ProtocolError;
 use indexmap::IndexMap;
@@ -303,6 +304,7 @@ fn refuse_unread_object_bytes(
     fields: &IndexMap<String, DocumentProperty>,
     buf: &mut BufReader<&[u8]>,
     top_level: bool,
+    budget: &mut DecodedValueBudget,
 ) -> Result<(), ProtocolError> {
     let unread = |path: &str| {
         ProtocolError::DecodingError(format!(
@@ -319,7 +321,11 @@ fn refuse_unread_object_bytes(
             field.required
         };
         let DocumentPropertyType::Object(members) = &field.property_type else {
-            let (_, finished) = field.property_type.read_optionally_from(buf, required)?;
+            let (_, finished) = field.property_type.read_optionally_from_with_budget(
+                buf,
+                required,
+                Some(budget),
+            )?;
             if finished {
                 return Ok(());
             }
@@ -334,6 +340,7 @@ fn refuse_unread_object_bytes(
                 continue;
             }
         }
+        budget.consume(1)?;
         let object_len: usize = buf.read_varint().map_err(|_| {
             ProtocolError::DecodingError(format!(
                 "the object {name} of a private document payload has no length"
@@ -350,7 +357,7 @@ fn refuse_unread_object_bytes(
             )));
         }
         let mut object = BufReader::new(body.as_slice());
-        refuse_unread_object_bytes(members, &mut object, false)?;
+        refuse_unread_object_bytes(members, &mut object, false, budget)?;
         if object.read(&mut [0u8; 1]).map_err(|_| unread(name))? > 0 {
             return Err(unread(name));
         }
@@ -366,20 +373,33 @@ fn refuse_unread_object_bytes(
 /// them is refused by a reader that does not know them, which should refetch the contract. The
 /// schema's bounds are not checked here, so a recipient validates the properties against the type
 /// before trusting them (`DataContract::validate_document_properties`).
+///
+/// Decoded values are bounded proportionally to `payload.len()` via
+/// [`DecodedValueBudget::for_encoded_payload`], so even an unvalidated schema carrying zero-width
+/// typed-array elements cannot expand a small payload beyond its encoded size.
 pub fn decode_private_document_payload(
     document_type: DocumentTypeRef,
     payload: &[u8],
     platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<String, Value>, ProtocolError> {
     refuse_a_public_type(document_type)?;
+    let mut check_budget = DecodedValueBudget::for_encoded_payload(payload.len(), document_type);
     refuse_unread_object_bytes(
         document_type.properties(),
         &mut BufReader::new(payload),
         true,
+        &mut check_budget,
     )?;
     let mut serialized = private_document_payload_prefix().to_vec();
     serialized.extend_from_slice(payload);
-    Ok(DocumentV0::from_bytes(&serialized, document_type, platform_version)?.properties)
+    let mut decode_budget = DecodedValueBudget::for_encoded_payload(payload.len(), document_type);
+    Ok(DocumentV0::from_bytes_with_budget(
+        &serialized,
+        document_type,
+        &mut decode_budget,
+        platform_version,
+    )?
+    .properties)
 }
 
 #[cfg(test)]
@@ -1122,5 +1142,59 @@ mod tests {
                 "required: {required}"
             );
         }
+    }
+
+    /// Even if an unvalidated private schema carries a zero-width byte-array typed array,
+    /// `decode_private_document_payload` bounds decoded values proportionally to the encoded
+    /// payload length so a 2-byte count cannot expand into `maxItems` values.
+    #[test]
+    fn should_bound_decoded_values_in_private_document_payload_by_encoded_size() {
+        let platform_version = PlatformVersion::latest();
+        let unvalidated_contract = DataContract::from_value(
+            platform_value::to_value(json!({
+                "$formatVersion": "1",
+                "id": Identifier::from([7; 32]).to_string(Encoding::Base58),
+                "ownerId": Identifier::from([8; 32]).to_string(Encoding::Base58),
+                "version": 1,
+                "documentSchemas": {
+                    "secret": {
+                        "type": "object",
+                        "private": { "entrySize": 512 },
+                        "documentsMutable": false,
+                        "canBeDeleted": false,
+                        "properties": {
+                            "empties": {
+                                "type": "array",
+                                "maxItems": 1024,
+                                "items": {
+                                    "type": "array",
+                                    "byteArray": true,
+                                    "minItems": 0,
+                                    "maxItems": 0
+                                },
+                                "position": 0
+                            }
+                        },
+                        "required": ["empties"],
+                        "additionalProperties": false
+                    }
+                }
+            }))
+            .expect("the contract converts"),
+            false,
+            platform_version,
+        )
+        .expect("unvalidated contract parses");
+        let secret = unvalidated_contract
+            .document_type_for_name("secret")
+            .expect("secret type");
+        // Varint 1024 = [0x80, 0x08]: 2 bytes claiming 1024 zero-width elements
+        let payload = [0x80u8, 0x08];
+        let error = decode_private_document_payload(secret, &payload, platform_version)
+            .expect_err("2-byte payload must not decode into 1024 values");
+        assert!(
+            error.to_string().contains("decoded value budget exhausted"),
+            "unexpected error: {error}"
+        );
     }
 }
