@@ -5,7 +5,10 @@ import SwiftDashSDK
 /// claim.
 struct ContractFeePotsSection: View {
     @EnvironmentObject var appState: AppState
-    let contractId: String
+    /// The contract and the connection it was opened on: this screen reads
+    /// only through that connection, and the hub hides it once replaced.
+    let scope: ModerationScope
+    private var contractId: String { scope.contractId }
 
     @StateObject private var loader = ModerationSingleLoader<ContractFeePots?>()
     private var load: ModerationLoad<ContractFeePots?> { loader.load }
@@ -50,11 +53,9 @@ struct ContractFeePotsSection: View {
         .task(id: contractId) {
             await reload()
         }
-        // A replaced SDK: drop the pots and read again through the new one
-        .onChange(of: appState.sdkGeneration) { _, _ in
-            loader.clear()
-            Task { await reload() }
-        }
+        // A replaced SDK: drop what was read through the old one and read
+        // nothing through the new one; the hub's gate shows the notice instead
+        .onChange(of: appState.sdkGeneration) { _, _ in loader.clear() }
     }
 
     private var isLoading: Bool {
@@ -63,7 +64,7 @@ struct ContractFeePotsSection: View {
     }
 
     private func reload() async {
-        guard let connection = appState.moderationConnection else {
+        guard let connection = appState.moderationConnection(in: scope) else {
             loader.fail("SDK not initialized")
             return
         }

@@ -5,7 +5,10 @@ import SwiftDashSDK
 /// seated team signed since the moderators pot was last claimed or settled.
 struct ContractModerationActionCountsView: View {
     @EnvironmentObject var appState: AppState
-    let contractId: String
+    /// The contract and the connection it was opened on: this screen reads
+    /// only through that connection, and the hub hides it once replaced.
+    let scope: ModerationScope
+    private var contractId: String { scope.contractId }
 
     @StateObject private var loader = ModerationSingleLoader<ContractModerationActionCounts?>()
     private var load: ModerationLoad<ContractModerationActionCounts?> { loader.load }
@@ -31,11 +34,9 @@ struct ContractModerationActionCountsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await reload() }
         .task { await reload() }
-        // A replaced SDK: drop the counts and read again through the new one
-        .onChange(of: appState.sdkGeneration) { _, _ in
-            loader.clear()
-            Task { await reload() }
-        }
+        // A replaced SDK: drop what was read through the old one and read
+        // nothing through the new one; the hub's gate shows the notice instead
+        .onChange(of: appState.sdkGeneration) { _, _ in loader.clear() }
     }
 
     @ViewBuilder
@@ -76,7 +77,7 @@ struct ContractModerationActionCountsView: View {
     }
 
     private func reload() async {
-        guard let connection = appState.moderationConnection else {
+        guard let connection = appState.moderationConnection(in: scope) else {
             loader.fail("SDK not initialized")
             return
         }

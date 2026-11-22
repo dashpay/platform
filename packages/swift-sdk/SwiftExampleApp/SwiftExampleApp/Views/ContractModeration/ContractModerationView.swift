@@ -10,14 +10,28 @@ import SwiftDashSDK
 /// keeps, which types keep removal records and whether it is elected are
 /// the node's to answer, and its refusal is shown on the screen that asked.
 struct ContractModerationView: View {
-    /// The contract's id, base58.
-    let contractId: String
+    /// The contract, and the connection current when it was opened: the hub
+    /// and every screen under it read and show only while that connection is
+    /// still the app's.
+    let scope: ModerationScope
     /// The contract's document types, offered for removal records.
     let documentTypeNames: [String]
 
+    /// The contract's id, base58.
+    private var contractId: String { scope.contractId }
+
     var body: some View {
+        ModerationScopeGate(scope: scope) { hub }
+            .navigationTitle("Moderation")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: ContractModerationRoute.self) { route in
+                ModerationScopeGate(scope: scope) { destination(for: route) }
+            }
+    }
+
+    private var hub: some View {
         List {
-            ContractFeePotsSection(contractId: contractId)
+            ContractFeePotsSection(scope: scope)
 
             Section {
                 ForEach(ContractModerationList.allCases) { list in
@@ -71,33 +85,28 @@ struct ContractModerationView: View {
                 Text("Only an elected contract has a seated team; the node refuses any other. Team actions are kept only when at least one document type sets moderatorAbilities.deleteSettled: otherwise the node refuses them, which differs from an empty list.")
             }
         }
-        .navigationTitle("Moderation")
-        .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(for: ContractModerationRoute.self) { route in
-            destination(for: route)
-        }
     }
 
     @ViewBuilder
     private func destination(for route: ContractModerationRoute) -> some View {
         switch route {
         case .list(let list):
-            ContractModerationEntriesView(contractId: contractId, list: list)
+            ContractModerationEntriesView(scope: scope, list: list)
         case .status:
-            ContractModerationStatusView(contractId: contractId)
+            ContractModerationStatusView(scope: scope)
         case .removals(let documentTypeName):
-            ContractDocumentRemovalsView(contractId: contractId, documentTypeName: documentTypeName)
+            ContractDocumentRemovalsView(scope: scope, documentTypeName: documentTypeName)
         case .teamActions:
-            ContractTeamActionsView(contractId: contractId)
+            ContractTeamActionsView(scope: scope)
         case .teamAction(let action, let status, let connection):
             ContractTeamActionDetailView(
-                contractId: contractId,
+                scope: scope,
                 action: action,
                 status: status,
                 connection: connection
             )
         case .actionCounts:
-            ContractModerationActionCountsView(contractId: contractId)
+            ContractModerationActionCountsView(scope: scope)
         }
     }
 }

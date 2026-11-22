@@ -6,7 +6,10 @@ import SwiftDashSDK
 /// one the contract keeps, which the node judges.
 struct ContractModerationStatusView: View {
     @EnvironmentObject var appState: AppState
-    let contractId: String
+    /// The contract and the connection it was opened on: this screen reads
+    /// only through that connection, and the hub hides it once replaced.
+    let scope: ModerationScope
+    private var contractId: String { scope.contractId }
 
     @State private var identityId = ""
     @State private var chosenLists: Set<ContractModerationList> = []
@@ -153,7 +156,7 @@ struct ContractModerationStatusView: View {
     /// Takes the identity and lists as they are now, makes them the current
     /// submission and shows it as loading; `nil` without an SDK.
     private func submitLookUp() -> LookUp? {
-        guard let connection = appState.moderationConnection else {
+        guard let connection = appState.moderationConnection(in: scope) else {
             load = .failed("SDK not initialized")
             return nil
         }

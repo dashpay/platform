@@ -971,13 +971,13 @@ struct QueryDetailView: View {
                 if inputs["startAfter"] != nil || inputs["limit"] != nil {
                     throw SDKError.invalidParameter("Give either Document IDs or Start After and Limit")
                 }
-                return try removalsResult(inputs, await sdk.contractDocumentRemovals(
+                return try await removalsResult(inputs, await sdk.contractDocumentRemovals(
                     contractId: contractId,
                     documentTypeName: documentTypeName,
                     documentIds: documentIds.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
                 ))
             }
-            return try removalsResult(inputs, await sdk.contractDocumentRemovals(
+            return try await removalsResult(inputs, await sdk.contractDocumentRemovals(
                 contractId: contractId,
                 documentTypeName: documentTypeName,
                 startAfter: inputs["startAfter"],
@@ -1093,34 +1093,19 @@ struct QueryDetailView: View {
         return BidiControls.jsonEscaped(String(decoding: try encoder.encode(value), as: UTF8.self))
     }
 
-    /// The most text a removal records preview shows. It protects rendering
-    /// only (one selectable `Text` lays out every character); the page read is
-    /// whole, and a smaller limit shows it whole.
-    private static let maxRemovalsPreviewBytes = 64 * 1024
-
-    /// A removal records page as the catalog shows it, cut to the most leading
-    /// records whose text fits ``maxRemovalsPreviewBytes``, with a `preview`
-    /// note saying how many of how many are shown when any are left out.
-    private func removalsResult(_ inputs: [String: String], _ page: ContractDocumentRemovalsPage?) throws -> Any {
+    /// A removal records page as the catalog shows it, formatted off the main
+    /// actor by ``RemovalsPreviewFormatter`` (record by record, stopping once
+    /// its budget is spent). The caller shows it only while the submission is
+    /// still current.
+    private func removalsResult(
+        _ inputs: [String: String],
+        _ page: ContractDocumentRemovalsPage?
+    ) async throws -> Any {
         guard let page else { return try moderationResult(inputs, page) }
-        var shown = page.removals.count
-        while true {
-            let note: String? = shown < page.removals.count
-                ? "Preview truncated (\(shown) of \(page.removals.count) records shown). Use a smaller limit."
-                : nil
-            let text = try catalogJSON(ModerationCatalogResult(
-                inputs: inputs,
-                result: RemovalsPreview(
-                    removals: Array(page.removals.prefix(shown)),
-                    nextStartAfter: page.nextStartAfter,
-                    preview: note
-                )
-            ))
-            if text.utf8.count <= Self.maxRemovalsPreviewBytes || shown == 0 {
-                return PreformattedJSON(text: text)
-            }
-            shown /= 2
-        }
+        let text = try await Task.detached(priority: .userInitiated) {
+            try RemovalsPreviewFormatter.format(inputs: inputs, page: page)
+        }.value
+        return PreformattedJSON(text: text)
     }
 
     private func inputFields(for queryName: String) -> [QueryInput] {
@@ -1552,12 +1537,72 @@ private struct ModerationCatalogResult<Answer: Encodable>: Encodable {
     }
 }
 
-/// A removal records page as the catalog previews it: the records shown, the
-/// page's cursor, and a note when records were left out of the preview.
-private struct RemovalsPreview: Encodable {
-    let removals: [ContractDocumentRemovalEntry]
-    let nextStartAfter: String?
-    let preview: String?
+/// Formats a removal records page for the catalog: pretty, sorted JSON of
+/// `{"inputs", "result": {"nextStartAfter"?, "preview"?, "removals"}}`, with bidi
+/// controls as JSON escapes (``BidiControls/jsonEscaped(_:)``).
+///
+/// It encodes record by record and stops once ``maxBytes`` would be passed, so
+/// a large page is never formatted whole just to be cut. When records are left
+/// out, `nextStartAfter` is dropped (it is the full page's cursor: paging from
+/// it would skip the hidden records) and `preview` says so. Not isolated to the
+/// main actor: the catalog runs it in a detached task.
+enum RemovalsPreviewFormatter {
+    /// The most text a preview shows. It protects rendering only (one
+    /// selectable `Text` lays out every character); the page read is whole,
+    /// and a smaller limit shows it whole.
+    static let maxBytes = 64 * 1024
+
+    static func format(
+        inputs: [String: String],
+        page: ContractDocumentRemovalsPage,
+        maxBytes: Int = maxBytes
+    ) throws -> String {
+        let inputsText = try encode(inputs)
+        var records: [String] = []
+        var used = inputsText.utf8.count
+        for removal in page.removals {
+            let record = try encode(removal)
+            if used + record.utf8.count > maxBytes {
+                break
+            }
+            used += record.utf8.count
+            records.append(record)
+        }
+        let truncated = records.count < page.removals.count
+
+        var result: [String] = []
+        if !truncated, let next = page.nextStartAfter {
+            result.append("\"nextStartAfter\" : " + (try encode(next)))
+        }
+        if truncated {
+            let note = "Preview truncated (\(records.count) of \(page.removals.count) records shown). "
+                + "Reduce Limit and rerun from the same Start After to see every record; "
+                + "in by-id mode submit fewer ids."
+            result.append("\"preview\" : " + (try encode(note)))
+        }
+        let removals = records.isEmpty
+            ? "[]"
+            : "[\n" + records.map { indent($0, by: 2) }.joined(separator: ",\n") + "\n]"
+        result.append("\"removals\" : " + removals)
+        let resultText = "{\n" + result.map { indent($0, by: 2) }.joined(separator: ",\n") + "\n}"
+        return "{\n"
+            + indent("\"inputs\" : " + inputsText, by: 2) + ",\n"
+            + indent("\"result\" : " + resultText, by: 2)
+            + "\n}"
+    }
+
+    /// `value` as pretty, sorted JSON, bidi controls escaped.
+    private static func encode<T: Encodable>(_ value: T) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        return BidiControls.jsonEscaped(String(decoding: try encoder.encode(value), as: UTF8.self))
+    }
+
+    /// `text` with every line indented by `spaces`.
+    private static func indent(_ text: String, by spaces: Int) -> String {
+        let pad = String(repeating: " ", count: spaces)
+        return pad + text.replacingOccurrences(of: "\n", with: "\n" + pad)
+    }
 }
 
 /// A query result already written as JSON text, shown as it is.

@@ -16,6 +16,8 @@ struct DataContractDetailsView: View {
     /// (the persist call lives there); we just toggle the spinner.
     var isSaving: Bool = false
     @Environment(\.dismiss) var dismiss
+    /// Read for the connection the moderation screens are opened on.
+    @EnvironmentObject var appState: AppState
     @Environment(\.modelContext) private var modelContext
     @State private var showingShareSheet = false
     @State private var showCopiedAlert = false
@@ -83,7 +85,7 @@ struct DataContractDetailsView: View {
             }
             .navigationDestination(for: ModerationRoute.self) { route in
                 ContractModerationView(
-                    contractId: route.contractId,
+                    scope: route.scope,
                     documentTypeNames: route.documentTypeNames
                 )
             }
@@ -299,7 +301,13 @@ struct DataContractDetailsView: View {
         Section("Moderation") {
             NavigationLink(
                 value: ModerationRoute(
-                    contractId: contract.idBase58,
+                    // The connection is captured as the hub is opened: once it is
+                    // replaced, the hub shows a notice rather than read this id
+                    // through the new SDK, which may hold another chain's contract
+                    scope: ModerationScope(
+                        contractId: contract.idBase58,
+                        generation: appState.sdkGeneration
+                    ),
                     documentTypeNames: (contract.documentTypes ?? []).map(\.name).sorted()
                 )
             ) {
@@ -367,7 +375,7 @@ struct DataContractDetailsView: View {
 
     /// Value-based navigation route for the moderation screen.
     private struct ModerationRoute: Hashable {
-        let contractId: String
+        let scope: ModerationScope
         let documentTypeNames: [String]
     }
 

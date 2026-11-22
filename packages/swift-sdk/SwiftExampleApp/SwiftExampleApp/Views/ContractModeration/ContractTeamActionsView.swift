@@ -13,7 +13,10 @@ struct ContractTeamActionsCursor: Sendable, Equatable {
 /// ``ContractTeamActionDetailView`` for its event and signers.
 struct ContractTeamActionsView: View {
     @EnvironmentObject var appState: AppState
-    let contractId: String
+    /// The contract and the connection it was opened on: this screen reads
+    /// only through that connection, and the hub hides it once replaced.
+    let scope: ModerationScope
+    private var contractId: String { scope.contractId }
 
     /// Actions per page.
     private static let pageSize: UInt32 = 20
@@ -99,12 +102,9 @@ struct ContractTeamActionsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await reload(status: status, token: begin(status: status)) }
         .task { await reload(status: status, token: begin(status: status)) }
-        // A replaced SDK: drop the actions, their cursor and any read in
-        // flight, and read again through the new one
-        .onChange(of: appState.sdkGeneration) { _, _ in
-            let token = begin(status: status)
-            Task { await reload(status: status, token: token) }
-        }
+        // A replaced SDK: drop what was read through the old one and read
+        // nothing through the new one; the hub's gate shows the notice instead
+        .onChange(of: appState.sdkGeneration) { _, _ in loader.clear() }
     }
 
     /// A status picked: in this main-actor turn the selection changes, the
@@ -121,7 +121,7 @@ struct ContractTeamActionsView: View {
     private func begin(status: ContractTeamActionStatus) -> Int {
         readToken += 1
         listedStatus = status
-        listedConnection = appState.moderationConnection
+        listedConnection = appState.moderationConnection(in: scope)
         loader.begin()
         return readToken
     }

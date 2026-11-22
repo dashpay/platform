@@ -34,6 +34,29 @@ func moderationDate(ms: UInt64) -> String {
     AppDate.formatted(Date(timeIntervalSince1970: TimeInterval(ms) / 1000))
 }
 
+/// Shows `content` only while the connection `scope` was opened on is still
+/// current; once it was replaced, only a notice, so no row read through the
+/// old connection stays on screen and nothing reads through the new one.
+struct ModerationScopeGate<Content: View>: View {
+    @EnvironmentObject var appState: AppState
+    let scope: ModerationScope
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        if scope.isOpen(currentGeneration: appState.sdkGeneration, hasSDK: appState.sdk != nil) {
+            content()
+        } else {
+            List {
+                ModerationMessageRow(
+                    kind: .error,
+                    text: "The connection changed since this contract was opened. Reopen the contract.",
+                    identifier: "contractModeration.connectionChanged"
+                )
+            }
+        }
+    }
+}
+
 /// A status line: a spinner while loading, otherwise a message.
 struct ModerationMessageRow: View {
     enum Kind {
@@ -97,8 +120,22 @@ struct ModerationReasonView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(reason.text.isEmpty ? "(no reason given)" : reason.text)
-                .font(.caption)
+            // The moderator's free text, set apart in a labeled box so it cannot
+            // pass for the structured fields below it; its bidi controls shown
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Moderator's text")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Text(reason.text.isEmpty ? "(empty)" : BidiControls.visible(reason.text))
+                    .font(.caption)
+                    .textSelection(.enabled)
+            }
+            .padding(6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.secondary.opacity(0.4), lineWidth: 1)
+            )
             if let code = reason.code {
                 Text("Code \(code)")
                     .font(.caption2)

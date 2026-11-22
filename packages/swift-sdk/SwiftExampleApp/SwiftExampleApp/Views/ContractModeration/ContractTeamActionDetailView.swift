@@ -4,7 +4,10 @@ import SwiftDashSDK
 /// One team action: who proposed it, what it does, and who approved it.
 struct ContractTeamActionDetailView: View {
     @EnvironmentObject var appState: AppState
-    let contractId: String
+    /// The contract and the connection it was opened on: this screen reads
+    /// only through that connection, and the hub hides it once replaced.
+    let scope: ModerationScope
+    private var contractId: String { scope.contractId }
     let action: ContractTeamActionEntry
     /// The status the action was listed under, which its signers are read
     /// with.
@@ -53,6 +56,8 @@ struct ContractTeamActionDetailView: View {
         .navigationTitle("Team Action")
         .navigationBarTitleDisplayMode(.inline)
         .task { await loadSigners() }
+        // A replaced SDK: the whole detail is a snapshot of the old connection,
+        // so the hub's gate shows only the notice in its place
         .onChange(of: appState.sdkGeneration) { _, _ in listingReplaced() }
     }
 
@@ -118,7 +123,7 @@ struct ContractTeamActionDetailView: View {
     }
 
     private func loadSigners() async {
-        guard let listing = appState.moderationConnection, listing.generation == connection else {
+        guard let listing = appState.moderationConnection(in: scope), listing.generation == connection else {
             listingReplaced()
             return
         }

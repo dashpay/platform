@@ -6,7 +6,10 @@ import SwiftDashSDK
 /// keeps records is the node's to answer.
 struct ContractDocumentRemovalsView: View {
     @EnvironmentObject var appState: AppState
-    let contractId: String
+    /// The contract and the connection it was opened on: this screen reads
+    /// only through that connection, and the hub hides it once replaced.
+    let scope: ModerationScope
+    private var contractId: String { scope.contractId }
     let documentTypeName: String
 
     /// Records per page.
@@ -107,9 +110,9 @@ struct ContractDocumentRemovalsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await refresh() }
         .task { submit(ids: nil) }
-        // A replaced SDK: drop the records, their cursor and any read in
-        // flight, and read every record again through the new one
-        .onChange(of: appState.sdkGeneration) { _, _ in submit(ids: nil) }
+        // A replaced SDK: drop what was read through the old one and read
+        // nothing through the new one; the hub's gate shows the notice instead
+        .onChange(of: appState.sdkGeneration) { _, _ in loader.clear() }
     }
 
     private var parsedIds: [String] {
@@ -138,7 +141,7 @@ struct ContractDocumentRemovalsView: View {
     /// Only then is the read queued.
     private func submit(ids: [String]?) {
         let token = begin(ids: ids)
-        let connection = appState.moderationConnection
+        let connection = appState.moderationConnection(in: scope)
         Task { await send(ids: ids, token: token, connection: connection) }
     }
 
@@ -169,7 +172,7 @@ struct ContractDocumentRemovalsView: View {
     private func refresh() async {
         let ids = lookedUpIds
         let token = begin(ids: ids)
-        await send(ids: ids, token: token, connection: appState.moderationConnection)
+        await send(ids: ids, token: token, connection: appState.moderationConnection(in: scope))
     }
 
     /// Every record, a page at a time.

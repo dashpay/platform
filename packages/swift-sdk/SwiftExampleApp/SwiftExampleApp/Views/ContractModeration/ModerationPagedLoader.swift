@@ -19,6 +19,29 @@ extension AppState {
     func isCurrent(_ connection: ModerationConnection) -> Bool {
         sdk != nil && sdkGeneration == connection.generation
     }
+
+    /// The current SDK, only while it is still the one `scope` was opened on;
+    /// `nil` once it was replaced, so a screen opened on it reads nothing.
+    func moderationConnection(in scope: ModerationScope) -> ModerationConnection? {
+        guard scope.isOpen(currentGeneration: sdkGeneration, hasSDK: sdk != nil) else { return nil }
+        return moderationConnection
+    }
+}
+
+/// A contract's moderation screens as opened: the contract and the generation
+/// of the connection current when the contract was opened. They read and show
+/// only while that connection is still current. A devnet edit keeps the
+/// network, and the same contract id can exist on both chains, so neither the
+/// network nor the id says the answer is still the same chain's.
+struct ModerationScope: Hashable, Sendable {
+    let contractId: String
+    let generation: Int
+
+    /// Whether the screens may still read and show: the SDK they were opened
+    /// on is still the app's.
+    func isOpen(currentGeneration: Int, hasSDK: Bool) -> Bool {
+        hasSDK && currentGeneration == generation
+    }
 }
 
 /// One page a paged moderation read answered: its rows and the cursor of the
