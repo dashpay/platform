@@ -502,14 +502,11 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         &self,
         identity_id: &Identifier,
     ) -> Result<(Identity, u64), PlatformWalletError> {
-        // Verify identity exists in the manager.
+        // Verify identity exists in this handle's wallet generation, before any query goes
+        // out: a wallet removed and imported again under the same id is another generation.
         {
             let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
+            let info = self.current_wallet_info(&wm)?;
             if info.identity_manager.identity(identity_id).is_none() {
                 return Err(PlatformWalletError::IdentityNotFound(*identity_id));
             }
@@ -531,16 +528,18 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         {
             let mut wm = self.wallet_manager.write().await;
             let info = self.current_wallet_info_mut(&mut wm)?;
-            if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                managed.status = IdentityStatus::Active;
-                if let Err(e) =
-                    managed.store_fetched_identity(&identity, block_time, &self.persister)
-                {
-                    tracing::error!("Failed to persist changeset: {}", e);
-                }
-                // The cache as folded.
-                identity = managed.identity.clone();
+            // Removed from the wallet while the fetch was in flight: say so rather than
+            // report a refresh that folded nothing.
+            let managed = info
+                .identity_manager
+                .managed_identity_mut(identity_id)
+                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+            managed.status = IdentityStatus::Active;
+            if let Err(e) = managed.store_fetched_identity(&identity, block_time, &self.persister) {
+                tracing::error!("Failed to persist changeset: {}", e);
             }
+            // The cache as folded.
+            identity = managed.identity.clone();
         }
 
         Ok((identity, proved_at))

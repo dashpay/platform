@@ -922,9 +922,9 @@ struct IdentityKeyLimitsUpdateOptionsInput {
 impl WasmSdk {
     /// Raises the limits of one of the identity's authentication keys: adds credits to its
     /// total budget (and to what is left of it), or moves its expiry later. An update only
-    /// ever loosens limits, and what consensus would refuse and charge for (a limit the key
-    /// does not have, a value that does not raise it) is refused here before anything is
-    /// signed. Signed by a MASTER key, or a CRITICAL authentication key without limits and
+    /// ever loosens limits, and what consensus would refuse and charge for (a disabled key, a
+    /// limit the key does not have, a value that does not raise it) is refused here before
+    /// anything is signed. Signed by a MASTER key, or a CRITICAL authentication key without limits and
     /// without contract bounds, that the signer holds.
     ///
     /// @param options - The identity, the key, what to raise, and the signer
