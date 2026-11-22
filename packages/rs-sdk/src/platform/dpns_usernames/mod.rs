@@ -316,14 +316,15 @@ impl Sdk {
             .ok_or_else(|| Error::Generic("DPNS contract not found".to_string()))
     }
 
-    /// The DPNS contract the network stores now, fetched and proved, for a registration.
-    /// The preorder commits to the hash that contract declares, so neither a contract the
+    /// The DPNS contract the network stores now, fetched and proved: the one a registration
+    /// or a tombstone is built against, and the one to select a key for either by. The
+    /// preorder commits to the hash that contract declares, so neither a contract the
     /// context provider holds for the SDK's protocol version nor one cached before an upgrade
     /// changed it will do: either can be older than the network's, and its hash one the
     /// domain cannot reveal. The SDK first learns the network's protocol version (a proven
     /// refresh), then takes a response proved at the version it parsed it under
     /// ([`dpns_contract_proved_at_parsed_version`]).
-    async fn fetch_current_dpns_contract(&self) -> Result<DataContract, Error> {
+    pub async fn fetch_current_dpns_contract(&self) -> Result<DataContract, Error> {
         let dpns_contract_id = self.get_dpns_contract_id()?;
         self.refresh_protocol_version().await?;
         dpns_contract_proved_at_parsed_version(

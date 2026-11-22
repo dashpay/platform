@@ -60,6 +60,7 @@ use super::*;
 
 mod give_up;
 
+pub(crate) use give_up::DpnsOperationGate;
 pub use give_up::{DpnsNameGiveUpChoices, DpnsNameGiveUpMethod, DpnsNameGivenUp};
 
 /// DPNS document type carrying registered names.
@@ -3985,7 +3986,7 @@ mod tests {
             broadcaster,
             sdk_writer: Arc::new(super::super::sdk_writer::SdkWriter::new(sdk)),
             document_erase_gate: Default::default(),
-            dpns_operation_gate: Arc::new(tokio::sync::Mutex::new(())),
+            dpns_operation_gate: Default::default(),
             dpns_sync_progress: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
             #[cfg(feature = "shielded")]
             contact_shielded_addresses: Default::default(),

@@ -336,7 +336,12 @@ fn plain_target(owner: Identifier) -> DpnsGiveUpTarget {
             can_tombstone: true,
         },
         domain: domain_document(PLAIN_LABEL, Identifier::from(DOCUMENT), owner),
-        normalized_label: convert_to_homograph_safe_chars(PLAIN_LABEL),
+        state: DpnsDomainState::from_document(&domain_document(
+            PLAIN_LABEL,
+            Identifier::from(DOCUMENT),
+            owner,
+        ))
+        .expect("the domain reads as marketplace state"),
     }
 }
 
@@ -518,4 +523,88 @@ async fn should_refuse_to_give_up_a_registration_the_user_was_not_shown() {
         vec![PLAIN_LABEL.to_string(), KEPT_LABEL.to_string()]
     );
     assert!(mirror.stored_dpns_removals().is_empty());
+}
+
+/// A wallet loaded cold holds no marketplace row of the name in memory. When the backend
+/// refuses the row removal, the wallet keeps the label and a row for the checked document,
+/// so the next marketplace sync removes the durable row by its id
+#[tokio::test]
+async fn should_keep_a_row_of_the_checked_document_when_a_cold_wallet_cannot_store_the_removal() {
+    let owner = Identifier::from(OWNER);
+    let (wallet, mirror) = wallet_with_name(PLAIN_LABEL, owner).await;
+    mirror.fail_stores();
+
+    wallet
+        .forget_given_up_dpns_name(&owner, &plain_target(owner))
+        .await;
+
+    assert_eq!(
+        dpns_labels(&wallet, &owner).await,
+        vec![PLAIN_LABEL.to_string(), KEPT_LABEL.to_string()]
+    );
+    let rows = wallet
+        .local_dpns_name_states(Some(&owner))
+        .await
+        .expect("the rows are read");
+    assert_eq!(
+        rows.iter().map(|row| row.document_id).collect::<Vec<_>>(),
+        vec![Identifier::from(DOCUMENT)]
+    );
+}
+
+/// While an earlier give-up of the name is unconfirmed and the name is still held, neither
+/// the choices nor another give-up proceed: both report it as unconfirmed (FFI code 20)
+#[tokio::test]
+async fn should_refuse_another_give_up_while_an_earlier_one_is_unconfirmed() {
+    let owner = Identifier::from(OWNER);
+    let (wallet, mirror) = wallet_with_name(PLAIN_LABEL, owner).await;
+    wallet
+        .dpns_operation_gate
+        .unresolved()
+        .insert((owner, convert_to_homograph_safe_chars(PLAIN_LABEL)));
+    let unconfirmed = |error: &PlatformWalletError| matches!(error, PlatformWalletError::Sdk(sdk) if sdk.is_state_transition_result_unconfirmed());
+
+    let read = wallet
+        .dpns_name_give_up_choices(&owner, PLAIN_LABEL)
+        .await
+        .expect_err("the earlier give-up is unconfirmed");
+    assert!(unconfirmed(&read), "{read:?}");
+    for method in [
+        DpnsNameGiveUpMethod::Delete,
+        DpnsNameGiveUpMethod::Tombstone,
+    ] {
+        let written = wallet
+            .give_up_dpns_name(
+                &owner,
+                PLAIN_LABEL,
+                &Identifier::from(DOCUMENT),
+                method,
+                &lock_checking_signer(&wallet),
+            )
+            .await
+            .expect_err("the earlier give-up is unconfirmed");
+        assert!(unconfirmed(&written), "{method:?}: {written:?}");
+    }
+    assert!(mirror.stored_dpns_removals().is_empty());
+}
+
+/// A read showing the name no longer registered settles an unconfirmed give-up: it executed
+#[tokio::test]
+async fn should_settle_an_unconfirmed_give_up_once_the_name_is_gone() {
+    let owner = Identifier::from(OWNER);
+    let (wallet, _mirror) = wallet_holding(sdk_holding(PLAIN_LABEL, None).await, &[]).await;
+    wallet
+        .dpns_operation_gate
+        .unresolved()
+        .insert((owner, convert_to_homograph_safe_chars(PLAIN_LABEL)));
+
+    let error = wallet
+        .dpns_name_give_up_choices(&owner, PLAIN_LABEL)
+        .await
+        .expect_err("nobody holds the name");
+    assert!(
+        matches!(error, PlatformWalletError::DpnsNameNotFound { .. }),
+        "{error:?}"
+    );
+    assert!(wallet.dpns_operation_gate.unresolved().is_empty());
 }

@@ -26,7 +26,9 @@ use crate::changeset::{DpnsNameSaleStatus, DpnsNameStateChangeSet};
 use crate::error::{promote_identity_insufficient_balance_or, PlatformWalletError};
 
 use super::super::contact_requests::GatedSigner;
-use super::{dpns_contract_id, DpnsDomainState, IdentityWallet, DPNS_DOCUMENT_TYPE};
+use super::{
+    dpns_contract_id, dpns_label, now_ms, DpnsDomainState, IdentityWallet, DPNS_DOCUMENT_TYPE,
+};
 
 /// DPNS document type of a name given up for good, from DPNS v3.
 const DPNS_TOMBSTONE_DOCUMENT_TYPE: &str = "tombstone";
@@ -81,14 +83,43 @@ pub struct DpnsNameGivenUp {
     pub tombstone_id: Option<Identifier>,
 }
 
-/// A name the wallet checked before giving it up: what the network accepts for it, the
-/// `domain` document it read, and the name's normalized label.
+/// A name the wallet checked before giving it up: what the network accepts for it, and the
+/// `domain` document it read, raw and as marketplace state.
 pub(super) struct DpnsGiveUpTarget {
     pub(super) choices: DpnsNameGiveUpChoices,
     /// The `domain` document read when the choices were: a delete is built for this very
     /// document, never for one read again by the name.
     pub(super) domain: Document,
-    pub(super) normalized_label: String,
+    pub(super) state: DpnsDomainState,
+}
+
+/// Serializes DPNS marketplace mutations and sync reconciliation for one wallet, across its
+/// cloned handles, and remembers the give-ups that were sent but not confirmed.
+///
+/// A give-up whose result was not confirmed may still execute. Until a read shows the name
+/// gone (or held by another identity), no other give-up of it is signed: a tombstone sent
+/// after a pending delete could execute first and retire a name the user only meant to
+/// free, and even a second delete of the same document is a second paid transition. The
+/// record lives for the session: a transition still pending across a restart is rare
+/// enough that the user is then asked again.
+#[derive(Debug, Default)]
+pub(crate) struct DpnsOperationGate {
+    gate: tokio::sync::Mutex<()>,
+    /// `(owner identity, normalized label)` of each give-up sent but not confirmed.
+    unresolved_give_ups: std::sync::Mutex<BTreeSet<(Identifier, String)>>,
+}
+
+impl DpnsOperationGate {
+    /// Hold the gate for one DPNS mutation or sync pass.
+    pub(crate) async fn lock(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.gate.lock().await
+    }
+
+    pub(super) fn unresolved(&self) -> std::sync::MutexGuard<'_, BTreeSet<(Identifier, String)>> {
+        self.unresolved_give_ups
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 }
 
 /// Map a give-up's SDK error. A protocol version refusal stays the SDK's own error, so a
@@ -100,10 +131,28 @@ fn give_up_error(error: dash_sdk::Error, name: &str) -> PlatformWalletError {
         return PlatformWalletError::Sdk(error);
     }
     promote_identity_insufficient_balance_or(error, |error| {
-        PlatformWalletError::InvalidIdentityData(format!(
-            "Failed to give up DPNS name {name:?}: {error}"
-        ))
+        // A definite consensus verdict stays the SDK's error, so the FFI reports its code
+        // and kind (an unconfirmed result was kept typed above, whatever its cause says)
+        if error.consensus_error().is_some() {
+            PlatformWalletError::Sdk(error)
+        } else {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to give up DPNS name {name:?}: {error}"
+            ))
+        }
     })
+}
+
+/// The refusal of a give-up while an earlier one of the same name is unconfirmed: the SDK's
+/// unconfirmed outcome, so a host shows it as such (FFI code 20) and offers nothing more.
+fn earlier_give_up_unconfirmed(name: &str) -> PlatformWalletError {
+    PlatformWalletError::Sdk(dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(
+        dash_sdk::Error::Generic(format!(
+            "an earlier give-up of DPNS name {name:?} was sent and is not confirmed yet: it \
+             may still execute, so no other give-up of the name is signed until a read shows \
+             it gone"
+        )),
+    )))
 }
 
 impl IdentityWallet {
@@ -128,6 +177,12 @@ impl IdentityWallet {
     }
 
     /// [`Self::dpns_name_give_up_choices`], keeping the `domain` document it read.
+    ///
+    /// It also settles an unconfirmed give-up of the name ([`DpnsOperationGate`]): a read
+    /// showing the name not registered, or held by another identity, shows the earlier one
+    /// executed (or no longer matters), and the record is dropped. A read showing the name
+    /// still held by `owner_identity_id` proves nothing about it, so it is refused as
+    /// unconfirmed again.
     async fn dpns_give_up_target(
         &self,
         owner_identity_id: &Identifier,
@@ -137,26 +192,37 @@ impl IdentityWallet {
             .sdk
             .dpns_name_give_up_options(name)
             .await
-            .map_err(|error| give_up_error(error, name))?
-            .ok_or_else(|| PlatformWalletError::DpnsNameNotFound {
+            .map_err(|error| give_up_error(error, name))?;
+        let Some(options) = options else {
+            self.dpns_operation_gate.unresolved().remove(&(
+                *owner_identity_id,
+                convert_to_homograph_safe_chars(dpns_label(name)),
+            ));
+            return Err(PlatformWalletError::DpnsNameNotFound {
                 name: name.to_string(),
-            })?;
+            });
+        };
+        let state = DpnsDomainState::from_document(&options.domain)?;
+        let key = (*owner_identity_id, state.normalized_label.clone());
         let owner_id = options.domain.owner_id();
         if owner_id != *owner_identity_id {
+            self.dpns_operation_gate.unresolved().remove(&key);
             return Err(PlatformWalletError::InvalidParameter(format!(
                 "DPNS name {name:?} is owned by {owner_id}, not by {owner_identity_id}"
             )));
         }
-        let state = DpnsDomainState::from_document(&options.domain)?;
+        if self.dpns_operation_gate.unresolved().contains(&key) {
+            return Err(earlier_give_up_unconfirmed(name));
+        }
         Ok(DpnsGiveUpTarget {
             choices: DpnsNameGiveUpChoices {
                 document_id: state.document_id,
-                label: state.label,
+                label: state.label.clone(),
                 can_delete: options.can_delete,
                 can_tombstone: options.can_tombstone,
             },
             domain: options.domain,
-            normalized_label: state.normalized_label,
+            state,
         })
     }
 
@@ -215,12 +281,17 @@ impl IdentityWallet {
             )));
         }
         let gated = GatedSigner::new(signer, self);
-        let removed_while_signing = |error: PlatformWalletError| {
+        let unresolved_key = (*owner_identity_id, target.state.normalized_label.clone());
+        let sent_error = |error: dash_sdk::Error| {
             if gated.removed() {
-                PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id))
-            } else {
-                error
+                return PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id));
             }
+            if error.is_state_transition_result_unconfirmed() {
+                self.dpns_operation_gate
+                    .unresolved()
+                    .insert(unresolved_key.clone());
+            }
+            give_up_error(error, name)
         };
         let tombstone_id = match method {
             DpnsNameGiveUpMethod::Delete => {
@@ -231,13 +302,23 @@ impl IdentityWallet {
                     .sdk
                     .delete_dpns_domain(target.domain.clone(), &signing_key, &gated)
                     .await
-                    .map_err(|error| removed_while_signing(give_up_error(error, name)))?;
+                    .map_err(sent_error)?;
                 None
             }
             DpnsNameGiveUpMethod::Tombstone => {
+                // The key is selected by the contract the tombstone is built against: the
+                // one the network stores now, which the SDK fetches checked against the
+                // protocol version it proved (an ordinary fetch can take an older node's
+                // contract, which declares no tombstone)
+                let current_contract = self
+                    .sdk
+                    .fetch_current_dpns_contract()
+                    .await
+                    .map_err(|error| give_up_error(error, name))?;
                 let signing_key = self
-                    .select_dpns_signing_key_for(
+                    .select_signing_key_for_document_type(
                         owner_identity_id,
+                        &current_contract,
                         DPNS_TOMBSTONE_DOCUMENT_TYPE,
                         signer,
                     )
@@ -246,10 +327,13 @@ impl IdentityWallet {
                     .sdk
                     .tombstone_dpns_name(name, *owner_identity_id, signing_key, &gated)
                     .await
-                    .map_err(|error| removed_while_signing(give_up_error(error, name)))?;
+                    .map_err(sent_error)?;
                 Some(tombstone.id())
             }
         };
+        self.dpns_operation_gate
+            .unresolved()
+            .remove(&unresolved_key);
         // Still under the generation's lifecycle gate the signature took (`gated` lives to
         // the end of this call): the generation that sent the give-up is the current one.
         self.forget_given_up_dpns_name(owner_identity_id, &target)
@@ -292,7 +376,7 @@ impl IdentityWallet {
             .values()
             .filter(|entry| {
                 entry.wallet_identity_id == *owner_identity_id
-                    && entry.normalized_label == target.normalized_label
+                    && entry.normalized_label == target.state.normalized_label
                     && matches!(entry.status, DpnsNameSaleStatus::Owned)
             })
             .map(|entry| entry.document_id)
@@ -307,8 +391,19 @@ impl IdentityWallet {
                 identity = %owner_identity_id,
                 document = %target.choices.document_id,
                 "failed to persist the row removal of a confirmed DPNS name give-up; keeping \
-                 the label so the next marketplace sync removes the name: {error}"
+                 the label and a row of the name so the next marketplace sync removes both: \
+                 {error}"
             );
+            // The departure path removes the row whose id it finds in memory: keep one for
+            // the checked document even on a wallet loaded cold, whose session map does not
+            // hold it, so the removal carries the id this give-up already knew
+            info.dpns_name_states
+                .entry(target.choices.document_id)
+                .or_insert_with(|| {
+                    target
+                        .state
+                        .to_entry(*owner_identity_id, DpnsNameSaleStatus::Owned, now_ms())
+                });
             return;
         }
         for document_id in &removed {
@@ -323,7 +418,7 @@ impl IdentityWallet {
         };
         let previous_names = managed.dpns_names.clone();
         managed.dpns_names.retain(|known| {
-            convert_to_homograph_safe_chars(&known.label) != target.normalized_label
+            convert_to_homograph_safe_chars(&known.label) != target.state.normalized_label
         });
         if let Err(error) = self.persister.store(managed.snapshot_changeset().into()) {
             tracing::error!(
