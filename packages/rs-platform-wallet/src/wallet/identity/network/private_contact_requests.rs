@@ -41,23 +41,21 @@ use dash_sdk::platform::dashpay::{
 };
 use dash_sdk::platform::private_document_entries::{PrivateDocumentEntries, PrivateDocumentEntry};
 use dash_sdk::platform::private_document_scan::{
-    PrivateDocumentPageHeights, PrivateDocumentScanKeys,
-    MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+    PrivateDocumentPageHeights, MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::decode_private_document_payload;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::identity_public_key::Purpose;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
 use dpp::secp256k1::rand::rngs::StdRng;
 use dpp::secp256k1::rand::{RngCore, SeedableRng};
-use dpp::secp256k1::{PublicKey, SecretKey};
+use dpp::secp256k1::PublicKey;
 use futures::StreamExt;
-use key_wallet::bip32::{DerivationPath, KeyDerivationType};
+use key_wallet::bip32::KeyDerivationType;
 use key_wallet_manager::WalletManager;
 use platform_encryption::{encrypt_account_label, encrypt_extended_public_key, COMPACT_XPUB_LEN};
 use tokio::sync::RwLock;
@@ -68,6 +66,7 @@ use super::contact_requests::{
     newest_sent_per_recipient, predates, records_or_supersedes, tear_down_stale_external_accounts,
     AutoAcceptProofSource, ContactCryptoProvider, PreparedContactRequest, ReplyOutcome,
 };
+use super::private_documents::{scanning_key, PrivateDocumentKeyPaths};
 use super::signing_key::first_available;
 use super::{dashpay_contract, DashPayView, IdentityWallet};
 use crate::broadcaster::TransactionBroadcaster;
@@ -79,31 +78,6 @@ use crate::wallet::identity::types::dashpay::established_contact::EstablishedCon
 use crate::wallet::identity::ManagedIdentity;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
-
-/// The paths of the keys a wallet's identities read DashPay's private contact
-/// request store with, for a [`ContactCryptoProvider`] to derive inside the
-/// signer.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct PrivateDocumentKeyPaths {
-    /// Each identity entries may be sealed to, with the path of each of its
-    /// keys an entry may be sealed to, by key id.
-    pub recipients: Vec<(Identifier, Vec<(KeyID, DerivationPath)>)>,
-    /// Each identity that may have sealed entries, with the id and path of
-    /// each of its encryption keys: one outgoing viewing key each.
-    pub senders: Vec<(Identifier, KeyID, DerivationPath)>,
-}
-
-impl PrivateDocumentKeyPaths {
-    /// The scan keys these paths derive to, `derive` deriving the secret key at
-    /// a path: for a provider implementation to build inside the signer and
-    /// drop there.
-    pub fn scan_keys<E>(
-        &self,
-        derive: impl FnMut(&DerivationPath) -> Result<SecretKey, E>,
-    ) -> Result<PrivateDocumentScanKeys, E> {
-        PrivateDocumentScanKeys::derive(&self.recipients, &self.senders, derive)
-    }
-}
 
 /// What a contact request from one of the wallet's identities waits for, as
 /// the wallet decides it ([`DashPayView::private_contact_readiness`]), so a
@@ -855,12 +829,6 @@ pub(super) fn private_request_record(
         .map(|label| encrypt_account_label(shared_key, &label_iv, label));
     record.auto_accept_proof = request.auto_accept_proof.clone();
     record
-}
-
-/// Whether `key` is one a private contact request entry can be sealed to,
-/// which a private sync scans the store with.
-fn scanning_key(key: &IdentityPublicKey) -> bool {
-    key.key_type() == KeyType::ECDSA_SECP256K1 && recipient_key_purpose_is_valid(key.purpose())
 }
 
 /// Whether a private sync reads DashPay's private contact request store for
@@ -1956,10 +1924,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     }
 
     /// The wallet's identities a pass reads the store for (those with an HD
-    /// index, whose keys the signer can derive) and the paths of their keys:
-    /// every `ECDSA_SECP256K1` decryption or encryption key, disabled ones
-    /// included, as an entry sealed before a key was disabled still opens with
-    /// it, and every such encryption key as a sender.
+    /// index, whose keys the signer can derive) and the paths of their keys,
+    /// as every private document type's store is read with
+    /// ([`PrivateDocumentKeyPaths::add_identity`]): every `ECDSA_SECP256K1`
+    /// decryption or encryption key, disabled ones included, as an entry
+    /// sealed before a key was disabled still opens with it, and every such
+    /// encryption key as a sender.
     async fn private_scan_identities(
         &self,
     ) -> Result<(Vec<ScannedIdentity>, PrivateDocumentKeyPaths), PlatformWalletError> {
@@ -1977,28 +1947,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             let Some(identity_index) = managed.identity_index else {
                 continue;
             };
-            let path = |key_id| {
-                IdentityWallet::<B>::identity_auth_derivation_path(
-                    self.sdk.network,
-                    KeyDerivationType::ECDSA,
-                    identity_index,
-                    key_id,
-                )
-            };
-            let mut recipient_paths = Vec::new();
-            for (key_id, key) in managed.identity.public_keys() {
-                if !scanning_key(key) {
-                    continue;
-                }
-                recipient_paths.push((*key_id, path(*key_id)?));
-                if key.purpose() == Purpose::ENCRYPTION {
-                    paths.senders.push((identity_id, *key_id, path(*key_id)?));
-                }
-            }
-            if recipient_paths.is_empty() {
+            if !paths.add_identity(self.sdk.network, identity_index, &managed.identity)? {
                 continue;
             }
-            paths.recipients.push((identity_id, recipient_paths));
             identities.push(ScannedIdentity {
                 identity_id,
                 identity_index,
@@ -2798,8 +2749,9 @@ mod tests {
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
-    use dpp::identity::{IdentityPublicKey, SecurityLevel};
+    use dpp::identity::{IdentityPublicKey, Purpose, SecurityLevel};
     use dpp::platform_value::Value;
+    use dpp::secp256k1::SecretKey;
     use dpp::state_transition::batch_transition::BatchTransition;
     use dpp::state_transition::StateTransition;
     use dpp::version::PlatformVersion;

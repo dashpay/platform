@@ -88,7 +88,13 @@ pub(crate) use private_contact_requests::{
     restore_journaled_private_payments, JournaledPrivatePayment,
 };
 pub use private_contact_requests::{
-    PaymentStarted, PrivateContactReadiness, PrivateContactSyncReport, PrivateDocumentKeyPaths,
+    PaymentStarted, PrivateContactReadiness, PrivateContactSyncReport,
+};
+// Any private document type's store, read for the wallet's identities; the
+// DashPay private contact request sync above scans with the same key paths.
+mod private_documents;
+pub use private_documents::{
+    OpenedPrivateDocument, PrivateDocumentDirection, PrivateDocumentKeyPaths, PrivateDocumentRead,
 };
 mod profile;
 mod public_keys;
