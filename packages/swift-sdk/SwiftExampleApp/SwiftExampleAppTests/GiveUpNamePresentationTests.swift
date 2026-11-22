@@ -10,9 +10,29 @@ final class GiveUpNamePresentationTests: XCTestCase {
             GiveUpNameUI.loadFailure(PlatformWalletError.protocolVersionNotActive(message)),
             .notAvailable(message)
         )
-        XCTAssertTrue(
-            GiveUpNameUI.submitFailure(PlatformWalletError.protocolVersionNotActive(message))
-                .hasPrefix("Not available on this network yet.")
+        guard case .failed(let submitted) = GiveUpNameUI.submitFailure(
+            PlatformWalletError.protocolVersionNotActive(message)
+        ) else {
+            return XCTFail("Expected a failure message")
+        }
+        XCTAssertTrue(submitted.hasPrefix("Not available on this network yet."))
+    }
+
+    func testPinnedSdkRefusalAsksForAnAppUpdateNotARetry() {
+        let message = "broadcast_state_transition needs Platform protocol version 15 for deleting "
+            + "or tombstoning a DPNS name; this SDK is pinned to an earlier protocol version"
+        XCTAssertEqual(
+            GiveUpNameUI.loadFailure(PlatformWalletError.sdkPinnedBelowProtocolVersion(message)),
+            .sdkPinned(message)
+        )
+    }
+
+    func testUnconfirmedGiveUpOffersNothingMore() {
+        XCTAssertEqual(
+            GiveUpNameUI.submitFailure(
+                PlatformWalletError.transactionBroadcastUnconfirmed("no result in time")
+            ),
+            .unconfirmed("no result in time")
         )
     }
 
@@ -24,9 +44,11 @@ final class GiveUpNamePresentationTests: XCTestCase {
         }
         XCTAssertTrue(message.contains("alice"))
 
-        let signing = GiveUpNameUI.submitFailure(
+        guard case .failed(let signing) = GiveUpNameUI.submitFailure(
             PlatformWalletError.signingKeyUnavailable("key 3 is watch-only")
-        )
+        ) else {
+            return XCTFail("Expected a failure message")
+        }
         XCTAssertTrue(signing.contains("signing key is unavailable"))
     }
 

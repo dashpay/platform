@@ -309,9 +309,12 @@ public struct DpnsNameGiveUpChoices: Sendable, Equatable {
 }
 
 /// A DPNS name given up, as the network confirmed it
-/// (``ManagedPlatformWallet/giveUpDpnsName(ownerIdentityId:name:method:signer:)``).
+/// (``ManagedPlatformWallet/giveUpDpnsName(ownerIdentityId:name:expectedDocumentId:method:signer:)``).
 public struct DpnsNameGivenUp: Sendable, Equatable {
-    /// The id of the `domain` document that no longer exists.
+    /// The `domain` document checked before signing. A delete removed exactly
+    /// this one. A tombstone consumed the owner's domain of the name at
+    /// execution, which is this one unless the name was deleted and
+    /// registered again in the moments between.
     public let documentId: Data
     /// How the name was given up.
     public let method: DpnsNameGiveUpMethod
@@ -749,6 +752,7 @@ extension ManagedPlatformWallet {
         ownerIdentityId: Identifier,
         name: String
     ) async throws -> DpnsNameGiveUpChoices {
+        try Self.requireGiveUpInputs(name: name, identifiers: [("ownerIdentityId", ownerIdentityId)])
         let handle = self.handle
         let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
@@ -778,7 +782,14 @@ extension ManagedPlatformWallet {
     /// creator included. A contested name can only be tombstoned; ask
     /// ``dpnsNameGiveUpChoices(ownerIdentityId:name:)`` first and offer only
     /// what it allows. Rust reads the name again before signing and throws
-    /// `.invalidParameter` for a method the network does not accept.
+    /// `.invalidParameter` for a method the network does not accept, and for
+    /// a name that is no longer `expectedDocumentId` (the
+    /// ``DpnsNameGiveUpChoices/documentId`` the user was shown): a name deleted
+    /// and registered again since is never given up unseen.
+    ///
+    /// `.transactionBroadcastUnconfirmed` means the transition may have been
+    /// delivered: do not offer another give-up of the name until a read shows
+    /// whether it was.
     ///
     /// Needs Platform protocol version 15. On a network proven below it
     /// this throws `PlatformWalletError.protocolVersionNotActive` and
@@ -795,28 +806,42 @@ extension ManagedPlatformWallet {
     public func giveUpDpnsName(
         ownerIdentityId: Identifier,
         name: String,
+        expectedDocumentId: Data,
         method: DpnsNameGiveUpMethod,
         signer: KeychainSigner
     ) async throws -> DpnsNameGivenUp {
+        try Self.requireGiveUpInputs(
+            name: name,
+            identifiers: [
+                ("ownerIdentityId", ownerIdentityId),
+                ("expectedDocumentId", expectedDocumentId),
+            ]
+        )
         let handle = self.handle
         let signerHandle = signer.handle
         let methodByte = method.ffiValue
         let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
+        let expectedBytes: [UInt8] = expectedDocumentId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
         return try await Task.detached(priority: .userInitiated) { () -> DpnsNameGivenUp in
             var out = DpnsNameGivenUpFFI()
             let result = withExtendedLifetime(signer) {
                 ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
-                    name.withCString { namePtr in
-                        platform_wallet_dpns_give_up_name(
-                            handle,
-                            ownerBp.baseAddress!,
-                            namePtr,
-                            methodByte,
-                            signerHandle,
-                            &out
-                        )
+                    expectedBytes.withUnsafeBufferPointer { expectedBp in
+                        name.withCString { namePtr in
+                            platform_wallet_dpns_give_up_name(
+                                handle,
+                                ownerBp.baseAddress!,
+                                namePtr,
+                                expectedBp.baseAddress!,
+                                methodByte,
+                                signerHandle,
+                                &out
+                            )
+                        }
                     }
                 }
             }
@@ -828,6 +853,22 @@ extension ManagedPlatformWallet {
             }
             return givenUp
         }.value
+    }
+
+    /// Refuse inputs that can not cross the give-up ABI unchanged: a name with an
+    /// embedded NUL (the C string would end there, and Rust would act on the
+    /// prefix) and an identifier that is not 32 bytes. These are checks of the
+    /// representation, not of DPNS naming rules, which Rust applies.
+    static func requireGiveUpInputs(
+        name: String,
+        identifiers: [(String, Data)]
+    ) throws {
+        try KeyDerivation.requireNoNUL(name, "name")
+        for (label, identifier) in identifiers where identifier.count != 32 {
+            throw PlatformWalletError.invalidParameter(
+                "\(label) must be 32 bytes, got \(identifier.count)"
+            )
+        }
     }
 
     /// Transfer a DPNS name to `recipientId` without payment (a gift or

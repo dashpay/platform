@@ -33,8 +33,14 @@ struct GiveUpNameView: View {
         /// The network does not serve the feature yet; the message is the
         /// SDK's own.
         case notAvailable(String)
+        /// This app's SDK is pinned to an older protocol version; the
+        /// message is the SDK's own.
+        case sdkPinned(String)
         case failed(String)
         case loaded(DpnsNameGiveUpChoices)
+        /// A give-up was sent and may have been delivered, but was not
+        /// confirmed. No further give-up is offered for this name here.
+        case unconfirmed(String)
     }
 
     private var wallet: ManagedPlatformWallet? {
@@ -127,6 +133,24 @@ struct GiveUpNameView: View {
                     .textSelection(.enabled)
             }
             .accessibilityIdentifier("giveUpName.notAvailable")
+        case .sdkPinned(let message):
+            Section("This app needs an update") {
+                Text(GiveUpNameUI.sdkPinnedExplanation)
+                Text(message)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .textSelection(.enabled)
+            }
+            .accessibilityIdentifier("giveUpName.sdkPinned")
+        case .unconfirmed(let message):
+            Section("Sent, not confirmed yet") {
+                Text(GiveUpNameUI.unconfirmedExplanation)
+                Text(message)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .textSelection(.enabled)
+            }
+            .accessibilityIdentifier("giveUpName.unconfirmed")
         case .failed(let message):
             Section("Could not check this name") {
                 Text(message)
@@ -239,6 +263,8 @@ struct GiveUpNameView: View {
             switch GiveUpNameUI.loadFailure(error) {
             case .notAvailable(let message):
                 phase = .notAvailable(message)
+            case .sdkPinned(let message):
+                phase = .sdkPinned(message)
             case .failed(let message):
                 phase = .failed(message)
             }
@@ -246,7 +272,7 @@ struct GiveUpNameView: View {
     }
 
     private func submit(_ method: DpnsNameGiveUpMethod) {
-        guard submitting == nil else { return }
+        guard submitting == nil, case .loaded(let choices) = phase else { return }
         guard let wallet else {
             submitError = "This identity's wallet is not loaded."
             return
@@ -262,6 +288,7 @@ struct GiveUpNameView: View {
                 try await wallet.giveUpDpnsName(
                     ownerIdentityId: identityId,
                     name: label,
+                    expectedDocumentId: choices.documentId,
                     method: method,
                     signer: signer
                 )
@@ -272,7 +299,13 @@ struct GiveUpNameView: View {
                 }
             } catch {
                 await MainActor.run {
-                    submitError = GiveUpNameUI.submitFailure(error)
+                    switch GiveUpNameUI.submitFailure(error) {
+                    case .unconfirmed(let message):
+                        submitError = nil
+                        phase = .unconfirmed(message)
+                    case .failed(let message):
+                        submitError = message
+                    }
                     submitting = nil
                 }
             }
@@ -308,6 +341,14 @@ enum GiveUpNameUI {
     enum LoadFailure: Equatable {
         /// The network does not serve giving up names yet.
         case notAvailable(String)
+        /// This app's SDK is pinned below the protocol version.
+        case sdkPinned(String)
+        case failed(String)
+    }
+
+    enum SubmitFailure: Equatable {
+        /// The give-up may have been delivered: offer nothing more.
+        case unconfirmed(String)
         case failed(String)
     }
 
@@ -317,6 +358,15 @@ enum GiveUpNameUI {
     static let notAvailableExplanation =
         "Names can be deleted or tombstoned from Platform protocol version 15. "
             + "This network does not serve that yet, so this name can not be given up here."
+
+    static let sdkPinnedExplanation =
+        "This app's SDK is fixed to an older Platform protocol version, so it can not give "
+            + "names up. Update the app to use this feature."
+
+    static let unconfirmedExplanation =
+        "The give-up was sent but Platform has not confirmed it, so it may still take "
+            + "effect. To avoid a second paid or permanent change, nothing more is offered "
+            + "here. Close this and refresh the identity later to see whether the name is gone."
 
     static let deleteExplanation =
         "Deleting makes the name free again. Anybody, including someone else, can then "
@@ -347,18 +397,26 @@ enum GiveUpNameUI {
     }
 
     static func loadFailure(_ error: Error) -> LoadFailure {
-        if let walletError = error as? PlatformWalletError,
-           case .protocolVersionNotActive(let message) = walletError {
+        switch error as? PlatformWalletError {
+        case .protocolVersionNotActive(let message)?:
             return .notAvailable(message)
+        case .sdkPinnedBelowProtocolVersion(let message)?:
+            return .sdkPinned(message)
+        default:
+            return .failed(DpnsMarketplaceUI.error(error))
         }
-        return .failed(DpnsMarketplaceUI.error(error))
     }
 
-    static func submitFailure(_ error: Error) -> String {
-        if let walletError = error as? PlatformWalletError,
-           case .protocolVersionNotActive = walletError {
-            return "Not available on this network yet. " + notAvailableExplanation
+    static func submitFailure(_ error: Error) -> SubmitFailure {
+        switch error as? PlatformWalletError {
+        case .transactionBroadcastUnconfirmed(let message)?:
+            return .unconfirmed(message)
+        case .protocolVersionNotActive?:
+            return .failed("Not available on this network yet. " + notAvailableExplanation)
+        case .sdkPinnedBelowProtocolVersion?:
+            return .failed(sdkPinnedExplanation)
+        default:
+            return .failed(DpnsMarketplaceUI.error(error))
         }
-        return DpnsMarketplaceUI.error(error)
     }
 }
