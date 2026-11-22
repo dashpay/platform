@@ -1343,13 +1343,19 @@ extension PlatformWalletManager {
     /// pool-paid fee (`estimateShieldedFee(kind: .tokenPurchaseFromPool)`),
     /// and `tokenCount` tokens of the token at `tokenPosition` of
     /// `contractId` are minted as a note to the wallet's own address in the
-    /// token's shielded pool. Rust derives the token id, selects the notes,
-    /// builds, broadcasts and records the activity.
+    /// token's shielded pool. Rust checks the token, the network and the
+    /// notes, builds, broadcasts, records the activity and requests the
+    /// shielded sync that resolves the purchase.
+    ///
+    /// Returning means submitted, not confirmed: Platform accepted the
+    /// purchase, but its answer does not show that it executed, so its
+    /// activity row stays pending (and its notes reserved) until a shielded
+    /// sync confirms it. Do not retry it.
     ///
     /// `totalAgreedPrice` is the price the buyer agreed to; Drive refuses
     /// the purchase unless it covers the token's configured price for
     /// `tokenCount`. The wallet does not sync token pool notes yet, so the
-    /// bought tokens are not shown anywhere after a success.
+    /// bought tokens are not shown anywhere.
     ///
     /// `resolver` supplies the per-operation Orchard spend authority (see
     /// [`shieldedTransfer`]). No identity is involved.
@@ -1422,6 +1428,62 @@ extension PlatformWalletManager {
                 }
             }
         }.value
+    }
+
+    /// Whether a token's direct purchase can be paid from the shielded pool,
+    /// as Rust reads the token's verified configuration
+    /// (`platform_wallet_manager_shielded_token_purchase_availability`).
+    public enum ShieldedTokenPurchaseAvailability: UInt8 {
+        /// The token has a shielded pool to mint the bought tokens into.
+        case available = 0
+        /// The token's configuration has no shielded pool.
+        case noShieldedPool = 1
+        /// The token's configuration could not be read; asking again may
+        /// succeed.
+        case configurationUnreadable = 2
+    }
+
+    /// Whether the token at `tokenPosition` of `contractId` can be bought
+    /// with `shieldedTokenPurchaseFromPool`, from the same verified read of
+    /// its configuration that purchase refuses on.
+    public func shieldedTokenPurchaseAvailability(
+        contractId: Data,
+        tokenPosition: UInt16
+    ) async throws -> ShieldedTokenPurchaseAvailability {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard contractId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "contractId must be exactly 32 bytes"
+            )
+        }
+
+        let handle = self.handle
+        let code = try await Task.detached(priority: .userInitiated) { () -> UInt8 in
+            var out: UInt8 = 0
+            try contractId.withUnsafeBytes { cidRaw in
+                guard let cidPtr = cidRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                else {
+                    throw PlatformWalletError.invalidParameter("contractId baseAddress is nil")
+                }
+                try platform_wallet_manager_shielded_token_purchase_availability(
+                    handle,
+                    cidPtr,
+                    tokenPosition,
+                    &out
+                ).check()
+            }
+            return out
+        }.value
+        guard let availability = ShieldedTokenPurchaseAvailability(rawValue: code) else {
+            throw PlatformWalletError.invalidParameter(
+                "unknown token purchase availability \(code)"
+            )
+        }
+        return availability
     }
 
     /// Shielded → Core L1 withdraw. Spends notes from `walletId`'s

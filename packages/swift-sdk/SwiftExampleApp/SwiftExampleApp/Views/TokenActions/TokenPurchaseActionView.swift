@@ -25,7 +25,12 @@ import SwiftDashSDK
 /// `walletManager.shieldedTokenPurchaseFromPool` (type 28): Rust selects the
 /// notes, proves, broadcasts and mints the tokens as a note to the wallet's
 /// own address in the token's shielded pool. The wallet does not sync token
-/// pool notes yet, so those tokens are not shown anywhere in the app.
+/// pool notes yet, so those tokens are not shown anywhere in the app. The
+/// shielded choice is offered only when Rust reports the token can be bought
+/// that way (`shieldedTokenPurchaseAvailability`: the token has a shielded
+/// pool); identity funding stays available either way. A shielded purchase
+/// that returns is submitted, not confirmed: the next shielded sync confirms
+/// it.
 struct TokenPurchaseActionView: View {
     let token: PersistentToken
     let identity: PersistentIdentity
@@ -66,6 +71,17 @@ struct TokenPurchaseActionView: View {
     }
 
     @State private var fundingSource: FundingSource = .identityCredits
+
+    /// Rust's answer to whether this token can be bought from the shielded
+    /// pool, `nil` while it is being asked. `.failed` when the question
+    /// itself could not be asked (the manager is not configured).
+    private enum ShieldedAvailabilityState: Equatable {
+        case loading
+        case loaded(PlatformWalletManager.ShieldedTokenPurchaseAvailability)
+        case failed
+    }
+
+    @State private var shieldedAvailability: ShieldedAvailabilityState = .loading
     /// Message shown after a shielded purchase returns; dismissing it closes
     /// the form.
     @State private var shieldedOutcome: AlertMessage?
@@ -82,13 +98,18 @@ struct TokenPurchaseActionView: View {
             }
 
             Section("Pay with") {
-                Picker("Pay with", selection: $fundingSource) {
-                    ForEach(FundingSource.allCases) { source in
-                        Text(source.rawValue).tag(source)
+                if shieldedAvailability == .loaded(.available) {
+                    Picker("Pay with", selection: $fundingSource) {
+                        ForEach(FundingSource.allCases) { source in
+                            Text(source.rawValue).tag(source)
+                        }
                     }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("tokenPurchase.fundingSource")
+                } else {
+                    LabeledContent("Pay with", value: FundingSource.identityCredits.rawValue)
+                    shieldedUnavailableNote
                 }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("tokenPurchase.fundingSource")
             }
 
             Section {
@@ -157,6 +178,7 @@ struct TokenPurchaseActionView: View {
         // connecting re-fetches once it does (an un-keyed `.task` would stick
         // with the initial run's result forever).
         .task(id: appState.sdk == nil) { await loadPrice() }
+        .task { await loadShieldedAvailability() }
         .alert(item: $submitError) { msg in
             Alert(
                 title: Text("Purchase failed"),
@@ -170,6 +192,59 @@ struct TokenPurchaseActionView: View {
                 message: Text(msg.message),
                 dismissButton: .default(Text("OK")) { dismiss() }
             )
+        }
+    }
+
+    // MARK: - Shielded availability
+
+    /// Why the shielded choice is not offered, from Rust's answer.
+    @ViewBuilder
+    private var shieldedUnavailableNote: some View {
+        switch shieldedAvailability {
+        case .loading:
+            Text("Checking whether this token can be bought from the shielded pool…")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        case .loaded(.noShieldedPool):
+            Text("This token has no shielded pool, so it can't be bought from the shielded pool.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .accessibilityIdentifier("tokenPurchase.shieldedUnavailable")
+        case .loaded(.configurationUnreadable), .failed:
+            Text("Couldn't read this token's configuration, so paying from the shielded pool isn't offered.")
+                .font(.caption)
+                .foregroundColor(.red)
+                .accessibilityIdentifier("tokenPurchase.shieldedUnavailable")
+            Button("Retry") {
+                Task { await loadShieldedAvailability() }
+            }
+            .font(.caption)
+        case .loaded(.available):
+            EmptyView()
+        }
+    }
+
+    /// Ask Rust whether this token can be bought from the shielded pool. A
+    /// funding choice the answer no longer allows falls back to identity
+    /// credits.
+    private func loadShieldedAvailability() async {
+        shieldedAvailability = .loading
+        guard let position = UInt16(exactly: token.position) else {
+            shieldedAvailability = .loaded(.configurationUnreadable)
+            fundingSource = .identityCredits
+            return
+        }
+        do {
+            let availability = try await walletManager.shieldedTokenPurchaseAvailability(
+                contractId: token.contractId,
+                tokenPosition: position
+            )
+            shieldedAvailability = .loaded(availability)
+        } catch {
+            shieldedAvailability = .failed
+        }
+        if shieldedAvailability != .loaded(.available) {
+            fundingSource = .identityCredits
         }
     }
 
@@ -297,9 +372,11 @@ struct TokenPurchaseActionView: View {
         case .identityCredits:
             return managedWallet != nil
         case .shieldedPool:
-            // A shielded spend needs a known, non-zero balance, as the send
-            // screen's shielded flows do; whether it covers price plus fee
-            // is Rust's call (an insufficient-balance error).
+            // Offered only on Rust's answer that the token has a shielded
+            // pool. A shielded spend needs a known, non-zero balance, as the
+            // send screen's shielded flows do; whether it covers price plus
+            // fee is Rust's call (an insufficient-balance error).
+            guard shieldedAvailability == .loaded(.available) else { return false }
             guard identity.wallet?.walletId != nil else { return false }
             guard let balance = shieldedBalance else { return false }
             return balance > 0
@@ -471,7 +548,7 @@ struct TokenPurchaseActionView: View {
                 await MainActor.run {
                     guard self.submitGeneration == gen else { return }
                     self.isSubmitting = false
-                    self.shieldedOutcome = .init(message: "Purchase complete. The tokens were minted to this wallet's shielded token pool. The app does not track shielded token notes yet, so they are not shown anywhere.")
+                    self.shieldedOutcome = .init(message: "Purchase submitted. Platform accepted it; the next shielded sync confirms it, and it shows as pending in Shielded Activity until then. Do not retry. The tokens go to this wallet's shielded token pool, which the app does not show yet.")
                 }
             } catch let unconfirmed as PlatformWalletError
                 where SendViewModel.mayHaveGoneThrough(unconfirmed) {

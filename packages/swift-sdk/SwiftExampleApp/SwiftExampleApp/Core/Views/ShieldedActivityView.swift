@@ -339,6 +339,19 @@ struct ShieldedActivityDetailView: View {
         }
     }
 
+    /// What a token purchase row says about its tokens, by its stored
+    /// status: minted only once Confirmed.
+    private var tokenPurchaseNote: String {
+        switch entry.status {
+        case 1:
+            return "The tokens were minted to this wallet's shielded token pool, which the app does not show yet."
+        case 2:
+            return "The purchase did not go through; no tokens were minted."
+        default:
+            return "Not confirmed yet: the next shielded sync confirms the purchase. The app does not show the shielded token pool yet."
+        }
+    }
+
     private var directionText: String {
         switch entry.direction {
         case 0: return "In"
@@ -392,15 +405,17 @@ struct ShieldedActivityDetailView: View {
                         }
                     }
                 } else if entry.kindTag == 10, entry.counterparty.count == 32 {
-                    // TokenPurchase: the counterparty is the bought token's id.
-                    // The tokens went to the wallet's shielded token pool,
-                    // which the app does not show yet.
-                    Section("Purchased Token") {
+                    // TokenPurchase: the counterparty is the token's id, and
+                    // the tokens are destined for the wallet's shielded token
+                    // pool, which the app does not show yet. The mint is
+                    // stated as done only once the row is Confirmed.
+                    Section("Token") {
                         let tokenIdHex = entry.counterparty.map { String(format: "%02x", $0) }.joined()
                         Text(tokenIdHex)
                             .font(.caption.monospaced())
                             .textSelection(.enabled)
-                        Text("Minted to this wallet's shielded token pool, which the app does not show yet.")
+                        LabeledContent("Tokens to", value: "This wallet's shielded token pool")
+                        Text(tokenPurchaseNote)
                             .font(.footnote)
                             .foregroundColor(.secondary)
                     }
