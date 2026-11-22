@@ -95,6 +95,61 @@ struct RecoveryReadState<Record: Equatable>: Equatable {
 
 typealias ShieldedIdentityDebitRecoveryReadState = RecoveryReadState<ShieldedIdentityDebitRecoveryRecord>
 
+// MARK: - Check Now
+
+/// Result of a Check Now started on a screen, from that call's own outcome
+/// rather than the shared `ShieldedService.lastError`, which other passes
+/// also write.
+enum ShieldedCheckNowStatus: Equatable {
+    case idle
+    case checking
+    case finished
+    case failed(String)
+    case didNotRun(String)
+
+    static func after(_ outcome: ShieldedService.ManualSyncOutcome) -> ShieldedCheckNowStatus {
+        switch outcome {
+        case .completed: return .finished
+        case .failed(let message): return .failed(message)
+        case .alreadyRunning:
+            return .didNotRun("A shielded sync was already running. This list updates when it finishes.")
+        case .notStarted(let reason): return .didNotRun(reason)
+        }
+    }
+
+    /// Line shown under Check Now; `nil` when there is nothing to say.
+    var text: String? {
+        switch self {
+        case .idle, .checking: return nil
+        case .finished:
+            return "Check finished. Entries still listed are not resolved yet."
+        case .failed(let message): return "Check failed: \(message)"
+        case .didNotRun(let reason): return "Check did not run. \(reason)"
+        }
+    }
+
+    var isFailure: Bool {
+        switch self {
+        case .failed, .didNotRun: return true
+        default: return false
+        }
+    }
+}
+
+/// The line under a Check Now button.
+struct ShieldedCheckNowStatusLine: View {
+    let status: ShieldedCheckNowStatus
+
+    var body: some View {
+        if let text = status.text {
+            Text(text)
+                .font(.caption)
+                .foregroundColor(status.isFailure ? .red : .secondary)
+                .accessibilityIdentifier("shielded.checkNow.status")
+        }
+    }
+}
+
 // MARK: - Sync completion
 
 /// Whether a shielded sync completion event covered `walletId`, so
@@ -252,6 +307,7 @@ struct ShieldedIdentityDebitRecoverySection: View {
     let identities: [PersistentIdentity]
     let isChecking: Bool
     let canCheck: Bool
+    let checkStatus: ShieldedCheckNowStatus
     let onCheckNow: () -> Void
     let onStopRetrying: (ShieldedIdentityDebitRecoveryRecord) -> Void
 
@@ -289,6 +345,7 @@ struct ShieldedIdentityDebitRecoverySection: View {
             }
             .disabled(isChecking || !canCheck)
             .accessibilityIdentifier("shieldedActivity.identityShields.checkNow")
+            ShieldedCheckNowStatusLine(status: checkStatus)
         } header: {
             Text("In-Progress Identity Shields")
         } footer: {

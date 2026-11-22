@@ -90,16 +90,16 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         ))
     }
 
-    func test_capturedRequest_isUnaffectedByLaterFormChanges() {
+    func test_capturedRequest_isUnaffectedByLaterFormChanges() throws {
         // The tap captures 0.001 DASH from the shielded form.
         var amountText = "0.001"
         var fundingIsShielded = true
-        let request = ShieldedTopUpRequest.capture(
+        let request = try XCTUnwrap(ShieldedTopUpRequest.capture(
             fundingIsShielded: fundingIsShielded,
             amountText: amountText,
             walletId: walletId,
             identityId: identityId
-        )!
+        ))
         // While the balance is re-read, the user picks a Platform Payment
         // account, which replaces the amount with that account's balance.
         fundingIsShielded = false
@@ -127,6 +127,13 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
     /// One credit in the formatter's own locale-aware output.
     private var oneCreditDash: String { formatTokenAmount(1, decimals: 11) + " DASH" }
 
+    func test_oneCredit_withAFixedLocale_isTheExactLiteral() {
+        let posix = Locale(identifier: "en_US_POSIX")
+        XCTAssertEqual(formatCreditsAsDash(1, locale: posix), "0.00000000001 DASH")
+        XCTAssertEqual(formatCreditsAsDash(100_000_000_001, locale: posix), "1.00000000001 DASH")
+        XCTAssertEqual(formatCreditsAsDash(0, locale: posix), "0 DASH")
+    }
+
     func test_oneCredit_isShownExactlyNotAsZero() {
         XCTAssertEqual(formatCreditsAsDash(1), oneCreditDash)
         XCTAssertNotEqual(formatCreditsAsDash(1), formatCreditsAsDash(0))
@@ -135,7 +142,8 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
 
     func test_topUpResults_showAOneCreditAmountExactly() {
         XCTAssertTrue(ShieldedTopUpSubmitCheck.completedText(amount: 1).contains("Requested: \(oneCreditDash)."))
-        XCTAssertTrue(ShieldedTopUpSubmitCheck.unconfirmedText(amount: 1).contains("The top-up of \(oneCreditDash) "))
+        XCTAssertTrue(ShieldedTopUpSubmitCheck.unconfirmedText(amount: 1, listedBelow: true)
+            .contains("The top-up of \(oneCreditDash) "))
     }
 
     func test_recoveryRowAmount_showsAOneCreditAmountExactly() {
@@ -169,6 +177,107 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
     func test_amountsOneCreditApart_readDifferently() {
         // One DASH and one DASH plus one credit.
         XCTAssertNotEqual(formatCreditsAsDash(100_000_000_000), formatCreditsAsDash(100_000_000_001))
+    }
+
+    func test_unconfirmedText_withAListedRow_pointsAtIt() {
+        let text = ShieldedTopUpSubmitCheck.unconfirmedText(amount: 1, listedBelow: true)
+        XCTAssertTrue(text.contains("Do not retry"))
+        XCTAssertTrue(text.contains("listed as pending below"))
+    }
+
+    func test_unconfirmedText_withoutAListedRow_promisesNoVisibleEntry() {
+        let text = ShieldedTopUpSubmitCheck.unconfirmedText(amount: 1, listedBelow: false)
+        XCTAssertTrue(text.contains("Do not retry"))
+        XCTAssertFalse(text.contains("listed"))
+    }
+
+    // MARK: - Check Now outcome
+
+    func test_checkNow_completedPass_isFinishedNotAFailure() {
+        let status = ShieldedCheckNowStatus.after(.completed)
+        XCTAssertEqual(status, .finished)
+        XCTAssertFalse(status.isFailure)
+        XCTAssertNotNil(status.text)
+    }
+
+    func test_checkNow_failedPass_showsThisChecksError() {
+        let status = ShieldedCheckNowStatus.after(.failed("network down"))
+        XCTAssertEqual(status, .failed("network down"))
+        XCTAssertTrue(status.isFailure)
+        XCTAssertTrue(status.text?.contains("network down") == true)
+    }
+
+    func test_checkNow_passAlreadyRunningOrNothingBound_didNotRun() {
+        XCTAssertTrue(ShieldedCheckNowStatus.after(.alreadyRunning).isFailure)
+        let notStarted = ShieldedCheckNowStatus.after(.notStarted("No wallet manager is bound."))
+        XCTAssertEqual(notStarted, .didNotRun("No wallet manager is bound."))
+        XCTAssertTrue(notStarted.text?.contains("did not run") == true)
+    }
+
+    func test_checkNow_idleOrChecking_showsNothing() {
+        XCTAssertNil(ShieldedCheckNowStatus.idle.text)
+        XCTAssertNil(ShieldedCheckNowStatus.checking.text)
+    }
+
+    // MARK: - Read scope (wallet manager replacement)
+
+    func test_readScope_sameManagerAndWallet_appliesTheRead() {
+        let manager = NSObject()
+        let scope = ShieldedReadScope(manager: ObjectIdentifier(manager), walletId: walletId)
+        let applied = ShieldedSpendableCredits.applying(
+            ready(credits: 5), startedFor: scope, current: scope, previous: .unknown(reason: nil)
+        )
+        XCTAssertEqual(applied, .known(5))
+    }
+
+    func test_readScope_replacedManager_discardsTheOldRead() {
+        let oldManager = NSObject()
+        let newManager = NSObject()
+        let started = ShieldedReadScope(manager: ObjectIdentifier(oldManager), walletId: walletId)
+        let current = ShieldedReadScope(manager: ObjectIdentifier(newManager), walletId: walletId)
+        // The view reset to unknown on the swap; the old manager's read must not undo that.
+        let applied = ShieldedSpendableCredits.applying(
+            ready(credits: 5), startedFor: started, current: current, previous: .unknown(reason: nil)
+        )
+        XCTAssertEqual(applied, .unknown(reason: nil))
+    }
+
+    func test_readScope_otherWalletOrNoWallet_discardsTheRead() {
+        let manager = NSObject()
+        let started = ShieldedReadScope(manager: ObjectIdentifier(manager), walletId: walletId)
+        let otherWallet = ShieldedReadScope(manager: ObjectIdentifier(manager), walletId: identityId)
+        XCTAssertEqual(
+            ShieldedSpendableCredits.applying(ready(credits: 5), startedFor: started, current: otherWallet, previous: .known(1)),
+            .known(1)
+        )
+        XCTAssertEqual(
+            ShieldedSpendableCredits.applying(ready(credits: 5), startedFor: started, current: nil, previous: .known(1)),
+            .known(1)
+        )
+    }
+
+    func test_readScope_invalidatedRead_keepsThePreviousValue() {
+        let manager = NSObject()
+        let scope = ShieldedReadScope(manager: ObjectIdentifier(manager), walletId: walletId)
+        XCTAssertEqual(
+            ShieldedSpendableCredits.applying(nil, startedFor: scope, current: scope, previous: .known(1)),
+            .known(1)
+        )
+    }
+
+    // MARK: - Shielded selection recheck
+
+    func test_selection_sourceGoneWhileSubmitting_isKept() {
+        XCTAssertFalse(ShieldedSpendableCredits.known(0).dropsShieldedSelection(isToppingUp: true))
+    }
+
+    func test_selection_sourceGoneWhenSubmissionEnds_isDropped() {
+        XCTAssertTrue(ShieldedSpendableCredits.known(0).dropsShieldedSelection(isToppingUp: false))
+        XCTAssertTrue(ShieldedSpendableCredits.unknown(reason: nil).dropsShieldedSelection(isToppingUp: false))
+    }
+
+    func test_selection_sourceStillOfferedWhenSubmissionEnds_isKept() {
+        XCTAssertFalse(ShieldedSpendableCredits.known(5).dropsShieldedSelection(isToppingUp: false))
     }
 
     // MARK: - Submit-time balance read
@@ -359,9 +468,9 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         XCTAssertEqual(ShieldedSpendableCredits.after(ready(credits: 5), previous: .afterClear), .known(5))
     }
 
-    func test_readCoordinator_readStartedBeforeAClear_neverAppliesAfterIt() {
+    func test_readCoordinator_readStartedBeforeAClear_neverAppliesAfterIt() throws {
         var reads = RecoveryReadCoordinator()
-        let beforeClear = reads.request()!
+        let beforeClear = try XCTUnwrap(reads.request())
         // A follow-up was also requested before the Clear.
         XCTAssertNil(reads.request())
         reads.reset()
@@ -371,7 +480,7 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         XCTAssertFalse(outcome.apply)
         XCTAssertNil(outcome.next)
         // The read started after the Clear applies.
-        let afterClear = reads.request()!
+        let afterClear = try XCTUnwrap(reads.request())
         XCTAssertTrue(reads.finish(afterClear).apply)
     }
 
@@ -454,16 +563,16 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         XCTAssertEqual(reads.inFlight, generation)
     }
 
-    func test_readCoordinator_requestsWhileInFlight_coalesceIntoOneFollowUp() {
+    func test_readCoordinator_requestsWhileInFlight_coalesceIntoOneFollowUp() throws {
         var reads = RecoveryReadCoordinator()
-        let first = reads.request()!
+        let first = try XCTUnwrap(reads.request())
         // Two more requests while the first is in flight start nothing.
         XCTAssertNil(reads.request())
         XCTAssertNil(reads.request())
         // The first finishes and applies; exactly one follow-up starts.
         let outcome = reads.finish(first)
         XCTAssertTrue(outcome.apply)
-        let followUp = outcome.next!
+        let followUp = try XCTUnwrap(outcome.next)
         XCTAssertGreaterThan(followUp, first)
         // The follow-up finishes with nothing more to run.
         let last = reads.finish(followUp)
@@ -472,10 +581,10 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         XCTAssertNil(reads.inFlight)
     }
 
-    func test_readCoordinator_completionsInReverseOrder_onlyNewestApplies() {
+    func test_readCoordinator_completionsInReverseOrder_onlyNewestApplies() throws {
         var reads = RecoveryReadCoordinator()
         // A read is in flight when Stop Retrying starts a superseding one.
-        let before = reads.request()!
+        let before = try XCTUnwrap(reads.request())
         let after = reads.startSuperseding()
         // The newer read finishes first and applies.
         XCTAssertTrue(reads.finish(after).apply)
@@ -485,9 +594,9 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         XCTAssertNil(late.next)
     }
 
-    func test_readCoordinator_olderReadFinishingFirst_doesNotApplyOrEndTheNewer() {
+    func test_readCoordinator_olderReadFinishingFirst_doesNotApplyOrEndTheNewer() throws {
         var reads = RecoveryReadCoordinator()
-        let before = reads.request()!
+        let before = try XCTUnwrap(reads.request())
         let after = reads.startSuperseding()
         XCTAssertFalse(reads.finish(before).apply)
         // The superseding read is still the one in flight.
@@ -496,12 +605,12 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         XCTAssertTrue(reads.finish(after).apply)
     }
 
-    func test_readCoordinator_reset_discardsReadsOfThePreviousWallet() {
+    func test_readCoordinator_reset_discardsReadsOfThePreviousWallet() throws {
         var reads = RecoveryReadCoordinator()
-        let oldWalletRead = reads.request()!
+        let oldWalletRead = try XCTUnwrap(reads.request())
         reads.reset()
         // A read for the new wallet starts at once.
-        let newWalletRead = reads.request()!
+        let newWalletRead = try XCTUnwrap(reads.request())
         XCTAssertNotEqual(oldWalletRead, newWalletRead)
         XCTAssertFalse(reads.finish(oldWalletRead).apply)
         XCTAssertTrue(reads.finish(newWalletRead).apply)

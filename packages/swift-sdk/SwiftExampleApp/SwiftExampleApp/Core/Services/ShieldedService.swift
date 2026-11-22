@@ -523,9 +523,14 @@ class ShieldedService: ObservableObject {
     /// the published `$shieldedSyncIsSyncing` stays `false` the
     /// whole time on a fast (e.g. empty-tree) sync, so we can't
     /// rely on the subscription alone to flip it back.
-    func manualSync() async {
-        guard !isSyncing else { return }
-        guard let walletManager else { return }
+    ///
+    /// Returns this call's own outcome, so a screen that started the check
+    /// can report it without reading the shared `lastError`, which other
+    /// passes also write.
+    @discardableResult
+    func manualSync() async -> ManualSyncOutcome {
+        guard !isSyncing else { return .alreadyRunning }
+        guard let walletManager else { return .notStarted("No wallet manager is bound.") }
         var startFields: [String: SDKLogValue] = [
             "bound": .boolean(isBound),
             "wallet_count": .integer(Int64(walletManager.wallets.count)),
@@ -551,7 +556,7 @@ class ShieldedService: ObservableObject {
                 let walletId = boundWalletId,
                 let resolver,
                 let network
-            else { return }
+            else { return .notStarted("The shielded wallet is not bound.") }
             let accounts = boundAccounts.isEmpty ? [0] : boundAccounts
             bind(
                 walletManager: walletManager,
@@ -607,7 +612,7 @@ class ShieldedService: ObservableObject {
                 severity: .warning,
                 fields: ["reason": .publicText("no_registered_wallet")]
             )
-            return
+            return .notStarted(lastError ?? "No wallet could be bound to the shielded pool.")
         }
 
         isSyncing = true
@@ -621,10 +626,12 @@ class ShieldedService: ObservableObject {
         // publisher does flip first it simply no-ops there.
         beginSyncTimingIfNeeded()
         defer { isSyncing = false }
+        var outcome = ManualSyncOutcome.completed
         do {
             try await walletManager.syncShieldedNow()
         } catch {
             lastError = "Shielded sync error: \(error.localizedDescription)"
+            outcome = .failed(error.localizedDescription)
             var fields: [String: SDKLogValue] = [:]
             if let walletId = boundWalletId {
                 fields["wallet_reference"] = .reference(walletId)
@@ -661,6 +668,18 @@ class ShieldedService: ObservableObject {
                 error: error
             )
         }
+        return outcome
+    }
+
+    /// Outcome of one `manualSync()` call.
+    enum ManualSyncOutcome: Equatable {
+        /// The pass ran without a pass-level error.
+        case completed
+        case failed(String)
+        /// Another pass was already running; this call did nothing.
+        case alreadyRunning
+        /// Nothing was bound, so no pass ran.
+        case notStarted(String)
     }
 
     /// Whether the service has enough stashed state to perform a

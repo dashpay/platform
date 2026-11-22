@@ -117,6 +117,7 @@ struct ShieldedActivityListView: View {
     @Query private var identities: [PersistentIdentity]
     @State private var selected: PersistentShieldedActivity?
     @StateObject private var recovery = ShieldedIdentityDebitRecoveryModel()
+    @State private var checkStatus: ShieldedCheckNowStatus = .idle
 
     init(walletId: Data) {
         self.walletId = walletId
@@ -181,6 +182,7 @@ struct ShieldedActivityListView: View {
                 identities: walletIdentities,
                 isChecking: shieldedService.isSyncing,
                 canCheck: shieldedService.canResume,
+                checkStatus: checkStatus,
                 onCheckNow: { Task { await checkNow() } },
                 onStopRetrying: { record in
                     Task {
@@ -246,7 +248,10 @@ struct ShieldedActivityListView: View {
 
     /// The app's existing manual shielded sync; it syncs every bound wallet.
     private func checkNow() async {
-        await shieldedService.manualSync()
+        checkStatus = .checking
+        let outcome = await shieldedService.manualSync()
+        checkStatus = .after(outcome)
+        // The records stay listed whatever the outcome.
         await loadRecoveryRecords()
     }
 

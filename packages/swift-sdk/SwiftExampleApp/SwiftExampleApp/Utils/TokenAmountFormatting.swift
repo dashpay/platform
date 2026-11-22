@@ -82,7 +82,10 @@ private func isWellFormedDecimal(_ s: String) -> Bool {
 /// Transfer amount field could silently lose three orders of
 /// magnitude. Disabling grouping in this formatter makes every value
 /// it produces a valid input for the parser.
-func formatTokenAmount(_ raw: UInt64, decimals: Int) -> String {
+///
+/// `locale` defaults to the formatter's own (the user's current locale);
+/// tests pass a fixed one to assert exact text.
+func formatTokenAmount(_ raw: UInt64, decimals: Int, locale: Locale? = nil) -> String {
     let dec = max(0, decimals)
     let rawDecimal = Decimal(raw)
     // `dec` is clamped to `>= 0` above, so `pow(Decimal(10), dec)` is
@@ -91,6 +94,7 @@ func formatTokenAmount(_ raw: UInt64, decimals: Int) -> String {
     let divisor = pow(Decimal(10), dec)
     let scaled = rawDecimal / divisor
     let formatter = NumberFormatter()
+    if let locale { formatter.locale = locale }
     formatter.numberStyle = .decimal
     formatter.maximumFractionDigits = dec
     formatter.minimumFractionDigits = 0
@@ -102,8 +106,8 @@ func formatTokenAmount(_ raw: UInt64, decimals: Int) -> String {
 /// Exact DASH text for a Platform credit amount (1 DASH = 1e11 credits),
 /// down to one credit. Payment surfaces use this so a one-credit amount or
 /// a one-credit shortfall never reads as zero or as two equal amounts.
-func formatCreditsAsDash(_ credits: UInt64) -> String {
-    formatTokenAmount(credits, decimals: 11) + " DASH"
+func formatCreditsAsDash(_ credits: UInt64, locale: Locale? = nil) -> String {
+    formatTokenAmount(credits, decimals: 11, locale: locale) + " DASH"
 }
 
 /// Exact DASH text for a `PersistentIdentity.balance` (`Int64` credits),
