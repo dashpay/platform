@@ -217,7 +217,7 @@ on another node, which may be newer.
 | An answer to a request that needs a version, signed below it | `StaleNodeError::BehindProtocolUpgrade` | kind `StaleNode` | `NetworkError` | yes / yes |
 | A document answer signed below the SDK's version, before the network is proven at it | `StaleNodeError::ProtocolVersion` per attempt; a request whose every attempt ended this way fails with `Error::Config` once no attempt is left | kind `Config` | `ProtocolError` | yes / no |
 | A document answer signed below the SDK's version, once the network is proven at it | `Error::Proof` | kind `Proof` | `ProtocolError` (its message names both versions) | yes / yes |
-| An answer the SDK could not read that names a version the build does not know, once the network is proven at such a version | `StaleNodeError::NewerProtocolVersion` per attempt; a request whose every attempt ended this way fails with `Error::Config` once no attempt is left | kind `Config` | `ProtocolError` | yes / no |
+| A fresh answer the SDK could not read that names a version the build does not know, once the network is proven at such a version (one outside the height or time tolerance fails as stale, and its node is banned) | `StaleNodeError::NewerProtocolVersion` per attempt; a request whose every attempt ended this way fails with `Error::Config` once no attempt is left | kind `Config` | `ProtocolError` | yes / no |
 
 `ProtocolVersionNotActive` names the method and, for a document query, the feature that needs
 the version, for example `get_documents needs Platform protocol version 14 for time-range
