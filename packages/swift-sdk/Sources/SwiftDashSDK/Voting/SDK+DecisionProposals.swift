@@ -256,6 +256,70 @@ extension SDK {
             _ = try DecisionProposalFFI.consumeString(result)
         }
     }
+
+    /// Answer a decision proposal for a masternode with `signer` and wait for
+    /// Platform's response
+    /// (`dash_sdk_decision_proposal_cast_vote_with_signer`).
+    ///
+    /// The same vote as
+    /// ``castDecisionProposalVote(proposalId:choice:proTxHash:votingPrivateKey:)``,
+    /// but no key bytes cross the FFI: the Rust side builds the masternode's
+    /// voting key from `votingAddress` and asks `signer` to sign with it. Use
+    /// ``KeychainSigner/withStoredMasternodeVotingKey(identityId:isolation:perform:)``
+    /// to make a loaded masternode identity's stored voting key signable for
+    /// the call.
+    ///
+    /// - Parameters:
+    ///   - proposalId: The proposal's id, base58.
+    ///   - choice: Yes, no or abstain.
+    ///   - proTxHash: The masternode's 32-byte pro_tx_hash in **wire order**,
+    ///     not the byte order of the hex Core displays (see
+    ///     ``castContestedResourceVote(dataContractId:documentTypeName:indexName:indexValues:choice:proTxHash:votingPrivateKey:)``).
+    ///   - votingAddress: The masternode's 20-byte voting address, the
+    ///     hash160 of the voting public key.
+    ///   - signer: Signs with the voting key. Kept alive for the whole call.
+    public nonisolated func castDecisionProposalVote(
+        proposalId: String,
+        choice: YesNoAbstainVoteChoice,
+        proTxHash: Data,
+        votingAddress: Data,
+        signer: KeychainSigner
+    ) async throws {
+        // The FFI reads exactly 32 and 20 bytes through these pointers.
+        guard proTxHash.count == 32 else {
+            throw SDKError.invalidParameter("proTxHash must be exactly 32 bytes")
+        }
+        guard votingAddress.count == 20 else {
+            throw SDKError.invalidParameter("votingAddress must be exactly 20 bytes")
+        }
+        let voteChoice = choice.ffiTag
+
+        try await performBlockingQuery { handle in
+            // The signer's FFI handle holds an unretained pointer to
+            // `signer`, so pin it for the whole call (see the lifetime
+            // contract on `KeychainSigner`).
+            let result = try withExtendedLifetime(signer) {
+                try proTxHash.withUnsafeBytes { proTxPtr in
+                    try votingAddress.withUnsafeBytes { addressPtr in
+                        try withDecisionProposalCString(
+                            proposalId, field: "proposalId", invalid: SDKError.invalidParameter
+                        ) { idPtr in
+                            dash_sdk_decision_proposal_cast_vote_with_signer(
+                                handle,
+                                idPtr,
+                                voteChoice,
+                                proTxPtr.bindMemory(to: UInt8.self).baseAddress,
+                                addressPtr.bindMemory(to: UInt8.self).baseAddress,
+                                signer.handle
+                            )
+                        }
+                    }
+                }
+            }
+            // No data on success.
+            _ = try DecisionProposalFFI.consumeString(result)
+        }
+    }
 }
 
 // MARK: - FFI result handling

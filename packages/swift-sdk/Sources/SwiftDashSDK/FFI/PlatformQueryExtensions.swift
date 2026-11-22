@@ -1940,7 +1940,11 @@ extension SDK {
     ///   - votingPrivateKey: The masternode's 32-byte voting private key. The
     ///     matching `ECDSA_HASH160` voting public key and the signer are
     ///     derived from this on the Rust side; the key bytes are not retained.
-    public func castContestedResourceVote(
+    ///
+    /// `nonisolated`: the broadcast blocks on the network inside Rust, so it
+    /// runs on the shared Platform query queue (see
+    /// ``performBlockingQuery(_:)``) instead of on the caller's actor.
+    public nonisolated func castContestedResourceVote(
         dataContractId: String,
         documentTypeName: String,
         indexName: String,
@@ -1949,9 +1953,6 @@ extension SDK {
         proTxHash: Data,
         votingPrivateKey: Data
     ) async throws {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
-        }
         guard proTxHash.count == 32 else {
             throw SDKError.invalidParameter("proTxHash must be exactly 32 bytes")
         }
@@ -1967,32 +1968,145 @@ extension SDK {
             if case let .towardsIdentity(id) = choice { return id }
             return nil
         }()
+        try Self.refuseEmbeddedNul([
+            ("dataContractId", dataContractId),
+            ("documentTypeName", documentTypeName),
+            ("indexName", indexName),
+            ("indexValues", indexValuesJson),
+            ("contenderId", contenderId),
+        ])
         let networkValue = network.ffiValue
 
-        let result = proTxHash.withUnsafeBytes { proTxPtr in
-            votingPrivateKey.withUnsafeBytes { keyPtr in
-                dash_sdk_contested_resource_cast_vote(
-                    handle,
-                    dataContractId,
-                    documentTypeName,
-                    indexName,
-                    indexValuesJson,
-                    voteChoiceTag,
-                    contenderId,
-                    proTxPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                    keyPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                    networkValue
-                )
+        try await performBlockingQuery { handle in
+            let result = proTxHash.withUnsafeBytes { proTxPtr in
+                votingPrivateKey.withUnsafeBytes { keyPtr in
+                    dash_sdk_contested_resource_cast_vote(
+                        handle,
+                        dataContractId,
+                        documentTypeName,
+                        indexName,
+                        indexValuesJson,
+                        voteChoiceTag,
+                        contenderId,
+                        proTxPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                        keyPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                        networkValue
+                    )
+                }
             }
+            try Self.processVoidResult(result)
+        }
+    }
+
+    /// Cast a masternode contested-resource (DPNS) vote signed by `signer`
+    /// and wait for the platform response.
+    ///
+    /// Thin bridge over `dash_sdk_contested_resource_cast_vote_with_signer`:
+    /// the same vote as
+    /// ``castContestedResourceVote(dataContractId:documentTypeName:indexName:indexValues:choice:proTxHash:votingPrivateKey:)``,
+    /// but no key bytes cross the FFI. The Rust side builds the masternode's
+    /// voting key from `votingAddress` (id 0, `VOTING`, `ECDSA_HASH160`) and
+    /// asks `signer` to sign with it, so the signer is asked for the 20-byte
+    /// voting address with key type `ECDSA_HASH160`. Use
+    /// ``KeychainSigner/withStoredMasternodeVotingKey(identityId:isolation:perform:)``
+    /// to make a loaded masternode identity's stored voting key signable for
+    /// the call.
+    ///
+    /// - Parameters:
+    ///   - dataContractId, documentTypeName, indexName, indexValues, choice:
+    ///     As for
+    ///     ``castContestedResourceVote(dataContractId:documentTypeName:indexName:indexValues:choice:proTxHash:votingPrivateKey:)``.
+    ///   - proTxHash: The masternode's 32-byte pro_tx_hash in **WIRE order**,
+    ///     exactly as
+    ///     ``castContestedResourceVote(dataContractId:documentTypeName:indexName:indexValues:choice:proTxHash:votingPrivateKey:)``
+    ///     takes it: NOT the byte order of the hex Core displays, which is its
+    ///     reverse. The Rust side reverses these bytes before deriving the
+    ///     voter identity.
+    ///   - votingAddress: The masternode's 20-byte voting address, the
+    ///     hash160 of the voting public key.
+    ///   - signer: Signs with the voting key. Kept alive for the whole call.
+    ///
+    /// `nonisolated`: the broadcast blocks on the network inside Rust, so it
+    /// runs on the shared Platform query queue (see
+    /// ``performBlockingQuery(_:)``) instead of on the caller's actor.
+    public nonisolated func castContestedResourceVote(
+        dataContractId: String,
+        documentTypeName: String,
+        indexName: String,
+        indexValues: [String],
+        choice: ContestedResourceVoteChoice,
+        proTxHash: Data,
+        votingAddress: Data,
+        signer: KeychainSigner
+    ) async throws {
+        guard proTxHash.count == 32 else {
+            throw SDKError.invalidParameter("proTxHash must be exactly 32 bytes")
+        }
+        guard votingAddress.count == 20 else {
+            throw SDKError.invalidParameter("votingAddress must be exactly 20 bytes")
         }
 
-        try processVoidResult(result)
+        let indexValuesData = try JSONSerialization.data(withJSONObject: indexValues)
+        let indexValuesJson = String(data: indexValuesData, encoding: .utf8) ?? "[]"
+
+        let voteChoiceTag = choice.ffiTag
+        let contenderId: String? = {
+            if case let .towardsIdentity(id) = choice { return id }
+            return nil
+        }()
+        try Self.refuseEmbeddedNul([
+            ("dataContractId", dataContractId),
+            ("documentTypeName", documentTypeName),
+            ("indexName", indexName),
+            ("indexValues", indexValuesJson),
+            ("contenderId", contenderId),
+        ])
+
+        try await performBlockingQuery { handle in
+            // The signer's FFI handle holds an unretained pointer to
+            // `signer`, so pin it for the whole call (see the lifetime
+            // contract on `KeychainSigner`).
+            let result = withExtendedLifetime(signer) {
+                proTxHash.withUnsafeBytes { proTxPtr in
+                    votingAddress.withUnsafeBytes { addressPtr in
+                        dash_sdk_contested_resource_cast_vote_with_signer(
+                            handle,
+                            dataContractId,
+                            documentTypeName,
+                            indexName,
+                            indexValuesJson,
+                            voteChoiceTag,
+                            contenderId,
+                            proTxPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                            addressPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                            signer.handle
+                        )
+                    }
+                }
+            }
+            // Keeps the Rust error code (e.g. InvalidParameter); no data on success.
+            try DecisionProposalFFI.throwIfFailed(result)
+        }
+    }
+
+    /// Refuses, as `SDKError.invalidParameter` naming the field, a string
+    /// with an embedded NUL: C reads each string only up to its first NUL, so
+    /// it would act on a prefix. The same check the proposal wrappers make
+    /// (``withDecisionProposalCString(_:field:invalid:_:)``); `nil` passes.
+    private nonisolated static func refuseEmbeddedNul(_ fields: [(name: String, value: String?)]) throws {
+        for field in fields {
+            try withDecisionProposalCString(
+                field.value,
+                field: field.name,
+                invalid: SDKError.invalidParameter
+            ) { _ in }
+        }
     }
 
     /// Process a `DashSDKResult` that carries no payload on success (the
     /// broadcast / put-style FFIs return `NoData`). Throws on the error arm,
     /// otherwise returns. Frees the FFI-owned error string on the failure path.
-    private func processVoidResult(_ result: DashSDKResult) throws {
+    private nonisolated static func processVoidResult(_ result: DashSDKResult) throws {
         if let error = result.error {
             let errorMessage = error.pointee.message != nil
                 ? String(cString: error.pointee.message!)

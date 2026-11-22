@@ -514,6 +514,39 @@ struct IdentitiesContentView: View {
     private func removeIdentityLocally(_ identity: PersistentIdentity) {
         let keychain = KeychainManager.shared
 
+        // Clear the special-key slots by identity id first, so a key stored
+        // without a row reference (a load whose save failed) goes too and a
+        // later load can store the key again. `deleteSpecialKey` treats an
+        // absent item as success, so `false` means the Keychain refused:
+        // then nothing else is removed and the operator can retry.
+        var uncleared: [SpecialKeyType] = []
+        for keyType in [SpecialKeyType.voting, .owner, .payout] {
+            if keychain.deleteSpecialKey(identityId: identity.identityId, keyType: keyType) {
+                // Deleted: a row kept below must not point at it.
+                switch keyType {
+                case .voting: identity.votingPrivateKeyIdentifier = nil
+                case .owner: identity.ownerPrivateKeyIdentifier = nil
+                case .payout: identity.payoutPrivateKeyIdentifier = nil
+                }
+            } else {
+                uncleared.append(keyType)
+            }
+        }
+        guard uncleared.isEmpty else {
+            let names = ListFormatter.localizedString(byJoining: uncleared.map(\.rawValue))
+            var message = "The identity was not removed: the Keychain refused to delete its \(names) key. Unlock the device and try again."
+            do {
+                // Persist the references cleared above for the deleted slots.
+                try modelContext.save()
+            } catch {
+                // The cleared references may come back on relaunch while
+                // their keys are gone; say so instead of hiding it.
+                message += " Saving the identity also failed (\(error.localizedDescription)), so it may still list keys that were deleted; remove it again to finish."
+            }
+            platformState.showError(message: message)
+            return
+        }
+
         for publicKey in identity.publicKeys {
             if let identifier = publicKey.privateKeyKeychainIdentifier {
                 _ = keychain.deleteKeyData(identifier: identifier)
@@ -529,7 +562,6 @@ struct IdentitiesContentView: View {
         if let payoutIdentifier = identity.payoutPrivateKeyIdentifier {
             _ = keychain.deleteKeyData(identifier: payoutIdentifier)
         }
-
         modelContext.delete(identity)
         do {
             try modelContext.save()

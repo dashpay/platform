@@ -178,6 +178,19 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         /// `out_error` (see `SIGN_WITH_MNEMONIC_ERR_*` constants in
         /// `signer_simple.rs`).
         case signWithMnemonicFailed(tag: UInt8)
+        /// ``KeychainSigner/withStoredMasternodeVotingKey(identityId:isolation:perform:)``:
+        /// the Keychain holds no voting key for this masternode or
+        /// evonode identity. Load the identity again with its voting key.
+        case votingKeyNotStored(identityIdHex: String)
+        /// ``KeychainSigner/withStoredMasternodeVotingKey(identityId:isolation:perform:)``:
+        /// the Keychain refused the read with `status` (for example
+        /// `errSecInteractionNotAllowed` while the device is locked), so
+        /// whether a voting key is stored is unknown.
+        case votingKeyUnreadable(status: Int32)
+        /// ``KeychainSigner/withStoredMasternodeVotingKey(identityId:isolation:perform:)``:
+        /// the stored voting key is not a usable secp256k1 secret key, so
+        /// no voting address could be formed from it.
+        case invalidVotingKey(message: String)
 
         public var errorDescription: String? {
             switch self {
@@ -201,6 +214,14 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
                 return "PersistentPlatformAddress.walletId is \(actual) bytes; expected \(expected)."
             case .signWithMnemonicFailed(let tag):
                 return "dash_sdk_sign_with_mnemonic_and_path failed with error tag \(tag)."
+            case .votingKeyNotStored(let identityIdHex):
+                return "No voting key is stored for masternode identity \(identityIdHex). "
+                    + "Load the masternode or evonode identity again with its voting private key."
+            case .votingKeyUnreadable(let status):
+                return "The Keychain could not be read (status \(status)), for example because the device is locked. "
+                    + "Unlock the device and try again."
+            case .invalidVotingKey(let message):
+                return "The stored voting key is not usable: \(message)"
             }
         }
     }
@@ -968,6 +989,111 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
 
     public func canSign(identityPublicKey: Data) -> Bool {
         canSign(publicKey: identityPublicKey, keyType: KeyType.ecdsaSecp256k1.rawValue)
+    }
+}
+
+// MARK: - Masternode voting key
+
+extension KeychainSigner {
+    /// Makes the voting key stored for a loaded masternode or evonode
+    /// identity signable for the duration of `body`, and hands `body` the
+    /// masternode's 20-byte voting address.
+    ///
+    /// A masternode vote is signed with the voting key Rust builds from the
+    /// voting address (`ECDSA_HASH160`, data = the address), so the sign
+    /// trampoline is asked for exactly those 20 bytes. This reads the private
+    /// key the identity was loaded with (`storeSpecialKey(_:identityId:keyType:)`
+    /// with `.voting`) from this signer's Keychain, asks Rust for its voting
+    /// address (`dash_sdk_masternode_voting_address_from_private_key`), and
+    /// registers the key in the scoped registry under that address through
+    /// ``withAdditionalSigningKeys(_:isolation:perform:)``, which zeroes it
+    /// when the scope ends, whether `body` returns or throws. Pass the
+    /// address to a `_with_signer` vote, for example
+    /// ``SDK/castDecisionProposalVote(proposalId:choice:proTxHash:votingAddress:signer:)``,
+    /// together with this signer.
+    ///
+    /// - Parameters:
+    ///   - identityId: The loaded identity's id, the bytes it was stored
+    ///     under (`PersistentIdentity.identityId`).
+    ///   - isolation: Keeps `body` in the caller's actor context, as for
+    ///     ``withAdditionalSigningKeys(_:isolation:perform:)``.
+    ///   - body: Runs with the key signable; receives the voting address.
+    /// - Throws: ``Error/votingKeyNotStored(identityIdHex:)`` when no voting
+    ///   key is stored for `identityId`, ``Error/votingKeyUnreadable(status:)``
+    ///   when the Keychain could not be read (for example while the device
+    ///   is locked), ``Error/invalidVotingKey(message:)`` when the stored
+    ///   bytes are not a secret key, and whatever `body` throws.
+    public func withStoredMasternodeVotingKey<T: Sendable>(
+        identityId: Data,
+        isolation: isolated (any Actor)? = #isolation,
+        perform body: (_ votingAddress: Data) async throws -> T
+    ) async throws -> T {
+        // Read the key and build the registry entry on a worker:
+        // `SecItemCopyMatching` is synchronous and the caller is often the
+        // main actor. Only the voting address and the entry come back, so
+        // no copy of the read buffer stays in this frame through the vote.
+        // The read keeps its status: `retrieveSpecialKey` returns `nil` for
+        // a locked Keychain too, which would read as a key never stored.
+        let prepared = await Task.detached { [self] () -> Result<(Data, [AdditionalSigningKeyEntry]), Swift.Error> in
+            Result { try self.prepareStoredVotingKey(identityId: identityId) }
+        }.value
+        let (votingAddress, entries) = try prepared.get()
+        return try await withAdditionalSigningKeys(entries, isolation: isolation) {
+            try await body(votingAddress)
+        }
+    }
+
+    /// Reads the stored voting key for `identityId` and returns its voting
+    /// address and a registry entry holding its own copy of the key. The
+    /// read buffer is reset before returning.
+    private func prepareStoredVotingKey(
+        identityId: Data
+    ) throws -> (Data, [AdditionalSigningKeyEntry]) {
+        var privateKey: Data
+        switch keychain.readSpecialKey(identityId: identityId, keyType: .voting) {
+        case .success(let stored?):
+            privateKey = stored
+        case .success(nil):
+            throw Error.votingKeyNotStored(identityIdHex: identityId.toHexString())
+        case .failure(.retrieveFailed(let status)):
+            throw Error.votingKeyUnreadable(status: status)
+        case .failure(let error):
+            throw Error.invalidVotingKey(message: error.localizedDescription)
+        }
+        defer { privateKey.resetBytes(in: 0..<privateKey.count) }
+        let votingAddress = try Self.masternodeVotingAddress(privateKey: privateKey)
+        // The entry copies the key; the signing scope zeroes that copy on exit.
+        let entries = makeAdditionalSigningKeyEntries([
+            (publicKey: votingAddress, privateKey: privateKey),
+        ])
+        return (votingAddress, entries)
+    }
+
+    /// The voting address Rust forms from a 32-byte voting private key
+    /// (`dash_sdk_masternode_voting_address_from_private_key`): bytes in,
+    /// bytes out.
+    static func masternodeVotingAddress(privateKey: Data) throws -> Data {
+        // The FFI reads exactly 32 bytes through the key pointer.
+        guard privateKey.count == 32 else {
+            throw Error.invalidVotingKey(
+                message: "expected 32 bytes, found \(privateKey.count)"
+            )
+        }
+        var address = [UInt8](repeating: 0, count: 20)
+        let result = privateKey.withUnsafeBytes { keyRaw in
+            address.withUnsafeMutableBufferPointer { out in
+                dash_sdk_masternode_voting_address_from_private_key(
+                    keyRaw.bindMemory(to: UInt8.self).baseAddress,
+                    out.baseAddress
+                )
+            }
+        }
+        if let error = result.error {
+            let message = error.pointee.message.map { String(cString: $0) } ?? "unknown error"
+            dash_sdk_error_free(error)
+            throw Error.invalidVotingKey(message: message)
+        }
+        return Data(address)
     }
 }
 
