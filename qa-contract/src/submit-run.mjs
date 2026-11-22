@@ -1,5 +1,8 @@
 // Submit a single testRun document (an append-only test-execution record).
 //
+// QA_IDENTITY_ID is whoever records the run: the contract owner or any identity
+// the owner listed with admin.mjs. The run's $ownerId is that identity.
+//
 // Usage:
 //   QA_IDENTITY_ID=... QA_PRIVATE_KEY=... node src/submit-run.mjs \
 //     --testId CORE-05 --result pass --buildRef 45fdf33901 \
@@ -11,7 +14,7 @@
 import { parseArgs } from 'node:util';
 import { randomBytes } from 'node:crypto';
 import {
-  loadDotEnv, connect, loadOwnerAuth, readConfig, networkId,
+  loadDotEnv, connect, loadOwnerAuth, readConfig, networkId, findAdmin,
 } from './sdk.mjs';
 import { appCode, DEFAULT_APP } from './codes.mjs';
 
@@ -56,6 +59,14 @@ async function main() {
   const contractId = cfg.contractId;
 
   const { ownerId, signer, identityKey } = await loadOwnerAuth(sdk, mod, network);
+
+  // The platform accepts a run only from an identity the contract owner listed
+  // (testRun.ownerRefersTo). Say so here rather than let the create be refused
+  // with a reference error.
+  if (!await findAdmin(sdk, contractId, ownerId)) {
+    throw new Error(`${ownerId} is not an admin of ${contractId} on ${network}, so it cannot record runs. `
+      + `Ask the contract owner (${cfg.ownerId ?? 'see contract-id file'}) to run: node src/admin.mjs add ${ownerId}`);
+  }
 
   // testRun is immutable + non-deletable, so a typo'd testId would create a
   // permanent orphan. Require the matching (testId, app) testCase to exist first.

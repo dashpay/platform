@@ -11,7 +11,7 @@
 import { parseArgs } from 'node:util';
 import {
   loadDotEnv, connect, loadOwnerAuth, loadSchema, schemaSha,
-  readConfig, writeConfig,
+  readConfig, writeConfig, addAdmin,
 } from './sdk.mjs';
 import { resolvePlanCommit } from './parse-test-plan.mjs';
 
@@ -84,6 +84,20 @@ async function main() {
   console.log(`\n✅ Registered QA contract on ${network}`);
   console.log(`   contractId: ${contractId}`);
   console.log(`   wrote: ${path}`);
+
+  // testRun accepts a run only from a listed admin, the owner included, so list
+  // the owner now. The contract is registered either way: a failure here is
+  // repaired with admin.mjs, not by registering again.
+  try {
+    await addAdmin(sdk, mod, {
+      contractId, ownerId, identityId: ownerId, label: 'contract owner', signer, identityKey,
+    });
+    console.log('   listed the owner as the first admin');
+  } catch (e) {
+    console.error(`\n⚠️  Could not list the owner as an admin: ${e?.message || e}`);
+    console.error(`   Run: node src/admin.mjs add ${ownerId} --label "contract owner"`);
+    process.exitCode = 1;
+  }
 }
 
 main().catch((e) => {

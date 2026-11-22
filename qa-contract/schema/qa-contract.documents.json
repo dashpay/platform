@@ -1,4 +1,35 @@
 {
+  "admin": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": true,
+    "creationRestrictionMode": 1,
+    "indices": [
+      { "name": "byIdentity", "properties": [{ "identity": "asc" }], "unique": true }
+    ],
+    "properties": {
+      "identity": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "refersTo": { "type": "identity" },
+        "position": 0,
+        "description": "The identity allowed to record test runs. Must exist."
+      },
+      "label": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 63,
+        "position": 1,
+        "description": "Who this admin is (a person, a CI job), for display."
+      }
+    },
+    "required": ["identity", "$createdAt"],
+    "additionalProperties": false,
+    "description": "The list of identities that may record test runs. Only the contract owner creates and deletes entries: creating one adds an admin, deleting it removes one. testRun.ownerRefersTo reads this list, so the owner lists itself to record runs."
+  },
   "app": {
     "type": "object",
     "documentsMutable": false,
@@ -201,23 +232,32 @@
     "type": "object",
     "documentsMutable": false,
     "canBeDeleted": false,
-    "creationRestrictionMode": 1,
+    "creationRestrictionMode": 0,
+    "ownerRefersTo": {
+      "type": "deletableDocument",
+      "documentType": "admin",
+      "findBy": { "identity": "." }
+    },
     "indices": [
       {
-        "name": "ownerAppTestNetworkCreated",
-        "properties": [{ "$ownerId": "asc" }, { "app": "asc" }, { "testId": "asc" }, { "network": "asc" }, { "$createdAt": "asc" }]
+        "name": "appTestNetworkCreated",
+        "properties": [{ "app": "asc" }, { "testId": "asc" }, { "network": "asc" }, { "$createdAt": "asc" }]
       },
       {
-        "name": "ownerAppTestResultCreated",
-        "properties": [{ "$ownerId": "asc" }, { "app": "asc" }, { "testId": "asc" }, { "result": "asc" }, { "$createdAt": "asc" }]
+        "name": "appTestResultCreated",
+        "properties": [{ "app": "asc" }, { "testId": "asc" }, { "result": "asc" }, { "$createdAt": "asc" }]
       },
       {
-        "name": "ownerAppTestCreated",
-        "properties": [{ "$ownerId": "asc" }, { "app": "asc" }, { "testId": "asc" }, { "$createdAt": "asc" }]
+        "name": "appTestCreated",
+        "properties": [{ "app": "asc" }, { "testId": "asc" }, { "$createdAt": "asc" }]
       },
       {
-        "name": "buildRefOwner",
-        "properties": [{ "buildRef": "asc" }, { "$ownerId": "asc" }]
+        "name": "buildRefCreated",
+        "properties": [{ "buildRef": "asc" }, { "$createdAt": "asc" }]
+      },
+      {
+        "name": "ownerCreated",
+        "properties": [{ "$ownerId": "asc" }, { "$createdAt": "asc" }]
       }
     ],
     "properties": {
@@ -283,6 +323,6 @@
     },
     "required": ["testId", "app", "result", "network", "buildRef", "$createdAt"],
     "additionalProperties": false,
-    "description": "An append-only record of one test execution for (app, testId). Immutable and non-deletable: an audit log. $createdAt is the run time. Owner-only creation in v1; relax creationRestrictionMode to 0 to let any identity submit runs."
+    "description": "An append-only record of one test execution for (app, testId). Immutable and non-deletable: an audit log. $createdAt is the run time. Only an identity the contract owner listed in an `admin` document may create one (ownerRefersTo), so $ownerId says which admin recorded the run."
   }
 }

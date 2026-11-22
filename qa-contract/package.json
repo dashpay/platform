@@ -11,11 +11,12 @@
     "register": "node src/register.mjs",
     "seed": "node src/seed.mjs",
     "submit-run": "node src/submit-run.mjs",
+    "admin": "node src/admin.mjs",
     "query": "node src/query.mjs",
     "parse": "node src/parse-test-plan.mjs",
     "derive-key": "node src/derive-identity-key.mjs"
   },
   "dependencies": {
-    "@dashevo/evo-sdk": "^4.0.0-rc.2"
+    "@dashevo/evo-sdk": "^5.0.3"
   }
 }

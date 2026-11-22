@@ -1,15 +1,17 @@
-// Migrate historical testRun records from the previous QA contract (v4) onto the
-// freshly-registered v5 contract, remapping testId via the v4->v5 table in
-// codes.mjs (MultiWallet / Group ids folded into their domain categories; GRP-03
-// merged into TOK-15).
+// Migrate historical testRun records from the previous QA contract (v5, whose
+// runs only its owner could record) onto the freshly-registered contract, where
+// listed admins record them. testIds pass through the remap table in codes.mjs,
+// which leaves v5 ids as they are.
 //
-// Reading the old contract is public (no key); writing the new runs uses the v5
-// owner from .env (QA_IDENTITY_ID / QA_PRIVATE_KEY). Migrated runs get a FRESH
-// $createdAt — the original run time is intentionally not preserved.
+// Reading the old contract is public (no key); writing the new runs uses the
+// identity from .env (QA_IDENTITY_ID / QA_PRIVATE_KEY), which must be an admin
+// of the new contract (register.mjs lists the owner). Migrated runs get a FRESH
+// $createdAt and are owned by that identity: the original run time is not
+// preserved. They are written oldest first, so their order is.
 //
-// Run AFTER register.mjs + seed.mjs (the v5 testCases must already exist).
-// Idempotent: a run already present on v5 for the same (testId, result, buildRef)
-// is skipped, so re-running won't duplicate.
+// Run AFTER register.mjs + seed.mjs (the new testCases must already exist), once
+// per app (--app). Idempotent: a run already present for the same
+// (testId, result, buildRef) is skipped, so re-running won't duplicate.
 //
 // Usage:
 //   QA_IDENTITY_ID=... QA_PRIVATE_KEY=... node src/migrate-runs.mjs [--dry-run]
@@ -20,13 +22,12 @@ import { randomBytes } from 'node:crypto';
 import { loadDotEnv, connect, loadOwnerAuth, readConfig } from './sdk.mjs';
 import { appCode, DEFAULT_APP, remapTestId } from './codes.mjs';
 
-// Previous (v4) QA contract on testnet + its owner identity (public, read-only).
-const DEFAULT_OLD_CONTRACT = '67ctgcKJgCs7U4hhAxGj1QQUVq15xkkvMk88CT2AbjCF';
-const DEFAULT_OLD_OWNER = '85KjYZLZXA7YZBPyFEjiMaH36xcQpBBZisKGBHF3uKuH';
+// Previous (v5) QA contract on testnet + its owner identity (public, read-only).
+const DEFAULT_OLD_CONTRACT = '9tshSfq5TU3gAEJCVa6KWxmb7cS7kkzRSmSSTmteKGcU';
+const DEFAULT_OLD_OWNER = '2YBjQKEP6APyu9JADk46yoELL2aKAcRW7yCLTCV2d4dD';
 
-// v4 also had Group (10) and MultiWallet (12) category codes that no longer exist
-// in v5; enumerate old testCases across a generous code range so none are missed
-// regardless of the old numbering.
+// Enumerate old testCases across a generous category code range so none are
+// missed regardless of the old numbering.
 const OLD_CATEGORY_CODES = Array.from({ length: 16 }, (_, i) => i);
 
 function entropy() { return Uint8Array.from(randomBytes(32)); }
@@ -82,13 +83,13 @@ async function main() {
   }
 
   const cfg = readConfig(network);
-  if (!cfg?.contractId) throw new Error(`No v5 contract registered for ${network}. Run register.mjs first.`);
+  if (!cfg?.contractId) throw new Error(`No contract registered for ${network}. Run register.mjs first.`);
   const newContractId = cfg.contractId;
   if (newContractId === oldContractId) {
-    throw new Error(`Refusing to migrate: the registered contract (${newContractId}) equals --from. Register the v5 contract first.`);
+    throw new Error(`Refusing to migrate: the registered contract (${newContractId}) equals --from. Register the new contract first (register.mjs --force).`);
   }
 
-  // Resolve the old owner (testRun indices are $ownerId-prefixed).
+  // Resolve the old owner (the old contract's testRun indices are $ownerId-prefixed).
   let oldOwner = (values['from-owner'] || process.env.OLD_OWNER_ID || '').trim();
   if (!oldOwner) {
     try {
@@ -134,10 +135,11 @@ async function main() {
     );
     if (!oldRuns.length) continue;
 
-    // Idempotency: skip a run already present on v5 for (newId, result, buildRef).
+    // Idempotency: skip a run already present for (newId, result, buildRef),
+    // whichever admin recorded it.
     const existing = await queryAll(
       sdk, newContractId, 'testRun',
-      [['$ownerId', '==', newOwner], ['app', '==', app], ['testId', '==', newId]],
+      [['app', '==', app], ['testId', '==', newId]],
       [['$createdAt', 'asc']],
     );
     const present = new Set(existing.map((r) => `${r.result}|${r.buildRef}`));
@@ -178,7 +180,7 @@ async function main() {
             // create a duplicate testRun for the same (testId, result, buildRef).
             const after = await queryAll(
               sdk, newContractId, 'testRun',
-              [['$ownerId', '==', newOwner], ['app', '==', app], ['testId', '==', newId]],
+              [['app', '==', app], ['testId', '==', newId]],
               [['$createdAt', 'asc']],
             );
             if (after.some((r) => `${r.result}|${r.buildRef}` === `${run.result}|${run.buildRef}`)) {

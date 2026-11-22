@@ -12,7 +12,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const QA_DIR = resolve(__dirname, '..');
@@ -167,6 +167,42 @@ export async function loadOwnerAuth(sdk, mod, network) {
   if (!identity) throw new Error(`Identity ${ownerId} not found on ${network}.`);
   const identityKey = resolveIdentityKey(identity, privateKey);
   return { ownerId, identity, signer, identityKey, privateKey };
+}
+
+// ---------------------------------------------------------------------------
+// Admin list
+// ---------------------------------------------------------------------------
+
+// The `admin` document naming `identityId`, or undefined. testRun.ownerRefersTo
+// reads the same unique index (`byIdentity`), so an identity with a document
+// here is one the platform lets record runs.
+export async function findAdmin(sdk, contractId, identityId) {
+  const res = await sdk.documents.query({
+    dataContractId: contractId,
+    documentTypeName: 'admin',
+    where: [['identity', '==', String(identityId)]],
+    limit: 1,
+  });
+  for (const doc of res.values()) if (doc) return doc;
+  return undefined;
+}
+
+// Create the `admin` document that lets `identityId` record runs. Only the
+// contract owner may sign it.
+export async function addAdmin(sdk, mod, {
+  contractId, ownerId, identityId, label, signer, identityKey,
+}) {
+  const { Document, Identifier } = mod;
+  const properties = { identity: new Identifier(String(identityId)) };
+  if (label) properties.label = label;
+  const doc = new Document({
+    ownerId,
+    dataContractId: contractId,
+    documentTypeName: 'admin',
+    properties,
+    entropy: Uint8Array.from(randomBytes(32)),
+  });
+  await sdk.documents.create({ document: doc, identityKey, signer });
 }
 
 // ---------------------------------------------------------------------------

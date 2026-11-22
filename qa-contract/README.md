@@ -7,8 +7,8 @@ and a website can render it. Complements GitHub issue
 [`packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md`](../packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md).
 
 This package is the **storage layer only**: the schema, a register script, a
-seed script (kept in sync with `TEST_PLAN.md`), a submit-run helper, and a
-read/verify tool. The website that consumes the contract is a separate task and
+seed script (kept in sync with `TEST_PLAN.md`), an admin-list tool, a submit-run
+helper, and a read/verify tool. The website that consumes the contract is a separate task and
 only needs the contract ID below.
 
 ## Contract ID
@@ -19,28 +19,17 @@ written by the register script. Read it from there — testnet resets periodical
 so the ID changes when the contract is re-registered (see
 [Testnet reset / re-seed](#testnet-reset--re-seed)).
 
-**Live testnet deployment** (as of registration):
-
-| | |
-|---|---|
-| Contract ID | `67ctgcKJgCs7U4hhAxGj1QQUVq15xkkvMk88CT2AbjCF` |
-| Owner (QA identity) | `85KjYZLZXA7YZBPyFEjiMaH36xcQpBBZisKGBHF3uKuH` |
-| Network | testnet |
-
-> A data contract's schema is immutable, so each schema change is a fresh
-> registration with a new id. Consumers pinned to an older id must re-pin.
-> History: `2qEVUbg4znNgNRs3FJQ4kof4NKpB8q4fGtYa7qBouLzw` (v1) →
+> The keywords that say who may write a document type cannot change once the
+> type exists, so a change to them is a fresh registration with a new id.
+> Consumers pinned to an older id must re-pin. History:
+> `2qEVUbg4znNgNRs3FJQ4kof4NKpB8q4fGtYa7qBouLzw` (v1) →
 > `2gevmsNEaWnWQURQpuWeN5QnLfC2ufrZG4SXkVMqeUgZ` (v2: integer `network` +
 > `$ownerId` testRun indices) → `4PtPYwYJcjuPXgKigkficzcrpKLG9yucqkNKKK9UVmiv`
 > (v3: normalized `app`/`tier`/`category` lookup types with integer foreign keys,
-> `(testId, app)` unique) → **deployed** (v4: hardening — non-deletable lookup rows,
-> `result` enum, `network` `0..3`, redundant `ownerAppTestNetwork` index dropped).
->
-> The committed schema additionally makes the `app`/`tier`/`category` lookups
-> fully **immutable** (`documentsMutable: false`, so a `code`'s name can't be
-> relabeled under historical runs). That post-dates the deployed v4 contract and
-> applies at the next re-registration; `register.mjs` flags the drift (use
-> `--force` to publish it as the next contract).
+> `(testId, app)` unique) → `67ctgcKJgCs7U4hhAxGj1QQUVq15xkkvMk88CT2AbjCF`
+> (v4: hardening) → `9tshSfq5TU3gAEJCVa6KWxmb7cS7kkzRSmSSTmteKGcU` (v5: tags,
+> immutable lookups) → the committed schema (v6: an `admin` list the owner
+> keeps, and runs recorded by the identities on it; needs protocol version 14).
 
 ```jsonc
 // contract-id.testnet.json (shape)
@@ -48,7 +37,7 @@ so the ID changes when the contract is re-registered (see
   "network": "testnet",
   "contractId": "<base58 contract id>",
   "ownerId": "<base58 QA identity id>",
-  "documentTypes": ["app", "tier", "category", "testCase", "testRun"],
+  "documentTypes": ["admin", "app", "tier", "category", "testCase", "testRun"],
   "schemaSha": "<sha256 prefix of the schema>",
   "planCommit": "<TEST_PLAN.md git short-sha at register time>",
   "registeredAt": "<ISO timestamp>"
@@ -57,13 +46,23 @@ so the ID changes when the contract is re-registered (see
 
 ## Schema
 
-Five document types (full schema in
+Six document types (full schema in
 [`schema/qa-contract.documents.json`](schema/qa-contract.documents.json)). The
 catalog is **normalized**: `app`, `tier`, and `category` are lookup tables, and
 `testCase`/`testRun` reference them by an integer **foreign key** (`code`). Dash
 Platform has no joins, so consumers fetch the (tiny) lookup tables once and
 resolve `code → name` client-side; the canonical codes live in
 [`src/codes.mjs`](src/codes.mjs).
+
+### `admin` — who may record runs
+
+`{ identity: identifier (unique), label?: string }`. Only the contract owner
+creates and deletes these (`creationRestrictionMode: 1`); creating one adds an
+admin, deleting it removes one. `identity` must be an existing identity
+(`refersTo`). `testRun` reads this list through `ownerRefersTo`, so the platform
+itself refuses a run from anyone not on it, the contract owner included:
+`register.mjs` lists the owner right after registering. Manage the list with
+[`src/admin.mjs`](src/admin.mjs).
 
 ### Lookup tables: `app`, `tier`, `category`
 
@@ -113,12 +112,17 @@ creating a doc with the next `code`, **no contract update needed**. Canonical co
 | `blockerReason` | string (≤512) | why blocked/skipped |
 | `$createdAt` | system | **run time**, stamped by the platform; required + indexed |
 
-- Indices (all `asc`; `$ownerId`-prefixed so runs are queried per submitter —
-  sets up multi-submitter; `app` pairs with `testId`):
-  - `ownerAppTestNetworkCreated` — `$ownerId`, `app`, `testId`, `network`, `$createdAt` (also serves the equality-only `…, network` prefix)
-  - `ownerAppTestResultCreated` — `$ownerId`, `app`, `testId`, `result`, `$createdAt`
-  - `ownerAppTestCreated` — `$ownerId`, `app`, `testId`, `$createdAt`
-  - `buildRefOwner` — `buildRef`, `$ownerId`
+- Recorded by an admin: `creationRestrictionMode: 0` with
+  `ownerRefersTo: { type: deletableDocument, documentType: admin, findBy: { identity: "." } }`,
+  so the writer must have an `admin` document when the run is created. `$ownerId`
+  is the admin that recorded the run. A run stays after its admin is removed.
+- Indices (all `asc`; none starts with `$ownerId`, so a test's runs are read
+  whoever recorded them; `app` pairs with `testId`):
+  - `appTestNetworkCreated` — `app`, `testId`, `network`, `$createdAt` (also serves the equality-only `…, network` prefix)
+  - `appTestResultCreated` — `app`, `testId`, `result`, `$createdAt`
+  - `appTestCreated` — `app`, `testId`, `$createdAt`
+  - `buildRefCreated` — `buildRef`, `$createdAt`
+  - `ownerCreated` — `$ownerId`, `$createdAt` (one admin's runs)
 - "Most recent run first" is done at query time with `orderBy [['$createdAt','desc']]`.
 - **Immutable + non-deletable** (`documentsMutable: false`, `canBeDeleted: false`):
   it is an audit log. `additionalProperties: false`.
@@ -137,23 +141,38 @@ creating a doc with the next `code`, **no contract update needed**. Canonical co
 >   `orderBy [['$createdAt','desc']]`.
 >
 > The schema is validated against `rs-dpp` (`new DataContract({ …, fullValidation: true })`)
-> before broadcast; note that local DPP validation does **not** catch the asc-only
-> index rule — drive-abci does, at register time.
+> before broadcast. That runs the parser, which checks `ownerRefersTo` against the
+> `admin` type's unique index, but not the document meta-schema: the asc-only index
+> rule and an unknown or misspelled keyword are caught by drive-abci, at register time.
 
-## QA identity (v1 ownership)
+## Identities: the owner and the admins
 
-In v1 a **single QA identity** owns the contract and creates every document.
-All five document types use `creationRestrictionMode: 1` (**OwnerOnly**), so only
-that identity can create documents.
+Two roles sign documents:
 
-You need:
+- The **contract owner** registers the contract, seeds the lookups and the
+  `testCase` catalog (all `creationRestrictionMode: 1`, **OwnerOnly**), and keeps
+  the `admin` list.
+- An **admin** is any identity the owner listed. Admins record `testRun`s, each
+  with its own key, so nobody needs the owner's key to record a run and every
+  run says who recorded it. The owner is an admin too.
+
+```sh
+node src/admin.mjs list                                   # no key needed
+node src/admin.mjs add <identityId> --label "CI runner"   # signed by the owner
+node src/admin.mjs remove <identityId>                    # signed by the owner
+```
+
+The catalog stays with the owner on purpose: a document can be replaced only by
+the identity that created it, so a test case one admin created could not be
+corrected by another, nor by the owner.
+
+Whichever role you sign as, you need:
 
 1. A registered testnet identity with a **credit balance** (registration + each
    document create costs credits). Create/fund one with the SwiftExampleApp
    (`ID-01`) or any Platform wallet.
 2. The **private key** of an `AUTHENTICATION` key on that identity with **HIGH or
-   CRITICAL** security level (WIF or 64-char hex). The register/seed/submit
-   scripts sign with it.
+   CRITICAL** security level (WIF or 64-char hex). The scripts sign with it.
 
 Provide them via env vars or a gitignored `.env` (copy `.env.example`):
 
@@ -180,21 +199,6 @@ It fetches the identity, derives candidate keys from the mnemonic at the
 platform-wallet DIP13 path `m/9'/<coin>'/5'/0'/<keyType>'/<identityIndex>'/<keyIndex>'`,
 matches them to the on-chain public keys, and writes `QA_PRIVATE_KEY` +
 `QA_IDENTITY_KEY_ID` into `.env`.
-
-### Extending to per-team-member `testRun` submission (v2)
-
-To let any identity submit runs (while keeping `testCase` owner-controlled), set
-`creationRestrictionMode: 0` (NoRestrictions) on **`testRun`** only.
-
-⚠️ This must be done in a **fresh contract registration**, *not* a data-contract
-update: DPP rejects any change to a document type's `creationRestrictionMode` on
-update (`DocumentTypeUpdateError`, see `validate_update`). So apply it before the
-first registration, or fold it into the next re-register (e.g. a testnet reset) —
-which mints a new contract id consumers must re-pin.
-
-`testRun` is already immutable + owner-stamped (`$ownerId`/`$createdAt` are
-system fields), so opening creation keeps every run attributable and tamper-proof.
-Leave `testCase` as OwnerOnly so the canonical catalog stays curated.
 
 ## Install & run
 
@@ -223,7 +227,8 @@ export EVO_SDK_BUNDLE="$PWD/../packages/js-evo-sdk/dist/evo-sdk.module.js"
 Then:
 
 ```sh
-# 1. Register the contract on testnet (writes contract-id.testnet.json)
+# 1. Register the contract on testnet (writes contract-id.testnet.json and
+#    lists the owner as the first admin)
 node src/register.mjs                 # --force to re-register a fresh contract
 
 # 2. Seed testCases from TEST_PLAN.md (idempotent; skips existing)
@@ -232,7 +237,9 @@ node src/seed.mjs --ids CORE-01,ID-04 # a subset
 node src/seed.mjs --tier Essential    # filter by tier / --category / --limit
 node src/seed.mjs --update            # push changed rows (replace)
 
-# 3. Submit a test-run result
+# 3. Let other identities record runs (owner only), then submit a result as
+#    the owner or as any listed admin
+node src/admin.mjs add <identityId> --label "Sam's laptop"
 node src/submit-run.mjs --testId CORE-05 --result pass --buildRef 45fdf33901 \
   --device "iPhone 16 (iOS 18.2)" --evidence "txid:30010050…17f840fc" --notes "2-output send credited both recipients"
 
@@ -240,6 +247,7 @@ node src/submit-run.mjs --testId CORE-05 --result pass --buildRef 45fdf33901 \
 node src/query.mjs                    # self-check: exercises every index
 node src/query.mjs --type testCase --tier Essential
 node src/query.mjs --type testRun --testId CORE-05 --proof
+node src/query.mjs --type testRun --recordedBy <identityId>
 ```
 
 `--result` must be one of `pass | fail | blocked | skipped`. Add `--proof` to any
@@ -249,7 +257,7 @@ node src/query.mjs --type testRun --testId CORE-05 --proof
 
 ```text
 qa-contract/
-├── schema/qa-contract.documents.json   # the five document types (the contract schema)
+├── schema/qa-contract.documents.json   # the six document types (the contract schema)
 ├── contract-id.testnet.json            # committed: live contract ID per network
 ├── src/
 │   ├── sdk.mjs                          # SDK load, connect, signer, identity-key, networkId, config
@@ -257,7 +265,9 @@ qa-contract/
 │   ├── parse-test-plan.mjs              # TEST_PLAN.md §4 catalog parser
 │   ├── register.mjs                     # register the contract
 │   ├── seed.mjs                         # seed lookups + testCases from the plan (idempotent)
+│   ├── admin.mjs                        # list / add / remove the admins who record runs
 │   ├── submit-run.mjs                   # create one testRun
+│   ├── migrate-runs.mjs                 # copy the previous contract's runs onto a new one
 │   ├── query.mjs                        # read back + verify indices
 │   └── derive-identity-key.mjs          # recover signing key from a wallet mnemonic
 ├── .env.example
@@ -277,7 +287,10 @@ node src/register.mjs
 # 2. Re-seed every testCase from the current plan
 node src/seed.mjs
 
-# 3. (testRun history does not survive a reset — it is re-accumulated as runs happen.)
+# 3. List the admins again: the list is gone with the old contract
+node src/admin.mjs add <identityId> --label "..."
+
+# 4. (testRun history does not survive a reset — it is re-accumulated as runs happen.)
 ```
 
 Re-running `register.mjs` while the committed contract still resolves is a no-op
