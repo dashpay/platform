@@ -39,7 +39,7 @@ use dpp::platform_value::BinaryData;
 use dpp::prelude::{DataContract, Identifier};
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::version::TryFromPlatformVersioned;
+use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
 use dpp::ProtocolError;
 
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
@@ -413,6 +413,142 @@ impl IdentityWallet {
                 .clone()
         };
 
+        // 2 + 3. Fetch the live contract and build the contract the
+        //    update puts in its place. `preview_data_contract_update`
+        //    builds it the same way, so what a preview reports is what
+        //    this broadcasts.
+        let ContractUpdateDraft { updated, .. } = self
+            .draft_data_contract_update(
+                owner_identity_id,
+                contract_id,
+                documents_schema_json,
+                tokens_schema_json,
+                groups_schema_json,
+                keywords_json,
+                description,
+                config_json,
+            )
+            .await?;
+        let platform_version = self.sdk.version();
+
+        // 4. Build + broadcast the update transition. There's no
+        //    `UpdateContract` SDK extension mirroring `PutContract`,
+        //    so assemble the `DataContractUpdateTransition` directly:
+        //    fetch+bump the identity-contract nonce, sign via the
+        //    external signer, broadcast on the platform-wallet 8 MB
+        //    worker stack, and wait for the confirmed contract.
+        let new_identity_contract_nonce = self
+            .sdk
+            .get_identity_contract_nonce(*owner_identity_id, *contract_id, true, None)
+            .await
+            .map_err(PlatformWalletError::Sdk)?;
+
+        let key_id = {
+            use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+            signing_key.id()
+        };
+        let partial_identity = PartialIdentity {
+            id: *owner_identity_id,
+            loaded_public_keys: [(key_id, signing_key.clone())].into_iter().collect(),
+            balance: None,
+            revision: None,
+            not_found_public_keys: Default::default(),
+        };
+
+        let transition = DataContractUpdateTransition::new_from_data_contract(
+            updated,
+            &partial_identity,
+            key_id,
+            new_identity_contract_nonce,
+            0,
+            &SignerRef(signer),
+            platform_version,
+            None,
+        )
+        .await
+        .map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to build contract-update transition: {e}"
+            ))
+        })?;
+
+        transition
+            .broadcast(&self.sdk, None)
+            .await
+            .map_err(PlatformWalletError::Sdk)?;
+
+        let confirmed = DataContract::wait_for_response(&self.sdk, transition, None)
+            .await
+            .map_err(PlatformWalletError::Sdk)?;
+
+        Ok(confirmed)
+    }
+
+    /// Report what `update_data_contract_with_signer` would change, called
+    /// with the same sections, without signing or broadcasting anything.
+    ///
+    /// Fetches the contract as Platform holds it, checks that
+    /// `owner_identity_id` owns it, merges the supplied sections onto it and
+    /// builds the updated contract exactly as the update does, then compares
+    /// the two. A section the update would refuse to build (JSON that does
+    /// not parse, a schema the contract parser rejects, a private document
+    /// type whose entries do not fit) is the same error here.
+    ///
+    /// The preview says what the update changes, not whether Platform accepts
+    /// it: the contract update rules are checked by the network when the
+    /// update is broadcast. It reads the contract once, so a contract that
+    /// changes between the preview and the update is updated as it is then.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn preview_data_contract_update(
+        &self,
+        owner_identity_id: &Identifier,
+        contract_id: &Identifier,
+        documents_schema_json: &str,
+        tokens_schema_json: Option<&str>,
+        groups_schema_json: Option<&str>,
+        keywords_json: Option<&str>,
+        description: Option<&str>,
+        config_json: Option<&str>,
+    ) -> Result<DataContractUpdatePreview, PlatformWalletError> {
+        let draft = self
+            .draft_data_contract_update(
+                owner_identity_id,
+                contract_id,
+                documents_schema_json,
+                tokens_schema_json,
+                groups_schema_json,
+                keywords_json,
+                description,
+                config_json,
+            )
+            .await?;
+        let updated_format = contract_format_json(&draft.updated, self.sdk.version())?;
+
+        Ok(DataContractUpdatePreview::between(
+            draft.existing.version(),
+            draft.updated.version(),
+            &draft.existing_format,
+            &updated_format,
+        ))
+    }
+
+    /// Fetch the contract `contract_id` as Platform holds it and build the
+    /// contract an update with these sections puts in its place: the shared
+    /// first half of `update_data_contract_with_signer` and
+    /// `preview_data_contract_update`. Reads Platform, writes nothing and
+    /// consumes no nonce.
+    #[allow(clippy::too_many_arguments)]
+    async fn draft_data_contract_update(
+        &self,
+        owner_identity_id: &Identifier,
+        contract_id: &Identifier,
+        documents_schema_json: &str,
+        tokens_schema_json: Option<&str>,
+        groups_schema_json: Option<&str>,
+        keywords_json: Option<&str>,
+        description: Option<&str>,
+        config_json: Option<&str>,
+    ) -> Result<ContractUpdateDraft, PlatformWalletError> {
         // 2. Fetch the live contract. We seed the update payload from
         //    it (so omitted sections are preserved) and read its
         //    current version to bump.
@@ -457,23 +593,10 @@ impl IdentityWallet {
         //    its on-chain version, document/token/group sets are
         //    complete). We then overlay only what the caller supplied.
         let platform_version = self.sdk.version();
-        let base_format = DataContractInSerializationFormat::try_from_platform_versioned(
-            &existing,
-            platform_version,
-        )
-        .map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to convert existing contract to serialization format: {e}"
-            ))
-        })?;
-        let base_value = serde_json::to_value(&base_format).map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to serialize existing contract format: {e}"
-            ))
-        })?;
+        let base_value = contract_format_json(&existing, platform_version)?;
 
         let merged_value = merge_contract_update_payload(
-            base_value,
+            base_value.clone(),
             new_version,
             parse_required_json("documents_schema_json", documents_schema_json)?,
             parse_optional_json("tokens_schema_json", tokens_schema_json)?,
@@ -499,7 +622,7 @@ impl IdentityWallet {
             })?;
 
         let mut errors = vec![];
-        let updated_contract =
+        let updated =
             DataContract::try_from_platform_versioned(format, true, &mut errors, platform_version)
                 .map_err(|e| {
                     PlatformWalletError::InvalidIdentityData(format!(
@@ -510,61 +633,154 @@ impl IdentityWallet {
         // A private document type the update adds, or whose properties it changes, takes entries
         // that must hold its largest payload, as `PutContract` checks on create; `existing` is the
         // contract as Platform holds it, so an unchanged type is not checked again.
-        ensure_private_document_entries_fit(&updated_contract, Some(&existing))
+        ensure_private_document_entries_fit(&updated, Some(&existing))
             .map_err(PlatformWalletError::Sdk)?;
 
-        // 4. Build + broadcast the update transition. There's no
-        //    `UpdateContract` SDK extension mirroring `PutContract`,
-        //    so assemble the `DataContractUpdateTransition` directly:
-        //    fetch+bump the identity-contract nonce, sign via the
-        //    external signer, broadcast on the platform-wallet 8 MB
-        //    worker stack, and wait for the confirmed contract.
-        let new_identity_contract_nonce = self
-            .sdk
-            .get_identity_contract_nonce(*owner_identity_id, *contract_id, true, None)
-            .await
-            .map_err(PlatformWalletError::Sdk)?;
-
-        let key_id = {
-            use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-            signing_key.id()
-        };
-        let partial_identity = PartialIdentity {
-            id: *owner_identity_id,
-            loaded_public_keys: [(key_id, signing_key.clone())].into_iter().collect(),
-            balance: None,
-            revision: None,
-            not_found_public_keys: Default::default(),
-        };
-
-        let transition = DataContractUpdateTransition::new_from_data_contract(
-            updated_contract,
-            &partial_identity,
-            key_id,
-            new_identity_contract_nonce,
-            0,
-            &SignerRef(signer),
-            platform_version,
-            None,
-        )
-        .await
-        .map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to build contract-update transition: {e}"
-            ))
-        })?;
-
-        transition
-            .broadcast(&self.sdk, None)
-            .await
-            .map_err(PlatformWalletError::Sdk)?;
-
-        let confirmed = DataContract::wait_for_response(&self.sdk, transition, None)
-            .await
-            .map_err(PlatformWalletError::Sdk)?;
-
-        Ok(confirmed)
+        Ok(ContractUpdateDraft {
+            existing_format: base_value,
+            existing,
+            updated,
+        })
     }
+}
+
+/// The contract Platform holds and the contract an update would put in its
+/// place, as `IdentityWallet::draft_data_contract_update` builds them.
+struct ContractUpdateDraft {
+    /// `existing` in its serialization-format JSON: the base the update's
+    /// sections were merged onto.
+    existing_format: serde_json::Value,
+    existing: DataContract,
+    updated: DataContract,
+}
+
+/// The entries of one keyed section of a contract (document types by name,
+/// tokens or groups by position) that an update adds or changes. An update
+/// never removes an entry: the sections it supplies are merged onto the
+/// contract Platform holds.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ContractSectionChanges {
+    /// Keys the contract does not have yet.
+    pub added: Vec<String>,
+    /// Keys the contract has, with a different definition.
+    pub changed: Vec<String>,
+}
+
+impl ContractSectionChanges {
+    /// Whether the update leaves the section as it is.
+    pub fn is_empty(&self) -> bool {
+        self.added.is_empty() && self.changed.is_empty()
+    }
+}
+
+/// What an update would change in a data contract, read against the contract
+/// as Platform holds it. Built by
+/// `IdentityWallet::preview_data_contract_update`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataContractUpdatePreview {
+    /// The version of the contract Platform holds.
+    pub current_version: u32,
+    /// The version the update would give it.
+    pub new_version: u32,
+    /// Document types, by name.
+    pub document_types: ContractSectionChanges,
+    /// Tokens, by contract position.
+    pub tokens: ContractSectionChanges,
+    /// Groups, by contract position.
+    pub groups: ContractSectionChanges,
+    /// Whether the keywords would differ.
+    pub keywords_changed: bool,
+    /// Whether the description would differ.
+    pub description_changed: bool,
+    /// Whether the contract configuration would differ.
+    pub config_changed: bool,
+}
+
+impl DataContractUpdatePreview {
+    /// Whether the update would change anything besides the version, which
+    /// every update raises.
+    pub fn has_changes(&self) -> bool {
+        !self.document_types.is_empty()
+            || !self.tokens.is_empty()
+            || !self.groups.is_empty()
+            || self.keywords_changed
+            || self.description_changed
+            || self.config_changed
+    }
+
+    /// Compare two contracts in their serialization-format JSON
+    /// (`contract_format_json`). Both sides are read in that one form, so a
+    /// section the update did not touch compares equal however the caller
+    /// wrote its JSON.
+    fn between(
+        current_version: u32,
+        new_version: u32,
+        existing: &serde_json::Value,
+        updated: &serde_json::Value,
+    ) -> Self {
+        let differs = |field: &str| existing.get(field) != updated.get(field);
+        Self {
+            current_version,
+            new_version,
+            document_types: section_changes(existing, updated, "documentSchemas"),
+            tokens: section_changes(existing, updated, "tokens"),
+            groups: section_changes(existing, updated, "groups"),
+            keywords_changed: differs("keywords"),
+            description_changed: differs("description"),
+            config_changed: differs("config"),
+        }
+    }
+}
+
+/// The keys of the keyed section `section` that `updated` adds to, or
+/// defines differently from, `existing`. A section that is absent or not an
+/// object counts as empty. Keys are sorted, numeric positions by value.
+fn section_changes(
+    existing: &serde_json::Value,
+    updated: &serde_json::Value,
+    section: &str,
+) -> ContractSectionChanges {
+    let existing_entries = existing.get(section).and_then(serde_json::Value::as_object);
+    let mut changes = ContractSectionChanges::default();
+    let Some(updated_entries) = updated.get(section).and_then(serde_json::Value::as_object) else {
+        return changes;
+    };
+    for (key, definition) in updated_entries {
+        match existing_entries.and_then(|entries| entries.get(key)) {
+            None => changes.added.push(key.clone()),
+            Some(existing_definition) if existing_definition != definition => {
+                changes.changed.push(key.clone())
+            }
+            Some(_) => {}
+        }
+    }
+    let positions_then_names = |key: &String| match key.parse::<u64>() {
+        Ok(position) => (0, position, String::new()),
+        Err(_) => (1, 0, key.clone()),
+    };
+    changes.added.sort_by_cached_key(positions_then_names);
+    changes.changed.sort_by_cached_key(positions_then_names);
+    changes
+}
+
+/// `contract` in its serialization-format JSON, the form the update merges
+/// the caller's sections onto.
+fn contract_format_json(
+    contract: &DataContract,
+    platform_version: &PlatformVersion,
+) -> Result<serde_json::Value, PlatformWalletError> {
+    let format =
+        DataContractInSerializationFormat::try_from_platform_versioned(contract, platform_version)
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to convert contract to serialization format: {e}"
+                ))
+            })?;
+    serde_json::to_value(&format).map_err(|e| {
+        PlatformWalletError::InvalidIdentityData(format!(
+            "Failed to serialize contract format: {e}"
+        ))
+    })
 }
 
 /// Parse a required JSON `&str`. `field_name` only feeds the error
@@ -763,7 +979,6 @@ fn build_config_object(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::version::PlatformVersion;
     use serde_json::json;
 
     /// A minimal serialized-V1-contract base value, shaped like the
@@ -890,6 +1105,168 @@ mod tests {
         assert_eq!(merged["description"], json!("new description"));
         assert_eq!(merged["config"]["$formatVersion"], json!("1"));
         assert_eq!(merged["config"]["canBeDeleted"], json!(true));
+    }
+
+    #[test]
+    fn should_report_added_and_changed_entries_of_each_section() {
+        let existing = base_contract();
+        let updated = merge_contract_update_payload(
+            existing.clone(),
+            2,
+            json!({
+                "note": { "type": "object", "revised": true },
+                "comment": { "type": "object" }
+            }),
+            Some(json!({ "0": { "conventions": {} }, "10": {}, "2": {} })),
+            Some(json!({ "0": { "requiredPower": 1 } })),
+            None,
+            None,
+            None,
+        )
+        .expect("merge");
+
+        let preview = DataContractUpdatePreview::between(1, 2, &existing, &updated);
+
+        assert_eq!(preview.current_version, 1);
+        assert_eq!(preview.new_version, 2);
+        assert_eq!(preview.document_types.added, vec!["comment"]);
+        assert_eq!(preview.document_types.changed, vec!["note"]);
+        // Token 0 was sent again as it is, so it is not a change; positions
+        // sort by value, not as text.
+        assert_eq!(preview.tokens.added, vec!["2", "10"]);
+        assert!(preview.tokens.changed.is_empty());
+        assert_eq!(preview.groups.added, vec!["0"]);
+        assert!(!preview.keywords_changed);
+        assert!(!preview.description_changed);
+        assert!(!preview.config_changed);
+        assert!(preview.has_changes());
+    }
+
+    #[test]
+    fn should_report_changed_keywords_description_and_config() {
+        let existing = base_contract();
+        let updated = merge_contract_update_payload(
+            existing.clone(),
+            2,
+            json!({}),
+            None,
+            None,
+            Some(json!(["gamma"])),
+            Some("new description"),
+            Some(json!({ "canBeDeleted": true })),
+        )
+        .expect("merge");
+
+        let preview = DataContractUpdatePreview::between(1, 2, &existing, &updated);
+
+        assert!(preview.document_types.is_empty());
+        assert!(preview.tokens.is_empty());
+        assert!(preview.groups.is_empty());
+        assert!(preview.keywords_changed);
+        assert!(preview.description_changed);
+        assert!(preview.config_changed);
+        assert!(preview.has_changes());
+    }
+
+    #[test]
+    fn should_report_no_changes_when_every_section_is_sent_as_it_is() {
+        let existing = base_contract();
+        let updated = merge_contract_update_payload(
+            existing.clone(),
+            2,
+            json!({ "note": { "type": "object" } }),
+            Some(json!({ "0": { "conventions": {} } })),
+            None,
+            Some(json!(["alpha", "beta"])),
+            Some("original description"),
+            Some(json!({ "canBeDeleted": false })),
+        )
+        .expect("merge");
+
+        let preview = DataContractUpdatePreview::between(1, 2, &existing, &updated);
+
+        assert_eq!(preview.new_version, 2);
+        assert!(!preview.has_changes(), "{preview:?}");
+    }
+
+    /// A contract with one document type, built as the update builds one,
+    /// from serialization-format JSON.
+    fn build_contract(format: serde_json::Value) -> DataContract {
+        let format: DataContractInSerializationFormat =
+            serde_json::from_str(&format.to_string()).expect("format deserializes");
+        let mut errors = vec![];
+        DataContract::try_from_platform_versioned(
+            format,
+            true,
+            &mut errors,
+            PlatformVersion::latest(),
+        )
+        .expect("contract builds")
+    }
+
+    /// The preview compares the built contracts, so it has to read a section
+    /// the update did not touch as unchanged after the merged payload went
+    /// through the contract parser and back.
+    #[test]
+    fn should_report_only_the_supplied_document_type_after_the_contract_is_rebuilt() {
+        let platform_version = PlatformVersion::latest();
+        let note = json!({
+            "type": "object",
+            "properties": {
+                "message": { "type": "string", "position": 0, "maxLength": 63 }
+            },
+            "additionalProperties": false
+        });
+        let id = bs58::encode(Identifier::default().to_buffer()).into_string();
+        let existing = build_contract(json!({
+            "$formatVersion": "1",
+            "id": id,
+            "ownerId": id,
+            "version": INITIAL_DATA_CONTRACT_VERSION,
+            "documentSchemas": { "note": note },
+            "keywords": ["alpha"],
+            "description": "original description",
+            "config": { "$formatVersion": latest_config_version().to_string() }
+        }));
+        let existing_format = contract_format_json(&existing, platform_version).expect("format");
+
+        let rebuild = |documents: serde_json::Value| {
+            let merged = merge_contract_update_payload(
+                existing_format.clone(),
+                existing.version() + 1,
+                documents,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .expect("merge");
+            let updated = build_contract(merged);
+            let updated_format = contract_format_json(&updated, platform_version).expect("format");
+            DataContractUpdatePreview::between(
+                existing.version(),
+                updated.version(),
+                &existing_format,
+                &updated_format,
+            )
+        };
+
+        let untouched = rebuild(json!({}));
+        assert!(!untouched.has_changes(), "{untouched:?}");
+        assert_eq!(untouched.new_version, untouched.current_version + 1);
+
+        let comment = json!({
+            "type": "object",
+            "properties": {
+                "text": { "type": "string", "position": 0, "maxLength": 63 }
+            },
+            "additionalProperties": false
+        });
+        let added = rebuild(json!({ "comment": comment }));
+        assert_eq!(added.document_types.added, vec!["comment"]);
+        assert!(added.document_types.changed.is_empty(), "{added:?}");
+        assert!(!added.keywords_changed && !added.description_changed && !added.config_changed);
     }
 
     /// The current default config version for the latest protocol — 1 on
