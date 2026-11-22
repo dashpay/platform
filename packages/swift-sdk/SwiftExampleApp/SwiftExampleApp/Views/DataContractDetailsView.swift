@@ -56,6 +56,7 @@ struct DataContractDetailsView: View {
                 groupsSection
                 documentTypesSection
                 documentsSection
+                moderationSection
                 actionsSection
             }
             .navigationTitle("Contract Details")
@@ -79,6 +80,12 @@ struct DataContractDetailsView: View {
             }
             .navigationDestination(for: OwnerRoute.self) { route in
                 IdentityDetailView(identityId: route.identityId)
+            }
+            .navigationDestination(for: ModerationRoute.self) { route in
+                ContractModerationView(
+                    contractId: route.contractId,
+                    documentTypeNames: route.documentTypeNames
+                )
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -284,6 +291,24 @@ struct DataContractDetailsView: View {
         }
     }
 
+    /// Contract moderation and fee pots (protocol version 15). Offered for
+    /// every contract: whether it is moderated, which lists it keeps and
+    /// what its pots hold are the node's to answer on the next screen.
+    @ViewBuilder
+    private var moderationSection: some View {
+        Section("Moderation") {
+            NavigationLink(
+                value: ModerationRoute(
+                    contractId: contract.idBase58,
+                    documentTypeNames: (contract.documentTypes ?? []).map(\.name).sorted()
+                )
+            ) {
+                Label("Moderation and Fee Pots", systemImage: "shield.lefthalf.filled")
+            }
+            .accessibilityIdentifier("contractModeration.link")
+        }
+    }
+
     @ViewBuilder
     private var actionsSection: some View {
         Section {
@@ -338,6 +363,12 @@ struct DataContractDetailsView: View {
     /// `Data` value could collide with any other `Data`-keyed route).
     private struct OwnerRoute: Hashable {
         let identityId: Data
+    }
+
+    /// Value-based navigation route for the moderation screen.
+    private struct ModerationRoute: Hashable {
+        let contractId: String
+        let documentTypeNames: [String]
     }
 
     /// Decode `contract.groups` (`[String: Any]?`) into a sorted

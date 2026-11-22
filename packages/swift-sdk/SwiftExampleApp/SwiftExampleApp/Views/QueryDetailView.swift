@@ -346,6 +346,68 @@ struct QueryDetailView: View {
             let idsOnly = Bool(queryInputs["idsOnly"] ?? "") ?? false
             return try await sdk.getDataContractsByRange(limit: limit, startAfter: startAfter, startAt: startAt, idsOnly: idsOnly)
 
+        // Contract Moderation Queries (protocol version 15)
+        case "getContractModerationStatus":
+            let lists = try moderationInput("lists").map { try parseModerationLists($0) }
+            return try moderationJSON(await sdk.contractModerationStatus(
+                contractId: queryInputs["contractId"] ?? "",
+                identityId: queryInputs["identityId"] ?? "",
+                lists: lists
+            ))
+
+        case "getContractModerationEntries":
+            return try moderationJSON(await sdk.contractModerationEntries(
+                contractId: queryInputs["contractId"] ?? "",
+                list: try parseModerationList(queryInputs["list"] ?? ""),
+                startAfter: moderationInput("startAfter"),
+                limit: try moderationLimit()
+            ))
+
+        case "getContractDocumentRemovals":
+            let contractId = queryInputs["contractId"] ?? ""
+            let documentTypeName = queryInputs["documentTypeName"] ?? ""
+            // Two reads: the records of the ids named, or one page of them all.
+            if let documentIds = moderationInput("documentIds") {
+                if moderationInput("startAfter") != nil || moderationInput("limit") != nil {
+                    throw SDKError.invalidParameter("Give either Document IDs or Start After and Limit")
+                }
+                return try moderationJSON(await sdk.contractDocumentRemovals(
+                    contractId: contractId,
+                    documentTypeName: documentTypeName,
+                    documentIds: documentIds.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                ))
+            }
+            return try moderationJSON(await sdk.contractDocumentRemovals(
+                contractId: contractId,
+                documentTypeName: documentTypeName,
+                startAfter: moderationInput("startAfter"),
+                limit: try moderationLimit()
+            ))
+
+        case "getContractTeamActions":
+            return try moderationJSON(await sdk.contractTeamActions(
+                contractId: queryInputs["contractId"] ?? "",
+                status: try parseTeamActionStatus(queryInputs["status"] ?? ""),
+                startAtActionId: moderationInput("startAtActionId"),
+                startAtActionIdIncluded: moderationInput("startAtActionIdIncluded")?.lowercased() == "true",
+                limit: try moderationLimit()
+            ))
+
+        case "getContractTeamActionSigners":
+            return try moderationJSON(await sdk.contractTeamActionSigners(
+                contractId: queryInputs["contractId"] ?? "",
+                status: try parseTeamActionStatus(queryInputs["status"] ?? ""),
+                actionId: queryInputs["actionId"] ?? ""
+            ))
+
+        case "getContractModerationActionCounts":
+            return try moderationJSON(await sdk.contractModerationActionCounts(
+                contractId: queryInputs["contractId"] ?? ""
+            ))
+
+        case "getContractFeePots":
+            return try moderationJSON(await sdk.contractFeePots(contractId: queryInputs["contractId"] ?? ""))
+
         // Document Queries
         case "getDocuments":
             let contractId = queryInputs["dataContractId"] ?? ""
@@ -868,6 +930,52 @@ struct QueryDetailView: View {
         return values
     }
 
+    // MARK: - Contract moderation inputs
+
+    /// The trimmed input `name`, `nil` when empty.
+    private func moderationInput(_ name: String) -> String? {
+        let value = (queryInputs[name] ?? "").trimmingCharacters(in: .whitespaces)
+        return value.isEmpty ? nil : value
+    }
+
+    /// The `limit` input, `nil` when empty (the SDK's default page).
+    private func moderationLimit() throws -> UInt32? {
+        guard let raw = moderationInput("limit") else { return nil }
+        guard let limit = UInt32(raw) else {
+            throw SDKError.invalidParameter("Limit must be a non-negative integer")
+        }
+        return limit
+    }
+
+    private func parseModerationList(_ raw: String) throws -> ContractModerationList {
+        let name = raw.trimmingCharacters(in: .whitespaces).lowercased()
+        guard let list = ContractModerationList(rawValue: name) else {
+            throw SDKError.invalidParameter("List must be banlist, suspensions or warnings, got '\(raw)'")
+        }
+        return list
+    }
+
+    private func parseModerationLists(_ raw: String) throws -> [ContractModerationList] {
+        try raw.split(separator: ",").map { try parseModerationList(String($0)) }
+    }
+
+    private func parseTeamActionStatus(_ raw: String) throws -> ContractTeamActionStatus {
+        let name = raw.trimmingCharacters(in: .whitespaces).lowercased()
+        guard let status = ContractTeamActionStatus(rawValue: name) else {
+            throw SDKError.invalidParameter("Status must be active or closed, got '\(raw)'")
+        }
+        return status
+    }
+
+    /// A moderation result as the JSON object the FFI returned (re-encoded
+    /// from the decoded value), for the result view; "No data" when the FFI
+    /// returned none.
+    private func moderationJSON<T: Encodable>(_ value: T?) throws -> Any {
+        guard let value else { return "No data" }
+        let data = try JSONEncoder().encode(value)
+        return try JSONSerialization.jsonObject(with: data)
+    }
+
     private func inputFields(for queryName: String) -> [QueryInput] {
         switch queryName {
         // Identity Queries
@@ -940,6 +1048,52 @@ struct QueryDetailView: View {
                 QueryInput(name: "startAfter", label: "Start After (Contract ID)", required: false, placeholder: "Last id of the previous page"),
                 QueryInput(name: "startAt", label: "Start At (Contract ID)", required: false, placeholder: "Inclusive start"),
                 QueryInput(name: "idsOnly", label: "IDs Only", required: false, placeholder: "true/false")
+            ]
+
+        // Contract Moderation Queries
+        case "getContractModerationStatus":
+            return [
+                QueryInput(name: "contractId", label: "Contract ID", required: true),
+                QueryInput(name: "identityId", label: "Identity ID", required: true),
+                QueryInput(name: "lists", label: "Lists (comma-separated)", required: false, placeholder: "banlist, suspensions, warnings; empty reads every list the contract keeps")
+            ]
+
+        case "getContractModerationEntries":
+            return [
+                QueryInput(name: "contractId", label: "Contract ID", required: true),
+                QueryInput(name: "list", label: "List", required: true, placeholder: "banlist, suspensions or warnings"),
+                QueryInput(name: "startAfter", label: "Start After (Identity ID)", required: false, placeholder: "The previous page's nextStartAfter"),
+                QueryInput(name: "limit", label: "Limit", required: false, placeholder: "Empty for the network's page cap")
+            ]
+
+        case "getContractDocumentRemovals":
+            return [
+                QueryInput(name: "contractId", label: "Contract ID", required: true),
+                QueryInput(name: "documentTypeName", label: "Document Type", required: true),
+                QueryInput(name: "documentIds", label: "Document IDs (comma-separated)", required: false, placeholder: "Read these records instead of a page"),
+                QueryInput(name: "startAfter", label: "Start After (Document ID)", required: false, placeholder: "The previous page's nextStartAfter"),
+                QueryInput(name: "limit", label: "Limit", required: false, placeholder: "Empty for the network's page cap")
+            ]
+
+        case "getContractTeamActions":
+            return [
+                QueryInput(name: "contractId", label: "Contract ID", required: true),
+                QueryInput(name: "status", label: "Status", required: true, placeholder: "active or closed"),
+                QueryInput(name: "startAtActionId", label: "Start At Action ID", required: false, placeholder: "The previous page's nextStartAtActionId"),
+                QueryInput(name: "startAtActionIdIncluded", label: "Include Start Action", required: false, placeholder: "true/false"),
+                QueryInput(name: "limit", label: "Limit", required: false, placeholder: "Empty for the network's page cap")
+            ]
+
+        case "getContractTeamActionSigners":
+            return [
+                QueryInput(name: "contractId", label: "Contract ID", required: true),
+                QueryInput(name: "status", label: "Status", required: true, placeholder: "active or closed"),
+                QueryInput(name: "actionId", label: "Action ID", required: true)
+            ]
+
+        case "getContractModerationActionCounts", "getContractFeePots":
+            return [
+                QueryInput(name: "contractId", label: "Contract ID", required: true)
             ]
 
         // Document Queries

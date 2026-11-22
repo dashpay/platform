@@ -205,6 +205,14 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | DC-02 | View contract / schema / doc types / history | Platform | Common | ✅ | read-only | `DataContractDetailsView`, `DocumentTypeDetailsView`. |
 | DC-03 | Create data contract | Platform | Common | ✅ |  | `QuickBasicTokenView` and *Settings builder → Data Contract Create* → `platform_wallet_create_data_contract_with_signer`. |
 | DC-04 | Update data contract | Platform | Thorough | 🧪 |  | *Settings builder → Data Contract Update* → `platform_wallet_update_data_contract_with_signer`. (Note the consensus-sensitive byteArray-widening case in memory when authoring updates.) |
+| DC-05 | View a contract's fee pots | Platform | Thorough | ✅ | read-only | Contracts → contract → **Moderation and Fee Pots** (`contractModeration.link`) → fee pots section (`contractModeration.feePots.owner` / `.moderators`) → `SDK.contractFeePots` → `dash_sdk_contract_get_fee_pots`. Protocol version 15. Each pot shows its credits and its last claim (epoch, time, claimant) or none. A contract that charges no action fees reads as two empty pots, which is a pass. Also in Platform Queries → Data Contract → **Get Contract Fee Pots**. |
+| DC-06 | Browse a moderated contract's banlist, suspension list and warning list | Platform | Thorough | ✅ | read-only | Moderation hub → `contractModeration.listLink.{banlist,suspensions,warnings}` → `SDK.contractModerationEntries` → `dash_sdk_contract_moderation_get_entries`. Pages of 20 in identity id order; **Load More** (`contractModeration.entries.loadMore`) appears only while the node returns a cursor. A list the contract does not keep shows the node's refusal inline (`contractModeration.entries.error`), which is a pass for that list. Suspension rows show when they lapse; warning rows list every warning. Also catalog **Get Contract Moderation Entries**. |
+| DC-07 | Look up one identity's moderation status on a contract | Platform | Thorough | ✅ | read-only | Moderation hub → `contractModeration.statusLink` → enter `contractModeration.status.identityId`, optionally pick lists (`contractModeration.status.list.<list>`; none picked = every list the contract keeps) → `contractModeration.status.lookup` → `SDK.contractModerationStatus` → `dash_sdk_contract_moderation_get_status`. Only the lists read report a field. An unmoderated contract is refused inline. Also catalog **Get Contract Moderation Status**. |
+| DC-08 | Browse a document type's moderator removal records | Platform | Thorough | ✅ | read-only | Moderation hub → `contractModeration.removalsLink.<type>` → page (`contractModeration.removals.showAll`) or ids (`contractModeration.removals.documentIds` + `.lookup`) → `SDK.contractDocumentRemovals` → `dash_sdk_contract_moderation_get_document_removals[_by_ids]`. Each row: owner, moderator, reason, removal time, document hash, restore (if any) and the kept field values. A type whose moderators' deletions keep no record is refused inline. Also catalog **Get Contract Document Removals**. |
+| DC-09 | Browse an elected contract's team actions and who approved each | Platform | Uncommon | ✅ | read-only | Moderation hub → `contractModeration.teamActionsLink` → status picker `contractModeration.teamActions.status` (active / closed) → row `contractModeration.teamActions.row.<actionId>` → detail with the event and signers (`contractModeration.teamAction.signers.row.<identityId>`) → `dash_sdk_contract_moderation_get_team_actions` / `_get_team_action_signers`. A contract that is not elected is refused inline. Also catalog **Get Contract Team Actions** / **Get Contract Team Action Signers**. |
+| DC-10 | View an elected team's moderation action counts | Platform | Uncommon | ✅ | read-only | Moderation hub → `contractModeration.actionCountsLink` → `dash_sdk_contract_moderation_get_action_counts`. One row per member that acted since the moderators pot was last paid out; empty is a pass. A contract that is not elected is refused inline. Also catalog **Get Contract Moderation Action Counts**. |
+| DC-11 | Moderate a contract user or document (ban, unban, suspend, unsuspend, warn, clear warnings, delete / restore a document, change moderator fields, propose / approve a settled deletion) | Platform | Uncommon | 🚫 |  | Transition type 24 (`ContractUserModeration`). rs-sdk has `ModerateContractUser`; there is no platform-wallet operation, FFI or app UI yet. |
+| DC-12 | Claim a contract fee pot (owner or moderators) | Platform | Uncommon | 🚫 |  | Transition type 25 (`ContractFeeClaim`). rs-sdk has `ClaimContractFees`; there is no platform-wallet operation, FFI or app UI yet. |
 
 ### 4.7 Documents — `Domain=Document`
 
@@ -330,8 +338,8 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 |---|---|---|
 | Essential | 22 | yes |
 | Common | 35 | yes |
-| Thorough | 38 | yes |
-| Uncommon | 30 | yes |
+| Thorough | 42 | yes |
+| Uncommon | 32 | yes |
 | Manual | 2 (`CORE-08`, `DP-10`) | no — physical device |
 
 **By layer (automatable only):**
@@ -339,7 +347,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Layer | Count (approx.) |
 |---|---|
 | Core | 18 |
-| Platform | ~81 |
+| Platform | ~87 |
 | Cross | 11 |
 | Shielded | 14 |
 
@@ -358,7 +366,7 @@ Each row's **primary home** is its §4 section, but a few rows are cross-cutting
 - **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06..09`, `ID-06`, `ID-08`, `ID-11`
 - **DPNS** — `DPNS-01..08`
 - **Voting** — `VOTE-01..07`, `DPNS-05`
-- **Contract** — `DC-01..04`
+- **Contract** — `DC-01..12`
 - **Document** — `DOC-01..15`
 - **Token** — `TOK-01..20`
 - **Shielded** — `SH-01..17`, `CORE-21`
@@ -407,6 +415,13 @@ The complete Platform read surface, mapped to where each RPC is exercised in the
 | getDataContracts | Thorough | ✅ | catalog |
 | getDataContractHistory | Thorough | ✅ | catalog |
 | getDataContractsByRange | Thorough | ✅ | catalog |
+| getContractFeePots | Thorough | ✅ | Moderation hub (`DC-05`) / catalog |
+| getContractModerationEntries | Thorough | ✅ | Moderation hub (`DC-06`) / catalog |
+| getContractModerationStatus | Thorough | ✅ | Moderation hub (`DC-07`) / catalog |
+| getContractDocumentRemovals | Thorough | ✅ | Moderation hub (`DC-08`) / catalog |
+| getContractTeamActions | Uncommon | ✅ | Moderation hub (`DC-09`) / catalog |
+| getContractTeamActionSigners | Uncommon | ✅ | Moderation hub (`DC-09`) / catalog |
+| getContractModerationActionCounts | Uncommon | ✅ | Moderation hub (`DC-10`) / catalog |
 
 ### Document
 | RPC | Tier | Status | Where |
@@ -500,5 +515,6 @@ For completeness (the "everything gRPC + Core can do" requirement), these exist 
 **🚫 Not implemented anywhere:**
 - `TOK-20` standalone group lifecycle management
 - `getConsensusParams` (served via Tenderdash RPC, not the SDK)
+- `DC-11` contract user moderation (type 24) and `DC-12` contract fee claim (type 25): rs-sdk only, no platform-wallet operation, FFI or UI
 
 **Protocol-level write transitions present in DPP but not surfaced as distinct app actions** (the address/asset-lock family — `IdentityCreditTransferToAddresses`, `IdentityCreateFromAddresses`, `IdentityTopUpFromAddresses`, `AddressFundsTransfer`, `AddressFundingFromAssetLock`, `AddressCreditWithdrawal`) are largely covered by the `ID-*`/`ADDR-*` rows above; the shielded family (`Shield`, `ShieldedTransfer`, `Unshield`, `ShieldFromAssetLock`, `ShieldedWithdrawal`, `IdentityCreateFromShieldedPool`) maps to the `SH-*` rows. Anything not mapped is either internal or `🔌`/`🚫` above.

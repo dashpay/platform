@@ -1,0 +1,298 @@
+import Foundation
+import DashSDKFFI
+
+// MARK: - Contract moderation and fee pots (protocol version 15)
+//
+// Thin bridges over the `dash_sdk_contract_moderation_*` and
+// `dash_sdk_contract_get_fee_pots` functions of `rs-sdk-ffi`, which call
+// `dash_sdk::platform::contract_moderation` and
+// `dash_sdk::platform::contract_fee_pots`. rs-sdk decides everything: which
+// lists a contract keeps, the page caps, the cursor of the next page, how a
+// removal record's kept values read. These wrappers marshal arguments in and
+// decode the JSON out; a page's cursor is passed back as it came. Every
+// string goes to C through ``withDecisionProposalCString(_:field:invalid:_:)``,
+// which refuses one with an embedded NUL.
+//
+// Every read parks its thread inside Rust until DAPI answers, so it runs on
+// the shared Platform query queue (``SDK/performBlockingQuery(_:)``) and the
+// caller only awaits. A refusal from the node (a list the contract does not
+// keep, a type that keeps no removal records, a network below protocol
+// version 15) is thrown as the `SDKError` the FFI reports.
+
+extension SDK {
+
+    /// One identity's status on a moderated contract, on the lists read
+    /// (`dash_sdk_contract_moderation_get_status`).
+    ///
+    /// - Parameters:
+    ///   - contractId: The moderated contract's id, base58.
+    ///   - identityId: The identity's id, base58.
+    ///   - lists: The lists to read, each one the contract keeps; `nil` or
+    ///     empty reads every list the contract keeps (rs-sdk fetches the
+    ///     contract to find them).
+    /// - Returns: The status, or `nil` when the FFI returns no data.
+    public nonisolated func contractModerationStatus(
+        contractId: String,
+        identityId: String,
+        lists: [ContractModerationList]? = nil
+    ) async throws -> ContractModerationStatus? {
+        let listBytes = (lists ?? []).map(\.ffiTag)
+        return try await performBlockingQuery { handle in
+            let result = try withDecisionProposalCString(
+                contractId, field: "contractId", invalid: SDKError.invalidParameter
+            ) { contractPtr in
+                try withDecisionProposalCString(
+                    identityId, field: "identityId", invalid: SDKError.invalidParameter
+                ) { identityPtr in
+                    listBytes.withUnsafeBufferPointer { buffer in
+                        dash_sdk_contract_moderation_get_status(
+                            handle, contractPtr, identityPtr, buffer.baseAddress, UInt(buffer.count))
+                    }
+                }
+            }
+            return try ContractModerationFFI.decode(ContractModerationStatus.self, result)
+        }
+    }
+
+    /// One page of a moderated contract's banlist, suspension list or warning
+    /// list, in identity id order (`dash_sdk_contract_moderation_get_entries`).
+    ///
+    /// - Parameters:
+    ///   - contractId: The moderated contract's id, base58.
+    ///   - list: The list; the contract must keep it.
+    ///   - startAfter: The previous page's ``ContractModerationEntriesPage/nextStartAfter``;
+    ///     `nil` for the first page.
+    ///   - limit: The most entries to return; `nil` for the page cap of the
+    ///     network queried.
+    public nonisolated func contractModerationEntries(
+        contractId: String,
+        list: ContractModerationList,
+        startAfter: String? = nil,
+        limit: UInt32? = nil
+    ) async throws -> ContractModerationEntriesPage? {
+        let listByte = list.ffiTag
+        return try await performBlockingQuery { handle in
+            let result = try withDecisionProposalCString(
+                contractId, field: "contractId", invalid: SDKError.invalidParameter
+            ) { contractPtr in
+                try withDecisionProposalCString(
+                    startAfter, field: "startAfter", invalid: SDKError.invalidParameter
+                ) { startAfterPtr in
+                    dash_sdk_contract_moderation_get_entries(
+                        handle, contractPtr, listByte, startAfterPtr, limit ?? 0)
+                }
+            }
+            return try ContractModerationFFI.decode(ContractModerationEntriesPage.self, result)
+        }
+    }
+
+    /// One page of the records of the documents a contract's moderators
+    /// deleted within one document type, in document id order
+    /// (`dash_sdk_contract_moderation_get_document_removals`).
+    ///
+    /// - Parameters:
+    ///   - contractId: The moderated contract's id, base58.
+    ///   - documentTypeName: The document type; the node refuses one that
+    ///     keeps no records.
+    ///   - startAfter: The previous page's ``ContractDocumentRemovalsPage/nextStartAfter``;
+    ///     `nil` for the first page.
+    ///   - limit: The most records to return; `nil` for the page cap of the
+    ///     network queried.
+    public nonisolated func contractDocumentRemovals(
+        contractId: String,
+        documentTypeName: String,
+        startAfter: String? = nil,
+        limit: UInt32? = nil
+    ) async throws -> ContractDocumentRemovalsPage? {
+        try await performBlockingQuery { handle in
+            let result = try withDecisionProposalCString(
+                contractId, field: "contractId", invalid: SDKError.invalidParameter
+            ) { contractPtr in
+                try withDecisionProposalCString(
+                    documentTypeName, field: "documentTypeName", invalid: SDKError.invalidParameter
+                ) { typePtr in
+                    try withDecisionProposalCString(
+                        startAfter, field: "startAfter", invalid: SDKError.invalidParameter
+                    ) { startAfterPtr in
+                        dash_sdk_contract_moderation_get_document_removals(
+                            handle, contractPtr, typePtr, startAfterPtr, limit ?? 0)
+                    }
+                }
+            }
+            return try ContractModerationFFI.decode(ContractDocumentRemovalsPage.self, result)
+        }
+    }
+
+    /// The removal records of the documents named, within one document type
+    /// (`dash_sdk_contract_moderation_get_document_removals_by_ids`). A
+    /// document with no record is left out of the answer.
+    ///
+    /// - Parameters:
+    ///   - contractId: The moderated contract's id, base58.
+    ///   - documentTypeName: The document type; the node refuses one that
+    ///     keeps no records.
+    ///   - documentIds: The documents' ids, base58. How many the node takes is
+    ///     the node's to judge.
+    public nonisolated func contractDocumentRemovals(
+        contractId: String,
+        documentTypeName: String,
+        documentIds: [String]
+    ) async throws -> ContractDocumentRemovalsPage? {
+        try await performBlockingQuery { handle in
+            let result = try withDecisionProposalCString(
+                contractId, field: "contractId", invalid: SDKError.invalidParameter
+            ) { contractPtr in
+                try withDecisionProposalCString(
+                    documentTypeName, field: "documentTypeName", invalid: SDKError.invalidParameter
+                ) { typePtr in
+                    try withContractModerationCStrings(documentIds, field: "documentIds") { idsPtr, count in
+                        dash_sdk_contract_moderation_get_document_removals_by_ids(
+                            handle, contractPtr, typePtr, idsPtr, UInt(count))
+                    }
+                }
+            }
+            return try ContractModerationFFI.decode(ContractDocumentRemovalsPage.self, result)
+        }
+    }
+
+    /// One page of the actions an elected contract's seated moderation team
+    /// votes on, in action id order
+    /// (`dash_sdk_contract_moderation_get_team_actions`).
+    ///
+    /// - Parameters:
+    ///   - contractId: The elected contract's id, base58.
+    ///   - status: Active (still gathering approvals) or closed (they ran).
+    ///   - startAtActionId: Start the page at this action, base58: the
+    ///     previous page's ``ContractTeamActionsPage/nextStartAtActionId`` with
+    ///     `startAtActionIdIncluded` false; `nil` for the first page.
+    ///   - startAtActionIdIncluded: Whether the page includes that action
+    ///     itself; the FFI refuses it without `startAtActionId`.
+    ///   - limit: The most actions to return; `nil` for the page cap of the
+    ///     network queried.
+    public nonisolated func contractTeamActions(
+        contractId: String,
+        status: ContractTeamActionStatus,
+        startAtActionId: String? = nil,
+        startAtActionIdIncluded: Bool = false,
+        limit: UInt32? = nil
+    ) async throws -> ContractTeamActionsPage? {
+        let statusByte = status.ffiTag
+        return try await performBlockingQuery { handle in
+            let result = try withDecisionProposalCString(
+                contractId, field: "contractId", invalid: SDKError.invalidParameter
+            ) { contractPtr in
+                try withDecisionProposalCString(
+                    startAtActionId, field: "startAtActionId", invalid: SDKError.invalidParameter
+                ) { startPtr in
+                    dash_sdk_contract_moderation_get_team_actions(
+                        handle, contractPtr, statusByte, startPtr, startAtActionIdIncluded, limit ?? 0)
+                }
+            }
+            return try ContractModerationFFI.decode(ContractTeamActionsPage.self, result)
+        }
+    }
+
+    /// Who approved one team action, in identity id order
+    /// (`dash_sdk_contract_moderation_get_team_action_signers`). The action is
+    /// looked up among the actions of `status` alone.
+    ///
+    /// - Parameters:
+    ///   - contractId: The elected contract's id, base58.
+    ///   - status: Whether the action is active or closed.
+    ///   - actionId: The action's id, base58.
+    public nonisolated func contractTeamActionSigners(
+        contractId: String,
+        status: ContractTeamActionStatus,
+        actionId: String
+    ) async throws -> ContractTeamActionSigners? {
+        let statusByte = status.ffiTag
+        return try await performBlockingQuery { handle in
+            let result = try withDecisionProposalCString(
+                contractId, field: "contractId", invalid: SDKError.invalidParameter
+            ) { contractPtr in
+                try withDecisionProposalCString(
+                    actionId, field: "actionId", invalid: SDKError.invalidParameter
+                ) { actionPtr in
+                    dash_sdk_contract_moderation_get_team_action_signers(
+                        handle, contractPtr, statusByte, actionPtr)
+                }
+            }
+            return try ContractModerationFFI.decode(ContractTeamActionSigners.self, result)
+        }
+    }
+
+    /// How many counted moderation actions each member of an elected
+    /// contract's seated team signed since the moderators pot was last paid
+    /// out (`dash_sdk_contract_moderation_get_action_counts`).
+    ///
+    /// - Parameter contractId: The elected contract's id, base58.
+    public nonisolated func contractModerationActionCounts(
+        contractId: String
+    ) async throws -> ContractModerationActionCounts? {
+        try await performBlockingQuery { handle in
+            let result = try withDecisionProposalCString(
+                contractId, field: "contractId", invalid: SDKError.invalidParameter
+            ) { contractPtr in
+                dash_sdk_contract_moderation_get_action_counts(handle, contractPtr)
+            }
+            return try ContractModerationFFI.decode(ContractModerationActionCounts.self, result)
+        }
+    }
+
+    /// What the document action fees of a contract have collected for its
+    /// owner and its moderation team, and the last claim of each pot
+    /// (`dash_sdk_contract_get_fee_pots`).
+    ///
+    /// - Parameter contractId: The contract's id, base58.
+    public nonisolated func contractFeePots(contractId: String) async throws -> ContractFeePots? {
+        try await performBlockingQuery { handle in
+            let result = try withDecisionProposalCString(
+                contractId, field: "contractId", invalid: SDKError.invalidParameter
+            ) { contractPtr in
+                dash_sdk_contract_get_fee_pots(handle, contractPtr)
+            }
+            return try ContractModerationFFI.decode(ContractFeePots.self, result)
+        }
+    }
+}
+
+// MARK: - FFI result handling
+
+/// Decodes the results of the contract moderation functions; the owned
+/// string and error are freed by ``DecisionProposalFFI/consumeString(_:)``.
+enum ContractModerationFFI {
+    /// The JSON the result carries, decoded; `nil` for no data.
+    static func decode<T: Decodable>(_ type: T.Type, _ result: DashSDKResult) throws -> T? {
+        try DecisionProposalFFI.consumeString(result).map {
+            try ContractModerationJSON.decode(type, from: $0)
+        }
+    }
+}
+
+/// Decodes the JSON the contract moderation FFI functions return. Shared by
+/// the wrappers and the hermetic decoder tests, so both read the same way.
+enum ContractModerationJSON {
+    static func decode<T: Decodable>(_ type: T.Type, from json: String) throws -> T {
+        try DecisionProposalJSON.decode(type, from: json)
+    }
+}
+
+/// Run `body` with `strings` as an array of NUL-terminated C strings and its
+/// count. Each string is refused, as by
+/// ``withDecisionProposalCString(_:field:invalid:_:)``, when it holds a NUL;
+/// the copies are freed when `body` returns.
+func withContractModerationCStrings<R>(
+    _ strings: [String],
+    field: String,
+    _ body: (UnsafePointer<UnsafePointer<CChar>?>?, Int) throws -> R
+) throws -> R {
+    if strings.contains(where: { $0.utf8.contains(0) }) {
+        throw SDKError.invalidParameter("\(field) contains a NUL character, which a C string cannot carry")
+    }
+    let copies: [UnsafeMutablePointer<CChar>?] = strings.map { strdup($0) }
+    defer { copies.forEach { free($0) } }
+    let pointers: [UnsafePointer<CChar>?] = copies.map { $0.map { UnsafePointer($0) } }
+    return try pointers.withUnsafeBufferPointer { buffer in
+        try body(buffer.baseAddress, buffer.count)
+    }
+}
