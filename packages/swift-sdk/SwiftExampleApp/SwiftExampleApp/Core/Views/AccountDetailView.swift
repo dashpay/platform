@@ -15,13 +15,6 @@ struct AccountDetailView: View {
     /// account's persisted address), so no key hashing happens in Swift.
     @Query private var allMasternodes: [PersistentMasternode]
 
-    @State private var errorMessage: String?
-    @State private var copiedText: String?
-    @State private var showingPrivateKey: String?
-    @State private var privateKeyToShow: (hex: String, wif: String)?
-    @State private var showingPINPrompt = false
-    @State private var pinInput = ""
-
     // MARK: Provider derived-keys state
     /// The #0..#19 keys derived from a provider account's extended
     /// public key. Empty until loaded — eagerly for operator/BLS on
@@ -32,12 +25,12 @@ struct AccountDetailView: View {
     @State private var derivedKeysLoaded = false
     @State private var isLoadingDerivedKeys = false
     @State private var derivedKeysError: String?
-    /// Per-index revealed private-key hex, populated only after the user
-    /// confirms a reveal for that row.
+    /// Per-index revealed private-key hex, populated only after the device
+    /// owner authenticates a reveal for that row, and cleared when the
+    /// screen closes.
     @State private var revealedPrivateKeys: [UInt32: String] = [:]
-    /// Which row's reveal confirmation dialog is open (`nil` = none).
-    @State private var revealConfirmIndex: UInt32?
-    /// Which row is mid-reveal, to disable buttons and show progress.
+    /// Which row is mid-reveal (authentication + derive), to disable
+    /// buttons and show progress.
     @State private var revealingIndex: UInt32?
     /// Copy-key of the derived-keys row just copied, for a transient
     /// "Copied" confirmation.
@@ -98,87 +91,73 @@ struct AccountDetailView: View {
 
     var body: some View {
         ScrollView {
-            if let error = errorMessage {
-                ContentUnavailableView(
-                    "Failed to Load Details",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text(error)
-                )
-            } else {
-                VStack(alignment: .leading, spacing: 20) {
-                    accountOverviewCard()
+            VStack(alignment: .leading, spacing: 20) {
+                accountOverviewCard()
 
-                    if isProviderKeyAccount {
-                        // Provider operator (BLS) / platform-node (EdDSA)
-                        // key accounts hold key material, not on-chain
-                        // addresses or a balance — surface the extended
-                        // public key instead of an empty address pool.
-                        extendedPublicKeyCard()
-                        // ...and the per-index keys derived from it (the
-                        // actual operator / platform-node keys).
-                        derivedKeysCard()
-                        // Operator-key accounts hold no TXOs, but a
-                        // ProRegTx can still match them payload-only
-                        // (provider owner / voting key address), so
-                        // surface those txs here too.
-                        transactionsCard()
-                    } else {
-                        if shouldShowBalance {
-                            balanceCard()
-                        }
-
-                        poolSummaryCard()
-
-                        if account.accountType == 14 {
-                            // PlatformPayment accounts keep their address
-                            // list in `platformAddresses`, with no
-                            // external/internal pool split.
-                            let sorted = account.platformAddresses.sorted {
-                                $0.addressIndex < $1.addressIndex
-                            }
-                            if sorted.isEmpty {
-                                emptyAddressesCard()
-                            } else {
-                                platformAddressListCard(addresses: sorted)
-                            }
-                        } else {
-                            ForEach(addressSections(), id: \.0) { name, addresses in
-                                addressListCard(
-                                    name: name,
-                                    systemImage: poolIcon(for: name),
-                                    addresses: addresses
-                                )
-                            }
-
-                            if account.coreAddresses.isEmpty {
-                                emptyAddressesCard()
-                            }
-                        }
-
-                        transactionsCard()
+                if isProviderKeyAccount {
+                    // Provider operator (BLS) / platform-node (EdDSA)
+                    // key accounts hold key material, not on-chain
+                    // addresses or a balance — surface the extended
+                    // public key instead of an empty address pool.
+                    extendedPublicKeyCard()
+                    // ...and the per-index keys derived from it (the
+                    // actual operator / platform-node keys).
+                    derivedKeysCard()
+                    // Operator-key accounts hold no TXOs, but a
+                    // ProRegTx can still match them payload-only
+                    // (provider owner / voting key address), so
+                    // surface those txs here too.
+                    transactionsCard()
+                } else {
+                    if shouldShowBalance {
+                        balanceCard()
                     }
+
+                    poolSummaryCard()
+
+                    if account.accountType == 14 {
+                        // PlatformPayment accounts keep their address
+                        // list in `platformAddresses`, with no
+                        // external/internal pool split.
+                        let sorted = account.platformAddresses.sorted {
+                            $0.addressIndex < $1.addressIndex
+                        }
+                        if sorted.isEmpty {
+                            emptyAddressesCard()
+                        } else {
+                            platformAddressListCard(addresses: sorted)
+                        }
+                    } else {
+                        ForEach(addressSections(), id: \.0) { name, addresses in
+                            addressListCard(
+                                name: name,
+                                systemImage: poolIcon(for: name),
+                                addresses: addresses
+                            )
+                        }
+
+                        if account.coreAddresses.isEmpty {
+                            emptyAddressesCard()
+                        }
+                    }
+
+                    transactionsCard()
                 }
-                .padding()
             }
+            .padding()
         }
         .navigationTitle(account.accountTypeName)
         .navigationBarTitleDisplayMode(.large)
         .sheet(item: $selectedTransaction) { transaction in
             TransactionDetailView(transaction: transaction)
         }
-        .sheet(isPresented: $showingPINPrompt) {
-            PINPromptView(
-                pinInput: $pinInput,
-                isPresented: $showingPINPrompt,
-                onSubmit: {
-                    Task {
-                        await derivePrivateKeyWithPIN()
-                        pinInput = ""
-                    }
-                }
-            )
-        }
         .onAppear { appUIState.showWalletsSyncDetails = false }
+        .onDisappear {
+            // Drop revealed provider private keys from view state when the
+            // screen closes.
+            revealedPrivateKeys = [:]
+            derivedCopiedKey = nil
+        }
     }
 
     // MARK: - Cards
@@ -501,6 +480,10 @@ struct AccountDetailView: View {
         }
     }
 
+    /// Each row opens `CoreAddressDetailView`, which reveals that
+    /// address's private key (hex + WIF) behind device authentication.
+    /// Platform-payment addresses (`platformAddressListCard`) have no
+    /// reveal.
     private func addressListCard(
         name: String,
         systemImage: String,
@@ -839,8 +822,8 @@ struct AccountDetailView: View {
     }
 
     /// One derived-key row: index header, public key, optional node id,
-    /// and a confirm-gated private-key reveal. All value rows are
-    /// monospaced, middle-truncated, and tap-to-copy.
+    /// and a private-key reveal behind device authentication. All value
+    /// rows are monospaced, middle-truncated, and tap-to-copy.
     @ViewBuilder
     private func derivedKeyRow(_ key: ManagedPlatformWallet.ProviderDerivedKey) -> some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -884,7 +867,8 @@ struct AccountDetailView: View {
                 derivedValueRowBothEncodings(
                     label: "Private Key",
                     hex: priv,
-                    copyKey: "\(key.index)-priv"
+                    copyKey: "\(key.index)-priv",
+                    sensitive: true
                 )
                 // Ed25519 platform-node key in dashmate's "Enter Ed25519
                 // node key" format: base64 of the 64-byte `priv(32) ‖
@@ -903,12 +887,13 @@ struct AccountDetailView: View {
                     derivedValueRow(
                         label: "Tenderdash Node Key (Base64)",
                         value: tenderdash,
-                        copyKey: "\(key.index)-tenderdash"
+                        copyKey: "\(key.index)-tenderdash",
+                        sensitive: true
                     )
                 }
             } else {
                 Button {
-                    revealConfirmIndex = key.index
+                    authorizeAndRevealPrivateKey(index: key.index)
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "key.fill")
@@ -917,19 +902,11 @@ struct AccountDetailView: View {
                     .font(.caption)
                 }
                 .disabled(revealingIndex != nil)
+
+                Text("The private key grants full control of this key. Only reveal it somewhere private.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
             }
-        }
-        .confirmationDialog(
-            "Reveal Private Key?",
-            isPresented: revealDialogBinding(for: key.index),
-            titleVisibility: .visible
-        ) {
-            Button("Reveal Private Key", role: .destructive) {
-                revealPrivateKey(index: key.index)
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The private key grants full control of this key. Only reveal it somewhere private.")
         }
     }
 
@@ -938,12 +915,23 @@ struct AccountDetailView: View {
     /// way, so a value can be cross-checked against tools (e.g.
     /// dashwallet-ios) that display Ed25519 / BLS keys in base64. Both use
     /// the standard tap-to-copy value-row styling; the base64 row's copy
-    /// key / accessibility id gets a `-b64` suffix.
+    /// key / accessibility id gets a `-b64` suffix. `sensitive` is passed
+    /// through to both rows (see `derivedValueRow`).
     @ViewBuilder
-    private func derivedValueRowBothEncodings(label: String, hex: String, copyKey: String) -> some View {
-        derivedValueRow(label: "\(label) (Hex)", value: hex, copyKey: copyKey)
+    private func derivedValueRowBothEncodings(
+        label: String,
+        hex: String,
+        copyKey: String,
+        sensitive: Bool = false
+    ) -> some View {
+        derivedValueRow(label: "\(label) (Hex)", value: hex, copyKey: copyKey, sensitive: sensitive)
         if let b64 = base64(fromHex: hex) {
-            derivedValueRow(label: "\(label) (Base64)", value: b64, copyKey: "\(copyKey)-b64")
+            derivedValueRow(
+                label: "\(label) (Base64)",
+                value: b64,
+                copyKey: "\(copyKey)-b64",
+                sensitive: sensitive
+            )
         }
     }
 
@@ -971,9 +959,16 @@ struct AccountDetailView: View {
     /// One monospaced, middle-truncated value row with tap-to-copy and a
     /// transient "Copied" confirmation keyed by `copyKey`. The `copyKey`
     /// doubles as the row's accessibility identifier (unique per row —
-    /// e.g. `"0-pub"`, `"0-pub-b64"`).
+    /// e.g. `"0-pub"`, `"0-pub-b64"`). A `sensitive` row holds private
+    /// key material: its value is marked `privacySensitive()` and its copy
+    /// expires from the pasteboard.
     @ViewBuilder
-    private func derivedValueRow(label: String, value: String, copyKey: String) -> some View {
+    private func derivedValueRow(
+        label: String,
+        value: String,
+        copyKey: String,
+        sensitive: Bool = false
+    ) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text(label)
@@ -996,19 +991,11 @@ struct AccountDetailView: View {
                 .truncationMode(.middle)
                 .foregroundColor(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .privacySensitive(sensitive)
         }
         .contentShape(Rectangle())
-        .onTapGesture { copyDerived(value, copyKey: copyKey) }
+        .onTapGesture { copyDerived(value, copyKey: copyKey, sensitive: sensitive) }
         .accessibilityIdentifier(copyKey)
-    }
-
-    private func revealDialogBinding(for index: UInt32) -> Binding<Bool> {
-        Binding(
-            get: { revealConfirmIndex == index },
-            set: { open in
-                if !open, revealConfirmIndex == index { revealConfirmIndex = nil }
-            }
-        )
     }
 
     /// Derive the #0..#19 public keys for this provider account. All
@@ -1059,17 +1046,44 @@ struct AccountDetailView: View {
         }
     }
 
+    /// Authenticate the device owner, then reveal one derived-key row's
+    /// private key. A cancelled prompt shows nothing; an unavailable or
+    /// failed one shows its message. `revealingIndex` stays set from the
+    /// tap until the derive finishes.
+    private func authorizeAndRevealPrivateKey(index: UInt32) {
+        guard revealingIndex == nil else { return }
+        revealingIndex = index
+        derivedKeysError = nil
+        Task { @MainActor in
+            switch await DeviceOwnerAuthentication.authorize(
+                reason: "Reveal the private key of provider key #\(index)."
+            ) {
+            case .authorized:
+                revealPrivateKey(index: index)
+            case .cancelled:
+                revealingIndex = nil
+            case .failed(let message):
+                derivedKeysError = message
+                revealingIndex = nil
+            }
+        }
+    }
+
     /// Reveal the private key for one derived-key row. Re-derives at that
     /// index with `includePrivate: true`; Rust returns the raw scalar
     /// hex (BLS / Ed25519 keys have no WIF).
     private func revealPrivateKey(index: UInt32) {
         guard let managed = walletManager.wallet(for: wallet.walletId) else {
             derivedKeysError = "The owning wallet is not loaded."
+            revealingIndex = nil
             return
         }
         guard let kind = ManagedPlatformWallet.ProviderKeyKind(
             rawValue: UInt8(account.accountType)
-        ) else { return }
+        ) else {
+            revealingIndex = nil
+            return
+        }
         revealingIndex = index
         derivedKeysError = nil
         Task {
@@ -1093,8 +1107,17 @@ struct AccountDetailView: View {
         }
     }
 
-    private func copyDerived(_ value: String, copyKey: String) {
-        UIPasteboard.general.string = value
+    private func copyDerived(_ value: String, copyKey: String, sensitive: Bool) {
+        if sensitive {
+            // Private key material: expire it from the system-wide
+            // pasteboard after 60 s, as `CoreAddressDetailView` does.
+            UIPasteboard.general.setItems(
+                [["public.utf8-plain-text": value]],
+                options: [.expirationDate: Date().addingTimeInterval(60)]
+            )
+        } else {
+            UIPasteboard.general.string = value
+        }
         derivedCopiedKey = copyKey
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             if derivedCopiedKey == copyKey { derivedCopiedKey = nil }
@@ -1152,60 +1175,5 @@ struct AccountDetailView: View {
             return "\(formatted) DASH"
         }
         return String(format: "%.8f DASH", dash)
-    }
-
-    private func derivePrivateKeyWithPIN() async {
-        // TODO(platform-wallet): needs new FFI for WIF derivation via
-        // PlatformWalletManager. For now, surface a stubbed error.
-        await MainActor.run {
-            errorMessage = "Private key derivation is not yet available through the new PlatformWalletManager."
-        }
-    }
-}
-
-// MARK: - PIN Prompt View
-
-struct PINPromptView: View {
-    @Binding var pinInput: String
-    @Binding var isPresented: Bool
-    let onSubmit: () -> Void
-
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 20) {
-                Text("Enter Wallet PIN")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-
-                Text("Your PIN is required to access private keys")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-
-                SecureField("PIN", text: $pinInput)
-                    .textFieldStyle(.roundedBorder)
-                    .keyboardType(.numberPad)
-                    .padding(.horizontal)
-
-                HStack(spacing: 20) {
-                    Button("Cancel") {
-                        pinInput = ""
-                        isPresented = false
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button("Unlock") {
-                        onSubmit()
-                        isPresented = false
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(pinInput.isEmpty)
-                }
-
-                Spacer()
-            }
-            .padding()
-            .navigationBarHidden(true)
-        }
     }
 }

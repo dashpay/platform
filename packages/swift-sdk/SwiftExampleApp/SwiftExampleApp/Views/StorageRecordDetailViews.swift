@@ -1832,10 +1832,12 @@ struct CoreAddressDetailView: View {
 
     @EnvironmentObject private var walletManager: PlatformWalletManager
 
-    /// The revealed key material, held only after the user confirms.
-    /// `nil` keeps the section in its "View Private Key" gated state.
+    /// The revealed key material, held only after the device owner
+    /// authenticates, and cleared when the screen closes. `nil` keeps the
+    /// section in its "View Private Key" gated state.
     @State private var privateKey: ManagedPlatformWallet.CoreAddressPrivateKey?
-    @State private var showRevealConfirm = false
+    /// True from the tap through authentication and derivation, so the
+    /// button cannot fire twice.
     @State private var isRevealing = false
     @State private var revealError: String?
     /// Label of the row whose value was just copied, for a transient
@@ -1882,25 +1884,33 @@ struct CoreAddressDetailView: View {
         }
         .navigationTitle("Address")
         .navigationBarTitleDisplayMode(.inline)
+        .onDisappear {
+            // Drop the revealed key from view state when the screen closes.
+            privateKey = nil
+            copiedLabel = nil
+        }
     }
 
     /// Reveal-gated private-key section. Before reveal it shows a single
-    /// "View Private Key" button that pops a confirmation dialog (this is
-    /// a developer example app, so a plain confirm — no biometrics — is
-    /// enough). After the user confirms, the derived hex + WIF are shown
-    /// monospaced with tap-to-copy.
+    /// "View Private Key" button with the warning under it; tapping it
+    /// asks the device owner to authenticate (Face ID / Touch ID /
+    /// passcode, see `DeviceOwnerAuthentication`) and only then derives
+    /// the key. After that the hex + WIF are shown monospaced with
+    /// tap-to-copy.
     @ViewBuilder
     private var privateKeySection: some View {
         Section("Private Key") {
             if let key = privateKey {
                 copyableKeyRow(label: "Hex", value: key.hex)
+                    .accessibilityIdentifier("coreAddress.privateKey.hex")
                 copyableKeyRow(label: "WIF", value: key.wif)
+                    .accessibilityIdentifier("coreAddress.privateKey.wif")
                 Text("Anyone with this key controls this address's funds. Never share it.")
                     .font(.caption2)
                     .foregroundColor(.secondary)
             } else {
                 Button {
-                    showRevealConfirm = true
+                    authorizeAndReveal()
                 } label: {
                     HStack {
                         Image(systemName: "key.fill")
@@ -1908,23 +1918,19 @@ struct CoreAddressDetailView: View {
                     }
                 }
                 .disabled(isRevealing)
+                .accessibilityIdentifier("coreAddress.revealPrivateKeyButton")
+
+                Text("The private key grants full control of this address's funds. Only reveal it somewhere private.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
 
                 if let revealError {
                     Text(revealError)
                         .font(.caption)
                         .foregroundColor(.red)
+                        .accessibilityIdentifier("coreAddress.revealError")
                 }
             }
-        }
-        .confirmationDialog(
-            "Reveal Private Key?",
-            isPresented: $showRevealConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Reveal Private Key", role: .destructive) { reveal() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The private key grants full control of this address's funds. Only reveal it somewhere private.")
         }
     }
 
@@ -1950,9 +1956,33 @@ struct CoreAddressDetailView: View {
                 .font(.system(.footnote, design: .monospaced))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .privacySensitive()
         }
         .contentShape(Rectangle())
         .onTapGesture { copy(value, label: label) }
+    }
+
+    /// Authenticate the device owner, then derive the key. A cancelled
+    /// prompt shows nothing; an unavailable or failed one shows its
+    /// message. `isRevealing` stays true from the tap until the derive
+    /// finishes.
+    private func authorizeAndReveal() {
+        guard !isRevealing else { return }
+        isRevealing = true
+        revealError = nil
+        Task { @MainActor in
+            switch await DeviceOwnerAuthentication.authorize(
+                reason: "Reveal the private key of this address."
+            ) {
+            case .authorized:
+                reveal()
+            case .cancelled:
+                isRevealing = false
+            case .failed(let message):
+                revealError = message
+                isRevealing = false
+            }
+        }
     }
 
     /// Look up the owning wallet and ask Rust to derive this address's
@@ -1961,10 +1991,12 @@ struct CoreAddressDetailView: View {
     private func reveal() {
         guard let walletId = record.account?.wallet.walletId else {
             revealError = "This address is not linked to a wallet."
+            isRevealing = false
             return
         }
         guard let wallet = walletManager.wallet(for: walletId) else {
             revealError = "The owning wallet is not loaded."
+            isRevealing = false
             return
         }
         isRevealing = true
