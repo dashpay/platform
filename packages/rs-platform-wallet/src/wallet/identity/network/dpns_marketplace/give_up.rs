@@ -16,14 +16,17 @@
 use std::collections::BTreeSet;
 
 use dash_sdk::platform::documents::transitions::DocumentDeleteResult;
-use dash_sdk::platform::dpns_usernames::convert_to_homograph_safe_chars;
+use dash_sdk::platform::dpns_usernames::{convert_to_homograph_safe_chars, normalize_dpns_label};
+use dpp::address_funds::AddressWitness;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType, SecurityLevel};
+use dpp::platform_value::BinaryData;
 use dpp::prelude::DataContract;
 use dpp::prelude::Identifier;
+use dpp::ProtocolError;
 
 use crate::changeset::{DpnsNameSaleStatus, DpnsNameStateChangeSet};
 use crate::error::{promote_identity_insufficient_balance_or, PlatformWalletError};
@@ -31,7 +34,7 @@ use crate::error::{promote_identity_insufficient_balance_or, PlatformWalletError
 use super::super::contact_requests::GatedSigner;
 use super::super::document::allowed_signing_security_levels;
 use super::super::usable_authentication_key_for_types;
-use super::{dpns_label, now_ms, DpnsDomainState, IdentityWallet, DPNS_DOCUMENT_TYPE};
+use super::{now_ms, DpnsDomainState, IdentityWallet, DPNS_DOCUMENT_TYPE};
 
 /// DPNS document type of a name given up for good, from DPNS v3.
 const DPNS_TOMBSTONE_DOCUMENT_TYPE: &str = "tombstone";
@@ -125,6 +128,50 @@ impl DpnsOperationGate {
     }
 }
 
+/// The host's signer for a give-up (already gated on the wallet's generation), calling
+/// `hold` once a signature returns: from then the signed transition can leave the wallet, so
+/// the give-up must be held as unresolved even if the call is dropped before its result.
+pub(super) struct HoldWhenSigned<'a, S: ?Sized> {
+    pub(super) signer: &'a S,
+    pub(super) hold: &'a (dyn Fn() + Send + Sync),
+}
+
+impl<S: ?Sized> std::fmt::Debug for HoldWhenSigned<'_, S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("HoldWhenSigned")
+    }
+}
+
+#[async_trait::async_trait]
+impl<S> Signer<IdentityPublicKey> for HoldWhenSigned<'_, S>
+where
+    S: Signer<IdentityPublicKey> + ?Sized + Send + Sync,
+{
+    async fn sign(
+        &self,
+        key: &IdentityPublicKey,
+        data: &[u8],
+    ) -> Result<BinaryData, ProtocolError> {
+        let signature = self.signer.sign(key, data).await?;
+        (self.hold)();
+        Ok(signature)
+    }
+
+    async fn sign_create_witness(
+        &self,
+        key: &IdentityPublicKey,
+        data: &[u8],
+    ) -> Result<AddressWitness, ProtocolError> {
+        let witness = self.signer.sign_create_witness(key, data).await?;
+        (self.hold)();
+        Ok(witness)
+    }
+
+    fn can_sign_with(&self, key: &IdentityPublicKey) -> bool {
+        self.signer.can_sign_with(key)
+    }
+}
+
 /// Map a give-up's SDK error. A protocol version refusal stays the SDK's own error, so a
 /// host is told the network does not serve the feature yet rather than that the operation
 /// failed; a balance refusal, an unavailable signing key and an unconfirmed result stay
@@ -197,10 +244,10 @@ impl IdentityWallet {
             .await
             .map_err(|error| give_up_error(error, name))?;
         let Some(options) = options else {
-            self.dpns_operation_gate.unresolved().remove(&(
-                *owner_identity_id,
-                convert_to_homograph_safe_chars(dpns_label(name)),
-            ));
+            // The label the SDK queried, its `.dash` stripped whatever its case
+            self.dpns_operation_gate
+                .unresolved()
+                .remove(&(*owner_identity_id, normalize_dpns_label(name)));
             return Err(PlatformWalletError::DpnsNameNotFound {
                 name: name.to_string(),
             });
@@ -286,37 +333,58 @@ impl IdentityWallet {
         // Both ways are signed by a key selected against the contract the network stores
         // now, which the SDK fetches checked against the protocol version it proved (an
         // ordinary fetch can take an older node's contract, which declares no tombstone).
-        // A tombstone consumes the owner's domain, so its key must be allowed both types.
+        // A tombstone consumes the owner's domain, so its key must also be allowed every type
+        // the contract lets a tombstone create consume.
         let current_contract = self
             .sdk
             .fetch_current_dpns_contract()
             .await
             .map_err(|error| give_up_error(error, name))?;
-        let document_types: &[&str] = match method {
-            DpnsNameGiveUpMethod::Delete => &[DPNS_DOCUMENT_TYPE],
-            DpnsNameGiveUpMethod::Tombstone => &[DPNS_TOMBSTONE_DOCUMENT_TYPE, DPNS_DOCUMENT_TYPE],
+        let document_types: Vec<&str> = match method {
+            DpnsNameGiveUpMethod::Delete => vec![DPNS_DOCUMENT_TYPE],
+            DpnsNameGiveUpMethod::Tombstone => {
+                let tombstone_type = current_contract
+                    .document_type_for_name(DPNS_TOMBSTONE_DOCUMENT_TYPE)
+                    .map_err(|error| {
+                        PlatformWalletError::InvalidIdentityData(format!(
+                            "DPNS contract has no {DPNS_TOMBSTONE_DOCUMENT_TYPE:?} document \
+                             type: {error}"
+                        ))
+                    })?;
+                std::iter::once(DPNS_TOMBSTONE_DOCUMENT_TYPE)
+                    .chain(tombstone_type.consumable_document_type_names())
+                    .collect()
+            }
         };
         let signing_key = self
             .select_give_up_signing_key(
                 owner_identity_id,
                 &current_contract,
-                document_types,
+                &document_types,
                 signer,
             )
             .await?;
 
-        // From here a transition may leave the wallet: the give-up is held as unresolved
-        // until its outcome is known, so even a call dropped while it waits for the result
-        // keeps another give-up of the name from being signed. A failure that shows nothing
-        // was sent, or that the network refused it, releases the hold.
+        // The give-up is held as unresolved from the moment the host's signature returns
+        // and the wallet is still current, the last step before the transition can leave
+        // the wallet ([`HoldWhenSigned`]): a call dropped before that (while the nonce is
+        // read or the host decides) holds nothing, and one dropped while it waits for the
+        // result keeps another give-up of the name from being signed. The SDK's own verdict
+        // on delivery decides the rest: a result it reports unconfirmed keeps the hold, any
+        // other failure releases it.
         let unresolved_key = (*owner_identity_id, target.state.normalized_label.clone());
-        self.dpns_operation_gate
-            .unresolved()
-            .insert(unresolved_key.clone());
         let gated = GatedSigner::new(signer, self);
+        let hold = || {
+            self.dpns_operation_gate
+                .unresolved()
+                .insert(unresolved_key.clone());
+        };
+        let held = HoldWhenSigned {
+            signer: &gated,
+            hold: &hold,
+        };
         let sent_error = |error: dash_sdk::Error| {
-            let unconfirmed = error.is_state_transition_result_unconfirmed();
-            if !unconfirmed || gated.removed() {
+            if !error.is_state_transition_result_unconfirmed() || gated.removed() {
                 self.dpns_operation_gate
                     .unresolved()
                     .remove(&unresolved_key);
@@ -330,7 +398,7 @@ impl IdentityWallet {
             DpnsNameGiveUpMethod::Delete => {
                 let DocumentDeleteResult::Deleted(_) = self
                     .sdk
-                    .delete_dpns_domain(target.domain.clone(), &signing_key, &gated)
+                    .delete_dpns_domain(target.domain.clone(), &signing_key, &held)
                     .await
                     .map_err(sent_error)?;
                 None
@@ -338,7 +406,7 @@ impl IdentityWallet {
             DpnsNameGiveUpMethod::Tombstone => {
                 let tombstone = self
                     .sdk
-                    .tombstone_dpns_name(name, *owner_identity_id, signing_key, &gated)
+                    .tombstone_dpns_name(name, *owner_identity_id, signing_key, &held)
                     .await
                     .map_err(sent_error)?;
                 Some(tombstone.id())

@@ -2,7 +2,7 @@
 //! signed, and that the wallet forgets a name only once the network confirmed it gone.
 
 use super::super::super::signing_key::tests::KeyFilter;
-use super::super::give_up::DpnsGiveUpTarget;
+use super::super::give_up::{DpnsGiveUpTarget, HoldWhenSigned};
 use super::*;
 use dash_sdk::query_types::Documents;
 use dash_sdk::{Sdk, SdkBuilder};
@@ -612,4 +612,87 @@ async fn should_settle_an_unconfirmed_give_up_once_the_name_is_gone() {
         "{error:?}"
     );
     assert!(wallet.dpns_operation_gate.unresolved().is_empty());
+}
+
+/// A name asked for with a `.DASH` suffix settles the hold of the label the SDK queried
+#[tokio::test]
+async fn should_settle_an_unconfirmed_give_up_asked_for_with_a_mixed_case_suffix() {
+    let owner = Identifier::from(OWNER);
+    let (wallet, _mirror) = wallet_holding(sdk_holding(PLAIN_LABEL, None).await, &[]).await;
+    wallet
+        .dpns_operation_gate
+        .unresolved()
+        .insert((owner, convert_to_homograph_safe_chars(PLAIN_LABEL)));
+
+    let error = wallet
+        .dpns_name_give_up_choices(&owner, &format!("{PLAIN_LABEL}.DASH"))
+        .await
+        .expect_err("nobody holds the name");
+    assert!(
+        matches!(error, PlatformWalletError::DpnsNameNotFound { .. }),
+        "{error:?}"
+    );
+    assert!(wallet.dpns_operation_gate.unresolved().is_empty());
+}
+
+/// A signer answering every signature with `signs`, for [`HoldWhenSigned`].
+#[derive(Debug)]
+struct Answers {
+    signs: bool,
+}
+
+#[async_trait::async_trait]
+impl Signer<IdentityPublicKey> for Answers {
+    async fn sign(
+        &self,
+        _: &IdentityPublicKey,
+        _: &[u8],
+    ) -> Result<dpp::platform_value::BinaryData, dpp::ProtocolError> {
+        if self.signs {
+            Ok(vec![7u8; 65].into())
+        } else {
+            Err(dpp::ProtocolError::Generic("the host declined".to_string()))
+        }
+    }
+
+    async fn sign_create_witness(
+        &self,
+        _: &IdentityPublicKey,
+        _: &[u8],
+    ) -> Result<dpp::address_funds::AddressWitness, dpp::ProtocolError> {
+        Err(dpp::ProtocolError::Generic("no witness here".to_string()))
+    }
+
+    fn can_sign_with(&self, _: &IdentityPublicKey) -> bool {
+        true
+    }
+}
+
+/// The give-up is held only once the host's signature returns: a declined (or never
+/// reached) signature holds nothing, so a call cancelled before it can not leave the name
+/// held as sent
+#[tokio::test]
+async fn should_hold_a_give_up_only_once_it_is_signed() {
+    let key = identity(
+        Purpose::AUTHENTICATION,
+        SecurityLevel::CRITICAL,
+        KeyType::ECDSA_SECP256K1,
+    )
+    .public_keys()
+    .values()
+    .next()
+    .expect("a key")
+    .clone();
+    for signs in [false, true] {
+        let held = std::sync::atomic::AtomicBool::new(false);
+        let hold = || held.store(true, std::sync::atomic::Ordering::SeqCst);
+        let signer = Answers { signs };
+        let wrapped = HoldWhenSigned {
+            signer: &signer,
+            hold: &hold,
+        };
+        let signed = wrapped.sign(&key, b"transition").await;
+        assert_eq!(signed.is_ok(), signs);
+        assert_eq!(held.load(std::sync::atomic::Ordering::SeqCst), signs);
+    }
 }
