@@ -84,6 +84,10 @@ pub fn identity_top_up_from_shielded_pool_requirement() -> ProtocolRequirement {
 /// take for the transition's own rejection. The broadcast gate applies it; a caller that keeps
 /// saved transitions to send again checks it first with [`Sdk::ensure_protocol_requirement`],
 /// so a local refusal does not count as a send.
+///
+/// This lists only the kinds the SDK's broadcast gate checks. `None` means no broadcast
+/// preflight is registered for the kind, not that every node accepts it: Drive-ABCI keeps its
+/// own activation checks (for example `IdentityKeyLimitsUpdate` below protocol version 14).
 pub fn transition_protocol_requirement(
     transition: &StateTransition,
 ) -> Option<ProtocolRequirement> {

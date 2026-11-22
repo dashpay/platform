@@ -4417,26 +4417,9 @@ pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
                 }
             }
         }
-        // A host recovery decision may have archived this snapshot while the
-        // nonce request was in flight. Do not initiate a new broadcast from it.
-        // Already submitted network requests cannot be cancelled by this check.
-        let still_active = store
-            .read()
-            .await
-            .pending_redrives(id)
-            .map(|current| {
-                current.iter().any(|record| {
-                    record.activity_id == redrive.activity_id
-                        && record.st_bytes == redrive.st_bytes
-                        && !record.identity_user_abandoned
-                        && !record.identity_nonce_finalized
-                })
-            })
-            .unwrap_or(false);
-        if !still_active {
-            continue;
-        }
-        // A refusal by the protocol gate sends nothing: do not count it.
+        // A refusal by the protocol gate sends nothing: do not count it. Checked
+        // before the live-record check below, so a Stop Retrying that lands while
+        // the check waits on the network is seen before anything is sent.
         match cancel
             .run_until_cancelled(
                 sdk.ensure_protocol_requirement(shield_from_identity_requirement()),
@@ -4455,6 +4438,27 @@ pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
                 continue;
             }
             Some(Ok(())) => {}
+        }
+
+        // A host recovery decision may have archived this snapshot while the
+        // nonce request or the protocol check was in flight. Do not initiate a
+        // new broadcast from it.
+        // Already submitted network requests cannot be cancelled by this check.
+        let still_active = store
+            .read()
+            .await
+            .pending_redrives(id)
+            .map(|current| {
+                current.iter().any(|record| {
+                    record.activity_id == redrive.activity_id
+                        && record.st_bytes == redrive.st_bytes
+                        && !record.identity_user_abandoned
+                        && !record.identity_nonce_finalized
+                })
+            })
+            .unwrap_or(false);
+        if !still_active {
+            continue;
         }
         // Last check before a broadcast starts; a broadcast already
         // submitted cannot be cancelled by this check.
@@ -6723,18 +6727,22 @@ mod redrive_tests {
             async move { store.read().await.pending_redrives(id).expect("redrives")[0].attempts }
         };
 
+        use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+        let request = top_up
+            .broadcast_request_for_state_transition()
+            .expect("serializes");
+
         let below =
             PlatformVersion::get(IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION - 1)
                 .expect("the version before activation");
-        let pinned_below = Arc::new(
-            dash_sdk::SdkBuilder::new_mock()
-                .with_version(below)
-                .build()
-                .expect("mock sdk"),
-        );
+        let mut pinned_below = dash_sdk::SdkBuilder::new_mock()
+            .with_version(below)
+            .build()
+            .expect("mock sdk");
+        let pinned_below_handle = Arc::new(pinned_below.clone());
         for _ in 0..MAX_REDRIVE_ATTEMPTS + 1 {
             redrive_pending_spends(
-                &pinned_below,
+                &pinned_below_handle,
                 &store,
                 id,
                 &recorded,
@@ -6747,12 +6755,18 @@ mod redrive_tests {
             0,
             "local refusals must not use up the retry budget"
         );
+        assert_eq!(
+            pinned_below.mock().request_count(&request).await,
+            0,
+            "nothing was sent"
+        );
 
-        // A compatible SDK claims an attempt and sends; the mock has no broadcast
-        // answer, so the send is inconclusive and counted.
-        let compatible = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        // A compatible SDK claims an attempt and sends the saved bytes; the mock has
+        // no broadcast answer, so the send is inconclusive and counted.
+        let mut compatible = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        let compatible_handle = Arc::new(compatible.clone());
         redrive_pending_spends(
-            &compatible,
+            &compatible_handle,
             &store,
             id,
             &recorded,
@@ -6760,6 +6774,10 @@ mod redrive_tests {
         )
         .await;
         assert_eq!(attempts(&store).await, 1, "a send is counted");
+        assert!(
+            compatible.mock().request_count(&request).await > 0,
+            "the saved top-up bytes were sent"
+        );
     }
 
     #[tokio::test]
