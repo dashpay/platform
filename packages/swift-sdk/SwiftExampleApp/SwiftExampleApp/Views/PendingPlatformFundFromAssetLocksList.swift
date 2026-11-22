@@ -45,6 +45,10 @@ struct PendingPlatformFundFromAssetLocksList: View {
     /// parent (`WalletDetailView`) so this section doesn't run
     /// another `@Query`.
     let assetLocks: [PersistentAssetLock]
+    /// Operation ids of stored Max-transfer markers. Their locks resume
+    /// from `UnfinishedWalletDrainsList` by operation id, so they are not
+    /// offered here as well.
+    let drainMarkedOperationIds: Set<UUID>
     /// Bound to the parent's "resume sheet" state. Setting non-nil
     /// presents `FundFromAssetLockPlatformAddressView` in resume mode.
     @Binding var resumingAssetLock: PersistentAssetLock?
@@ -137,6 +141,25 @@ struct PendingPlatformFundFromAssetLocksList: View {
         assetLocks
             .filter { Self.isResumableTopUp($0) }
             .filter { !excluded.contains($0.outPointHex) }
+            .filter {
+                !Self.isClaimedByDrainMarker(
+                    operationId: $0.operationId,
+                    markedOperationIds: drainMarkedOperationIds
+                )
+            }
+    }
+
+    /// Whether a lock belongs to a Max transfer that still has its marker.
+    /// A drain lock with no marker stays in this list: its exact-outpoint
+    /// resume is the fallback Rust supports.
+    nonisolated static func isClaimedByDrainMarker(
+        operationId: Data?,
+        markedOperationIds: Set<UUID>
+    ) -> Bool {
+        guard let operationId,
+              let uuid = WalletDrainOperationRecord.uuid(fromOperationIdBytes: operationId)
+        else { return false }
+        return markedOperationIds.contains(uuid)
     }
 
     /// Funding-type + status predicate for this surface, extracted as a

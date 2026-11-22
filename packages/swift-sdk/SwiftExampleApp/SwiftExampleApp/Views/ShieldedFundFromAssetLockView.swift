@@ -114,6 +114,11 @@ struct ShieldedFundFromAssetLockView: View {
     /// Kept separate from `amountDash` so the Core (duffs) and
     /// Platform (credits) unit systems never share a text buffer.
     @State private var platformAmountDash: String = "0.001"
+    /// Core branch "Max": move the whole Core balance through a wallet
+    /// drain. Rust picks the inputs and the amount; the view only shows
+    /// its preview.
+    @State private var drainMax = false
+    @State private var drainPreview: WalletDrainPreview? = nil
 
     // MARK: - Submit state
 
@@ -173,7 +178,15 @@ struct ShieldedFundFromAssetLockView: View {
                     case .coreBalance:
                         coreFundingSection
                         recipientSection
-                        amountSection
+                        if drainMax {
+                            WalletDrainPreviewSection(
+                                walletId: wallet.walletId,
+                                fundingAccountIndex: drainFundingAccountIndex,
+                                preview: $drainPreview
+                            )
+                        } else {
+                            amountSection
+                        }
                     case .platformBalance:
                         platformAccountSection
                         platformAmountSection
@@ -251,15 +264,35 @@ struct ShieldedFundFromAssetLockView: View {
                     }
                 }
             }
+            Toggle("Max (entire Core balance)", isOn: $drainMax)
+                .disabled(activeController != nil)
+                .accessibilityIdentifier("shieldFromCore.maxToggle")
+                .onChange(of: drainMax) { _, _ in drainPreview = nil }
         } header: {
             Text("Core Source")
         } footer: {
-            Text(
-                "The selected Core account's UTXOs are locked into an asset lock; "
-                    + "the locked DASH becomes shielded credits on the destination "
-                    + "Orchard address."
-            )
+            if drainMax {
+                Text(
+                    "Max sweeps account index \(drainFundingAccountIndex): the BIP44 and BIP32 "
+                        + "accounts at that index together with every DashPay receiving account. "
+                        + "The amount is set by the wallet, not typed here."
+                )
+            } else {
+                Text(
+                    "The selected Core account's UTXOs are locked into an asset lock; "
+                        + "the locked DASH becomes shielded credits on the destination "
+                        + "Orchard address."
+                )
+            }
         }
+    }
+
+    /// Account index for a Max drain. The picker lists only accounts with a
+    /// confirmed BIP44 balance, while a drain also pools BIP32 and DashPay
+    /// receiving funds, so an empty picker still drains index 0 (the SDK
+    /// wrapper's default).
+    private var drainFundingAccountIndex: UInt32 {
+        fundingCoreAccountIndex ?? 0
     }
 
     /// Segmented Core/Platform source toggle (fresh-build flow only).
@@ -511,14 +544,25 @@ struct ShieldedFundFromAssetLockView: View {
                 submit()
             } label: {
                 HStack {
-                    Text(resumeFromLock == nil ? "Shield" : "Resume Shield")
+                    Text(submitTitle)
                     Spacer()
                 }
                 .foregroundColor(.white)
             }
             .frame(maxWidth: .infinity)
             .listRowBackground(Color.accentColor)
+            .accessibilityIdentifier("shieldFromCore.submitButton")
         }
+    }
+
+    private var submitTitle: String {
+        if resumeFromLock != nil { return "Resume Shield" }
+        return isDrainMax ? "Shield Max" : "Shield"
+    }
+
+    /// Max applies to the fresh-build Core branch only.
+    private var isDrainMax: Bool {
+        resumeFromLock == nil && source == .coreBalance && drainMax
     }
 
     @ViewBuilder
@@ -653,6 +697,11 @@ struct ShieldedFundFromAssetLockView: View {
             return
         }
 
+        if isDrainMax {
+            submitDrainMax()
+            return
+        }
+
         guard let recipient = recipientRaw43 else { return }
 
         let walletId = wallet.walletId
@@ -733,6 +782,32 @@ struct ShieldedFundFromAssetLockView: View {
                     + "are serialised wallet-wide by the Rust runtime — try again after that "
                     + "one finishes."
             )
+        }
+    }
+
+    /// Max: the drain coordinator stores the operation id before anything
+    /// is called, then runs it through the shielded-funding coordinator, so
+    /// the progress and terminal sections below are the sibling flow's.
+    private func submitDrainMax() {
+        guard let recipient = recipientRaw43 else { return }
+        switch walletManager.walletDrainCoordinator.start(
+            walletId: wallet.walletId,
+            networkRaw: platformState.currentNetwork.rawValue,
+            fundingAccountIndex: drainFundingAccountIndex,
+            recipientRaw43: recipient,
+            walletManager: walletManager
+        ) {
+        case .started(let controller):
+            activeController = controller
+        case .blockedByOtherWalletFunding(let blocker):
+            submitError = SubmitError(
+                message: "Another shielded funding is already in progress on this wallet "
+                    + "(recipient \(hexShort(blocker.recipientRaw43))). Shield-class operations "
+                    + "are serialised wallet-wide by the Rust runtime, so try again after that "
+                    + "one finishes."
+            )
+        case .markerWriteFailed(let message):
+            submitError = SubmitError(message: message)
         }
     }
 
@@ -852,6 +927,12 @@ struct ShieldedFundFromAssetLockView: View {
                 && activeController == nil
                 && credits > 0
                 && credits <= selectedPlatformAccountCredits
+        }
+        if drainMax {
+            guard let preview = drainPreview else { return false }
+            return recipientRaw43 != nil
+                && preview.status != .insufficientFunds
+                && activeController == nil
         }
         let amount = parsedDuffs ?? 0
         return fundingCoreAccountIndex != nil

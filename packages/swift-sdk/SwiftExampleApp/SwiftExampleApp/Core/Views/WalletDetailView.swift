@@ -36,6 +36,9 @@ struct WalletDetailView: View {
     @State private var showSeedShieldedPool = false
     /// Set by `PendingPlatformFundFromAssetLocksList`'s Resume tap.
     @State private var resumingAssetLock: PersistentAssetLock?
+    /// Operation ids with a stored Max-transfer marker, mirrored from
+    /// `walletDrainCoordinator` so the generic list can hide their locks.
+    @State private var drainMarkedOperationIds: Set<UUID> = []
 
     @Query private var walletAssetLocks: [PersistentAssetLock]
 
@@ -157,10 +160,17 @@ struct WalletDetailView: View {
                 .accessibilityIdentifier("walletDetail.seedPoolNotesButton")
             }
 
+            UnfinishedWalletDrainsList(
+                drainCoordinator: walletManager.walletDrainCoordinator,
+                fundingCoordinator: walletManager.shieldedFundFromAssetLockCoordinator,
+                walletId: wallet.walletId
+            )
+
             PendingPlatformFundFromAssetLocksList(
                 coordinator: walletManager.addressFundFromAssetLockCoordinator,
                 walletId: wallet.walletId,
                 assetLocks: walletAssetLocks,
+                drainMarkedOperationIds: drainMarkedOperationIds,
                 resumingAssetLock: $resumingAssetLock
             )
             .padding(.top, 8)
@@ -310,6 +320,18 @@ struct WalletDetailView: View {
         }
         .onChange(of: wallet.walletId) { _, newId in
             shieldedService.switchTo(walletId: newId)
+        }
+        .onReceive(walletManager.walletDrainCoordinator.$markedOperationIds) { ids in
+            drainMarkedOperationIds = ids
+        }
+        .task(id: wallet.walletId) {
+            // Read this wallet's unfinished Max transfers, so one cut off by
+            // process death is listed with what Rust reports for it.
+            await walletManager.walletDrainCoordinator.reconcile(
+                walletManager: walletManager,
+                networkRaw: platformState.currentNetwork.rawValue,
+                walletIds: [wallet.walletId]
+            )
         }
     }
 }
@@ -1054,12 +1076,7 @@ struct BalanceCardView: View {
     /// Reading every component from the same FFI result keeps the card
     /// internally consistent while sync updates account state.
     private var coreBalance: WalletCoreBalance {
-        walletManager.accountBalances(for: wallet.walletId)
-            .reduce(into: WalletCoreBalance()) { total, account in
-                total.confirmed += account.confirmed
-                total.unconfirmed += account.unconfirmed
-                total.immature += account.immature
-            }
+        WalletCoreBalance(accountBalances: walletManager.accountBalances(for: wallet.walletId))
     }
 
     /// Platform balance from BLAST sync (preferred) or identity sum (fallback).
@@ -1218,6 +1235,21 @@ struct WalletCoreBalance {
     var confirmed: UInt64 = 0
     var unconfirmed: UInt64 = 0
     var immature: UInt64 = 0
+}
+
+extension WalletCoreBalance {
+    /// The balance card's sum of one Rust account snapshot. Shared so the
+    /// Max preview's "Stays in Core" uses the same total the card shows.
+    init(accountBalances: [PlatformWalletManager.AccountBalance]) {
+        self.init()
+        for account in accountBalances {
+            confirmed += account.confirmed
+            unconfirmed += account.unconfirmed
+            immature += account.immature
+        }
+    }
+
+    var total: UInt64 { confirmed + unconfirmed + immature }
 }
 
 /// Pure balance-card state used by the SwiftUI view and unit tests. Keeping
