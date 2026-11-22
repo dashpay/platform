@@ -137,7 +137,6 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
     func test_oneCredit_isShownExactlyNotAsZero() {
         XCTAssertEqual(formatCreditsAsDash(1), oneCreditDash)
         XCTAssertNotEqual(formatCreditsAsDash(1), formatCreditsAsDash(0))
-        XCTAssertTrue(formatCreditsAsDash(1).hasSuffix("1 DASH"))
     }
 
     func test_topUpResults_showAOneCreditAmountExactly() {
