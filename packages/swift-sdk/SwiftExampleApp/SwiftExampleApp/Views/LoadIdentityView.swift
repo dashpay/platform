@@ -643,19 +643,14 @@ struct LoadIdentityView: View {
                             return identifier
                         case .alreadyStored(let identifier):
                             return identifier
-                        case .conflicting:
+                        case .conflicting(let digest):
                             conflictingKeys.append(name)
-                            // Offered for replacement only when the stored
-                            // key can be named, so a confirmation always
-                            // refers to the key that caused the conflict.
-                            if let digest = KeychainManager.shared.specialKeyDigest(
-                                identityId: validIdData,
-                                keyType: keyType
-                            ) {
-                                conflictingReplacements.append(
-                                    PendingKeyReplacement(keyType: keyType, keyData: key, storedKeyDigest: digest)
-                                )
-                            }
+                            // The digest names the stored key that caused
+                            // the conflict, so a confirmation always refers
+                            // to that key.
+                            conflictingReplacements.append(
+                                PendingKeyReplacement(keyType: keyType, keyData: key, storedKeyDigest: digest)
+                            )
                             return nil
                         case .failed, .changedSinceConfirmation:
                             unstoredKeys.append(name)
@@ -801,8 +796,8 @@ struct LoadIdentityView: View {
                 identifier = nil
                 kept.append(name)
             case .changedSinceConfirmation:
-                // The slot holds a different key than the one the user
-                // agreed to replace (another window replaced it); untouched.
+                // The slot no longer holds the key the user agreed to
+                // replace (another window replaced or removed it); untouched.
                 identifier = nil
                 changed.append(name)
             case .failed:
@@ -852,8 +847,10 @@ struct LoadIdentityView: View {
         }
         if !changed.isEmpty {
             let names = ListFormatter.localizedString(byJoining: changed)
-            let noun = changed.count == 1 ? "key has" : "keys have"
-            parts.append("The stored \(names) \(noun) changed since you confirmed, so nothing was replaced. Load the identity again to compare.")
+            let noun = changed.count == 1
+                ? "key is no longer the one"
+                : "keys are no longer the ones"
+            parts.append("The stored \(names) \(noun) you confirmed replacing, so nothing was changed. Load the identity again.")
         }
         if !unknown.isEmpty {
             let names = ListFormatter.localizedString(byJoining: unknown)
@@ -880,13 +877,16 @@ struct LoadIdentityView: View {
             parts.append(unstoredNote)
         }
 
-        if saved && kept.isEmpty && removed.isEmpty && notChosen.isEmpty && pending.unstoredNote == nil {
-            // Every conflicting key was replaced and saved, so the load
-            // ended as a plain success.
+        // `pending.keys` holds every conflicting key of the load, so this is
+        // a plain success only when the identity saved and every key the
+        // user entered is now stored. Any other outcome keeps the report.
+        if saved && replaced.count == pending.keys.count && pending.unstoredNote == nil {
             errorMessage = nil
             showSuccess = true
         } else {
             errorMessage = parts.joined(separator: " ")
+            isLoading = false
+            loadStartTime = nil
         }
     }
 

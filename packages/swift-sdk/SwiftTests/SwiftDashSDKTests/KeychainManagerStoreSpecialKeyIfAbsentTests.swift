@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 
 @testable import SwiftDashSDK
@@ -25,7 +26,7 @@ final class KeychainManagerStoreSpecialKeyIfAbsentTests: XCTestCase {
         )
         XCTAssertEqual(
             keychain.storeSpecialKeyIfAbsent(second, identityId: identityId, keyType: .voting),
-            .conflicting
+            .conflicting(storedKeyDigest: Data(SHA256.hash(data: first)))
         )
         // The refused key left the stored one as it was.
         XCTAssertEqual(
@@ -50,7 +51,7 @@ final class KeychainManagerStoreSpecialKeyIfAbsentTests: XCTestCase {
         }
         XCTAssertEqual(
             keychain.storeSpecialKeyIfAbsent(correct, identityId: identityId, keyType: .voting),
-            .conflicting
+            .conflicting(storedKeyDigest: Data(SHA256.hash(data: stale)))
         )
 
         XCTAssertTrue(keychain.deleteSpecialKey(identityId: identityId, keyType: .voting))
@@ -76,12 +77,12 @@ final class KeychainManagerStoreSpecialKeyIfAbsentTests: XCTestCase {
         guard case .stored = keychain.storeSpecialKeyIfAbsent(stored, identityId: identityId, keyType: .voting) else {
             return XCTFail("an empty slot stores the key")
         }
-        XCTAssertEqual(
-            keychain.storeSpecialKeyIfAbsent(replacement, identityId: identityId, keyType: .voting),
-            .conflicting
-        )
-
-        let digest = try XCTUnwrap(keychain.specialKeyDigest(identityId: identityId, keyType: .voting))
+        guard case .conflicting(let digest) = keychain.storeSpecialKeyIfAbsent(
+            replacement, identityId: identityId, keyType: .voting
+        ) else {
+            return XCTFail("a different key for an occupied slot conflicts")
+        }
+        XCTAssertEqual(digest, Data(SHA256.hash(data: stored)))
         guard case .stored = keychain.replaceSpecialKey(
             replacement, identityId: identityId, keyType: .voting, replacing: digest
         ) else {
@@ -109,7 +110,11 @@ final class KeychainManagerStoreSpecialKeyIfAbsentTests: XCTestCase {
             return XCTFail("an empty slot stores the key")
         }
         // Both dialogs were shown for the original key.
-        let shown = try XCTUnwrap(keychain.specialKeyDigest(identityId: identityId, keyType: .voting))
+        guard case .conflicting(let shown) = keychain.storeSpecialKeyIfAbsent(
+            first, identityId: identityId, keyType: .voting
+        ) else {
+            return XCTFail("a different key for an occupied slot conflicts")
+        }
 
         guard case .stored = keychain.replaceSpecialKey(
             first, identityId: identityId, keyType: .voting, replacing: shown
@@ -123,6 +128,71 @@ final class KeychainManagerStoreSpecialKeyIfAbsentTests: XCTestCase {
         XCTAssertEqual(
             try keychain.readSpecialKey(identityId: identityId, keyType: .voting).get(),
             first
+        )
+    }
+
+    /// A confirmation shown for a key that was removed since (for example
+    /// in another window) changes nothing: the emptied slot stays empty.
+    func testAConfirmationForAClearedSlotLeavesItEmpty() throws {
+        let keychain = KeychainManager(serviceName: "org.dashfoundation.tests.\(UUID().uuidString)")
+        let identityId = Data(repeating: 0x36, count: 32)
+        addTeardownBlock { @MainActor in
+            _ = keychain.deleteSpecialKey(identityId: identityId, keyType: .voting)
+        }
+
+        let original = Data(repeating: 0x0C, count: 32)
+        let replacement = Data(repeating: 0x0D, count: 32)
+        guard case .stored = keychain.storeSpecialKeyIfAbsent(original, identityId: identityId, keyType: .voting) else {
+            return XCTFail("an empty slot stores the key")
+        }
+        guard case .conflicting(let digest) = keychain.storeSpecialKeyIfAbsent(
+            replacement, identityId: identityId, keyType: .voting
+        ) else {
+            return XCTFail("a different key for an occupied slot conflicts")
+        }
+
+        XCTAssertTrue(keychain.deleteSpecialKey(identityId: identityId, keyType: .voting))
+        XCTAssertEqual(
+            keychain.replaceSpecialKey(replacement, identityId: identityId, keyType: .voting, replacing: digest),
+            .changedSinceConfirmation
+        )
+        XCTAssertNil(try keychain.readSpecialKey(identityId: identityId, keyType: .voting).get())
+    }
+
+    /// Another writer fills the slot after the confirmed delete and before
+    /// the add: its key is kept and reported as conflicting.
+    func testAWriterFillingTheSlotAfterTheDeleteKeepsItsKey() throws {
+        let keychain = KeychainManager(serviceName: "org.dashfoundation.tests.\(UUID().uuidString)")
+        let identityId = Data(repeating: 0x37, count: 32)
+        addTeardownBlock { @MainActor in
+            _ = keychain.deleteSpecialKey(identityId: identityId, keyType: .voting)
+        }
+
+        let original = Data(repeating: 0x0E, count: 32)
+        let ours = Data(repeating: 0x0F, count: 32)
+        let theirs = Data(repeating: 0x10, count: 32)
+        guard case .stored = keychain.storeSpecialKeyIfAbsent(original, identityId: identityId, keyType: .voting) else {
+            return XCTFail("an empty slot stores the key")
+        }
+        guard case .conflicting(let digest) = keychain.storeSpecialKeyIfAbsent(
+            ours, identityId: identityId, keyType: .voting
+        ) else {
+            return XCTFail("a different key for an occupied slot conflicts")
+        }
+
+        let outcome = keychain.replaceSpecialKey(
+            ours,
+            identityId: identityId,
+            keyType: .voting,
+            replacing: digest,
+            afterDelete: {
+                _ = keychain.storeSpecialKey(theirs, identityId: identityId, keyType: .voting)
+            }
+        )
+        XCTAssertEqual(outcome, .conflicting(storedKeyDigest: Data(SHA256.hash(data: theirs))))
+        XCTAssertEqual(
+            try keychain.readSpecialKey(identityId: identityId, keyType: .voting).get(),
+            theirs
         )
     }
 
@@ -140,7 +210,7 @@ final class KeychainManagerStoreSpecialKeyIfAbsentTests: XCTestCase {
         let outcome = keychain.storeSpecialKeyIfAbsent(ours, identityId: identityId, keyType: .voting) {
             _ = keychain.storeSpecialKey(theirs, identityId: identityId, keyType: .voting)
         }
-        XCTAssertEqual(outcome, .conflicting)
+        XCTAssertEqual(outcome, .conflicting(storedKeyDigest: Data(SHA256.hash(data: theirs))))
         XCTAssertEqual(
             try keychain.readSpecialKey(identityId: identityId, keyType: .voting).get(),
             theirs

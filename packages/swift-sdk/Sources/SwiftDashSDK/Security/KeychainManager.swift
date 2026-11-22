@@ -297,22 +297,16 @@ public final class KeychainManager: Sendable {
         /// The slot already held these exact bytes; nothing was written.
         case alreadyStored(identifier: String)
         /// The slot holds a different key, which was kept; nothing was written.
-        case conflicting
+        /// `storedKeyDigest` is the SHA-256 digest of that kept key, so a
+        /// caller can name the key a user agrees to replace without keeping
+        /// the key itself.
+        case conflicting(storedKeyDigest: Data)
         /// The slot could not be read or written.
         case failed
         /// `replaceSpecialKey(_:identityId:keyType:replacing:)` only: the
-        /// slot no longer holds the key the user confirmed replacing, so
-        /// nothing was changed.
+        /// slot no longer holds the key the user confirmed replacing (it
+        /// holds a different key, or none), so nothing was changed.
         case changedSinceConfirmation
-    }
-
-    /// The SHA-256 digest of the key stored in a special-key slot, or `nil`
-    /// when the slot is empty or cannot be read. Lets a caller name the key
-    /// a user agreed to replace without keeping the key itself.
-    public nonisolated func specialKeyDigest(identityId: Data, keyType: SpecialKeyType) -> Data? {
-        let identifier = generateSpecialKeyIdentifier(identityId: identityId, keyType: keyType)
-        guard case .success(let stored?) = readKeyData(identifier: identifier) else { return nil }
-        return Data(SHA256.hash(data: stored))
     }
 
     /// Store a special key only into an empty slot. An existing key is never
@@ -367,7 +361,9 @@ public final class KeychainManager: Sendable {
                 return .failed
             }
         case .success(let existing?):
-            return existing == keyData ? .alreadyStored(identifier: identifier) : .conflicting
+            return existing == keyData
+                ? .alreadyStored(identifier: identifier)
+                : .conflicting(storedKeyDigest: Data(SHA256.hash(data: existing)))
         case .failure:
             return .failed
         }
@@ -379,25 +375,51 @@ public final class KeychainManager: Sendable {
     ///
     /// The replacement is bound to the key the user saw: when the slot no
     /// longer holds the key whose digest is `expectedDigest` (another
-    /// window replaced it since), nothing is changed and the result is
-    /// `.changedSinceConfirmation`. A slot emptied since then simply takes
-    /// the new key. Returns `.failed` with the old key untouched when the
-    /// slot cannot be read or the Keychain refuses the delete. Once the
-    /// delete succeeded the result is that of
+    /// window replaced or removed it since), nothing is changed and the
+    /// result is `.changedSinceConfirmation`. Returns `.failed` with the
+    /// old key untouched when the slot cannot be read or the Keychain
+    /// refuses the delete. Once the delete succeeded the result is that of
     /// `storeSpecialKeyIfAbsent(_:identityId:keyType:)`, so `.failed` there
     /// leaves the slot empty and `.conflicting` means another writer filled
     /// it in between.
+    ///
+    /// Limits: the check and the delete are two Keychain calls, so a writer
+    /// outside the main actor (another process sharing an access group) can
+    /// change the slot between them. With `accessGroup == nil` on a host
+    /// entitled to several access groups, the read names one item but the
+    /// delete removes every match; construct the manager with an explicit
+    /// access group on such a host. If the process ends between the delete
+    /// and the add, the slot is left empty and the next store fills it.
     /// - Parameters:
     ///   - keyData: The key data
     ///   - identityId: The identity ID (32 bytes)
     ///   - keyType: The type of special key
-    ///   - expectedDigest: `specialKeyDigest(identityId:keyType:)` of the
-    ///     stored key when the user was asked
+    ///   - expectedDigest: the `storedKeyDigest` of the `.conflicting`
+    ///     outcome the user was asked about
     public func replaceSpecialKey(
         _ keyData: Data,
         identityId: Data,
         keyType: SpecialKeyType,
         replacing expectedDigest: Data
+    ) -> SpecialKeyStoreOutcome {
+        replaceSpecialKey(
+            keyData,
+            identityId: identityId,
+            keyType: keyType,
+            replacing: expectedDigest,
+            afterDelete: {}
+        )
+    }
+
+    /// `replaceSpecialKey(_:identityId:keyType:replacing:)` with a hook that
+    /// runs after the delete and before the add, so a test can fill the
+    /// emptied slot in between.
+    func replaceSpecialKey(
+        _ keyData: Data,
+        identityId: Data,
+        keyType: SpecialKeyType,
+        replacing expectedDigest: Data,
+        afterDelete: () -> Void
     ) -> SpecialKeyStoreOutcome {
         let identifier = generateSpecialKeyIdentifier(identityId: identityId, keyType: keyType)
         switch readKeyData(identifier: identifier) {
@@ -406,21 +428,28 @@ public final class KeychainManager: Sendable {
                 return .changedSinceConfirmation
             }
         case .success(nil):
-            return storeSpecialKeyIfAbsent(keyData, identityId: identityId, keyType: keyType)
+            return .changedSinceConfirmation
         case .failure:
             return .failed
         }
         guard deleteSpecialKey(identityId: identityId, keyType: keyType) else {
             return .failed
         }
-        return storeSpecialKeyIfAbsent(keyData, identityId: identityId, keyType: keyType)
+        return storeSpecialKeyIfAbsent(
+            keyData,
+            identityId: identityId,
+            keyType: keyType,
+            afterEmptyRead: afterDelete
+        )
     }
 
     /// The outcome for `keyData` against what the slot holds now.
     private func compareStoredKey(_ keyData: Data, identifier: String) -> SpecialKeyStoreOutcome {
         switch readKeyData(identifier: identifier) {
         case .success(let existing?):
-            return existing == keyData ? .alreadyStored(identifier: identifier) : .conflicting
+            return existing == keyData
+                ? .alreadyStored(identifier: identifier)
+                : .conflicting(storedKeyDigest: Data(SHA256.hash(data: existing)))
         case .success(nil), .failure:
             return .failed
         }
