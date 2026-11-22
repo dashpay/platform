@@ -224,7 +224,7 @@ struct MasternodeVoterSection: View {
         } header: {
             Text("Voting Masternode")
         } footer: {
-            Text("The vote is signed with the voting key stored when the identity was loaded. The key stays in the Keychain.")
+            Text("When you vote with a loaded identity, the signer uses its stored voting key. You don’t need to enter the private key here.")
         }
         .onAppear(perform: selectDefaultIfNeeded)
         // `@Query` updates while the sheet is open can add or remove an
@@ -261,7 +261,7 @@ struct MasternodeVoterSection: View {
         } else {
             Picker("Masternode", selection: $selectedIdentityId) {
                 ForEach(candidates, id: \.identityId) { identity in
-                    voterLabel(identity)
+                    voterLabel(identity, among: candidates)
                         .tag(Optional(identity.identityId))
                 }
             }
@@ -270,8 +270,13 @@ struct MasternodeVoterSection: View {
         }
     }
 
-    private func voterLabel(_ identity: PersistentIdentity) -> some View {
-        Text("\(identity.displayName) (\(identity.identityTypeEnum.rawValue))")
+    /// The identity's name and type, plus the start of its id when another
+    /// candidate shows the same name, since aliases need not be unique.
+    private func voterLabel(_ identity: PersistentIdentity, among candidates: [PersistentIdentity]) -> some View {
+        let name = identity.displayName
+        let shared = candidates.contains { $0.identityId != identity.identityId && $0.displayName == name }
+        let suffix = shared ? ", \(identity.identityId.toHexString().prefix(8))" : ""
+        return Text("\(name) (\(identity.identityTypeEnum.rawValue)\(suffix))")
     }
 
     /// A pro_tx_hash typed with no key, available in every build: reads

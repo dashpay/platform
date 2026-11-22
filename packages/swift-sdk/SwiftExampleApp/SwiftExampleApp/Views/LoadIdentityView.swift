@@ -573,47 +573,42 @@ struct LoadIdentityView: View {
                     }
 
                     // Masternode-/evonode-specific keys go to the
-                    // keychain under their dedicated slots. A failed
-                    // write returns nil and leaves the row's previous
-                    // identifier, and the Keychain its previous key, in
-                    // place; it is reported below.
+                    // keychain under their dedicated slots, only into an
+                    // empty slot: a stored key is never replaced or
+                    // deleted here, so a failed or refused write keeps the
+                    // previous key and the row's identifier. Reported below.
                     var unstoredKeys: [String] = []
+                    var conflictingKeys: [String] = []
                     var storedKeys: [String] = []
-                    if let votingKey = capturedVotingKey {
-                        if let identifier = KeychainManager.shared.storeSpecialKey(
-                            votingKey,
+                    @MainActor
+                    func storeSlot(_ key: Data?, _ keyType: SpecialKeyType, named name: String) -> String? {
+                        guard let key else { return nil }
+                        switch KeychainManager.shared.storeSpecialKeyIfAbsent(
+                            key,
                             identityId: validIdData,
-                            keyType: .voting
+                            keyType: keyType
                         ) {
-                            row.votingPrivateKeyIdentifier = identifier
-                            storedKeys.append("voting")
-                        } else {
-                            unstoredKeys.append("voting")
+                        case .stored(let identifier):
+                            storedKeys.append(name)
+                            return identifier
+                        case .alreadyStored(let identifier):
+                            return identifier
+                        case .conflicting:
+                            conflictingKeys.append(name)
+                            return nil
+                        case .failed:
+                            unstoredKeys.append(name)
+                            return nil
                         }
                     }
-                    if let ownerKey = capturedOwnerKey {
-                        if let identifier = KeychainManager.shared.storeSpecialKey(
-                            ownerKey,
-                            identityId: validIdData,
-                            keyType: .owner
-                        ) {
-                            row.ownerPrivateKeyIdentifier = identifier
-                            storedKeys.append("owner")
-                        } else {
-                            unstoredKeys.append("owner")
-                        }
+                    if let identifier = storeSlot(capturedVotingKey, .voting, named: "voting") {
+                        row.votingPrivateKeyIdentifier = identifier
                     }
-                    if let payoutKey = capturedPayoutKey {
-                        if let identifier = KeychainManager.shared.storeSpecialKey(
-                            payoutKey,
-                            identityId: validIdData,
-                            keyType: .payout
-                        ) {
-                            row.payoutPrivateKeyIdentifier = identifier
-                            storedKeys.append("payout")
-                        } else {
-                            unstoredKeys.append("payout")
-                        }
+                    if let identifier = storeSlot(capturedOwnerKey, .owner, named: "owner") {
+                        row.ownerPrivateKeyIdentifier = identifier
+                    }
+                    if let identifier = storeSlot(capturedPayoutKey, .payout, named: "payout") {
+                        row.payoutPrivateKeyIdentifier = identifier
                     }
 
                     // The identity itself loaded, so its row is saved
@@ -635,16 +630,26 @@ struct LoadIdentityView: View {
                         return
                     }
 
-                    if unstoredKeys.isEmpty {
+                    if unstoredKeys.isEmpty && conflictingKeys.isEmpty {
                         showSuccess = true
                     } else {
-                        let names = ListFormatter.localizedString(byJoining: unstoredKeys)
-                        let noun = unstoredKeys.count == 1 ? "private key" : "private keys"
-                        var text = "The identity was loaded, but the \(names) \(noun) could not be stored in the Keychain."
-                        if unstoredKeys.contains("voting") {
-                            text += row.votingPrivateKeyIdentifier == nil
-                                ? " The identity cannot vote until it is loaded again."
-                                : " Any voting key stored before was not replaced, and may not be usable."
+                        var parts: [String] = []
+                        if !unstoredKeys.isEmpty {
+                            let names = ListFormatter.localizedString(byJoining: unstoredKeys)
+                            let noun = unstoredKeys.count == 1 ? "private key" : "private keys"
+                            parts.append("the \(names) \(noun) could not be stored in the Keychain")
+                        }
+                        if !conflictingKeys.isEmpty {
+                            let names = ListFormatter.localizedString(byJoining: conflictingKeys)
+                            let noun = conflictingKeys.count == 1 ? "private key is" : "private keys are"
+                            parts.append("a different \(names) \(noun) already stored for this identity and was kept")
+                        }
+                        var text = "The identity was loaded, but " + parts.joined(separator: ", and ") + "."
+                        if !conflictingKeys.isEmpty {
+                            text += " To replace a stored key, remove the identity from the app and load it again."
+                        }
+                        if unstoredKeys.contains("voting") && row.votingPrivateKeyIdentifier == nil {
+                            text += " The identity cannot vote until it is loaded again."
                         }
                         errorMessage = text
                         isLoading = false

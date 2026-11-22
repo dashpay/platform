@@ -289,6 +289,44 @@ public final class KeychainManager: Sendable {
         return storeKeyData(keyData, identifier: keyIdentifier)
     }
 
+    /// What `storeSpecialKeyIfAbsent(_:identityId:keyType:)` did.
+    public enum SpecialKeyStoreOutcome: Sendable, Equatable {
+        /// The slot was empty and now holds the key.
+        case stored(identifier: String)
+        /// The slot already held these exact bytes; nothing was written.
+        case alreadyStored(identifier: String)
+        /// The slot holds a different key, which was kept; nothing was written.
+        case conflicting
+        /// The slot could not be read or written.
+        case failed
+    }
+
+    /// Store a special key only into an empty slot. An existing key is never
+    /// replaced or deleted, so an import cannot lose a stored credential:
+    /// the same bytes are reported as already stored, different bytes as
+    /// conflicting, and an unreadable slot as failed.
+    /// - Parameters:
+    ///   - keyData: The key data
+    ///   - identityId: The identity ID (32 bytes)
+    ///   - keyType: The type of special key
+    public func storeSpecialKeyIfAbsent(
+        _ keyData: Data,
+        identityId: Data,
+        keyType: SpecialKeyType
+    ) -> SpecialKeyStoreOutcome {
+        let identifier = generateSpecialKeyIdentifier(identityId: identityId, keyType: keyType)
+        switch readKeyData(identifier: identifier) {
+        case .success(nil):
+            return storeKeyData(keyData, identifier: identifier) == nil
+                ? .failed
+                : .stored(identifier: identifier)
+        case .success(let existing?):
+            return existing == keyData ? .alreadyStored(identifier: identifier) : .conflicting
+        case .failure:
+            return .failed
+        }
+    }
+
     /// Retrieve a special key from the keychain
     /// - Parameters:
     ///   - identityId: The identity ID (32 bytes)
