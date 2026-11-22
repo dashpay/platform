@@ -116,6 +116,32 @@ struct QueryCategoryDetailView: View {
                             .padding(.vertical, 4)
                         }
                         .accessibilityIdentifier("systemQueries.getPathElementsLink")
+                    } else if query.name == "browseBlocks" {
+                        NavigationLink(destination: PlatformBlocksView()) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(query.label)
+                                    .font(.headline)
+                                Text(query.description)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        .accessibilityIdentifier("epochQueries.browseBlocksLink")
+                    } else if query.name == "checkTransitionStatus" {
+                        NavigationLink(destination: TransitionStatusCheckView()) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(query.label)
+                                    .font(.headline)
+                                Text(query.description)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        .accessibilityIdentifier("systemQueries.checkTransitionStatusLink")
                     } else if query.name == "decisionProposals" {
                         NavigationLink(destination: DecisionProposalsView()) {
                             VStack(alignment: .leading, spacing: 4) {
@@ -249,7 +275,10 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "getCurrentEpoch", label: "Get Current Epoch", description: "Get information about the current epoch"),
                 QueryDefinition(name: "getFinalizedEpochInfos", label: "Get Finalized Epoch Info", description: "Get information about finalized epochs"),
                 QueryDefinition(name: "getEvonodesProposedEpochBlocksByIds", label: "Get Evonodes Proposed Epoch Blocks by IDs", description: "Get proposed blocks by evonode IDs"),
-                QueryDefinition(name: "getEvonodesProposedEpochBlocksByRange", label: "Get Evonodes Proposed Epoch Blocks by Range", description: "Get proposed blocks by range")
+                QueryDefinition(name: "getEvonodesProposedEpochBlocksByRange", label: "Get Evonodes Proposed Epoch Blocks by Range", description: "Get proposed blocks by range"),
+                QueryDefinition(name: "browseBlocks", label: "Block Explorer", description: "Read blocks with their state transitions, open one, and find an identity's transitions in it (protocol version 15)"),
+                QueryDefinition(name: "getBlocks", label: "Get Blocks", description: "Up to 10 consecutive blocks with every state transition and its result, proved by the block's quorum signature (protocol version 15)"),
+                QueryDefinition(name: "getOwnerTransactionsInBlock", label: "Get Owner Transactions In Block", description: "An identity's state transitions in one block: each proved, the list not proved complete (protocol version 15)")
             ]
 
         case .token:
@@ -280,7 +309,10 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "getTotalCreditsInPlatform", label: "Get Total Credits in Platform", description: "Get total credits in the platform"),
                 QueryDefinition(name: "getCurrentQuorumsInfo", label: "Get Current Quorums Info", description: "Get information about current validator quorums"),
                 QueryDefinition(name: "getPrefundedSpecializedBalance", label: "Get Prefunded Specialized Balance", description: "Get balance of a prefunded specialized account"),
-                QueryDefinition(name: "getPathElements", label: "Get GroveDB Path Elements", description: "Fetch raw GroveDB elements by path and keys (diagnostic)")
+                QueryDefinition(name: "getPathElements", label: "Get GroveDB Path Elements", description: "Fetch raw GroveDB elements by path and keys (diagnostic)"),
+                QueryDefinition(name: "checkTransitionStatus", label: "Transition Status Checker", description: "Paste a state transition hash to see whether a proved block holds it, with its result (protocol version 15)"),
+                QueryDefinition(name: "getRecentStateTransitionStatus", label: "Get Recent State Transition Status (unproved)", description: "What one node says of a transition hash: committed, pending or unknown. Unproved, one node's word (protocol version 15)"),
+                QueryDefinition(name: "getStateTransitionStatusByHash", label: "Check State Transition Status", description: "A transition hash's status, proved by its block when the node says committed; otherwise the node's unproved word (protocol version 15)")
             ]
 
         case .addresses:

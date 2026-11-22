@@ -751,6 +751,18 @@ struct QueryDetailView: View {
                 orderAscending: orderAscending
             )
 
+        case "getBlocks":
+            return try encodedJSON(try await sdk.getBlocks(
+                startHeight: try requiredUnsigned("startHeight", label: "Start Height"),
+                count: try requiredUnsigned("count", label: "Count")
+            ))
+
+        case "getOwnerTransactionsInBlock":
+            return try encodedJSON(try await sdk.getOwnerTransactionsInBlock(
+                height: try requiredUnsigned("height", label: "Block Height"),
+                ownerId: trimmedInput("ownerId")
+            ))
+
         // Token Queries
         case "getIdentityTokenBalances":
             let identityId = queryInputs["identityId"] ?? ""
@@ -872,6 +884,16 @@ struct QueryDetailView: View {
             let id = queryInputs["id"] ?? ""
             return try await sdk.getPrefundedSpecializedBalance(id: id)
 
+        case "getRecentStateTransitionStatus":
+            return try encodedJSON(try await sdk.getRecentStateTransitionStatus(
+                transitionHash: trimmedInput("transitionHash")
+            ))
+
+        case "getStateTransitionStatusByHash":
+            return try encodedJSON(try await sdk.getStateTransitionStatusByHash(
+                transitionHash: trimmedInput("transitionHash")
+            ))
+
         case "runAllQueries":
             // This is handled by DiagnosticsView - should not reach here
             throw SDKError.notImplemented("Use DiagnosticsView for running all queries")
@@ -879,6 +901,26 @@ struct QueryDetailView: View {
         default:
             throw SDKError.notImplemented("Query \(query.name) not implemented yet")
         }
+    }
+
+    /// `value` as a JSON object for ``formatResult(_:)``, in the snake_case keys the FFI wrote.
+    private func encodedJSON<T: Encodable>(_ value: T) throws -> Any {
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        return try JSONSerialization.jsonObject(with: encoder.encode(value))
+    }
+
+    /// The input `key`, trimmed of surrounding whitespace.
+    private func trimmedInput(_ key: String) -> String {
+        (queryInputs[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The input `key` read as an unsigned integer of type `T`.
+    private func requiredUnsigned<T: FixedWidthInteger & UnsignedInteger>(_ key: String, label: String) throws -> T {
+        guard let value = T(trimmedInput(key)) else {
+            throw SDKError.invalidParameter("\(label) must be a whole number")
+        }
+        return value
     }
 
     private func formatResult(_ result: Any) -> String {
@@ -1396,6 +1438,18 @@ struct QueryDetailView: View {
                 QueryInput(name: "ids", label: "Evonode IDs (comma-separated)", required: true)
             ]
 
+        case "getBlocks":
+            return [
+                QueryInput(name: "startHeight", label: "Start Height", required: true, placeholder: "The first block's height, from 1"),
+                QueryInput(name: "count", label: "Count", required: true, placeholder: "1 to 10")
+            ]
+
+        case "getOwnerTransactionsInBlock":
+            return [
+                QueryInput(name: "height", label: "Block Height", required: true),
+                QueryInput(name: "ownerId", label: "Identity ID", required: true, placeholder: "Base58 identity id")
+            ]
+
         case "getEvonodesProposedEpochBlocksByRange":
             return [
                 QueryInput(name: "epoch", label: "Epoch", required: true),
@@ -1504,6 +1558,11 @@ struct QueryDetailView: View {
 
         case "getCurrentQuorumsInfo":
             return []
+
+        case "getRecentStateTransitionStatus", "getStateTransitionStatusByHash":
+            return [
+                QueryInput(name: "transitionHash", label: "State Transition Hash", required: true, placeholder: "64 hex characters")
+            ]
 
         case "getPrefundedSpecializedBalance":
             return [
