@@ -12,13 +12,16 @@ import org.dashfoundation.dashsdk.ffi.SdkNative
 import org.dashfoundation.dashsdk.wallet.op
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
-import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.FutureTask
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -646,9 +649,10 @@ class Sdk private constructor(
                     connection.readTimeout = 5_000
                     connection.requestMethod = "GET"
                     // The read timeout bounds each read only, and opening
-                    // the stream waits for the response headers before the
-                    // body loop checks its deadline: disconnecting at the
-                    // deadline ends a request stuck anywhere in between.
+                    // the stream resolves the host and waits for the
+                    // response headers before the body loop checks its
+                    // deadline: the caller stops waiting at the deadline
+                    // wherever the request is stuck.
                     withDeadline(deadlineMs, abort = connection::disconnect) {
                         connection.inputStream.use { readBounded(it, maxBytes, deadlineNanos) }
                     }
@@ -674,24 +678,28 @@ class Sdk private constructor(
          */
         private const val MASTERNODES_DEADLINE_MS = 15_000L
 
-        /** Runs the deadlines of [withDeadline]; a daemon, so it never keeps the process up. */
-        private val deadlineTimer: ScheduledExecutorService by lazy {
-            Executors.newSingleThreadScheduledExecutor { task ->
-                Thread(task, "dash-sdk-deadline").apply { isDaemon = true }
-            }
-        }
-
         /**
-         * Run [block], calling [abort] from another thread if it is still
-         * running after [timeoutMs]. [abort] must make [block] fail fast,
-         * such as by disconnecting the connection it reads from.
+         * Run [block] and return its result, or throw an [IOException] once
+         * [timeoutMs] have passed. [block] runs on its own daemon thread, so
+         * the caller returns at the deadline even when [block] is stuck in a
+         * call nothing can interrupt, such as a host name lookup. [abort]
+         * is then called to make [block] end soon, such as by disconnecting
+         * the connection it reads from; its thread is left to finish.
          */
         internal fun <T> withDeadline(timeoutMs: Long, abort: () -> Unit, block: () -> T): T {
-            val watchdog = deadlineTimer.schedule({ abort() }, timeoutMs, TimeUnit.MILLISECONDS)
+            val task = FutureTask(Callable { block() })
+            Thread(task, "dash-sdk-bounded-request").apply { isDaemon = true }.start()
             try {
-                return block()
-            } finally {
-                watchdog.cancel(false)
+                return task.get(timeoutMs, TimeUnit.MILLISECONDS)
+            } catch (e: ExecutionException) {
+                throw e.cause ?: e
+            } catch (_: TimeoutException) {
+                abort()
+                throw IOException("the request did not finish in $timeoutMs ms")
+            } catch (e: InterruptedException) {
+                abort()
+                Thread.currentThread().interrupt()
+                throw e
             }
         }
 

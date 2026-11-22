@@ -108,8 +108,8 @@ fun SyncStatusScreen() {
                 // Liveness poll — `spvProgress` alone can't distinguish
                 // "synced and running" from "stopped".
                 var isRunning by remember { mutableStateOf(false) }
-                // One Start or Pause at a time: a second Start waiting on its
-                // peer lookup would otherwise restart a client paused meanwhile.
+                // One Start, Pause or Clear at a time: a second Start waiting on
+                // its peer lookup would otherwise restart a client paused meanwhile.
                 var spvActionInFlight by remember { mutableStateOf(false) }
                 var rescanHeightText by remember { mutableStateOf("0") }
                 var rescanInFlight by remember { mutableStateOf(false) }
@@ -212,15 +212,22 @@ fun SyncStatusScreen() {
 
                     OutlinedButton(
                         onClick = {
+                            // Shares the Start/Pause guard: a Start still
+                            // looking up its peers would otherwise open
+                            // the store this clears.
+                            if (spvActionInFlight) return@OutlinedButton
+                            spvActionInFlight = true
                             scope.launch {
                                 try {
                                     currentManager.clearSpvStorage()
                                 } catch (e: Exception) {
                                     error = e.message ?: "Failed to clear SPV storage"
+                                } finally {
+                                    spvActionInFlight = false
                                 }
                             }
                         },
-                        enabled = !isRunning,
+                        enabled = !isRunning && !spvActionInFlight,
                         modifier = Modifier.testTag("sync.spvClear"),
                     ) { Text("Clear") }
                 }

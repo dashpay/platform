@@ -3808,21 +3808,25 @@ fn read_cstring_array(
     let len = env.get_array_length(arr)? as usize;
     let mut owned: Vec<std::ffi::CString> = Vec::with_capacity(len);
     for i in 0..len {
-        let element = env.get_object_array_element(arr, i as i32)?;
-        if element.is_null() {
-            owned.push(std::ffi::CString::default());
-            continue;
-        }
-        let jstr = JString::from(element);
-        let s: String = match env.get_string(&jstr) {
-            Ok(v) => v.into(),
-            Err(_) => {
-                let _ = env.exception_clear();
-                owned.push(std::ffi::CString::default());
-                continue;
+        // One local frame per element: the element and the two class
+        // references `get_string` takes would otherwise stay in the native
+        // frame until the call returns, three per entry of the list.
+        let entry = env.with_local_frame(4, |env| -> Result<_, jni::errors::Error> {
+            let element = env.get_object_array_element(arr, i as i32)?;
+            if element.is_null() {
+                return Ok(std::ffi::CString::default());
             }
-        };
-        owned.push(std::ffi::CString::new(s).unwrap_or_default());
+            let jstr = JString::from(element);
+            let s: String = match env.get_string(&jstr) {
+                Ok(v) => v.into(),
+                Err(_) => {
+                    let _ = env.exception_clear();
+                    return Ok(std::ffi::CString::default());
+                }
+            };
+            Ok(std::ffi::CString::new(s).unwrap_or_default())
+        })?;
+        owned.push(entry);
     }
     let ptrs: Vec<*const std::os::raw::c_char> = owned.iter().map(|c| c.as_ptr()).collect();
     Ok((owned, ptrs))

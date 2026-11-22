@@ -3,12 +3,15 @@ package org.dashfoundation.dashsdk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
+import java.io.IOException
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.URI
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
@@ -58,8 +61,11 @@ class MasternodeDiscoveryTest {
                         val out = socket.getOutputStream()
                         out.write("HTTP/1.1 200 OK\r\n".toByteArray())
                         // One header byte every 200 ms: each read finishes
-                        // well inside the read timeout, the headers never end.
-                        while (true) {
+                        // well inside the read timeout, and the headers do
+                        // not end before the asserted limit. The server
+                        // gives up after 10 s, so a broken deadline fails
+                        // the assertion instead of stalling the test job.
+                        repeat(50) {
                             out.write('x'.code)
                             out.flush()
                             Thread.sleep(200)
@@ -69,14 +75,45 @@ class MasternodeDiscoveryTest {
                     // The client disconnected.
                 }
             }
-            val url = URI("http://127.0.0.1:${server.localPort}/masternodes").toURL()
-            val started = System.nanoTime()
-            assertNull(Sdk.fetchBounded(url, deadlineMs = 1_000))
-            val elapsedMs = (System.nanoTime() - started) / 1_000_000
-            assertTrue("took $elapsedMs ms", elapsedMs < 4_000)
-            assertTrue("the client never connected", accepted.get())
-            trickler.interrupt()
+            try {
+                val url = URI("http://127.0.0.1:${server.localPort}/masternodes").toURL()
+                val started = System.nanoTime()
+                assertNull(Sdk.fetchBounded(url, deadlineMs = 1_000))
+                val elapsedMs = (System.nanoTime() - started) / 1_000_000
+                assertTrue("took $elapsedMs ms", elapsedMs < 4_000)
+                assertTrue("the client never connected", accepted.get())
+            } finally {
+                trickler.interrupt()
+            }
         }
+    }
+
+    @Test
+    fun shouldReturnAtTheDeadlineWhenTheRequestCannotBeAborted() {
+        // A host name lookup has no socket to close: the caller must stop
+        // waiting at the deadline even though the abort does nothing.
+        val aborted = AtomicBoolean(false)
+        val blocked = CountDownLatch(1)
+        val started = System.nanoTime()
+        try {
+            assertThrows(IOException::class.java) {
+                Sdk.withDeadline(200, abort = { aborted.set(true) }) { blocked.await() }
+            }
+            val elapsedMs = (System.nanoTime() - started) / 1_000_000
+            assertTrue("took $elapsedMs ms", elapsedMs < 2_000)
+            assertTrue("the request was not told to stop", aborted.get())
+        } finally {
+            blocked.countDown()
+        }
+    }
+
+    @Test
+    fun shouldPassOnTheResultOrTheFailureOfARequestThatFinishesInTime() {
+        assertEquals("body", Sdk.withDeadline(5_000, abort = {}) { "body" })
+        val failure = assertThrows(IllegalStateException::class.java) {
+            Sdk.withDeadline<String>(5_000, abort = {}) { error("refused") }
+        }
+        assertEquals("refused", failure.message)
     }
 
     @Test
