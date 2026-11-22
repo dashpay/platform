@@ -62,10 +62,10 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | **Funded Core wallet** | all `Layer=Core` and `Layer=Cross` | A wallet with confirmed, mature, spendable UTXOs. Asset-lock funding needs InstantSend/ChainLock, so masternode sync must complete. |
 | **A registered identity with credit balance** | almost all `Layer=Platform` | Created via `ID-01`. Many transitions also need a specific **key purpose/security level** present on the identity. |
 | **A loaded data contract** (with a token + a document type) | `Domain=Token`, `Domain=Document`, `Tag=group` | Token actions are gated by the contract's on-chain permission rules — a "coming soon" placeholder means *disallowed by rule*, not unimplemented. |
-| **A contested-name scenario** | `DPNS-05`, `DPNS-11`, `VOTE-*` | Register a premium/contested name to create a live vote poll. `DPNS-11` needs one the vote has already awarded to the identity. |
+| **A contested-name scenario** | `DPNS-05`, `DPNS-11`, `VOTE-01..06` | Register a premium/contested name to create a live vote poll. `DPNS-11` needs one the vote has already awarded to the identity. |
 | **Network at protocol version 15** | `DPNS-09`..`DPNS-12` | Deleting or tombstoning a DPNS name is served from protocol version 15. Use a network already at it (a local or devnet network until testnet activates it). |
 | **Network still at protocol version 14** | `DPNS-13` | Any network proven at protocol version 14, where the give-up feature must be refused as not available yet. |
-| **Masternode / evonode voting key** | `VOTE-01` | Casting a contested-resource vote requires masternode voting credentials. Standard app QA on a non-masternode identity **cannot** exercise the actual vote broadcast — treat as environment-limited unless a masternode identity is configured. |
+| **Masternode / evonode voting key** | `VOTE-01`, `VOTE-08`, `VOTE-09` | Every masternode vote is cast as a masternode or evonode identity loaded on the device with its voting private key (Identities, Load Identity, type Masternode or Evonode). Use an operator-provided registered test masternode or evonode and its matching voting key: the bundled "Fill Random Masternode" / "Fill Random HPMN" presets are placeholder sample data (a made-up pro_tx_hash, and keys that do not all pass the WIF checksum), so they only demonstrate filling the form and cannot validate the import or a broadcast. The keys may be typed as 64 hex characters or in WIF (`dash_sdk_private_key_bytes_from_text`); a key that is neither stops the load with an error instead of being dropped. A key is stored only into an empty slot: re-loading with the same key is fine, while a different key for an occupied slot is refused and the stored one kept, and the load then asks whether to replace it (`loadIdentity.replaceKey.voting`, `.owner`, `.payout`, `.all` when several conflict, `.cancel` to keep the stored key). Confirming deletes only that slot and stores the typed key, leaving the identity and its other keys as they are; if the Keychain refuses the delete, for example while the device is locked, the stored key is kept and the report says which key could not be replaced. If the delete succeeds but the new key cannot be stored, the report says the stored key was removed and to load the identity again with it. A confirmation applies only to the key it was shown for: if that key was replaced or removed meanwhile (for example in another window), nothing is changed, an emptied slot stays empty, and the report says the stored key is no longer the one you confirmed replacing. The Success screen appears only when the identity saved and every key you entered is stored; a key that was kept, changed, removed or could not be checked leaves the report on the form. Re-loading keeps each unchanged public key's local signing reference. The key is kept in the Keychain and signs through `KeychainSigner`; the vote sheets pick the identity and never take a typed key in a Release build. Debug builds also offer typed test credentials (wire-order pro_tx_hash and voting private key) behind a "Use typed test credentials (debug only)" toggle. Without such an identity the broadcast cannot be exercised; treat the row as environment-limited. |
 | **Shielded pool: configured + bound + prover warmed + synced** | `Domain=Shielded` | `SH-01` sync + `SH-09` prover warm-up are preconditions for any shielded spend. The pool also needs a non-trivial anonymity set (`SH-10` on devnet/testnet) for realistic spends. |
 | **A second identity / contact** | credit transfer, token transfer, document transfer, DashPay | Needed as the counterparty/recipient. |
 
@@ -196,13 +196,15 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 
 | ID | Action | Layer | Tier | Status | Tags | Entry point & test notes |
 |---|---|---|---|---|---|---|
-| VOTE-01 | Vote on contested DPNS username (masternode vote) | Platform | Thorough | ✅ | contested, masternode | `ContestDetailView` cast-vote (from per-name link in `IdentityDetailView`) → `dash_sdk_contested_resource_cast_vote`. *Anchor: voting = Thorough.* **Requires masternode voting credentials** — environment-limited otherwise. |
+| VOTE-01 | Vote on contested DPNS username (masternode vote) | Platform | Thorough | ✅ | contested, masternode | `ContestDetailView` cast-vote (from per-name link in `IdentityDetailView`): pick the voting masternode in the sheet (`contestVote.voter`), then `contestVote.submit` → `dash_sdk_contested_resource_cast_vote_with_signer`, signed with the identity's stored voting key through `KeychainSigner`. Debug builds also allow typed credentials (`contestVote.useTypedCredentials`) → `dash_sdk_contested_resource_cast_vote`. Pass: Platform accepts and the contender's tally rises on refresh. *Anchor: voting = Thorough.* **Requires a loaded masternode or evonode identity with its voting key**, environment-limited otherwise. |
 | VOTE-02 | Query contested resources | Platform | Thorough | ✅ | contested, read-only | `PlatformQueriesView` (getContestedResources). |
 | VOTE-03 | Query contested-resource vote state | Platform | Thorough | ✅ | contested, read-only | `PlatformQueriesView` (getContestedResourceVoteState) — contenders + abstain/lock tallies. |
 | VOTE-04 | Query voters for a contestant identity | Platform | Thorough | ✅ | contested, read-only | `PlatformQueriesView` (getContestedResourceVotersForIdentity). |
 | VOTE-05 | Query an identity's votes | Platform | Thorough | ✅ | contested, read-only | `PlatformQueriesView` (getContestedResourceIdentityVotes). |
 | VOTE-06 | Query vote polls by end date | Platform | Thorough | ✅ | contested, read-only | `PlatformQueriesView` (getVotePollsByEndDate). |
 | VOTE-07 | Masternode vote (generic builder entry) | Platform | — | ➖ | contested | Retired — builder entry is a stub (`default → notImplemented`); masternode voting is covered by `VOTE-01`. Kept here to document the stub; not seeded to the QA catalog. |
+| VOTE-08 | Vote on a decision proposal (masternode yes/no vote) | Platform | Thorough | ✅ | masternode | `PlatformQueriesView` → Decision Proposals → a proposal → `decisionProposal.vote`: pick the answer (`decisionProposalVote.choice`) and the voting masternode (`decisionProposalVote.voter`), then `decisionProposalVote.submit` → `dash_sdk_decision_proposal_cast_vote_with_signer`, signed with the identity's stored voting key through `KeychainSigner`. `decisionProposalVote.lookUp` reads the same masternode's answer; in every build the answer of any masternode can also be read without a key from a typed wire-order pro_tx_hash (`decisionProposalVote.useTypedProTxHash`, field `decisionProposalVote.proTxHash`), which cannot cast. Debug builds also allow typed credentials (`decisionProposalVote.useTypedCredentials`) → `dash_sdk_decision_proposal_cast_vote`. Pass: Platform accepts, and the lookup shows the answer given. Needs protocol version 15 and a loaded masternode or evonode identity with its voting key, environment-limited otherwise. |
+| VOTE-09 | Vote on a multiple choice proposal (masternode vote among its choices) | Platform | Thorough | ✅ | masternode | `PlatformQueriesView` → Multiple Choice Proposals → a proposal → vote: pick a choice, none of the choices or abstain (`multipleChoiceProposalVote.choice`) and the voting masternode (`multipleChoiceProposalVote.voter`), then `multipleChoiceProposalVote.submit` → `dash_sdk_multiple_choice_proposal_cast_vote_with_signer`, signed with the identity's stored voting key through `KeychainSigner`. `multipleChoiceProposalVote.lookUp` reads the same masternode's answer; in every build the answer of any masternode can also be read without a key from a typed wire-order pro_tx_hash (`multipleChoiceProposalVote.useTypedProTxHash`, field `multipleChoiceProposalVote.proTxHash`), which cannot cast. Debug builds also allow typed credentials (`multipleChoiceProposalVote.useTypedCredentials`) → `dash_sdk_multiple_choice_proposal_cast_vote`. Pass: Platform accepts, and the lookup shows the answer given. Needs protocol version 15, a proposal with at least one choice, and a loaded masternode or evonode identity with its voting key, environment-limited otherwise. |
 
 ### 4.6 Data Contracts — `Domain=Contract`
 
@@ -338,7 +340,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 |---|---|---|
 | Essential | 22 | yes |
 | Common | 35 | yes |
-| Thorough | 41 | yes |
+| Thorough | 43 | yes |
 | Uncommon | 33 | yes |
 | Manual | 2 (`CORE-08`, `DP-10`) | no — physical device |
 
@@ -347,7 +349,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Layer | Count (approx.) |
 |---|---|
 | Core | 18 |
-| Platform | ~87 |
+| Platform | ~89 |
 | Cross | 11 |
 | Shielded | 14 |
 
@@ -365,7 +367,7 @@ Each row's **primary home** is its §4 section, but a few rows are cross-cutting
 - **Identity** — `ID-01..16`, `SH-11`
 - **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06..09`, `ID-06`, `ID-08`, `ID-11`
 - **DPNS** — `DPNS-01..13`
-- **Voting** — `VOTE-01..07`, `DPNS-05`
+- **Voting** — `VOTE-01..09`, `DPNS-05`
 - **Contract** — `DC-01..04`
 - **Document** — `DOC-01..17`
 - **Token** — `TOK-01..20`
@@ -383,7 +385,7 @@ Each row's **primary home** is its §4 section, but a few rows are cross-cutting
 - **read-only** — the pure query / view rows (see the Tags column; also Appendix A)
 - **freeze** — `TOK-08`, `TOK-09`
 - **distribution** — `TOK-07`
-- **masternode** — `VOTE-01`
+- **masternode** — `VOTE-01`, `VOTE-08`, `VOTE-09`
 - **regression** — `TOK-17`, `ADDR-09`, `DP-10`
 
 Worked example — *"run all non-Uncommon Token tests"*: take **Token** = `TOK-01..20`; drop the `Uncommon`/stub ones (`TOK-08..16`, `TOK-20`) → run **`TOK-01..07`** plus the Thorough group / multi-wallet token rows `TOK-17`/`TOK-18`/`TOK-19`. Worked example — *"run all multi-wallet token tests"*: `Category=Token AND Tag=multiwallet` → `TOK-17`.
