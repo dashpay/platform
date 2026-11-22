@@ -43,7 +43,11 @@ struct ContractModerationStatusView: View {
 
             Section {
                 Button {
-                    Task { await lookUp() }
+                    // The inputs are taken now, at the tap: an edit made before
+                    // the task runs cannot change what this look up sends
+                    if let lookUp = submitLookUp() {
+                        Task { await run(lookUp) }
+                    }
                 } label: {
                     HStack {
                         if case .loading = load { ProgressView().controlSize(.small) }
@@ -134,28 +138,44 @@ struct ContractModerationStatusView: View {
         load = .idle
     }
 
-    private func lookUp() async {
-        guard let sdk = appState.sdk else {
+    /// One look up as submitted: its token and the inputs read at the tap.
+    private struct LookUp {
+        let token: Int
+        let identityId: String
+        let lists: [ContractModerationList]?
+    }
+
+    /// Takes the identity and lists as they are now, makes them the current
+    /// submission and shows it as loading; `nil` without an SDK.
+    private func submitLookUp() -> LookUp? {
+        guard appState.sdk != nil else {
             load = .failed("SDK not initialized")
-            return
+            return nil
         }
         submission += 1
-        let current = submission
         let identityId = trimmedIdentityId
         submittedIdentityId = identityId
         load = .loading
         // In the order the lists are offered; none chosen reads every list.
         let lists = ContractModerationList.allCases.filter { chosenLists.contains($0) }
+        return LookUp(token: submission, identityId: identityId, lists: lists.isEmpty ? nil : lists)
+    }
+
+    /// Sends `lookUp` from its captured inputs alone, unless an edit or a
+    /// newer submission superseded it before it ran, and shows its answer
+    /// only while it is still current.
+    private func run(_ lookUp: LookUp) async {
+        guard lookUp.token == submission, let sdk = appState.sdk else { return }
         do {
             let status = try await sdk.contractModerationStatus(
                 contractId: contractId,
-                identityId: identityId,
-                lists: lists.isEmpty ? nil : lists
+                identityId: lookUp.identityId,
+                lists: lookUp.lists
             )
-            guard current == submission else { return }
+            guard lookUp.token == submission else { return }
             load = .loaded(status)
         } catch {
-            guard current == submission else { return }
+            guard lookUp.token == submission else { return }
             load = .failed(moderationErrorText(error))
         }
     }

@@ -15,6 +15,9 @@ struct ContractDocumentRemovalsView: View {
     @State private var documentIdsInput = ""
     /// The ids the shown records were looked up by; `nil` while paging.
     @State private var lookedUpIds: [String]?
+    /// Bumped by every look up and every edit of the ids, so a look up that
+    /// was superseded before its task ran is not sent.
+    @State private var lookupSubmission = 0
     @StateObject private var loader = ModerationPagedLoader<ContractDocumentRemovalEntry, String>()
 
     var body: some View {
@@ -27,7 +30,16 @@ struct ContractDocumentRemovalsView: View {
                     .accessibilityIdentifier("contractModeration.removals.documentIds")
                     .onChange(of: documentIdsInput) { _, _ in draftChanged() }
                 Button("Look Up These Documents") {
-                    Task { await lookUp() }
+                    // The ids are taken now, at the tap: an edit made before the
+                    // task runs cannot change what this look up sends
+                    let ids = parsedIds
+                    lookedUpIds = ids
+                    lookupSubmission += 1
+                    let token = lookupSubmission
+                    Task {
+                        guard token == lookupSubmission else { return }
+                        await read(ids: ids)
+                    }
                 }
                 .disabled(parsedIds.isEmpty)
                 .accessibilityIdentifier("contractModeration.removals.lookup")
@@ -116,6 +128,7 @@ struct ContractDocumentRemovalsView: View {
     /// The ids typed changed: the lookup shown, and one still running, no
     /// longer answer them, so they are cleared until the next look up.
     private func draftChanged() {
+        lookupSubmission += 1
         guard lookedUpIds != nil else { return }
         lookedUpIds = nil
         loader.clear()
@@ -149,10 +162,6 @@ struct ContractDocumentRemovalsView: View {
             )
             .map { ModerationPage(items: $0.removals, nextCursor: $0.nextStartAfter) }
         }
-    }
-
-    private func lookUp() async {
-        await read(ids: parsedIds)
     }
 
     /// The records of `ids` alone; a read by ids has no page after it.

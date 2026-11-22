@@ -23,4 +23,24 @@ final class ContractKeptFieldDisplayTests: XCTestCase {
         XCTAssertEqual(ContractKeptFieldValue.double(1.5).displayText, "1.5")
         XCTAssertEqual(ContractKeptFieldValue.string("").displayText, #""""#)
     }
+
+    func testShouldShowBidiControlsAsVisibleEscapes() {
+        let value = ContractKeptFieldValue.object([
+            "name\u{202E}": .string("abc\u{202E}def\u{2066}g\u{200F}"),
+        ])
+
+        XCTAssertEqual(
+            value.displayText,
+            #"{"name\u{202E}": "abc\u{202E}def\u{2066}g\u{200F}"}"#
+        )
+        XCTAssertFalse(value.displayText.unicodeScalars.contains { $0.value == 0x202E })
+    }
+
+    func testShouldShowTheTaggedKinds() {
+        XCTAssertEqual(ContractKeptFieldValue.identifier("abc").displayText, #""abc""#)
+        XCTAssertEqual(ContractKeptFieldValue.bytes("AQID").displayText, "bytes(AQID)")
+        XCTAssertEqual(ContractKeptFieldValue.uint128("340282366920938463463374607431768211455").displayText,
+                       "340282366920938463463374607431768211455")
+        XCTAssertEqual(ContractKeptFieldValue.double(-0.0).displayText, "-0.0")
+    }
 }

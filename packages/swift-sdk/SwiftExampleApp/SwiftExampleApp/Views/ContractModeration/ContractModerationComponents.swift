@@ -149,8 +149,11 @@ extension ContractKeptFieldValue {
         case .bool(let value): return String(value)
         case .int(let value): return String(value)
         case .uint(let value): return String(value)
+        case .int128(let value), .uint128(let value): return value
         case .double(let value): return String(value)
         case .string(let value): return Self.quoted(value)
+        case .identifier(let value): return Self.quoted(value)
+        case .bytes(let value): return "bytes(\(value))"
         case .array(let values): return "[" + values.map(\.displayText).joined(separator: ", ") + "]"
         case .object(let members):
             let fields = members.keys.sorted().map { key in
@@ -160,14 +163,35 @@ extension ContractKeptFieldValue {
         }
     }
 
-    /// `text` as a JSON string literal.
+    /// `text` as a JSON string literal, with the Unicode bidirectional
+    /// formatting controls written as visible escapes (`\u{202E}`), so text a
+    /// document held cannot reorder what is shown around it.
     static func quoted(_ text: String) -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .withoutEscapingSlashes
-        guard let data = try? encoder.encode(text),
-              let literal = String(data: data, encoding: .utf8) else {
-            return "\"" + text + "\""
+        let literal: String
+        if let data = try? encoder.encode(text), let encoded = String(data: data, encoding: .utf8) {
+            literal = encoded
+        } else {
+            literal = "\"" + text + "\""
         }
-        return literal
+        var shown = ""
+        for scalar in literal.unicodeScalars {
+            if bidiControls.contains(scalar.value) {
+                shown += String(format: "\\u{%04X}", scalar.value)
+            } else {
+                shown.unicodeScalars.append(scalar)
+            }
+        }
+        return shown
     }
+
+    /// The bidirectional formatting controls: the Arabic letter mark, the
+    /// left-to-right and right-to-left marks, the embeddings and overrides,
+    /// and the isolates.
+    private static let bidiControls: Set<UInt32> = [
+        0x061C, 0x200E, 0x200F,
+        0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
+        0x2066, 0x2067, 0x2068, 0x2069,
+    ]
 }
