@@ -28,6 +28,17 @@ final class KeychainSignerStoredVotingKeyTests: XCTestCase {
             XCTAssertTrue(
                 signer.canSign(publicKey: votingAddress, keyType: KeyType.ecdsaHash160.rawValue)
             )
+            // The signer signs with the stored key, not only claims it can.
+            let payload = Data("stored voting key payload".utf8)
+            let signature = try signer.signOnDemand(
+                publicKey: votingAddress,
+                keyType: KeyType.ecdsaHash160.rawValue,
+                data: payload
+            ).get()
+            XCTAssertEqual(
+                signature,
+                try RawKeySigner.sign(data: payload, privateKey: privateKey, network: .testnet)
+            )
             return votingAddress
         }
 

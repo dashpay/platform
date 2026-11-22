@@ -185,7 +185,7 @@ struct LoadIdentityView: View {
                             }
                         }
 
-                        TextField("Hex or WIF", text: $privateKeys[index])
+                        TextField("Hex (64 characters)", text: $privateKeys[index])
                             .textFieldStyle(RoundedBorderTextFieldStyle())
                     }
 
@@ -296,16 +296,25 @@ struct LoadIdentityView: View {
                 let identityType = selectedIdentityType
                 let isMasternodeType = identityType == .masternode || identityType == .evonode
 
-                // Every key field takes hex or WIF (the testnet presets
-                // fill WIF); Rust reads either. A key that is typed but
-                // refused stops the load with Rust's reason instead of
+                // Only the fields the selected identity type shows are
+                // read: the "Private Keys" list for a type that is neither
+                // masternode nor evonode, voting and owner for a masternode
+                // or evonode, payout for an evonode only. Keys typed before
+                // switching the type are not stored.
+                //
+                // The "Private Keys" list is hex, matched to a public key by
+                // its type below (a key of any type, Ed25519 included).
+                let privateKeyData: [Data] = isMasternodeType ? [] : privateKeys.compactMap { keyString in
+                    let trimmed = keyString.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return nil }
+                    return Data(hexString: trimmed)
+                }
+
+                // The masternode key fields take hex or WIF (the testnet
+                // presets fill WIF); Rust reads either. A key that is typed
+                // but refused stops the load with Rust's reason instead of
                 // being dropped, since the vote sheets sign with the stored
-                // voting key. Only the fields the selected identity type
-                // shows are read: the "Private Keys" list for a type that is
-                // neither masternode nor evonode, voting and owner for a
-                // masternode or evonode, payout for an evonode only. Keys
-                // typed before switching the type are not stored. The
-                // refusal never repeats the typed text.
+                // voting key. The refusal never repeats the typed text.
                 var refusals: [String] = []
                 func readKey(_ input: String, named name: String) -> Data? {
                     guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -319,9 +328,6 @@ struct LoadIdentityView: View {
                         refusals.append("The \(name) was refused: \(error.localizedDescription)")
                     }
                     return nil
-                }
-                let privateKeyData: [Data] = isMasternodeType ? [] : privateKeys.enumerated().compactMap { index, input in
-                    readKey(input, named: "private key \(index + 1)")
                 }
                 let votingKeyData = isMasternodeType
                     ? readKey(votingPrivateKeyInput, named: "voting private key") : nil

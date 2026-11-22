@@ -437,6 +437,8 @@ private struct DecisionProposalVoteSheet: View {
             .interactiveDismissDisabled(isCasting)
             // A message names the previous voter's answer; drop it.
             .onChange(of: voter) { _, _ in message = nil }
+            // So does a message read on the previous network.
+            .onChange(of: appState.currentNetwork) { _, _ in message = nil }
         }
     }
 

@@ -403,9 +403,6 @@ public final class KeychainManager: Sendable {
     // MARK: - Generic Key Storage
 
     /// Store arbitrary data in the keychain with a custom identifier
-    ///
-    /// An existing item under `identifier` is updated in place, so a failed
-    /// write leaves the previous data readable instead of deleting it first.
     /// - Parameters:
     ///   - keyData: The data to store
     ///   - identifier: A unique identifier for the stored data
@@ -415,27 +412,20 @@ public final class KeychainManager: Sendable {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: identifier
+            kSecAttrAccount as String: identifier,
+            kSecValueData as String: keyData,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            kSecAttrSynchronizable as String: false
         ]
 
         if let accessGroup = accessGroup {
             query[kSecAttrAccessGroup as String] = accessGroup
         }
 
-        let update: [String: Any] = [kSecValueData as String: keyData]
-        let updateStatus = SecItemUpdate(query as CFDictionary, update as CFDictionary)
-        if updateStatus == errSecSuccess {
-            return identifier
-        }
-        guard updateStatus == errSecItemNotFound else {
-            return nil
-        }
+        SecItemDelete(query as CFDictionary)
 
-        query[kSecValueData as String] = keyData
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        query[kSecAttrSynchronizable as String] = false
-        let addStatus = SecItemAdd(query as CFDictionary, nil)
-        return addStatus == errSecSuccess ? identifier : nil
+        let status = SecItemAdd(query as CFDictionary, nil)
+        return status == errSecSuccess ? identifier : nil
     }
 
     /// Retrieve data from the keychain by identifier.

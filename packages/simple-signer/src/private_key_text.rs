@@ -1,5 +1,7 @@
 //! Reading a secp256k1 private key typed by a person, as hex or WIF.
 
+use dpp::dashcore::ecdsa::EcdsaError;
+use dpp::dashcore::key::Error as KeyError;
 use dpp::dashcore::PrivateKey;
 use dpp::secp256k1::SecretKey;
 use std::fmt;
@@ -65,13 +67,20 @@ pub fn private_key_from_text(text: &str) -> Result<Zeroizing<[u8; 32]>, PrivateK
         // the text leaves no partial secret in another buffer.
         hex::decode_to_slice(text, secret.as_mut_slice())
             .map_err(|_| PrivateKeyTextError::NotHexOrWif)?;
-        SecretKey::from_secret_bytes(*secret).map_err(|_| PrivateKeyTextError::NotASecretKey)?;
+        let mut validated = SecretKey::from_secret_bytes(*secret)
+            .map_err(|_| PrivateKeyTextError::NotASecretKey)?;
+        validated.non_secure_erase();
         return Ok(secret);
     }
     if text.len() > MAX_WIF_LEN {
         return Err(PrivateKeyTextError::TooLong);
     }
-    let private_key = PrivateKey::from_wif(text).map_err(|_| PrivateKeyTextError::NotHexOrWif)?;
+    // A checksummed WIF whose 32 bytes are not a secret key is refused for
+    // the key, not the encoding.
+    let private_key = PrivateKey::from_wif(text).map_err(|error| match error {
+        KeyError::Ecdsa(EcdsaError::InvalidSecretKey) => PrivateKeyTextError::NotASecretKey,
+        _ => PrivateKeyTextError::NotHexOrWif,
+    })?;
     if !private_key.compressed {
         return Err(PrivateKeyTextError::UncompressedWif);
     }
@@ -81,6 +90,7 @@ pub fn private_key_from_text(text: &str) -> Result<Zeroizing<[u8; 32]>, PrivateK
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::dashcore::base58::Base58CkString;
     use dpp::dashcore::Network;
 
     fn wif(secret: &[u8; 32], compressed: bool) -> String {
@@ -119,6 +129,19 @@ mod tests {
     fn should_refuse_a_zero_key() {
         assert_eq!(
             private_key_from_text(&"0".repeat(64)).as_deref(),
+            Err(&PrivateKeyTextError::NotASecretKey)
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_checksummed_wif_of_a_zero_key() {
+        // Testnet version byte, 32 zero bytes, compression flag.
+        let mut payload = vec![0xEF];
+        payload.extend_from_slice(&[0u8; 32]);
+        payload.push(0x01);
+        let zero_wif = Base58CkString::encode_unbounded(&payload).to_string();
+        assert_eq!(
+            private_key_from_text(&zero_wif).as_deref(),
             Err(&PrivateKeyTextError::NotASecretKey)
         );
     }
