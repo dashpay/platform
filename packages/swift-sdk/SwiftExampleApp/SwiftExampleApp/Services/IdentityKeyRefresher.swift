@@ -58,6 +58,13 @@ enum IdentityKeyRefresher {
         let fetchedIdentity = try await sdk.identityGet(
             identityId: identity.identityIdBase58
         )
+        // Wallet discovery may have claimed the identity, and written its
+        // rows with their signing metadata, while the fetch was out. Check
+        // again before writing anything, on the main actor, with no await
+        // between this check and the writes below.
+        if identity.wallet != nil {
+            throw SDKError.invalidState("A wallet took over this identity during the refresh; refresh it again from the wallet.")
+        }
 
         // Balance — accept either the numeric or string-encoded form
         // the FFI may hand back depending on magnitude.

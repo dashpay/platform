@@ -423,22 +423,26 @@ struct UpdateKeyLimitsView: View {
                 submitError = "\(message)\nThe update may have landed. Close this sheet and check the key before trying again."
                 return
             }
-            // Ask the wallet for the key's limits now, still locked as
-            // submitting. A raise can be proved, move the wallet's copy and
-            // then fail to store its row; offering the same inputs again then
-            // would sign the increment on top of it. Only an answer showing
-            // exactly the reviewed limits proves nothing landed.
-            let current: KeyLimitsRetryGate.Limits?
-            if case .answered(let now) = await preview(addBudget: nil, expiresAt: nil) {
+            // Still locked as submitting. Only Platform's own refusal shows
+            // this transition did not apply; any other failure may have come
+            // after the broadcast (a raise proved but not stored, a wallet
+            // removed after the proof). Then ask the wallet for the key's
+            // limits: only an answer showing exactly the reviewed ones lets
+            // the same inputs be offered again without signing the increment
+            // on top of a raise that landed.
+            let refusedByPlatform = submitConsensusCode != nil
+            var current: KeyLimitsRetryGate.Limits?
+            if refusedByPlatform,
+               case .answered(let now) = await preview(addBudget: nil, expiresAt: nil) {
                 current = KeyLimitsRetryGate.Limits(totalBudget: now.currentTotalBudget, expiresAt: now.currentExpiresAt)
-            } else {
-                current = nil
             }
             let reviewedLimits = KeyLimitsRetryGate.Limits(
                 totalBudget: reviewed.currentTotalBudget,
                 expiresAt: reviewed.currentExpiresAt
             )
-            guard KeyLimitsRetryGate.mayOfferAgain(reviewed: reviewedLimits, current: current) else {
+            guard KeyLimitsRetryGate.mayOfferAgain(
+                refusedByPlatform: refusedByPlatform, reviewed: reviewedLimits, current: current
+            ) else {
                 outcomeUnknown = true
                 isSubmitting = false
                 submitError = "\(message)\nThe wallet could not confirm that this update did not land. Close this sheet and check the key before trying again."
@@ -464,18 +468,20 @@ struct UpdateKeyLimitsView: View {
 
 /// After a failed key limits update, whether the sheet may offer the same
 /// change again. A UI guard against signing a raise twice, not a protocol
-/// rule: only a wallet answer showing exactly the limits the person
-/// reviewed proves the failed update did not land. Moved limits (a raise
-/// proved but not stored, or another client's raise) and no answer at all
-/// (the wallet refused the check) both leave the outcome unknown.
+/// rule. Only Platform's refusal (a consensus error) shows the transition
+/// did not apply; any other failure may have come after the broadcast. Even
+/// then, only a wallet answer showing exactly the limits the person reviewed
+/// lets the same change be offered again: moved limits (another client's
+/// raise) and no answer at all (the wallet refused the check) leave the
+/// outcome unknown.
 enum KeyLimitsRetryGate {
     struct Limits: Equatable {
         var totalBudget: UInt64?
         var expiresAt: UInt64?
     }
 
-    static func mayOfferAgain(reviewed: Limits, current: Limits?) -> Bool {
-        current == reviewed
+    static func mayOfferAgain(refusedByPlatform: Bool, reviewed: Limits, current: Limits?) -> Bool {
+        refusedByPlatform && current == reviewed
     }
 }
 

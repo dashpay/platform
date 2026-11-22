@@ -650,14 +650,14 @@ struct PrivateKeyView: View {
 
   private func forgetPrivateKey() {
     // Remove from keychain
-    let removed = KeychainManager.shared.deletePrivateKey(identityId: identity.identityId, keyIndex: Int32(keyId))
+    let removed = KeychainManager.shared.deletePrivateKey(identityId: identity.identityId, keyIndex: Int32(bitPattern: keyId))
 
     if removed {
       // Clear the keychain reference on the matching
       // PersistentPublicKey. The @Query observing the parent
       // identity will re-render this row automatically.
       if let persistedKey = identity.publicKeys.first(
-        where: { $0.keyId == Int32(keyId) }
+        where: { $0.keyId == Int32(bitPattern: keyId) }
       ) {
         persistedKey.privateKeyKeychainIdentifier = nil
         try? modelContext.save()
@@ -674,7 +674,7 @@ struct PrivateKeyView: View {
     // misses, fall back to the wallet-derived `identity_privkey.*`
     // scheme keyed by public-key hex.
     let km = KeychainManager.shared
-    if let legacy = km.retrievePrivateKey(identityId: identity.identityId, keyIndex: Int32(keyId)) {
+    if let legacy = km.retrievePrivateKey(identityId: identity.identityId, keyIndex: Int32(bitPattern: keyId)) {
       print("🔑 Retrieved private key for keyId \(keyId) via legacy (id, index) scheme")
       return legacy
     }
