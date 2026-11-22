@@ -14,6 +14,7 @@ import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.QueriesNative
+import org.dashfoundation.dashsdk.voting.ContestedIndexValue
 
 /**
  * Read-only Platform query surface, grouped like the Swift SDK's lazy
