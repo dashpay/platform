@@ -3,9 +3,9 @@
 //!
 //! Arguments are refused before any request only when they cannot be represented in the rs-sdk
 //! query: a null handle, a null or non-base58 id, a byte that names no list or status, a limit
-//! above `u16::MAX`, an inclusion flag without the action it includes. Everything else (a limit
-//! above the page cap, an empty id list, a list the contract does not keep) is the node's to
-//! refuse.
+//! above `u16::MAX`, an inclusion flag without the action it includes, a null array with a
+//! count. Everything else (a limit of 0 or above the page cap, an empty id or list selection, a
+//! list the contract does not keep) is the node's to refuse.
 
 use super::json::{
     action_counts_json, entries_json, fee_pots_json, removals_json, status_json,
@@ -30,19 +30,25 @@ use dash_sdk::platform::Fetch;
 use serde_json::Value as JsonValue;
 use std::ffi::c_char;
 
-/// The page bound `limit` asks for: `None` for 0 (rs-sdk's default, the page cap of the
-/// network queried), refused above `u16::MAX`, which no rs-sdk page query can carry.
-fn page_limit(limit: u32) -> Result<Option<u16>, FFIError> {
-    if limit == 0 {
+/// The page bound `limit` points to: `None` for a null pointer (rs-sdk's default, the page cap
+/// of the network queried), the value as it is otherwise (0 included, which the node judges),
+/// refused above `u16::MAX`, which no rs-sdk page query can carry.
+///
+/// # Safety
+/// `limit` must be null or point to a readable `u32`.
+unsafe fn page_limit(limit: *const u32) -> Result<Option<u16>, FFIError> {
+    if limit.is_null() {
         return Ok(None);
     }
+    let limit = *limit;
     u16::try_from(limit).map(Some).map_err(|_| {
         FFIError::InvalidParameter(format!("limit {limit} exceeds the maximum of {}", u16::MAX))
     })
 }
 
-/// The lists `lists` names, `None` for a null pointer or a count of 0 (every list the contract
-/// keeps).
+/// The lists `lists` names: `None` for a null pointer with a count of 0 (no selection), the
+/// lists as given for a non-null pointer, an empty selection for a count of 0 included;
+/// a null pointer with a count above 0 is refused.
 ///
 /// # Safety
 /// `lists` must be null or point to `lists_count` readable bytes.
@@ -50,13 +56,16 @@ unsafe fn moderation_lists(
     lists: *const u8,
     lists_count: usize,
 ) -> Result<Option<Vec<ContractModerationList>>, FFIError> {
-    if lists_count == 0 {
-        return Ok(None);
-    }
     if lists.is_null() {
+        if lists_count == 0 {
+            return Ok(None);
+        }
         return Err(FFIError::InvalidParameter(format!(
             "lists is null but lists_count is {lists_count}"
         )));
+    }
+    if lists_count == 0 {
+        return Ok(Some(Vec::new()));
     }
     std::slice::from_raw_parts(lists, lists_count)
         .iter()
@@ -96,9 +105,15 @@ unsafe fn identifiers(
 /// * `contract_id` - The moderated contract's id, base58.
 /// * `identity_id` - The identity's id, base58.
 /// * `lists` - The lists to read, each a `ContractModerationListFFI` byte (0 banlist,
-///   1 suspensions, 2 warnings) that must be a list the contract keeps; null (or a
-///   `lists_count` of 0) reads every list the contract keeps, which fetches the contract first
-///   (`ContractModerationStatusQuery::for_contract_id`).
+///   1 suspensions, 2 warnings) that must be a list the contract keeps. The selection is
+///   resolved by `ContractModerationStatusQuery::resolve`:
+///   - null with a `lists_count` of 0: no selection; every list the contract keeps is read,
+///     which fetches the contract first (refused, before the contract is fetched, on a network
+///     below the status read's protocol version);
+///   - non-null with a `lists_count` of 0: an explicit empty selection, sent as it is for the
+///     node to judge;
+///   - non-null with a `lists_count` above 0: the lists named, sent as they are;
+///   - null with a `lists_count` above 0: refused with `InvalidParameter`.
 /// * `lists_count` - The number of bytes `lists` points to.
 ///
 /// # Returns
@@ -155,17 +170,8 @@ unsafe fn get_status_inner(
     let lists = moderation_lists(lists, lists_count)?;
     let sdk = &wrapper.sdk;
     let statuses = wrapper.runtime.block_on(async {
-        let query = match lists {
-            Some(lists) => ContractModerationStatusQuery {
-                contract_id,
-                identity_id,
-                lists,
-            },
-            None => {
-                ContractModerationStatusQuery::for_contract_id(sdk, contract_id, identity_id)
-                    .await?
-            }
-        };
+        let query =
+            ContractModerationStatusQuery::resolve(sdk, contract_id, identity_id, lists).await?;
         ContractModerationListStatuses::fetch(sdk, query).await
     })?;
     Ok(statuses.as_ref().map(status_json))
@@ -181,8 +187,9 @@ unsafe fn get_status_inner(
 ///   2 warnings); the contract must keep it.
 /// * `start_after` - The page's `nextStartAfter` (base58) to continue after it; null for the
 ///   first page.
-/// * `limit` - The most entries to return; 0 for the page cap of the network queried. A value
-///   above `u16::MAX` is refused; the node refuses one above its cap.
+/// * `limit` - Null for the page cap of the network queried, or a pointer to the most entries
+///   to return, passed as it is (0 included, which the node judges). A value above
+///   `u16::MAX` is refused; the node refuses one above its cap.
 ///
 /// # Returns
 /// A JSON object, or no data when rs-sdk returns none:
@@ -202,13 +209,14 @@ unsafe fn get_status_inner(
 /// - `sdk_handle` must be a valid pointer to an initialized `SDKHandle`.
 /// - `contract_id` must be a valid pointer to a NUL-terminated string, and `start_after` null
 ///   or one, for the duration of the call.
+/// - `limit` must be null or point to a readable `u32`.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_contract_moderation_get_entries(
     sdk_handle: *const SDKHandle,
     contract_id: *const c_char,
     list: u8,
     start_after: *const c_char,
-    limit: u32,
+    limit: *const u32,
 ) -> DashSDKResult {
     json_result(get_entries_inner(
         sdk_handle,
@@ -224,7 +232,7 @@ unsafe fn get_entries_inner(
     contract_id: *const c_char,
     list: u8,
     start_after: *const c_char,
-    limit: u32,
+    limit: *const u32,
 ) -> Result<Option<JsonValue>, FFIError> {
     let wrapper = sdk_wrapper(sdk_handle)?;
     let contract_id = required_identifier(contract_id, "contract_id")?;
@@ -254,8 +262,9 @@ unsafe fn get_entries_inner(
 ///   `moderatorAbilities.delete`, or `deleteKeepsRecord: false`).
 /// * `start_after` - The page's `nextStartAfter` (base58) to continue after it; null for the
 ///   first page.
-/// * `limit` - The most records to return; 0 for the page cap of the network queried. A value
-///   above `u16::MAX` is refused; the node refuses one above its cap.
+/// * `limit` - Null for the page cap of the network queried, or a pointer to the most records
+///   to return, passed as it is (0 included, which the node judges). A value above
+///   `u16::MAX` is refused; the node refuses one above its cap.
 ///
 /// # Returns
 /// A JSON object, or no data when rs-sdk returns none:
@@ -282,13 +291,14 @@ unsafe fn get_entries_inner(
 /// - `sdk_handle` must be a valid pointer to an initialized `SDKHandle`.
 /// - `contract_id` and `document_type_name` must be valid pointers to NUL-terminated strings,
 ///   and `start_after` null or one, for the duration of the call.
+/// - `limit` must be null or point to a readable `u32`.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_contract_moderation_get_document_removals(
     sdk_handle: *const SDKHandle,
     contract_id: *const c_char,
     document_type_name: *const c_char,
     start_after: *const c_char,
-    limit: u32,
+    limit: *const u32,
 ) -> DashSDKResult {
     json_result(get_document_removals_inner(
         sdk_handle,
@@ -304,7 +314,7 @@ unsafe fn get_document_removals_inner(
     contract_id: *const c_char,
     document_type_name: *const c_char,
     start_after: *const c_char,
-    limit: u32,
+    limit: *const u32,
 ) -> Result<Option<JsonValue>, FFIError> {
     let wrapper = sdk_wrapper(sdk_handle)?;
     let contract_id = required_identifier(contract_id, "contract_id")?;
@@ -402,12 +412,14 @@ unsafe fn get_document_removals_by_ids_inner(
 /// * `sdk_handle` - Handle to the SDK instance.
 /// * `contract_id` - The elected contract's id, base58.
 /// * `status` - A `ContractTeamActionStatusFFI` byte: 0 active, 1 closed.
-/// * `start_at_action_id` - The page's `nextStartAtActionId` (base58) to continue from it; null
-///   for the first page.
-/// * `start_at_action_id_included` - Whether the page includes the `start_at_action_id` action
-///   itself; refused when set without `start_at_action_id`, which leaves nothing to include.
-/// * `limit` - The most actions to return; 0 for the page cap of the network queried. A value
-///   above `u16::MAX` is refused; the node refuses one above its cap.
+/// * `start_at_action_id` - The previous page's `nextStartAtActionId` (base58) to continue from
+///   it; null for the first page.
+/// * `start_at_action_id_included` - The previous page's `nextStartAtActionIdIncluded`: whether
+///   the page includes the `start_at_action_id` action itself; refused when set without
+///   `start_at_action_id`, which leaves nothing to include.
+/// * `limit` - Null for the page cap of the network queried, or a pointer to the most actions
+///   to return, passed as it is (0 included, which the node judges). A value above
+///   `u16::MAX` is refused; the node refuses one above its cap.
 ///
 /// # Returns
 /// A JSON object, or no data when rs-sdk returns none:
@@ -419,19 +431,21 @@ unsafe fn get_document_removals_by_ids_inner(
 ///                         "documentId": "<base58>", "documentLastModifiedAt": 1690000000000,
 ///                         "documentRevision": 3, "reason": {"code": null, "text": "spam"}},
 ///               "approvalCount": 2}],
-///  "nextStartAtActionId": "<base58>"}
+///  "nextStartAtActionId": "<base58>", "nextStartAtActionIdIncluded": false}
 /// ```
 ///
 /// `documentRevision` is absent on a type whose documents carry none. An active action's
 /// `approvalCount` is an upper bound (see `dash_sdk_contract_moderation_get_team_action_signers`
-/// for who approved it). `nextStartAtActionId` is rs-sdk's cursor (to pass back with
-/// `start_at_action_id_included` false) and is absent on the last page. Free the string with
-/// `dash_sdk_string_free`.
+/// for who approved it). `nextStartAtActionId` and `nextStartAtActionIdIncluded` are rs-sdk's
+/// cursor of the next page, to pass back as `start_at_action_id` and
+/// `start_at_action_id_included` as they are; both are absent on the last page. Free the string
+/// with `dash_sdk_string_free`.
 ///
 /// # Safety
 /// - `sdk_handle` must be a valid pointer to an initialized `SDKHandle`.
 /// - `contract_id` must be a valid pointer to a NUL-terminated string, and
 ///   `start_at_action_id` null or one, for the duration of the call.
+/// - `limit` must be null or point to a readable `u32`.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_contract_moderation_get_team_actions(
     sdk_handle: *const SDKHandle,
@@ -439,7 +453,7 @@ pub unsafe extern "C" fn dash_sdk_contract_moderation_get_team_actions(
     status: u8,
     start_at_action_id: *const c_char,
     start_at_action_id_included: bool,
-    limit: u32,
+    limit: *const u32,
 ) -> DashSDKResult {
     json_result(get_team_actions_inner(
         sdk_handle,
@@ -457,7 +471,7 @@ unsafe fn get_team_actions_inner(
     status: u8,
     start_at_action_id: *const c_char,
     start_at_action_id_included: bool,
-    limit: u32,
+    limit: *const u32,
 ) -> Result<Option<JsonValue>, FFIError> {
     let wrapper = sdk_wrapper(sdk_handle)?;
     let contract_id = required_identifier(contract_id, "contract_id")?;
@@ -582,7 +596,7 @@ unsafe fn get_action_counts_inner(
 }
 
 /// What the document action fees of a contract have collected for its owner and for its
-/// moderation team, and the last claim of each pot. A contract that charges no fees, or whose
+/// moderation team, and the last explicit claim of each pot. A contract that charges no fees, or whose
 /// fees nobody has paid yet, reads as two empty pots; a contract the network does not hold is
 /// an error on the node.
 ///
@@ -599,9 +613,13 @@ unsafe fn get_action_counts_inner(
 ///                 "lastClaimTimeMs": 1700000000000, "lastClaimantId": "<base58>"}}
 /// ```
 ///
-/// `credits` is what a claim would pay out. `lastClaimEpoch`, `lastClaimTimeMs` and
-/// `lastClaimantId` are present together, once the pot was ever paid out (epoch 0 included); a
-/// pot is paid out at most once per epoch. Free the string with `dash_sdk_string_free`.
+/// `credits` is the pot's balance; it does not promise what a claim will distribute.
+/// `lastClaimEpoch`, `lastClaimTimeMs` and `lastClaimantId` describe the last explicit claim
+/// and are present together once the pot was ever claimed (epoch 0 included); a pot is claimed
+/// at most once per epoch. They are not the last payout: a membership change of an elected
+/// team can also pay out the moderators pot (a moderators pot settlement), which takes credits
+/// from it and resets the action counts without touching these fields. Free the string with
+/// `dash_sdk_string_free`.
 ///
 /// # Safety
 /// - `sdk_handle` must be a valid pointer to an initialized `SDKHandle`.
@@ -630,10 +648,18 @@ unsafe fn get_fee_pots_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sdk::SDKWrapper;
     use crate::test_utils::test_utils::{create_mock_sdk_handle, destroy_mock_sdk_handle};
-    use crate::{dash_sdk_error_free, DashSDKErrorCode};
+    use crate::{
+        dash_sdk_error_free, dash_sdk_string_free, DashSDKErrorCode, DashSDKResultDataType,
+    };
+    use dash_sdk::dpp::data_contract::config::moderation::ContractModerationReason;
     use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-    use std::ffi::CString;
+    use dash_sdk::platform::contract_moderation::{
+        ContractDocumentRemoval, ContractDocumentRemovalEntry, ContractDocumentRemovals,
+        ContractTeamAction, ContractTeamActionEntry, ContractTeamActionEvent, GroupActionStatus,
+    };
+    use std::ffi::{CStr, CString};
 
     /// `result` failed with `InvalidParameter`; its error is freed.
     unsafe fn assert_invalid_parameter(result: DashSDKResult) {
@@ -682,14 +708,14 @@ mod tests {
                     bad_id,
                     0,
                     std::ptr::null(),
-                    0,
+                    std::ptr::null(),
                 ));
                 assert_invalid_parameter(dash_sdk_contract_moderation_get_document_removals(
                     sdk,
                     bad_id,
                     post.as_ptr(),
                     std::ptr::null(),
-                    0,
+                    std::ptr::null(),
                 ));
                 assert_invalid_parameter(
                     dash_sdk_contract_moderation_get_document_removals_by_ids(
@@ -706,7 +732,7 @@ mod tests {
                     0,
                     std::ptr::null(),
                     false,
-                    0,
+                    std::ptr::null(),
                 ));
                 assert_invalid_parameter(dash_sdk_contract_moderation_get_team_action_signers(
                     sdk,
@@ -732,14 +758,14 @@ mod tests {
                 id.as_ptr(),
                 0,
                 not_base58.as_ptr(),
-                0,
+                std::ptr::null(),
             ));
             assert_invalid_parameter(dash_sdk_contract_moderation_get_document_removals(
                 handle,
                 id.as_ptr(),
                 post.as_ptr(),
                 not_base58.as_ptr(),
-                0,
+                std::ptr::null(),
             ));
             assert_invalid_parameter(dash_sdk_contract_moderation_get_team_actions(
                 handle,
@@ -747,7 +773,7 @@ mod tests {
                 0,
                 not_base58.as_ptr(),
                 false,
-                0,
+                std::ptr::null(),
             ));
             let bad_ids = [id.as_ptr(), not_base58.as_ptr()];
             assert_invalid_parameter(dash_sdk_contract_moderation_get_document_removals_by_ids(
@@ -779,7 +805,7 @@ mod tests {
                 id.as_ptr(),
                 std::ptr::null(),
                 std::ptr::null(),
-                0,
+                std::ptr::null(),
             ));
             assert_invalid_parameter(dash_sdk_contract_moderation_get_document_removals_by_ids(
                 handle,
@@ -821,21 +847,21 @@ mod tests {
                 id.as_ptr(),
                 3,
                 std::ptr::null(),
-                0,
+                std::ptr::null(),
             ));
             assert_invalid_parameter(dash_sdk_contract_moderation_get_entries(
                 handle,
                 id.as_ptr(),
                 0,
                 std::ptr::null(),
-                over_u16,
+                &over_u16,
             ));
             assert_invalid_parameter(dash_sdk_contract_moderation_get_document_removals(
                 handle,
                 id.as_ptr(),
                 post.as_ptr(),
                 std::ptr::null(),
-                over_u16,
+                &over_u16,
             ));
             for status in [2, u8::MAX] {
                 assert_invalid_parameter(dash_sdk_contract_moderation_get_team_actions(
@@ -844,7 +870,7 @@ mod tests {
                     status,
                     std::ptr::null(),
                     false,
-                    0,
+                    std::ptr::null(),
                 ));
                 assert_invalid_parameter(dash_sdk_contract_moderation_get_team_action_signers(
                     handle,
@@ -859,7 +885,7 @@ mod tests {
                 0,
                 std::ptr::null(),
                 false,
-                over_u16,
+                &over_u16,
             ));
             assert_invalid_parameter(dash_sdk_contract_moderation_get_team_actions(
                 handle,
@@ -867,32 +893,40 @@ mod tests {
                 0,
                 std::ptr::null(),
                 true,
-                0,
+                std::ptr::null(),
             ));
             destroy_mock_sdk_handle(handle);
         }
     }
 
     #[test]
-    fn should_read_a_limit_of_zero_as_the_default_and_refuse_one_above_u16() {
-        assert_eq!(page_limit(0).expect("default"), None);
-        assert_eq!(page_limit(1).expect("one"), Some(1));
+    fn should_read_no_limit_as_the_default_and_pass_any_value_up_to_u16() {
+        let read = |limit: u32| unsafe { page_limit(&limit) };
         assert_eq!(
-            page_limit(u32::from(u16::MAX)).expect("the largest"),
+            unsafe { page_limit(std::ptr::null()) }.expect("default"),
+            None
+        );
+        assert_eq!(read(0).expect("zero, for the node"), Some(0));
+        assert_eq!(read(1).expect("one"), Some(1));
+        assert_eq!(
+            read(u32::from(u16::MAX)).expect("the largest"),
             Some(u16::MAX)
         );
         assert!(matches!(
-            page_limit(u32::from(u16::MAX) + 1),
+            read(u32::from(u16::MAX) + 1),
             Err(FFIError::InvalidParameter(_))
         ));
     }
 
     #[test]
-    fn should_read_no_lists_as_every_list_the_contract_keeps() {
+    fn should_read_a_null_list_pointer_as_no_selection_and_an_empty_one_as_explicit() {
         let lists = [2u8, 0];
         unsafe {
             assert_eq!(moderation_lists(std::ptr::null(), 0).expect("none"), None);
-            assert_eq!(moderation_lists(lists.as_ptr(), 0).expect("none"), None);
+            assert_eq!(
+                moderation_lists(lists.as_ptr(), 0).expect("an empty selection"),
+                Some(vec![])
+            );
             assert_eq!(
                 moderation_lists(lists.as_ptr(), lists.len()).expect("two"),
                 Some(vec![
@@ -900,6 +934,167 @@ mod tests {
                     ContractModerationList::Banlist
                 ])
             );
+            assert!(matches!(
+                moderation_lists(std::ptr::null(), 1),
+                Err(FFIError::InvalidParameter(_))
+            ));
+        }
+    }
+
+    /// A mock SDK handle on which `register` sets the answers, and the SDK's version for the
+    /// queries the answers are registered under.
+    fn mock_handle_answering(
+        register: impl FnOnce(
+            &mut SDKWrapper,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + '_>>,
+    ) -> *mut SDKHandle {
+        let mut wrapper = Box::new(SDKWrapper::new_mock());
+        // Registering expectations is async, and the FFI entry point spins up its own runtime
+        // and blocks on it, so this runtime must be gone by the time it runs.
+        let setup_runtime = tokio::runtime::Runtime::new().expect("create setup runtime");
+        setup_runtime.block_on(register(&mut wrapper));
+        drop(setup_runtime);
+        Box::into_raw(wrapper) as *mut SDKHandle
+    }
+
+    /// The JSON a successful call returned; the string is freed with `dash_sdk_string_free`.
+    unsafe fn json_of(result: DashSDKResult) -> JsonValue {
+        assert!(result.error.is_null(), "the call must succeed");
+        assert_eq!(result.data_type, DashSDKResultDataType::String);
+        let json: JsonValue = serde_json::from_str(
+            CStr::from_ptr(result.data as *const c_char)
+                .to_str()
+                .expect("UTF-8"),
+        )
+        .expect("JSON");
+        dash_sdk_string_free(result.data as *mut c_char);
+        json
+    }
+
+    fn b58(seed: u8) -> String {
+        Identifier::new([seed; 32]).to_string(Encoding::Base58)
+    }
+
+    /// A page of removal records read after a cursor with a limit, whose records keep no
+    /// fields, comes back with rs-sdk's cursor and without a contract request (the mock holds
+    /// no contract).
+    #[test]
+    fn should_return_a_removals_page_after_a_cursor_with_its_next_cursor() {
+        let contract_id = Identifier::new([1; 32]);
+        let entry = ContractDocumentRemovalEntry {
+            document_id: Identifier::new([3; 32]),
+            removal: ContractDocumentRemoval {
+                document_owner_id: Identifier::new([20; 32]),
+                moderator_id: Identifier::new([21; 32]),
+                reason: ContractModerationReason::from_text("off topic"),
+                removed_at: 1_700_000_000_000,
+                document_hash: [0xab; 32],
+                restoration: None,
+                kept_fields: vec![],
+            },
+        };
+        let handle = mock_handle_answering(|wrapper| {
+            Box::pin(async move {
+                let mut query = ContractDocumentRemovalsPageQuery::new(
+                    contract_id,
+                    "post".to_string(),
+                    wrapper.sdk.version(),
+                )
+                .with_limit(1);
+                query.query.selection = ContractDocumentRemovalsSelection::Page {
+                    start_after: Some(Identifier::new([2; 32])),
+                    limit: 1,
+                };
+                wrapper
+                    .sdk
+                    .mock()
+                    .expect_fetch(query, Some(ContractDocumentRemovals(vec![entry])))
+                    .await
+                    .expect("register the removals");
+            })
+        });
+        let contract = CString::new(b58(1)).expect("no NUL");
+        let post = CString::new("post").expect("no NUL");
+        let cursor = CString::new(b58(2)).expect("no NUL");
+        let limit = 1u32;
+        unsafe {
+            let json = json_of(dash_sdk_contract_moderation_get_document_removals(
+                handle,
+                contract.as_ptr(),
+                post.as_ptr(),
+                cursor.as_ptr(),
+                &limit,
+            ));
+            assert_eq!(json["removals"][0]["documentId"], b58(3));
+            assert_eq!(json["removals"][0]["keptFields"], serde_json::json!({}));
+            assert_eq!(json["nextStartAfter"], b58(3));
+            destroy_mock_sdk_handle(handle);
+        }
+    }
+
+    fn team_action_entry(seed: u8) -> ContractTeamActionEntry {
+        ContractTeamActionEntry {
+            action_id: Identifier::new([seed; 32]),
+            action: ContractTeamAction {
+                proposer_id: Identifier::new([30; 32]),
+                proposed_at: 1_000,
+                event: ContractTeamActionEvent::DeleteSettledDocument {
+                    document_type_name: "post".to_string(),
+                    document_id: Identifier::new([31; 32]),
+                    document_last_modified_at: 10,
+                    document_revision: Some(1),
+                    reason: ContractModerationReason::from_text("spam"),
+                },
+            },
+            approval_count: 2,
+        }
+    }
+
+    /// A page of team actions started at an action, the action included, comes back with
+    /// rs-sdk's cursor of the next page and its include flag.
+    #[test]
+    fn should_return_a_team_actions_page_from_a_cursor_with_its_next_cursor() {
+        let contract_id = Identifier::new([1; 32]);
+        let handle = mock_handle_answering(|wrapper| {
+            Box::pin(async move {
+                let query = ContractTeamActionsPageQuery::new(
+                    contract_id,
+                    GroupActionStatus::ActionClosed,
+                    wrapper.sdk.version(),
+                )
+                .starting_at(Identifier::new([3; 32]), true)
+                .with_limit(2);
+                wrapper
+                    .sdk
+                    .mock()
+                    .expect_fetch(
+                        query,
+                        Some(ContractTeamActions(vec![
+                            team_action_entry(3),
+                            team_action_entry(4),
+                        ])),
+                    )
+                    .await
+                    .expect("register the team actions");
+            })
+        });
+        let contract = CString::new(b58(1)).expect("no NUL");
+        let cursor = CString::new(b58(3)).expect("no NUL");
+        let limit = 2u32;
+        unsafe {
+            let json = json_of(dash_sdk_contract_moderation_get_team_actions(
+                handle,
+                contract.as_ptr(),
+                1,
+                cursor.as_ptr(),
+                true,
+                &limit,
+            ));
+            assert_eq!(json["actions"][0]["actionId"], b58(3));
+            assert_eq!(json["actions"][1]["actionId"], b58(4));
+            assert_eq!(json["nextStartAtActionId"], b58(4));
+            assert_eq!(json["nextStartAtActionIdIncluded"], false);
+            destroy_mock_sdk_handle(handle);
         }
     }
 }

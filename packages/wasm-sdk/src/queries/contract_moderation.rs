@@ -10,7 +10,6 @@ use crate::queries::utils::{deserialize_required_query, parse_contract_id};
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dash_sdk::dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::dpp::ProtocolError;
@@ -24,7 +23,8 @@ use dash_sdk::platform::contract_moderation::{
     ContractTeamActionSigners, ContractTeamActionSignersQuery, ContractTeamActions,
     ContractTeamActionsPageQuery, GroupActionStatus,
 };
-use dash_sdk::platform::{DataContract, Fetch, Identifier};
+use dash_sdk::platform::{Fetch, Identifier};
+use dash_sdk::Error as SdkError;
 use js_sys::Array;
 use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -533,8 +533,10 @@ fn required_query(query: JsValue) -> Result<JsValue, WasmSdkError> {
 }
 
 impl WasmSdk {
-    /// The status query for `query`. Without `lists`, the contract is fetched and every list
-    /// it keeps is read, because the node refuses a list the contract does not keep.
+    /// The status query for `query`, resolved by rs-sdk
+    /// (`ContractModerationStatusQuery::resolve`): without `lists`, the contract is fetched
+    /// and every list it keeps is read, because the node refuses a list the contract does not
+    /// keep.
     async fn contract_moderation_status_query(
         &self,
         query: ContractModerationStatusQueryJs,
@@ -546,28 +548,22 @@ impl WasmSdk {
         )?;
         let contract_id = Identifier::from(input.contract_id);
         let identity_id = Identifier::from(input.identity_id);
+        let lists = input
+            .lists
+            .map(|lists| lists.into_iter().map(Into::into).collect());
 
-        if let Some(lists) = input.lists {
-            return Ok(ContractModerationStatusQuery {
-                contract_id,
-                identity_id,
-                lists: lists.into_iter().map(Into::into).collect(),
-            });
-        }
-
-        let contract = DataContract::fetch(self.as_ref(), contract_id)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found(format!("contract {contract_id} not found")))?;
-        ContractModerationStatusQuery::for_contract(&contract, identity_id).ok_or_else(|| {
-            // A moderated contract may keep no list at all, when its moderators only delete
-            // documents: there is then no status to read, which is not the same as no
-            // moderation.
-            let reason = match contract.config().moderation() {
-                Some(_) => "keeps no moderation list, so no identity has a status on it",
-                None => "is not moderated",
-            };
-            WasmSdkError::invalid_argument(format!("contract {contract_id} {reason}"))
-        })
+        // Without `lists`, rs-sdk reads every list the contract keeps; an absent contract,
+        // and one with no list to read (not moderated, or moderated without a list), keep
+        // their JavaScript errors.
+        ContractModerationStatusQuery::resolve(self.as_ref(), contract_id, identity_id, lists)
+            .await
+            .map_err(|error| match error {
+                SdkError::MissingDependency(_, _) => {
+                    WasmSdkError::not_found(format!("contract {contract_id} not found"))
+                }
+                SdkError::InvalidRequest(reason) => WasmSdkError::invalid_argument(reason),
+                other => other.into(),
+            })
     }
 }
 

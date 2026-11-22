@@ -18,7 +18,8 @@ use crate::platform::contract_groups::{
 };
 use crate::platform::contract_moderation::{
     ContractDocumentRemovals, ContractModerationActionCounts, ContractModerationEntries,
-    ContractModerationListStatuses, ContractTeamActionSigners, ContractTeamActions,
+    ContractModerationListStatuses, ContractModerationStatusQuery, ContractTeamActionSigners,
+    ContractTeamActions,
 };
 use crate::platform::data_contracts_by_range::DataContractsByRange;
 use crate::platform::data_contracts_latest_versions::{
@@ -663,6 +664,31 @@ async fn should_refuse_when_the_network_proves_protocol_13() {
     assert_eq!(probes(&sdk).await, 1);
     assert_eq!(sent(&sdk, &fee_pots()).await, 0);
     assert!(!sdk.address_list().is_banned(&node()));
+}
+
+/// A status read over every list the contract keeps, on a network proven at 13, is refused
+/// as the status fetch would refuse it, before the contract is asked for: not taken for a
+/// contract that is not moderated.
+#[tokio::test]
+async fn should_refuse_a_status_over_every_list_below_protocol_14_without_a_contract_request() {
+    let sdk = mock_sdk(V13, false, 0);
+    sdk.mock_verified_protocol_version(V13).unwrap();
+    let contract_id = Identifier::new([7; 32]);
+    let result =
+        ContractModerationStatusQuery::resolve(&sdk, contract_id, Identifier::new([8; 32]), None)
+            .await;
+    match result {
+        Err(Error::ProtocolVersionNotActive {
+            method, required, ..
+        }) => {
+            assert_eq!((method, required), ("get_contract_moderation_status", V14));
+        }
+        other => panic!("expected the status read refused below 14, got {other:?}"),
+    }
+    let contract_request: GetDataContractRequest =
+        contract_id.query(&sdk.query_settings()).unwrap();
+    assert_eq!(sent(&sdk, &contract_request).await, 0);
+    assert_eq!(probes(&sdk).await, 0);
 }
 
 /// A proved contract request and an answer to it that this build cannot read: its proof is

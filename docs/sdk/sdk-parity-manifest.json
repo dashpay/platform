@@ -2064,7 +2064,7 @@
     },
     {
       "id": "contracts.moderation_reads",
-      "title": "Contract moderation and fee pot reads (protocol version 15)",
+      "title": "Contract moderation and fee pot reads (protocol version 14)",
       "area": "example_app",
       "shared_apis": [
         "dash_sdk_contract_get_fee_pots",

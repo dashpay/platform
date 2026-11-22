@@ -239,8 +239,8 @@ fn team_action_json(entry: &ContractTeamActionEntry) -> JsonValue {
     })
 }
 
-/// One page of team actions, with `nextStartAtActionId` when `query.after(page)` gives a next
-/// page.
+/// One page of team actions, with `nextStartAtActionId` and `nextStartAtActionIdIncluded` when
+/// `query.after(page)` gives a next page.
 pub(super) fn team_actions_json(
     page: &ContractTeamActions,
     query: &ContractTeamActionsPageQuery,
@@ -248,8 +248,9 @@ pub(super) fn team_actions_json(
     let actions = page.actions().iter().map(team_action_json).collect();
     let mut object = Map::new();
     object.insert("actions".to_string(), JsonValue::Array(actions));
-    if let Some((action_id, _)) = query.after(page).and_then(|next| next.query.start_at) {
+    if let Some((action_id, included)) = query.after(page).and_then(|next| next.query.start_at) {
         object.insert("nextStartAtActionId".to_string(), json!(base58(action_id)));
+        object.insert("nextStartAtActionIdIncluded".to_string(), json!(included));
     }
     JsonValue::Object(object)
 }
@@ -268,8 +269,8 @@ pub(super) fn action_counts_json(counts: &ContractModerationActionCounts) -> Jso
     json!({ "counts": counts })
 }
 
-/// One pot; the last claim's fields only when the pot was ever paid out (epoch 0 is an epoch a
-/// pot can have been paid out in, so "never" is the absent fields).
+/// One pot; the last claim's fields only when the pot was ever claimed (epoch 0 is an epoch a
+/// pot can have been claimed in, so "never" is the absent fields).
 fn fee_pot_json(pot: &ContractFeePotState) -> JsonValue {
     let mut object = Map::new();
     object.insert("credits".to_string(), json!(pot.credits));
@@ -635,6 +636,7 @@ mod tests {
                     },
                 ],
                 "nextStartAtActionId": b58(4),
+                "nextStartAtActionIdIncluded": false,
             })
         );
         let short = ContractTeamActions(vec![team_action_entry(3, None)]);

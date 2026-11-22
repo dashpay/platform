@@ -1,4 +1,4 @@
-//! Contract moderation and contract fee pots (protocol version 15): the reads. Thin bindings
+//! Contract moderation and contract fee pots (protocol version 14): the reads. Thin bindings
 //! over `dash_sdk::platform::contract_moderation` and `dash_sdk::platform::contract_fee_pots`:
 //! rs-sdk decides everything (which lists a contract keeps, the page caps, the cursor of the
 //! next page, how a removal record's kept values read); these functions read C arguments, call
@@ -15,7 +15,7 @@
 //! it is; a page without one is the last.
 //!
 //! A refusal from the node (a list the contract does not keep, a document type that keeps no
-//! removal records, a contract that is not elected, a network below protocol version 15)
+//! removal records, a contract that is not elected, a network below protocol version 14)
 //! comes back as the error, not as an empty result.
 //!
 //! # Enumerated arguments

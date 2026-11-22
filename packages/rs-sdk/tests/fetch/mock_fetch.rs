@@ -554,3 +554,211 @@ async fn should_read_the_values_a_removal_record_keeps_under_its_document_type()
     assert_eq!(read.next, query.after(&page));
     assert!(read.next.is_some());
 }
+
+#[tokio::test]
+/// Given an explicit empty list selection, when I resolve the status query, then it is sent as
+/// given for the node to judge, without a contract request (the mock holds no contract)
+async fn should_pass_an_empty_list_selection_through_unchanged() {
+    use dash_sdk::platform::contract_moderation::ContractModerationStatusQuery;
+
+    let mut sdk = Sdk::new_mock();
+    bootstrap_mock_sdk_to_latest(&mut sdk).await;
+    let contract_id = Identifier::from([1u8; 32]);
+    let identity_id = Identifier::from([2u8; 32]);
+
+    let query =
+        ContractModerationStatusQuery::resolve(&sdk, contract_id, identity_id, Some(vec![]))
+            .await
+            .expect("an explicit selection needs no contract");
+
+    assert_eq!(
+        query,
+        ContractModerationStatusQuery {
+            contract_id,
+            identity_id,
+            lists: vec![],
+        }
+    );
+}
+
+/// A moderated contract whose `post` type keeps `kept` of `properties` when a moderator
+/// deletes a post, at contract version `version`.
+fn mock_contract_keeping(
+    properties: dpp::platform_value::Value,
+    kept: &[&str],
+    version: u32,
+) -> DataContract {
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+    use dpp::data_contract::config::DataContractConfig;
+    use dpp::platform_value::platform_value;
+    use std::collections::BTreeMap;
+
+    let platform_version = PlatformVersion::latest();
+    let moderation = ContractModerationConfig {
+        banlist: false,
+        suspensions: false,
+        moderators: ContractModerators::ContractOwner,
+        warnings: false,
+    };
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("a default config")
+        .with_moderation(Some(moderation.clone()));
+    let mut contract = mock_contract_with_moderation(Some(moderation));
+    contract.set_id(Identifier::from([1u8; 32]));
+    contract.set_version(version);
+    let post = DocumentType::try_from_schema(
+        contract.id(),
+        1,
+        config.version(),
+        "post",
+        platform_value!({
+            "type": "object",
+            "properties": properties,
+            "additionalProperties": false,
+            "moderatorAbilities": {
+                "delete": true,
+                "deleteKeepsFields": kept,
+            },
+        }),
+        None,
+        &BTreeMap::new(),
+        &config,
+        true,
+        &mut vec![],
+        platform_version,
+    )
+    .expect("a post type keeping fields");
+    contract
+        .document_types_mut()
+        .insert("post".to_string(), post);
+    contract
+}
+
+/// The `meta` object a post keeps, declaring `tags` alone, or also `note` as a later
+/// compatible version of the contract adds it.
+fn meta_schema(with_note: bool) -> dpp::platform_value::Value {
+    use dpp::platform_value::platform_value;
+
+    let mut meta = platform_value!({
+        "type": "object",
+        "position": 0,
+        "properties": {
+            "tags": { "type": "string", "maxLength": 20, "position": 0 },
+        },
+        "additionalProperties": false,
+    });
+    if with_note {
+        meta = platform_value!({
+            "type": "object",
+            "position": 0,
+            "properties": {
+                "tags": { "type": "string", "maxLength": 20, "position": 0 },
+                "note": { "type": "string", "maxLength": 20, "position": 1 },
+            },
+            "additionalProperties": false,
+        });
+    }
+    platform_value!({ "meta": meta })
+}
+
+/// The kept fields of a post whose `meta` holds a tag and a note, encoded under `contract`.
+fn kept_meta_under(contract: &DataContract) -> Vec<u8> {
+    use dpp::data_contract::config::moderation::encode_kept_fields;
+    use dpp::document::DocumentV0;
+    use dpp::platform_value::Value;
+    use std::collections::BTreeMap;
+
+    let meta = Value::Map(vec![
+        (Value::Text("tags".into()), Value::Text("privacy".into())),
+        (Value::Text("note".into()), Value::Text("n".into())),
+    ]);
+    encode_kept_fields(
+        &Document::V0(DocumentV0 {
+            id: Identifier::from([3u8; 32]),
+            properties: BTreeMap::from([("meta".to_string(), meta)]),
+            ..Default::default()
+        }),
+        contract
+            .document_type_for_name("post")
+            .expect("the post type"),
+    )
+    .expect("encodes")
+}
+
+#[test]
+/// Given a removal record encoded after a compatible update added a member to a kept object,
+/// when its values are read under the contract from before the update, then the member is
+/// dropped without an error: why the contract must be answered no older than the records
+fn should_drop_a_kept_member_read_under_an_older_contract() {
+    use dash_sdk::platform::contract_moderation::ContractDocumentRemoval;
+    use dpp::platform_value::Value;
+
+    let older = mock_contract_keeping(meta_schema(false), &["meta"], 1);
+    let newer = mock_contract_keeping(meta_schema(true), &["meta"], 2);
+    let removal = ContractDocumentRemoval {
+        kept_fields: kept_meta_under(&newer),
+        ..Default::default()
+    };
+    let note = |contract: &DataContract| {
+        removal
+            .kept_values(
+                contract
+                    .document_type_for_name("post")
+                    .expect("the post type"),
+            )
+            .expect("reads")
+            .get("meta")
+            .and_then(|meta| meta.get_optional_value("note").ok().flatten().cloned())
+    };
+
+    assert_eq!(note(&newer), Some(Value::Text("n".into())));
+    assert_eq!(note(&older), None);
+}
+
+#[tokio::test]
+/// Given records proved at a block newer than every contract answer, when I read their kept
+/// values, then the read is refused as stale rather than read under an older contract
+async fn should_refuse_kept_values_when_every_contract_answer_is_older_than_the_records() {
+    use dash_sdk::error::StaleNodeError;
+    use dash_sdk::platform::contract_moderation::{
+        ContractDocumentRemovals, ContractDocumentRemovalsPageQuery,
+    };
+    use dash_sdk::Error;
+
+    let mut sdk = Sdk::new_mock();
+    bootstrap_mock_sdk_to_latest(&mut sdk).await;
+    let contract = mock_contract_keeping(meta_schema(true), &["meta"], 2);
+    let contract_id = contract.id();
+    let query =
+        ContractDocumentRemovalsPageQuery::new(contract_id, "post".to_string(), sdk.version());
+    let page = ContractDocumentRemovals(vec![mock_removal_entry(3, kept_meta_under(&contract))]);
+    sdk.mock()
+        .expect_fetch(query.clone(), Some(page))
+        .await
+        .unwrap();
+    sdk.mock()
+        .expect_fetch(contract_id, Some(contract))
+        .await
+        .unwrap();
+    sdk.mock()
+        .set_response_height_of::<ContractDocumentRemovals>(10)
+        .set_response_height_of::<DataContract>(9);
+
+    let refused = query
+        .fetch_with_kept_values(&sdk)
+        .await
+        .expect_err("a contract older than the records cannot read their values");
+
+    assert!(
+        matches!(
+            refused,
+            Error::StaleNode(StaleNodeError::Height {
+                expected_height: 10,
+                received_height: 9,
+                tolerance_blocks: 0,
+            })
+        ),
+        "{refused:?}"
+    );
+}

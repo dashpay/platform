@@ -44,6 +44,7 @@
 //! Every type also implements [`FetchUnproved`] for the unverified fast path.
 
 use crate::platform::{Fetch, FetchUnproved, Identifier, Query, QuerySettings};
+use crate::error::StaleNodeError;
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::get_contract_document_removals_request::get_contract_document_removals_request_v0::Selection;
 use dapi_grpc::platform::v0::get_contract_document_removals_request::{
@@ -107,12 +108,41 @@ impl ContractModerationStatusQuery {
         })
     }
 
+    /// The status query of `identity_id` on the contract `contract_id`: over `lists` when the
+    /// caller names them (an empty selection included, which the node judges), else over
+    /// every list the contract keeps ([`for_contract_id`](Self::for_contract_id)).
+    ///
+    /// # Errors
+    /// Those of [`for_contract_id`](Self::for_contract_id) when `lists` is `None`; none
+    /// otherwise.
+    pub async fn resolve(
+        sdk: &Sdk,
+        contract_id: Identifier,
+        identity_id: Identifier,
+        lists: Option<Vec<ContractModerationList>>,
+    ) -> Result<Self, Error> {
+        match lists {
+            Some(lists) => Ok(Self {
+                contract_id,
+                identity_id,
+                lists,
+            }),
+            None => Self::for_contract_id(sdk, contract_id, identity_id).await,
+        }
+    }
+
     /// The status of `identity_id` on every list the contract `contract_id` keeps, for a
     /// caller that holds only the contract's id: fetches the contract and reads its lists with
     /// [`for_contract`](Self::for_contract). Which lists a contract keeps is fixed when it is
     /// created, so the query stays valid for as long as the contract exists.
     ///
+    /// The status request's own protocol requirement is checked first, through the gate the
+    /// fetch paths use, so a network that does not serve the status read refuses it as the
+    /// fetch would, before the contract is fetched.
+    ///
     /// # Errors
+    /// * [`Error::ProtocolVersionNotActive`] when the network is not proven to serve the
+    ///   status request;
     /// * [`Error::MissingDependency`] when the network holds no such contract;
     /// * [`Error::InvalidRequest`] when the contract is not moderated, or is moderated and
     ///   keeps no list (its moderators only delete documents): no identity has a status on it,
@@ -122,6 +152,17 @@ impl ContractModerationStatusQuery {
         contract_id: Identifier,
         identity_id: Identifier,
     ) -> Result<Self, Error> {
+        // The requirement is the request's, whatever lists it names
+        let unresolved = Self {
+            contract_id,
+            identity_id,
+            lists: Vec::new(),
+        };
+        let requirement = Query::<GetContractModerationStatusRequest>::protocol_requirement(
+            &unresolved,
+            &sdk.query_settings(),
+        )?;
+        sdk.ensure_network_serves(requirement, None).await?;
         let contract = DataContract::fetch(sdk, contract_id)
             .await?
             .ok_or_else(|| {
@@ -132,7 +173,7 @@ impl ContractModerationStatusQuery {
                 Some(_) => "keeps no moderation list, so no identity has a status on it",
                 None => "is not moderated",
             };
-            Error::InvalidRequest(format!("data contract {contract_id} {reason}"))
+            Error::InvalidRequest(format!("contract {contract_id} {reason}"))
         })
     }
 }
@@ -313,16 +354,25 @@ impl ContractDocumentRemovalsPageQuery {
     /// record keeps any; a read whose records keep none costs the records' request alone.
     /// `None` when [`ContractDocumentRemovals::fetch`] returns none.
     ///
+    /// A compatible contract update can add members to a kept object, and the values read
+    /// only the members the type they are read under declares. So the contract must be
+    /// answered at a block no older than the records: an older answer is asked again, at most
+    /// [`KEPT_VALUES_CONTRACT_RETRIES`] more times.
+    ///
     /// # Errors
     /// Those of [`ContractDocumentRemovals::fetch`], and, when a record keeps values:
     /// * [`Error::MissingDependency`] when the network holds no such contract;
+    /// * [`Error::StaleNode`] when every contract answer is from a block older than the
+    ///   records' ([`StaleNodeError::Height`], `expected_height` the records' block);
     /// * [`Error::Protocol`] when the contract declares no such document type, or the record's
     ///   values do not read under it.
     pub async fn fetch_with_kept_values(
         &self,
         sdk: &Sdk,
     ) -> Result<Option<ContractDocumentRemovalsWithKeptValues>, Error> {
-        let Some(page) = ContractDocumentRemovals::fetch(sdk, self.clone()).await? else {
+        let (page, removals_metadata) =
+            ContractDocumentRemovals::fetch_with_metadata(sdk, self.clone(), None).await?;
+        let Some(page) = page else {
             return Ok(None);
         };
         let next = self.after(&page);
@@ -331,15 +381,10 @@ impl ContractDocumentRemovalsPageQuery {
             .iter()
             .any(|entry| !entry.removal.kept_fields.is_empty());
         let contract = if keeps_values {
-            let contract = DataContract::fetch(sdk, self.contract_id)
-                .await?
-                .ok_or_else(|| {
-                    Error::MissingDependency(
-                        "DataContract".to_string(),
-                        format!("{}", self.contract_id),
-                    )
-                })?;
-            Some(contract)
+            Some(
+                self.contract_at_or_after(sdk, removals_metadata.height)
+                    .await?,
+            )
         } else {
             None
         };
@@ -367,6 +412,53 @@ impl ContractDocumentRemovalsPageQuery {
             removals,
             next,
         }))
+    }
+
+    /// The contract as answered at a block no older than `records_height`, asked again while
+    /// an answer is older, at most [`KEPT_VALUES_CONTRACT_RETRIES`] more times.
+    async fn contract_at_or_after(
+        &self,
+        sdk: &Sdk,
+        records_height: u64,
+    ) -> Result<DataContract, Error> {
+        let mut attempts_left = KEPT_VALUES_CONTRACT_RETRIES;
+        loop {
+            let (contract, metadata) =
+                DataContract::fetch_with_metadata(sdk, self.contract_id, None).await?;
+            let contract = contract.ok_or_else(|| {
+                Error::MissingDependency(
+                    "DataContract".to_string(),
+                    format!("{}", self.contract_id),
+                )
+            })?;
+            match contract_answer_freshness(records_height, metadata.height) {
+                Ok(()) => return Ok(contract),
+                Err(stale) if attempts_left == 0 => return Err(stale.into()),
+                Err(_) => attempts_left -= 1,
+            }
+        }
+    }
+}
+
+/// How many more times [`ContractDocumentRemovalsPageQuery::fetch_with_kept_values`] asks for
+/// the contract after an answer from a block older than the records'.
+pub const KEPT_VALUES_CONTRACT_RETRIES: u32 = 2;
+
+/// Whether a contract answered at `contract_height` can read records answered at
+/// `records_height`: it must be no older, or a member a later contract version added to a kept
+/// object would be dropped.
+fn contract_answer_freshness(
+    records_height: u64,
+    contract_height: u64,
+) -> Result<(), StaleNodeError> {
+    if contract_height >= records_height {
+        Ok(())
+    } else {
+        Err(StaleNodeError::Height {
+            expected_height: records_height,
+            received_height: contract_height,
+            tolerance_blocks: 0,
+        })
     }
 }
 
@@ -742,5 +834,19 @@ mod tests {
         );
         let short = ContractTeamActions(vec![team_action_entry(3)]);
         assert_eq!(page_query.after(&short), None);
+    }
+
+    #[test]
+    fn should_read_kept_values_only_under_a_contract_answered_no_older_than_the_records() {
+        assert!(contract_answer_freshness(10, 10).is_ok());
+        assert!(contract_answer_freshness(10, 11).is_ok());
+        assert!(matches!(
+            contract_answer_freshness(10, 9),
+            Err(StaleNodeError::Height {
+                expected_height: 10,
+                received_height: 9,
+                tolerance_blocks: 0,
+            })
+        ));
     }
 }
