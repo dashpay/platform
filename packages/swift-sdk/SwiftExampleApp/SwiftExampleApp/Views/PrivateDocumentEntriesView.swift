@@ -341,12 +341,15 @@ struct PrivateDocumentEntriesView: View {
         resetRead()
     }
 
-    /// An identity's alias or DPNS name when this device knows one, else its
-    /// base58 id shortened.
+    /// A known identity's `displayName` on the current network: its alias, or
+    /// a DPNS name it still owns (a sold name kept as the stored main pick is
+    /// skipped), else its own short id. An identity this device does not
+    /// know shows its base58 id shortened.
     private func identityName(for id: Data) -> String {
-        if let identity = identities.first(where: { $0.identityId == id }),
-           let name = identity.alias ?? identity.mainDpnsName ?? identity.dpnsName {
-            return name
+        if let identity = identities.first(where: {
+            $0.identityId == id && $0.networkRaw == appState.currentNetwork.rawValue
+        }) {
+            return identity.displayName
         }
         let base58 = id.toBase58String()
         guard base58.count > 14 else { return base58 }

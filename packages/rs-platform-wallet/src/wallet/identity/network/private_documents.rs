@@ -10,10 +10,12 @@
 //! from a [`PrivateDocumentCursor`] the caller keeps, and reads each opened
 //! entry's payload against the type's schema.
 //!
-//! Which keys those are is decided here, once, for every private type
-//! ([`PrivateDocumentKeyPaths::add_identity`]): DashPay's private contact
-//! request sync scans with the same paths. The keys are derived inside the
-//! [`ContactCryptoProvider`], which keeps them.
+//! Which keys those are is decided here for every private type
+//! ([`PrivateDocumentKeyPaths::add_identity`]), and each is checked to derive
+//! its registered key before it is scanned with. DashPay's private contact
+//! request sync keeps its own key rule, as its reads gate sends and replies.
+//! The keys are derived inside the [`ContactCryptoProvider`], which keeps
+//! them.
 //!
 //! The read keeps nothing: no cursor, no entry. What an entry means, and
 //! whether the sender it names wrote it, is its type's rule; DashPay's is in
@@ -22,7 +24,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use dash_sdk::platform::dashpay::recipient_key_purpose_is_valid;
 use dash_sdk::platform::private_document_entries::PrivateDocumentEntries;
 use dash_sdk::platform::private_document_scan::{
     read_private_document_payload, PrivateDocumentPage, PrivateDocumentScanKeys,
@@ -75,10 +76,9 @@ impl PrivateDocumentKeyPaths {
     /// `network`, with the paths of its keys: every key an entry can be sealed
     /// to ([`scanning_key`]) as a recipient key, and every such `ENCRYPTION`
     /// key as a sender's, one outgoing viewing key each. A key whose id names
-    /// no hardened slot (`2^31` or above) has no path and is left out: the
-    /// wallet derives no key there. It is reported, so each reader decides
-    /// what a key it cannot scan with means for it: DashPay's sync refuses,
-    /// as its reads gate sends and replies; the generic read lists it.
+    /// no hardened slot (`2^31` or above) has no path and is left out, and
+    /// reported: the wallet derives no key there. An identity index that
+    /// names no hardened slot fails, as it is the wallet's own record.
     pub(super) fn add_identity(
         &mut self,
         network: Network,
@@ -86,6 +86,14 @@ impl PrivateDocumentKeyPaths {
         identity: &Identity,
     ) -> Result<AddedIdentity, PlatformWalletError> {
         let identity_id = identity.id();
+        // The identity's own slot: a failure here is the wallet's record, not
+        // a key the read can leave out.
+        identity_auth_derivation_path_for_type(
+            network,
+            KeyDerivationType::ECDSA,
+            identity_index,
+            0,
+        )?;
         let mut recipient_paths = Vec::new();
         let mut sender_paths = Vec::new();
         let mut keys_without_slot = Vec::new();
@@ -164,9 +172,12 @@ pub(super) struct AddedIdentity {
 /// Whether `key` is one a private document entry can be sealed to, which a
 /// wallet scans a private type's store with: an `ECDSA_SECP256K1` `DECRYPTION`
 /// or `ENCRYPTION` key, disabled ones included, as an entry sealed before a
-/// key was disabled still opens with it.
-pub(super) fn scanning_key(key: &IdentityPublicKey) -> bool {
-    key.key_type() == KeyType::ECDSA_SECP256K1 && recipient_key_purpose_is_valid(key.purpose())
+/// key was disabled still opens with it. The rule of this read, for every
+/// private type: not the policy for the contact requests DashPay seals, which
+/// may change on its own.
+fn scanning_key(key: &IdentityPublicKey) -> bool {
+    key.key_type() == KeyType::ECDSA_SECP256K1
+        && matches!(key.purpose(), Purpose::DECRYPTION | Purpose::ENCRYPTION)
 }
 
 /// The public key data of each key of the wallet's identities an entry may be
@@ -1911,5 +1922,12 @@ mod tests {
         // Another key set, another fingerprint: a cursor read with one is
         // read again from the start with the other.
         assert_ne!(paths.fingerprint(), none.fingerprint());
+        // An identity index that names no slot is the wallet's record, not a
+        // key to leave out: it fails, whatever its key ids.
+        let mut invalid_index = PrivateDocumentKeyPaths::default();
+        invalid_index
+            .add_identity(Network::Testnet, 0x8000_0000, &alice)
+            .expect_err("an identity index with no hardened slot");
+        assert_eq!(invalid_index, PrivateDocumentKeyPaths::default());
     }
 }

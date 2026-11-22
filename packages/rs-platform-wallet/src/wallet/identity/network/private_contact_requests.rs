@@ -47,6 +47,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::decode_private_document_payload;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::identity_public_key::Purpose;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType};
 use dpp::platform_value::BinaryData;
@@ -66,7 +67,7 @@ use super::contact_requests::{
     newest_sent_per_recipient, predates, records_or_supersedes, tear_down_stale_external_accounts,
     AutoAcceptProofSource, ContactCryptoProvider, PreparedContactRequest, ReplyOutcome,
 };
-use super::private_documents::{scanning_key, PrivateDocumentKeyPaths};
+use super::private_documents::PrivateDocumentKeyPaths;
 use super::signing_key::first_available;
 use super::{dashpay_contract, DashPayView, IdentityWallet};
 use crate::broadcaster::TransactionBroadcaster;
@@ -829,6 +830,12 @@ pub(super) fn private_request_record(
         .map(|label| encrypt_account_label(shared_key, &label_iv, label));
     record.auto_accept_proof = request.auto_accept_proof.clone();
     record
+}
+
+/// Whether `key` is one a private contact request entry can be sealed to,
+/// which a private sync scans the store with.
+fn scanning_key(key: &IdentityPublicKey) -> bool {
+    key.key_type() == KeyType::ECDSA_SECP256K1 && recipient_key_purpose_is_valid(key.purpose())
 }
 
 /// Whether a private sync reads DashPay's private contact request store for
@@ -1924,12 +1931,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     }
 
     /// The wallet's identities a pass reads the store for (those with an HD
-    /// index, whose keys the signer can derive) and the paths of their keys,
-    /// as every private document type's store is read with
-    /// ([`PrivateDocumentKeyPaths::add_identity`]): every `ECDSA_SECP256K1`
-    /// decryption or encryption key, disabled ones included, as an entry
-    /// sealed before a key was disabled still opens with it, and every such
-    /// encryption key as a sender.
+    /// index, whose keys the signer can derive) and the paths of their keys:
+    /// every `ECDSA_SECP256K1` decryption or encryption key, disabled ones
+    /// included, as an entry sealed before a key was disabled still opens with
+    /// it, and every such encryption key as a sender.
     async fn private_scan_identities(
         &self,
     ) -> Result<(Vec<ScannedIdentity>, PrivateDocumentKeyPaths), PlatformWalletError> {
@@ -1947,19 +1952,28 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             let Some(identity_index) = managed.identity_index else {
                 continue;
             };
-            let added = paths.add_identity(self.sdk.network, identity_index, &managed.identity)?;
-            // A key the sync cannot scan with could hold a request to the
-            // identity, and a read to the end gates its sends and replies:
-            // refused, rather than read past.
-            if let Some(key_id) = added.keys_without_slot.first() {
-                return Err(PlatformWalletError::InvalidIdentityData(format!(
-                    "the key {key_id} of identity {identity_id} names no hardened derivation \
-                     slot, so the private contact request store cannot be read for it"
-                )));
+            let path = |key_id| {
+                IdentityWallet::<B>::identity_auth_derivation_path(
+                    self.sdk.network,
+                    KeyDerivationType::ECDSA,
+                    identity_index,
+                    key_id,
+                )
+            };
+            let mut recipient_paths = Vec::new();
+            for (key_id, key) in managed.identity.public_keys() {
+                if !scanning_key(key) {
+                    continue;
+                }
+                recipient_paths.push((*key_id, path(*key_id)?));
+                if key.purpose() == Purpose::ENCRYPTION {
+                    paths.senders.push((identity_id, *key_id, path(*key_id)?));
+                }
             }
-            if !added.added {
+            if recipient_paths.is_empty() {
                 continue;
             }
+            paths.recipients.push((identity_id, recipient_paths));
             identities.push(ScannedIdentity {
                 identity_id,
                 identity_index,
@@ -2759,7 +2773,7 @@ mod tests {
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
-    use dpp::identity::{IdentityPublicKey, Purpose, SecurityLevel};
+    use dpp::identity::{IdentityPublicKey, SecurityLevel};
     use dpp::platform_value::Value;
     use dpp::secp256k1::SecretKey;
     use dpp::state_transition::batch_transition::BatchTransition;
@@ -15135,7 +15149,8 @@ mod tests {
     /// An identity holding a key an entry can be sealed to whose id names no
     /// hardened slot is refused by the private sync rather than read past: a
     /// request sealed to that key would go unseen while the read to the end
-    /// clears the identity's sends and replies.
+    /// clears the identity's sends and replies. (The generic private document
+    /// read lists such a key as not scanned instead.)
     #[tokio::test]
     async fn should_refuse_to_sync_an_identity_holding_a_key_with_no_slot() {
         let mut alice = identity(ALICE_PHRASE, ALICE);
@@ -15168,8 +15183,7 @@ mod tests {
             .expect_err("a key the sync cannot scan with");
 
         assert!(
-            matches!(&error, PlatformWalletError::InvalidIdentityData(message)
-                if message.contains("names no hardened derivation slot")),
+            matches!(&error, PlatformWalletError::InvalidIdentityData(_)),
             "{error:?}"
         );
         let wm = wallet.identity().wallet_manager.read().await;
