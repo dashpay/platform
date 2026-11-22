@@ -4732,19 +4732,38 @@ extension ManagedPlatformWallet {
     /// and broadcast the change to Platform.
     ///
     /// Companion to `createDataContract`. The wallet fetches the
-    /// live contract from Platform, bumps its version, and applies
-    /// the supplied schemas / config at the next version — the
-    /// caller does NOT track contract version state. Every JSON
-    /// input has the same shape as `createDataContract`.
+    /// live contract from Platform, checks that `ownerIdentityId`
+    /// owns it, raises its version by one, and merges the supplied
+    /// sections onto it: document types, tokens and groups are
+    /// added or replaced key by key (omitted keys keep their
+    /// on-chain definition), and keywords, description and config
+    /// replace the live ones only when supplied. The caller does
+    /// NOT track contract version state. Every JSON input has the
+    /// same shape as `createDataContract`. Platform decides whether
+    /// the update is allowed when it is broadcast;
+    /// `previewDataContractUpdate` reports what the same arguments
+    /// would change without broadcasting.
     ///
     /// `contractId` is the id of the existing contract to update.
     /// Returns the (unchanged) contract id of the updated contract.
     ///
-    /// Lifetime contract: the `signer` instance MUST stay alive for
-    /// the duration of the `await` (Rust holds a `passUnretained`
-    /// ctx pointer to the underlying `KeychainSigner`). A
-    /// `_ = signer` keepalive at the call site is the canonical way
-    /// to pin it.
+    /// `expectedCurrentVersion` is the contract version the caller
+    /// reviewed (`DataContractUpdatePreview.currentVersion`). When
+    /// it is set and the live contract is at another version, Rust
+    /// refuses the update before any nonce is read; review again.
+    /// `nil` (passed to Rust as `0`, never a real contract version)
+    /// updates whatever version is live.
+    ///
+    /// A broadcast whose result could not be confirmed throws
+    /// `ErrorTransactionBroadcastUnconfirmed`: the update may have
+    /// executed.
+    ///
+    /// Lifetime contract: the `signer` instance MUST stay alive for the
+    /// duration of the synchronous FFI call inside this async wrapper
+    /// (Rust holds a `passUnretained` ctx pointer to the underlying
+    /// `KeychainSigner`). The wrapper pins it with
+    /// `withExtendedLifetime(signer)` around the full marshalling
+    /// chain, so callers need no keepalive of their own.
     public func updateDataContract(
         ownerIdentityId: Identifier,
         contractId: Identifier,
@@ -4754,10 +4773,29 @@ extension ManagedPlatformWallet {
         keywordsJSON: String? = nil,
         description: String? = nil,
         contractConfigJSON: String? = nil,
+        expectedCurrentVersion: UInt32? = nil,
         signer: KeychainSigner
     ) async throws -> Identifier {
+        try Self.requireDataContractUpdateIdentifiers(
+            ownerIdentityId: ownerIdentityId,
+            contractId: contractId
+        )
+        try Self.requireNoNULInDataContractUpdateArguments(
+            documentSchemasJSON: documentSchemasJSON,
+            tokenSchemasJSON: tokenSchemasJSON,
+            groupsJSON: groupsJSON,
+            keywordsJSON: keywordsJSON,
+            description: description,
+            contractConfigJSON: contractConfigJSON
+        )
         let handle = self.handle
         let signerHandle = signer.handle
+        // 0 is the FFI's "no check" value, so an explicit 0 would silently
+        // update whatever version is live. Contract versions start at 1.
+        if expectedCurrentVersion == 0 {
+            throw PlatformWalletError.invalidParameter("expectedCurrentVersion must be greater than zero")
+        }
+        let expectedVersion: UInt32 = expectedCurrentVersion ?? 0
         let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
@@ -4772,31 +4810,37 @@ extension ManagedPlatformWallet {
             // inside `block_on_worker`, so the `withCString` scopes
             // here are sufficient — the pointers don't need to
             // outlive the call.
-            _ = signer
             var contractIdBytes = [UInt8](repeating: 0, count: 32)
 
-            let result = ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
-                contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
-                    documentSchemasJSON.withCString { docsPtr in
-                        Self.withOptionalCString(tokenSchemasJSON) { tokensPtr in
-                            Self.withOptionalCString(groupsJSON) { groupsPtr in
-                                Self.withOptionalCString(keywordsJSON) { keywordsPtr in
-                                    Self.withOptionalCString(description) { descriptionPtr in
-                                        Self.withOptionalCString(contractConfigJSON) { configPtr in
-                                            contractIdBytes.withUnsafeMutableBufferPointer { outBp in
-                                                platform_wallet_update_data_contract_with_signer(
-                                                    handle,
-                                                    ownerBp.baseAddress!,
-                                                    contractBp.baseAddress!,
-                                                    docsPtr,
-                                                    tokensPtr,
-                                                    groupsPtr,
-                                                    keywordsPtr,
-                                                    descriptionPtr,
-                                                    configPtr,
-                                                    signerHandle,
-                                                    outBp.baseAddress!
-                                                )
+            // Pin `signer` for the whole FFI call. A bare `_ = signer`
+            // may be elided under -O, releasing the signer before Rust
+            // dereferences `signerHandle`; `withExtendedLifetime`
+            // guarantees it, as in `createDocument`.
+            let result = withExtendedLifetime(signer) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentSchemasJSON.withCString { docsPtr in
+                            Self.withOptionalCString(tokenSchemasJSON) { tokensPtr in
+                                Self.withOptionalCString(groupsJSON) { groupsPtr in
+                                    Self.withOptionalCString(keywordsJSON) { keywordsPtr in
+                                        Self.withOptionalCString(description) { descriptionPtr in
+                                            Self.withOptionalCString(contractConfigJSON) { configPtr in
+                                                contractIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                                    platform_wallet_update_data_contract_with_signer(
+                                                        handle,
+                                                        ownerBp.baseAddress!,
+                                                        contractBp.baseAddress!,
+                                                        docsPtr,
+                                                        tokensPtr,
+                                                        groupsPtr,
+                                                        keywordsPtr,
+                                                        descriptionPtr,
+                                                        configPtr,
+                                                        expectedVersion,
+                                                        signerHandle,
+                                                        outBp.baseAddress!
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -4810,6 +4854,156 @@ extension ManagedPlatformWallet {
             try result.check()
             return Data(contractIdBytes)
         }.value
+    }
+
+    /// Report what `updateDataContract`, called with the same
+    /// arguments, would change in the contract `contractId`, without
+    /// signing or broadcasting anything.
+    ///
+    /// Routes through `IdentityWallet::preview_data_contract_update`
+    /// (via `platform_wallet_preview_data_contract_update`): the
+    /// wallet fetches the live contract, checks that
+    /// `ownerIdentityId` owns it, merges the supplied sections onto
+    /// it and builds the updated contract as the update does, then
+    /// compares the two. It consumes no nonce. JSON that does not
+    /// parse or a schema the contract parser rejects is the same
+    /// error the update would give.
+    ///
+    /// The preview says what changes, not whether Platform accepts
+    /// the update: the network checks the contract update rules when
+    /// the update is broadcast. `hasChanges` is computed by Rust.
+    public func previewDataContractUpdate(
+        ownerIdentityId: Identifier,
+        contractId: Identifier,
+        documentSchemasJSON: String,
+        tokenSchemasJSON: String? = nil,
+        groupsJSON: String? = nil,
+        keywordsJSON: String? = nil,
+        description: String? = nil,
+        contractConfigJSON: String? = nil
+    ) async throws -> DataContractUpdatePreview {
+        try Self.requireDataContractUpdateIdentifiers(
+            ownerIdentityId: ownerIdentityId,
+            contractId: contractId
+        )
+        try Self.requireNoNULInDataContractUpdateArguments(
+            documentSchemasJSON: documentSchemasJSON,
+            tokenSchemasJSON: tokenSchemasJSON,
+            groupsJSON: groupsJSON,
+            keywordsJSON: keywordsJSON,
+            description: description,
+            contractConfigJSON: contractConfigJSON
+        )
+        let handle = self.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            // Receives an owned JSON C string on success; freed with
+            // `platform_wallet_string_free` on every path.
+            var previewJsonPtr: UnsafeMutablePointer<CChar>? = nil
+            defer { if let p = previewJsonPtr { platform_wallet_string_free(p) } }
+
+            // Pin the wallet (whose deinit destroys the handle) and every
+            // borrowed payload across the FFI call. Rust dereferences the
+            // C-string pointers synchronously inside `block_on_worker`,
+            // so the `withCString` scopes are long enough.
+            let result = withExtendedLifetime(self) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentSchemasJSON.withCString { docsPtr in
+                            Self.withOptionalCString(tokenSchemasJSON) { tokensPtr in
+                                Self.withOptionalCString(groupsJSON) { groupsPtr in
+                                    Self.withOptionalCString(keywordsJSON) { keywordsPtr in
+                                        Self.withOptionalCString(description) { descriptionPtr in
+                                            Self.withOptionalCString(contractConfigJSON) { configPtr in
+                                                platform_wallet_preview_data_contract_update(
+                                                    handle,
+                                                    ownerBp.baseAddress!,
+                                                    contractBp.baseAddress!,
+                                                    docsPtr,
+                                                    tokensPtr,
+                                                    groupsPtr,
+                                                    keywordsPtr,
+                                                    descriptionPtr,
+                                                    configPtr,
+                                                    &previewJsonPtr
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            // On success the Rust side always writes the JSON; a null
+            // pointer is an FFI contract violation.
+            guard let jsonPtr = previewJsonPtr else {
+                throw PlatformWalletError.walletOperation(
+                    "preview_data_contract_update returned no preview JSON"
+                )
+            }
+            return try DataContractUpdatePreview.decode(fromJSON: String(cString: jsonPtr))
+        }.value
+    }
+
+    /// Refuse an identifier argument of `updateDataContract` or
+    /// `previewDataContractUpdate` that is not 32 bytes. `Identifier` is
+    /// `Data` of any length, and `withFFIBytes` traps on any other length,
+    /// so the wrong length is a thrown `PlatformWalletError.invalidParameter`
+    /// naming the argument rather than a crash. Checks only that the ids can
+    /// cross the boundary, as `refreshIdentityBalance` does.
+    static func requireDataContractUpdateIdentifiers(
+        ownerIdentityId: Identifier,
+        contractId: Identifier
+    ) throws {
+        guard ownerIdentityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "ownerIdentityId must be 32 bytes, got \(ownerIdentityId.count)"
+            )
+        }
+        guard contractId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "contractId must be 32 bytes, got \(contractId.count)"
+            )
+        }
+    }
+
+    /// Refuse a string argument of `updateDataContract` or
+    /// `previewDataContractUpdate` that holds a NUL. `withCString` hands
+    /// Rust a C string that ends at the first NUL, so Rust would preview or
+    /// update with a prefix of the argument. Throws
+    /// `PlatformWalletError.invalidParameter` naming the first such
+    /// argument. Checks only that the strings can cross the boundary; what
+    /// they say is the wallet's and Platform's to judge.
+    static func requireNoNULInDataContractUpdateArguments(
+        documentSchemasJSON: String,
+        tokenSchemasJSON: String?,
+        groupsJSON: String?,
+        keywordsJSON: String?,
+        description: String?,
+        contractConfigJSON: String?
+    ) throws {
+        let arguments: [(name: String, value: String?)] = [
+            ("documentSchemasJSON", documentSchemasJSON),
+            ("tokenSchemasJSON", tokenSchemasJSON),
+            ("groupsJSON", groupsJSON),
+            ("keywordsJSON", keywordsJSON),
+            ("description", description),
+            ("contractConfigJSON", contractConfigJSON)
+        ]
+        for argument in arguments {
+            if let value = argument.value {
+                try KeyDerivation.requireNoNUL(value, argument.name)
+            }
+        }
     }
 
     /// Create + broadcast a new revision-1 document on `contractId`'s
