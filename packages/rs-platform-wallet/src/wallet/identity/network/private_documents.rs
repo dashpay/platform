@@ -486,7 +486,11 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// `None` otherwise. A type can gain optional properties, and a payload
     /// written under the newer type does not read under an older one, which
     /// DPP refuses for the reader to fetch the contract again. The context
-    /// provider is given the newer contract, so it verifies the next pages.
+    /// provider is given the newer contract, so it verifies the next pages,
+    /// and the contract it then holds is returned when it is at least as new
+    /// and declares the type: another operation may have given it a newer one
+    /// while this fetch ran, and the pages and their payloads are then read
+    /// under the same contract.
     async fn newer_private_document_contract(
         &self,
         held: &DataContract,
@@ -505,6 +509,19 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let fetched = Arc::new(fetched);
         if let Some(provider) = self.sdk.context_provider() {
             provider.register_data_contract(Arc::clone(&fetched));
+            let retained = provider
+                .get_data_contract(&data_contract_id, self.sdk.version())
+                .ok()
+                .flatten()
+                .filter(|retained| {
+                    retained.version() >= fetched.version()
+                        && retained
+                            .document_type_for_name(document_type_name)
+                            .is_ok_and(|document_type| document_type.is_private())
+                });
+            if let Some(retained) = retained {
+                return Ok(Some(retained));
+            }
         }
         Ok(Some(fetched))
     }
@@ -815,9 +832,13 @@ mod tests {
     impl EventHandler for NoopEventHandler {}
     impl PlatformEventHandler for NoopEventHandler {}
 
-    /// A context provider holding the test contract.
-    /// What it holds, or nothing; a contract it is given takes its place.
-    struct HeldContract(Mutex<Option<Arc<DataContract>>>);
+    /// A context provider holding the test contract, or nothing. A contract
+    /// it is given takes its place, or, when `promoted` is set, `promoted`
+    /// does, as if another operation gave it a newer one meanwhile.
+    struct HeldContract {
+        held: Mutex<Option<Arc<DataContract>>>,
+        promoted: Option<Arc<DataContract>>,
+    }
 
     impl ContextProvider for HeldContract {
         fn get_data_contract(
@@ -826,7 +847,7 @@ mod tests {
             _platform_version: &PlatformVersion,
         ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
             Ok(self
-                .0
+                .held
                 .lock()
                 .expect("the lock")
                 .as_ref()
@@ -835,7 +856,7 @@ mod tests {
         }
 
         fn register_data_contract(&self, contract: Arc<DataContract>) {
-            *self.0.lock().expect("the lock") = Some(contract);
+            *self.held.lock().expect("the lock") = Some(self.promoted.clone().unwrap_or(contract));
         }
 
         fn get_token_configuration(
@@ -868,7 +889,8 @@ mod tests {
     }
 
     /// The test contract at `version`. From version 2 the `secret` type has an
-    /// optional `mood` too, appended as a compatible update appends one.
+    /// optional `mood` too, appended as a compatible update appends one, and
+    /// from version 3 an optional `tag` after it.
     fn contract_at(version: u32) -> DataContract {
         let mut secret_properties = json!({
             "text": {
@@ -889,6 +911,13 @@ mod tests {
                 "type": "string",
                 "maxLength": 10,
                 "position": 2
+            });
+        }
+        if version >= 3 {
+            secret_properties["tag"] = json!({
+                "type": "string",
+                "maxLength": 10,
+                "position": 3
             });
         }
         DataContract::from_value(
@@ -1013,10 +1042,29 @@ mod tests {
         held: Option<DataContract>,
         proved: Option<DataContract>,
     ) -> (PlatformWalletManager<NoPersistence>, Arc<PlatformWallet>) {
+        wallet_on_provider(
+            phrase,
+            own,
+            HeldContract {
+                held: Mutex::new(held.map(Arc::new)),
+                promoted: None,
+            },
+            proved,
+        )
+        .await
+    }
+
+    /// [`wallet_with`], on the context provider `provider`.
+    async fn wallet_on_provider(
+        phrase: &str,
+        own: &Identity,
+        provider: HeldContract,
+        proved: Option<DataContract>,
+    ) -> (PlatformWalletManager<NoPersistence>, Arc<PlatformWallet>) {
         let mut sdk = dash_sdk::SdkBuilder::new_mock()
             .with_network(Network::Testnet)
             .with_version(PlatformVersion::latest())
-            .with_context_provider(HeldContract(Mutex::new(held.map(Arc::new))))
+            .with_context_provider(provider)
             .build()
             .expect("mock sdk");
         if let Some(proved) = proved {
@@ -1758,6 +1806,100 @@ mod tests {
         assert_eq!(read.identities, vec![Identifier::from(ALICE)]);
         assert_eq!(read.unscanned_keys, vec![], "Bob's keys are not collected");
         assert_eq!(read.entries.len(), 1);
+    }
+
+    /// Another operation gives the provider a newer contract while the read's
+    /// refresh runs: the read decodes under the contract the provider then
+    /// holds, the one the pages are verified against, not the one it fetched.
+    #[tokio::test]
+    async fn should_decode_with_the_contract_the_provider_holds_after_the_refresh() {
+        let alice = identity(ALICE_PHRASE, ALICE, true);
+        let newest = contract_at(3);
+        let (_manager, wallet) = wallet_on_provider(
+            ALICE_PHRASE,
+            &alice,
+            HeldContract {
+                held: Mutex::new(Some(Arc::new(contract()))),
+                promoted: Some(Arc::new(newest.clone())),
+            },
+            Some(contract_at(2)),
+        )
+        .await;
+        serve_page(
+            &wallet,
+            0,
+            vec![to_alice(
+                &payload_under(&newest, json!({ "text": "hello Alice", "tag": "new" })),
+                1,
+            )],
+            1,
+        )
+        .await;
+
+        let read = read_from(&wallet, None, usize::MAX).await;
+
+        let properties = read.entries[0]
+            .properties
+            .as_ref()
+            .expect("read under the contract the provider holds");
+        assert_eq!(properties.get("tag"), Some(&Value::Text("new".to_string())));
+    }
+
+    /// A cursor read with one key, continued after the wallet's identity gains
+    /// another key an entry on the pages read is sealed to: the read starts
+    /// over and finds the entry the first read could not open.
+    #[tokio::test]
+    async fn should_restart_a_returned_cursor_once_the_wallet_derives_another_key() {
+        let mut alice = identity(ALICE_PHRASE, ALICE, true);
+        let encryption_key = alice
+            .public_keys_mut()
+            .remove(&ENCRYPTION_KEY_ID)
+            .expect("the encryption key");
+        let (_manager, wallet) = wallet(ALICE_PHRASE, &alice).await;
+        let hello = payload(json!({ "text": "hello Alice" }));
+        let to_encryption_key = seal(
+            ALICE,
+            &identity_secret_key(ALICE_PHRASE, ENCRYPTION_KEY_ID),
+            &PrivateDocumentSender::Anonymous,
+            &other_key(0xC0),
+            &hello,
+            2,
+        );
+        serve_page(&wallet, 0, vec![to_alice(&hello, 1), to_encryption_key], 2).await;
+
+        let first = read_from(&wallet, None, usize::MAX).await;
+        assert_eq!(
+            first
+                .entries
+                .iter()
+                .map(|entry| entry.position)
+                .collect::<Vec<_>>(),
+            vec![0]
+        );
+        assert!(first.complete);
+
+        // The identity registers its encryption key, which the wallet derives.
+        {
+            let iw = wallet.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet.wallet_id())
+                .expect("wallet info")
+                .identity_manager
+                .managed_identity_mut(&Identifier::from(ALICE))
+                .expect("Alice")
+                .identity
+                .public_keys_mut()
+                .insert(ENCRYPTION_KEY_ID, encryption_key);
+        }
+
+        let again = read_from(&wallet, Some(first.cursor), usize::MAX).await;
+
+        assert!(again.restarted);
+        assert_ne!(again.cursor.key_set, first.cursor.key_set);
+        assert!(again
+            .entries
+            .iter()
+            .any(|entry| entry.position == 1 && entry.wallet_key_id == ENCRYPTION_KEY_ID));
     }
 
     /// A cursor of another store is refused: its position and size describe

@@ -34,8 +34,10 @@ use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 /// way.
 ///
 /// Exactly one of `properties_json` and `properties_refusal` is non-null.
-/// Both are owned by the enclosing [`PrivateDocumentReadFFI`] and released
-/// with it.
+/// Both are read-only strings owned by the enclosing
+/// [`PrivateDocumentReadFFI`] and released with it: do not modify or free
+/// them, as their release needs their original length; copy one first when an
+/// API needs a writable buffer.
 #[repr(C)]
 #[derive(Debug)]
 pub struct PrivateDocumentEntryFFI {
