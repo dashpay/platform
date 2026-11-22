@@ -324,6 +324,14 @@ impl Sdk {
     /// domain cannot reveal. The SDK first learns the network's protocol version (a proven
     /// refresh), then takes a response proved at the version it parsed it under
     /// ([`dpns_contract_proved_at_parsed_version`]).
+    ///
+    /// The guarantee is the contract proved at the version the SDK parses with. An SDK
+    /// pinned to a version ([`SdkBuilder::with_version`](crate::SdkBuilder::with_version))
+    /// does not learn a newer one, so it takes a response proved at its pinned version even
+    /// when a verified answer shows the network newer: a caller that must have the newest
+    /// contract on a pinned SDK compares with
+    /// [`Sdk::protocol_version_info`]`().verified_version` itself, or refuses a pinned SDK
+    /// below the version it needs, as [`Sdk::dpns_name_give_up_options`] does.
     pub async fn fetch_current_dpns_contract(&self) -> Result<DataContract, Error> {
         let dpns_contract_id = self.get_dpns_contract_id()?;
         self.refresh_protocol_version().await?;
