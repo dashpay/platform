@@ -18,7 +18,9 @@ enum SendFlow: Equatable {
         switch self {
         case .shieldedToShielded, .shieldedToPlatform, .shieldedToCore:
             return true
-        case .coreToCore, .coreToShielded, .platformToPlatform, .platformToShielded:
+        // An identity shield spends identity credits, not notes.
+        case .coreToCore, .coreToShielded, .platformToPlatform, .platformToShielded,
+             .identityToShielded:
             return false
         }
     }
@@ -113,12 +115,16 @@ struct CoreRecipient: Identifiable, Equatable {
     var amountString: String = ""
 }
 
-/// Per-source balances of the Send screen. `platformAddresses` is the sum of
+/// Per-source balances of the Send screen, the one input to
+/// `SendViewModel.availableSources(_:)`. `platformAddresses` is the sum of
 /// the wallet's platform-address balances only. The screen's "Platform"
 /// balance row may fall back to identity credits before the first address
 /// sync, but those credits can only be sent through the Identity source.
 struct SendSourceBalances: Equatable {
     var core: UInt64
+    /// Account 0's spendable credits as the wallet pushes them
+    /// (`spendableShieldedCredits(walletId:account: 0)`); a balance that is
+    /// not known yet is passed as 0, so the source is not offered.
     var shielded: UInt64
     var platformAddresses: UInt64
     /// Largest balance of any one identity: one identity funds a shield.
@@ -477,11 +483,11 @@ class SendViewModel: ObservableObject {
     /// Determine which fund sources are available based on destination and balances.
     /// `identityBalance` is the largest balance of any one identity of the
     /// wallet, since a single identity funds an identity shield.
-    func availableSources(
+    private func availableSources(
         coreBalance: UInt64,
         shieldedBalance: UInt64,
         platformBalance: UInt64,
-        identityBalance: UInt64 = 0
+        identityBalance: UInt64
     ) -> [FundSource] {
         var sources: [FundSource] = []
         switch detectedAddressType {

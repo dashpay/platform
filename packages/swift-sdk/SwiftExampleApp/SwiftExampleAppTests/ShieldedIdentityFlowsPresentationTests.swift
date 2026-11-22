@@ -225,52 +225,6 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         XCTAssertNil(ShieldedCheckNowStatus.checking.text)
     }
 
-    // MARK: - Read scope (wallet manager replacement)
-
-    func test_readScope_sameManagerAndWallet_appliesTheRead() {
-        let manager = NSObject()
-        let scope = ShieldedReadScope(manager: ObjectIdentifier(manager), walletId: walletId)
-        let applied = ShieldedSpendableCredits.applying(
-            ready(credits: 5), startedFor: scope, current: scope, previous: .unknown(reason: nil)
-        )
-        XCTAssertEqual(applied, .known(5))
-    }
-
-    func test_readScope_replacedManager_discardsTheOldRead() {
-        let oldManager = NSObject()
-        let newManager = NSObject()
-        let started = ShieldedReadScope(manager: ObjectIdentifier(oldManager), walletId: walletId)
-        let current = ShieldedReadScope(manager: ObjectIdentifier(newManager), walletId: walletId)
-        // The view reset to unknown on the swap; the old manager's read must not undo that.
-        let applied = ShieldedSpendableCredits.applying(
-            ready(credits: 5), startedFor: started, current: current, previous: .unknown(reason: nil)
-        )
-        XCTAssertEqual(applied, .unknown(reason: nil))
-    }
-
-    func test_readScope_otherWalletOrNoWallet_discardsTheRead() {
-        let manager = NSObject()
-        let started = ShieldedReadScope(manager: ObjectIdentifier(manager), walletId: walletId)
-        let otherWallet = ShieldedReadScope(manager: ObjectIdentifier(manager), walletId: identityId)
-        XCTAssertEqual(
-            ShieldedSpendableCredits.applying(ready(credits: 5), startedFor: started, current: otherWallet, previous: .known(1)),
-            .known(1)
-        )
-        XCTAssertEqual(
-            ShieldedSpendableCredits.applying(ready(credits: 5), startedFor: started, current: nil, previous: .known(1)),
-            .known(1)
-        )
-    }
-
-    func test_readScope_invalidatedRead_keepsThePreviousValue() {
-        let manager = NSObject()
-        let scope = ShieldedReadScope(manager: ObjectIdentifier(manager), walletId: walletId)
-        XCTAssertEqual(
-            ShieldedSpendableCredits.applying(nil, startedFor: scope, current: scope, previous: .known(1)),
-            .known(1)
-        )
-    }
-
     // MARK: - Shielded selection recheck
 
     func test_selection_sourceGoneWhileSubmitting_isKept() {
@@ -286,60 +240,111 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         XCTAssertFalse(ShieldedSpendableCredits.known(5).dropsShieldedSelection(isToppingUp: false))
     }
 
-    // MARK: - Submit-time balance read
+    // MARK: - Pushed shielded balance
 
     private var request: ShieldedTopUpRequest {
         ShieldedTopUpRequest(walletId: walletId, identityId: identityId, amount: 1_000)
     }
 
-    private func readyRead(_ credits: UInt64) -> ShieldedSpendableCredits.Read {
-        ready(credits: credits)
+    private func update(_ state: ShieldedBalanceState) -> ShieldedBalanceUpdate {
+        ShieldedBalanceUpdate(walletId: walletId, revision: 1, state: state)
     }
 
-    func test_submitCheck_freshAffordableRead_sends() {
-        XCTAssertEqual(
-            ShieldedTopUpSubmitCheck.decide(request: request, minimumFee: 10, submitRead: readyRead(2_000)),
-            .send
-        )
+    /// A ready update with account 0 holding `credits`.
+    private func readyUpdate(
+        credits: UInt64,
+        established: Bool = true,
+        account: UInt32 = 0
+    ) -> ShieldedBalanceUpdate {
+        update(.ready(ShieldedReadyBalance(
+            ordinarySpendableCredits: credits,
+            ordinaryBalanceEstablished: established,
+            accounts: [account: ShieldedBalanceAccount(
+                spendableCredits: credits,
+                established: established,
+                lastScannedIndex: 10,
+                source: .scannedThisSession
+            )]
+        )))
     }
 
-    func test_submitCheck_freshReadTooLow_refuses() {
+    func test_pushedBalance_noUpdateYet_isUnknownWithoutAReason() {
+        let spendable = ShieldedSpendableCredits.from(nil)
+        XCTAssertEqual(spendable, .unknown(reason: nil))
+        XCTAssertFalse(spendable.offersShieldedSource)
+    }
+
+    func test_pushedBalance_unbound_isUnknownNotZero() {
+        let spendable = ShieldedSpendableCredits.from(update(.unbound))
+        XCTAssertEqual(spendable, .unknown(reason: nil))
+        XCTAssertNil(spendable.credits)
+    }
+
+    func test_pushedBalance_restoreIncomplete_isUnknownWithAReason() {
+        let spendable = ShieldedSpendableCredits.from(update(.restoreIncomplete))
+        XCTAssertNil(spendable.credits)
+        XCTAssertNotNil(spendable.unavailableReason)
+        XCTAssertFalse(spendable.offersShieldedSource)
+    }
+
+    func test_pushedBalance_accountNotEstablished_isUnknownNotZero() {
+        let spendable = ShieldedSpendableCredits.from(readyUpdate(credits: 0, established: false))
+        XCTAssertNil(spendable.credits)
+        XCTAssertNotNil(spendable.unavailableReason)
+    }
+
+    func test_pushedBalance_accountZeroNotBound_isUnknown() {
+        let spendable = ShieldedSpendableCredits.from(readyUpdate(credits: 5, account: 1))
+        XCTAssertNil(spendable.credits)
+        XCTAssertFalse(spendable.offersShieldedSource)
+    }
+
+    func test_pushedBalance_knownZero_isKnownAndNotOffered() {
+        let spendable = ShieldedSpendableCredits.from(readyUpdate(credits: 0))
+        XCTAssertEqual(spendable, .known(0))
+        XCTAssertFalse(spendable.offersShieldedSource)
+        XCTAssertNil(spendable.unavailableReason)
+    }
+
+    func test_pushedBalance_knownAmount_isOffered() {
+        let spendable = ShieldedSpendableCredits.from(readyUpdate(credits: 2_000))
+        XCTAssertEqual(spendable, .known(2_000))
+        XCTAssertTrue(spendable.offersShieldedSource)
+    }
+
+    // MARK: - Submit gate on the pushed balance
+
+    func test_submitCheck_unknownPushedBalance_makesNoPayment() {
         guard case .refuse(let message) = ShieldedTopUpSubmitCheck.decide(
-            request: request, minimumFee: 10, submitRead: readyRead(1_009)
+            request: request, minimumFee: 10, pushedSpendable: nil
+        ) else { return XCTFail("expected a refusal") }
+        XCTAssertTrue(message.contains("not known"))
+        XCTAssertTrue(message.contains("nothing was sent"))
+    }
+
+    func test_submitCheck_zeroPushedBalance_makesNoPayment() {
+        guard case .refuse(let message) = ShieldedTopUpSubmitCheck.decide(
+            request: request, minimumFee: 10, pushedSpendable: 0
         ) else { return XCTFail("expected a refusal") }
         XCTAssertTrue(message.contains("Nothing was sent"))
     }
 
-    func test_submitCheck_failedReadAfterAGoodDisplayRead_makesNoPayment() {
-        // The screen showed an affordable balance earlier...
-        let display = ShieldedSpendableCredits.after(readyRead(2_000), previous: .unknown(reason: nil))
-        XCTAssertTrue(request.isAffordable(minimumFee: 10, spendable: display.credits))
-        // ...but the submit read fails: no payment, whatever the display says.
-        guard case .refuse(let message) = ShieldedTopUpSubmitCheck.decide(
-            request: request, minimumFee: 10, submitRead: .failed("busy")
-        ) else { return XCTFail("expected a refusal") }
-        XCTAssertTrue(message.contains("Could not read the shielded balance"))
-        XCTAssertTrue(message.contains("nothing was sent"))
+    func test_submitCheck_enoughPushedBalance_sends() {
+        XCTAssertEqual(
+            ShieldedTopUpSubmitCheck.decide(request: request, minimumFee: 10, pushedSpendable: 1_010),
+            .send
+        )
     }
 
-    func test_submitCheck_invalidatedReadAfterAGoodDisplayRead_makesNoPayment() {
-        guard case .refuse(let message) = ShieldedTopUpSubmitCheck.decide(
-            request: request, minimumFee: 10, submitRead: nil
+    func test_submitCheck_pushedBalanceOneCreditShort_makesNoPayment() {
+        guard case .refuse = ShieldedTopUpSubmitCheck.decide(
+            request: request, minimumFee: 10, pushedSpendable: 1_009
         ) else { return XCTFail("expected a refusal") }
-        XCTAssertTrue(message.contains("Could not read the shielded balance"))
-    }
-
-    func test_submitCheck_unboundOrIncompleteRead_makesNoPayment() {
-        for read: ShieldedSpendableCredits.Read in [.state(.unbound), .state(.restoreIncomplete)] {
-            guard case .refuse = ShieldedTopUpSubmitCheck.decide(
-                request: request, minimumFee: 10, submitRead: read
-            ) else { return XCTFail("expected a refusal for \(read)") }
-        }
     }
 
     func test_submitCheck_unresolvedFee_makesNoPayment() {
         guard case .refuse = ShieldedTopUpSubmitCheck.decide(
-            request: request, minimumFee: nil, submitRead: readyRead(2_000)
+            request: request, minimumFee: nil, pushedSpendable: 2_000
         ) else { return XCTFail("expected a refusal") }
     }
 
@@ -361,118 +366,7 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         XCTAssertNil(ShieldedTopUpSubmitCheck.refusalMessage(.walletOperation("x")))
     }
 
-    // MARK: - Spendable shielded credits
-
-    private func ready(
-        account: UInt32 = 0,
-        credits: UInt64,
-        source: ShieldedBalanceSource = .scannedThisSession
-    ) -> ShieldedSpendableCredits.Read {
-        .state(.ready(ShieldedLocalBalanceSnapshot(accounts: [
-            account: ShieldedLocalAccountBalance(
-                spendableCredits: credits,
-                lastScannedIndex: 10,
-                source: source
-            ),
-        ])))
-    }
-
-    private let notRead = ShieldedSpendableCredits.unknown(reason: nil)
-
-    func test_spendable_readyWithCredits_offersTheShieldedSource() {
-        let spendable = ShieldedSpendableCredits.after(ready(credits: 500), previous: notRead)
-        XCTAssertEqual(spendable, .known(500))
-        XCTAssertEqual(spendable.credits, 500)
-        XCTAssertTrue(spendable.offersShieldedSource)
-        XCTAssertNil(spendable.unavailableReason)
-    }
-
-    func test_spendable_readyWithZero_isAKnownZeroNotOffered() {
-        let spendable = ShieldedSpendableCredits.after(ready(credits: 0), previous: notRead)
-        XCTAssertEqual(spendable, .known(0))
-        XCTAssertEqual(spendable.credits, 0)
-        XCTAssertFalse(spendable.offersShieldedSource)
-        XCTAssertNil(spendable.unavailableReason)
-    }
-
-    func test_spendable_readyWithRestoredLedger_isKnown() {
-        let spendable = ShieldedSpendableCredits.after(
-            ready(credits: 7, source: .restored),
-            previous: notRead
-        )
-        XCTAssertEqual(spendable, .known(7))
-    }
-
-    func test_spendable_readyWithNoHistory_isUnknownNotZero() {
-        let spendable = ShieldedSpendableCredits.after(
-            ready(credits: 0, source: .noHistory),
-            previous: notRead
-        )
-        XCTAssertNil(spendable.credits)
-        XCTAssertFalse(spendable.offersShieldedSource)
-        XCTAssertNotNil(spendable.unavailableReason)
-    }
-
-    func test_spendable_readyWithoutAccountZero_isUnknown() {
-        let spendable = ShieldedSpendableCredits.after(
-            ready(account: 1, credits: 500),
-            previous: notRead
-        )
-        XCTAssertNil(spendable.credits)
-        XCTAssertFalse(spendable.offersShieldedSource)
-        XCTAssertNotNil(spendable.unavailableReason)
-    }
-
-    func test_spendable_unbound_isUnknownWithoutAReason() {
-        let spendable = ShieldedSpendableCredits.after(.state(.unbound), previous: .known(500))
-        XCTAssertEqual(spendable, .unknown(reason: nil))
-        XCTAssertFalse(spendable.offersShieldedSource)
-    }
-
-    func test_spendable_restoreIncomplete_isUnknownWithAReason() {
-        let spendable = ShieldedSpendableCredits.after(.state(.restoreIncomplete), previous: .known(500))
-        XCTAssertNil(spendable.credits)
-        XCTAssertFalse(spendable.offersShieldedSource)
-        XCTAssertNotNil(spendable.unavailableReason)
-    }
-
-    func test_spendable_failedReadAfterAGoodValue_keepsTheGoodValue() {
-        let spendable = ShieldedSpendableCredits.after(.failed("busy"), previous: .known(500))
-        XCTAssertEqual(spendable, .known(500))
-        XCTAssertTrue(spendable.offersShieldedSource)
-    }
-
-    func test_spendable_failedReadAfterAKnownZero_keepsTheZero() {
-        let spendable = ShieldedSpendableCredits.after(.failed("busy"), previous: .known(0))
-        XCTAssertEqual(spendable, .known(0))
-    }
-
-    func test_spendable_failedReadWithoutAGoodValue_isUnknownWithTheError() {
-        let spendable = ShieldedSpendableCredits.after(.failed("busy"), previous: notRead)
-        XCTAssertNil(spendable.credits)
-        XCTAssertFalse(spendable.offersShieldedSource)
-        XCTAssertTrue(spendable.unavailableReason?.contains("busy") == true)
-    }
-
     // MARK: - After a shielded Clear
-
-    func test_afterClear_spendableIsUnknownAndNotOffered() {
-        let spendable = ShieldedSpendableCredits.afterClear
-        XCTAssertNil(spendable.credits)
-        XCTAssertFalse(spendable.offersShieldedSource)
-        XCTAssertNotNil(spendable.unavailableReason)
-    }
-
-    func test_afterClear_failedReadKeepsItUnknown() {
-        // The pre-Clear value is gone, so a failed read has nothing to keep.
-        let spendable = ShieldedSpendableCredits.after(.failed("busy"), previous: .afterClear)
-        XCTAssertNil(spendable.credits)
-        XCTAssertFalse(spendable.offersShieldedSource)
-    }
-
-    func test_afterClear_aSuccessfulReadMakesItKnownAgain() {
-        XCTAssertEqual(ShieldedSpendableCredits.after(ready(credits: 5), previous: .afterClear), .known(5))
-    }
 
     func test_readCoordinator_readStartedBeforeAClear_neverAppliesAfterIt() throws {
         var reads = RecoveryReadCoordinator()

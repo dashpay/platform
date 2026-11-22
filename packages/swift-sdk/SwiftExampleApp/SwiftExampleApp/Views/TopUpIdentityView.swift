@@ -62,10 +62,9 @@ struct ShieldedTopUpRequest: Equatable {
     }
 }
 
-/// Whether a captured top-up may be sent, decided only from the read taken
-/// at submit for the captured wallet. A cached display value never lets a
-/// payment through: a failed, invalidated (`nil`), unbound or incomplete
-/// submit read refuses it.
+/// Whether a captured top-up may be sent, decided from the spendable
+/// balance the wallet pushes for the captured wallet, read at submit time.
+/// An unknown balance never lets a payment through.
 enum ShieldedTopUpSubmitCheck: Equatable {
     case send
     case refuse(String)
@@ -73,15 +72,10 @@ enum ShieldedTopUpSubmitCheck: Equatable {
     static func decide(
         request: ShieldedTopUpRequest,
         minimumFee: UInt64?,
-        submitRead: ShieldedSpendableCredits.Read?
+        pushedSpendable: UInt64?
     ) -> ShieldedTopUpSubmitCheck {
-        let fresh = submitRead.map {
-            ShieldedSpendableCredits.after($0, previous: .unknown(reason: nil))
-        }
-        guard let spendable = fresh?.credits else {
-            var message = "Could not read the shielded balance, so nothing was sent."
-            if let reason = fresh?.unavailableReason { message += " " + reason }
-            return .refuse(message)
+        guard let spendable = pushedSpendable else {
+            return .refuse("The shielded balance is not known right now, so nothing was sent.")
         }
         guard request.isAffordable(minimumFee: minimumFee, spendable: spendable) else {
             return .refuse("The amount plus the minimum fee must fit the spendable "
@@ -125,44 +119,23 @@ enum ShieldedTopUpSubmitCheck: Equatable {
     }
 }
 
-/// What the top-up screen knows about the wallet's spendable shielded
-/// credits on account 0 (notes reserved for a pending spend excluded), read
-/// from the wallet's local balance snapshot. "Unknown" is kept distinct
+/// What the top-up screen knows about account 0's spendable shielded
+/// credits, from the balance the wallet pushes
+/// (`PlatformWalletManager.shieldedBalances`). Notes reserved for a pending
+/// spend are already excluded by the wallet. "Unknown" is kept distinct
 /// from a known zero: an unknown balance never offers the shielded source.
 enum ShieldedSpendableCredits: Equatable {
-    /// No usable value. `reason` is shown to the user when present; `nil`
-    /// means nothing worth saying (not read yet, or no shielded pool).
+    /// No known amount. `reason` is shown to the user when present; `nil`
+    /// means nothing worth saying (no update yet, or no shielded pool).
     case unknown(reason: String?)
     case known(UInt64)
 
-    /// Outcome of one snapshot read.
-    enum Read {
-        case state(ShieldedLocalBalanceState)
-        case failed(String)
-    }
-
-    /// The value after `read`. A failed read keeps an earlier known value.
-    static func after(_ read: Read, previous: ShieldedSpendableCredits) -> ShieldedSpendableCredits {
-        switch read {
-        case .state(.unbound):
-            return .unknown(reason: nil)
-        case .state(.restoreIncomplete):
-            return .unknown(reason: "The shielded balance is still being restored. "
-                + "Wait for the shielded sync to finish.")
-        case .state(.ready(let snapshot)):
-            guard let account = snapshot.accounts[0] else {
-                return .unknown(reason: "Shielded account 0 is not bound on this wallet.")
-            }
-            // With no persisted ledger or completed scan, zero does not
-            // mean the wallet has no shielded funds.
-            if account.source == .noHistory {
-                return .unknown(reason: "The shielded balance has not been scanned yet.")
-            }
-            return .known(account.spendableCredits)
-        case .failed(let message):
-            if case .known = previous { return previous }
-            return .unknown(reason: "The shielded balance could not be read: \(message)")
-        }
+    /// The state for the wallet's latest pushed update, if any.
+    static func from(_ update: ShieldedBalanceUpdate?) -> ShieldedSpendableCredits {
+        guard let update else { return .unknown(reason: nil) }
+        if case .unbound = update.state { return .unknown(reason: nil) }
+        if let credits = update.accountBalance(0) { return .known(credits) }
+        return .unknown(reason: "The shielded balance is not known yet.")
     }
 
     var credits: UInt64? {
@@ -172,19 +145,6 @@ enum ShieldedSpendableCredits: Equatable {
 
     var offersShieldedSource: Bool { (credits ?? 0) > 0 }
 
-    /// Apply a display read only when the wallet manager and wallet that
-    /// started it are still the current ones; otherwise keep `previous`.
-    /// An invalidated read (`nil`) also keeps `previous`.
-    static func applying(
-        _ read: Read?,
-        startedFor: ShieldedReadScope,
-        current: ShieldedReadScope?,
-        previous: ShieldedSpendableCredits
-    ) -> ShieldedSpendableCredits {
-        guard let read, startedFor == current else { return previous }
-        return after(read, previous: previous)
-    }
-
     /// Whether a shielded funding selection must be dropped: the source is
     /// no longer offered and no submission is running (a running one keeps
     /// its selection and is rechecked when it ends).
@@ -192,21 +152,10 @@ enum ShieldedSpendableCredits: Equatable {
         !isToppingUp && !offersShieldedSource
     }
 
-    /// State right after a shielded Clear: unknown until a fresh read.
-    static let afterClear = ShieldedSpendableCredits.unknown(
-        reason: "The shielded state was cleared. Waiting for a new balance read."
-    )
-
     var unavailableReason: String? {
         if case .unknown(let reason) = self { return reason }
         return nil
     }
-}
-
-/// The wallet manager instance and wallet a balance read was started for.
-struct ShieldedReadScope: Equatable {
-    let manager: ObjectIdentifier
-    let walletId: Data
 }
 
 struct TopUpIdentityView: View {
@@ -256,9 +205,6 @@ struct TopUpIdentityView: View {
     /// on appear and again at submit. `nil` keeps submit closed.
     @State private var shieldedTopUpFee: UInt64? = nil
 
-    /// Spendable shielded credits from the wallet's local snapshot. Read on
-    /// appear, after each shielded sync, and again at submit.
-    @State private var shieldedSpendable: ShieldedSpendableCredits = .unknown(reason: nil)
 
     // MARK: - Submit state
 
@@ -283,8 +229,8 @@ struct TopUpIdentityView: View {
                     pendingShieldedTopUpsSection
                     fundingSection
                     amountSection
-                    // Kept while submitting: the spend reserves notes, so a
-                    // re-read can close the gate mid-proof.
+                    // Kept while submitting: the spend reserves notes, so the
+                    // pushed balance can close the gate mid-proof.
                     if canSubmit || isToppingUp {
                         submitSection
                     }
@@ -306,29 +252,19 @@ struct TopUpIdentityView: View {
                 )
             }
             .onAppear { resolveShieldedTopUpFee() }
-            .task { await refreshShieldedSpendable() }
-            // Re-read on the wallet's sync completion event; `isSyncing` can
-            // miss a fast pass and only drives the spinner.
+            // The balance is pushed by the wallet; only the fee is resolved
+            // here, again after a sync of this wallet (the network's version
+            // can have moved).
             .onReceive(walletManager.$lastShieldedSyncEvent.dropFirst()) { event in
                 if let walletId = identity.wallet?.walletId,
                    ShieldedSyncEventScope.covers(event, walletId: walletId) {
                     resolveShieldedTopUpFee()
-                    Task { await refreshShieldedSpendable() }
                 }
-            }
-            // A Clear purges the local balance without a sync event: the
-            // balance is unknown until a read after it succeeds.
-            .onReceive(shieldedService.$localStateClearCount.dropFirst()) { _ in
-                shieldedSpendable = ShieldedSpendableCredits.afterClear
-                Task { await refreshShieldedSpendable() }
             }
             // A manager swapped during an SDK rebuild: re-resolve against it
             // so a sheet opened meanwhile recovers without being dismissed.
             .onChange(of: ObjectIdentifier(walletManager)) { _, _ in
-                // The old manager's balance says nothing about the new one.
-                shieldedSpendable = .unknown(reason: nil)
                 resolveShieldedTopUpFee()
-                Task { await refreshShieldedSpendable() }
             }
             // Drop a shielded selection the wallet can no longer fund, and
             // recheck when a submission that kept it ends.
@@ -703,23 +639,11 @@ struct TopUpIdentityView: View {
         return String(format: "%g", dash)
     }
 
-    /// Read the wallet's spendable shielded credits. The snapshot can fail
-    /// (busy during a scan, for example); a failed read keeps the last known
-    /// value. A rebind during the read makes one fresh read safe.
-    private func refreshShieldedSpendable() async {
-        guard let scope = currentReadScope else { return }
-        let read = await readShieldedSpendable(walletId: scope.walletId)
-        shieldedSpendable = .applying(
-            read,
-            startedFor: scope,
-            current: currentReadScope,
-            previous: shieldedSpendable
-        )
-    }
-
-    private var currentReadScope: ShieldedReadScope? {
-        guard let walletId = identity.wallet?.walletId else { return nil }
-        return ShieldedReadScope(manager: ObjectIdentifier(walletManager), walletId: walletId)
+    /// Account 0's spendable shielded credits as the wallet pushes them for
+    /// the identity's wallet. Re-renders when an update is published.
+    private var shieldedSpendable: ShieldedSpendableCredits {
+        guard let walletId = identity.wallet?.walletId else { return .unknown(reason: nil) }
+        return .from(walletManager.shieldedBalances[walletId])
     }
 
     private func recheckShieldedSelection() {
@@ -727,26 +651,6 @@ struct TopUpIdentityView: View {
            shieldedSpendable.dropsShieldedSelection(isToppingUp: isToppingUp) {
             fundingSelection = nil
         }
-    }
-
-    /// One snapshot read for `walletId`. `nil` when the SDK invalidated it
-    /// with `CancellationError` (Clear, stop, a failed bind, or the view
-    /// going away). A rebind during the read makes one fresh read safe.
-    private func readShieldedSpendable(walletId: Data) async -> ShieldedSpendableCredits.Read? {
-        // The manager the read starts on, even if the environment swaps it.
-        let manager = walletManager
-        for attempt in 0..<2 {
-            do {
-                return .state(try await manager.localShieldedBalanceSnapshot(walletId: walletId))
-            } catch ShieldedLocalBalanceReadError.bindingChanged where attempt == 0 {
-                continue
-            } catch is CancellationError {
-                return nil
-            } catch {
-                return .failed(error.localizedDescription)
-            }
-        }
-        return .failed(ShieldedLocalBalanceReadError.bindingChanged.localizedDescription)
     }
 
     private func resolveShieldedTopUpFee() {
@@ -845,42 +749,25 @@ struct TopUpIdentityView: View {
             submitError = .init(message: "Selection is incomplete.")
             return
         }
-        // Set before the re-reads so a second tap cannot start another
+        // Re-check the captured request against the fee and the balance the
+        // wallet has pushed for the captured wallet, right now.
+        resolveShieldedTopUpFee()
+        if case .refuse(let message) = ShieldedTopUpSubmitCheck.decide(
+            request: request,
+            minimumFee: shieldedTopUpFee,
+            pushedSpendable: walletManager.spendableShieldedCredits(
+                walletId: request.walletId,
+                account: 0
+            )
+        ) {
+            submitError = .init(message: message)
+            return
+        }
+        // Set before the async call so a second tap cannot start another
         // top-up, and so the funding picker and amount field lock.
         isToppingUp = true
 
         Task {
-            // The send is gated on a fresh read for the captured wallet only,
-            // never on the cached display value.
-            resolveShieldedTopUpFee()
-            let scope = ShieldedReadScope(
-                manager: ObjectIdentifier(walletManager),
-                walletId: request.walletId
-            )
-            let read = await readShieldedSpendable(walletId: request.walletId)
-            shieldedSpendable = .applying(
-                read,
-                startedFor: scope,
-                current: currentReadScope,
-                previous: shieldedSpendable
-            )
-            // The payment goes through the current manager; its read must be
-            // the one the gate checks.
-            guard scope == currentReadScope else {
-                submitError = .init(message: "The wallet was reloaded while checking the "
-                    + "shielded balance. Nothing was sent.")
-                isToppingUp = false
-                return
-            }
-            if case .refuse(let message) = ShieldedTopUpSubmitCheck.decide(
-                request: request,
-                minimumFee: shieldedTopUpFee,
-                submitRead: read
-            ) {
-                submitError = .init(message: message)
-                isToppingUp = false
-                return
-            }
             let amount = request.amount
             do {
                 try await walletManager.shieldedIdentityTopUpFromPool(

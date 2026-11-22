@@ -25,6 +25,31 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
         return vm
     }
 
+    private func balances(
+        core: UInt64 = 0,
+        shielded: UInt64 = 0,
+        platformAddresses: UInt64 = 0,
+        largestIdentity: UInt64 = 0
+    ) -> SendSourceBalances {
+        SendSourceBalances(
+            core: core,
+            shielded: shielded,
+            platformAddresses: platformAddresses,
+            largestIdentity: largestIdentity
+        )
+    }
+
+    /// Offer the sources the screen would offer for `balances`, as the view
+    /// does on every change, then pick `source` as the user would.
+    private func offerAndPick(
+        _ source: FundSource,
+        on vm: SendViewModel,
+        balances: SendSourceBalances
+    ) {
+        vm.reconcileSource(available: vm.availableSources(balances))
+        vm.selectSource(source)
+    }
+
     /// A view model on the identity shield flow with the floor resolved and
     /// an identity of `balance` credits selected.
     private func makeIdentityShieldViewModel(
@@ -33,11 +58,10 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
     ) -> SendViewModel {
         let vm = makeViewModel(recipient: orchardAddress)
         vm.shieldedFeeEstimates = [.shieldFromIdentity: feeFloor]
-        vm.selectedSource = .identity
         vm.selectedIdentityId = identityId
         vm.selectedIdentityBalance = balance
         vm.amountString = amount
-        vm.updateFlow()
+        offerAndPick(.identity, on: vm, balances: balances(largestIdentity: balance))
         return vm
     }
 
@@ -53,84 +77,95 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
 
     func test_orchardRecipient_offersIdentitySourceLast() {
         let vm = makeViewModel(recipient: orchardAddress)
-        let sources = vm.availableSources(
-            coreBalance: 1,
-            shieldedBalance: 1,
-            platformBalance: 1,
-            identityBalance: 1
-        )
+        let sources = vm.availableSources(balances(
+            core: 1, shielded: 1, platformAddresses: 1, largestIdentity: 1
+        ))
         XCTAssertEqual(sources, [.shielded, .platform, .core, .identity])
         // Shielded to shielded stays the auto-selected default.
-        XCTAssertEqual(sources.first, .shielded)
+        vm.reconcileSource(available: sources)
+        XCTAssertEqual(vm.selectedSource, .shielded)
     }
 
     func test_orchardRecipient_withOnlyIdentityFunds_offersIdentityOnly() {
         let vm = makeViewModel(recipient: orchardAddress)
-        let sources = vm.availableSources(
-            coreBalance: 0,
-            shieldedBalance: 0,
-            platformBalance: 0,
-            identityBalance: 1
-        )
+        let sources = vm.availableSources(balances(largestIdentity: 1))
         XCTAssertEqual(sources, [.identity])
+        // With nothing else offered it is the default.
+        vm.reconcileSource(available: sources)
+        XCTAssertEqual(vm.selectedSource, .identity)
+        XCTAssertEqual(vm.detectedFlow, .identityToShielded)
     }
 
     func test_orchardRecipient_withoutFundedIdentity_hidesIdentitySource() {
         let vm = makeViewModel(recipient: orchardAddress)
-        let sources = vm.availableSources(
-            coreBalance: 1,
-            shieldedBalance: 1,
-            platformBalance: 1,
-            identityBalance: 0
-        )
-        XCTAssertFalse(sources.contains(.identity))
-    }
-
-    func test_existingCallShape_withoutIdentityBalance_hidesIdentitySource() {
-        let vm = makeViewModel(recipient: orchardAddress)
-        let sources = vm.availableSources(
-            coreBalance: 1,
-            shieldedBalance: 1,
-            platformBalance: 1
-        )
+        let sources = vm.availableSources(balances(
+            core: 1, shielded: 1, platformAddresses: 1, largestIdentity: 0
+        ))
         XCTAssertEqual(sources, [.shielded, .platform, .core])
     }
 
     func test_coreRecipient_neverOffersIdentitySource() {
         let vm = makeViewModel(recipient: coreAddress)
-        let sources = vm.availableSources(
-            coreBalance: 1,
-            shieldedBalance: 1,
-            platformBalance: 1,
-            identityBalance: 1
-        )
+        let sources = vm.availableSources(balances(
+            core: 1, shielded: 1, platformAddresses: 1, largestIdentity: 1
+        ))
         XCTAssertFalse(sources.contains(.identity))
+    }
+
+    func test_unknownShieldedBalancePassedAsZero_doesNotOfferShielded() {
+        // The screen passes a not-yet-known pushed balance as 0.
+        let vm = makeViewModel(recipient: orchardAddress)
+        XCTAssertEqual(vm.availableSources(balances(largestIdentity: 1)), [.identity])
+    }
+
+    func test_identityShield_doesNotSpendShieldedNotes() {
+        XCTAssertFalse(SendFlow.identityToShielded.spendsShieldedNotes)
+        // So an unknown or zero account-0 balance never blocks its dispatch.
+        XCTAssertTrue(SendViewModel.mayDispatch(.identityToShielded, accountZeroShieldedBalance: nil))
+        XCTAssertTrue(SendViewModel.mayDispatch(.identityToShielded, accountZeroShieldedBalance: 0))
+    }
+
+    func test_pickedIdentitySource_isKeptWhenItStopsBeingOffered() {
+        let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
+        XCTAssertTrue(vm.canSend)
+        // The identity balance goes away: the choice stays, Send is disabled.
+        vm.reconcileSource(available: vm.availableSources(balances(shielded: 1)))
+        XCTAssertEqual(vm.selectedSource, .identity)
+        XCTAssertTrue(vm.chosenSourceUnavailable)
+        XCTAssertFalse(vm.canSend)
+    }
+
+    func test_tappedIdentityShield_isTheFlowToSend() {
+        let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
+        XCTAssertEqual(
+            vm.flowToSend(tappedFlow: .identityToShielded, tappedRecipient: orchardAddress),
+            .identityToShielded
+        )
     }
 
     // MARK: - Flow detection
 
     func test_orchardRecipientWithIdentitySource_detectsIdentityToShielded() {
         let vm = makeViewModel(recipient: orchardAddress)
-        vm.selectedSource = .identity
-        vm.updateFlow()
+        offerAndPick(.identity, on: vm, balances: balances(shielded: 1, largestIdentity: 1))
         XCTAssertEqual(vm.detectedFlow, .identityToShielded)
         XCTAssertEqual(vm.detectedFlow?.displayName, "Shield from Identity")
     }
 
-    func test_coreRecipientWithIdentitySource_detectsNoFlow() {
+    func test_coreRecipient_cannotPickTheIdentitySource() {
         let vm = makeViewModel(recipient: coreAddress)
-        vm.selectedSource = .identity
-        vm.updateFlow()
-        XCTAssertNil(vm.detectedFlow)
-        XCTAssertFalse(vm.canSend)
+        offerAndPick(.identity, on: vm, balances: balances(core: 1, largestIdentity: 1))
+        // Not offered for a Core recipient, so the pick is ignored.
+        XCTAssertNotEqual(vm.selectedSource, .identity)
+        XCTAssertNotEqual(vm.detectedFlow, .identityToShielded)
     }
 
     // MARK: - Fee display
 
     func test_unresolvedFeeFloor_showsNoEstimatedFee() {
         let vm = makeViewModel(recipient: orchardAddress)
-        vm.selectedSource = .identity
-        vm.updateFlow()
+        offerAndPick(.identity, on: vm, balances: balances(largestIdentity: 1))
+        XCTAssertEqual(vm.detectedFlow, .identityToShielded)
         XCTAssertNil(vm.estimatedFee)
     }
 
@@ -202,8 +237,7 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
         // Platform to shielded keeps its own `amount > 0` gate.
         let vm = makeViewModel(recipient: orchardAddress)
         vm.amountString = "0.001"
-        vm.selectedSource = .platform
-        vm.updateFlow()
+        offerAndPick(.platform, on: vm, balances: balances(platformAddresses: 1, largestIdentity: 1))
         XCTAssertEqual(vm.detectedFlow, .platformToShielded)
         XCTAssertTrue(vm.canSend)
     }
@@ -214,23 +248,13 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
         // Before the first address sync the screen's Platform balance row
         // falls back to identity credits; the sources must not.
         let vm = makeViewModel(recipient: orchardAddress)
-        let sources = vm.availableSources(SendSourceBalances(
-            core: 0,
-            shielded: 0,
-            platformAddresses: 0,
-            largestIdentity: 1_000
-        ))
+        let sources = vm.availableSources(balances(largestIdentity: 1_000))
         XCTAssertEqual(sources, [.identity])
     }
 
     func test_addressFunds_offerPlatform() {
         let vm = makeViewModel(recipient: orchardAddress)
-        let sources = vm.availableSources(SendSourceBalances(
-            core: 0,
-            shielded: 0,
-            platformAddresses: 1_000,
-            largestIdentity: 0
-        ))
+        let sources = vm.availableSources(balances(platformAddresses: 1_000))
         XCTAssertEqual(sources, [.platform])
     }
 
