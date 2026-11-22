@@ -341,6 +341,17 @@ final class PasteboardContractCandidateTests: XCTestCase {
         assertGroupsSerializationError(#"[{"id":1.5,"requiredPower":1}]"#)
     }
 
+    /// Foundation bridges JSON `true` to an `NSNumber` that `as? Int` reads
+    /// as 1; the helper refuses it instead of keying the group at 1.
+    func test_positionKeyedGroupsJSON_entryWithTrueId_throws() {
+        assertGroupsSerializationError(#"[{"id":true,"requiredPower":1}]"#)
+    }
+
+    /// JSON `false` would otherwise read as position 0.
+    func test_positionKeyedGroupsJSON_entryWithFalseId_throws() {
+        assertGroupsSerializationError(#"[{"id":false,"requiredPower":1}]"#)
+    }
+
     func test_positionKeyedGroupsJSON_duplicatePosition_throws() {
         assertGroupsSerializationError(#"[{"id":0,"requiredPower":1},{"id":"0","requiredPower":2}]"#)
     }

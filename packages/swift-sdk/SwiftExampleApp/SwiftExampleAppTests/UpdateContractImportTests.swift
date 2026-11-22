@@ -147,6 +147,49 @@ final class UpdateContractImportTests: XCTestCase {
         }
     }
 
+    // MARK: - Shared definitions
+
+    /// An exported contract without definitions writes `"schemaDefs": null`.
+    func testShouldNotReportSharedDefinitionsForANullSchemaDefs() throws {
+        let imported = try UpdateContractImport.read(
+            from: #"{"schemaDefs":null,"documentSchemas":{"note":{"type":"object","properties":{}}}}"#
+        )
+
+        XCTAssertFalse(imported.carriesSharedDefinitions)
+    }
+
+    func testShouldReportANonEmptySchemaDefsObject() throws {
+        let text = """
+            {"schemaDefs":{"label":{"type":"string","maxLength":32}},\
+            "documentSchemas":{"note":{"type":"object","properties":{}}}}
+            """
+
+        let imported = try UpdateContractImport.read(from: text)
+
+        XCTAssertTrue(imported.carriesSharedDefinitions)
+        // The definitions are not written to any field.
+        XCTAssertEqual(imported.fields.documents, #"{"note":{"properties":{},"type":"object"}}"#)
+        XCTAssertEqual(imported.fields, try UpdateContractImport.fields(from: text))
+    }
+
+    func testShouldReportANonEmptyDollarDefsObject() throws {
+        let imported = try UpdateContractImport.read(
+            from: #"{"$defs":{"label":{"type":"string"}},"documentSchemas":{"note":{"type":"object","properties":{}}}}"#
+        )
+
+        XCTAssertTrue(imported.carriesSharedDefinitions)
+    }
+
+    func testShouldNotReportAnEmptyDefinitionsObject() throws {
+        for key in ["schemaDefs", "$defs"] {
+            let imported = try UpdateContractImport.read(
+                from: #"{"\#(key)":{},"documentSchemas":{"note":{"type":"object","properties":{}}}}"#
+            )
+
+            XCTAssertFalse(imported.carriesSharedDefinitions, key)
+        }
+    }
+
     // MARK: - Wallet arguments
 
     func testShouldPassAKeywordsJSONArrayThroughVerbatim() throws {

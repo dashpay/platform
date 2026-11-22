@@ -4598,11 +4598,12 @@ extension ManagedPlatformWallet {
     /// `ErrorTransactionBroadcastUnconfirmed`: the update may have
     /// executed.
     ///
-    /// Lifetime contract: the `signer` instance MUST stay alive for
-    /// the duration of the `await` (Rust holds a `passUnretained`
-    /// ctx pointer to the underlying `KeychainSigner`). A
-    /// `_ = signer` keepalive at the call site is the canonical way
-    /// to pin it.
+    /// Lifetime contract: the `signer` instance MUST stay alive for the
+    /// duration of the synchronous FFI call inside this async wrapper
+    /// (Rust holds a `passUnretained` ctx pointer to the underlying
+    /// `KeychainSigner`). The wrapper pins it with
+    /// `withExtendedLifetime(signer)` around the full marshalling
+    /// chain, so callers need no keepalive of their own.
     public func updateDataContract(
         ownerIdentityId: Identifier,
         contractId: Identifier,
@@ -4640,32 +4641,37 @@ extension ManagedPlatformWallet {
             // inside `block_on_worker`, so the `withCString` scopes
             // here are sufficient — the pointers don't need to
             // outlive the call.
-            _ = signer
             var contractIdBytes = [UInt8](repeating: 0, count: 32)
 
-            let result = ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
-                contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
-                    documentSchemasJSON.withCString { docsPtr in
-                        Self.withOptionalCString(tokenSchemasJSON) { tokensPtr in
-                            Self.withOptionalCString(groupsJSON) { groupsPtr in
-                                Self.withOptionalCString(keywordsJSON) { keywordsPtr in
-                                    Self.withOptionalCString(description) { descriptionPtr in
-                                        Self.withOptionalCString(contractConfigJSON) { configPtr in
-                                            contractIdBytes.withUnsafeMutableBufferPointer { outBp in
-                                                platform_wallet_update_data_contract_with_signer(
-                                                    handle,
-                                                    ownerBp.baseAddress!,
-                                                    contractBp.baseAddress!,
-                                                    docsPtr,
-                                                    tokensPtr,
-                                                    groupsPtr,
-                                                    keywordsPtr,
-                                                    descriptionPtr,
-                                                    configPtr,
-                                                    expectedVersion,
-                                                    signerHandle,
-                                                    outBp.baseAddress!
-                                                )
+            // Pin `signer` for the whole FFI call. A bare `_ = signer`
+            // may be elided under -O, releasing the signer before Rust
+            // dereferences `signerHandle`; `withExtendedLifetime`
+            // guarantees it, as in `createDocument`.
+            let result = withExtendedLifetime(signer) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentSchemasJSON.withCString { docsPtr in
+                            Self.withOptionalCString(tokenSchemasJSON) { tokensPtr in
+                                Self.withOptionalCString(groupsJSON) { groupsPtr in
+                                    Self.withOptionalCString(keywordsJSON) { keywordsPtr in
+                                        Self.withOptionalCString(description) { descriptionPtr in
+                                            Self.withOptionalCString(contractConfigJSON) { configPtr in
+                                                contractIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                                    platform_wallet_update_data_contract_with_signer(
+                                                        handle,
+                                                        ownerBp.baseAddress!,
+                                                        contractBp.baseAddress!,
+                                                        docsPtr,
+                                                        tokensPtr,
+                                                        groupsPtr,
+                                                        keywordsPtr,
+                                                        descriptionPtr,
+                                                        configPtr,
+                                                        expectedVersion,
+                                                        signerHandle,
+                                                        outBp.baseAddress!
+                                                    )
+                                                }
                                             }
                                         }
                                     }

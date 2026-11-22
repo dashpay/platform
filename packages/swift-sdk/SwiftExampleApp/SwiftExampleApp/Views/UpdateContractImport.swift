@@ -56,6 +56,17 @@ enum UpdateContractImport {
         }
     }
 
+    /// What an import read: the five fields, and whether the source carries
+    /// shared definitions the fields leave out. Kept outside `Fields`, whose
+    /// equality the screen uses to clear a review on edit.
+    struct Imported {
+        let fields: Fields
+        /// The object has a `schemaDefs` or `$defs` member that is a
+        /// non-empty JSON object. The update does not send definitions, so
+        /// Platform keeps the live ones.
+        let carriesSharedDefinitions: Bool
+    }
+
     /// The fields `text` fills. A section the text does not carry gets the
     /// value of `Fields.empty`.
     ///
@@ -66,6 +77,12 @@ enum UpdateContractImport {
     /// contract imports as is. An object with none of those keys whose values
     /// all look like document schemas is read as a bare document schemas map.
     static func fields(from text: String) throws -> Fields {
+        try read(from: text).fields
+    }
+
+    /// `fields(from:)`, plus whether `text` carries shared definitions
+    /// (`schemaDefs` or `$defs`) that the fields do not hold.
+    static func read(from text: String) throws -> Imported {
         guard let data = text.data(using: .utf8),
               let parsed = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
         else {
@@ -73,6 +90,10 @@ enum UpdateContractImport {
         }
         guard let object = parsed as? [String: Any] else {
             throw ImportError.notAnObject
+        }
+        let carriesSharedDefinitions = ["schemaDefs", "$defs"].contains { key in
+            guard let definitions = object[key] as? [String: Any] else { return false }
+            return !definitions.isEmpty
         }
 
         let documents = try section(object, "documents", "documentSchemas")
@@ -87,7 +108,7 @@ enum UpdateContractImport {
                 throw ImportError.noSections(topLevelKeys: object.keys.sorted())
             }
             fields.documents = try json(object)
-            return fields
+            return Imported(fields: fields, carriesSharedDefinitions: carriesSharedDefinitions)
         }
 
         if let documents {
@@ -115,7 +136,7 @@ enum UpdateContractImport {
             }
             fields.description = descriptionText
         }
-        return fields
+        return Imported(fields: fields, carriesSharedDefinitions: carriesSharedDefinitions)
     }
 
     /// The value of a section that has two names, or nil when neither is

@@ -46,6 +46,14 @@ struct UpdateContractView: View {
     /// a second update is not sent while the first may still land. Held by
     /// this screen only, not persisted.
     @State private var unconfirmedUpdateSent = false
+    /// Set when an update was sent and the stored contract could not be
+    /// refreshed afterwards: the lowest version the refresh accepts. Refresh
+    /// Stored Contract then retries the refresh alone, and Update Contract
+    /// stays off.
+    @State private var pendingRefreshFloor: Int?
+    /// Why the last refresh failed, shown on the retry row.
+    @State private var refreshFailure: String?
+    @State private var isRefreshing = false
 
     var body: some View {
         Form {
@@ -97,7 +105,7 @@ struct UpdateContractView: View {
             }
         } message: { presented in
             Text(presented.message)
-                .accessibilityIdentifier(presented.dismissesScreen ? "updateContract.success" : "updateContract.unconfirmed")
+                .accessibilityIdentifier(presented.identifier)
         }
     }
 
@@ -253,8 +261,12 @@ struct UpdateContractView: View {
                     .foregroundColor(.orange)
                     .accessibilityIdentifier("updateContract.unconfirmedHold")
             }
+
+            if pendingRefreshFloor != nil {
+                refreshRetryRow
+            }
         } footer: {
-            if unconfirmedUpdateSent {
+            if unconfirmedUpdateSent || pendingRefreshFloor != nil {
                 EmptyView()
             } else if review?.preview.hasChanges == false {
                 Text("The update would change nothing, so it is not offered.")
@@ -262,6 +274,38 @@ struct UpdateContractView: View {
                 Text("Review the changes first.")
             }
         }
+    }
+
+    /// Shown when the stored contract could not be refreshed after an update
+    /// was sent. The button refreshes only: it never signs or broadcasts.
+    @ViewBuilder
+    private var refreshRetryRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(unconfirmedUpdateSent
+                ? "The local copy of the contract could not be refreshed."
+                : "The update was confirmed, but the local copy of the contract is not updated.")
+                .font(.caption)
+            if let refreshFailure {
+                Text(refreshFailure)
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .accessibilityIdentifier("updateContract.refreshRetryFailure")
+            }
+            Button {
+                Task { await retryRefresh() }
+            } label: {
+                HStack {
+                    if isRefreshing {
+                        ProgressView().controlSize(.small)
+                    }
+                    Label("Refresh Stored Contract", systemImage: "arrow.clockwise")
+                }
+            }
+            .disabled(isBusy)
+            .accessibilityIdentifier("updateContract.refreshRetryButton")
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("updateContract.refreshRetry")
     }
 
     private func jsonEditor(text: Binding<String>, identifier: String) -> some View {
@@ -277,7 +321,7 @@ struct UpdateContractView: View {
     // MARK: - State
 
     private var isBusy: Bool {
-        isReviewing || isSubmitting
+        isReviewing || isSubmitting || isRefreshing
     }
 
     /// The raw text of the five inputs. Any change clears the review.
@@ -299,9 +343,11 @@ struct UpdateContractView: View {
 
     /// The paid-no-op guard: the update is offered only for a review of the
     /// inputs on screen that reports a change. `hasChanges` comes from Rust.
-    /// Never after an update whose outcome is unknown.
+    /// Never after an update whose outcome is unknown, nor while a sent
+    /// update's refresh is pending.
     private var canSubmit: Bool {
-        guard !isBusy, !unconfirmedUpdateSent, ownerWallet != nil, let review else { return false }
+        guard !isBusy, !unconfirmedUpdateSent, pendingRefreshFloor == nil,
+              ownerWallet != nil, let review else { return false }
         return review.inputs == inputs && review.preview.hasChanges
     }
 
@@ -343,19 +389,24 @@ struct UpdateContractView: View {
             sourceMessage = "The \(source) holds no contract JSON."
             return
         }
-        let fields: UpdateContractImport.Fields
+        let imported: UpdateContractImport.Imported
         do {
-            fields = try UpdateContractImport.fields(from: text)
+            imported = try UpdateContractImport.read(from: text)
         } catch {
             sourceMessage = "Nothing filled from \(source): \(Self.describe(error))"
             return
         }
+        let fields = imported.fields
         documentsJSON = fields.documents
         tokensJSON = fields.tokens
         groupsJSON = fields.groups
         keywords = fields.keywords
         descriptionText = fields.description
-        sourceMessage = "Filled from \(source)."
+        var message = "Filled from \(source)."
+        if imported.carriesSharedDefinitions {
+            message += " This file has shared definitions ($defs). This screen does not update them: Platform keeps the live ones."
+        }
+        sourceMessage = message
     }
 
     // MARK: - Actions
@@ -419,39 +470,59 @@ struct UpdateContractView: View {
                 expectedCurrentVersion: review.preview.currentVersion,
                 signer: signer
             )
-            // Keepalive: see the KeychainSigner lifetime contract on
-            // `updateDataContract`.
-            _ = signer
 
             // Platform holds at least the reviewed new version now, so an
             // older copy from a lagging node is not stored.
-            let refreshFailure = await refreshStoredContract(
-                minimumVersion: Int(review.preview.newVersion)
-            )
+            let newVersion = Int(review.preview.newVersion)
+            let refreshFailure = await refreshStoredContract(minimumVersion: newVersion)
             // The confirmed update gave the contract the reviewed new
             // version. Read it from the review, not the stored row, which
             // the refresh writes through another context.
             var message = "Contract id:\n\(contractId.toBase58String())\n\nVersion: \(review.preview.newVersion)"
             if let refreshFailure {
-                message += "\n\nThe contract was updated, but the local copy could not be refreshed: \(refreshFailure)"
+                // Stay on the screen and offer a refresh-only retry. The
+                // review is stale after the update.
+                self.review = nil
+                pendingRefreshFloor = newVersion
+                self.refreshFailure = refreshFailure
+                message += "\n\nThe contract was updated, but the local copy could not be refreshed: \(refreshFailure)\n\nUse Refresh Stored Contract to try again."
+                outcome = Outcome(
+                    title: "Contract Updated",
+                    message: message,
+                    dismissesScreen: false,
+                    identifier: "updateContract.success"
+                )
+            } else {
+                outcome = Outcome(
+                    title: "Contract Updated",
+                    message: message,
+                    dismissesScreen: true,
+                    identifier: "updateContract.success"
+                )
             }
-            outcome = Outcome(title: "Contract Updated", message: message, dismissesScreen: true)
         } catch PlatformWalletError.transactionBroadcastUnconfirmed(let detail) {
-            _ = signer
             // The update may have executed, or may still. It is not retried,
-            // and no other update is offered from this screen. The refresh
-            // has only the stored version as its floor: the update's new
-            // version is not known to be on chain.
+            // and no other update is offered from this screen. The review
+            // proved the contract was at least at its current version, so
+            // the refresh refuses an older copy; the update's new version is
+            // not known to be on chain, so it is not the floor.
             self.review = nil
             unconfirmedUpdateSent = true
-            let refreshFailure = await refreshStoredContract(minimumVersion: nil)
+            let currentVersion = Int(review.preview.currentVersion)
+            let refreshFailure = await refreshStoredContract(minimumVersion: currentVersion)
             var message = "The update was sent, but its outcome is unknown: it may have executed, or may still. It was not retried. Do not send another update now: check the contract's version on the contract screen later before trying again.\n\n\(detail)"
             if let refreshFailure {
+                pendingRefreshFloor = currentVersion
+                self.refreshFailure = refreshFailure
                 message += "\n\nThe local copy could not be refreshed: \(refreshFailure)"
             }
-            outcome = Outcome(title: "Update Unconfirmed", message: message, dismissesScreen: false)
+            outcome = Outcome(
+                title: "Update Unconfirmed",
+                message: message,
+                dismissesScreen: false,
+                identifier: "updateContract.unconfirmed"
+            )
         } catch {
-            _ = signer
             // A failed submit may leave the reviewed contract behind (it may
             // have changed, or this update may have reached Platform), so
             // the review is cleared and Update Contract stays off until the
@@ -459,6 +530,26 @@ struct UpdateContractView: View {
             self.review = nil
             errorMessage = Self.describe(error)
         }
+    }
+
+    /// Retry only the refresh after a sent update whose refresh failed, with
+    /// the floor that update set. Never signs or broadcasts.
+    private func retryRefresh() async {
+        guard !isBusy, let floor = pendingRefreshFloor else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+        if let failure = await refreshStoredContract(minimumVersion: floor) {
+            refreshFailure = failure
+            return
+        }
+        pendingRefreshFloor = nil
+        refreshFailure = nil
+        outcome = Outcome(
+            title: "Contract Refreshed",
+            message: "The stored contract is up to date.",
+            dismissesScreen: true,
+            identifier: "updateContract.refreshed"
+        )
     }
 
     /// Bring the stored contract up to date with Platform, refusing a
@@ -510,8 +601,11 @@ private extension UpdateContractView {
     struct Outcome {
         let title: String
         let message: String
-        /// Whether OK goes back to the contract: after a confirmed update.
+        /// Whether OK goes back to the contract: after a confirmed update
+        /// whose refresh succeeded, or a successful refresh-only retry.
         let dismissesScreen: Bool
+        /// The accessibility identifier of the alert message.
+        let identifier: String
     }
 }
 

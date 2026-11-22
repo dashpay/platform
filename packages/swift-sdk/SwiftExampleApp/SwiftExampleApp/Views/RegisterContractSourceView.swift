@@ -614,7 +614,13 @@ struct PasteboardContractCandidate {
                     throw SDKError.serializationError("Group entry is missing an `id` field")
                 }
                 let key: String
-                if let intId = rawId as? Int {
+                // Foundation reads JSON `true`/`false` as an `NSNumber`
+                // that `as? Int` turns into 1/0, so a Boolean is refused
+                // before the Int branch.
+                if let number = rawId as? NSNumber,
+                   CFGetTypeID(number) == CFBooleanGetTypeID() {
+                    throw SDKError.serializationError("Group entry has unsupported `id` type, expected Int or String")
+                } else if let intId = rawId as? Int {
                     key = String(intId)
                 } else if let strId = rawId as? String {
                     key = strId
