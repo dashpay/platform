@@ -294,9 +294,33 @@ struct LoadIdentityView: View {
                     return Data(hexString: trimmed)
                 }
 
-                let votingKeyData = votingPrivateKeyInput.isEmpty ? nil : Data(hexString: votingPrivateKeyInput.trimmingCharacters(in: .whitespacesAndNewlines))
-                let ownerKeyData = ownerPrivateKeyInput.isEmpty ? nil : Data(hexString: ownerPrivateKeyInput.trimmingCharacters(in: .whitespacesAndNewlines))
-                let payoutKeyData = payoutPrivateKeyInput.isEmpty ? nil : Data(hexString: payoutPrivateKeyInput.trimmingCharacters(in: .whitespacesAndNewlines))
+                // Masternode keys arrive as hex or WIF (the testnet presets
+                // fill WIF); Rust reads either. A key that is typed but
+                // unreadable stops the load instead of being dropped, since
+                // the vote sheets sign with the stored voting key.
+                var unreadableKeys: [String] = []
+                func masternodeKey(_ input: String, named name: String) -> Data? {
+                    guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                        return nil
+                    }
+                    guard let key = KeyValidation.privateKeyBytes(fromText: input) else {
+                        unreadableKeys.append(name)
+                        return nil
+                    }
+                    return key
+                }
+                let votingKeyData = masternodeKey(votingPrivateKeyInput, named: "voting")
+                let ownerKeyData = masternodeKey(ownerPrivateKeyInput, named: "owner")
+                let payoutKeyData = masternodeKey(payoutPrivateKeyInput, named: "payout")
+                guard unreadableKeys.isEmpty else {
+                    let names = unreadableKeys.joined(separator: ", ")
+                    await MainActor.run {
+                        errorMessage = "The \(names) private key is neither 64 hex characters nor WIF."
+                        isLoading = false
+                        loadStartTime = nil
+                    }
+                    return
+                }
 
                 // Fetch the identity from the network to verify it exists
                 guard let sdk = appState.sdk else {
