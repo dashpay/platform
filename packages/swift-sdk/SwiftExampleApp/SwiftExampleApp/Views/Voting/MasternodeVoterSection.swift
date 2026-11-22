@@ -16,9 +16,24 @@ enum MasternodeVoter: Equatable {
     case storedKey(identityId: Data)
     #if DEBUG
     /// Debug builds only: a pro_tx_hash (wire order) and a voting private key
-    /// typed into the sheet, for testing with arbitrary credentials.
-    case typedCredentials(proTxHash: Data, votingPrivateKey: Data)
+    /// typed into the sheet, for testing with arbitrary credentials. The key
+    /// is `nil` while its field is empty: reading the masternode's answer
+    /// needs only the pro_tx_hash, casting needs both.
+    case typedCredentials(proTxHash: Data, votingPrivateKey: Data?)
     #endif
+
+    /// Whether a vote can be cast as this voter. A stored key always can;
+    /// typed credentials only with a voting private key.
+    var canCast: Bool {
+        switch self {
+        case .storedKey:
+            return true
+        #if DEBUG
+        case .typedCredentials(_, let votingPrivateKey):
+            return votingPrivateKey != nil
+        #endif
+        }
+    }
 
     /// The pro_tx_hash in the wire order the vote and the "read this
     /// masternode's answer" FFIs take.
@@ -100,6 +115,9 @@ struct MasternodeVoteCall {
             guard let withTypedKey else {
                 throw MasternodeVoteCallError.typedCredentialsUnsupported
             }
+            guard let votingPrivateKey else {
+                throw MasternodeVoteCallError.typedCredentialsWithoutKey
+            }
             try await withTypedKey(proTxHash, votingPrivateKey)
         #endif
         }
@@ -109,9 +127,15 @@ struct MasternodeVoteCall {
 #if DEBUG
 enum MasternodeVoteCallError: LocalizedError {
     case typedCredentialsUnsupported
+    case typedCredentialsWithoutKey
 
     var errorDescription: String? {
-        "This vote cannot be cast with typed credentials."
+        switch self {
+        case .typedCredentialsUnsupported:
+            return "This vote cannot be cast with typed credentials."
+        case .typedCredentialsWithoutKey:
+            return "Enter the voting private key to cast a vote with typed credentials."
+        }
     }
 }
 #endif
@@ -165,6 +189,9 @@ struct MasternodeVoterSection: View {
             Text("The vote is signed with the voting key stored when the identity was loaded. The key stays in the Keychain.")
         }
         .onAppear(perform: selectDefaultIfNeeded)
+        // `@Query` updates while the sheet is open can add or remove an
+        // eligible identity; keep the selection on one that still is.
+        .onChange(of: votingIdentities.map(\.identityId)) { _, _ in selectDefaultIfNeeded() }
         .onChange(of: selectedIdentityId) { _, _ in publish() }
         #if DEBUG
         .onChange(of: useTypedCredentials) { _, _ in publish() }
@@ -246,9 +273,17 @@ struct MasternodeVoterSection: View {
     private func publish() {
         #if DEBUG
         if useTypedCredentials {
-            if let proTxHash = Self.decode32(proTxHashHex),
-                let votingKey = Self.decode32(votingKeyHex)
-            {
+            // The pro_tx_hash alone is enough to read the masternode's
+            // answer, so the voter is published without a key while the key
+            // field is empty. A key that is typed but invalid publishes
+            // nothing.
+            guard let proTxHash = Self.decode32(proTxHashHex) else {
+                voter = nil
+                return
+            }
+            if votingKeyHex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                voter = .typedCredentials(proTxHash: proTxHash, votingPrivateKey: nil)
+            } else if let votingKey = Self.decode32(votingKeyHex) {
                 voter = .typedCredentials(proTxHash: proTxHash, votingPrivateKey: votingKey)
             } else {
                 voter = nil

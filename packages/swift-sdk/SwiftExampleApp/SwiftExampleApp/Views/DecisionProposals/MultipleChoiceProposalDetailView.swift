@@ -459,7 +459,7 @@ private struct MultipleChoiceProposalVoteSheet: View {
                             Text("Submit Vote")
                         }
                     }
-                    .disabled(isCasting || isLookingUp || voteChoice == nil || voter == nil)
+                    .disabled(isCasting || isLookingUp || voteChoice == nil || voter?.canCast != true)
                     .accessibilityIdentifier("multipleChoiceProposalVote.submit")
 
                     Button {
@@ -493,6 +493,8 @@ private struct MultipleChoiceProposalVoteSheet: View {
                 }
             }
             .interactiveDismissDisabled(isCasting)
+            // A message names the previous voter's answer; drop it.
+            .onChange(of: voter) { _, _ in message = nil }
         }
     }
 
@@ -559,19 +561,25 @@ private struct MultipleChoiceProposalVoteSheet: View {
             return
         }
         guard let voter else { return }
+        let proTxHash = voter.wireOrderProTxHash
 
         isLookingUp = true
         defer { isLookingUp = false }
         do {
-            if let current = try await sdk.multipleChoiceProposalMasternodeVote(
+            let current = try await sdk.multipleChoiceProposalMasternodeVote(
                 proposalId: proposalId,
-                proTxHash: voter.wireOrderProTxHash
-            ) {
+                proTxHash: proTxHash
+            )
+            // The voter changed while the read was in flight: this answer
+            // is not the picked masternode's.
+            guard self.voter?.wireOrderProTxHash == proTxHash else { return }
+            if let current {
                 show("Current answer: \(describe(current)).", isError: false)
             } else {
                 show("This masternode has no answer in the vote (none yet, or the vote has ended).", isError: false)
             }
         } catch {
+            guard self.voter?.wireOrderProTxHash == proTxHash else { return }
             show("Reading the answer failed: \(error.localizedDescription)", isError: true)
         }
     }

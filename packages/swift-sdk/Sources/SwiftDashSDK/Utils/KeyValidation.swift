@@ -59,6 +59,11 @@ public enum KeyValidation {
     /// decides which form it is; `nil` when it is neither, or not a secp256k1
     /// secret key.
     public static func privateKeyBytes(fromText text: String) -> Data? {
+        // C reads only up to the first NUL, so text with an embedded one
+        // would be judged by its prefix alone.
+        guard !text.contains("\0") else {
+            return nil
+        }
         var secret = [UInt8](repeating: 0, count: 32)
         defer {
             secret.withUnsafeMutableBufferPointer { ptr in

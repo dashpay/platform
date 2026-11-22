@@ -431,6 +431,8 @@ private struct DecisionProposalVoteSheet: View {
                 }
             }
             .interactiveDismissDisabled(isCasting)
+            // A message names the previous voter's answer; drop it.
+            .onChange(of: voter) { _, _ in message = nil }
         }
     }
 
@@ -448,7 +450,7 @@ private struct DecisionProposalVoteSheet: View {
                     Text("Submit Vote")
                 }
             }
-            .disabled(isCasting || isLookingUp || voter == nil)
+            .disabled(isCasting || isLookingUp || voter?.canCast != true)
             .accessibilityIdentifier("decisionProposalVote.submit")
 
             Button {
@@ -523,14 +525,19 @@ private struct DecisionProposalVoteSheet: View {
             return
         }
         guard let voter else { return }
+        let proTxHash = voter.wireOrderProTxHash
 
         isLookingUp = true
         defer { isLookingUp = false }
         do {
-            if let vote = try await sdk.decisionProposalMasternodeVote(
+            let vote = try await sdk.decisionProposalMasternodeVote(
                 proposalId: proposalId,
-                proTxHash: voter.wireOrderProTxHash
-            ) {
+                proTxHash: proTxHash
+            )
+            // The voter changed while the read was in flight: this answer
+            // is not the picked masternode's.
+            guard self.voter?.wireOrderProTxHash == proTxHash else { return }
+            if let vote {
                 show(
                     "Current answer: \(vote.choice.rawValue), voted \(vote.timesVoted) time\(vote.timesVoted == 1 ? "" : "s").",
                     isError: false
@@ -539,6 +546,7 @@ private struct DecisionProposalVoteSheet: View {
                 show("This masternode has no answer on the poll (none yet, or the poll has finished).", isError: false)
             }
         } catch {
+            guard self.voter?.wireOrderProTxHash == proTxHash else { return }
             show("Reading the answer failed: \(error.localizedDescription)", isError: true)
         }
     }

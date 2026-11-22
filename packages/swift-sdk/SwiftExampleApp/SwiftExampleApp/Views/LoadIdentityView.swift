@@ -297,7 +297,12 @@ struct LoadIdentityView: View {
                 // Masternode keys arrive as hex or WIF (the testnet presets
                 // fill WIF); Rust reads either. A key that is typed but
                 // unreadable stops the load instead of being dropped, since
-                // the vote sheets sign with the stored voting key.
+                // the vote sheets sign with the stored voting key. Only the
+                // fields the selected identity type shows are read: voting
+                // and owner for a masternode or evonode, payout for an
+                // evonode only.
+                let identityType = selectedIdentityType
+                let isMasternodeType = identityType == .masternode || identityType == .evonode
                 var unreadableKeys: [String] = []
                 func masternodeKey(_ input: String, named name: String) -> Data? {
                     guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -309,9 +314,12 @@ struct LoadIdentityView: View {
                     }
                     return key
                 }
-                let votingKeyData = masternodeKey(votingPrivateKeyInput, named: "voting")
-                let ownerKeyData = masternodeKey(ownerPrivateKeyInput, named: "owner")
-                let payoutKeyData = masternodeKey(payoutPrivateKeyInput, named: "payout")
+                let votingKeyData = isMasternodeType
+                    ? masternodeKey(votingPrivateKeyInput, named: "voting") : nil
+                let ownerKeyData = isMasternodeType
+                    ? masternodeKey(ownerPrivateKeyInput, named: "owner") : nil
+                let payoutKeyData = identityType == .evonode
+                    ? masternodeKey(payoutPrivateKeyInput, named: "payout") : nil
                 guard unreadableKeys.isEmpty else {
                     let names = unreadableKeys.joined(separator: ", ")
                     await MainActor.run {
@@ -453,7 +461,6 @@ struct LoadIdentityView: View {
                 // Private keys are stored in the keychain and linked
                 // to the matching `PersistentPublicKey`s below.
                 let trimmedAlias = aliasInput.isEmpty ? nil : aliasInput
-                let identityType = selectedIdentityType
                 let network = appState.currentNetwork
                 let capturedPublicKeys = parsedPublicKeys
                 let capturedPrivateKeys = privateKeyData
@@ -536,13 +543,18 @@ struct LoadIdentityView: View {
                     }
 
                     // Masternode-/evonode-specific keys go to the
-                    // keychain under their dedicated slots.
+                    // keychain under their dedicated slots. A failed
+                    // write returns nil; it is reported below.
+                    var unstoredKeys: [String] = []
                     if let votingKey = capturedVotingKey {
                         row.votingPrivateKeyIdentifier = KeychainManager.shared.storeSpecialKey(
                             votingKey,
                             identityId: validIdData,
                             keyType: .voting
                         )
+                        if row.votingPrivateKeyIdentifier == nil {
+                            unstoredKeys.append("voting")
+                        }
                     }
                     if let ownerKey = capturedOwnerKey {
                         row.ownerPrivateKeyIdentifier = KeychainManager.shared.storeSpecialKey(
@@ -550,6 +562,9 @@ struct LoadIdentityView: View {
                             identityId: validIdData,
                             keyType: .owner
                         )
+                        if row.ownerPrivateKeyIdentifier == nil {
+                            unstoredKeys.append("owner")
+                        }
                     }
                     if let payoutKey = capturedPayoutKey {
                         row.payoutPrivateKeyIdentifier = KeychainManager.shared.storeSpecialKey(
@@ -557,11 +572,28 @@ struct LoadIdentityView: View {
                             identityId: validIdData,
                             keyType: .payout
                         )
+                        if row.payoutPrivateKeyIdentifier == nil {
+                            unstoredKeys.append("payout")
+                        }
                     }
 
+                    // The identity itself loaded, so its row is saved
+                    // even when a key could not be stored.
                     try? modelContext.save()
 
-                    showSuccess = true
+                    if unstoredKeys.isEmpty {
+                        showSuccess = true
+                    } else {
+                        let names = ListFormatter.localizedString(byJoining: unstoredKeys)
+                        let noun = unstoredKeys.count == 1 ? "private key" : "private keys"
+                        var text = "The identity was loaded, but the \(names) \(noun) could not be stored in the Keychain."
+                        if unstoredKeys.contains("voting") {
+                            text += " The identity cannot vote until it is loaded again."
+                        }
+                        errorMessage = text
+                        isLoading = false
+                        loadStartTime = nil
+                    }
 
                     // Also fetch DPNS names for the identity
                     Task {

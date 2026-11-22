@@ -621,7 +621,7 @@ private struct CastVoteSheet: View {
                             Text("Submit Vote")
                         }
                     }
-                    .disabled(isCasting || voter == nil)
+                    .disabled(isCasting || voter?.canCast != true)
                     .accessibilityIdentifier("contestVote.submit")
 
                     if let choiceError {
