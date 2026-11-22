@@ -219,8 +219,10 @@ impl Sdk {
     /// The listing is ordered by `$updatedAt`, which moves whenever Platform advances a
     /// withdrawal's status, so a withdrawal can move between pages while they are read: to an
     /// earlier page (it would be read twice) or, from a page not read yet, to the top (it
-    /// would be missed). See [`read_all_withdrawals`] for how the read lists each withdrawal
-    /// once.
+    /// would be missed). Rows are merged by id, and the listing is read again from the top
+    /// to find withdrawals that moved during the read. With more than one page, a withdrawal
+    /// whose status changes repeatedly during the read can be absent from the result; read
+    /// again to pick it up. A listing that fits one page is always complete.
     pub async fn fetch_all_identity_withdrawals(
         &self,
         identity_id: Identifier,
@@ -237,9 +239,16 @@ impl Sdk {
 /// page, the listing is therefore read again from the top, page by page until a page holds
 /// nothing new or changed. A withdrawal can move again during that pass and land above
 /// where the pass has reached, so passes repeat until one finds nothing new or changed on
-/// its first page: the top of the listing is then unchanged, so no withdrawal moved since
-/// the pass before, and the list is complete as of that read. Each further pass needs
-/// another status change on the chain, so the passes end.
+/// its first page. Each further pass needs another status change on the chain, so the
+/// passes end.
+///
+/// This narrows the gap but does not close it. Each page is a separate proved query, so a
+/// listing longer than one page is never read at a single block, and a pass stops at the
+/// first unchanged page: when the row a pass continues from moves to the top itself, the
+/// next page starts from the top again and the rows in between are not read. A withdrawal
+/// that keeps moving while others move around it can therefore be absent from the result.
+/// A listing that fits one page is one query and is always complete. A caller that needs
+/// a complete longer listing has to read every page at the same block height.
 async fn read_all_withdrawals<F, Fut>(mut fetch_page: F) -> Result<Vec<IdentityWithdrawal>, Error>
 where
     F: FnMut(DocumentsPage) -> Fut,
