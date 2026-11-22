@@ -2325,6 +2325,7 @@ mod tests {
             balance: corrected,
             account_balances: BTreeMap::new(),
             addresses_derived: vec![],
+            locked_outpoints: vec![],
         });
 
         // Observable immediately — before the lifecycle writer commits.
