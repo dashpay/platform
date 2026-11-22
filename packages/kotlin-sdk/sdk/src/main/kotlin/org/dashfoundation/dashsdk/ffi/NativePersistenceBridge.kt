@@ -56,10 +56,16 @@ package org.dashfoundation.dashsdk.ffi
  *
  * ## Threading
  *
- * Callbacks arrive **synchronously** on Rust Tokio worker threads and
- * must complete before returning. Subclasses that touch Room do so with
- * `runBlocking` on a dedicated dispatcher (see
- * `PlatformWalletPersistenceHandler`).
+ * Callbacks arrive **synchronously** on the native thread that runs the
+ * wallet operation, and must complete before returning. That thread is
+ * attached to the JVM for the callback and is not always a Tokio worker:
+ * wallet create, the persisted-wallet load, shielded configure and bind,
+ * and wallet startup run their work on a short-lived native thread
+ * (`pw-ffi-bigstack`) while the thread that called into native code stays
+ * blocked until it finishes. A callback must therefore not dispatch
+ * synchronously to the thread that made the native call: that deadlocks.
+ * Subclasses that touch Room do so with `runBlocking` on a dedicated
+ * dispatcher (see `PlatformWalletPersistenceHandler`).
  *
  * Known coverage deviation: the deferred contact-crypto queue
  * (`PlatformWalletChangeSet.pending_contact_crypto_added/_cleared`) has
