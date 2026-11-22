@@ -6,6 +6,7 @@
     "asset_lock_funding_indices",
     "asset_lock_operation_ids",
     "atomic_changesets",
+    "dpns_name_states",
     "invitations",
     "pending_contact_crypto",
     "private_contact_request_scan_state",
@@ -57,6 +58,8 @@
     "platform_wallet_claim_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
     "platform_wallet_create_document_with_signer": "packages/rs-platform-wallet-ffi/src/document.rs",
     "platform_wallet_create_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
+    "platform_wallet_dpns_give_up_name": "packages/rs-platform-wallet-ffi/src/dpns_marketplace.rs",
+    "platform_wallet_dpns_name_give_up_choices": "packages/rs-platform-wallet-ffi/src/dpns_marketplace.rs",
     "platform_wallet_drain_pending_contact_crypto": "packages/rs-platform-wallet-ffi/src/dashpay.rs",
     "platform_wallet_get_private_contact_readiness": "packages/rs-platform-wallet-ffi/src/contact_request.rs",
     "platform_wallet_get_private_pair_held": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
@@ -1279,6 +1282,80 @@
           "file": "packages/rs-platform-wallet/src/wallet/identity/state/manager/apply.rs",
           "id": "contested_dpns_apply_replaces_canonical_snapshot_and_allows_empty",
           "command": "cargo test -p platform-wallet contested_dpns_apply_replaces_canonical_snapshot_and_allows_empty",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "dpns.give_up_name",
+      "title": "Delete or tombstone a DPNS name the identity holds (protocol version 15)",
+      "area": "shared_policy",
+      "shared_apis": [
+        "platform_wallet_dpns_name_give_up_choices",
+        "platform_wallet_dpns_give_up_name"
+      ],
+      "required_persistence_capabilities": [
+        "dpns_name_states"
+      ],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "GiveUpNameView offers only the ways Rust reports (a contested name: tombstone only), refuses below protocol version 15 from the SDK's typed refusal, and drops the name through the persister after the network confirms it. The TEST_PLAN gates DPNS-09..13 are written but not yet run on a simulator or device. Restart is required and not yet met: the hold on a give-up that was sent but not confirmed is session-scoped, so after a process restart such a give-up is offered again until the name is seen gone."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI binding in rs-unified-sdk-jni and no Kotlin wrapper or KotlinExampleApp screen for platform_wallet_dpns_name_give_up_choices / platform_wallet_dpns_give_up_name yet."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/dpns_marketplace/tests/give_up.rs",
+          "id": "should_refuse_to_give_up_a_name_on_a_network_below_protocol_version_15",
+          "command": "cargo test -p platform-wallet --lib give_up",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/dpns_marketplace/tests/give_up.rs",
+          "id": "should_offer_only_a_tombstone_for_a_contested_name",
+          "command": "cargo test -p platform-wallet --lib give_up",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/dpns_marketplace.rs",
+          "id": "should_refuse_an_unknown_give_up_method_before_touching_the_wallet",
+          "command": "cargo test -p platform-wallet-ffi --lib dpns",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/DpnsMarketplaceDecodingTests.swift",
+          "id": "testUnknownOrInconsistentGivenUpResultsFailClosed",
+          "command": "swift test --package-path packages/swift-sdk --filter DpnsMarketplaceDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DPNS-09",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DPNS-13",
           "covers_restart": false
         }
       ]

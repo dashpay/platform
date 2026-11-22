@@ -50,6 +50,8 @@ struct IdentityDetailView: View {
     @State private var isLoadingDPNS = false
     @State private var showingRegisterName = false
     @State private var showingSelectMainName = false
+    /// The owned name whose "Give Up Name…" sheet is open, if any.
+    @State private var giveUpRequest: GiveUpNameRequest?
 
     // DashPay profile state — read from the platform-wallet cache,
     // refreshed on appear via `syncDashPayProfiles()`.
@@ -252,6 +254,27 @@ struct IdentityDetailView: View {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundColor(.green)
                             }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                // Giving up signs through the loaded wallet.
+                                // Tinted rather than `role: .destructive`,
+                                // which animates the row away at once: the
+                                // row leaves only when persistence drops it
+                                // after Platform confirmed the name gone.
+                                if hasLoadedWallet(for: identity) {
+                                    Button {
+                                        giveUpRequest = GiveUpNameRequest(name: name)
+                                    } label: {
+                                        Label("Give Up Name…", systemImage: "trash")
+                                    }
+                                    .tint(.red)
+                                    .accessibilityIdentifier(
+                                        "identity.dpnsName.\(PersistentDPNSName.normalize(name)).giveUp"
+                                    )
+                                }
+                            }
+                            .accessibilityIdentifier(
+                                "identity.dpnsName.\(PersistentDPNSName.normalize(name))"
+                            )
                         }
 
                         // Show contested names
@@ -448,6 +471,11 @@ struct IdentityDetailView: View {
             RegisterNameView(identity: identity, onRegistered: { _ in })
                 .environmentObject(appState)
         }
+        .sheet(item: $giveUpRequest) { request in
+            // The name leaves `dpnsNamesRows` through the persister once
+            // Platform confirmed it gone; nothing here removes the row.
+            GiveUpNameView(identity: identity, name: request.name)
+        }
         .sheet(isPresented: $showingSelectMainName) {
             SelectMainNameView(identity: identity)
                 .environmentObject(appState)
@@ -553,6 +581,7 @@ struct IdentityDetailView: View {
                 // badge appears without a manual refresh).
                 try await IdentityKeyRefresher.refreshBalanceAndKeys(
                     identity: identity,
+                    wallet: identity.wallet.flatMap { walletManager.wallet(for: $0.walletId) },
                     sdk: sdk,
                     modelContext: modelContext
                 )
