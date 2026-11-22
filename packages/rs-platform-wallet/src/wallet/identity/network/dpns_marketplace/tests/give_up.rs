@@ -95,7 +95,16 @@ async fn sdk_holding(label: &str, domain: Option<Document>) -> Sdk {
 
 /// A wallet over `sdk` whose identity [`OWNER`] holds `labels`, and its mirror.
 async fn wallet_holding(sdk: Sdk, labels: &[&str]) -> (IdentityWallet, Arc<MirrorPersister>) {
-    let mirror = Arc::new(MirrorPersister::hydrated(Vec::new()));
+    wallet_holding_over(sdk, labels, MirrorPersister::hydrated(Vec::new())).await
+}
+
+/// [`wallet_holding`] over `mirror`, the durable storage the wallet loaded from.
+async fn wallet_holding_over(
+    sdk: Sdk,
+    labels: &[&str],
+    mirror: MirrorPersister,
+) -> (IdentityWallet, Arc<MirrorPersister>) {
+    let mirror = Arc::new(mirror);
     let wallet = mirror_backed_identity_wallet_with_sdk(Arc::clone(&mirror), Arc::new(sdk));
     let mut owner = identity(
         Purpose::AUTHENTICATION,
@@ -954,4 +963,78 @@ fn refused_broadcast(error: &str) -> StateTransition {
         .collect();
     StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, PlatformVersion::latest())
         .expect("a serialized state transition")
+}
+
+/// A wallet loaded cold holds no marketplace row in memory, while durable storage still
+/// holds an `Owned` row of an older registration of the name (deleted and registered again
+/// from another client). Giving up the current registration removes both rows before it
+/// drops the label, so nothing is left marked owned on disk.
+#[tokio::test]
+async fn should_remove_the_stored_row_of_an_older_registration_of_the_name() {
+    let owner = Identifier::from(OWNER);
+    let older = Identifier::from([0xC5; 32]);
+    let sdk = sdk_holding(
+        PLAIN_LABEL,
+        Some(domain_document(
+            PLAIN_LABEL,
+            Identifier::from(DOCUMENT),
+            owner,
+        )),
+    )
+    .await;
+    let (wallet, mirror) = wallet_holding_over(
+        sdk,
+        &[PLAIN_LABEL, KEPT_LABEL],
+        MirrorPersister::hydrated(vec![owned_row(older, owner, PLAIN_LABEL)]),
+    )
+    .await;
+
+    wallet
+        .forget_given_up_dpns_name(&owner, &plain_target(owner))
+        .await;
+
+    let removed: BTreeSet<Identifier> = mirror.stored_dpns_removals().into_iter().collect();
+    assert_eq!(
+        removed,
+        [Identifier::from(DOCUMENT), older].into_iter().collect()
+    );
+    assert_eq!(
+        dpns_labels(&wallet, &owner).await,
+        vec![KEPT_LABEL.to_string()]
+    );
+}
+
+/// When the stored rows can not be read, the label is kept as the cue for the next
+/// marketplace sync; the checked document's row is still removed
+#[tokio::test]
+async fn should_keep_the_label_when_the_stored_rows_can_not_be_read() {
+    let owner = Identifier::from(OWNER);
+    let sdk = sdk_holding(
+        PLAIN_LABEL,
+        Some(domain_document(
+            PLAIN_LABEL,
+            Identifier::from(DOCUMENT),
+            owner,
+        )),
+    )
+    .await;
+    let (wallet, mirror) = wallet_holding_over(
+        sdk,
+        &[PLAIN_LABEL, KEPT_LABEL],
+        MirrorPersister::failing_with(PersistenceErrorKind::Fatal),
+    )
+    .await;
+
+    wallet
+        .forget_given_up_dpns_name(&owner, &plain_target(owner))
+        .await;
+
+    assert_eq!(
+        mirror.stored_dpns_removals(),
+        vec![Identifier::from(DOCUMENT)]
+    );
+    assert_eq!(
+        dpns_labels(&wallet, &owner).await,
+        vec![PLAIN_LABEL.to_string(), KEPT_LABEL.to_string()]
+    );
 }

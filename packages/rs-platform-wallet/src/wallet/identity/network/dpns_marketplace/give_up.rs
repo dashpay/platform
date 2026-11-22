@@ -502,6 +502,30 @@ impl IdentityWallet {
             .map(|entry| entry.document_id)
             .collect();
         removed.insert(target.choices.document_id);
+        // The row durable storage still holds for this owner and name, which a wallet loaded
+        // cold does not hold in memory: an older registration of the name (deleted and
+        // registered again from another client) would otherwise stay `Owned` on disk with no
+        // label left to find it by. Retained `Sold`/`Transferred` history is kept. When the
+        // lookup fails, the label is kept as the cue for the next marketplace sync.
+        let mut keep_label = false;
+        match self
+            .persister
+            .get_dpns_name_state(owner_identity_id, &target.state.normalized_label)
+        {
+            Ok(Some(entry)) if matches!(entry.status, DpnsNameSaleStatus::Owned) => {
+                removed.insert(entry.document_id);
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(
+                    identity = %owner_identity_id,
+                    document = %target.choices.document_id,
+                    "could not read the stored rows of a confirmed DPNS name give-up; keeping \
+                     the label so the next marketplace sync finishes the removal: {error}"
+                );
+                keep_label = true;
+            }
+        }
         let rows = DpnsNameStateChangeSet {
             removed: removed.clone(),
             ..Default::default()
@@ -528,6 +552,9 @@ impl IdentityWallet {
         }
         for document_id in &removed {
             info.dpns_name_states.remove(document_id);
+        }
+        if keep_label {
+            return;
         }
 
         let Some(managed) = info
