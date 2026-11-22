@@ -18,6 +18,7 @@ struct UnfinishedWalletDrainsList: View {
     @State private var presented: PresentedProgress?
     @State private var resumeError: ResumeError?
     @State private var checking: Set<UUID> = []
+    @State private var retrying = false
 
     var body: some View {
         // The sheet and alert hang off an always-present container: a
@@ -48,26 +49,43 @@ struct UnfinishedWalletDrainsList: View {
         let entries = drainCoordinator.unfinished.filter {
             $0.record.walletId == walletId && $0.record.networkRaw == networkRaw
         }
-        if !entries.isEmpty || drainCoordinator.storeError != nil {
+        let storeError = drainCoordinator.storeError
+        if let heading = UnfinishedWalletDrainsHeading.make(
+            count: entries.count,
+            storeErrorPresent: storeError != nil
+        ) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Unfinished Max Transfers (\(entries.count))")
+                    Text(heading.title)
                         .font(.headline)
                     Spacer()
+                    if heading.showsRetry {
+                        retryButton
+                    }
                 }
                 .padding(.horizontal)
 
-                Text(
-                    "Nothing is lost. A new Max transfer cannot start until this one is finished."
-                )
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .padding(.horizontal)
+                if heading.showsNothingLostNotice {
+                    Text(
+                        "Nothing is lost. A new Max transfer cannot start until this one is finished."
+                    )
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal)
+                }
 
-                if let storeError = drainCoordinator.storeError {
+                if let storeError {
                     Text(storeError)
                         .font(.caption)
                         .foregroundColor(.red)
+                        .padding(.horizontal)
+                        .accessibilityIdentifier("walletDetail.unfinishedMaxTransfers.storeError")
+                }
+
+                if let lastKnownNotice = heading.lastKnownNotice {
+                    Text(lastKnownNotice)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                         .padding(.horizontal)
                 }
 
@@ -89,6 +107,25 @@ struct UnfinishedWalletDrainsList: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("walletDetail.unfinishedMaxTransfers")
         }
+    }
+
+    private var retryButton: some View {
+        Button {
+            retryStoreRead()
+        } label: {
+            if retrying {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Label("Try again", systemImage: "arrow.clockwise")
+                    .labelStyle(.titleAndIcon)
+                    .font(.callout)
+            }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .disabled(retrying)
+        .accessibilityIdentifier("walletDetail.unfinishedMaxTransfers.retryButton")
     }
 
     /// A row with a controller observes it, so its action follows the live
@@ -151,6 +188,20 @@ struct UnfinishedWalletDrainsList: View {
         Task {
             await drainCoordinator.checkAgain(record, walletManager: walletManager)
             checking.remove(id)
+        }
+    }
+
+    private func retryStoreRead() {
+        guard !retrying else { return }
+        retrying = true
+        let networkRaw = platformState.currentNetwork.rawValue
+        Task {
+            await drainCoordinator.retryStoreRead(
+                walletManager: walletManager,
+                networkRaw: networkRaw,
+                walletIds: [walletId]
+            )
+            retrying = false
         }
     }
 
@@ -290,6 +341,41 @@ private struct DrainRowContent: View {
     private func outpointLabel(_ outpoint: WalletDrainOutpoint) -> String {
         let txid = outpoint.txidWire.reversed().map { String(format: "%02x", $0) }.joined()
         return "\(txid.prefix(8))…:\(outpoint.vout)"
+    }
+}
+
+/// What the section's heading claims. Pure over plain values so it is
+/// testable. A failed marker-file read leaves the coordinator's list as an
+/// earlier read left it (empty on a cold launch), so while it is failed the
+/// heading gives no count and does not say nothing is lost.
+struct UnfinishedWalletDrainsHeading: Equatable {
+    let title: String
+    /// "Nothing is lost…": only after the marker file was read.
+    let showsNothingLostNotice: Bool
+    /// Says that the rows listed come from an earlier successful read.
+    let lastKnownNotice: String?
+    /// Section-level "Try again", which works without any row.
+    let showsRetry: Bool
+
+    /// `nil` when there is nothing to show: no rows and the read succeeded.
+    static func make(count: Int, storeErrorPresent: Bool) -> UnfinishedWalletDrainsHeading? {
+        if storeErrorPresent {
+            return UnfinishedWalletDrainsHeading(
+                title: "Unfinished Max Transfers",
+                showsNothingLostNotice: false,
+                lastKnownNotice: count > 0
+                    ? "Last known from an earlier read. This list may be out of date."
+                    : nil,
+                showsRetry: true
+            )
+        }
+        guard count > 0 else { return nil }
+        return UnfinishedWalletDrainsHeading(
+            title: "Unfinished Max Transfers (\(count))",
+            showsNothingLostNotice: true,
+            lastKnownNotice: nil,
+            showsRetry: false
+        )
     }
 }
 

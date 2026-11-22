@@ -77,8 +77,10 @@ final class WalletDrainCoordinator: ObservableObject {
     @Published private(set) var unfinished: [Entry] = []
     /// Every operation id with a stored marker, read or not yet read.
     @Published private(set) var markedOperationIds: Set<UUID> = []
-    /// Set when the marker file cannot be read. Shown rather than treated
-    /// as "no unfinished transfers".
+    /// Set when the marker file cannot be read, cleared by the next
+    /// successful read. Shown rather than treated as "no unfinished
+    /// transfers". While set, `unfinished` is what the last successful
+    /// read listed (empty if none has succeeded), so it may be stale.
     @Published private(set) var storeError: String?
 
     private let store: WalletDrainOperationStore
@@ -342,6 +344,23 @@ final class WalletDrainCoordinator: ObservableObject {
         )
     }
 
+    /// Reads the marker file again after `storeError`, then reconciles the
+    /// given wallets. Needs no row, since a failed read may list none.
+    /// Sends nothing.
+    func retryStoreRead(
+        walletManager: PlatformWalletManager,
+        networkRaw: UInt32,
+        walletIds: [Data]
+    ) async {
+        // Lists the markers at once, before the status reads finish.
+        refreshFromStore()
+        await reconcile(
+            walletManager: walletManager,
+            networkRaw: networkRaw,
+            walletIds: walletIds
+        )
+    }
+
     /// Drops every marker of a deleted wallet, on every network.
     func forgetWallet(walletId: Data) throws {
         try store.remove(walletId: walletId)
@@ -404,7 +423,10 @@ final class WalletDrainCoordinator: ObservableObject {
         }
     }
 
-    private func refreshFromStore() {
+    /// Lists every stored marker. On a failed read it sets `storeError` and
+    /// leaves `unfinished` as the last successful read left it; a
+    /// successful read clears `storeError`. Internal for tests.
+    func refreshFromStore() {
         let records: [WalletDrainOperationRecord]
         do {
             records = try store.records()
@@ -412,6 +434,7 @@ final class WalletDrainCoordinator: ObservableObject {
             storeError = "Could not read unfinished Max transfers: \(error.localizedDescription)"
             return
         }
+        storeError = nil
         let ids = Set(records.map(\.operationId))
         latest = latest.filter { ids.contains($0.key) }
         markedOperationIds = ids

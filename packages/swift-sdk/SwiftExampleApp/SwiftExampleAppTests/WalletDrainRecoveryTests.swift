@@ -229,6 +229,98 @@ final class WalletDrainRecoveryTests: XCTestCase {
         }
     }
 
+    // MARK: - Unreadable marker file
+
+    private func writeCorruptMarkerFile(for store: WalletDrainOperationStore) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("not json".utf8).write(to: store.fileURL)
+    }
+
+    @MainActor
+    func testShouldSetTheStoreErrorWhenTheMarkerFileIsCorruptAtLaunch() throws {
+        let store = WalletDrainOperationStore(directory: directory)
+        try writeCorruptMarkerFile(for: store)
+
+        let coordinator = WalletDrainCoordinator(store: store)
+
+        XCTAssertNotNil(coordinator.storeError)
+        XCTAssertEqual(coordinator.unfinished, [])
+    }
+
+    @MainActor
+    func testShouldClearTheStoreErrorWhenARefreshReadsTheFixedFile() throws {
+        let store = WalletDrainOperationStore(directory: directory)
+        try writeCorruptMarkerFile(for: store)
+        let coordinator = WalletDrainCoordinator(store: store)
+        XCTAssertNotNil(coordinator.storeError)
+
+        let stored = record()
+        try JSONEncoder().encode([stored]).write(to: store.fileURL)
+        coordinator.refreshFromStore()
+
+        XCTAssertNil(coordinator.storeError)
+        XCTAssertEqual(coordinator.unfinished.map(\.record), [stored])
+        XCTAssertEqual(coordinator.markedOperationIds, [stored.operationId])
+    }
+
+    @MainActor
+    func testShouldClearTheStoreErrorWhenARefreshFindsTheFileDeleted() throws {
+        let store = WalletDrainOperationStore(directory: directory)
+        try writeCorruptMarkerFile(for: store)
+        let coordinator = WalletDrainCoordinator(store: store)
+        XCTAssertNotNil(coordinator.storeError)
+
+        try FileManager.default.removeItem(at: store.fileURL)
+        coordinator.refreshFromStore()
+
+        XCTAssertNil(coordinator.storeError)
+        XCTAssertEqual(coordinator.unfinished, [])
+    }
+
+    /// A later failed read keeps the rows an earlier read listed, which is
+    /// why the section labels them as last known.
+    @MainActor
+    func testShouldKeepTheLastKnownRowsWhenALaterReadFails() throws {
+        let store = WalletDrainOperationStore(directory: directory)
+        let stored = record()
+        try store.insert(stored)
+        let coordinator = WalletDrainCoordinator(store: store)
+        XCTAssertNil(coordinator.storeError)
+
+        try Data("not json".utf8).write(to: store.fileURL)
+        coordinator.refreshFromStore()
+
+        XCTAssertNotNil(coordinator.storeError)
+        XCTAssertEqual(coordinator.unfinished.map(\.record), [stored])
+    }
+
+    func testShouldCountAndPromiseNothingLostOnlyAfterASuccessfulRead() throws {
+        XCTAssertNil(UnfinishedWalletDrainsHeading.make(count: 0, storeErrorPresent: false))
+
+        let read = try XCTUnwrap(UnfinishedWalletDrainsHeading.make(count: 2, storeErrorPresent: false))
+        XCTAssertEqual(read.title, "Unfinished Max Transfers (2)")
+        XCTAssertTrue(read.showsNothingLostNotice)
+        XCTAssertNil(read.lastKnownNotice)
+        XCTAssertFalse(read.showsRetry)
+    }
+
+    func testShouldGiveNoCountOrSafetyClaimWhileTheStoreCannotBeRead() throws {
+        // Cold launch: nothing was ever read, so zero rows is not "none".
+        let empty = try XCTUnwrap(UnfinishedWalletDrainsHeading.make(count: 0, storeErrorPresent: true))
+        XCTAssertEqual(empty.title, "Unfinished Max Transfers")
+        XCTAssertFalse(empty.showsNothingLostNotice)
+        XCTAssertNil(empty.lastKnownNotice)
+        XCTAssertTrue(empty.showsRetry)
+
+        // Rows from an earlier read are labelled as last known.
+        let stale = try XCTUnwrap(UnfinishedWalletDrainsHeading.make(count: 3, storeErrorPresent: true))
+        XCTAssertEqual(stale.title, "Unfinished Max Transfers")
+        XCTAssertFalse(stale.title.contains("3"))
+        XCTAssertFalse(stale.showsNothingLostNotice)
+        XCTAssertNotNil(stale.lastKnownNotice)
+        XCTAssertTrue(stale.showsRetry)
+    }
+
     func testShouldReadTheDrainIdBackFromItsControllerOperationId() {
         let id = UUID()
         XCTAssertEqual(
@@ -475,22 +567,70 @@ final class WalletDrainRecoveryTests: XCTestCase {
         XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 0), [.failed, .pending, .pending, .pending, .pending])
         XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 1, seconds: 10), [.done, .done, .failed, .pending, .pending])
         XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 2), [.done, .done, .done, .skipped, .failed])
-        XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 3), [.done, .done, .skipped, .done, .failed])
+        XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 3), [.done, .done, .done, .done, .failed])
+    }
+
+    /// Once the attempt has stopped the clock must not move its failure:
+    /// a Broadcast row fails on the finality wait at any age, including
+    /// inside the broadcasting window and past the old InstantSend timeout.
+    func testShouldKeepAFailedBroadcastLockOnStepThreeWhateverTheElapsedTime() {
+        for seconds: TimeInterval in [0, 1, 2, 10, 299, 300, 400, 86_400] {
+            XCTAssertEqual(
+                Progress.currentStep(phase: .failed("x"), lockStatusRaw: 1, secondsSinceLockUpdate: seconds),
+                3,
+                "seconds \(seconds)"
+            )
+            XCTAssertEqual(
+                steps(.failed("x"), lockStatusRaw: 1, seconds: seconds),
+                [.done, .done, .failed, .pending, .pending],
+                "seconds \(seconds)"
+            )
+        }
     }
 
     func testShouldFollowTheLockWhileInFlight() {
         XCTAssertEqual(steps(.inFlight, lockStatusRaw: nil), [.active, .pending, .pending, .pending, .pending])
         XCTAssertEqual(steps(.inFlight, lockStatusRaw: 0), [.active, .pending, .pending, .pending, .pending])
-        XCTAssertEqual(steps(.inFlight, lockStatusRaw: 1, seconds: 1), [.done, .active, .pending, .pending, .pending])
         XCTAssertEqual(steps(.inFlight, lockStatusRaw: 1, seconds: 10), [.done, .done, .active, .pending, .pending])
-        XCTAssertEqual(steps(.inFlight, lockStatusRaw: 1, seconds: 400), [.done, .done, .skipped, .active, .pending])
         XCTAssertEqual(steps(.inFlight, lockStatusRaw: 2), [.done, .done, .done, .skipped, .active])
-        XCTAssertEqual(steps(.inFlight, lockStatusRaw: 3), [.done, .done, .skipped, .done, .active])
+        XCTAssertEqual(steps(.inFlight, lockStatusRaw: 3), [.done, .done, .done, .done, .active])
+    }
+
+    func testShouldShowBroadcastingOnlyForTheFirstWindowOfAFreshBroadcastLock() {
+        for seconds: TimeInterval in [0, 1, 1.9] {
+            XCTAssertEqual(
+                steps(.inFlight, lockStatusRaw: 1, seconds: seconds),
+                [.done, .active, .pending, .pending, .pending],
+                "seconds \(seconds)"
+            )
+        }
+        XCTAssertEqual(
+            steps(.inFlight, lockStatusRaw: 1, seconds: 2),
+            [.done, .done, .active, .pending, .pending]
+        )
+    }
+
+    /// A resumed lock's `updatedAt` is as old as its last status change, so
+    /// age says nothing about the finality lane: an old Broadcast row waits
+    /// on step 3, never step 4, and no lane is skipped.
+    func testShouldWaitOnStepThreeForAnOldBroadcastLockWhileInFlight() {
+        for seconds: TimeInterval in [300, 400, 86_400] {
+            XCTAssertEqual(
+                Progress.currentStep(phase: .inFlight, lockStatusRaw: 1, secondsSinceLockUpdate: seconds),
+                3,
+                "seconds \(seconds)"
+            )
+            XCTAssertEqual(
+                steps(.inFlight, lockStatusRaw: 1, seconds: seconds),
+                [.done, .done, .active, .pending, .pending],
+                "seconds \(seconds)"
+            )
+        }
     }
 
     func testShouldMarkTheRecordedLaneWhenCompleted() {
         XCTAssertEqual(steps(.completed, lockStatusRaw: 2), [.done, .done, .done, .skipped, .done])
-        XCTAssertEqual(steps(.completed, lockStatusRaw: 3), [.done, .done, .skipped, .done, .done])
+        XCTAssertEqual(steps(.completed, lockStatusRaw: 3), [.done, .done, .done, .done, .done])
     }
 
     /// RecoveredFromChain (5): the lock is confirmed on Core and only the

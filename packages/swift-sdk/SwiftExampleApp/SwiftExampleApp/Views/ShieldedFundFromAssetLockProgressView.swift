@@ -25,22 +25,25 @@ extension PersistentAssetLock: ShieldedProgressLockRow {}
 ///
 ///   1. Building asset-lock tx        → no matching row yet, or
 ///                                      activeLock `statusRaw == 0`
-///   2. Broadcasting                  → activeLock `statusRaw == 1` and
+///   2. Broadcasting                  → activeLock `statusRaw == 1`,
+///                                      controller `.inFlight`, and
 ///                                      < `broadcastingWindow` since
 ///                                      the row's `updatedAt`
-///   3. Waiting for InstantSend proof → activeLock `statusRaw == 1` and
-///                                      between `broadcastingWindow`
-///                                      and `instantLockTimeout`
-///   4. Waiting for ChainLock proof   → activeLock `statusRaw == 1` and
-///                                      >= `instantLockTimeout` (Rust
-///                                      side has fallen back to CL);
-///                                      also done when
-///                                      `statusRaw == 3` (CL-locked).
+///   3. Waiting for InstantSend or    → activeLock `statusRaw == 1`
+///      ChainLock proof                 otherwise, whatever its age
+///   4. ChainLock proof               → never the current step; done
+///                                      when `statusRaw == 3`
+///                                      (CL-locked), skipped at 2
 ///   5. Shielding (Halo 2 + submit)   → activeLock `statusRaw ∈ {2, 3, 5}`
 ///                                      AND controller still `.inFlight`
 ///                                      (5, RecoveredFromChain: the lock
 ///                                      is confirmed on Core, only the
 ///                                      shield remains)
+///
+/// The row's age never decides the finality lane: a resumed lock's
+/// `updatedAt` is as old as its last status change, so age says nothing
+/// about whether Rust is still waiting for InstantSend. The lane is shown
+/// only once the row reports it (status 2 or 3).
 ///
 /// A lock at `statusRaw == 6` (DrainCompleted) marks every step done,
 /// as a completed controller does.
@@ -54,8 +57,9 @@ extension PersistentAssetLock: ShieldedProgressLockRow {}
 /// The footer explicitly calls that out so users don't think the
 /// app is hung.
 ///
-/// One of steps 3/4 is `.skipped` only when the lock shows which
-/// finality lane ran (`stepState`). When it does not (statuses 5 and 6,
+/// Step 4 is `.skipped` only when the lock shows InstantSend proved it
+/// (`stepState`); step 3 waits for either proof, so a recorded proof
+/// completes it. When it does not (statuses 5 and 6,
 /// whose proof is gone, or no row), both show `.finalityKindUnknown`
 /// once passed, never two green checks that would claim both proofs.
 struct ShieldedFundFromAssetLockProgressSection: View {
@@ -63,20 +67,15 @@ struct ShieldedFundFromAssetLockProgressSection: View {
 
     /// Asset-lock rows for this wallet, filtered to the
     /// AssetLockShieldedAddressTopUp variant (discriminant `5`).
-    /// Queried live so step 2/3/4 transitions are reactive to
-    /// status changes without polling.
+    /// Queried live so step changes are reactive to status changes
+    /// without polling.
     @Query private var activeLocks: [PersistentAssetLock]
 
-    /// Cutoff (seconds since the row transitioned to `Broadcast`)
-    /// between the visually-brief "Broadcasting" step (2) and the
-    /// "Waiting for InstantSend proof" step (3). Same value as the
-    /// address-funding progress section.
+    /// Seconds after the row's `updatedAt` that an in-flight `Broadcast`
+    /// row shows the visually brief "Broadcasting" step (2) before the
+    /// finality wait (3). Same value as the address-funding progress
+    /// section.
     nonisolated private static let broadcastingWindow: TimeInterval = 2.0
-
-    /// Cutoff (seconds since `Broadcast`) where the Rust side falls
-    /// back from InstantSend to ChainLock. Mirrors
-    /// `AssetLockManager`'s 300 s IS wait.
-    nonisolated private static let instantLockTimeout: TimeInterval = 300.0
 
     init(controller: ShieldedFundFromAssetLockController) {
         self.controller = controller
@@ -203,7 +202,8 @@ struct ShieldedFundFromAssetLockProgressSection: View {
     /// done. Pure over plain values so it is testable: `lockStatusRaw` is
     /// the status of this operation's lock (`matchingLock`), `nil` when
     /// none is stored, and `secondsSinceLockUpdate` is the time since that
-    /// lock's `updatedAt`.
+    /// lock's `updatedAt`. The time only splits a `Broadcast` row of an
+    /// in-flight attempt between steps 2 and 3; it never picks step 4.
     ///
     /// A failed attempt with no lock was refused before anything was
     /// built (for example a second Max that Rust refuses), so its failure
@@ -224,7 +224,12 @@ struct ShieldedFundFromAssetLockProgressSection: View {
             guard let lockStatusRaw else { return 1 }
             switch lockStatusRaw {
             case 1:
-                return broadcastSubStep(secondsSinceLockUpdate: secondsSinceLockUpdate)
+                // A failure stays where the lock was, so the clock must not
+                // move it once the attempt has stopped.
+                if case .inFlight = phase, secondsSinceLockUpdate < broadcastingWindow {
+                    return 2
+                }
+                return 3
             case 2, 3, 5:
                 // InstantSend-locked (2), ChainLock-locked (3) or
                 // RecoveredFromChain (5): the lock is final on Core and
@@ -238,12 +243,6 @@ struct ShieldedFundFromAssetLockProgressSection: View {
                 return 1
             }
         }
-    }
-
-    nonisolated private static func broadcastSubStep(secondsSinceLockUpdate elapsed: TimeInterval) -> Int {
-        if elapsed < broadcastingWindow { return 2 }
-        if elapsed < instantLockTimeout { return 3 }
-        return 4
     }
 
     private var isFailed: Bool {
@@ -260,8 +259,8 @@ struct ShieldedFundFromAssetLockProgressSection: View {
         switch idx {
         case 1: return "Building asset-lock transaction"
         case 2: return "Broadcasting"
-        case 3: return "Waiting for InstantSend proof"
-        case 4: return "Waiting for ChainLock proof"
+        case 3: return "Waiting for InstantSend or ChainLock proof"
+        case 4: return "ChainLock proof"
         case 5: return "Building Orchard proof and shielding"
         default: return ""
         }
@@ -274,15 +273,13 @@ struct ShieldedFundFromAssetLockProgressSection: View {
         case finalityKindUnknown
     }
 
-    /// The state of step `idx` given `currentStep`. A passed finality lane
-    /// is skipped only when the lock shows the other one ran: status 2
-    /// (InstantSend proof) skips step 4, status 3 (ChainLock proof) skips
-    /// step 3, and a Broadcast lock (1) waiting on step 4 is past the
-    /// InstantSend timeout, so step 3 is skipped. With any other status
-    /// both passed lanes are `.finalityKindUnknown`: `complete_wallet_drain`
-    /// clears the proof, so at RecoveredFromChain (5), DrainCompleted (6),
-    /// with no row, or with a row that lags a completed attempt, the lane
-    /// that ran is unknown.
+    /// The state of step `idx` given `currentStep`. Step 3 waits for either
+    /// proof, so status 2 (InstantSend) or 3 (ChainLock) completes it;
+    /// status 2 also skips step 4 (ChainLock), status 3 completes it. With
+    /// any other status both passed steps are
+    /// `.finalityKindUnknown`: `complete_wallet_drain` clears the proof, so
+    /// at RecoveredFromChain (5), DrainCompleted (6), with no row, or with
+    /// a row that lags a completed attempt, the lane that ran is unknown.
     nonisolated static func stepState(
         _ idx: Int,
         currentStep: Int,
@@ -293,12 +290,12 @@ struct ShieldedFundFromAssetLockProgressSection: View {
             return .failed
         }
         if idx < currentStep {
+            // Step 3 waits for either proof, so any recorded proof completes
+            // it; only step 4 (ChainLock) is skipped when InstantSend won.
             switch (idx, lockStatusRaw) {
-            case (3, 3?), (4, 2?):
+            case (4, 2?):
                 return .skipped
-            case (3, 1?) where currentStep == 4:
-                return .skipped
-            case (3, 2?), (4, 3?):
+            case (3, 2?), (3, 3?), (4, 3?):
                 return .done
             case (3, _), (4, _):
                 return .finalityKindUnknown
@@ -384,8 +381,10 @@ struct ShieldedFundFromAssetLockProgressSection: View {
             switch step {
             case 1: stepText = "Building a Core asset-lock transaction from wallet funds."
             case 2: stepText = "Sending the asset-lock transaction to peers."
-            case 3: stepText = "Waiting for the InstantSend lock so the asset-lock proof is final."
-            case 4: stepText = "InstantSend timed out; falling back to ChainLock finality (~2 min)."
+            case 3:
+                stepText = "Waiting for the asset-lock transaction to become final, by an "
+                    + "InstantSend lock or, if none arrives, a ChainLock. A ChainLock can take "
+                    + "a few minutes."
             case 5: stepText = "Building the Halo 2 proof (~30s) and submitting the ShieldFromAssetLock state transition to Platform. The shielded note appears in your balance after the next sync pass."
             default: stepText = ""
             }
