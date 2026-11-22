@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftDashSDK
 
 /// How many counted moderation actions each member of an elected contract's
-/// seated team signed since the moderators pot was last paid out.
+/// seated team signed since the moderators pot was last claimed or settled.
 struct ContractModerationActionCountsView: View {
     @EnvironmentObject var appState: AppState
     let contractId: String
@@ -15,9 +15,9 @@ struct ContractModerationActionCountsView: View {
             Section {
                 content
             } header: {
-                Text("Counts Since the Last Payout")
+                Text("Counts Since the Last Claim or Settlement")
             } footer: {
-                Text("Bans, suspensions, warnings and document deletions. A member that did not act since has no count.")
+                Text("Bans, suspensions, warnings and document deletions since the moderators pot was last claimed or settled. A settlement (a membership change of the team) resets the counts even when it pays nothing out. A member that did not act since has no count.")
             }
             Section {
                 Button("Reload") {
@@ -53,7 +53,7 @@ struct ContractModerationActionCountsView: View {
             if counts.isEmpty {
                 ModerationMessageRow(
                     kind: .empty,
-                    text: "No member acted since the last payout.",
+                    text: "No member acted since the last claim or settlement.",
                     identifier: "contractModeration.actionCounts.empty"
                 )
             }

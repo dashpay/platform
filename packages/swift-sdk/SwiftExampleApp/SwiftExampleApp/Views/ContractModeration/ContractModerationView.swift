@@ -68,7 +68,7 @@ struct ContractModerationView: View {
             } header: {
                 Text("Moderation Team")
             } footer: {
-                Text("Only an elected contract has a seated team; the node refuses any other.")
+                Text("Only an elected contract has a seated team; the node refuses any other. Team actions are kept only when at least one document type sets moderatorAbilities.deleteSettled: otherwise the node refuses them, which differs from an empty list.")
             }
         }
         .navigationTitle("Moderation")

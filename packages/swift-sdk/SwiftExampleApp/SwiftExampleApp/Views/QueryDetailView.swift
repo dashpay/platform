@@ -195,17 +195,25 @@ struct QueryDetailView: View {
         error = ""
         result = ""
         showResult = false
-        let token = submissions.submit()
+        // A moderation read is built from its inputs as they are now, so an
+        // edit made before the task runs cannot change what it sends; its
+        // result echoes the same snapshot
+        let submission = submissions.submit(resultFollowsInputs ? submittedInputs() : [:])
 
         Task {
             do {
                 print("🔵 QueryDetailView: Calling performQuery...")
-                let queryResult = try await performQuery(sdk: sdk)
+                let queryResult: Any
+                if resultFollowsInputs {
+                    queryResult = try await performModerationQuery(sdk: sdk, inputs: submission.inputs)
+                } else {
+                    queryResult = try await performQuery(sdk: sdk)
+                }
                 print("✅ QueryDetailView: performQuery returned successfully")
                 print("🔵 QueryDetailView: Query result type: \(type(of: queryResult))")
 
                 await MainActor.run {
-                    guard submissions.isCurrent(token) else { return }
+                    guard submissions.isCurrent(submission) else { return }
                     result = formatResult(queryResult)
                     showResult = true
                     isLoading = false
@@ -214,7 +222,7 @@ struct QueryDetailView: View {
             } catch let sdkError as SDKError {
                 print("❌ QueryDetailView: SDK error occurred: \(sdkError)")
                 await MainActor.run {
-                    guard submissions.isCurrent(token) else { return }
+                    guard submissions.isCurrent(submission) else { return }
                     // Handle SDK errors with more detail
                     switch sdkError {
                     case .invalidParameter(let message):
@@ -250,7 +258,7 @@ struct QueryDetailView: View {
             } catch {
                 print("❌ QueryDetailView: General error occurred: \(error)")
                 await MainActor.run {
-                    guard submissions.isCurrent(token) else { return }
+                    guard submissions.isCurrent(submission) else { return }
                     // For non-SDK errors, try to get more information
                     let nsError = error as NSError
                     var errorMessage = ""
@@ -382,78 +390,6 @@ struct QueryDetailView: View {
             let startAt = (queryInputs["startAt"] ?? "").isEmpty ? nil : queryInputs["startAt"]
             let idsOnly = Bool(queryInputs["idsOnly"] ?? "") ?? false
             return try await sdk.getDataContractsByRange(limit: limit, startAfter: startAfter, startAt: startAt, idsOnly: idsOnly)
-
-        // Contract Moderation Queries (protocol version 14). Each result names
-        // the inputs it was read for (``submittedInputs()``).
-        case "getContractModerationStatus":
-            let inputs = submittedInputs()
-            let lists = try moderationInput("lists").map { try parseModerationLists($0) }
-            return try moderationResult(inputs, await sdk.contractModerationStatus(
-                contractId: queryInputs["contractId"] ?? "",
-                identityId: queryInputs["identityId"] ?? "",
-                lists: lists
-            ))
-
-        case "getContractModerationEntries":
-            let inputs = submittedInputs()
-            return try moderationResult(inputs, await sdk.contractModerationEntries(
-                contractId: queryInputs["contractId"] ?? "",
-                list: try parseModerationList(queryInputs["list"] ?? ""),
-                startAfter: moderationInput("startAfter"),
-                limit: try moderationLimit()
-            ))
-
-        case "getContractDocumentRemovals":
-            let inputs = submittedInputs()
-            let contractId = queryInputs["contractId"] ?? ""
-            let documentTypeName = queryInputs["documentTypeName"] ?? ""
-            // Two reads: the records of the ids named, or one page of them all.
-            if let documentIds = moderationInput("documentIds") {
-                if moderationInput("startAfter") != nil || moderationInput("limit") != nil {
-                    throw SDKError.invalidParameter("Give either Document IDs or Start After and Limit")
-                }
-                return try moderationResult(inputs, await sdk.contractDocumentRemovals(
-                    contractId: contractId,
-                    documentTypeName: documentTypeName,
-                    documentIds: documentIds.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-                ))
-            }
-            return try moderationResult(inputs, await sdk.contractDocumentRemovals(
-                contractId: contractId,
-                documentTypeName: documentTypeName,
-                startAfter: moderationInput("startAfter"),
-                limit: try moderationLimit()
-            ))
-
-        case "getContractTeamActions":
-            let inputs = submittedInputs()
-            return try moderationResult(inputs, await sdk.contractTeamActions(
-                contractId: queryInputs["contractId"] ?? "",
-                status: try parseTeamActionStatus(queryInputs["status"] ?? ""),
-                startAtActionId: moderationInput("startAtActionId"),
-                startAtActionIdIncluded: moderationInput("startAtActionIdIncluded")?.lowercased() == "true",
-                limit: try moderationLimit()
-            ))
-
-        case "getContractTeamActionSigners":
-            let inputs = submittedInputs()
-            return try moderationResult(inputs, await sdk.contractTeamActionSigners(
-                contractId: queryInputs["contractId"] ?? "",
-                status: try parseTeamActionStatus(queryInputs["status"] ?? ""),
-                actionId: queryInputs["actionId"] ?? ""
-            ))
-
-        case "getContractModerationActionCounts":
-            let inputs = submittedInputs()
-            return try moderationResult(inputs, await sdk.contractModerationActionCounts(
-                contractId: queryInputs["contractId"] ?? ""
-            ))
-
-        case "getContractFeePots":
-            let inputs = submittedInputs()
-            return try moderationResult(inputs, await sdk.contractFeePots(
-                contractId: queryInputs["contractId"] ?? ""
-            ))
 
         // Document Queries
         case "getDocuments":
@@ -981,21 +917,108 @@ struct QueryDetailView: View {
         return values
     }
 
-    // MARK: - Contract moderation inputs
+    // MARK: - Contract moderation reads
 
-    /// The trimmed input `name`, `nil` when empty.
+    /// Runs one of the contract moderation and fee pot reads (protocol
+    /// version 14) from `inputs`, the snapshot ``submittedInputs()`` took at
+    /// Execute, and nothing else: the form may have changed since. The result
+    /// names the same inputs.
+    private func performModerationQuery(sdk: SDK, inputs: [String: String]) async throws -> Any {
+        let contractId = inputs["contractId"] ?? ""
+        switch query.name {
+        case "getContractModerationStatus":
+            let lists = try inputs["lists"].map { try parseModerationLists($0) }
+            return try moderationResult(inputs, await sdk.contractModerationStatus(
+                contractId: contractId,
+                identityId: inputs["identityId"] ?? "",
+                lists: lists
+            ))
+
+        case "getContractModerationEntries":
+            return try moderationResult(inputs, await sdk.contractModerationEntries(
+                contractId: contractId,
+                list: try parseModerationList(inputs["list"] ?? ""),
+                startAfter: inputs["startAfter"],
+                limit: try moderationLimit(inputs)
+            ))
+
+        case "getContractDocumentRemovals":
+            let documentTypeName = inputs["documentTypeName"] ?? ""
+            // Two reads: the records of the ids named, or one page of them all.
+            if let documentIds = inputs["documentIds"] {
+                if inputs["startAfter"] != nil || inputs["limit"] != nil {
+                    throw SDKError.invalidParameter("Give either Document IDs or Start After and Limit")
+                }
+                return try moderationResult(inputs, await sdk.contractDocumentRemovals(
+                    contractId: contractId,
+                    documentTypeName: documentTypeName,
+                    documentIds: documentIds.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                ))
+            }
+            return try moderationResult(inputs, await sdk.contractDocumentRemovals(
+                contractId: contractId,
+                documentTypeName: documentTypeName,
+                startAfter: inputs["startAfter"],
+                limit: try moderationLimit(inputs)
+            ))
+
+        case "getContractTeamActions":
+            return try moderationResult(inputs, await sdk.contractTeamActions(
+                contractId: contractId,
+                status: try parseTeamActionStatus(inputs["status"] ?? ""),
+                startAtActionId: inputs["startAtActionId"],
+                startAtActionIdIncluded: try parseStrictBool(
+                    inputs["startAtActionIdIncluded"], field: "Include Start Action"),
+                limit: try moderationLimit(inputs)
+            ))
+
+        case "getContractTeamActionSigners":
+            return try moderationResult(inputs, await sdk.contractTeamActionSigners(
+                contractId: contractId,
+                status: try parseTeamActionStatus(inputs["status"] ?? ""),
+                actionId: inputs["actionId"] ?? ""
+            ))
+
+        case "getContractModerationActionCounts":
+            return try moderationResult(inputs, await sdk.contractModerationActionCounts(
+                contractId: contractId
+            ))
+
+        case "getContractFeePots":
+            return try moderationResult(inputs, await sdk.contractFeePots(contractId: contractId))
+
+        default:
+            throw SDKError.notImplemented("Query \(query.name) is not a moderation read")
+        }
+    }
+
+    /// The trimmed form input `name`, `nil` when empty.
     private func moderationInput(_ name: String) -> String? {
         let value = (queryInputs[name] ?? "").trimmingCharacters(in: .whitespaces)
         return value.isEmpty ? nil : value
     }
 
-    /// The `limit` input, `nil` when empty (the SDK's default page).
-    private func moderationLimit() throws -> UInt32? {
-        guard let raw = moderationInput("limit") else { return nil }
+    /// The `limit` input of `inputs`, `nil` when absent (the SDK's default
+    /// page).
+    private func moderationLimit(_ inputs: [String: String]) throws -> UInt32? {
+        guard let raw = inputs["limit"] else { return nil }
         guard let limit = UInt32(raw) else {
             throw SDKError.invalidParameter("Limit must be a non-negative integer")
         }
         return limit
+    }
+
+    /// A yes/no input read strictly: absent is `false`, and only `true` or
+    /// `false` (any case) is accepted, so a typo is shown as an input error
+    /// before anything is sent rather than read as `false`.
+    private func parseStrictBool(_ raw: String?, field: String) throws -> Bool {
+        guard let raw else { return false }
+        switch raw.lowercased() {
+        case "true": return true
+        case "false": return false
+        default:
+            throw SDKError.invalidParameter("\(field) must be true or false, got '\(raw)'")
+        }
     }
 
     private func parseModerationList(_ raw: String) throws -> ContractModerationList {
@@ -1146,7 +1169,7 @@ struct QueryDetailView: View {
                 QueryInput(name: "contractId", label: "Contract ID", required: true),
                 QueryInput(name: "status", label: "Status", required: true, placeholder: "active or closed"),
                 QueryInput(name: "startAtActionId", label: "Start At Action ID", required: false, placeholder: "The previous page's nextStartAtActionId"),
-                QueryInput(name: "startAtActionIdIncluded", label: "Include Start Action", required: false, placeholder: "true/false"),
+                QueryInput(name: "startAtActionIdIncluded", label: "Include Start Action", required: false, placeholder: "true or false; empty is false"),
                 QueryInput(name: "limit", label: "Limit", required: false, placeholder: "Empty for the network's page cap")
             ]
 

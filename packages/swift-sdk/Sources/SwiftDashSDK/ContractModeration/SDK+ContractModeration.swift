@@ -184,6 +184,10 @@ extension SDK {
     /// One page of the actions an elected contract's seated moderation team
     /// votes on, in action id order
     /// (`dash_sdk_contract_moderation_get_team_actions`).
+    /// The node refuses it unless at least one of the contract's document
+    /// types sets `moderatorAbilities.deleteSettled` (which only an elected
+    /// contract may set); a contract that keeps team actions but has none
+    /// answers an empty page.
     ///
     /// - Parameters:
     ///   - contractId: The elected contract's id, base58.
@@ -228,7 +232,10 @@ extension SDK {
 
     /// Who approved one team action, in identity id order
     /// (`dash_sdk_contract_moderation_get_team_action_signers`). The action is
-    /// looked up among the actions of `status` alone.
+    /// looked up among the actions of `status` alone. The node refuses it
+    /// unless at least one of the contract's document types sets
+    /// `moderatorAbilities.deleteSettled` (which only an elected contract may
+    /// set).
     ///
     /// - Parameters:
     ///   - contractId: The elected contract's id, base58.
@@ -259,8 +266,10 @@ extension SDK {
     }
 
     /// How many counted moderation actions each member of an elected
-    /// contract's seated team signed since the moderators pot was last paid
-    /// out (`dash_sdk_contract_moderation_get_action_counts`).
+    /// contract's seated team signed since the moderators pot was last claimed
+    /// or settled (`dash_sdk_contract_moderation_get_action_counts`). A
+    /// moderators pot settlement (a membership change of the team) resets
+    /// the counts even when it pays nothing out.
     ///
     /// - Parameter contractId: The elected contract's id, base58.
     /// - Throws: The FFI's `SDKError`; below protocol version 14 a refusal

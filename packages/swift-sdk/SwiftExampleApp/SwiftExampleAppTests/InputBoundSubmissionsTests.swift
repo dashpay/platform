@@ -31,14 +31,14 @@ final class InputBoundSubmissionsTests: XCTestCase {
         _ read: ReleasedRead,
         on screen: Screen
     ) -> Task<Void, Never> {
-        let token = submissions.submit()
+        let submission = submissions.submit(["contractId": "c"])
         return Task {
             do {
                 let pots = try await read.value()
-                guard submissions.isCurrent(token) else { return }
+                guard submissions.isCurrent(submission) else { return }
                 screen.shown = pots
             } catch {
-                guard submissions.isCurrent(token) else { return }
+                guard submissions.isCurrent(submission) else { return }
                 screen.error = "\(error)"
             }
         }
@@ -89,6 +89,20 @@ final class InputBoundSubmissionsTests: XCTestCase {
         await olderTask.value
 
         XCTAssertEqual(screen.shown?.owner.credits, 2)
+    }
+
+    /// The inputs travel with the token as they were at submission: what the
+    /// form holds afterwards does not change them.
+    func testShouldCarryTheInputsAsSubmitted() {
+        let submissions = InputBoundSubmissions()
+        var form = ["contractId": "A"]
+        let submission = submissions.submit(form)
+        form["contractId"] = "B"
+        submissions.invalidate()
+
+        XCTAssertEqual(submission.inputs, ["contractId": "A"])
+        XCTAssertFalse(submissions.isCurrent(submission))
+        XCTAssertTrue(submissions.isCurrent(submissions.submit(form)))
     }
 
     func testShouldShowAReadNoEditInterrupted() async throws {

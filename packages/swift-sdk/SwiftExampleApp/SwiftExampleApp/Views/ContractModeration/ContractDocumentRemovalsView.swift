@@ -25,12 +25,13 @@ struct ContractDocumentRemovalsView: View {
                     .autocorrectionDisabled()
                     .font(.system(.body, design: .monospaced))
                     .accessibilityIdentifier("contractModeration.removals.documentIds")
+                    .onChange(of: documentIdsInput) { _, _ in draftChanged() }
                 Button("Look Up These Documents") {
                     Task { await lookUp() }
                 }
                 .disabled(parsedIds.isEmpty)
                 .accessibilityIdentifier("contractModeration.removals.lookup")
-                if lookedUpIds != nil {
+                if lookedUpIds != nil || !loader.loadedOnce {
                     Button("Show Every Record") {
                         Task { await reload() }
                     }
@@ -42,15 +43,29 @@ struct ContractDocumentRemovalsView: View {
                 Text("A document with no record is left out of the answer.")
             }
 
-            if let errorMessage = loader.errorMessage {
-                ModerationMessageRow(
-                    kind: .error,
-                    text: errorMessage,
-                    identifier: "contractModeration.removals.error"
-                )
-            }
-
             Section(lookedUpIds == nil ? "Records" : "Records of the Documents Named") {
+                if let lookedUpIds {
+                    ModerationFieldRow(
+                        label: "Looked up",
+                        value: lookedUpIds.joined(separator: ", "),
+                        monospaced: true
+                    )
+                    .accessibilityIdentifier("contractModeration.removals.submittedIds")
+                }
+                if let errorMessage = loader.errorMessage {
+                    ModerationMessageRow(
+                        kind: .error,
+                        text: errorMessage,
+                        identifier: "contractModeration.removals.error"
+                    )
+                }
+                if !loader.loadedOnce && !loader.isLoading && loader.errorMessage == nil {
+                    ModerationMessageRow(
+                        kind: .empty,
+                        text: "Look up the ids typed above, or show every record.",
+                        identifier: "contractModeration.removals.idle"
+                    )
+                }
                 if loader.items.isEmpty {
                     if loader.isLoading {
                         ModerationMessageRow(
@@ -96,6 +111,14 @@ struct ContractDocumentRemovalsView: View {
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
+    }
+
+    /// The ids typed changed: the lookup shown, and one still running, no
+    /// longer answer them, so they are cleared until the next look up.
+    private func draftChanged() {
+        guard lookedUpIds != nil else { return }
+        lookedUpIds = nil
+        loader.clear()
     }
 
     /// Read again what is shown: the ids looked up, or the pages.

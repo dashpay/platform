@@ -91,6 +91,23 @@ final class ModerationPagedLoaderTests: XCTestCase {
         XCTAssertFalse(loader.isLoading)
     }
 
+    /// Clearing (the removal lookup's ids were edited) drops what is shown
+    /// and what a running request brings back.
+    func testShouldDropARunningRequestOnClear() async {
+        let fetches = ControlledFetch()
+        let (loader, loadMore) = await loaderWithALoadMoreInFlight(fetches)
+
+        loader.clear()
+        fetches.answer("A-a1", with: Page(items: ["stale"], nextCursor: "stale"))
+        await loadMore.value
+
+        XCTAssertEqual(loader.items, [])
+        XCTAssertNil(loader.nextCursor)
+        XCTAssertFalse(loader.isLoading)
+        XCTAssertFalse(loader.loadedOnce)
+        XCTAssertNil(loader.errorMessage)
+    }
+
     func testShouldShowTheCurrentRequestsFailure() async {
         let fetches = ControlledFetch()
         let loader = Loader()

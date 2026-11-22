@@ -446,7 +446,7 @@ public struct ContractTeamActionSigners: Codable, Sendable, Equatable {
 // MARK: - Action counts
 
 /// How many counted moderation actions one member signed since the
-/// moderators pot was last paid out.
+/// moderators pot was last claimed or settled.
 public struct ContractModerationActionCount: Codable, Sendable, Equatable, Hashable, Identifiable {
     /// The member, base58.
     public let identityId: String
@@ -456,8 +456,9 @@ public struct ContractModerationActionCount: Codable, Sendable, Equatable, Hasha
     public var id: String { identityId }
 }
 
-/// The moderation action counts of an elected contract's seated team, in
-/// identity id order (`dash_sdk_contract_moderation_get_action_counts`).
+/// The moderation action counts of an elected contract's seated team since
+/// the moderators pot was last claimed or settled, in identity id order
+/// (`dash_sdk_contract_moderation_get_action_counts`).
 public struct ContractModerationActionCounts: Codable, Sendable, Equatable {
     public let counts: [ContractModerationActionCount]
 }

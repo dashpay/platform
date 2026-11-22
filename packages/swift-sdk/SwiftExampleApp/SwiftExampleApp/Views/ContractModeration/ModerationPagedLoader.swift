@@ -51,6 +51,18 @@ final class ModerationPagedLoader<Item: Sendable, Cursor: Sendable>: ObservableO
         await load(fetch, cursor: cursor, generation: generation)
     }
 
+    /// Show nothing, as before the first read, and drop whatever a running
+    /// request brings back.
+    func clear() {
+        generation += 1
+        fetch = nil
+        items = []
+        nextCursor = nil
+        isLoading = false
+        errorMessage = nil
+        loadedOnce = false
+    }
+
     /// Show `message` instead of any rows, ending whatever is in flight.
     func fail(_ message: String) {
         generation += 1
