@@ -8,6 +8,10 @@ import SwiftDashSDK
 /// Rust asks the node and, when the node says committed, reads that block with its proof and
 /// looks for the transition. Only "in a block" is proved; every other outcome is the node's
 /// word and is shown as unproved, with the node's height.
+///
+/// The outcome shown answers the hash it was checked for, through the SDK it was read with:
+/// editing the hash or replacing the SDK clears it, and a check that completes after either is
+/// dropped (``InputBoundSubmissions``).
 struct TransitionStatusCheckView: View {
     @EnvironmentObject var appState: AppState
 
@@ -15,6 +19,9 @@ struct TransitionStatusCheckView: View {
     @State private var isRunning = false
     @State private var status: TransitionStatusByHash?
     @State private var errorMessage: String?
+    /// The hash the outcome shown was checked for.
+    @State private var checkedHash: String?
+    @State private var submissions = InputBoundSubmissions()
 
     private var trimmedHash: String {
         hashText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -29,7 +36,6 @@ struct TransitionStatusCheckView: View {
                     .font(.system(.footnote, design: .monospaced))
                     .accessibilityLabel("State transition hash")
                     .accessibilityIdentifier("txStatus.hashField")
-                    .disabled(isRunning)
                 Button(action: check) {
                     HStack {
                         if isRunning {
@@ -47,7 +53,12 @@ struct TransitionStatusCheckView: View {
             } header: {
                 Text("State transition hash")
             } footer: {
-                Text("Proved only when the block the node names holds the transition. For shielded and private document transitions, ask only the node the transition was broadcast to.")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(TransitionStatusPrivacy.note)
+                        .foregroundColor(.orange)
+                        .accessibilityIdentifier("txStatus.privacyNote")
+                    Text("Proved only when the block the node names holds the transition.")
+                }
             }
 
             if let errorMessage {
@@ -64,6 +75,18 @@ struct TransitionStatusCheckView: View {
         }
         .navigationTitle("Transition Status")
         .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: hashText) { _, _ in clearOutcome() }
+        .onChange(of: appState.sdkGeneration) { _, _ in clearOutcome() }
+    }
+
+    /// The hash was edited or the SDK replaced: the outcome shown, and a check still running,
+    /// answer a hash or a connection no longer on screen.
+    private func clearOutcome() {
+        submissions.invalidate()
+        status = nil
+        errorMessage = nil
+        checkedHash = nil
+        isRunning = false
     }
 
     @ViewBuilder
@@ -78,6 +101,10 @@ struct TransitionStatusCheckView: View {
             Text(headline(status))
                 .font(.headline)
                 .accessibilityIdentifier("txStatus.outcomeText")
+            if let checkedHash {
+                BlockField(label: "Hash checked", value: checkedHash, monospaced: true)
+                    .accessibilityIdentifier("txStatus.checkedHashText")
+            }
 
             if status.status == .inBlock {
                 if let height = status.blockHeight {
@@ -138,23 +165,36 @@ struct TransitionStatusCheckView: View {
             errorMessage = "SDK not initialized"
             return
         }
-        let hash = trimmedHash
+        // The hash as it is now: the outcome is shown beside it, and only while the field and
+        // the SDK are unchanged
+        let submission = submissions.submit(["hash": trimmedHash], connection: appState.sdkGeneration)
+        let hash = submission.inputs["hash"] ?? ""
         isRunning = true
         errorMessage = nil
         status = nil
+        checkedHash = nil
         Task {
             do {
                 let answer = try await sdk.getStateTransitionStatusByHash(transitionHash: hash)
                 await MainActor.run {
+                    guard submissions.isCurrent(submission, connection: appState.sdkGeneration) else { return }
                     status = answer
+                    checkedHash = hash
                     isRunning = false
                 }
             } catch {
                 await MainActor.run {
+                    guard submissions.isCurrent(submission, connection: appState.sdkGeneration) else { return }
                     errorMessage = error.localizedDescription
                     isRunning = false
                 }
             }
         }
     }
+}
+
+/// What the transition status reads tell before a hash is sent: the hash goes to the app's
+/// nodes, not to the node the transition was broadcast to.
+enum TransitionStatusPrivacy {
+    static let note = "For public transitions only. The hash goes to the app's nodes, not to the node the transition was broadcast to, so checking it ties you to that transition in front of them. Do not use this for shielded or private document transitions."
 }

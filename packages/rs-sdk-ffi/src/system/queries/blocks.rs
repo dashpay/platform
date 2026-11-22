@@ -6,8 +6,13 @@
 //!
 //! A block and a state transition are written the same way everywhere in this module and in
 //! `transition_status`; see [`block_json`] and [`transaction_json`].
+//!
+//! Each read runs on the SDK handle's own runtime with `BigStackRuntime::try_block_on`: the
+//! SDK keeps its gRPC channels in a pool that outlives one call, and a channel's worker lives
+//! on the runtime that created it, so a runtime made for one call and then dropped would
+//! break the next request on that channel. A worker thread the OS will not start comes back
+//! as an error instead of aborting the host app.
 
-use crate::runtime::BigStackRuntime;
 use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;
 use crate::{DashSDKResult, FFIError};
@@ -19,7 +24,6 @@ use dash_sdk::platform::blocks::{
 };
 use serde_json::{json, Value as JsonValue};
 use std::ffi::{c_char, CStr, CString};
-use std::future::Future;
 
 /// Fetches up to `count` consecutive blocks from `start_height`, each with every state
 /// transition it holds and the result of its execution (`Sdk::fetch_blocks`).
@@ -37,7 +41,8 @@ use std::future::Future;
 ///  "blocks": [{"height": 120, "hash": "<hex>", "time_ms": 1700000000000,
 ///              "core_chain_locked_height": 2100, "app_hash": "<hex>",
 ///              "proposer_pro_tx_hash": "<hex>",
-///              "transactions": [{"hash": "<hex>", "code": 0, "gas_used": 1200,
+///              "transactions": [{"hash": "<hex>", "code": 0, "executed": true,
+///                                "gas_used": 1200,
 ///                                "result_data": "<hex>", "type": "IdentityCreditTransfer",
 ///                                "owner_id": "<base58>"}]}]}
 /// ```
@@ -45,9 +50,10 @@ use std::future::Future;
 /// `proved` is true when the SDK verifies proofs: each block is then the one a validator
 /// quorum committed at its height, with exactly these transitions and results. There can be
 /// fewer blocks than asked for, and nothing proves a block left off the end does not exist.
-/// A transaction's `code` is 0 when it executed, otherwise the code of the error it paid for;
-/// `owner_id` is null for a transition that reports no owner. Hashes are hex in the byte
-/// order the block carries them.
+/// A transaction's `code` is 0 when it executed, otherwise the code of the error it paid for,
+/// and `executed` is rs-sdk's reading of that code (`BlockTransaction::executed`); `owner_id`
+/// is null for a transition that reports no owner. Hashes are hex in the byte order the block
+/// carries them.
 ///
 /// Before the network runs protocol version 15 the call fails with the SDK's protocol
 /// version refusal, without sending anything.
@@ -70,10 +76,12 @@ unsafe fn get_blocks(
 ) -> Result<JsonValue, FFIError> {
     let wrapper = sdk_wrapper(sdk_handle)?;
     let sdk = &wrapper.sdk;
-    let blocks = block_on(sdk.fetch_blocks(BlocksQuery {
-        start_height,
-        count,
-    }))??;
+    let blocks = wrapper
+        .runtime
+        .try_block_on(sdk.fetch_blocks(BlocksQuery {
+            start_height,
+            count,
+        }))??;
     Ok(blocks_json(&blocks, sdk.prove()))
 }
 
@@ -120,13 +128,16 @@ unsafe fn get_owner_transactions_in_block(
 ) -> Result<JsonValue, FFIError> {
     let wrapper = sdk_wrapper(sdk_handle)?;
     let owner_id = required_str(owner_id, "owner_id")?;
-    let owner_id = Identifier::from_string(owner_id, Encoding::Base58).map_err(|e| {
-        FFIError::InvalidParameter(format!("owner_id is not a base58 identifier: {e}"))
+    let owner_id = Identifier::from_base58_text(owner_id).ok_or_else(|| {
+        FFIError::InvalidParameter("owner_id is not a base58 identifier".to_string())
     })?;
     let sdk = &wrapper.sdk;
-    let answer = block_on(
-        sdk.fetch_owner_transactions_in_block(OwnerTransactionsInBlockQuery { height, owner_id }),
-    )??;
+    let answer =
+        wrapper
+            .runtime
+            .try_block_on(sdk.fetch_owner_transactions_in_block(
+                OwnerTransactionsInBlockQuery { height, owner_id },
+            ))??;
     Ok(owner_transactions_json(&answer, sdk.prove()))
 }
 
@@ -159,14 +170,6 @@ pub(super) unsafe fn required_str<'a>(
         .map_err(|e| FFIError::InvalidParameter(format!("{field} is not UTF-8: {e}")))
 }
 
-/// Drive `future` to completion on an isolated runtime with large stacks, as the other system
-/// queries do.
-pub(super) fn block_on<F: Future>(future: F) -> Result<F::Output, FFIError> {
-    let runtime = BigStackRuntime::new_isolated()
-        .map_err(|e| FFIError::InternalError(format!("Failed to create Tokio runtime: {e}")))?;
-    Ok(runtime.block_on(future))
-}
-
 /// A result holding `json` written as an owned C string (freed with `dash_sdk_string_free`).
 pub(super) fn json_result(json: Result<JsonValue, FFIError>) -> DashSDKResult {
     match json.and_then(|json| CString::new(json.to_string()).map_err(FFIError::from)) {
@@ -180,6 +183,7 @@ pub(super) fn transaction_json(transaction: &BlockTransaction) -> JsonValue {
     json!({
         "hash": hex::encode(transaction.hash),
         "code": transaction.code,
+        "executed": transaction.executed(),
         "gas_used": transaction.gas_used,
         "result_data": hex::encode(&transaction.result_data),
         "type": transaction.state_transition.name(),
@@ -272,6 +276,8 @@ pub(super) mod tests {
     fn should_refuse_a_missing_or_malformed_owner_id_before_asking_the_network() {
         let handle = create_mock_sdk_handle();
         let not_base58 = CString::new("0OIl").expect("no NUL");
+        // Far longer than any identifier's base58 form: refused without being decoded
+        let oversized = CString::new("1".repeat(100_000)).expect("no NUL");
         unsafe {
             assert_eq!(
                 error_code(dash_sdk_system_get_owner_transactions_in_block(
@@ -286,6 +292,14 @@ pub(super) mod tests {
                     handle,
                     1,
                     not_base58.as_ptr(),
+                )),
+                DashSDKErrorCode::InvalidParameter
+            );
+            assert_eq!(
+                error_code(dash_sdk_system_get_owner_transactions_in_block(
+                    handle,
+                    1,
+                    oversized.as_ptr(),
                 )),
                 DashSDKErrorCode::InvalidParameter
             );
@@ -319,6 +333,7 @@ pub(super) mod tests {
                     "transactions": [{
                         "hash": "07".repeat(32),
                         "code": 40_100,
+                        "executed": false,
                         "gas_used": 1_200,
                         "result_data": "abcd",
                         "type": "IdentityCreditTransfer",
@@ -340,5 +355,6 @@ pub(super) mod tests {
         assert_eq!(json["height"], 5);
         assert_eq!(json["transactions"][0]["hash"], "03".repeat(32));
         assert_eq!(json["transactions"][0]["code"], 0);
+        assert_eq!(json["transactions"][0]["executed"], true);
     }
 }

@@ -8,7 +8,7 @@ import XCTest
 /// handle, no network.
 final class PlatformBlocksDecodingTests: XCTestCase {
     private let transactionJSON = """
-        {"hash":"0707","code":40100,"gas_used":1200,"result_data":"abcd",\
+        {"hash":"0707","code":40100,"executed":false,"gas_used":1200,"result_data":"abcd",\
         "type":"IdentityCreditTransfer","owner_id":"11111111111111111111111111111111"}
         """
 
@@ -39,7 +39,7 @@ final class PlatformBlocksDecodingTests: XCTestCase {
 
     func testShouldDecodeATransitionWithoutAnOwner() throws {
         let json = """
-            {"proved":false,"height":5,"transactions":[{"hash":"03","code":0,"gas_used":0,\
+            {"proved":false,"height":5,"transactions":[{"hash":"03","code":0,"executed":true,"gas_used":0,\
             "result_data":"","type":"ShieldedTransfer","owner_id":null}]}
             """
 
@@ -79,6 +79,7 @@ final class PlatformBlocksDecodingTests: XCTestCase {
         XCTAssertEqual(status.blockHeight, 120)
         XCTAssertEqual(status.blockTimeMs, 1_700_000_000_000)
         XCTAssertEqual(status.transaction?.code, 40100)
+        XCTAssertEqual(status.transaction?.executed, false)
         XCTAssertNil(status.nodeHeight)
 
         let unproved: [(String, TransitionStatusByHash.Status)] = [
@@ -93,5 +94,44 @@ final class PlatformBlocksDecodingTests: XCTestCase {
             XCTAssertEqual(status.status, expected, json)
             XCTAssertNil(status.transaction, json)
         }
+    }
+
+    func testShouldReadExecutedFromTheJSONNotFromTheCode() throws {
+        // `executed` is Rust's answer; Swift does not derive it from `code`
+        let json = """
+            {"hash":"03","code":0,"executed":false,"gas_used":0,"result_data":"",\
+            "type":"ShieldedTransfer","owner_id":null}
+            """
+
+        let transaction = try JSONDecoder.platformBlocks.decode(PlatformBlockTransaction.self, from: Data(json.utf8))
+
+        XCTAssertFalse(transaction.executed)
+    }
+
+    func testShouldRefuseATransactionWithoutExecuted() {
+        let json = """
+            {"hash":"03","code":0,"gas_used":0,"result_data":"","type":"ShieldedTransfer","owner_id":null}
+            """
+
+        XCTAssertThrowsError(
+            try JSONDecoder.platformBlocks.decode(PlatformBlockTransaction.self, from: Data(json.utf8))
+        )
+    }
+
+    func testShouldRefuseAQueryStringHoldingANULBeforeTheFFICall() {
+        // The wrappers pass `ownerId` and `transitionHash` through this conversion; a NUL would
+        // otherwise make Rust read only the prefix ("valid\0junk" queries "valid")
+        var bodyRan = false
+        XCTAssertThrowsError(
+            try withDecisionProposalCString(
+                "valid\0junk", field: "transitionHash", invalid: SDKError.invalidParameter
+            ) { _ in bodyRan = true }
+        ) { error in
+            guard case SDKError.invalidParameter(let message) = error else {
+                return XCTFail("unexpected error \(error)")
+            }
+            XCTAssertTrue(message.contains("transitionHash"), message)
+        }
+        XCTAssertFalse(bodyRan)
     }
 }

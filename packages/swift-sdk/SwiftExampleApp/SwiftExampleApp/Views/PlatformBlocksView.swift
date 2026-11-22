@@ -9,14 +9,27 @@ import SwiftDashSDK
 /// Rust verifies the block proofs and says whether the answer is proved; this view shows that
 /// flag and nothing it decides itself. Below protocol version 15 the SDK's refusal is shown as
 /// it comes.
+///
+/// Blocks are read through the SDK current when Read Blocks is tapped, and a block opened from
+/// them stays bound to that SDK: once the app's SDK is replaced (another network), the list and
+/// the block say so and the owner lookup does not run on the new SDK.
 struct PlatformBlocksView: View {
     @EnvironmentObject var appState: AppState
 
     @State private var startHeightText = "1"
     @State private var countText = "10"
     @State private var isRunning = false
-    @State private var answer: PlatformBlocks?
+    @State private var answer: LoadedBlocks?
     @State private var errorMessage: String?
+    @State private var submissions = InputBoundSubmissions()
+
+    /// Blocks with the SDK that read them and that SDK's connection generation
+    /// (``AppState/sdkGeneration``).
+    struct LoadedBlocks {
+        let blocks: PlatformBlocks
+        let sdk: SDK
+        let connection: Int
+    }
 
     var body: some View {
         Form {
@@ -59,14 +72,24 @@ struct PlatformBlocksView: View {
                 }
             } else if let answer {
                 Section {
-                    ProvedBadge(proved: answer.proved, identifier: "blocks.provedBadge")
-                    if answer.blocks.isEmpty {
+                    if answer.connection != appState.sdkGeneration {
+                        NetworkChangedNote(identifier: "blocks.networkChangedText")
+                    }
+                    if answer.blocks.blocks.isEmpty {
+                        // Nothing came back, so there is nothing a proof covers
                         Text("No blocks returned")
                             .foregroundColor(.secondary)
                             .accessibilityIdentifier("blocks.emptyText")
+                    } else {
+                        ProvedBadge(proved: answer.blocks.proved, identifier: "blocks.provedBadge")
                     }
-                    ForEach(answer.blocks, id: \.height) { block in
-                        NavigationLink(destination: PlatformBlockDetailView(block: block, proved: answer.proved)) {
+                    ForEach(answer.blocks.blocks, id: \.height) { block in
+                        NavigationLink(destination: PlatformBlockDetailView(
+                            block: block,
+                            proved: answer.blocks.proved,
+                            sdk: answer.sdk,
+                            connection: answer.connection
+                        )) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Block \(block.height)")
                                     .font(.headline)
@@ -80,12 +103,18 @@ struct PlatformBlocksView: View {
                         .accessibilityIdentifier("blocks.row.\(block.height)")
                     }
                 } header: {
-                    Text("Result (\(answer.blocks.count))")
+                    Text("Result (\(answer.blocks.blocks.count))")
                 }
             }
         }
         .navigationTitle("Block Explorer")
         .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: appState.sdkGeneration) { _, _ in
+            // A read still running answers for the replaced SDK; blocks already shown stay,
+            // marked as read from it
+            submissions.invalidate()
+            isRunning = false
+        }
     }
 
     private func run() {
@@ -99,6 +128,8 @@ struct PlatformBlocksView: View {
             answer = nil
             return
         }
+        let connection = appState.sdkGeneration
+        let submission = submissions.submit(connection: connection)
         isRunning = true
         errorMessage = nil
         answer = nil
@@ -106,11 +137,14 @@ struct PlatformBlocksView: View {
             do {
                 let blocks = try await sdk.getBlocks(startHeight: startHeight, count: count)
                 await MainActor.run {
-                    answer = blocks
+                    // Read through an SDK the app has since replaced: not this network's blocks
+                    guard submissions.isCurrent(submission, connection: appState.sdkGeneration) else { return }
+                    answer = LoadedBlocks(blocks: blocks, sdk: sdk, connection: connection)
                     isRunning = false
                 }
             } catch {
                 await MainActor.run {
+                    guard submissions.isCurrent(submission, connection: appState.sdkGeneration) else { return }
                     errorMessage = error.localizedDescription
                     isRunning = false
                 }
@@ -120,10 +154,20 @@ struct PlatformBlocksView: View {
 }
 
 /// One block's fields and state transitions, and a lookup of one identity's transitions in it.
+///
+/// The lookup runs through `sdk`, the SDK that read the block, and only while it is still the
+/// app's SDK (`connection` is the current ``AppState/sdkGeneration``): another chain's
+/// transitions are never shown under this block. The lookup's result answers the identity id
+/// it was asked for: editing the field clears it, and a lookup that completes after an edit or
+/// an SDK change is dropped.
 struct PlatformBlockDetailView: View {
     let block: PlatformBlock
     /// Whether Rust proved the block this view shows.
     let proved: Bool
+    /// The SDK that read the block.
+    let sdk: SDK
+    /// The connection generation of `sdk`.
+    let connection: Int
 
     @EnvironmentObject var appState: AppState
 
@@ -131,10 +175,19 @@ struct PlatformBlockDetailView: View {
     @State private var isRunning = false
     @State private var ownerAnswer: OwnerTransactionsInBlock?
     @State private var ownerError: String?
+    @State private var submissions = InputBoundSubmissions()
+
+    /// Whether the app's SDK is no longer the one that read this block.
+    private var networkChanged: Bool {
+        appState.sdkGeneration != connection
+    }
 
     var body: some View {
         Form {
             Section("Block") {
+                if networkChanged {
+                    NetworkChangedNote(identifier: "blockDetail.networkChangedText")
+                }
                 ProvedBadge(proved: proved, identifier: "blockDetail.provedBadge")
                 BlockField(label: "Height", value: "\(block.height)")
                 BlockField(label: "Time", value: BlockFormatting.time(ms: block.timeMs))
@@ -162,7 +215,6 @@ struct PlatformBlockDetailView: View {
                     .disableAutocorrection(true)
                     .font(.system(.footnote, design: .monospaced))
                     .accessibilityIdentifier("blockDetail.ownerIdField")
-                    .disabled(isRunning)
                 Button(action: findOwnerTransactions) {
                     HStack {
                         if isRunning {
@@ -175,9 +227,13 @@ struct PlatformBlockDetailView: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
-                .disabled(isRunning || appState.sdk == nil
+                .disabled(isRunning || networkChanged
                           || ownerIdText.trimmingCharacters(in: .whitespaces).isEmpty)
                 .accessibilityIdentifier("blockDetail.findOwnerButton")
+
+                if networkChanged {
+                    NetworkChangedNote(identifier: "blockDetail.ownerNetworkChangedText")
+                }
 
                 if let ownerError {
                     Text(ownerError)
@@ -186,15 +242,17 @@ struct PlatformBlockDetailView: View {
                         .textSelection(.enabled)
                         .accessibilityIdentifier("blockDetail.ownerErrorText")
                 } else if let ownerAnswer {
-                    ProvedBadge(
-                        proved: ownerAnswer.proved,
-                        provedText: "Each transition proved; the list is not proved complete",
-                        identifier: "blockDetail.ownerProvedBadge"
-                    )
                     if ownerAnswer.transactions.isEmpty {
+                        // Nothing came back, so there is nothing a proof covers
                         Text("The node returned no transitions of this identity in block \(ownerAnswer.height)")
                             .foregroundColor(.secondary)
                             .accessibilityIdentifier("blockDetail.ownerEmptyText")
+                    } else {
+                        ProvedBadge(
+                            proved: ownerAnswer.proved,
+                            provedText: "Each transition proved; the list is not proved complete",
+                            identifier: "blockDetail.ownerProvedBadge"
+                        )
                     }
                     ForEach(ownerAnswer.transactions, id: \.hash) { transaction in
                         BlockTransactionRow(transaction: transaction)
@@ -209,26 +267,45 @@ struct PlatformBlockDetailView: View {
         }
         .navigationTitle("Block \(block.height)")
         .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: ownerIdText) { _, _ in
+            // The result shown, and a lookup running, answer the old identity id
+            submissions.invalidate()
+            ownerAnswer = nil
+            ownerError = nil
+            isRunning = false
+        }
+        .onChange(of: appState.sdkGeneration) { _, _ in
+            // A lookup still running would land beside the notice; a result already shown was
+            // read through this block's SDK and stays
+            submissions.invalidate()
+            isRunning = false
+        }
     }
 
     private func findOwnerTransactions() {
-        guard let sdk = appState.sdk else {
-            ownerError = "SDK not initialized"
-            return
-        }
-        let ownerId = ownerIdText.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Only through the SDK that read this block, and only while it is the app's SDK
+        guard !networkChanged else { return }
+        let submission = submissions.submit(
+            ["ownerId": ownerIdText.trimmingCharacters(in: .whitespacesAndNewlines)],
+            connection: connection
+        )
+        let ownerId = submission.inputs["ownerId"] ?? ""
+        let sdk = sdk
+        let height = block.height
         isRunning = true
         ownerError = nil
         ownerAnswer = nil
         Task {
             do {
-                let answer = try await sdk.getOwnerTransactionsInBlock(height: block.height, ownerId: ownerId)
+                let answer = try await sdk.getOwnerTransactionsInBlock(height: height, ownerId: ownerId)
                 await MainActor.run {
+                    guard submissions.isCurrent(submission, connection: appState.sdkGeneration) else { return }
                     ownerAnswer = answer
                     isRunning = false
                 }
             } catch {
                 await MainActor.run {
+                    guard submissions.isCurrent(submission, connection: appState.sdkGeneration) else { return }
                     ownerError = error.localizedDescription
                     isRunning = false
                 }
@@ -276,6 +353,18 @@ struct BlockTransactionRow: View {
                 .foregroundColor(.secondary)
         }
         .padding(.vertical, 2)
+    }
+}
+
+/// Says the app's SDK was replaced since the blocks shown were read.
+struct NetworkChangedNote: View {
+    let identifier: String
+
+    var body: some View {
+        Label("Network changed, reload the blocks", systemImage: "arrow.triangle.2.circlepath")
+            .font(.footnote)
+            .foregroundColor(.orange)
+            .accessibilityIdentifier(identifier)
     }
 }
 

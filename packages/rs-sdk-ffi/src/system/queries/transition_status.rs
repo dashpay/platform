@@ -4,7 +4,7 @@
 //! holds the transition). rs-sdk decides everything, including which answers are proved; these
 //! functions read the C arguments, call it and write the answer as JSON.
 
-use super::blocks::{block_on, json_result, required_str, sdk_wrapper, transaction_json};
+use super::blocks::{json_result, required_str, sdk_wrapper, transaction_json};
 use crate::types::SDKHandle;
 use crate::{DashSDKResult, FFIError};
 use dash_sdk::platform::transition::node_status::{
@@ -17,6 +17,10 @@ use std::ffi::c_char;
 /// Asks one node what it knows of the state transition with this hash, without waiting
 /// (`Sdk::recent_state_transition_status`). UNPROVED: a node can answer anything, and
 /// "unknown" from one node does not mean the transition will not land.
+///
+/// Privacy: the hash goes to the nodes this SDK handle talks to, not to the node the transition
+/// was broadcast to, so asking links the caller to that transition in front of those nodes.
+/// Use it for public transitions only, not for shielded or private document transitions.
 ///
 /// # Parameters
 /// * `sdk_handle` - Handle to the SDK instance.
@@ -58,13 +62,19 @@ unsafe fn get_recent_state_transition_status(
 ) -> Result<JsonValue, FFIError> {
     let wrapper = sdk_wrapper(sdk_handle)?;
     let hash = transition_hash(state_transition_hash)?;
-    let view = block_on(wrapper.sdk.recent_state_transition_status(hash, None))??;
+    let view = wrapper
+        .runtime
+        .try_block_on(wrapper.sdk.recent_state_transition_status(hash, None))??;
     Ok(node_view_json(&view))
 }
 
 /// The status of the state transition with this hash, proved where the network can prove it
 /// (`Sdk::state_transition_status_by_hash`): when the node says the transition is committed,
 /// rs-sdk reads that block with its proof and looks for the transition in it.
+///
+/// Privacy: the hash goes to the nodes this SDK handle talks to, not to the node the transition
+/// was broadcast to, so asking links the caller to that transition in front of those nodes.
+/// Use it for public transitions only, not for shielded or private document transitions.
 ///
 /// # Parameters
 /// * `sdk_handle` - Handle to the SDK instance. It must verify proofs.
@@ -110,7 +120,9 @@ unsafe fn get_state_transition_status_by_hash(
 ) -> Result<JsonValue, FFIError> {
     let wrapper = sdk_wrapper(sdk_handle)?;
     let hash = transition_hash(state_transition_hash)?;
-    let status = block_on(wrapper.sdk.state_transition_status_by_hash(hash, None))??;
+    let status = wrapper
+        .runtime
+        .try_block_on(wrapper.sdk.state_transition_status_by_hash(hash, None))??;
     Ok(status_by_hash_json(&status))
 }
 
@@ -312,6 +324,7 @@ mod tests {
         assert_eq!(json["block_time_ms"], 1_700_000_000_000u64);
         assert_eq!(json["transaction"]["hash"], "07".repeat(32));
         assert_eq!(json["transaction"]["code"], 0);
+        assert_eq!(json["transaction"]["executed"], true);
 
         for (status, name) in [
             (

@@ -2442,6 +2442,20 @@
           "host": "swift",
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "SYS-10",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "SYS-11",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
           "id": "SYS-12",
           "covers_restart": false
         }

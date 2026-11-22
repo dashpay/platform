@@ -11,6 +11,8 @@ public struct PlatformBlockTransaction: Codable, Equatable, Sendable {
     public let hash: String
     /// 0 if it executed, otherwise the code of the error it paid for.
     public let code: UInt32
+    /// Whether the transition executed, as rs-sdk reads `code` (`BlockTransaction::executed`).
+    public let executed: Bool
     public let gasUsed: Int64
     /// The data of its execution result, hex.
     public let resultData: String
@@ -18,9 +20,6 @@ public struct PlatformBlockTransaction: Codable, Equatable, Sendable {
     public let type: String
     /// The identity the transition reports as its own, base58; nil when it has none.
     public let ownerId: String?
-
-    /// Whether the transition executed (`code` 0).
-    public var executed: Bool { code == 0 }
 }
 
 /// A block of the Platform chain with every state transition it holds, in block order.

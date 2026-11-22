@@ -30,6 +30,16 @@ struct QueryDetailView: View {
                 .background(Color.gray.opacity(0.1))
                 .cornerRadius(10)
 
+                if Self.transitionStatusQueries.contains(query.name) {
+                    Label(TransitionStatusPrivacy.note, systemImage: "eye.trianglebadge.exclamationmark")
+                        .font(.callout)
+                        .foregroundColor(.orange)
+                        .padding()
+                        .background(Color.orange.opacity(0.1))
+                        .cornerRadius(10)
+                        .accessibilityIdentifier("queryDetail.privacyNote")
+                }
+
                 // Input Fields
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Parameters")
@@ -155,19 +165,21 @@ struct QueryDetailView: View {
 
     /// Whether the result shown names the inputs it answers and is cleared
     /// when they change: the contract moderation and fee pot reads, whose
-    /// answers name neither the contract nor most of what was asked.
+    /// answers name neither the contract nor most of what was asked, and the
+    /// block and transition status reads, whose answers would otherwise sit
+    /// beside an edited height, identity or hash.
     private var resultFollowsInputs: Bool {
         Self.inputBoundQueries.contains(query.name)
     }
 
     /// Whether `submission`'s result may still be shown: it answers the inputs
-    /// on screen and, for a moderation read, was read through the current SDK.
+    /// on screen and, for an input-bound read, was read through the current SDK.
     private func stillAnswers(_ submission: InputBoundSubmission) -> Bool {
         guard resultFollowsInputs else { return submissions.isCurrent(submission) }
         return submissions.isCurrent(submission, connection: appState.sdkGeneration)
     }
 
-    /// The SDK was replaced: a moderation result shown, or still being read,
+    /// The SDK was replaced: an input-bound result shown, or still being read,
     /// answered for the old connection.
     private func connectionReplaced() {
         guard resultFollowsInputs else { return }
@@ -186,6 +198,17 @@ struct QueryDetailView: View {
         "getContractTeamActionSigners",
         "getContractModerationActionCounts",
         "getContractFeePots",
+        "getBlocks",
+        "getOwnerTransactionsInBlock",
+        "getRecentStateTransitionStatus",
+        "getStateTransitionStatusByHash",
+    ]
+
+    /// The reads that send a state transition hash to the app's nodes; their
+    /// form says so before anything is sent (``TransitionStatusPrivacy``).
+    private static let transitionStatusQueries: Set<String> = [
+        "getRecentStateTransitionStatus",
+        "getStateTransitionStatusByHash",
     ]
 
     private func hasRequiredInputs() -> Bool {
@@ -208,15 +231,14 @@ struct QueryDetailView: View {
         }
 
         print("🔵 QueryDetailView: SDK is initialized, preparing to execute query")
-        print("🔵 QueryDetailView: Query inputs: \(queryInputs)")
 
         isLoading = true
         error = ""
         result = ""
         showResult = false
-        // A moderation read is built from its inputs as they are now, so an
-        // edit made before the task runs cannot change what it sends; its
-        // result echoes the same snapshot
+        // An input-bound read is built from its inputs as they are now, so an
+        // edit made before the task runs cannot change what it sends; a
+        // moderation result echoes the same snapshot
         let submission = submissions.submit(
             resultFollowsInputs ? submittedInputs() : [:],
             connection: appState.sdkGeneration
@@ -227,7 +249,7 @@ struct QueryDetailView: View {
                 print("🔵 QueryDetailView: Calling performQuery...")
                 let queryResult: Any
                 if resultFollowsInputs {
-                    queryResult = try await performModerationQuery(sdk: sdk, inputs: submission.inputs)
+                    queryResult = try await performInputBoundQuery(sdk: sdk, inputs: submission.inputs)
                 } else {
                     queryResult = try await performQuery(sdk: sdk)
                 }
@@ -751,18 +773,6 @@ struct QueryDetailView: View {
                 orderAscending: orderAscending
             )
 
-        case "getBlocks":
-            return try encodedJSON(try await sdk.getBlocks(
-                startHeight: try requiredUnsigned("startHeight", label: "Start Height"),
-                count: try requiredUnsigned("count", label: "Count")
-            ))
-
-        case "getOwnerTransactionsInBlock":
-            return try encodedJSON(try await sdk.getOwnerTransactionsInBlock(
-                height: try requiredUnsigned("height", label: "Block Height"),
-                ownerId: trimmedInput("ownerId")
-            ))
-
         // Token Queries
         case "getIdentityTokenBalances":
             let identityId = queryInputs["identityId"] ?? ""
@@ -884,16 +894,6 @@ struct QueryDetailView: View {
             let id = queryInputs["id"] ?? ""
             return try await sdk.getPrefundedSpecializedBalance(id: id)
 
-        case "getRecentStateTransitionStatus":
-            return try encodedJSON(try await sdk.getRecentStateTransitionStatus(
-                transitionHash: trimmedInput("transitionHash")
-            ))
-
-        case "getStateTransitionStatusByHash":
-            return try encodedJSON(try await sdk.getStateTransitionStatusByHash(
-                transitionHash: trimmedInput("transitionHash")
-            ))
-
         case "runAllQueries":
             // This is handled by DiagnosticsView - should not reach here
             throw SDKError.notImplemented("Use DiagnosticsView for running all queries")
@@ -910,14 +910,11 @@ struct QueryDetailView: View {
         return try JSONSerialization.jsonObject(with: encoder.encode(value))
     }
 
-    /// The input `key`, trimmed of surrounding whitespace.
-    private func trimmedInput(_ key: String) -> String {
-        (queryInputs[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    /// The input `key` read as an unsigned integer of type `T`.
-    private func requiredUnsigned<T: FixedWidthInteger & UnsignedInteger>(_ key: String, label: String) throws -> T {
-        guard let value = T(trimmedInput(key)) else {
+    /// The submitted input `key` read as an unsigned integer of type `T`.
+    private func requiredUnsigned<T: FixedWidthInteger & UnsignedInteger>(
+        _ inputs: [String: String], _ key: String, label: String
+    ) throws -> T {
+        guard let value = T(inputs[key] ?? "") else {
             throw SDKError.invalidParameter("\(label) must be a whole number")
         }
         return value
@@ -981,7 +978,40 @@ struct QueryDetailView: View {
         return values
     }
 
-    // MARK: - Contract moderation reads
+    // MARK: - Input-bound reads (blocks, transition status, contract moderation)
+
+    /// A read whose result follows its inputs (``inputBoundQueries``), built
+    /// from `inputs`, the snapshot ``submittedInputs()`` took at Execute: the
+    /// block and transition status reads here, the moderation reads in
+    /// ``performModerationQuery(sdk:inputs:)``.
+    private func performInputBoundQuery(sdk: SDK, inputs: [String: String]) async throws -> Any {
+        switch query.name {
+        case "getBlocks":
+            return try encodedJSON(try await sdk.getBlocks(
+                startHeight: try requiredUnsigned(inputs, "startHeight", label: "Start Height"),
+                count: try requiredUnsigned(inputs, "count", label: "Count")
+            ))
+
+        case "getOwnerTransactionsInBlock":
+            return try encodedJSON(try await sdk.getOwnerTransactionsInBlock(
+                height: try requiredUnsigned(inputs, "height", label: "Block Height"),
+                ownerId: inputs["ownerId"] ?? ""
+            ))
+
+        case "getRecentStateTransitionStatus":
+            return try encodedJSON(try await sdk.getRecentStateTransitionStatus(
+                transitionHash: inputs["transitionHash"] ?? ""
+            ))
+
+        case "getStateTransitionStatusByHash":
+            return try encodedJSON(try await sdk.getStateTransitionStatusByHash(
+                transitionHash: inputs["transitionHash"] ?? ""
+            ))
+
+        default:
+            return try await performModerationQuery(sdk: sdk, inputs: inputs)
+        }
+    }
 
     /// Runs one of the contract moderation and fee pot reads (protocol
     /// version 14) from `inputs`, the snapshot ``submittedInputs()`` took at
@@ -1058,7 +1088,7 @@ struct QueryDetailView: View {
 
     /// The trimmed form input `name`, `nil` when empty.
     private func moderationInput(_ name: String) -> String? {
-        let value = (queryInputs[name] ?? "").trimmingCharacters(in: .whitespaces)
+        let value = (queryInputs[name] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
     }
 

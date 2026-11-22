@@ -310,9 +310,9 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "getCurrentQuorumsInfo", label: "Get Current Quorums Info", description: "Get information about current validator quorums"),
                 QueryDefinition(name: "getPrefundedSpecializedBalance", label: "Get Prefunded Specialized Balance", description: "Get balance of a prefunded specialized account"),
                 QueryDefinition(name: "getPathElements", label: "Get GroveDB Path Elements", description: "Fetch raw GroveDB elements by path and keys (diagnostic)"),
-                QueryDefinition(name: "checkTransitionStatus", label: "Transition Status Checker", description: "Paste a state transition hash to see whether a proved block holds it, with its result (protocol version 15)"),
-                QueryDefinition(name: "getRecentStateTransitionStatus", label: "Get Recent State Transition Status (unproved)", description: "What one node says of a transition hash: committed, pending or unknown. Unproved, one node's word (protocol version 15)"),
-                QueryDefinition(name: "getStateTransitionStatusByHash", label: "Check State Transition Status", description: "A transition hash's status, proved by its block when the node says committed; otherwise the node's unproved word (protocol version 15)")
+                QueryDefinition(name: "checkTransitionStatus", label: "Transition Status Checker", description: "Public transitions only: the hash goes to the app's nodes. Paste a state transition hash to see whether a proved block holds it, with its result (protocol version 15)"),
+                QueryDefinition(name: "getRecentStateTransitionStatus", label: "Get Recent State Transition Status (unproved)", description: "Public transitions only: the hash goes to the app's nodes. What one node says of a transition hash: committed, pending or unknown. Unproved, one node's word (protocol version 15)"),
+                QueryDefinition(name: "getStateTransitionStatusByHash", label: "Check State Transition Status", description: "Public transitions only: the hash goes to the app's nodes. A transition hash's status, proved by its block when the node says committed; otherwise the node's unproved word (protocol version 15)")
             ]
 
         case .addresses:
