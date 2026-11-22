@@ -114,7 +114,7 @@ fn parse_identifier(value: &str, field: &str) -> Result<Identifier, FFIError> {
 
 /// A result holding `string` as an owned C string (freed with `dash_sdk_string_free`), or no
 /// data for `None`.
-fn string_result(string: Result<Option<String>, FFIError>) -> DashSDKResult {
+pub(crate) fn string_result(string: Result<Option<String>, FFIError>) -> DashSDKResult {
     match string.and_then(|string| string.map(CString::new).transpose().map_err(Into::into)) {
         Ok(Some(string)) => DashSDKResult::success_string(string.into_raw()),
         Ok(None) => DashSDKResult::success(std::ptr::null_mut()),

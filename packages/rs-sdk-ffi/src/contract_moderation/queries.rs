@@ -13,11 +13,11 @@
 
 use super::json::{
     action_counts_json, entries_json, fee_pots_json, removals_json, status_json,
-    team_action_signers_json, team_actions_json, RemovalsPageJson,
+    team_action_signers_json, team_actions_json,
 };
 use super::{moderation_list, team_action_status};
 use crate::decision_proposal::{
-    json_result, optional_identifier, required_identifier, required_str, sdk_wrapper,
+    json_result, optional_identifier, required_identifier, required_str, sdk_wrapper, string_result,
 };
 use crate::types::SDKHandle;
 use crate::{DashSDKResult, FFIError};
@@ -30,8 +30,25 @@ use dash_sdk::platform::contract_moderation::{
     ContractTeamActions, ContractTeamActionsPageQuery,
 };
 use dash_sdk::platform::Fetch;
+use dash_sdk::Sdk;
 use serde_json::Value as JsonValue;
 use std::ffi::c_char;
+
+/// Reads the removal records `query` names and writes them as the JSON string the removal
+/// exports return. The page is serialized, and its decoded values dropped, here, inside the
+/// future the caller drives on the large-stack worker: the kept values are a recursive tree,
+/// and so is their serializer, so neither runs on the caller's thread, whose stack may be small.
+async fn removals_page_string(
+    sdk: &Sdk,
+    query: ContractDocumentRemovalsPageQuery,
+) -> Result<Option<String>, FFIError> {
+    query
+        .fetch_with_kept_values(sdk)
+        .await?
+        .map(|removals| serde_json::to_string(&removals_json(removals)))
+        .transpose()
+        .map_err(FFIError::from)
+}
 
 /// The page bound `limit` points to: `None` for a null pointer (rs-sdk's default, the page cap
 /// of the network queried), the value as it is otherwise (0 included, which the node judges),
@@ -209,7 +226,9 @@ unsafe fn get_status_inner(
 /// `until` is present on a suspension list entry (when it lapses, in milliseconds); `warnings`
 /// (`[{"warnedAt": <ms>, "reason": {...}}]`, oldest first) on a warning list entry, whose
 /// `reason` is the latest warning's. `nextStartAfter` is rs-sdk's cursor of the next page and
-/// is absent on the last page. Free the string with `dash_sdk_string_free`.
+/// is absent on the last page. A missing cursor ends paging, but a present one does not promise
+/// another row: a full final page carries one, and the page after it is empty. Free the string
+/// with `dash_sdk_string_free`.
 ///
 /// # Safety
 /// - `sdk_handle` must be a valid pointer to an initialized `SDKHandle`.
@@ -304,9 +323,11 @@ unsafe fn get_entries_inner(
 /// Drive reads them: a record stores a kept object's members by position, not by name, so on a
 /// contract whose protocol 14 update reordered a kept object's members (refused from protocol
 /// 15), a record written before that update reads under the new order's names.
-/// `nextStartAfter` is
-/// rs-sdk's cursor and is absent on the last page. Free the string with
-/// `dash_sdk_string_free`.
+/// `nextStartAfter` is rs-sdk's cursor and is absent on the last page. A missing cursor ends
+/// paging, but a present one does not promise another row: a full final page carries one, and
+/// the page after it is empty. A read by ids
+/// (`dash_sdk_contract_moderation_get_document_removals_by_ids`) has no cursor. Free the string
+/// with `dash_sdk_string_free`.
 ///
 /// # Safety
 /// - `sdk_handle` must be a valid pointer to an initialized `SDKHandle`.
@@ -321,7 +342,7 @@ pub unsafe extern "C" fn dash_sdk_contract_moderation_get_document_removals(
     start_after: *const c_char,
     limit: *const u32,
 ) -> DashSDKResult {
-    json_result(get_document_removals_inner(
+    string_result(get_document_removals_inner(
         sdk_handle,
         contract_id,
         document_type_name,
@@ -336,7 +357,7 @@ unsafe fn get_document_removals_inner(
     document_type_name: *const c_char,
     start_after: *const c_char,
     limit: *const u32,
-) -> Result<Option<RemovalsPageJson>, FFIError> {
+) -> Result<Option<String>, FFIError> {
     let wrapper = sdk_wrapper(sdk_handle)?;
     let contract_id = required_identifier(contract_id, "contract_id")?;
     let document_type_name = required_str(document_type_name, "document_type_name")?;
@@ -357,10 +378,9 @@ unsafe fn get_document_removals_inner(
     {
         *cursor = start_after;
     }
-    let removals = wrapper
+    wrapper
         .runtime
-        .try_block_on(query.fetch_with_kept_values(&wrapper.sdk))??;
-    Ok(removals.map(removals_json))
+        .try_block_on(removals_page_string(&wrapper.sdk, query))?
 }
 
 /// The records of the documents named, within one document type, that the contract's
@@ -394,7 +414,7 @@ pub unsafe extern "C" fn dash_sdk_contract_moderation_get_document_removals_by_i
     document_ids: *const *const c_char,
     document_ids_count: usize,
 ) -> DashSDKResult {
-    json_result(get_document_removals_by_ids_inner(
+    string_result(get_document_removals_by_ids_inner(
         sdk_handle,
         contract_id,
         document_type_name,
@@ -409,7 +429,7 @@ unsafe fn get_document_removals_by_ids_inner(
     document_type_name: *const c_char,
     document_ids: *const *const c_char,
     document_ids_count: usize,
-) -> Result<Option<RemovalsPageJson>, FFIError> {
+) -> Result<Option<String>, FFIError> {
     let wrapper = sdk_wrapper(sdk_handle)?;
     let contract_id = required_identifier(contract_id, "contract_id")?;
     let document_type_name = required_str(document_type_name, "document_type_name")?;
@@ -419,10 +439,9 @@ unsafe fn get_document_removals_by_ids_inner(
         document_type_name.to_string(),
         document_ids,
     );
-    let removals = wrapper
+    wrapper
         .runtime
-        .try_block_on(query.fetch_with_kept_values(&wrapper.sdk))??;
-    Ok(removals.map(removals_json))
+        .try_block_on(removals_page_string(&wrapper.sdk, query))?
 }
 
 /// One page of the actions an elected contract's seated moderation team votes on, active (still
@@ -463,8 +482,9 @@ unsafe fn get_document_removals_by_ids_inner(
 /// `approvalCount` is an upper bound (see `dash_sdk_contract_moderation_get_team_action_signers`
 /// for who approved it). `nextStartAtActionId` and `nextStartAtActionIdIncluded` are rs-sdk's
 /// cursor of the next page, to pass back as `start_at_action_id` and
-/// `start_at_action_id_included` as they are; both are absent on the last page. Free the string
-/// with `dash_sdk_string_free`.
+/// `start_at_action_id_included` as they are; both are absent on the last page. A missing
+/// cursor ends paging, but a present one does not promise another row: a full final page
+/// carries one, and the page after it is empty. Free the string with `dash_sdk_string_free`.
 ///
 /// # Safety
 /// - `sdk_handle` must be a valid pointer to an initialized `SDKHandle`.
@@ -689,13 +709,26 @@ mod tests {
     use dash_sdk::dapi_grpc::platform::v0::{
         ContractModerationList as ContractModerationListProto, GetContractModerationEntriesRequest,
     };
+    use dash_sdk::dpp::data_contract::accessors::v0::{
+        DataContractV0Getters, DataContractV0Setters,
+    };
     use dash_sdk::dpp::data_contract::config::moderation::ContractModerationReason;
+    use dash_sdk::dpp::data_contract::config::moderation::{
+        encode_kept_fields, ContractModerationConfig, ContractModerators,
+    };
+    use dash_sdk::dpp::data_contract::config::DataContractConfig;
+    use dash_sdk::dpp::data_contract::document_type::DocumentType;
+    use dash_sdk::dpp::data_contract::{DataContract, DataContractFactory};
+    use dash_sdk::dpp::document::{Document, DocumentV0};
     use dash_sdk::dpp::platform_value::string_encoding::Encoding;
+    use dash_sdk::dpp::platform_value::{platform_value, Value};
+    use dash_sdk::dpp::version::PlatformVersion;
     use dash_sdk::platform::contract_moderation::{
         ContractDocumentRemoval, ContractDocumentRemovalEntry, ContractDocumentRemovals,
         ContractModerationListStatuses, ContractModerationStatusQuery, ContractTeamAction,
         ContractTeamActionEntry, ContractTeamActionEvent, GroupActionStatus,
     };
+    use std::collections::BTreeMap;
     use std::ffi::{CStr, CString};
 
     /// `result` failed with `InvalidParameter`; its error is freed.
@@ -1213,6 +1246,145 @@ mod tests {
                 &limit,
             ));
             assert_eq!(json, serde_json::json!({"entries": []}));
+            destroy_mock_sdk_handle(handle);
+        }
+    }
+
+    /// A moderated contract whose `post` type keeps its `hashtag` when a moderator deletes a
+    /// post: what the read decodes the record's kept value under.
+    fn contract_keeping_a_hashtag() -> DataContract {
+        let platform_version = PlatformVersion::latest();
+        let moderation = ContractModerationConfig {
+            banlist: false,
+            suspensions: false,
+            moderators: ContractModerators::ContractOwner,
+            warnings: false,
+        };
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("a default config")
+            .with_moderation(Some(moderation));
+        let mut contract = DataContractFactory::new(platform_version.protocol_version)
+            .expect("a factory")
+            .create_with_value_config(
+                Identifier::new([7; 32]),
+                1,
+                // A contract needs a document type; the kept one is added below
+                platform_value!({
+                    "note": {
+                        "type": "object",
+                        "properties": { "text": { "type": "string", "maxLength": 10, "position": 0 } },
+                        "additionalProperties": false,
+                    },
+                }),
+                None,
+                None,
+            )
+            .expect("a contract")
+            .data_contract_owned();
+        contract.set_config(config.clone());
+        let post = DocumentType::try_from_schema(
+            contract.id(),
+            1,
+            config.version(),
+            "post",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "hashtag": { "type": "string", "maxLength": 61, "position": 0 },
+                },
+                "additionalProperties": false,
+                "moderatorAbilities": {
+                    "delete": true,
+                    "deleteKeepsFields": ["hashtag"],
+                },
+            }),
+            None,
+            &BTreeMap::new(),
+            &config,
+            true,
+            &mut vec![],
+            platform_version,
+        )
+        .expect("a post type keeping its hashtag");
+        contract
+            .document_types_mut()
+            .insert("post".to_string(), post);
+        contract
+    }
+
+    /// The records of the ids named, through the exported function: the contract is looked up
+    /// because the record keeps a value, the value comes back tagged, and a read by ids
+    /// carries no cursor.
+    #[test]
+    fn should_return_the_records_of_the_ids_named_with_their_kept_values() {
+        let contract = contract_keeping_a_hashtag();
+        let contract_id = contract.id();
+        let document_id = Identifier::new([3; 32]);
+        let kept_fields = encode_kept_fields(
+            &Document::V0(DocumentV0 {
+                id: document_id,
+                properties: BTreeMap::from([(
+                    "hashtag".to_string(),
+                    Value::Text("dash".to_string()),
+                )]),
+                ..Default::default()
+            }),
+            contract
+                .document_type_for_name("post")
+                .expect("the post type"),
+        )
+        .expect("encodes");
+        let entry = ContractDocumentRemovalEntry {
+            document_id,
+            removal: ContractDocumentRemoval {
+                document_owner_id: Identifier::new([20; 32]),
+                moderator_id: Identifier::new([21; 32]),
+                reason: ContractModerationReason::from_text("off topic"),
+                removed_at: 1_700_000_000_000,
+                document_hash: [0xab; 32],
+                restoration: None,
+                kept_fields,
+            },
+        };
+        let handle = mock_handle_answering(|wrapper| {
+            Box::pin(async move {
+                let query = ContractDocumentRemovalsPageQuery::for_document_ids(
+                    contract_id,
+                    "post".to_string(),
+                    vec![document_id],
+                );
+                wrapper
+                    .sdk
+                    .mock()
+                    .expect_fetch(query, Some(ContractDocumentRemovals(vec![entry])))
+                    .await
+                    .expect("register the records");
+                wrapper
+                    .sdk
+                    .mock()
+                    .expect_fetch(contract_id, Some(contract))
+                    .await
+                    .expect("register the contract");
+            })
+        });
+        let contract = CString::new(contract_id.to_string(Encoding::Base58)).expect("no NUL");
+        let post = CString::new("post").expect("no NUL");
+        let document = CString::new(b58(3)).expect("no NUL");
+        let ids = [document.as_ptr()];
+        unsafe {
+            let json = json_of(dash_sdk_contract_moderation_get_document_removals_by_ids(
+                handle,
+                contract.as_ptr(),
+                post.as_ptr(),
+                ids.as_ptr(),
+                ids.len(),
+            ));
+            assert_eq!(json["removals"][0]["documentId"], b58(3));
+            assert_eq!(
+                json["removals"][0]["keptFields"],
+                serde_json::json!({"hashtag": {"type": "string", "value": "dash"}})
+            );
+            assert!(json.get("nextStartAfter").is_none());
             destroy_mock_sdk_handle(handle);
         }
     }

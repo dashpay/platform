@@ -819,8 +819,13 @@ mod tests {
 
     /// The kept values the Swift decoding tests read too
     /// (`ContractModerationDecodingTests.testShouldDecodeTheSharedKeptFieldsFixtureByItsTags`):
-    /// one file for both, written compact, one line.
-    const KEPT_FIELDS_FIXTURE: &str = include_str!("fixtures/kept_fields.json");
+    /// one file for both, written compact, one line. It is a resource of the Swift test target
+    /// (`Fixtures`, loaded there through `Bundle.module`), read here from the repository, as
+    /// `rs-platform-wallet-ffi` reads that target's state transition fixtures.
+    const KEPT_FIELDS_FIXTURE: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../swift-sdk/SwiftTests/SwiftDashSDKTests/Fixtures/ContractModeration/kept_fields.json"
+    ));
 
     #[test]
     fn should_write_kept_values_tagged_with_their_kind() {
@@ -913,5 +918,31 @@ mod tests {
             serde_json::to_string(&removals_json(removals)).expect("writes"),
             expected
         );
+    }
+
+    /// A kept value nested 256 levels deep, arrays and objects in turn, built directly as a
+    /// platform value (deeper than a schema admits), writes every level tagged, innermost last.
+    #[test]
+    fn should_write_a_deeply_nested_kept_value() {
+        let depth = 256;
+        let mut value = Value::Bool(true);
+        for level in 0..depth {
+            value = if level % 2 == 0 {
+                Value::Array(vec![value])
+            } else {
+                Value::Map(vec![(Value::Text("m".to_string()), value)])
+            };
+        }
+        let written = serde_json::to_string(&KeptValue(&value)).expect("writes");
+
+        let mut expected = String::from(r#"{"type":"bool","value":true}"#);
+        for level in 0..depth {
+            expected = if level % 2 == 0 {
+                format!(r#"{{"type":"array","value":[{expected}]}}"#)
+            } else {
+                format!(r#"{{"type":"object","value":{{"m":{expected}}}}}"#)
+            };
+        }
+        assert_eq!(written, expected);
     }
 }

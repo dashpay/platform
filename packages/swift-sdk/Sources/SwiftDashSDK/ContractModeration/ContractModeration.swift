@@ -164,7 +164,8 @@ public struct ContractModerationEntry: Codable, Sendable, Equatable, Hashable, I
 public struct ContractModerationEntriesPage: Codable, Sendable, Equatable {
     public let entries: [ContractModerationEntry]
     /// The cursor of the next page, to pass back as `startAfter`; `nil` on
-    /// the last page.
+    /// the last page. `nil` ends paging, but a cursor does not promise another
+    /// row: a full final page carries one, and the page after it is empty.
     public let nextStartAfter: String?
 }
 
@@ -328,7 +329,9 @@ public struct ContractDocumentRemovalEntry: Codable, Sendable, Equatable, Hashab
 public struct ContractDocumentRemovalsPage: Codable, Sendable, Equatable {
     public let removals: [ContractDocumentRemovalEntry]
     /// The cursor of the next page, to pass back as `startAfter`; `nil` on
-    /// the last page and for a read by ids.
+    /// the last page and for a read by ids. `nil` ends paging, but a cursor
+    /// does not promise another row: a full final page carries one, and the
+    /// page after it is empty.
     public let nextStartAfter: String?
 }
 
@@ -424,7 +427,9 @@ public struct ContractTeamActionEntry: Codable, Sendable, Equatable, Hashable, I
 public struct ContractTeamActionsPage: Codable, Sendable, Equatable {
     public let actions: [ContractTeamActionEntry]
     /// The cursor of the next page, to pass back as `startAtActionId`;
-    /// `nil` on the last page.
+    /// `nil` on the last page. `nil` ends paging, but a cursor does not
+    /// promise another row: a full final page carries one, and the page after
+    /// it is empty.
     public let nextStartAtActionId: String?
     /// Whether the next page includes the ``nextStartAtActionId`` action, to
     /// pass back as `startAtActionIdIncluded`; set with

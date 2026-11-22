@@ -202,31 +202,22 @@ final class ContractModerationDecodingTests: XCTestCase {
         XCTAssertEqual(page.nextStartAfter, id4)
     }
 
-    /// The kept values the FFI's writer tests produce, read from the one
-    /// fixture file both sides use
-    /// (`packages/rs-sdk-ffi/src/contract_moderation/fixtures/kept_fields.json`),
-    /// found from this source file's path in the repository. A missing file
-    /// fails the test rather than skipping it.
-    static func keptFieldsFixture(file: StaticString = #filePath) throws -> String {
-        var directory = URL(fileURLWithPath: "\(file)").deletingLastPathComponent()
-        while directory.lastPathComponent != "packages" {
-            let parent = directory.deletingLastPathComponent()
-            guard parent.path != directory.path else {
-                throw FixtureMissing(reason: "no packages directory above \(file)")
-            }
-            directory = parent
-        }
-        let fixture = directory
-            .appendingPathComponent("rs-sdk-ffi/src/contract_moderation/fixtures/kept_fields.json")
-        guard let contents = try? String(contentsOf: fixture, encoding: .utf8) else {
-            throw FixtureMissing(reason: "cannot read \(fixture.path)")
-        }
-        return contents.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private struct FixtureMissing: Error, CustomStringConvertible {
-        let reason: String
-        var description: String { "kept fields fixture missing: \(reason)" }
+    /// The kept values the FFI's writer tests produce: one fixture file both
+    /// sides use, a resource of this test target
+    /// (`Fixtures/ContractModeration/kept_fields.json`, which
+    /// `packages/rs-sdk-ffi/src/contract_moderation/json.rs` includes too).
+    /// A missing resource fails the test rather than skipping it.
+    static func keptFieldsFixture() throws -> String {
+        let url = try XCTUnwrap(
+            Bundle.module.url(
+                forResource: "kept_fields",
+                withExtension: "json",
+                subdirectory: "Fixtures/ContractModeration"
+            ),
+            "the kept fields fixture is not in the test bundle"
+        )
+        return try String(contentsOf: url, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// The FFI tags each kept value with its kind, so no kind is inferred

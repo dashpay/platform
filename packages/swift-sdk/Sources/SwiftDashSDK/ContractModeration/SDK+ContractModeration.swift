@@ -72,6 +72,8 @@ extension SDK {
     ///   - list: The list; the contract must keep it.
     ///   - startAfter: The previous page's ``ContractModerationEntriesPage/nextStartAfter``;
     ///     `nil` for the first page.
+    ///     A page without a cursor is the last; one with a cursor may still be
+    ///     followed by an empty page (a full final page carries one).
     ///   - limit: The most entries to return, passed as it is (0 included,
     ///     which the node judges); `nil` for the page cap of the network
     ///     queried.
@@ -112,6 +114,8 @@ extension SDK {
     ///     keeps no records.
     ///   - startAfter: The previous page's ``ContractDocumentRemovalsPage/nextStartAfter``;
     ///     `nil` for the first page.
+    ///     A page without a cursor is the last; one with a cursor may still be
+    ///     followed by an empty page (a full final page carries one).
     ///   - limit: The most records to return, passed as it is (0 included,
     ///     which the node judges); `nil` for the page cap of the network
     ///     queried.
@@ -154,7 +158,7 @@ extension SDK {
     ///   - documentTypeName: The document type; the node refuses one that
     ///     keeps no records.
     ///   - documentIds: The documents' ids, base58. How many the node takes is
-    ///     the node's to judge.
+    ///     the node's to judge. A read by ids has no cursor.
     /// - Throws: The FFI's `SDKError`; below protocol version 14 a refusal
     ///   of the SDK's protocol gate, before any request (see the top of this
     ///   file for telling its causes apart).
@@ -194,6 +198,8 @@ extension SDK {
     ///   - startAtActionId: Start the page at this action, base58: the
     ///     previous page's ``ContractTeamActionsPage/nextStartAtActionId``;
     ///     `nil` for the first page.
+    ///     A page without a cursor is the last; one with a cursor may still be
+    ///     followed by an empty page (a full final page carries one).
     ///   - startAtActionIdIncluded: Whether the page includes that action
     ///     itself: the previous page's
     ///     ``ContractTeamActionsPage/nextStartAtActionIdIncluded``. The FFI

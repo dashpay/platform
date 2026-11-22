@@ -691,6 +691,105 @@ async fn should_refuse_a_status_over_every_list_below_protocol_14_without_a_cont
     assert_eq!(probes(&sdk).await, 0);
 }
 
+/// The positive counterpart: an unpinned SDK that starts below 14 learns 14 from the probe,
+/// then reads the status over every list the contract keeps. It fetches the contract and
+/// sends the status request over the lists the contract keeps.
+#[tokio::test]
+async fn should_resolve_and_send_a_status_over_every_list_once_the_probe_shows_protocol_14() {
+    use crate::platform::contract_moderation::ContractModerationList;
+    use dapi_grpc::platform::v0::get_contract_moderation_status_request;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::config::moderation::ContractModerationListStatus;
+    use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+    use dpp::data_contract::DataContractFactory;
+    use dpp::platform_value::platform_value;
+
+    let mut sdk = mock_sdk(V13, false, 0);
+    answer_probe(&sdk, "pv14").await;
+    // The probe answers the gate's question for the status request: the network runs 14,
+    // and the unpinned SDK moves up to it. (The mock encodes the expectations below at the
+    // SDK's version, which must therefore already be 14.)
+    let status_requirement = ContractModerationStatusQuery {
+        contract_id: Identifier::new([1; 32]),
+        identity_id: Identifier::new([1; 32]),
+        lists: vec![],
+    }
+    .protocol_requirement(&sdk.query_settings())
+    .unwrap();
+    sdk.ensure_network_serves(status_requirement, None)
+        .await
+        .expect("the probe shows protocol 14");
+    assert!(sdk.protocol_version_number() >= V14);
+    let mut contract = DataContractFactory::new(V14)
+        .unwrap()
+        .create_with_value_config(
+            Identifier::new([7; 32]),
+            1,
+            platform_value!({
+                "note": {
+                    "type": "object",
+                    "properties": { "text": { "type": "string", "maxLength": 10, "position": 0 } },
+                    "additionalProperties": false,
+                },
+            }),
+            None,
+            None,
+        )
+        .unwrap()
+        .data_contract_owned();
+    let config = contract
+        .config()
+        .clone()
+        .with_moderation(Some(ContractModerationConfig {
+            banlist: true,
+            suspensions: false,
+            moderators: ContractModerators::ContractOwner,
+            warnings: true,
+        }));
+    contract.set_config(config);
+    let contract_id = contract.id();
+    let identity_id = Identifier::new([8; 32]);
+    let resolved = ContractModerationStatusQuery {
+        contract_id,
+        identity_id,
+        lists: vec![
+            ContractModerationList::Banlist,
+            ContractModerationList::Warnings,
+        ],
+    };
+    let statuses = ContractModerationListStatuses(vec![
+        ContractModerationListStatus::Banlist { ban: None },
+        ContractModerationListStatus::Warnings { warnings: vec![] },
+    ]);
+    sdk.mock()
+        .expect_fetch(contract_id, Some(contract))
+        .await
+        .unwrap();
+    sdk.mock()
+        .expect_fetch(resolved.clone(), Some(statuses.clone()))
+        .await
+        .unwrap();
+
+    let fetched = sdk
+        .fetch_contract_moderation_status(contract_id, identity_id, None)
+        .await
+        .expect("the network serves the status read once the probe shows 14");
+
+    assert_eq!(fetched, Some(statuses));
+    assert_eq!(probes(&sdk).await, 1);
+    assert_eq!(verified(&sdk), V14);
+    let contract_request: GetDataContractRequest =
+        contract_id.query(&sdk.query_settings()).unwrap();
+    assert_eq!(sent(&sdk, &contract_request).await, 1);
+    let status_request: GetContractModerationStatusRequest =
+        resolved.query(&sdk.query_settings()).unwrap();
+    assert!(matches!(
+        status_request.version,
+        Some(get_contract_moderation_status_request::Version::V0(_))
+    ));
+    assert_eq!(sent(&sdk, &status_request).await, 1);
+}
+
 /// A proved contract request and an answer to it that this build cannot read: its proof is
 /// not one GroveDB decodes. The answer names protocol version `named`.
 fn unreadable_contract_answer(named: u32) -> (GetDataContractRequest, GetDataContractResponse) {
