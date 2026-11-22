@@ -439,6 +439,44 @@ impl Sdk {
         probed.err().map(Box::new)
     }
 
+    /// Ask the network for its protocol version before a node is banned for an answer this
+    /// build could not read that names a version newer than the build knows
+    /// ([`Self::classify_refused_answer`]): one probe, which bans no node, since an answer to
+    /// it this build cannot read says as little about its node.
+    ///
+    /// Nothing is asked when nothing can be learned: by an SDK without nodes or a context
+    /// provider, once a verified answer has shown a newer version, while the last probe's
+    /// epoch has not ended ([`ProbeHold`]), or while a probe runs, which may be the one this
+    /// answer belongs to.
+    pub(super) async fn probe_for_newer_network(&self) {
+        let required = PlatformVersion::latest().protocol_version.saturating_add(1);
+        let state = self.gate_state();
+        let verified = state.settings.verified_protocol_version;
+        if !state.enforced
+            || !state.has_context_provider
+            || verified >= required
+            || state
+                .hold
+                .is_some_and(|hold| hold.covers(required, verified, state.now_ms))
+        {
+            return;
+        }
+        let Ok(_probing) = self.probe_hold.probing.try_lock() else {
+            return;
+        };
+        let settings = RequestSettings {
+            ban_failed_address: Some(false),
+            ..Default::default()
+        };
+        if self
+            .probe_network_protocol_version(required, Some(settings))
+            .await
+            .is_ok()
+        {
+            self.probe_hold.answered.fetch_add(1, Ordering::AcqRel);
+        }
+    }
+
     /// Learn the network's protocol version from the genesis epoch, which every node serves
     /// at every version: the first query of `ExtendedEpochInfo::fetch_current`. It asks for
     /// a proof whatever the SDK's proof setting, since only a verified answer counts.

@@ -97,6 +97,21 @@ impl<T: VersionedGrpcResponse> ProofResponseMetadata for T {
     }
 }
 
+/// Whether a verifier error is a failure to read what a proof holds: its envelope, its
+/// GroveDB proof, the state it proves, or an object decoded from it. A build older than the
+/// network's protocol version fails this way on forms that version introduced. An answer
+/// without a proof, or one whose signature is refused, does not: that is its node's fault
+/// whatever the network runs.
+fn may_be_an_unreadable_format(error: &drive_proof_verifier::Error) -> bool {
+    matches!(
+        error,
+        drive_proof_verifier::Error::DriveError { .. }
+            | drive_proof_verifier::Error::GroveDBError { .. }
+            | drive_proof_verifier::Error::ProtocolError { .. }
+            | drive_proof_verifier::Error::ResponseDecodeError { .. }
+    )
+}
+
 /// Select proof rules without weakening the SDK's stored version.
 ///
 /// Document query verifiers also require the answer to be signed at the selected
@@ -612,9 +627,9 @@ impl Sdk {
     /// An answer naming no protocol version is malformed, whatever the network runs: it stays
     /// [`Error::Proof`] and its node is banned.
     ///
-    /// Any other answer that fails verification is classified by whether this build can be
-    /// expected to read it ([`Self::classify_unverified_answer`]): on a network proven to run
-    /// a protocol version newer than this build knows, its node is not banned.
+    /// An answer this build could not read is classified by whether it can be expected to
+    /// read it ([`Self::classify_unverified_answer`]): on a network proven to run a protocol
+    /// version newer than this build knows, its node is not banned.
     ///
     /// `metadata` is the response's, not yet verified, and `arrival` the SDK's anchors when
     /// it arrived.
@@ -679,15 +694,18 @@ impl Sdk {
     /// network running a protocol version newer than this build knows, such an answer fails
     /// alike from every node, and banning them would empty the pool for the requests this
     /// build still reads. So once a verified answer has shown the network running a version
-    /// this build does not know, an unverifiable answer naming such a version is
-    /// [`StaleNodeError::NewerProtocolVersion`]: the request moves to another node and none
-    /// is banned, and a request whose every attempt ends so fails with [`Error::Config`].
+    /// this build does not know, an answer naming such a version that this build could not
+    /// read ([`may_be_an_unreadable_format`]) is [`StaleNodeError::NewerProtocolVersion`]:
+    /// the request moves to another node and none is banned, and a request whose every
+    /// attempt ends so fails with [`Error::Config`].
     ///
     /// The answer's metadata is not verified, so it does not decide alone: before a verified
     /// answer has shown the newer version, a node naming one is banned as for any unusable
-    /// proof. An answer naming a version this build knows comes from a node behind that
-    /// network, or is unusable for another reason, and an answer outside the height or time
-    /// tolerance is stale: their nodes are banned.
+    /// proof ([`Self::classify_refused_answer`] asks the network first). An answer naming a
+    /// version this build knows comes from a node behind that network, or is unusable for
+    /// another reason, and an answer outside the height or time tolerance is stale: their
+    /// nodes are banned. So is the node of an answer that fails in any other way, such as
+    /// one without a proof or with a refused signature, whatever the network runs.
     fn classify_unverified_answer(
         &self,
         error: drive_proof_verifier::Error,
@@ -696,9 +714,11 @@ impl Sdk {
         arrival: MetadataArrival,
     ) -> Error {
         let supported = PlatformVersion::latest().protocol_version;
+        let network = self.verified_protocol_version.load(Ordering::Relaxed);
         let Some(metadata) = metadata.filter(|metadata| {
-            metadata.protocol_version > supported
-                && self.verified_protocol_version.load(Ordering::Relaxed) > supported
+            may_be_an_unreadable_format(&error)
+                && metadata.protocol_version > supported
+                && network > supported
         }) else {
             return Error::Proof(error);
         };
@@ -707,10 +727,35 @@ impl Sdk {
         }
         StaleNodeError::NewerProtocolVersion {
             supported_protocol_version: supported,
-            received_protocol_version: metadata.protocol_version,
+            network_protocol_version: network,
             error: Box::new(error),
         }
         .into()
+    }
+
+    /// Turn a proof verifier error into an SDK error ([`Self::classify_verifier_error`]),
+    /// asking the network for its protocol version first when the answer could not be read
+    /// and names a version newer than this build knows, while no verified answer has shown
+    /// such a version ([`Self::probe_for_newer_network`]).
+    ///
+    /// The version an unverified answer names is a reason to ask, not evidence. Without the
+    /// question, an SDK whose first request meets a form it cannot read would ban each node
+    /// it asks, and might have none left to learn the network's version from.
+    pub(crate) async fn classify_refused_answer(
+        &self,
+        error: drive_proof_verifier::Error,
+        method_name: &str,
+        metadata: Option<&ResponseMetadata>,
+        arrival: MetadataArrival,
+    ) -> Error {
+        let supported = PlatformVersion::latest().protocol_version;
+        if may_be_an_unreadable_format(&error)
+            && metadata.is_some_and(|metadata| metadata.protocol_version > supported)
+            && self.verified_protocol_version.load(Ordering::Relaxed) <= supported
+        {
+            self.probe_for_newer_network().await;
+        }
+        self.classify_verifier_error(error, method_name, metadata, arrival)
     }
 
     /// Check that metadata whose proof was not verified is fresh as of `arrival`, without
@@ -893,13 +938,20 @@ impl Sdk {
             SdkInstance::Mock { ref mock, .. } => {
                 let metadata = response.response_metadata().ok().cloned();
                 let arrival = self.metadata_arrival();
-                let (verified, from_expectation) = mock
-                    .lock()
-                    .await
-                    .parse_proof_with_metadata(request, response, self.version())
-                    .map_err(|error| {
-                        self.classify_verifier_error(error, method_name, metadata.as_ref(), arrival)
-                    })?;
+                // The mock is released before the error is classified, which may ask it
+                // for the network's version.
+                let parsed =
+                    mock.lock()
+                        .await
+                        .parse_proof_with_metadata(request, response, self.version());
+                let (verified, from_expectation) = match parsed {
+                    Ok(parsed) => parsed,
+                    Err(error) => {
+                        return Err(self
+                            .classify_refused_answer(error, method_name, metadata.as_ref(), arrival)
+                            .await)
+                    }
+                };
                 if from_expectation {
                     // An expectation's metadata is made up, not verified: it moves
                     // the stored version as a real answer would, but is no evidence

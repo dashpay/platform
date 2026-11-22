@@ -9,7 +9,9 @@ they use.** This applies to every SDK: Rust (`dash-sdk`), JavaScript (`@dashevo/
 
 A 5.1 SDK reads a network at protocol version 14 and at 15, so an app can ship the update ahead
 of the activation and needs no second release when the network switches. The upgrade rehearsal
-ran iOS and Android apps built from 5.1 through the switch without a restart.
+ran iOS and Android apps built from 5.1 through the switch without a restart. Check document
+history against the release you ship: the 5.1.0-dev.2 SDK could not read it while the network
+was still at protocol version 14.
 
 Nothing can be changed on the network side to keep a 5.0.x client reading these parts: a proof
 carries the bytes as they are stored, and only a client that knows the new forms can verify it.
@@ -24,12 +26,11 @@ From the first block of protocol version 15:
 | Everything that needs one of those contracts: resolving and registering DPNS names, DashPay profiles and contact requests, and document queries on a contract created or updated at protocol version 15 | The SDK fetches the contract to build and verify the document query. | The same proof error |
 | Document history (`getDocumentHistory`) | Retained revisions move to per-type history trees at the activation. Request version 1 reads them, and request version 0, the one 5.0.x sends, is retired. | `unsupported version for query: document_history, currently supporting versions 1 to 1 on platform protocol 15, given 0` |
 | Sum queries, and ranked queries ordered by a sum, on a document type that sums a property not declared within ±2^27 | Such a type keeps its sums in trees with a 128-bit total. The activation converts the trees of types registered earlier, so contracts from before the upgrade are affected too. A 5.0.x SDK does not know those GroveDB element types. Other queries whose proof passes through one of these trees can fail the same way. | A proof error: `cannot determine element type in KVValueHash node ... Unknown element type discriminant: 32` |
-| Confirming a replace of a document whose type keeps history | The proof of the result follows the new history layout. | The replace is applied, but the SDK cannot verify the result and reports a proof error |
+| Confirming a write whose result is proved in a new form: a replace of a document whose type keeps history, and a contract create or update | The proof of a replace follows the new history layout, and the proof of a contract write carries the contract in format version 2. | The SDK cannot verify the result and reports a proof error |
 
-A replace that fails this way has still been executed. An app must not submit it again: read
-the document to confirm instead. A 5.0.x client can read it while the document's contract is
-one stored before protocol version 15 and not updated since. Once the contract has been
-updated, only a 5.1 client can.
+A write whose confirmation fails this way is unconfirmed, not refused: in the rehearsal the
+replace had been applied. An app must not submit it again. Check the state it expected with a
+client on a 5.1 SDK.
 
 ### Banned nodes make it worse
 
@@ -48,12 +49,16 @@ As long as its nodes are not banned by one of the failures above:
 
 - identities, their keys and balances;
 - documents of contracts stored before protocol version 15 and not updated since, with their
-  counts and ranked-by-count queries, and sums of properties declared within ±2^27;
+  counts and ranked-by-count queries, and sums of properties declared within ±2^27. A count
+  or ranked query whose proof passes through a tree the activation converted to a 128-bit
+  sum fails like the sum queries above;
 - contested resource vote state and vote polls;
 - token balances, supply and info, and group actions;
 - epochs and status;
-- writes: state transitions are accepted and executed as before. Only the confirmation of a
-  replace on a type that keeps history fails, as described above.
+- writes: the state transitions a 5.0.x SDK builds are still decoded, and are held to the
+  rules of protocol version 15. Some that version 14 accepted are refused, for example a
+  contract create or update signed by a key with a budget or an expiry. One that is accepted
+  executes as before, and its confirmation can fail as described above.
 
 ## What an app should do
 
@@ -62,6 +67,8 @@ As long as its nodes are not banned by one of the failures above:
    one epoch before the switch.
 2. If the app still supports an older build in the field, show its users an update notice
    before the activation: after it, name lookups and DashPay stop working there.
+3. Rust apps that match `dash_sdk::error::StaleNodeError` exhaustively need arms for the
+   variants 5.1 adds (`PrivateDocumentStoreBehind`, `NewerProtocolVersion`), or a wildcard arm.
 
 ## The next upgrade
 
@@ -72,11 +79,14 @@ case differently from 5.0.x:
   version the build does not know, `Sdk::protocol_version_info()` reports
   `newer_protocol_available` (Swift: `ProtocolVersionInfo`). An app can show an update notice
   from it.
-- From then on, an answer the SDK cannot verify that names such a version does not ban its
+- From then on, an answer the SDK cannot read that names such a version does not ban its
   node. The request moves to another node, and when every attempt ends that way it fails with
   a configuration error (`Error::Config`, JS kind `Config`) that says the network runs a newer
   protocol version and the SDK has to be updated. Requests the build can still read keep
   working. [Protocol Versions in the SDK](protocol-versions.md#a-network-newer-than-the-sdk)
   has the details.
+- When the first answer an SDK gets is one it cannot read, it asks the network for its
+  protocol version before it decides about the node, so an app whose first request is a name
+  lookup does not lose its nodes either.
 - A request version that a protocol upgrade retired is refused with `INVALID_ARGUMENT`: the
   request fails at once and no node is banned.

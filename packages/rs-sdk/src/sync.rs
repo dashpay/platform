@@ -198,7 +198,9 @@ where
                     return Err(error);
                 }
 
-                every_attempt_spared &= error.inner.spares_responder();
+                // An attempt whose lower layer failed on other nodes first, and may have
+                // banned them, did not fail only on answers that spare their node.
+                every_attempt_spared &= error.inner.spares_responder() && error.retries == 0;
 
                 // Count requests sent in this attempt
                 let requests_sent = error.retries + 1;
@@ -482,13 +484,7 @@ mod test {
             async move {
                 Err::<rs_dapi_client::ExecutionResponse<()>, _>(ExecutionError {
                     possibly_accepted: false,
-                    inner: Error::StaleNode(StaleNodeError::NewerProtocolVersion {
-                        supported_protocol_version: 15,
-                        received_protocol_version: 16,
-                        error: Box::new(drive_proof_verifier::Error::ProtocolError {
-                            error: "unexpected variant".to_string(),
-                        }),
-                    }),
+                    inner: newer_network_answer(),
                     retries: 0,
                     address: Some(node),
                 })
@@ -506,6 +502,45 @@ mod test {
         );
         assert_eq!(call_count.load(Ordering::Relaxed), 3);
         for node in &nodes {
+            assert!(!address_list.is_banned(node), "{node} is not banned");
+        }
+    }
+
+    /// A node spared the ban still leaves the request's rotation: with one node in use and
+    /// one standing by, the retry asks the other node, and neither is banned.
+    #[tokio::test]
+    async fn should_ask_another_node_after_an_answer_that_spares_its_node() {
+        let mut address_list = AddressList::default().with_active_set_size(1);
+        for port in 1..=2 {
+            address_list.add(format!("http://localhost:{port}").parse().unwrap());
+        }
+        let settings = RequestSettings {
+            retries: Some(1),
+            ban_failed_address: Some(true),
+            ..Default::default()
+        };
+        let asked = std::sync::Mutex::new(Vec::new());
+        let closure = |_settings: RequestSettings| {
+            let node = address_list.get_live_address().expect("a live node");
+            asked.lock().expect("asked lock").push(node.clone());
+            async move {
+                Err::<rs_dapi_client::ExecutionResponse<()>, _>(ExecutionError {
+                    possibly_accepted: false,
+                    inner: newer_network_answer(),
+                    retries: 0,
+                    address: Some(node),
+                })
+            }
+        };
+
+        retry(&address_list, settings, closure)
+            .await
+            .expect_err("no answer can be read");
+
+        let asked = asked.into_inner().expect("asked lock");
+        assert_eq!(asked.len(), 2);
+        assert_ne!(asked[0], asked[1], "the retry asks the other node");
+        for node in &asked {
             assert!(!address_list.is_banned(node), "{node} is not banned");
         }
     }
@@ -556,6 +591,49 @@ mod test {
             error.inner
         );
         assert_eq!(call_count.load(Ordering::Relaxed), 2);
+    }
+
+    fn newer_network_answer() -> Error {
+        Error::StaleNode(StaleNodeError::NewerProtocolVersion {
+            supported_protocol_version: 15,
+            network_protocol_version: 16,
+            error: Box::new(drive_proof_verifier::Error::ProtocolError {
+                error: "unexpected variant".to_string(),
+            }),
+        })
+    }
+
+    /// An attempt whose lower layer first failed on other nodes, and may have banned them,
+    /// did not fail only on answers that spare their node: the request then ends with its
+    /// last error as it is, not as a configuration error.
+    #[tokio::test]
+    async fn should_report_a_spared_answer_as_is_when_its_attempt_failed_on_other_nodes_first() {
+        for spared in [newer_network_answer, protocol_version_answer] {
+            let address_list = AddressList::default();
+            let settings = RequestSettings {
+                retries: Some(1),
+                ..Default::default()
+            };
+            let closure = |_settings: RequestSettings| async move {
+                Err::<rs_dapi_client::ExecutionResponse<()>, _>(ExecutionError {
+                    possibly_accepted: false,
+                    inner: spared(),
+                    // One transport failure on another node before this answer.
+                    retries: 1,
+                    address: Some("http://localhost:2".parse().unwrap()),
+                })
+            };
+
+            let error = retry(&address_list, settings, closure)
+                .await
+                .expect_err("no attempt succeeds");
+
+            assert!(
+                matches!(error.inner, Error::StaleNode(_)),
+                "{:?}",
+                error.inner
+            );
+        }
     }
 
     fn protocol_version_answer() -> Error {
