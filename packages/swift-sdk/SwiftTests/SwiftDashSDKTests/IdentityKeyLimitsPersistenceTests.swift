@@ -45,7 +45,7 @@ final class IdentityKeyLimitsPersistenceTests: XCTestCase {
         _ entry: PlatformWalletPersistenceHandler.IdentityKeyEntrySnapshot
     ) {
         handler.beginChangeset(walletId: walletId)
-        handler.persistIdentityKeys(walletId: walletId, upserts: [entry], removed: [])
+        XCTAssertNoThrow(try handler.persistIdentityKeys(walletId: walletId, upserts: [entry], removed: []))
         _ = handler.endChangeset(walletId: walletId, success: true)
     }
 
@@ -101,6 +101,47 @@ final class IdentityKeyLimitsPersistenceTests: XCTestCase {
         let row = try storedKey(container)
         XCTAssertEqual(row.totalBudgetCredits, 350_000)
         XCTAssertEqual(row.expiresAtMillis, 1_900_000_000_000)
+    }
+
+    /// Load Identity can leave a held identity with its key attached under the
+    /// hex identity id and an unlinked Base58-tagged copy of the same key id.
+    /// A raise must update the attached row, the one the key screens and cold
+    /// restore read, not the orphan.
+    func testRaiseUpdatesTheAttachedRowWhateverIdentityStringItCarries() throws {
+        let container = try DashModelContainer.createInMemory()
+        let seed = ModelContext(container)
+        let identity = PersistentIdentity(identityId: identityId, network: .testnet)
+        seed.insert(identity)
+        let attached = PersistentPublicKey(
+            keyId: 3, purpose: .authentication, securityLevel: .high,
+            keyType: .ecdsaSecp256k1, publicKeyData: publicKeyData,
+            totalBudget: 100_000, expiresAt: 1_800_000_000_000,
+            identityId: identityId.toHexString())
+        seed.insert(attached)
+        attached.identity = identity
+        identity.addPublicKey(attached)
+        let orphan = PersistentPublicKey(
+            keyId: 3, purpose: .authentication, securityLevel: .high,
+            keyType: .ecdsaSecp256k1, publicKeyData: publicKeyData,
+            totalBudget: 100_000, expiresAt: 1_800_000_000_000,
+            identityId: identityId.toBase58String())
+        seed.insert(orphan)
+        try seed.save()
+
+        let handler = PlatformWalletPersistenceHandler(
+            modelContainer: container, network: .testnet)
+        persist(handler, snapshot(totalBudget: 350_000, expiresAt: 1_900_000_000_000))
+
+        let context = ModelContext(container)
+        let identityIdData = identityId
+        let stored = try XCTUnwrap(context.fetch(FetchDescriptor<PersistentIdentity>(
+            predicate: #Predicate { $0.identityId == identityIdData })).first)
+        XCTAssertEqual(stored.publicKeys.count, 1)
+        let row = try XCTUnwrap(stored.publicKeys.first)
+        XCTAssertEqual(row.totalBudgetCredits, 350_000)
+        XCTAssertEqual(row.expiresAtMillis, 1_900_000_000_000)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<PersistentPublicKey>()).count, 2,
+                       "no third row, and the orphan is left alone")
     }
 
     /// Rust is the source of truth on every round, so a key re-emitted without
