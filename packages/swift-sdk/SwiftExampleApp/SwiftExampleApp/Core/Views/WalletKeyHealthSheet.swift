@@ -369,15 +369,12 @@ enum WalletKeyHealthChecker {
     /// Ordering:
     ///  1. Wipe Keychain first (`identity_privkey.*` rows whose
     ///     metadata matches this identity). Idempotent on retry.
-    ///  2. Pre-delete the identity's cascade children that have
-    ///     non-Optional inverses back to it — DPNS names, DashPay
-    ///     profile, contact requests — and save. SwiftData fatals
-    ///     on `save()` whenever it tries to null out a non-
-    ///     Optional inverse, so the parent delete in step 3 cannot
-    ///     be in the same save batch as these children; mirrors
-    ///     the per-layer save pattern in
-    ///     `PlatformWalletPersistenceHandler.deleteWalletData`.
-    ///  3. Delete the identity itself + save.
+    ///  2. Delete the identity's SwiftData rows children first
+    ///     (`PersistentIdentity.deleteChildrenFirst`): the children
+    ///     with a non-optional inverse to it are deleted and saved
+    ///     before the identity, because SwiftData fatals in `save()`
+    ///     when it has to null such an inverse. A failed save rolls
+    ///     the context back and throws.
     ///
     /// Returns a per-side outcome so the caller can distinguish
     /// "fully clean" from "SwiftData clean, Keychain warning" —
@@ -402,29 +399,7 @@ enum WalletKeyHealthChecker {
             keychainError = error
         }
 
-        // PHASE 1: delete cascade children with non-Optional
-        // inverses to identity. Same reasoning as
-        // `PlatformWalletPersistenceHandler.deleteWalletData` —
-        // PersistentPublicKey / Document / TokenBalance inverses
-        // to identity are already Optional and don't need pre-
-        // deletion; DPNS names, DashPay profile, contact requests
-        // do.
-        for name in Array(identity.dpnsNames) {
-            modelContext.delete(name)
-        }
-        if let profile = identity.dashpayProfile {
-            modelContext.delete(profile)
-        }
-        for cr in Array(identity.contactRequests) {
-            modelContext.delete(cr)
-        }
-        try modelContext.save()
-
-        // PHASE 2: delete the identity itself. Its problematic
-        // cascade children are gone, so SwiftData has no non-
-        // Optional inverse to null out during the merge phase.
-        modelContext.delete(identity)
-        try modelContext.save()
+        try PersistentIdentity.deleteChildrenFirst(identity, in: modelContext)
 
         return OrphanDeleteOutcome(
             swiftDataDeleted: true,

@@ -7033,24 +7033,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     // and privacy-relevant ignored-sender ids on disk after
                     // a user-initiated wallet wipe.
                     for identity in identitiesToDelete {
-                        for name in Array(identity.dpnsNames) {
-                            backgroundContext.delete(name)
-                        }
-                        if let profile = identity.dashpayProfile {
-                            backgroundContext.delete(profile)
-                        }
-                        for contactProfile in Array(identity.contactProfiles) {
-                            backgroundContext.delete(contactProfile)
-                        }
-                        for cr in Array(identity.contactRequests) {
-                            backgroundContext.delete(cr)
-                        }
-                        for payment in Array(identity.dashpayPayments) {
-                            backgroundContext.delete(payment)
-                        }
-                        for ignored in Array(identity.dashpayIgnoredSenders) {
-                            backgroundContext.delete(ignored)
-                        }
+                        identity.deleteChildrenWithRequiredInverse(in: backgroundContext)
                     }
                     try backgroundContext.save()
 

@@ -481,95 +481,107 @@ struct IdentitiesContentView: View {
         return "Remove \(identity.displayName) from this device?"
     }
 
-    /// Delete a single identity locally. This does **not** touch the
-    /// Dash Platform network — the identity on-chain is untouched and
-    /// can be reloaded later if the keys survive (either in the
-    /// originating wallet mnemonic or via an import flow).
-    ///
-    /// Keychain cleanup policy — we walk the identity's public keys
-    /// and delete each entry by the stored
-    /// `privateKeyKeychainIdentifier` account string. That covers
-    /// both write formats the app uses (see `KeychainManager`):
-    ///   * `privkey_<identityHex>_<keyIndex>` — legacy direct storage
-    ///     via `storePrivateKey`.
-    ///   * `identity_privkey.<derivationPath>` — wallet-derived
-    ///     entries written by the Rust persister callback.
-    /// Because the cascade delete on `PersistentPublicKey` rows runs
-    /// *after* we've harvested these strings, the keychain entries
-    /// would otherwise orphan (the legacy `deleteAllPrivateKeys(for:)`
-    /// filter only matches the `privkey_…_` prefix and would miss
-    /// derivation-path entries). We also clear the three special-key
-    /// identifiers stored directly on the identity
-    /// (`votingPrivateKeyIdentifier`, `ownerPrivateKeyIdentifier`,
-    /// `payoutPrivateKeyIdentifier`) since those are likewise keyed
-    /// by string identifier.
-    ///
-    /// After keychain cleanup the SwiftData cascade does the rest:
-    /// `@Relationship(.cascade)` on `publicKeys` / `documents` drops
-    /// those child rows, `@Relationship(.nullify)` on `tokenBalances`
-    /// severs the link, and the `PersistentWallet.identities` inverse
-    /// (declared on the wallet side, also `.nullify`) naturally drops
-    /// this identity from its owning wallet — no manual detachment
-    /// required.
+    /// Delete a single identity from this device. This does **not** touch
+    /// Dash Platform: the identity on chain is untouched and can be loaded
+    /// again later with its keys. Runs
+    /// `removeIdentityLocally(_:modelContext:deleteSpecialKey:deleteKeyData:)`
+    /// with the shared Keychain and reports what it could not do.
     private func removeIdentityLocally(_ identity: PersistentIdentity) {
         let keychain = KeychainManager.shared
-
-        // Clear the special-key slots by identity id first, so a key stored
-        // without a row reference (a load whose save failed) goes too and a
-        // later load can store the key again. `deleteSpecialKey` treats an
-        // absent item as success, so `false` means the Keychain refused:
-        // then nothing else is removed and the operator can retry.
-        var uncleared: [SpecialKeyType] = []
-        for keyType in [SpecialKeyType.voting, .owner, .payout] {
-            if keychain.deleteSpecialKey(identityId: identity.identityId, keyType: keyType) {
-                // Deleted: a row kept below must not point at it.
-                switch keyType {
-                case .voting: identity.votingPrivateKeyIdentifier = nil
-                case .owner: identity.ownerPrivateKeyIdentifier = nil
-                case .payout: identity.payoutPrivateKeyIdentifier = nil
-                }
-            } else {
-                uncleared.append(keyType)
-            }
-        }
-        guard uncleared.isEmpty else {
-            let names = ListFormatter.localizedString(byJoining: uncleared.map(\.rawValue))
-            var message = "The identity was not removed: the Keychain refused to delete its \(names) key. Unlock the device and try again."
-            do {
-                // Persist the references cleared above for the deleted slots.
-                try modelContext.save()
-            } catch {
-                // The cleared references may come back on relaunch while
-                // their keys are gone; say so instead of hiding it.
-                message += " Saving the identity also failed (\(error.localizedDescription)), so it may still list keys that were deleted; remove it again to finish."
-            }
-            platformState.showError(message: message)
-            return
-        }
-
-        for publicKey in identity.publicKeys {
-            if let identifier = publicKey.privateKeyKeychainIdentifier {
-                _ = keychain.deleteKeyData(identifier: identifier)
-            }
-        }
-
-        if let votingIdentifier = identity.votingPrivateKeyIdentifier {
-            _ = keychain.deleteKeyData(identifier: votingIdentifier)
-        }
-        if let ownerIdentifier = identity.ownerPrivateKeyIdentifier {
-            _ = keychain.deleteKeyData(identifier: ownerIdentifier)
-        }
-        if let payoutIdentifier = identity.payoutPrivateKeyIdentifier {
-            _ = keychain.deleteKeyData(identifier: payoutIdentifier)
-        }
-        modelContext.delete(identity)
+        let keysLeft: [String]
         do {
-            try modelContext.save()
+            keysLeft = try Self.removeIdentityLocally(
+                identity,
+                modelContext: modelContext,
+                deleteSpecialKey: { keychain.deleteSpecialKey(identityId: $0, keyType: $1) },
+                deleteKeyData: { keychain.deleteKeyData(identifier: $0) }
+            )
         } catch {
             platformState.showError(
-                message: "Failed to remove identity from device: \(error.localizedDescription)"
+                message: "The identity was not removed from this device: \(error.localizedDescription). Its keys were not deleted."
             )
+            return
         }
+        guard !keysLeft.isEmpty else { return }
+        let names = ListFormatter.localizedString(byJoining: keysLeft)
+        let (stays, them) = keysLeft.count == 1 ? ("It stays", "it") : ("They stay", "them")
+        platformState.showError(
+            message: "The identity was removed from this device, but the Keychain refused to delete its \(names). \(stays) in the Keychain with no identity using \(them). Loading the identity again with its keys reuses or replaces \(them), and removing it again while the device is unlocked deletes \(them)."
+        )
+    }
+
+    /// Delete `identity`'s SwiftData rows, then its Keychain items. Returns
+    /// the names of the Keychain items that could not be deleted (for
+    /// example "voting key", "key 2"); throws when the rows could not be
+    /// deleted, in which case the Keychain was not touched.
+    ///
+    /// Order, so a failure before the row is gone cannot leave a row whose
+    /// keys are deleted:
+    ///  1. Snapshot the Keychain identifiers, since a deleted row can no
+    ///     longer be read: each public key's `privateKeyKeychainIdentifier`
+    ///     (both write formats, `privkey_<identityHex>_<keyIndex>` from
+    ///     `storePrivateKey` and `identity_privkey.<walletId>.<path>` from
+    ///     the wallet persister) and the voting / owner / payout identifiers
+    ///     on the row.
+    ///  2. Delete the rows with `PersistentIdentity.deleteChildrenFirst`.
+    ///     The cascade alone is not enough: DPNS names, the DashPay profile
+    ///     and the other DashPay rows have a non-optional inverse to the
+    ///     identity, and SwiftData fatals in `save()` when deleting the
+    ///     identity has to null one, which no `catch` can catch. A failed
+    ///     save rolls the context back and throws.
+    ///  3. Clear the voting / owner / payout slots by identity id, so a key
+    ///     stored without a row reference (a load whose save failed) goes
+    ///     too and a later load can store the key again, then delete the
+    ///     snapshotted identifiers.
+    ///
+    /// A failed Keychain delete in step 3 (for example while the device is
+    /// locked) is returned rather than ignored. The row is gone by then and
+    /// the key left behind is harmless: loading the identity again
+    /// overwrites a private key (`storePrivateKey`,
+    /// `storeIdentityPrivateKey`), keeps a special key holding the same
+    /// bytes, and asks before replacing a different one; voting also needs
+    /// the row's `votingPrivateKeyIdentifier`, which a reload without the
+    /// voting key leaves unset. Deleting the Keychain items before the rows
+    /// would instead turn a failed save into a row with no keys.
+    static func removeIdentityLocally(
+        _ identity: PersistentIdentity,
+        modelContext: ModelContext,
+        deleteSpecialKey: (Data, SpecialKeyType) -> Bool,
+        deleteKeyData: (String) -> Bool
+    ) throws -> [String] {
+        let identityId = identity.identityId
+        var referenced: [(name: String, identifier: String)] = []
+        for publicKey in identity.publicKeys.sorted(by: { $0.keyId < $1.keyId }) {
+            if let identifier = publicKey.privateKeyKeychainIdentifier {
+                referenced.append((name: "key \(publicKey.keyId)", identifier: identifier))
+            }
+        }
+        let specialIdentifiers: [(SpecialKeyType, String?)] = [
+            (.voting, identity.votingPrivateKeyIdentifier),
+            (.owner, identity.ownerPrivateKeyIdentifier),
+            (.payout, identity.payoutPrivateKeyIdentifier),
+        ]
+        for case let (keyType, identifier?) in specialIdentifiers {
+            referenced.append((name: "\(keyType.rawValue) key", identifier: identifier))
+        }
+
+        try PersistentIdentity.deleteChildrenFirst(identity, in: modelContext)
+
+        // `deleteSpecialKey` and `deleteKeyData` treat an absent item as
+        // success, so `false` means the Keychain refused.
+        var keysLeft: [String] = []
+        for keyType in [SpecialKeyType.voting, .owner, .payout] {
+            if !deleteSpecialKey(identityId, keyType) {
+                keysLeft.append("\(keyType.rawValue) key")
+            }
+        }
+        var attempted = Set<String>()
+        for item in referenced where attempted.insert(item.identifier).inserted {
+            if !deleteKeyData(item.identifier) && !keysLeft.contains(item.name) {
+                keysLeft.append(item.name)
+            }
+        }
+        return keysLeft
     }
 }
 

@@ -158,6 +158,7 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | ID-14 | Credit transfer between two on-device identities (A → B) | Platform | Thorough | ✅ | multiwallet | `IdentityDetailView` → **Transfer Credits** (`ID-04`), recipient = wallet B's identity (via `RecipientPickerView` — local / paste id / DPNS). Switch to B; verify its credit balance rose and A's dropped. Fully local round-trip. |
 | ID-15 | Same identity restored into two wallets (duplicate seed) | Platform | Uncommon | ✅ | multiwallet | Importing the same mnemonic as a second wallet derives the **same** identity; verify state stays consistent and balances are not double-counted or conflicting across the two wallets. |
 | ID-16 | Resume stuck top-up (tracked asset lock) | Cross | Uncommon | 🧪 |  | *Settings → Platform State Transitions → Top Up Identity (Resume)* (`TransitionDetailView` `executeIdentityTopUpResume`) → **confirmation dialog** (target identity + outpoint) → `wallet.resumeTopUpWithAssetLock` → `platform_wallet_topup_identity_with_existing_asset_lock_signer`. Crash-recovery for a `ID-13` top-up whose Core asset lock confirmed but whose IdentityTopUp never reached Platform: consumes the **already-tracked** lock by outpoint (txid hex in display order + vout). Enter the outpoint, confirm the dialog, and the selected identity's balance rises. Cancelling the dialog leaves the transition untouched; resuming an untracked / already-consumed / foreign-wallet outpoint fails cleanly with **no fund movement**. *(Funded e2e pending; testnet UAT.)* |
+| ID-17 | Remove identity from device | Platform | Thorough | ✅ | regression | Identities tab → swipe the identity's row → **Remove** → confirm **Remove from Device** (`IdentitiesContentView.removeIdentityLocally`). Local only: nothing is broadcast and the identity stays on Platform. Use an identity that has a DPNS name and private keys stored on the device (for example one created with `ID-01` that registered a name with `DPNS-01`, or a masternode loaded with its voting key as in `VOTE-01`). Pass: the row disappears and the app does not crash (it used to crash here for any identity with a DPNS name or DashPay data, after its keys were already deleted, and relaunch showed the identity with no keys); after a relaunch the identity is still gone; loading it again (`ID-02`, or Load Identity with its keys) brings it back with usable keys, and a voting key typed again is stored without a replace prompt. If the Keychain refuses a delete (device locked) the identity is still removed and the alert names each key left in the Keychain. *SwiftData side and the rows-then-Keychain order are covered by `IdentityLocalRemovalTests`; simulator UAT pending.* |
 
 ### 4.3 Platform Addresses (DIP-17 credit addresses) — `Domain=Address`
 
@@ -336,7 +337,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 |---|---|---|
 | Essential | 22 | yes |
 | Common | 35 | yes |
-| Thorough | 40 | yes |
+| Thorough | 41 | yes |
 | Uncommon | 31 | yes |
 | Manual | 2 (`CORE-08`, `DP-10`) | no — physical device |
 
@@ -345,7 +346,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Layer | Count (approx.) |
 |---|---|
 | Core | 18 |
-| Platform | ~84 |
+| Platform | ~85 |
 | Cross | 11 |
 | Shielded | 14 |
 
@@ -360,7 +361,7 @@ Each row's **primary home** is its §4 section, but a few rows are cross-cutting
 **By category (§4 section):**
 
 - **Core / Wallet** — `CORE-01..23`
-- **Identity** — `ID-01..16`, `SH-11`
+- **Identity** — `ID-01..17`, `SH-11`
 - **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06..09`, `ID-06`, `ID-08`, `ID-11`
 - **DPNS** — `DPNS-01..08`
 - **Voting** — `VOTE-01..09`, `DPNS-05`
@@ -382,7 +383,7 @@ Each row's **primary home** is its §4 section, but a few rows are cross-cutting
 - **freeze** — `TOK-08`, `TOK-09`
 - **distribution** — `TOK-07`
 - **masternode** — `VOTE-01`, `VOTE-08`, `VOTE-09`
-- **regression** — `TOK-17`, `ADDR-09`, `DP-10`
+- **regression** — `ID-17`, `TOK-17`, `ADDR-09`, `DP-10`
 - **restart** (the flow is killed mid-way and must recover after relaunch) — `SH-19`, `SH-20`
 
 Worked example — *"run all non-Uncommon Token tests"*: take **Token** = `TOK-01..20`; drop the `Uncommon`/stub ones (`TOK-08..16`, `TOK-20`) → run **`TOK-01..07`** plus the Thorough group / multi-wallet token rows `TOK-17`/`TOK-18`/`TOK-19`. Worked example — *"run all multi-wallet token tests"*: `Category=Token AND Tag=multiwallet` → `TOK-17`.
