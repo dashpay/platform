@@ -85,6 +85,28 @@ final class WalletDrainCoordinator: ObservableObject {
 
     nonisolated static let controllerOperationIdPrefix = "drain:"
 
+    /// Shown when a Max or its Resume is tapped while an SDK rebuild runs.
+    /// The rebuild stops SPV, which a funding needs for its ChainLock, so
+    /// the views refuse to start one until it ends.
+    nonisolated static let rebuildInProgressMessage =
+        "Nothing was sent: the app is applying a network or settings change. "
+            + "Try again once it finishes."
+
+    /// Shown when a Resume finds no tracked asset lock for the outpoint.
+    nonisolated static let assetLockNotTrackedMessage =
+        "This asset lock was never stored, so nothing was sent. Restart the app to "
+            + "release the coins; after that this transfer clears itself and a new Max can start."
+
+    /// The error a resume throws for `error`: a lock the wallet does not
+    /// track gets a message that says how to recover, any other error
+    /// passes through unchanged.
+    nonisolated static func resumeError(for error: Error) -> Error {
+        if case PlatformWalletError.assetLockNotTracked = error {
+            return WalletDrainAttemptError(message: assetLockNotTrackedMessage)
+        }
+        return error
+    }
+
     nonisolated static func controllerOperationId(_ operationId: UUID) -> String {
         controllerOperationIdPrefix + operationId.uuidString
     }
@@ -269,14 +291,19 @@ final class WalletDrainCoordinator: ObservableObject {
         walletManager: PlatformWalletManager
     ) -> ShieldedFundFromAssetLockCoordinator.StartFundingResult {
         run(record, walletManager: walletManager) {
-            try await walletManager.shieldedResumeFundFromAssetLock(
-                walletId: record.walletId,
-                outPointTxid: outpoint.txidWire,
-                outPointVout: outpoint.vout,
-                recipients: [
-                    ShieldedFundFromAssetLockRecipient(recipientRaw43: record.recipientRaw43)
-                ]
-            )
+            do {
+                try await walletManager.shieldedResumeFundFromAssetLock(
+                    walletId: record.walletId,
+                    outPointTxid: outpoint.txidWire,
+                    outPointVout: outpoint.vout,
+                    recipients: [
+                        ShieldedFundFromAssetLockRecipient(recipientRaw43: record.recipientRaw43)
+                    ]
+                )
+            } catch {
+                // Rust's "not tracked" text does not say what to do next.
+                throw WalletDrainCoordinator.resumeError(for: error)
+            }
         }
     }
 

@@ -14,6 +14,7 @@ struct UnfinishedWalletDrainsList: View {
     let walletId: Data
 
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var platformState: AppState
     @State private var presented: PresentedProgress?
     @State private var resumeError: ResumeError?
     @State private var checking: Set<UUID> = []
@@ -119,6 +120,13 @@ struct UnfinishedWalletDrainsList: View {
     }
 
     private func resume(_ record: WalletDrainOperationRecord, outpoint: WalletDrainOutpoint) {
+        // A rebuild stops SPV, so a resume that still needs a ChainLock
+        // would wait for one that never comes; the rebuild in turn refuses
+        // to start while a funding runs.
+        guard !platformState.isRebuildingSdk else {
+            resumeError = ResumeError(message: WalletDrainCoordinator.rebuildInProgressMessage)
+            return
+        }
         switch drainCoordinator.resume(record, outpoint: outpoint, walletManager: walletManager) {
         case .started(let controller):
             presented = PresentedProgress(controller: controller)

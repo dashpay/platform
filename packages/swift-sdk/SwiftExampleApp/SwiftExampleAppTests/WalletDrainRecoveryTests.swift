@@ -425,6 +425,71 @@ final class WalletDrainRecoveryTests: XCTestCase {
         XCTAssertEqual(steps(.completed, lockStatusRaw: 3), [.done, .done, .skipped, .done, .done])
     }
 
+    /// RecoveredFromChain (5): the lock is confirmed on Core and only the
+    /// shield remains. Its proof is gone, so neither lane is skipped.
+    func testShouldPointAtTheShieldForARecoveredLock() {
+        XCTAssertEqual(
+            Progress.currentStep(phase: .inFlight, lockStatusRaw: 5, secondsSinceLockUpdate: 0),
+            5
+        )
+        XCTAssertEqual(steps(.inFlight, lockStatusRaw: 5), [.done, .done, .done, .done, .active])
+        XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 5), [.done, .done, .done, .done, .failed])
+        XCTAssertEqual(steps(.completed, lockStatusRaw: 5), [.done, .done, .done, .done, .done])
+    }
+
+    /// DrainCompleted (6): Rust recorded the shield as done, so every step
+    /// is done in any phase, and the ChainLock lane is not claimed.
+    func testShouldMarkEveryStepDoneForACompletedDrainLock() {
+        XCTAssertEqual(
+            Progress.currentStep(phase: .inFlight, lockStatusRaw: 6, secondsSinceLockUpdate: 0),
+            6
+        )
+        XCTAssertEqual(
+            Progress.currentStep(phase: .failed("x"), lockStatusRaw: 6, secondsSinceLockUpdate: 0),
+            6
+        )
+        XCTAssertEqual(steps(.inFlight, lockStatusRaw: 6), [.done, .done, .done, .done, .done])
+        XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 6), [.done, .done, .done, .done, .done])
+        XCTAssertEqual(steps(.completed, lockStatusRaw: 6), [.done, .done, .done, .done, .done])
+    }
+
+    /// A completed controller whose row still reads Broadcast (1) does not
+    /// show which lane ran, so InstantSend is not marked skipped.
+    func testShouldNotSkipALaneForACompletedAttemptWhoseRowLags() {
+        XCTAssertEqual(steps(.completed, lockStatusRaw: 1), [.done, .done, .done, .done, .done])
+        XCTAssertEqual(steps(.completed, lockStatusRaw: 0), [.done, .done, .done, .done, .done])
+    }
+
+    // MARK: - Resume errors
+
+    func testShouldExplainRecoveryWhenAResumeFindsNoTrackedLock() throws {
+        let mapped = WalletDrainCoordinator.resumeError(
+            for: PlatformWalletError.assetLockNotTracked("deadbeef:0")
+        )
+        let error = try XCTUnwrap(mapped as? WalletDrainAttemptError)
+        XCTAssertEqual(error.message, WalletDrainCoordinator.assetLockNotTrackedMessage)
+        XCTAssertTrue(error.message.contains("never stored, so nothing was sent"))
+        XCTAssertTrue(error.message.contains("Restart the app"))
+        XCTAssertTrue(error.message.contains("a new Max can start"))
+    }
+
+    private struct OtherError: Error, Equatable {
+        let code: Int
+    }
+
+    func testShouldPassAnyOtherResumeErrorThroughUnchanged() throws {
+        let other = OtherError(code: 7)
+        XCTAssertEqual(WalletDrainCoordinator.resumeError(for: other) as? OtherError, other)
+
+        let consumed = WalletDrainCoordinator.resumeError(
+            for: PlatformWalletError.assetLockAlreadyConsumed("deadbeef:0")
+        )
+        guard case PlatformWalletError.assetLockAlreadyConsumed(let detail)? = consumed as? PlatformWalletError else {
+            return XCTFail("expected the original error, got \(consumed)")
+        }
+        XCTAssertEqual(detail, "deadbeef:0")
+    }
+
     // MARK: - Mainnet
 
     func testShouldRefuseANewMaxOnMainnetOnly() {

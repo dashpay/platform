@@ -36,8 +36,14 @@ extension PersistentAssetLock: ShieldedProgressLockRow {}
 ///                                      side has fallen back to CL);
 ///                                      also done when
 ///                                      `statusRaw == 3` (CL-locked).
-///   5. Shielding (Halo 2 + submit)   → activeLock `statusRaw ∈ {2, 3}`
+///   5. Shielding (Halo 2 + submit)   → activeLock `statusRaw ∈ {2, 3, 5}`
 ///                                      AND controller still `.inFlight`
+///                                      (5, RecoveredFromChain: the lock
+///                                      is confirmed on Core, only the
+///                                      shield remains)
+///
+/// A lock at `statusRaw == 6` (DrainCompleted) marks every step done,
+/// as a completed controller does.
 ///
 /// A failed attempt is marked on the step its lock reached by the same
 /// mapping; with no matching lock nothing was built, so step 1 fails and
@@ -48,9 +54,9 @@ extension PersistentAssetLock: ShieldedProgressLockRow {}
 /// The footer explicitly calls that out so users don't think the
 /// app is hung.
 ///
-/// Exactly one of steps 3/4 is `.skipped` on a successful
-/// resolution — same finality-lane semantics as the address-funding
-/// progress section.
+/// One of steps 3/4 is `.skipped` only when the lock shows which
+/// finality lane ran (`stepState`); at statuses 5 and 6 the proof is
+/// gone, so both show done once passed.
 struct ShieldedFundFromAssetLockProgressSection: View {
     @ObservedObject var controller: ShieldedFundFromAssetLockController
 
@@ -197,10 +203,14 @@ struct ShieldedFundFromAssetLockProgressSection: View {
             switch lockStatusRaw {
             case 1:
                 return broadcastSubStep(secondsSinceLockUpdate: secondsSinceLockUpdate)
-            case 2, 3:
-                // InstantSend-locked (2) or ChainLock-locked (3): the
-                // finality lane that did not run shows as skipped.
+            case 2, 3, 5:
+                // InstantSend-locked (2), ChainLock-locked (3) or
+                // RecoveredFromChain (5): the lock is final on Core and
+                // only the shield remains.
                 return 5
+            case 6:
+                // DrainCompleted: Rust recorded the shield as done.
+                return 6
             default:
                 // Built (0) and any other status.
                 return 1
@@ -237,11 +247,14 @@ struct ShieldedFundFromAssetLockProgressSection: View {
 
     enum StepState { case done, active, pending, skipped, failed }
 
-    /// The state of step `idx` given `currentStep`. Exactly one of steps
-    /// 3 and 4 is skipped once a lock passed them: an InstantSend-locked
-    /// lock (2) never needed the ChainLock fallback (4), any other never
-    /// observed an InstantSend proof (3). Same lanes as the
-    /// address-funding progress section.
+    /// The state of step `idx` given `currentStep`. A passed finality lane
+    /// is skipped only when the lock shows the other one ran: status 2
+    /// (InstantSend proof) skips step 4, status 3 (ChainLock proof) skips
+    /// step 3, and a Broadcast lock (1) waiting on step 4 is past the
+    /// InstantSend timeout, so step 3 is skipped. Any other status shows
+    /// both as done: `complete_wallet_drain` clears the proof, so at
+    /// RecoveredFromChain (5), DrainCompleted (6) or with no row the lane
+    /// that ran is unknown.
     nonisolated static func stepState(
         _ idx: Int,
         currentStep: Int,
@@ -252,11 +265,14 @@ struct ShieldedFundFromAssetLockProgressSection: View {
             return .failed
         }
         if idx < currentStep {
-            if let lockStatusRaw {
-                if idx == 3 && lockStatusRaw != 2 { return .skipped }
-                if idx == 4 && lockStatusRaw == 2 { return .skipped }
+            switch (idx, lockStatusRaw) {
+            case (3, 3?), (4, 2?):
+                return .skipped
+            case (3, 1?) where currentStep == 4:
+                return .skipped
+            default:
+                return .done
             }
-            return .done
         }
         if idx == currentStep {
             return .active

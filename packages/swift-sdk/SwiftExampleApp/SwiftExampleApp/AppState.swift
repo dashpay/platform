@@ -44,7 +44,9 @@ class AppState: ObservableObject {
 
     /// Whether an SDK rebuild is running, started from any window. Options
     /// disables its rebuild controls on it; `rebuildSdk` refuses a second
-    /// rebuild by itself.
+    /// rebuild by itself. A Max transfer and its wallet-screen Resume refuse
+    /// to start on it: the rebuild has stopped, or is about to stop, the SPV
+    /// client a funding needs.
     @Published private(set) var isRebuildingSdk = false
 
     @Published var useDockerSetup: Bool {
@@ -229,13 +231,17 @@ class AppState: ObservableObject {
     /// first suspension and released after its publish or rollback. This is
     /// the only way the SDK and its network change after the bootstrap.
     ///
-    /// The steps this object does not own are injected: `stopSpv` (the
-    /// wallet manager's), `prepare` and `rollBack` (the settings the flow
-    /// changes), `activateManager` (the wallet manager store's) and
-    /// `beforePublish` (the flow's own state).
+    /// The steps this object does not own are injected: `fundingInFlight`
+    /// and `stopSpv` (the wallet manager's), `prepare` and `rollBack` (the
+    /// settings the flow changes), `activateManager` (the wallet manager
+    /// store's) and `beforePublish` (the flow's own state). The sequence
+    /// checks `fundingInFlight` before its first suspension, and a Max
+    /// transfer or its wallet-screen Resume checks `isRebuildingSdk` before
+    /// it starts, so neither starts beside the other.
     func rebuildSdk(
         from network: Network,
         to target: Network,
+        fundingInFlight: @MainActor () -> Bool,
         stopSpv: @MainActor () async -> Bool,
         prepare: @MainActor () -> Void,
         activateManager: @MainActor (Network, SDK) async -> Bool,
@@ -257,6 +263,7 @@ class AppState: ObservableObject {
             to: target,
             stopSpv: stopSpv,
             currentNetwork: { self.currentNetwork },
+            fundingInFlight: fundingInFlight,
             prepare: prepare,
             buildSdk: { self.buildSdk(for: $0) },
             activateManager: activateManager,

@@ -912,6 +912,14 @@ struct ShieldedFundFromAssetLockView: View {
             )
             return
         }
+        // A rebuild stops SPV and then waits for the manager's fundings, so
+        // a drain started now could wait for a ChainLock that never comes.
+        // The rebuild refuses to start beside a funding; this is the other
+        // side of that rule.
+        guard !platformState.isRebuildingSdk else {
+            submitError = SubmitError(message: WalletDrainCoordinator.rebuildInProgressMessage)
+            return
+        }
         guard let quote = drainQuote,
               quote.matches(walletId: wallet.walletId, fundingAccountIndex: drainFundingAccountIndex),
               quote.preview.status != .insufficientFunds
