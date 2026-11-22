@@ -16,7 +16,7 @@
 //! [`MasternodeVoteTransition`]: dash_sdk::dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition
 //! [`PutVote`]: dash_sdk::platform::transition::vote::PutVote
 
-use crate::contested_resource::parse_index_value;
+use crate::contested_resource::parse_index_values_json;
 use crate::sdk::SDKWrapper;
 use crate::types::{FFINetwork, SDKHandle};
 use crate::voting::masternode_vote::MasternodeVoter;
@@ -73,10 +73,13 @@ pub enum ContestedResourceVoteChoiceFFI {
 /// * `document_type_name` — contested document type (e.g. `"domain"`).
 /// * `index_name` — contested index name (e.g. `"parentNameAndLabel"`).
 /// * `index_values_json` — JSON array of index values. Each element is decoded
-///   via an explicit type tag: a `"0x"`-prefixed string is hex-decoded to
-///   `Value::Bytes`, and any other string is taken verbatim as `Value::Text`.
-///   DPNS index values are text labels, so typical callers pass plain text
-///   (no `0x`). This matches the parsing used by the vote-state query FFI.
+///   via an explicit type tag: an element starting with a backslash is
+///   `Value::Text` with that one backslash removed; otherwise a
+///   `"0x"`-prefixed string is hex-decoded to `Value::Bytes`; otherwise the
+///   string is taken verbatim as `Value::Text`. To pass text that itself
+///   starts with `"0x"` or a backslash (the DPNS label "oxford" normalizes
+///   to `"0xf0rd"`), prepend one backslash. This matches the parsing used by
+///   the vote-state query FFI.
 /// * `vote_choice` — discriminant byte matching
 ///   [`ContestedResourceVoteChoiceFFI`]: `TowardsIdentity` (`0`), `Abstain`
 ///   (`1`) or `Lock` (`2`). Any other value is rejected with
@@ -194,20 +197,16 @@ unsafe fn cast_vote_inner(
     let contract_identifier = Identifier::new(contract_id_arr);
 
     // Same index-value parsing as the vote-state query FFI, via the shared
-    // `parse_index_value` helper: a `"0x"`-prefixed value is hex-decoded to
+    // `parse_index_values_json` helper: a `"\\"`-prefixed value is text with
+    // that backslash removed, else a `"0x"`-prefixed value is hex-decoded to
     // `Value::Bytes`, anything else is taken verbatim as `Value::Text`. Using
     // the single shared helper keeps the read and write paths in lockstep, so a
     // poll a caller can read with `get_vote_state` is the same poll it votes on
     // here. An explicit `0x` tag is required (rather than guessing by content)
     // because this is a signing surface: a legit DPNS text label that happens
     // to be even-length all-hex must not be silently re-encoded as bytes.
-    let index_values_array: Vec<String> = serde_json::from_str(index_values_str)
-        .map_err(|e| invalid(&format!("Failed to parse index_values JSON: {}", e)))?;
-    let index_values: Vec<Value> = index_values_array
-        .into_iter()
-        .map(parse_index_value)
-        .collect::<Result<Vec<Value>, String>>()
-        .map_err(|e| invalid(&e))?;
+    let index_values: Vec<Value> =
+        parse_index_values_json(index_values_str).map_err(|e| invalid(&e))?;
 
     let vote_poll =
         VotePoll::ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll {

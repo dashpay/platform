@@ -329,7 +329,13 @@ object StateTransitionDefinitions {
                 TransitionInput("contractId", text, "Contract ID", true),
                 TransitionInput("documentType", text, "Document type", true),
                 TransitionInput("indexName", text, "Index name", true),
-                TransitionInput("indexValues", text, "Index values", true, placeholder = "Comma-separated"),
+                TransitionInput(
+                    "indexValues", text, "Index values", true,
+                    placeholder = "Comma-separated",
+                    help = "Sent as typed: a value starting with 0x is hex bytes, one starting " +
+                        "with \\ is text with that backslash removed. Put \\ before a text " +
+                        "value that starts with 0x or \\ (DPNS label oxford -> \\0xf0rd).",
+                ),
                 TransitionInput("voteChoice", select, "Vote choice", true, options = voteChoiceOptions),
                 TransitionInput("targetIdentity", identityPicker, "Target identity", false),
                 TransitionInput(

@@ -46,9 +46,12 @@ class VoteCasting internal constructor() {
      * Platform with an authorization-style error — the correct deterministic
      * outcome (surfaced as a thrown exception).
      *
-     * @param indexValues JSON-encodable index values (DPNS: `["dash",
-     *   label]`). Text values are taken verbatim; a `"0x"`-prefixed value is
-     *   hex-decoded Rust-side.
+     * @param indexValues Index values (DPNS: `["dash", label]`), read
+     *   Rust-side in this order: a value starting with a backslash (`\`) is
+     *   text with that one backslash removed; else a `0x`-prefixed value is
+     *   hex bytes; else the value is text. Encode text with
+     *   [ContestedIndexValue.text] (a DPNS label normalized to `0xf0rd` must
+     *   be sent as `\0xf0rd`) and bytes with [ContestedIndexValue.bytes].
      * @param proTxHash 32-byte masternode pro_tx_hash in **wire order** — the
      *   orientation `Txid` stores, which is what a parsed ProRegTx yields and
      *   what a wallet holds internally. NOT the byte order of the hex Core
@@ -86,7 +89,7 @@ class VoteCasting internal constructor() {
                 dataContractId,
                 documentTypeName,
                 indexName,
-                encodeIndexValues(indexValues),
+                encodeIndexValuesJson(indexValues),
                 choice.discriminant,
                 contender,
                 proTxHash,
@@ -95,16 +98,4 @@ class VoteCasting internal constructor() {
             )
         }
     }
-
-    /**
-     * Encode [values] as a JSON array of strings — the shape
-     * `dash_sdk_contested_resource_cast_vote` parses (each element decoded
-     * verbatim as text, or hex when `0x`-prefixed). Minimal escaping (quote +
-     * backslash) matches the DPNS text-label inputs the vote poll uses.
-     */
-    private fun encodeIndexValues(values: List<String>): String =
-        values.joinToString(prefix = "[", postfix = "]", separator = ",") { v ->
-            val escaped = v.replace("\\", "\\\\").replace("\"", "\\\"")
-            "\"$escaped\""
-        }
 }

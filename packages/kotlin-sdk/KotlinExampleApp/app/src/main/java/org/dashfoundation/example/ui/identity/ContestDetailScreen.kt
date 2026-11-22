@@ -41,6 +41,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import org.dashfoundation.dashsdk.voting.ContestedIndexValue
 import org.dashfoundation.dashsdk.voting.VoteChoice
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
@@ -102,7 +103,7 @@ fun ContestDetailScreen(
                 contractId = DPNS_CONTRACT_ID_BASE58,
                 documentTypeName = DPNS_DOCUMENT_TYPE,
                 indexName = DPNS_INDEX_NAME,
-                indexValuesJson = dpnsIndexValuesJson(contestName),
+                indexValuesJson = dpnsIndexValuesJson(currentSdk.dpns.normalizeLabel(contestName)),
                 resultType = RESULT_TYPE_DOCUMENTS_AND_VOTE_TALLY,
             )
             voteState = json?.let(::parseContestVoteState)
@@ -295,7 +296,10 @@ fun ContestDetailScreen(
                             dataContractId = DPNS_CONTRACT_ID_BASE58,
                             documentTypeName = DPNS_DOCUMENT_TYPE,
                             indexName = DPNS_INDEX_NAME,
-                            indexValues = listOf("dash", contestName),
+                            indexValues = listOf(
+                                "dash",
+                                ContestedIndexValue.text(currentSdk.dpns.normalizeLabel(contestName)),
+                            ),
                             choice = choice,
                             proTxHash = proTxHash,
                             votingPrivateKey = votingKey,
@@ -516,8 +520,13 @@ internal const val DPNS_INDEX_NAME = "parentNameAndLabel"
 /** `Documents_AND_VOTE_TALLY` result-type discriminant (rs-sdk-ffi). */
 internal const val RESULT_TYPE_DOCUMENTS_AND_VOTE_TALLY = 2
 
-/** JSON index-values array for a DPNS label, with minimal escaping. */
-internal fun dpnsIndexValuesJson(label: String): String {
-    val escaped = label.replace("\\", "\\\\").replace("\"", "\\\"")
-    return "[\"dash\",\"$escaped\"]"
-}
+/**
+ * JSON index-values array for a normalized DPNS label: the label is encoded
+ * with [ContestedIndexValue.text] (so `0xf0rd` is sent as text, not hex).
+ * Routes into this screen may carry a typed name (`oxford`), so callers pass
+ * `Dpns.normalizeLabel(contestName)`, never the raw name.
+ */
+internal fun dpnsIndexValuesJson(normalizedLabel: String): String =
+    JsonArray(
+        listOf(JsonPrimitive("dash"), JsonPrimitive(ContestedIndexValue.text(normalizedLabel))),
+    ).toString()

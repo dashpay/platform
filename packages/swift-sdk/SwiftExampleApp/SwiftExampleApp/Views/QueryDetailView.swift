@@ -840,7 +840,11 @@ struct QueryDetailView: View {
 
     /// Parse an index-values input: a JSON string array when it starts with
     /// "[", otherwise comma-separated values, trimmed. Values pass through
-    /// unchanged (the FFI reads a "0x" prefix as bytes). Empty input is nil.
+    /// unchanged: the FFI reads a leading backslash as text with that
+    /// backslash removed, else a "0x" prefix as hex bytes, else text. So a
+    /// text value starting with "0x" or a backslash is typed with one more
+    /// backslash in front (the DPNS label oxford is `\0xf0rd`). Empty input
+    /// is nil.
     /// A comma-separated list refuses an empty value (a stray or trailing
     /// comma); an empty string can only be given in a JSON array.
     private func parseIndexValues(_ input: String?) throws -> [String]? {
@@ -1038,7 +1042,7 @@ struct QueryDetailView: View {
                 QueryInput(name: "dataContractId", label: "Data Contract ID", required: true),
                 QueryInput(name: "documentTypeName", label: "Document Type Name", required: true),
                 QueryInput(name: "indexName", label: "Index Name", required: true),
-                QueryInput(name: "indexValues", label: "Index Values", required: true, placeholder: "e.g., dash, a11ce or [\"dash\",\"a11ce\"]"),
+                QueryInput(name: "indexValues", label: "Index Values", required: true, placeholder: "e.g., dash, a11ce; 0x… is bytes, \\0x… is text"),
                 QueryInput(name: "resultType", label: "Result Type", required: false, placeholder: "Default: documents_and_vote_tally (or documents, vote_tally)"),
                 QueryInput(name: "allowIncludeLockedAndAbstainingVoteTally", label: "Include Locked and Abstaining", required: false, placeholder: "true/false"),
                 QueryInput(name: "count", label: "Request Limit", required: false, placeholder: "Single request; finished polls return all contenders")
@@ -1049,7 +1053,7 @@ struct QueryDetailView: View {
                 QueryInput(name: "dataContractId", label: "Data Contract ID", required: true),
                 QueryInput(name: "documentTypeName", label: "Document Type Name", required: true),
                 QueryInput(name: "indexName", label: "Index Name", required: true),
-                QueryInput(name: "indexValues", label: "Index Values", required: true, placeholder: "e.g., dash, a11ce or [\"dash\",\"a11ce\"]"),
+                QueryInput(name: "indexValues", label: "Index Values", required: true, placeholder: "e.g., dash, a11ce; 0x… is bytes, \\0x… is text"),
                 QueryInput(name: "contestantId", label: "Contestant ID", required: true),
                 QueryInput(name: "count", label: "Count", required: false),
                 QueryInput(name: "orderAscending", label: "Order Ascending", required: false, placeholder: "true/false")
