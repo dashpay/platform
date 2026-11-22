@@ -757,16 +757,19 @@ extension ManagedPlatformWallet {
         let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        return try await Task.detached(priority: .userInitiated) { () -> DpnsNameGiveUpChoices in
+        return try await Task.detached(priority: .userInitiated) { [self] () -> DpnsNameGiveUpChoices in
             var out = DpnsNameGiveUpChoicesFFI()
-            let result = ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
-                name.withCString { namePtr in
-                    platform_wallet_dpns_name_give_up_choices(
-                        handle,
-                        ownerBp.baseAddress!,
-                        namePtr,
-                        &out
-                    )
+            // Keep this wallet (and so its handle) alive until Rust has looked it up
+            let result = withExtendedLifetime(self) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    name.withCString { namePtr in
+                        platform_wallet_dpns_name_give_up_choices(
+                            handle,
+                            ownerBp.baseAddress!,
+                            namePtr,
+                            &out
+                        )
+                    }
                 }
             }
             try result.check()
@@ -832,9 +835,10 @@ extension ManagedPlatformWallet {
         let expectedBytes: [UInt8] = expectedDocumentId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        return try await Task.detached(priority: .userInitiated) { () -> DpnsNameGivenUp in
+        return try await Task.detached(priority: .userInitiated) { [self] () -> DpnsNameGivenUp in
             var out = DpnsNameGivenUpFFI()
-            let result = withExtendedLifetime(signer) {
+            // Keep this wallet (and so its handle) and the signer alive through the call
+            let result = withExtendedLifetime((self, signer)) {
                 ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
                     expectedBytes.withUnsafeBufferPointer { expectedBp in
                         name.withCString { namePtr in
