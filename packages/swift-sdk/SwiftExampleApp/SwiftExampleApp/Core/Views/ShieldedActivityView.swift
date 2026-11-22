@@ -55,20 +55,20 @@ enum ShieldedActivityKindDisplay {
 }
 
 extension PersistentShieldedActivity {
-    /// 1 DASH = 1e11 Platform credits (distinct from Core's 1e8/DASH).
-    fileprivate static let creditsPerDash = 100_000_000_000.0
-
-    /// Signed amount string, e.g. `-0.5000 DASH` for an out, `+1.0000`
-    /// for an in. `direction`: 0 In, 1 Out, 2 Self.
+    /// Exact signed amount, e.g. `-0.5 DASH` for an out and `+1 DASH` for
+    /// an in, down to one credit. `direction`: 0 In, 1 Out, 2 Self.
     var signedAmountText: String {
-        let dash = Double(amount) / Self.creditsPerDash
+        Self.signedAmountText(amount: amount, direction: direction)
+    }
+
+    static func signedAmountText(amount: UInt64, direction: Int) -> String {
         let sign: String
         switch direction {
         case 0: sign = "+"
         case 1: sign = "-"
         default: sign = ""
         }
-        return String(format: "%@%.4f DASH", sign, dash)
+        return sign + formatCreditsAsDash(amount)
     }
 
     /// Tint for the amount label by direction.
@@ -222,6 +222,11 @@ struct ShieldedActivityListView: View {
                 Task { await loadRecoveryRecords() }
             }
         }
+        // A Clear purges the records without a sync event.
+        .onReceive(shieldedService.$localStateClearCount.dropFirst()) { _ in
+            recovery.resetSnapshot()
+            Task { await loadRecoveryRecords() }
+        }
         .alert(
             "Could not stop retrying",
             isPresented: Binding(
@@ -332,7 +337,7 @@ struct ShieldedActivityDetailView: View {
                     LabeledContent("Type", value: ShieldedActivityKindDisplay.label(entry.kindTag))
                     LabeledContent("Amount", value: entry.signedAmountText)
                     if entry.hasFee {
-                        LabeledContent("Fee", value: String(format: "%.6f DASH", Double(entry.fee) / 100_000_000_000.0))
+                        LabeledContent("Fee", value: formatCreditsAsDash(entry.fee))
                     }
                     LabeledContent("Status", value: statusText)
                     LabeledContent("Direction", value: directionText)

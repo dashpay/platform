@@ -141,6 +141,10 @@ class SendViewModel: ObservableObject {
     /// The send may already be on chain but is not proved: neither a success
     /// nor a retryable error. Shown in its own alert.
     @Published var unconfirmedMessage: String?
+    /// The send was accepted but its effect is not confirmed yet (the
+    /// identity shield: the wallet only verified the identity's balance at
+    /// a block). Shown in its own "Submitted" alert, never as a success.
+    @Published var submittedMessage: String?
 
     /// Per-output minimum credit amount (`min_output_amount`) the chain
     /// enforces for address-funds transitions, resolved on the Rust side from
@@ -570,6 +574,7 @@ class SendViewModel: ObservableObject {
         error = nil
         successMessage = nil
         unconfirmedMessage = nil
+        submittedMessage = nil
         defer { isSending = false }
 
         do {
@@ -903,14 +908,23 @@ class SendViewModel: ObservableObject {
                     amount: amountCredits,
                     identitySigner: identitySigner
                 )
-                // The returned balance proves the identity debit only; the
-                // activity row confirms when the scan sees the note.
-                successMessage = Self.identityShieldSubmittedMessage
+                applyIdentityShieldSubmitted()
             }
 
         } catch {
             applySendFailure(error, flow: flow)
         }
+    }
+
+    /// Outcome of a normal return from `shieldedShieldFromIdentity`. That
+    /// return is not proof the debit executed: the wallet verified the
+    /// identity's balance at a block, and the activity row stays pending
+    /// until the scan sees the note. So it is "submitted", not a success.
+    func applyIdentityShieldSubmitted() {
+        error = nil
+        successMessage = nil
+        unconfirmedMessage = nil
+        submittedMessage = Self.identityShieldSubmittedMessage
     }
 
     /// Route a failed send to the right outcome.
@@ -924,6 +938,7 @@ class SendViewModel: ObservableObject {
     func applySendFailure(_ failure: Error, flow: SendFlow) {
         successMessage = nil
         unconfirmedMessage = nil
+        submittedMessage = nil
         guard let walletError = failure as? PlatformWalletError else {
             error = failure.localizedDescription
             return

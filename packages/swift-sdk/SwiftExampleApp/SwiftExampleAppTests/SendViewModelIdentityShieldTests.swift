@@ -243,6 +243,32 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
         XCTAssertFalse(SendViewModel.mayHaveGoneThrough(.shieldedIdentityDebitPending("x")))
     }
 
+    // MARK: - Ok path of the identity shield
+
+    func test_identityShieldOkPath_isSubmittedNotSuccess() {
+        let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
+        vm.successMessage = "stale"
+        vm.unconfirmedMessage = "stale"
+        vm.error = "stale"
+        vm.applyIdentityShieldSubmitted()
+        XCTAssertEqual(vm.submittedMessage, SendViewModel.identityShieldSubmittedMessage)
+        XCTAssertNil(vm.successMessage)
+        XCTAssertNil(vm.unconfirmedMessage)
+        XCTAssertNil(vm.error)
+    }
+
+    func test_identityShieldSubmittedMessage_saysTheRowStaysPending() {
+        XCTAssertTrue(SendViewModel.identityShieldSubmittedMessage.contains("pending"))
+    }
+
+    func test_failureAfterASubmittedOutcome_clearsIt() {
+        let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
+        vm.applyIdentityShieldSubmitted()
+        vm.applySendFailure(PlatformWalletError.walletOperation("x"), flow: .identityToShielded)
+        XCTAssertNil(vm.submittedMessage)
+        XCTAssertNotNil(vm.error)
+    }
+
     func test_unconfirmedIdentityShield_setsUnconfirmedNotSuccess() {
         let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
         vm.applySendFailure(

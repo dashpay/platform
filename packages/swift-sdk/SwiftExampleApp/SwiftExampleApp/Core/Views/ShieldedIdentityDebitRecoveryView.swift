@@ -177,11 +177,18 @@ final class ShieldedIdentityDebitRecoveryModel: ObservableObject {
         // Another wallet's records must never show under this one.
         if self.walletId != walletId {
             self.walletId = walletId
-            state = ShieldedIdentityDebitRecoveryReadState()
-            reads.reset()
+            resetSnapshot()
         }
         guard let generation = reads.request() else { return }
         await runReads(from: generation, walletManager: walletManager, walletId: walletId)
+    }
+
+    /// Forget the records and every read already started, so none of them
+    /// can apply. Used when the wallet changes and after a shielded Clear,
+    /// which purges the records without a sync event.
+    func resetSnapshot() {
+        state = ShieldedIdentityDebitRecoveryReadState()
+        reads.reset()
     }
 
     /// Call only after the user confirmed `stopRetryingWarning`.

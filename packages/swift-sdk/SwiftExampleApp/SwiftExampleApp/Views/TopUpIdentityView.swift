@@ -166,6 +166,11 @@ enum ShieldedSpendableCredits: Equatable {
 
     var offersShieldedSource: Bool { (credits ?? 0) > 0 }
 
+    /// State right after a shielded Clear: unknown until a fresh read.
+    static let afterClear = ShieldedSpendableCredits.unknown(
+        reason: "The shielded state was cleared. Waiting for a new balance read."
+    )
+
     var unavailableReason: String? {
         if case .unknown(let reason) = self { return reason }
         return nil
@@ -271,8 +276,21 @@ struct TopUpIdentityView: View {
             .onReceive(walletManager.$lastShieldedSyncEvent.dropFirst()) { event in
                 if let walletId = identity.wallet?.walletId,
                    ShieldedSyncEventScope.covers(event, walletId: walletId) {
+                    resolveShieldedTopUpFee()
                     Task { await refreshShieldedSpendable() }
                 }
+            }
+            // A Clear purges the local balance without a sync event: the
+            // balance is unknown until a read after it succeeds.
+            .onReceive(shieldedService.$localStateClearCount.dropFirst()) { _ in
+                shieldedSpendable = ShieldedSpendableCredits.afterClear
+                Task { await refreshShieldedSpendable() }
+            }
+            // A manager swapped during an SDK rebuild: re-resolve against it
+            // so a sheet opened meanwhile recovers without being dismissed.
+            .onChange(of: ObjectIdentifier(walletManager)) { _, _ in
+                resolveShieldedTopUpFee()
+                Task { await refreshShieldedSpendable() }
             }
             .onChange(of: shieldedSpendable) { _, spendable in
                 // Drop a shielded selection the wallet can no longer fund.
@@ -529,7 +547,7 @@ struct TopUpIdentityView: View {
                         .foregroundColor(.secondary)
                 }
                 HStack {
-                    Text("Identity balance:")
+                    Text("Last saved identity balance:")
                         .foregroundColor(.secondary)
                     // Exact, so a one-credit change is visible.
                     Text(formatIdentityBalanceAsDash(identity.balance))

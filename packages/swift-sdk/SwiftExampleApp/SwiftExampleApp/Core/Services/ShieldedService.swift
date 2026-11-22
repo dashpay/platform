@@ -71,6 +71,9 @@ class ShieldedService: ObservableObject {
     /// Last error from a shielded operation. Cleared on a successful
     /// pass.
     @Published var lastError: String?
+    /// Bumped by `clearLocalState` once it has reached the shielded reset.
+    /// Views showing wallet-owned shielded state re-read on a change.
+    @Published private(set) var localStateClearCount: UInt64 = 0
 
     /// Bech32m-encoded Orchard payment address for account 0.
     /// Kept for the existing Receive sheet which is still
@@ -829,6 +832,11 @@ class ShieldedService: ObservableObject {
             return
         }
 
+        // Clear purges wallet-owned shielded state (recovery records, the
+        // local balance) without a sync event. Signal every attempt that
+        // reached the reset, failed ones included: the native clear can
+        // purge before a later error is returned.
+        defer { localStateClearCount &+= 1 }
         do {
             try Self.executeClearPersistenceSequence(
                 resetRustState: {

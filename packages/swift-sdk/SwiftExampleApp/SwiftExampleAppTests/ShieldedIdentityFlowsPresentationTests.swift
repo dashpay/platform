@@ -156,6 +156,16 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         XCTAssertEqual(formatIdentityBalanceAsDash(Int64.min), formatCreditsAsDash(0))
     }
 
+    func test_activityAmount_oneCredit_isExactWithEachDirectionsSign() {
+        XCTAssertEqual(PersistentShieldedActivity.signedAmountText(amount: 1, direction: 0), "+" + oneCreditDash)
+        XCTAssertEqual(PersistentShieldedActivity.signedAmountText(amount: 1, direction: 1), "-" + oneCreditDash)
+        XCTAssertEqual(PersistentShieldedActivity.signedAmountText(amount: 1, direction: 2), oneCreditDash)
+        XCTAssertNotEqual(
+            PersistentShieldedActivity.signedAmountText(amount: 1, direction: 1),
+            PersistentShieldedActivity.signedAmountText(amount: 0, direction: 1)
+        )
+    }
+
     func test_amountsOneCreditApart_readDifferently() {
         // One DASH and one DASH plus one credit.
         XCTAssertNotEqual(formatCreditsAsDash(100_000_000_000), formatCreditsAsDash(100_000_000_001))
@@ -327,6 +337,51 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         XCTAssertNil(spendable.credits)
         XCTAssertFalse(spendable.offersShieldedSource)
         XCTAssertTrue(spendable.unavailableReason?.contains("busy") == true)
+    }
+
+    // MARK: - After a shielded Clear
+
+    func test_afterClear_spendableIsUnknownAndNotOffered() {
+        let spendable = ShieldedSpendableCredits.afterClear
+        XCTAssertNil(spendable.credits)
+        XCTAssertFalse(spendable.offersShieldedSource)
+        XCTAssertNotNil(spendable.unavailableReason)
+    }
+
+    func test_afterClear_failedReadKeepsItUnknown() {
+        // The pre-Clear value is gone, so a failed read has nothing to keep.
+        let spendable = ShieldedSpendableCredits.after(.failed("busy"), previous: .afterClear)
+        XCTAssertNil(spendable.credits)
+        XCTAssertFalse(spendable.offersShieldedSource)
+    }
+
+    func test_afterClear_aSuccessfulReadMakesItKnownAgain() {
+        XCTAssertEqual(ShieldedSpendableCredits.after(ready(credits: 5), previous: .afterClear), .known(5))
+    }
+
+    func test_readCoordinator_readStartedBeforeAClear_neverAppliesAfterIt() {
+        var reads = RecoveryReadCoordinator()
+        let beforeClear = reads.request()!
+        // A follow-up was also requested before the Clear.
+        XCTAssertNil(reads.request())
+        reads.reset()
+        // The pre-Clear read finishes after the reset: it does not apply and
+        // does not start the old follow-up.
+        let outcome = reads.finish(beforeClear)
+        XCTAssertFalse(outcome.apply)
+        XCTAssertNil(outcome.next)
+        // The read started after the Clear applies.
+        let afterClear = reads.request()!
+        XCTAssertTrue(reads.finish(afterClear).apply)
+    }
+
+    func test_readState_afterReset_isNotLoaded() {
+        var state = RecoveryReadState<Int>()
+        state.applySuccess([1])
+        state = RecoveryReadState<Int>()
+        XCTAssertEqual(state.status, .notLoaded)
+        XCTAssertTrue(state.records.isEmpty)
+        XCTAssertFalse(state.isKnownEmpty)
     }
 
     // MARK: - Recovery record labels

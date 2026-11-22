@@ -354,6 +354,13 @@ struct SendTransactionView: View {
                     Text(msg)
                 }
             }
+            .alert("Submitted", isPresented: .constant(viewModel.submittedMessage != nil)) {
+                Button("Done") { dismiss() }
+            } message: {
+                if let msg = viewModel.submittedMessage {
+                    Text(msg)
+                }
+            }
             .alert("Not Confirmed Yet", isPresented: .constant(viewModel.unconfirmedMessage != nil)) {
                 Button("Done") { dismiss() }
             } message: {
