@@ -1,5 +1,6 @@
 //! Address query operations
 
+mod address_funds_elements;
 pub mod balance_changes;
 pub mod branch_state;
 pub mod compacted_balance_changes;

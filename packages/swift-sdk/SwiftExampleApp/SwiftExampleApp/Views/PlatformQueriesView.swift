@@ -284,15 +284,11 @@ struct QueryCategoryDetailView: View {
             ]
 
         case .addresses:
-            // Addresses use a dedicated view (`AddressQueriesView`), but define
-            // queries for completeness. Names match the gRPC RPCs.
+            // Not shown: `QueryCategoryDetailView` routes addresses to the
+            // dedicated `AddressQueriesView`, which lists every address query.
             return [
                 QueryDefinition(name: "getAddressInfo", label: "Get Address Info", description: "Fetch balance and nonce for a single Platform address"),
-                QueryDefinition(name: "getAddressesInfos", label: "Get Addresses Infos", description: "Fetch balance and nonce for multiple Platform addresses"),
-                QueryDefinition(name: "getAddressesTrunkState", label: "Get Trunk State", description: "Fetch address tree trunk state for privacy-preserving sync"),
-                QueryDefinition(name: "getAddressesBranchState", label: "Get Branch State", description: "Query a specific branch of the address tree"),
-                QueryDefinition(name: "getRecentAddressBalanceChanges", label: "Get Recent Balance Changes", description: "Fetch address balance changes since a block height"),
-                QueryDefinition(name: "getRecentCompactedAddressBalanceChanges", label: "Get Compacted Balance Changes", description: "Fetch compacted (merged) address balance changes")
+                QueryDefinition(name: "getAddressesInfos", label: "Get Addresses Infos", description: "Fetch balance and nonce for multiple Platform addresses")
             ]
 
         case .diagnostics:

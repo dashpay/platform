@@ -715,7 +715,9 @@ struct GetTrunkStateView: View {
 struct GetBranchStateView: View {
   @EnvironmentObject var appState: AppState
   @State private var keyHex: String = ""
-  @State private var depth: String = "6"  // Valid range: 6-9
+  // The valid range comes from the platform version; the query rejects a
+  // depth outside it.
+  @State private var depth: String = "6"
   @State private var expectedHashHex: String = ""
   @State private var checkpointHeight: String = ""
   @State private var isLoading = false
@@ -776,10 +778,10 @@ struct GetBranchStateView: View {
           }
 
           VStack(alignment: .leading, spacing: 4) {
-            Text("Depth (6-9)")
+            Text("Depth")
               .font(.subheadline)
               .fontWeight(.medium)
-            TextField("Query depth (6-9)", text: $depth)
+            TextField("Query depth", text: $depth)
               .textFieldStyle(RoundedBorderTextFieldStyle())
               .keyboardType(.numberPad)
           }
@@ -982,10 +984,8 @@ struct GetBranchStateView: View {
   }
 
   private var isFormValid: Bool {
-    guard let depthValue = UInt32(depth) else { return false }
     return !keyHex.isEmpty && AddressValidator.validateHash(expectedHashHex)
-      && !checkpointHeight.isEmpty && depthValue >= 6 && depthValue <= 9
-      && UInt64(checkpointHeight) != nil
+      && UInt32(depth) != nil && UInt64(checkpointHeight) != nil
   }
 
   private func fetchBranchState() {
@@ -1003,8 +1003,10 @@ struct GetBranchStateView: View {
       return
     }
 
-    guard let depthValue = UInt32(depth), depthValue >= 6 && depthValue <= 9 else {
-      errorMessage = "Depth must be between 6 and 9"
+    // Only the number is parsed here; whether the depth is allowed is
+    // decided by the query (Rust and the server), whose error is shown.
+    guard let depthValue = UInt32(depth) else {
+      errorMessage = "Depth must be a whole number"
       showResult = true
       return
     }

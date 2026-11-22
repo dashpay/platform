@@ -10,6 +10,7 @@ use dash_sdk::drive::drive::Drive;
 use dash_sdk::platform::address_sync::address_branch_query_depth;
 use std::panic::{self, AssertUnwindSafe};
 
+use super::address_funds_elements::address_funds_elements_into_ffi;
 use crate::sdk::SDKWrapper;
 use crate::types::{DashSDKBranchState, DashSDKLeafBoundary, DashSDKTrunkStateElement, SDKHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
@@ -134,6 +135,16 @@ unsafe fn dash_sdk_address_fetch_branch_state_inner(
         ));
     }
 
+    // The query depth is a `u8` in GroveDB; a wider value is refused here
+    // rather than truncated. The range itself is checked by the server and
+    // by the proof verification below, from the platform version.
+    let Ok(depth_u8) = u8::try_from(depth) else {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            format!("Depth {depth} is not a valid branch query depth"),
+        ));
+    };
+
     let wrapper = &*(sdk_handle as *const SDKWrapper);
 
     // Convert inputs to Rust types
@@ -186,28 +197,15 @@ unsafe fn dash_sdk_address_fetch_branch_state_inner(
         let branch_result = Drive::verify_address_funds_branch_query(
             &proof_bytes,
             key_vec,
-            depth as u8,
+            depth_u8,
             hash_array,
             platform_version,
         )
         .map_err(|e| FFIError::InternalError(format!("Proof verification failed: {}", e)))?;
 
-        // Convert elements to FFI format
-        let mut elements: Vec<DashSDKTrunkStateElement> = Vec::new();
-        for (elem_key, element) in branch_result.elements.iter() {
-            if let Some((balance, nonce)) = extract_balance_nonce_from_element(element) {
-                let elem_key_vec: Vec<u8> = elem_key.clone();
-                let elem_key_len = elem_key_vec.len();
-                let elem_key_ptr = Box::into_raw(elem_key_vec.into_boxed_slice()) as *mut u8;
-
-                elements.push(DashSDKTrunkStateElement {
-                    key: elem_key_ptr,
-                    key_len: elem_key_len,
-                    nonce,
-                    balance,
-                });
-            }
-        }
+        // Decode every element as address funds; an undecodable one fails
+        // the call instead of being dropped.
+        let elements = address_funds_elements_into_ffi(branch_result.elements.iter())?;
 
         // Convert leaf keys to FFI format
         let mut leaf_boundaries: Vec<DashSDKLeafBoundary> = Vec::new();
@@ -250,40 +248,6 @@ unsafe fn dash_sdk_address_fetch_branch_state_inner(
     match result {
         Ok(state) => DashSDKResult::success_branch_state(state),
         Err(e) => DashSDKResult::error(e.into()),
-    }
-}
-
-/// Extract balance and nonce from a GroveDB Element.
-/// Returns None if the element format is not recognized.
-fn extract_balance_nonce_from_element(
-    element: &dash_sdk::drive::grovedb::Element,
-) -> Option<(u64, u32)> {
-    use dash_sdk::drive::grovedb::Element;
-
-    match element {
-        Element::Item(data, _) => {
-            // Address funds are encoded as: nonce (4 bytes) + balance (8 bytes)
-            if data.len() >= 12 {
-                let nonce = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
-                let balance = u64::from_be_bytes([
-                    data[4], data[5], data[6], data[7], data[8], data[9], data[10], data[11],
-                ]);
-                Some((balance, nonce))
-            } else if data.len() >= 8 {
-                // Fallback: just balance
-                let balance = u64::from_be_bytes([
-                    data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
-                ]);
-                Some((balance, 0))
-            } else {
-                None
-            }
-        }
-        Element::SumItem(balance, _) => {
-            // SumItem directly contains the balance
-            Some((*balance as u64, 0))
-        }
-        _ => None,
     }
 }
 

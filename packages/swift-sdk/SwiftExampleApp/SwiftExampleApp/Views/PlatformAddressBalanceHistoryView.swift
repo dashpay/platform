@@ -4,11 +4,14 @@
 // ADDR-10: balance change history of the wallet's DIP-17 Platform addresses,
 // opened from the WalletDetailView Platform Balance row's ⋯ menu.
 //
-// Recent changes come from `ManagedPlatformAddressWallet.recentBalanceChanges()`
-// and older (compacted) ranges from `compactedBalanceChanges()`. Paging, the
-// filter to this wallet's addresses (every platform payment account) and the
-// newest-first order all happen in Rust (`platform-wallet`); this view only
-// renders what it gets back.
+// Both sections come from one `ManagedPlatformAddressWallet.balanceHistory`
+// call: the first load asks for recent changes only, "Load older history"
+// asks for both and replaces both sections from that one result, so a block
+// compacted in between never shows twice. Paging, the filter to this
+// wallet's addresses (every platform payment account), the reconciliation
+// of the two zones, the newest-first order and each address's bech32m form
+// all happen in Rust (`platform-wallet`); this view only renders what it
+// gets back.
 
 import SwiftUI
 import SwiftDashSDK
@@ -28,8 +31,6 @@ struct PlatformAddressBalanceHistoryView: View {
     @State private var compacted: [ManagedPlatformAddressWallet.CompactedBalanceHistoryEntry]?
     @State private var isLoadingCompacted = false
     @State private var compactedError: String?
-
-    private var network: Network { wallet.network ?? .testnet }
 
     var body: some View {
         NavigationStack {
@@ -106,7 +107,7 @@ struct PlatformAddressBalanceHistoryView: View {
             }
             if compacted == nil || compactedError != nil {
                 Button {
-                    Task { await loadCompacted() }
+                    Task { await loadOlder() }
                 } label: {
                     HStack {
                         if isLoadingCompacted {
@@ -138,7 +139,7 @@ struct PlatformAddressBalanceHistoryView: View {
                 Spacer()
                 changeText(entry.change)
             }
-            addressText(entry.bech32m(network: network), hash: entry.hash)
+            addressText(entry.address)
         }
         .padding(.vertical, 2)
     }
@@ -163,7 +164,7 @@ struct PlatformAddressBalanceHistoryView: View {
                         .foregroundColor(.green)
                 }
             }
-            addressText(entry.bech32m(network: network), hash: entry.hash)
+            addressText(entry.address)
             if case .additions(_, let additions) = entry.change, !additions.isEmpty {
                 ForEach(Array(additions.enumerated()), id: \.offset) { _, addition in
                     HStack {
@@ -194,8 +195,8 @@ struct PlatformAddressBalanceHistoryView: View {
         }
     }
 
-    private func addressText(_ bech32m: String?, hash: Data) -> some View {
-        Text(bech32m ?? hash.map { String(format: "%02x", $0) }.joined())
+    private func addressText(_ address: String) -> some View {
+        Text(address)
             .font(.system(.caption, design: .monospaced))
             .foregroundColor(.secondary)
             .lineLimit(1)
@@ -218,34 +219,45 @@ struct PlatformAddressBalanceHistoryView: View {
         return try managed.platformAddressWallet()
     }
 
+    /// Pull to refresh: reload what is shown, both sections from one call
+    /// when older history is shown.
     private func refresh() async {
-        await loadRecent()
         if compacted != nil {
-            await loadCompacted()
+            await loadOlder()
+        } else {
+            await loadRecent()
         }
     }
 
+    /// First load: the recent zone only.
     private func loadRecent() async {
-        guard !isLoadingRecent else { return }
+        guard !isLoadingRecent, !isLoadingCompacted else { return }
         isLoadingRecent = true
         defer {
             isLoadingRecent = false
             hasLoadedRecent = true
         }
         do {
-            recent = try await addressWallet().recentBalanceChanges()
+            let history = try await addressWallet().balanceHistory(includeCompacted: false)
+            recent = history.recent
             recentError = nil
         } catch {
             recentError = error.localizedDescription
         }
     }
 
-    private func loadCompacted() async {
-        guard !isLoadingCompacted else { return }
+    /// "Load older history": both zones from one call, replacing both
+    /// sections, so no row shows in both.
+    private func loadOlder() async {
+        guard !isLoadingRecent, !isLoadingCompacted else { return }
         isLoadingCompacted = true
         defer { isLoadingCompacted = false }
         do {
-            compacted = try await addressWallet().compactedBalanceChanges()
+            let history = try await addressWallet().balanceHistory(includeCompacted: true)
+            recent = history.recent
+            compacted = history.compacted
+            hasLoadedRecent = true
+            recentError = nil
             compactedError = nil
         } catch {
             compactedError = error.localizedDescription
@@ -254,24 +266,9 @@ struct PlatformAddressBalanceHistoryView: View {
 
     // MARK: - Formatting
 
-    /// One formatter for every amount on the screen, configured once.
-    private static let dashFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = 8
-        formatter.numberStyle = .decimal
-        formatter.groupingSeparator = ","
-        formatter.decimalSeparator = "."
-        return formatter
-    }()
-
-    /// Credits (1e11 per DASH) as DASH, the same format as the wallet's
-    /// Platform Balance row.
+    /// Credits as DASH at full credit precision (exact integer arithmetic),
+    /// the formatter the key screens use: 400 credits is "0.000000004 DASH".
     private func formatCredits(_ credits: UInt64) -> String {
-        let dash = Double(credits) / 100_000_000_000.0
-        if let formatted = Self.dashFormatter.string(from: NSNumber(value: dash)) {
-            return "\(formatted) DASH"
-        }
-        return String(format: "%.8f DASH", dash)
+        KeyLimitsFormatting.dash(credits)
     }
 }

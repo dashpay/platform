@@ -291,6 +291,16 @@ pub async fn run_full_tree_scan<Ops: TrunkBranchSyncOps>(
     Ok((checkpoint_height, block_time_ms))
 }
 
+// ── Query depth ──────────────────────────────────────────────────────
+
+/// The depth to ask for when querying the branch under a leaf of about
+/// `count` elements directly: the deepest an AVL tree of that many elements
+/// can be, clamped to `[min_query_depth, max_query_depth]`. A count of 0
+/// (unknown) gives `min_query_depth`.
+pub fn direct_leaf_query_depth(count: u64, min_query_depth: u8, max_query_depth: u8) -> u8 {
+    calculate_max_tree_depth_from_count(count).clamp(min_query_depth, max_query_depth)
+}
+
 // ── Privacy-adjusted leaves ──────────────────────────────────────────
 
 /// Get privacy-adjusted leaves to query.
@@ -316,8 +326,7 @@ pub fn get_privacy_adjusted_leaves(
 
     for (leaf_key, info) in active_leaves {
         let count = info.count.unwrap_or(0);
-        let tree_depth = calculate_max_tree_depth_from_count(count);
-        let clamped_depth = tree_depth.clamp(min_query_depth, max_query_depth);
+        let clamped_depth = direct_leaf_query_depth(count, min_query_depth, max_query_depth);
 
         if count >= min_privacy_count {
             best.entry(leaf_key)
@@ -326,7 +335,7 @@ pub fn get_privacy_adjusted_leaves(
         } else if let Some((levels_up, ancestor_count, ancestor_key, ancestor_hash)) =
             trunk_result.get_ancestor(&leaf_key, min_privacy_count)
         {
-            let depth = tree_depth
+            let depth = calculate_max_tree_depth_from_count(count)
                 .saturating_sub(levels_up)
                 .clamp(min_query_depth, max_query_depth);
             let ancestor_info = LeafInfo {

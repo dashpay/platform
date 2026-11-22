@@ -66,9 +66,7 @@ use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::prelude::AddressNonce;
 use dpp::version::PlatformVersion;
 use drive::drive::{Drive, RootTree};
-use drive::grovedb::{
-    calculate_max_tree_depth_from_count, Element, GroveBranchQueryResult, GroveTrunkQueryResult,
-};
+use drive::grovedb::{Element, GroveBranchQueryResult, GroveTrunkQueryResult};
 use drive_proof_verifier::types::{
     PlatformAddressTrunkState, RecentAddressBalanceChanges, RecentCompactedAddressBalanceChanges,
 };
@@ -1233,12 +1231,13 @@ fn address_query_depth_limits(platform_version: &PlatformVersion) -> (u8, u8) {
 /// the address tree that holds about `estimated_count` elements.
 ///
 /// This is the depth the address sync's full tree scan picks for a leaf it
-/// queries directly: the deepest an AVL tree of that many elements can be,
-/// clamped to the address branch query limits of `platform_version`. A count
-/// of 0 (unknown) gives the minimum depth.
+/// queries directly ([`trunk_branch_sync::direct_leaf_query_depth`], the
+/// same function `get_privacy_adjusted_leaves` uses) under the address
+/// branch query limits of `platform_version`. A count of 0 (unknown) gives
+/// the minimum depth.
 pub fn address_branch_query_depth(estimated_count: u64, platform_version: &PlatformVersion) -> u8 {
     let (min_depth, max_depth) = address_query_depth_limits(platform_version);
-    calculate_max_tree_depth_from_count(estimated_count).clamp(min_depth, max_depth)
+    trunk_branch_sync::direct_leaf_query_depth(estimated_count, min_depth, max_depth)
 }
 
 // ── Branch query helper (address-specific) ───────────────────────────

@@ -44,8 +44,8 @@ where
 }
 
 pub use balance_history::{
-    AddressBalanceChange, AddressBalanceChangeEntry, CompactedAddressBalanceChange,
-    CompactedAddressBalanceChangeEntry,
+    AddressBalanceChange, AddressBalanceChangeEntry, AddressBalanceHistory,
+    CompactedAddressBalanceChange, CompactedAddressBalanceChangeEntry,
 };
 pub use provider::{
     PerAccountPlatformAddressState, PerWalletPlatformAddressState, PlatformAddressTag,
