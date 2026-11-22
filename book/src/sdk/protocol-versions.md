@@ -201,9 +201,9 @@ on another node, which may be newer.
 | The network is not proven to serve what the request needs | `Error::ProtocolVersionNotActive { method, required, feature, network, pinned, cause }` | kind `ProtocolVersionNotActive` | `ProtocolError`, or `NetworkError` when learning the network's version failed for a reason that can pass | no / no |
 | No node can answer the request as the requested result type: refused before sending, or a fresh verified answer cannot be returned as that type (several documents for a single-document fetch, a total that overflows) | `Error::InvalidRequest` | kind `InvalidArgument` | `InvalidParameter` | no / no |
 | An answer to a request that needs a version, signed below it | `StaleNodeError::BehindProtocolUpgrade` | kind `StaleNode` | `NetworkError` | yes / yes |
-| A document answer signed below the SDK's version, before the network is proven at it | `StaleNodeError::ProtocolVersion` per attempt; the request fails with `Error::Config` once no attempt is left | kind `Config` | `ProtocolError` | yes / no |
+| A document answer signed below the SDK's version, before the network is proven at it | `StaleNodeError::ProtocolVersion` per attempt; a request whose every attempt ended this way fails with `Error::Config` once no attempt is left | kind `Config` | `ProtocolError` | yes / no |
 | A document answer signed below the SDK's version, once the network is proven at it | `Error::Proof` | kind `Proof` | `ProtocolError` (its message names both versions) | yes / yes |
-| An answer that fails verification and names a version the build does not know, once the network is proven at such a version | `StaleNodeError::NewerProtocolVersion` per attempt; the request fails with `Error::Config` once no attempt is left | kind `Config` | `ProtocolError` | yes / no |
+| An answer that fails verification and names a version the build does not know, once the network is proven at such a version | `StaleNodeError::NewerProtocolVersion` per attempt; a request whose every attempt ended this way fails with `Error::Config` once no attempt is left | kind `Config` | `ProtocolError` | yes / no |
 
 `ProtocolVersionNotActive` names the method and, for a document query, the feature that needs
 the version, for example `get_documents needs Platform protocol version 14 for time-range

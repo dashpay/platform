@@ -27,7 +27,9 @@ From the first block of protocol version 15:
 | Confirming a replace of a document whose type keeps history | The proof of the result follows the new history layout. | The replace is applied, but the SDK cannot verify the result and reports a proof error |
 
 A replace that fails this way has still been executed. An app must not submit it again: read
-the document to confirm instead.
+the document to confirm instead. A 5.0.x client can read it while the document's contract is
+one stored before protocol version 15 and not updated since. Once the contract has been
+updated, only a 5.1 client can.
 
 ### Banned nodes make it worse
 
