@@ -5152,6 +5152,46 @@ mod redrive_tests {
     }
 
     #[tokio::test]
+    async fn should_refuse_an_identity_shield_when_the_identity_has_no_balance_on_platform() {
+        let identity_id = Identifier::from([0x71; 32]);
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .expect("mock sdk");
+        // The proved answer is "no balance": `IdentityBalance::fetch` returns `Ok(None)`.
+        sdk.mock()
+            .expect_fetch::<IdentityBalance, Identifier>(identity_id, None)
+            .await
+            .expect("absent balance expectation");
+
+        let (result, store, id) = identity_shield_on_sdk(sdk, None, 1_000_000).await;
+
+        match result {
+            Err(PlatformWalletError::IdentityBalanceUnavailable(found)) => {
+                assert_eq!(found, identity_id)
+            }
+            other => panic!("expected IdentityBalanceUnavailable, got {other:?}"),
+        }
+        assert_nothing_armed_or_recorded(&store, id).await;
+    }
+
+    #[tokio::test]
+    async fn should_keep_the_sdk_error_when_the_identity_balance_read_fails() {
+        // No balance expectation: the mock fails the read, past the activation check.
+        let (result, store, id) =
+            identity_shield_on_mock(PlatformVersion::latest(), None, 1_000_000).await;
+
+        match result {
+            Err(PlatformWalletError::Sdk(error)) => assert!(
+                !matches!(error, dash_sdk::Error::ProtocolVersionNotActive { .. }),
+                "the activation check must pass; the read itself fails: {error:?}"
+            ),
+            other => panic!("expected the SDK's own error, got {other:?}"),
+        }
+        assert_nothing_armed_or_recorded(&store, id).await;
+    }
+
+    #[tokio::test]
     async fn should_report_a_pending_identity_debit_before_the_activation_check() {
         use dpp::identity::v0::IdentityV0;
 
