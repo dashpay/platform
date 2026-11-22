@@ -949,17 +949,22 @@ fn shield_inputs_read_spent(
 /// `initial_protocol_version` reject the kind, and a rejected identity debit or
 /// note spend would otherwise stay saved for a retry that can never execute.
 ///
-/// The SDK's own version covers an SDK seeded or pinned below the activation.
-/// The SDK starts at protocol version 14 on every network, so a network still
-/// below it is caught by `network_proven_below`, which asks the network with one
-/// proved query only while no verified answer has shown its version yet. A failed
-/// probe refuses too: nothing is sent while the version is unknown.
+/// An SDK whose own version is below the activation learns the network's
+/// version first (`refresh_protocol_version`, one proved query): an unpinned
+/// SDK may only be at its seed, while a pinned one keeps its version and is
+/// refused. The SDK starts at protocol version 14 on every network, so a network
+/// still below it is caught by `network_proven_below`, which asks the network
+/// with one proved query only while no verified answer has shown its version
+/// yet. A failed probe refuses too: nothing is sent while the version is unknown.
 async fn ensure_protocol_version_runs(
     sdk: &dash_sdk::Sdk,
     initial_protocol_version: u32,
     operation: &str,
 ) -> Result<(), PlatformWalletError> {
-    let protocol_version = sdk.version().protocol_version;
+    let mut protocol_version = sdk.version().protocol_version;
+    if protocol_version < initial_protocol_version {
+        protocol_version = sdk.refresh_protocol_version().await?;
+    }
     if protocol_version < initial_protocol_version {
         return Err(PlatformWalletError::ShieldedBuildError(format!(
             "{operation} exists from protocol version {initial_protocol_version}; the SDK \
@@ -4981,13 +4986,27 @@ mod redrive_tests {
         Arc<RwLock<InMemoryShieldedStore>>,
         SubwalletId,
     ) {
-        use dpp::identity::v0::IdentityV0;
-
-        let identity_id = Identifier::from([0x71; 32]);
-        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+        let sdk = dash_sdk::SdkBuilder::new_mock()
             .with_version(platform_version)
             .build()
             .expect("mock sdk");
+        identity_shield_on_sdk(sdk, network_version, proved_balance, amount).await
+    }
+
+    /// [`identity_shield_on_mock`] on a mock SDK the caller built.
+    async fn identity_shield_on_sdk(
+        mut sdk: dash_sdk::Sdk,
+        network_version: Option<u32>,
+        proved_balance: Option<u64>,
+        amount: u64,
+    ) -> (
+        Result<(Credits, ResponseMetadata), PlatformWalletError>,
+        Arc<RwLock<InMemoryShieldedStore>>,
+        SubwalletId,
+    ) {
+        use dpp::identity::v0::IdentityV0;
+
+        let identity_id = Identifier::from([0x71; 32]);
         if let Some(version) = network_version {
             sdk.mock_verified_protocol_version(version)
                 .expect("mock network version");
@@ -5102,6 +5121,73 @@ mod redrive_tests {
                 "{reason}"
             ),
             other => panic!("expected the activation refusal, got {other:?}"),
+        }
+        assert_nothing_armed_or_recorded(&store, id).await;
+    }
+
+    /// Answer the proved epoch queries `refresh_protocol_version` sends. The mock
+    /// signs its answers with the latest protocol version, as a network that has
+    /// activated it would.
+    async fn expect_epoch_refresh(sdk: &mut dash_sdk::Sdk) {
+        use dash_sdk::platform::types::epoch::EpochQuery;
+        use dash_sdk::platform::LimitQuery;
+        use dash_sdk::query_types::ExtendedEpochInfos;
+        use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0;
+        use dpp::block::extended_epoch_info::ExtendedEpochInfo;
+
+        let probe_query = LimitQuery {
+            query: EpochQuery::genesis(),
+            limit: Some(1),
+            start_info: None,
+        };
+        let confirmation_query = LimitQuery {
+            query: EpochQuery::ascending_from(0),
+            limit: Some(2),
+            start_info: None,
+        };
+        let epoch = ExtendedEpochInfo::from(ExtendedEpochInfoV0 {
+            index: 0,
+            first_block_time: 0,
+            first_block_height: 0,
+            first_core_block_height: 0,
+            fee_multiplier_permille: 0,
+            protocol_version: dpp::version::LATEST_VERSION,
+        });
+        sdk.mock()
+            .expect_fetch::<ExtendedEpochInfo, _>(probe_query, Some(epoch.clone()))
+            .await
+            .expect("epoch probe expectation");
+        sdk.mock()
+            .expect_fetch_many::<_, ExtendedEpochInfo, _, ExtendedEpochInfos>(
+                confirmation_query,
+                Some(ExtendedEpochInfos::from_iter([(0, Some(epoch))])),
+            )
+            .await
+            .expect("epoch refresh expectation");
+    }
+
+    #[tokio::test]
+    async fn should_let_an_unpinned_sdk_seeded_below_activation_learn_the_network_s_version() {
+        let below = PlatformVersion::get(SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION - 1)
+            .expect("the version before activation");
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_initial_version(below)
+            .build()
+            .expect("mock sdk");
+        expect_epoch_refresh(&mut sdk).await;
+        let amount = 1_000_000;
+        let fee = identity_shield_fee();
+
+        let (result, store, id) =
+            identity_shield_on_sdk(sdk, None, Some(amount + fee), amount).await;
+
+        // Past the activation check and the balance check, the unconfigured mock
+        // refuses the nonce fetch.
+        match result {
+            Err(PlatformWalletError::ShieldedBuildError(reason)) => {
+                assert!(reason.contains("fetch identity nonce"), "{reason}")
+            }
+            other => panic!("expected to reach the nonce fetch, got {other:?}"),
         }
         assert_nothing_armed_or_recorded(&store, id).await;
     }
