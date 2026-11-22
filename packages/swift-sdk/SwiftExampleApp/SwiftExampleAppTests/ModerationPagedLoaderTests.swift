@@ -108,6 +108,31 @@ final class ModerationPagedLoaderTests: XCTestCase {
         XCTAssertNil(loader.errorMessage)
     }
 
+    /// `begin()` (a lookup tapped, its read still queued) drops the old page
+    /// and a running request's answer at once, and shows loading until the
+    /// new read runs.
+    func testShouldDropTheOldPageAndARunningRequestOnBegin() async {
+        let fetches = ControlledFetch()
+        let (loader, loadMore) = await loaderWithALoadMoreInFlight(fetches)
+
+        loader.begin()
+        XCTAssertEqual(loader.items, [])
+        XCTAssertTrue(loader.isLoading)
+
+        fetches.answer("A-a1", with: Page(items: ["stale"], nextCursor: "stale"))
+        await loadMore.value
+        XCTAssertEqual(loader.items, [])
+        XCTAssertNil(loader.nextCursor)
+        XCTAssertTrue(loader.isLoading)
+
+        let read = Task { await loader.reload(fetches.source("B")) }
+        await fetches.waitUntilCalled("B-first")
+        fetches.answer("B-first", with: Page(items: ["b1"], nextCursor: nil))
+        await read.value
+        XCTAssertEqual(loader.items, ["b1"])
+        XCTAssertFalse(loader.isLoading)
+    }
+
     func testShouldShowTheCurrentRequestsFailure() async {
         let fetches = ControlledFetch()
         let loader = Loader()

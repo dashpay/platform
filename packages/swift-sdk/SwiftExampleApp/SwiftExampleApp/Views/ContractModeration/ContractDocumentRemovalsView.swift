@@ -32,20 +32,13 @@ struct ContractDocumentRemovalsView: View {
                 Button("Look Up These Documents") {
                     // The ids are taken now, at the tap: an edit made before the
                     // task runs cannot change what this look up sends
-                    let ids = parsedIds
-                    lookedUpIds = ids
-                    lookupSubmission += 1
-                    let token = lookupSubmission
-                    Task {
-                        guard token == lookupSubmission else { return }
-                        await read(ids: ids)
-                    }
+                    submit(ids: parsedIds)
                 }
                 .disabled(parsedIds.isEmpty)
                 .accessibilityIdentifier("contractModeration.removals.lookup")
                 if lookedUpIds != nil || !loader.loadedOnce {
                     Button("Show Every Record") {
-                        Task { await reload() }
+                        submit(ids: nil)
                     }
                     .accessibilityIdentifier("contractModeration.removals.showAll")
                 }
@@ -134,13 +127,40 @@ struct ContractDocumentRemovalsView: View {
         loader.clear()
     }
 
-    /// Read again what is shown: the ids looked up, or the pages.
-    private func refresh() async {
-        if let lookedUpIds {
-            await read(ids: lookedUpIds)
+    /// Starts a read of `ids` (`nil` for every record, a page at a time), all
+    /// in this main-actor turn: the filter shown changes, the submission
+    /// token advances so a read queued earlier is not sent, and the loader
+    /// drops the rows, cursor and error shown and anything still in flight.
+    /// Only then is the read queued.
+    private func submit(ids: [String]?) {
+        let token = begin(ids: ids)
+        Task { await send(ids: ids, token: token) }
+    }
+
+    /// The synchronous part of a read of `ids`; returns its token.
+    private func begin(ids: [String]?) -> Int {
+        lookedUpIds = ids
+        lookupSubmission += 1
+        loader.begin()
+        return lookupSubmission
+    }
+
+    /// Sends the read of `ids` unless a newer read or an edit superseded it
+    /// before it ran.
+    private func send(ids: [String]?, token: Int) async {
+        guard token == lookupSubmission else { return }
+        if let ids {
+            await read(ids: ids)
         } else {
             await reload()
         }
+    }
+
+    /// Read again what is shown: the ids looked up, or the pages.
+    private func refresh() async {
+        let ids = lookedUpIds
+        let token = begin(ids: ids)
+        await send(ids: ids, token: token)
     }
 
     /// Every record, a page at a time.

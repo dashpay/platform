@@ -51,6 +51,19 @@ final class ModerationPagedLoader<Item: Sendable, Cursor: Sendable>: ObservableO
         await load(fetch, cursor: cursor, generation: generation)
     }
 
+    /// A new read is about to start: drop the rows, cursor and error shown
+    /// and whatever a running request brings back, and show loading at once,
+    /// before the read itself is queued.
+    func begin() {
+        generation += 1
+        fetch = nil
+        items = []
+        nextCursor = nil
+        errorMessage = nil
+        loadedOnce = false
+        isLoading = true
+    }
+
     /// Show nothing, as before the first read, and drop whatever a running
     /// request brings back.
     func clear() {
