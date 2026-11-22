@@ -343,14 +343,17 @@ impl Sdk {
             }
         }
 
-        // Fetch recipient identity if only ID was provided
+        // Fetch recipient identity if only ID was provided; the fetched identity
+        // is Platform's, so its key is judged as Platform holds it.
         let recipient_identity = match input.recipient {
             RecipientIdentity::Identity(identity) => identity,
             RecipientIdentity::Identifier(id) => {
                 use crate::platform::Fetch;
-                Identity::fetch(self, id)
+                let recipient = Identity::fetch(self, id)
                     .await?
-                    .ok_or_else(|| Error::Generic(format!("Recipient identity {} not found", id)))?
+                    .ok_or(Error::ContactRequestIdentityNotFound(id))?;
+                refuse_key_not_current_on_platform(&recipient, input.recipient_key_index)?;
+                recipient
             }
         };
 
@@ -1046,6 +1049,74 @@ mod tests {
             matches!(error, Error::ContactRequestIdentityNotFound(id) if id == sender_id),
             "{error}"
         );
+    }
+
+    /// A recipient named by id is fetched, and refused the same typed way.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_refuse_a_send_to_a_recipient_by_id_with_a_disabled_key_or_no_identity() {
+        use crate::sdk::put_test_support::CountingSigner;
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+        let sender = identity_with_key(Purpose::ENCRYPTION, None);
+        let recipient = with_id(identity_with_key(Purpose::DECRYPTION, None), 3);
+        let recipient_id = recipient.id();
+        let mut disabled = recipient.clone();
+        let mut key = disabled.public_keys()[&0].clone();
+        key.set_disabled_at(1_700_000_000_000);
+        disabled.add_public_key(key);
+
+        for (answer, disabled_on_platform) in [(Some(disabled), true), (None, false)] {
+            let mut sdk = crate::SdkBuilder::new_mock().build().expect("mock sdk");
+            sdk.mock()
+                .expect_fetch(sender.id(), Some(sender.clone()))
+                .await
+                .expect("sender expectation")
+                .expect_fetch(recipient_id, answer)
+                .await
+                .expect("recipient expectation");
+            let input = SendContactRequestInput {
+                contact_request: ContactRequestInput {
+                    sender_identity: sender.clone(),
+                    recipient: RecipientIdentity::Identifier(recipient_id),
+                    sender_key_index: 0,
+                    recipient_key_index: 0,
+                    account_reference: 0,
+                    account_label: None,
+                    auto_accept_proof: None,
+                },
+                identity_public_key: sender.public_keys()[&0].clone(),
+                signer: CountingSigner::default(),
+            };
+            type NoSecret = fn(&PublicKey) -> std::future::Ready<Result<[u8; 32], Error>>;
+            let ecdh: EcdhProvider<_, _, NoSecret, _> = EcdhProvider::SdkSide {
+                get_private_key: |_: &IdentityPublicKey, _: u32| async {
+                    Err::<SecretKey, _>(Error::Generic("ECDH reached".to_string()))
+                },
+            };
+            let error = sdk
+                .send_contact_request(input, ecdh, |_| async { Ok(vec![0; COMPACT_XPUB_LEN]) })
+                .await
+                .expect_err("the send must fail");
+
+            if disabled_on_platform {
+                assert!(
+                    matches!(
+                        error,
+                        Error::ContactRequestKeyNotValid {
+                            identity_id,
+                            key_id: 0,
+                            disabled_at: Some(1_700_000_000_000),
+                        } if identity_id == recipient_id
+                    ),
+                    "{error}"
+                );
+            } else {
+                assert!(
+                    matches!(error, Error::ContactRequestIdentityNotFound(id) if id == recipient_id),
+                    "{error}"
+                );
+            }
+        }
     }
 
     #[cfg(feature = "mocks")]
