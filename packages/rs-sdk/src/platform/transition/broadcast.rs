@@ -81,8 +81,12 @@ pub fn identity_top_up_from_shielded_pool_requirement() -> ProtocolRequirement {
 
 /// The protocol version `transition`'s kind needs before every node serves it, for a kind
 /// newer than every node may run: nodes of an older release reject it, which the client would
-/// take for the transition's own rejection.
-fn transition_protocol_requirement(transition: &StateTransition) -> Option<ProtocolRequirement> {
+/// take for the transition's own rejection. The broadcast gate applies it; a caller that keeps
+/// saved transitions to send again checks it first with [`Sdk::ensure_protocol_requirement`],
+/// so a local refusal does not count as a send.
+pub fn transition_protocol_requirement(
+    transition: &StateTransition,
+) -> Option<ProtocolRequirement> {
     match transition {
         StateTransition::PrivateDocumentCreateFromShieldedPool(_) => {
             Some(private_document_create_requirement())
