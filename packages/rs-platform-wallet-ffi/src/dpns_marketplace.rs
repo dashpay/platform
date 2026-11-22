@@ -937,17 +937,22 @@ pub unsafe extern "C" fn platform_wallet_dpns_name_give_up_choices(
 /// touched.
 ///
 /// `expected_document_id` is the 32-byte `domain` document id the host showed
-/// its user (`DpnsNameGiveUpChoicesFFI::document_id`): a name deleted and
-/// registered again since is refused with `ErrorInvalidParameter` before
-/// anything is signed.
+/// its user (`DpnsNameGiveUpChoicesFFI::document_id`): a replacement
+/// registration the pre-signing read detects is refused with
+/// `ErrorInvalidParameter`. A delete targets that document; a tombstone is
+/// bound to the owner and name, so a replacement made between that read and
+/// execution is the one it consumes.
 ///
 /// Goes through `IdentityWallet::give_up_dpns_name`, which reads the name
 /// again before signing (protocol version 15, registered, held by
 /// `owner_identity_id`, still `expected_document_id`, `method` accepted for
-/// it), selects the signing key on the owner, and broadcasts. The wallet's stored state changes only
-/// once the network confirmed the name gone: the persister receives the
-/// name's marketplace-row removal and an identity snapshot without the
-/// label. On any error nothing stored changes.
+/// it), selects the signing key on the owner, and broadcasts. The wallet's
+/// stored state changes only once the network confirmed the name gone: the
+/// persister commits the name's marketplace-row removal, then an identity
+/// snapshot without the label. On an error before that nothing stored
+/// changes. If the backend refuses that cleanup, the result is still a
+/// success (the network confirmed it) and the next marketplace sync removes
+/// the name.
 ///
 /// Typed results:
 /// - `ErrorProtocolVersionNotActive` (70): a verified answer shows the

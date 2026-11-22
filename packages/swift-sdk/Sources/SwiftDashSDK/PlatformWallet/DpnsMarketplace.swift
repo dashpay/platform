@@ -784,8 +784,12 @@ extension ManagedPlatformWallet {
     /// what it allows. Rust reads the name again before signing and throws
     /// `.invalidParameter` for a method the network does not accept, and for
     /// a name that is no longer `expectedDocumentId` (the
-    /// ``DpnsNameGiveUpChoices/documentId`` the user was shown): a name deleted
-    /// and registered again since is never given up unseen.
+    /// ``DpnsNameGiveUpChoices/documentId`` the user was shown): a replacement
+    /// registration that read detects is refused before signing. A delete
+    /// targets that document, so the network refuses it once the document is
+    /// gone. A tombstone is bound to the owner and name, not the document: if
+    /// the name is replaced between that read and execution, the tombstone
+    /// consumes the replacement (see ``DpnsNameGivenUp/documentId``).
     ///
     /// `.transactionBroadcastUnconfirmed` means the transition may have been
     /// delivered: do not offer another give-up of the name until a read shows
@@ -798,8 +802,10 @@ extension ManagedPlatformWallet {
     /// `.signingKeyUnavailable`.
     ///
     /// The wallet's stored state changes only after the network confirmed
-    /// the name gone: the persister removes it from the identity's names, so
-    /// views observing `PersistentDPNSName` drop it on their own.
+    /// the name gone, and the row disappears from views observing
+    /// `PersistentDPNSName` once that cleanup is persisted. If the backend
+    /// refuses the cleanup, the give-up is still reported as confirmed and
+    /// the name stays listed until the next Name Marketplace sync removes it.
     ///
     /// Same signer lifetime contract as ``setDpnsNamePrice(ownerIdentityId:name:priceCredits:signer:)``.
     @discardableResult

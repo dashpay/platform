@@ -6,6 +6,7 @@
     "asset_lock_funding_indices",
     "asset_lock_operation_ids",
     "atomic_changesets",
+    "dpns_name_states",
     "invitations",
     "pending_contact_crypto",
     "private_contact_request_scan_state",
@@ -1283,7 +1284,9 @@
         "platform_wallet_dpns_name_give_up_choices",
         "platform_wallet_dpns_give_up_name"
       ],
-      "required_persistence_capabilities": [],
+      "required_persistence_capabilities": [
+        "dpns_name_states"
+      ],
       "hosts": {
         "swift": {
           "sdk": "supported",
