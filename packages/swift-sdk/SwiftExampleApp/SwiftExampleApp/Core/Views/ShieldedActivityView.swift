@@ -110,8 +110,12 @@ extension PersistentShieldedActivity {
 /// outgoing-notes UI).
 struct ShieldedActivityListView: View {
     let walletId: Data
+    @EnvironmentObject private var walletManager: PlatformWalletManager
+    @EnvironmentObject private var shieldedService: ShieldedService
     @Query private var entries: [PersistentShieldedActivity]
+    @Query private var identities: [PersistentIdentity]
     @State private var selected: PersistentShieldedActivity?
+    @StateObject private var recovery = ShieldedIdentityDebitRecoveryModel()
 
     init(walletId: Data) {
         self.walletId = walletId
@@ -157,15 +161,36 @@ struct ShieldedActivityListView: View {
             }
     }
 
+    /// This wallet's identities, for labelling identity shield records.
+    private var walletIdentities: [PersistentIdentity] {
+        identities.filter { $0.wallet?.walletId == walletId }
+    }
+
     var body: some View {
         List {
-            if entries.isEmpty {
+            if entries.isEmpty && recovery.records.isEmpty {
                 ContentUnavailableView(
                     "No Shielded Activity",
                     systemImage: "lock.rectangle.stack",
                     description: Text("Shielded sends, receives, and other private operations appear here.")
                 )
             }
+            ShieldedIdentityDebitRecoverySection(
+                model: recovery,
+                identities: walletIdentities,
+                isChecking: shieldedService.isSyncing,
+                canCheck: shieldedService.canResume,
+                onCheckNow: { Task { await checkNow() } },
+                onStopRetrying: { record in
+                    Task {
+                        await recovery.stopRetrying(
+                            record,
+                            walletManager: walletManager,
+                            walletId: walletId
+                        )
+                    }
+                }
+            )
             // Key rows by MODEL identity, not `entryId`: the table is
             // uniqued on (walletId, accountIndex, entryId), so one
             // wallet-level list can legitimately hold the same entryId
@@ -186,6 +211,33 @@ struct ShieldedActivityListView: View {
         .navigationTitle("Shielded Activity")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selected) { ShieldedActivityDetailView(entry: $0) }
+        .task { await loadRecoveryRecords() }
+        .refreshable { await loadRecoveryRecords() }
+        // A finished sync pass is what resends and resolves the records.
+        .onChange(of: shieldedService.isSyncing) { _, syncing in
+            if !syncing { Task { await loadRecoveryRecords() } }
+        }
+        .alert(
+            "Could not stop retrying",
+            isPresented: Binding(
+                get: { recovery.actionError != nil },
+                set: { if !$0 { recovery.actionError = nil } }
+            )
+        ) {
+            Button("OK") { recovery.actionError = nil }
+        } message: {
+            Text(recovery.actionError ?? "")
+        }
+    }
+
+    private func loadRecoveryRecords() async {
+        await recovery.load(walletManager: walletManager, walletId: walletId)
+    }
+
+    /// The app's existing manual shielded sync; it syncs every bound wallet.
+    private func checkNow() async {
+        await shieldedService.manualSync()
+        await loadRecoveryRecords()
     }
 
     @ViewBuilder

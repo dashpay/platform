@@ -11,6 +11,7 @@ enum SendFlow: Equatable {
     case shieldedToShielded      // Private transfer
     case shieldedToPlatform      // Unshield
     case shieldedToCore          // Withdrawal from shielded to L1
+    case identityToShielded      // Shield from an identity's credit balance (Type 21)
 
     var displayName: String {
         switch self {
@@ -21,6 +22,7 @@ enum SendFlow: Equatable {
         case .shieldedToShielded: return "Shielded Transfer"
         case .shieldedToPlatform: return "Unshield"
         case .shieldedToCore: return "Withdrawal to Core"
+        case .identityToShielded: return "Shield from Identity"
         }
     }
 
@@ -33,6 +35,7 @@ enum SendFlow: Equatable {
         case .shieldedToShielded: return "arrow.left.arrow.right"
         case .shieldedToPlatform: return "lock.open"
         case .shieldedToCore: return "arrow.down.to.line"
+        case .identityToShielded: return "lock.shield"
         }
     }
 
@@ -50,6 +53,9 @@ enum SendFlow: Equatable {
         case .shieldedToShielded: return 300_000
         case .shieldedToPlatform: return 300_000
         case .shieldedToCore: return 500_000
+        // Never shown: this flow has no fee row and no Send until the
+        // resolved floor is known (see `estimateFee(for:)`).
+        case .identityToShielded: return 200_000
         }
     }
 }
@@ -59,6 +65,7 @@ enum FundSource: String, CaseIterable, Identifiable {
     case core = "Core"
     case shielded = "Shielded"
     case platform = "Platform"
+    case identity = "Identity"
 
     var id: String { rawValue }
 
@@ -67,6 +74,7 @@ enum FundSource: String, CaseIterable, Identifiable {
         case .core: return "arrow.right"
         case .shielded: return "lock.shield"
         case .platform: return "square.stack.3d.up"
+        case .identity: return "person.crop.circle"
         }
     }
 
@@ -75,6 +83,7 @@ enum FundSource: String, CaseIterable, Identifiable {
         case .core: return .green
         case .shielded: return .purple
         case .platform: return .blue
+        case .identity: return .orange
         }
     }
 }
@@ -145,6 +154,13 @@ class SendViewModel: ObservableObject {
     /// `platformMinOutputAmount` above. A missing entry falls back to the
     /// static `SendFlow.estimatedFee` placeholder in `estimateFee(for:)`.
     @Published var shieldedFeeEstimates: [PlatformWalletManager.ShieldedFeeKind: UInt64] = [:]
+
+    /// Identity funding an `.identityToShielded` send, and its credit
+    /// balance. The view owns the identity rows, so it pushes both in
+    /// (`SendTransactionView.syncSelectedIdentity()`), the same way it
+    /// pushes `platformMinOutputAmount`.
+    @Published var selectedIdentityId: Data?
+    @Published var selectedIdentityBalance: UInt64 = 0
 
     private let network: Network
 
@@ -377,14 +393,34 @@ class SendViewModel: ObservableObject {
         case .platformToShielded,
              .shieldedToShielded, .shieldedToPlatform, .shieldedToCore:
             return (amountCredits ?? 0) > 0
+        case .identityToShielded:
+            return identityShieldIsAffordable
         }
     }
 
+    /// Send gate for `.identityToShielded`: an identity is selected, the
+    /// amount is > 0, the fee floor is resolved, and amount + floor fits the
+    /// identity's balance (overflow-checked). The wallet arms its retry guard
+    /// for a Type 21 shield before the chain checks the balance, so a request
+    /// the chain refuses would block further shields from that identity until
+    /// the user abandons it. An unresolved floor keeps the gate closed.
+    var identityShieldIsAffordable: Bool {
+        guard selectedIdentityId != nil,
+              let feeFloor = shieldedFeeEstimates[.shieldFromIdentity],
+              let amount = amountCredits, amount > 0
+        else { return false }
+        let (total, overflow) = amount.addingReportingOverflow(feeFloor)
+        return !overflow && total <= selectedIdentityBalance
+    }
+
     /// Determine which fund sources are available based on destination and balances.
+    /// `identityBalance` is the largest balance of any one identity of the
+    /// wallet, since a single identity funds an identity shield.
     func availableSources(
         coreBalance: UInt64,
         shieldedBalance: UInt64,
-        platformBalance: UInt64
+        platformBalance: UInt64,
+        identityBalance: UInt64 = 0
     ) -> [FundSource] {
         var sources: [FundSource] = []
         switch detectedAddressType {
@@ -398,6 +434,8 @@ class SendViewModel: ObservableObject {
             // ShieldFromAssetLock. Appended last so the private
             // shielded → shielded path stays the auto-selected default.
             if coreBalance > 0 { sources.append(.core) }
+            // Type 21 ShieldFromIdentity, last for the same reason.
+            if identityBalance > 0 { sources.append(.identity) }
         case .platform:
             if platformBalance > 0 { sources.append(.platform) }
             if shieldedBalance > 0 { sources.append(.shielded) }
@@ -435,6 +473,8 @@ class SendViewModel: ObservableObject {
             detectedFlow = .platformToShielded
         case (.orchard, .core):
             detectedFlow = .coreToShielded
+        case (.orchard, .identity):
+            detectedFlow = .identityToShielded
         case (.platform, .platform):
             detectedFlow = .platformToPlatform
         case (.platform, .shielded):
@@ -442,7 +482,7 @@ class SendViewModel: ObservableObject {
         default:
             detectedFlow = nil
         }
-        estimatedFee = detectedFlow.map(estimateFee(for:))
+        estimatedFee = detectedFlow.flatMap(estimateFee(for:))
     }
 
     /// Resolve the estimated fee (in the flow's settlement unit) for the
@@ -460,10 +500,13 @@ class SendViewModel: ObservableObject {
     /// minimum, so it shares the transfer kind. When the view hasn't
     /// resolved a fee (or the FFI errored) we fall back to the static enum
     /// placeholder rather than surfacing a fee of nil for a flow we can
-    /// otherwise send.
-    private func estimateFee(for flow: SendFlow) -> UInt64 {
+    /// otherwise send. `.identityToShielded` is the exception: its floor
+    /// gates Send, so it has no placeholder and stays `nil` until resolved.
+    private func estimateFee(for flow: SendFlow) -> UInt64? {
         let kind: PlatformWalletManager.ShieldedFeeKind?
         switch flow {
+        case .identityToShielded:
+            return shieldedFeeEstimates[.shieldFromIdentity]
         case .shieldedToShielded, .platformToShielded, .coreToShielded:
             // Type 18 ShieldFromAssetLock carves the same
             // `compute_minimum_shielded_fee` base as the Shield/transfer
@@ -731,33 +774,11 @@ class SendViewModel: ObservableObject {
                 }
                 _ = platformState
                 _ = sdk
-                // `shieldedShield` has no recipient parameter — Rust
-                // always shields into this wallet's own default Orchard
-                // address (shieldedAccount 0). If the user typed a
-                // *different* Orchard address we'd report success while
-                // nothing reached that recipient, so constrain this path
-                // to self-shield only.
-                let enteredRecipient = recipientAddress
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                // Resolve THIS wallet's own default Orchard address from
-                // the engine rather than the single-mirror
-                // `shieldedService` (which tracks `firstWallet`). Every
-                // loaded wallet is engine-bound, so `shieldedDefaultAddress`
-                // resolves for the wallet actually being sent from.
-                let ownShieldedAddress = walletManager.shieldedDisplayAddress(
-                    walletId: wallet.walletId,
-                    network: network
-                )
-                if !enteredRecipient.isEmpty,
-                   enteredRecipient != ownShieldedAddress {
-                    // Don't advertise "leave it blank": a blank recipient
-                    // clears `detectedFlow` upstream (detectAddressType →
-                    // updateFlow), so `canSend` disables the button and
-                    // this branch is only reachable with a non-empty
-                    // address. Tell the user to enter their own.
-                    error = "Shield always sends to your own shielded "
-                        + "address; enter your own shielded address as "
-                        + "the recipient"
+                if let message = selfShieldRecipientError(
+                    walletManager: walletManager,
+                    walletId: wallet.walletId
+                ) {
+                    error = message
                     return
                 }
                 let signer = KeychainSigner(modelContainer: modelContext.container)
@@ -827,8 +848,45 @@ class SendViewModel: ObservableObject {
                 )
                 successMessage = "Shield submitted — the note arrives on "
                     + "the recipient's next shielded sync."
+
+            case .identityToShielded:
+                // Re-checked here so a stale enabled tap cannot reach the
+                // wallet with an amount the identity cannot cover.
+                guard identityShieldIsAffordable,
+                      let amountCredits,
+                      let identityId = selectedIdentityId
+                else {
+                    error = "Select an identity whose balance covers the "
+                        + "amount plus the estimated fee"
+                    return
+                }
+                if let message = selfShieldRecipientError(
+                    walletManager: walletManager,
+                    walletId: wallet.walletId
+                ) {
+                    error = message
+                    return
+                }
+                // Signs with the identity's TRANSFER key.
+                let identitySigner = KeychainSigner(modelContainer: modelContext.container)
+                try await walletManager.shieldedShieldFromIdentity(
+                    walletId: wallet.walletId,
+                    shieldedAccount: 0,
+                    identityId: identityId,
+                    amount: amountCredits,
+                    identitySigner: identitySigner
+                )
+                // The returned balance proves the identity debit only; the
+                // activity row confirms when the scan sees the note.
+                successMessage = Self.identityShieldSubmittedMessage
             }
 
+        } catch PlatformWalletError.shieldedIdentityDebitPending(_) {
+            // Nothing was built or broadcast for this request.
+            error = Self.identityDebitPendingMessage
+        } catch let unconfirmed as PlatformWalletError
+                    where flow == .identityToShielded && SendViewModel.mayHaveGoneThrough(unconfirmed) {
+            successMessage = Self.identityShieldMayHaveGoneThroughMessage
         } catch let unconfirmed as PlatformWalletError where SendViewModel.mayHaveGoneThrough(unconfirmed) {
             // The shielded operation (shield / unshield / transfer / withdraw)
             // may have reached a node and its result is not proved (a node's
@@ -856,6 +914,53 @@ class SendViewModel: ObservableObject {
         default: return false
         }
     }
+
+    // MARK: - Self-shield recipient
+
+    /// Error for a self-shield (`.platformToShielded`, `.identityToShielded`)
+    /// whose recipient is not this wallet's own default Orchard address, or
+    /// `nil` when it is. Neither wrapper takes a recipient: Rust always
+    /// shields into shielded account 0's default address, so another typed
+    /// address would report success while nothing reached it.
+    ///
+    /// The own address is resolved per wallet from the engine, not from the
+    /// single-mirror `shieldedService` (which tracks `firstWallet`). A blank
+    /// recipient never gets here (it clears `detectedFlow`), so the message
+    /// asks for the own address instead of suggesting leaving it blank.
+    private func selfShieldRecipientError(
+        walletManager: PlatformWalletManager,
+        walletId: Data
+    ) -> String? {
+        let enteredRecipient = recipientAddress
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let ownShieldedAddress = walletManager.shieldedDisplayAddress(
+            walletId: walletId,
+            network: network
+        )
+        guard !enteredRecipient.isEmpty,
+              enteredRecipient != ownShieldedAddress
+        else { return nil }
+        return "Shield always sends to your own shielded "
+            + "address; enter your own shielded address as "
+            + "the recipient"
+    }
+
+    // MARK: - Identity shield messages
+
+    static let identityShieldSubmittedMessage =
+        "Shield from identity submitted. Its Shielded Activity row stays "
+        + "pending until the shielded sync sees the new note."
+
+    static let identityShieldMayHaveGoneThroughMessage =
+        "The shield from this identity may have gone through. Do not retry. "
+        + "It is listed under In-Progress Identity Shields in Shielded "
+        + "Activity, and the wallet keeps checking it on each shielded sync."
+
+    static let identityDebitPendingMessage =
+        "An earlier shield from this identity is still unresolved, so a new "
+        + "one was not sent. See In-Progress Identity Shields in Shielded "
+        + "Activity: the wallet resolves it on a shielded sync, or you can "
+        + "stop retrying it there."
 
     /// Apply the authoritative Core broadcast outcome to the send UI. Kept as
     /// a small pure state transition so rejected/unknown can be regression

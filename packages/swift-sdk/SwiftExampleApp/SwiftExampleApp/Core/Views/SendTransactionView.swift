@@ -207,8 +207,14 @@ struct SendTransactionView: View {
                                     }
                                 }
                             }
+                            .accessibilityIdentifier("send.source.\(source.rawValue.lowercased())")
                         }
                     }
+                }
+
+                // Source identity (identity to shielded only).
+                if viewModel.detectedFlow == .identityToShielded {
+                    identitySourceSection
                 }
 
                 // Transaction Type
@@ -395,6 +401,90 @@ struct SendTransactionView: View {
         }
     }
 
+    // MARK: - Identity source (identity to shielded)
+
+    /// Picker over the wallet's identities with a positive balance. The
+    /// selection binds straight to the view model; the balance is pushed
+    /// by `syncSelectedIdentity()` so the Send gate tracks the live row.
+    @ViewBuilder
+    private var identitySourceSection: some View {
+        let identities = eligibleIdentities
+        Section {
+            Picker("Identity", selection: $viewModel.selectedIdentityId) {
+                Text("Select…")
+                    .tag(Optional<Data>.none)
+                    .accessibilityIdentifier("send.identitySource.none")
+                ForEach(identities, id: \.identityId) { identity in
+                    Text(identityOptionLabel(identity))
+                        .tag(Optional(identity.identityId))
+                        .accessibilityIdentifier("send.identitySource.identity.\(identity.identityIdBase58)")
+                }
+            }
+            .accessibleFormPicker("send.identitySourcePicker")
+            if viewModel.shieldedFeeEstimates[.shieldFromIdentity] == nil {
+                Text("The fee floor is not available yet, so Send stays disabled.")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            }
+        } header: {
+            Text("Source Identity")
+        } footer: {
+            Text(
+                "The identity's transfer key signs. It must hold the amount "
+                + "plus the estimated fee. The note goes to this wallet's own "
+                + "shielded address, so enter that as the recipient."
+            )
+        }
+        .onAppear { syncSelectedIdentity() }
+        .onChange(of: viewModel.selectedIdentityId) { _, _ in syncSelectedIdentity() }
+        .onChange(of: identityBalancesById) { _, _ in syncSelectedIdentity() }
+    }
+
+    private func identityOptionLabel(_ identity: PersistentIdentity) -> String {
+        let balance = formatBalance(Self.clampedBalance(identity), unit: .credits)
+        return "\(identity.displayName): \(balance)"
+    }
+
+    /// `PersistentIdentity.balance` is `Int64`; clamp a negative to zero
+    /// (same as `TransferCreditsView`).
+    private static func clampedBalance(_ identity: PersistentIdentity) -> UInt64 {
+        identity.balance < 0 ? 0 : UInt64(identity.balance)
+    }
+
+    /// This wallet's identities that can fund an identity shield.
+    private var eligibleIdentities: [PersistentIdentity] {
+        wallet.identities
+            .filter { Self.clampedBalance($0) > 0 }
+            .sorted { $0.identityIndex < $1.identityIndex }
+    }
+
+    /// Largest single identity balance: one identity funds the shield.
+    private var largestIdentityBalance: UInt64 {
+        eligibleIdentities.map(Self.clampedBalance).max() ?? 0
+    }
+
+    private var identityBalancesById: [Data: Int64] {
+        Dictionary(
+            wallet.identities.map { ($0.identityId, $0.balance) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    /// Push the selected identity's current balance into the view model,
+    /// and drop a selection whose identity no longer has a positive balance.
+    private func syncSelectedIdentity() {
+        guard let selectedId = viewModel.selectedIdentityId else {
+            viewModel.selectedIdentityBalance = 0
+            return
+        }
+        if let identity = eligibleIdentities.first(where: { $0.identityId == selectedId }) {
+            viewModel.selectedIdentityBalance = Self.clampedBalance(identity)
+        } else {
+            viewModel.selectedIdentityId = nil
+            viewModel.selectedIdentityBalance = 0
+        }
+    }
+
     // MARK: - Multi-recipient sections (Core → Core)
 
     /// The extra-output input rows plus the "Add recipient" button.
@@ -562,7 +652,9 @@ struct SendTransactionView: View {
     /// lookup — no caching guard needed).
     private func resolveShieldedFees() {
         var fees: [PlatformWalletManager.ShieldedFeeKind: UInt64] = [:]
-        for kind: PlatformWalletManager.ShieldedFeeKind in [.transfer, .unshield, .withdrawal] {
+        for kind: PlatformWalletManager.ShieldedFeeKind in [
+            .transfer, .unshield, .withdrawal, .shieldFromIdentity,
+        ] {
             fees[kind] = try? walletManager.estimateShieldedFee(kind: kind, numActions: 2)
         }
         viewModel.shieldedFeeEstimates = fees
@@ -696,7 +788,8 @@ struct SendTransactionView: View {
         viewModel.availableSources(
             coreBalance: coreBalance,
             shieldedBalance: shieldedBalance,
-            platformBalance: platformBalance
+            platformBalance: platformBalance,
+            identityBalance: largestIdentityBalance
         )
     }
 
@@ -705,6 +798,11 @@ struct SendTransactionView: View {
         case .core: return coreBalance
         case .shielded: return shieldedBalance
         case .platform: return platformBalance
+        case .identity:
+            // The selected identity once one is picked, else the largest.
+            return viewModel.selectedIdentityId == nil
+                ? largestIdentityBalance
+                : viewModel.selectedIdentityBalance
         }
     }
 
@@ -730,6 +828,7 @@ struct SendTransactionView: View {
         case .shieldedToShielded: return .purple
         case .shieldedToPlatform: return .blue
         case .shieldedToCore: return .green
+        case .identityToShielded: return .purple
         }
     }
 
@@ -755,7 +854,7 @@ struct SendTransactionView: View {
     private func unit(for source: FundSource) -> SendBalanceUnit {
         switch source {
         case .core: return .duffs
-        case .platform, .shielded: return .credits
+        case .platform, .shielded, .identity: return .credits
         }
     }
 
@@ -769,7 +868,8 @@ struct SendTransactionView: View {
         switch flow {
         case .coreToCore: return .duffs
         case .coreToShielded, .platformToPlatform, .platformToShielded,
-             .shieldedToShielded, .shieldedToPlatform, .shieldedToCore:
+             .shieldedToShielded, .shieldedToPlatform, .shieldedToCore,
+             .identityToShielded:
             return .credits
         }
     }

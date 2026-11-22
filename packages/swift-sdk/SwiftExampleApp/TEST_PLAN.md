@@ -24,7 +24,7 @@ Every catalog row carries four orthogonal, machine-filterable fields. Select tes
 
 A test is **automatable now** only if Status is `✅`, `🧪`, or `⚠️` (reachable and drivable in the simulator) **and** `Tier ≠ Manual`. `Tier=Manual` marks implemented features that need a human on a physical device (e.g. a camera) — the automated QA agent must **skip and flag them for manual testing**, never mark them failed. `🔌`/`🚫` rows are listed for completeness — skip them unless asked to confirm absence.
 
-A row's **primary home** is the §4 section it lives in (its `Domain=…`). **Category** stays a distinct selection axis, though: a handful of rows are cross-cutting and belong to a category *other* than their section — e.g. `ID-06`/`ID-08`/`ID-11` are **Address** tests that live in §4.2 Identity, and `SH-11` is an **Identity** test in the Shielded section. Resolve any `Category=…` selection through the **§6 category index**, which lists every member per category (primary + cross-cutting). Separately, the old MultiWallet/Group *sections* are gone — those cross-cutting concerns are now **tags**: e.g. `TOK-17` (token transfer between two wallets) lives in **Token** and carries `Tag=multiwallet`. Select cross-cutting sets with the Tags column — `Tag=multiwallet`, `Tag=group`, `Tag=read-only`, etc. — intersected with `Tier`/`Layer`/`Status`/`Category` as needed. This is the axis behind requests like *"run all multi-wallet token tests"* (`Category=Token AND Tag=multiwallet`).
+A row's **primary home** is the §4 section it lives in (its `Domain=…`). **Category** stays a distinct selection axis, though: a handful of rows are cross-cutting and belong to a category *other* than their section — e.g. `ID-06`/`ID-08`/`ID-11` are **Address** tests that live in §4.2 Identity, and `SH-11`/`SH-19` are **Identity** tests in the Shielded section. Resolve any `Category=…` selection through the **§6 category index**, which lists every member per category (primary + cross-cutting). Separately, the old MultiWallet/Group *sections* are gone — those cross-cutting concerns are now **tags**: e.g. `TOK-17` (token transfer between two wallets) lives in **Token** and carries `Tag=multiwallet`. Select cross-cutting sets with the Tags column — `Tag=multiwallet`, `Tag=group`, `Tag=read-only`, etc. — intersected with `Tier`/`Layer`/`Status`/`Category` as needed. This is the axis behind requests like *"run all multi-wallet token tests"* (`Category=Token AND Tag=multiwallet`).
 
 **Worked examples of a request → selection:**
 
@@ -36,7 +36,7 @@ A row's **primary home** is the §4 section it lives in (its `Domain=…`). **Ca
 | "smoke test the wallet" | `Category=Core AND Status=✅` | `CORE-01..CORE-10` |
 | "test all non-Uncommon Token tests" | `Category=Token AND Tier≠Uncommon` | `TOK-01..07`, `TOK-17`, `TOK-18`, `TOK-19` |
 | "exercise every token admin action" | `Category=Token AND Tier=Uncommon` | `TOK-08..TOK-16`, `TOK-20` |
-| "run all Shielded tests" | `Category=Shielded` | `SH-01..17` |
+| "run all Shielded tests" | `Category=Shielded` | `SH-01..20` |
 | "run all multi-wallet tests" | `Tag=multiwallet` | `CORE-14..23`, `ID-14/15`, `TOK-17`, `DPNS-08`, `DP-11`, `DOC-15`, `SH-14/15/16`, `SYS-08` |
 | "run all read queries" | `Tag=read-only` (or Appendix A) | the read-only rows + the gRPC read-RPC coverage table |
 
@@ -277,6 +277,9 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SH-15 | Unshield from A to a Platform address owned by B | Shielded | Uncommon | ✅ | multiwallet | A unshields (`SH-06`) to a Platform address belonging to wallet B; B's balance lands on the next platform-address sweep (every wallet syncs each pass, no wallet-switch needed). Both wallets are engine-bound automatically at rebind, so A can spend from its own pool without a wallet-swap. |
 | SH-16 | Shielded withdraw from A to B's Core L1 address | Shielded | Uncommon | ✅ | multiwallet, withdrawal | Wallet A's pool → a Core L1 address owned by wallet B (`SH-08`). Completes the cross-wallet shielded exit set (→ shielded `SH-14`, → Platform `SH-15`, → Core `SH-16`). Both wallets are engine-bound automatically at rebind (no wallet-swap needed). Verify B's Core balance rises after SPV sync. |
 | SH-17 | Multiple wallets bound to the shielded pool concurrently | Shielded | Uncommon | ✅ | multiwallet | `platform_wallet_manager_bind_shielded` is per `wallet_id`; the manager syncs all bound wallets. UI (`ShieldedService.boundWalletId`) displays one wallet's shielded state at a time — switching should swap cleanly, not merge balances. |
+| SH-18 | Shield from an identity's credit balance (Type 21) | Shielded | Common | ✅ |  | Send flow: enter this wallet's own shielded address as the recipient, pick **Send From → Identity** (`send.source.identity`), then the identity (`send.identitySourcePicker`) → `walletManager.shieldedShieldFromIdentity` (`platform_wallet_manager_shielded_shield_from_identity`), signed with the identity's TRANSFER key. Send stays disabled until the fee floor (`estimateShieldedFee(.shieldFromIdentity)`) resolves and amount + floor fits the identity's balance. Self-shield only: another recipient is refused. Pass: the identity balance drops by the amount plus the fee, a **Shielded from Identity** activity row appears as Pending and turns Confirmed after the next shielded sync, and the shielded balance rises by the amount. A second shield from the same identity while the first is unresolved is refused with a message pointing at Shielded Activity (see `SH-20`). |
+| SH-19 | Top up an identity from the shielded pool (Type 22) | Cross | Common | ✅ |  | `IdentityDetailView` → **Top Up** → `TopUpIdentityView`, funding source **Shielded Balance** (`topup.fundingSource.shielded`, offered when the identity's wallet is bound and holds unspent account-0 notes) → free-form amount (`topup.shielded.amount`; no fixed denominations, unlike `SH-11`) with the fee shown as spent from the notes on top → `walletManager.shieldedIdentityTopUpFromPool` (`platform_wallet_manager_shielded_identity_top_up_from_pool`). Submit stays disabled unless amount + fee fits the shielded balance. The proof takes tens of seconds. Pass: the identity balance rises by the amount, the shielded balance drops by the amount plus the fee, and an **Identity Top-Up from Pool** activity row confirms. Requires a synced shielded pool with sufficient balance. |
+| SH-20 | Interrupted identity shield / shielded top-up stays visible after a restart | Shielded | Uncommon | ✅ |  | **Type 21:** interrupt an `SH-18` shield after signing (for example drop the network while it broadcasts) so it reports "may have gone through". Shielded Activity (`ShieldedActivityListView`) lists it under **In-Progress Identity Shields** (`shieldedIdentityDebitRecoveryRecords`) with its identity, amount and status (Retrying / Waiting for the note / Outcome unknown). **Check Now** (`shieldedActivity.identityShields.checkNow`) runs a shielded sync, which resends and resolves it. **Stop Retrying** (`shieldedActivity.identityShields.stopRetrying`) first confirms that the payment is not cancelled, may already have executed or may still execute, and that a new shield may be an additional debit; then `abandonShieldedIdentityDebit(acknowledgePossibleExecution: true)` runs, the record shows Outcome unknown and a new shield from that identity is accepted. **Type 22:** interrupt an `SH-19` top-up the same way; `TopUpIdentityView` shows "may have gone through, do not retry" instead of a retryable error, and when reopened its **Pending Shielded Top-Ups** section lists the pending kind-9 `PersistentShieldedActivity` row until a later shielded sync resolves it. Kill and relaunch the app before each check: both lists must still show the entries. |
 
 ### 4.10 DashPay — `Domain=DashPay`
 
@@ -329,9 +332,9 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Tier | Count (approx.) | Automatable? |
 |---|---|---|
 | Essential | 22 | yes |
-| Common | 35 | yes |
-| Thorough | 38 | yes |
-| Uncommon | 30 | yes |
+| Common | 42 | yes |
+| Thorough | 39 | yes |
+| Uncommon | 35 | yes |
 | Manual | 2 (`CORE-08`, `DP-10`) | no — physical device |
 
 **By layer (automatable only):**
@@ -339,9 +342,9 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Layer | Count (approx.) |
 |---|---|
 | Core | 18 |
-| Platform | ~81 |
-| Cross | 11 |
-| Shielded | 14 |
+| Platform | 87 |
+| Cross | 16 |
+| Shielded | 16 |
 
 **Headline intersection — `Essential ∩ Platform` (the most common QA request):** `ID-02`, `ID-03`, `ID-04`, `ADDR-07`, `DPNS-01`, `DPNS-02`, `DPNS-03`, `DPNS-04`. Essential Core lives in §4.1 (`CORE-01..08`); Essential cross-layer identity creation is `ID-01`; Essential shielded is `SH-01..06`.
 
@@ -349,19 +352,19 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 
 ## 6. Category & tag index
 
-Each row's **primary home** is its §4 section, but a few rows are cross-cutting and are listed under an additional **category** below (e.g. `ID-06`/`ID-08`/`ID-11` under Address, `SH-11` under Identity). To run a `Category=X` selection, take the category list below — it already includes those cross-cutting members. For cross-cutting *modalities* (multi-wallet, group, read-only, …) use the **tag index** that follows. Intersect either with `Tier` / `Layer` / `Status` as needed. `A-01..09` means every id in that span.
+Each row's **primary home** is its §4 section, but a few rows are cross-cutting and are listed under an additional **category** below (e.g. `ID-06`/`ID-08`/`ID-11` under Address, `SH-11`/`SH-19` under Identity). To run a `Category=X` selection, take the category list below — it already includes those cross-cutting members. For cross-cutting *modalities* (multi-wallet, group, read-only, …) use the **tag index** that follows. Intersect either with `Tier` / `Layer` / `Status` as needed. `A-01..09` means every id in that span.
 
 **By category (§4 section):**
 
 - **Core / Wallet** — `CORE-01..23`
-- **Identity** — `ID-01..16`, `SH-11`
+- **Identity** — `ID-01..16`, `SH-11`, `SH-19`
 - **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06..09`, `ID-06`, `ID-08`, `ID-11`
 - **DPNS** — `DPNS-01..08`
 - **Voting** — `VOTE-01..07`, `DPNS-05`
 - **Contract** — `DC-01..04`
 - **Document** — `DOC-01..15`
 - **Token** — `TOK-01..20`
-- **Shielded** — `SH-01..17`, `CORE-21`
+- **Shielded** — `SH-01..20`, `CORE-21`
 - **DashPay** — `DP-01..19` (`DP-12..19` = shipped invitation create, claim, persistence, and reclaim UI; funded testnet acceptance is not automated)
 - **System / Diagnostics** — `SYS-01..08`
 
@@ -501,4 +504,4 @@ For completeness (the "everything gRPC + Core can do" requirement), these exist 
 - `TOK-20` standalone group lifecycle management
 - `getConsensusParams` (served via Tenderdash RPC, not the SDK)
 
-**Protocol-level write transitions present in DPP but not surfaced as distinct app actions** (the address/asset-lock family — `IdentityCreditTransferToAddresses`, `IdentityCreateFromAddresses`, `IdentityTopUpFromAddresses`, `AddressFundsTransfer`, `AddressFundingFromAssetLock`, `AddressCreditWithdrawal`) are largely covered by the `ID-*`/`ADDR-*` rows above; the shielded family (`Shield`, `ShieldedTransfer`, `Unshield`, `ShieldFromAssetLock`, `ShieldedWithdrawal`, `IdentityCreateFromShieldedPool`) maps to the `SH-*` rows. Anything not mapped is either internal or `🔌`/`🚫` above.
+**Protocol-level write transitions present in DPP but not surfaced as distinct app actions** (the address/asset-lock family — `IdentityCreditTransferToAddresses`, `IdentityCreateFromAddresses`, `IdentityTopUpFromAddresses`, `AddressFundsTransfer`, `AddressFundingFromAssetLock`, `AddressCreditWithdrawal`) are largely covered by the `ID-*`/`ADDR-*` rows above; the shielded family (`Shield`, `ShieldedTransfer`, `Unshield`, `ShieldFromAssetLock`, `ShieldedWithdrawal`, `IdentityCreateFromShieldedPool`, `ShieldFromIdentity`, `IdentityTopUpFromShieldedPool`) maps to the `SH-*` rows. Anything not mapped is either internal or `🔌`/`🚫` above.
