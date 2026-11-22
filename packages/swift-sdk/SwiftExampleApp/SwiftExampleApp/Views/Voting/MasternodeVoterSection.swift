@@ -171,11 +171,13 @@ enum MasternodeVoteCallError: LocalizedError {
 /// (`<prefix>.useTypedProTxHash`, field `<prefix>.proTxHash`), published as
 /// `.typedProTxHash`: it reads any masternode's answer and casts nothing.
 ///
-/// A candidate whose stored voting key Platform proved cannot vote for it
-/// (`PersistentIdentity.votingKeyCheck` is `.invalid`) is labelled and never
-/// published. A picked candidate whose key was never checked (stored before
-/// keys were checked) or could not be checked is checked once when picked
-/// (`<prefix>.voterKeyCheck` shows how it went) and stays usable meanwhile.
+/// Rust decides from the check recorded on a candidate
+/// (`PersistentIdentity.votingKeyCheck`) whether it may vote and whether its
+/// key is checked when picked (`MasternodeRecordedVotingKeyUse`). A candidate
+/// that may not vote is labelled and never published. A picked candidate
+/// whose key is to be checked first is checked once when picked
+/// (`<prefix>.voterKeyCheck` shows how it went), and what Rust says to record
+/// is written on its row.
 struct MasternodeVoterSection: View {
     let accessibilityPrefix: String
     @Binding var voter: MasternodeVoter?
@@ -256,8 +258,8 @@ struct MasternodeVoterSection: View {
         // section's own check, or another window loading the identity again):
         // publish again so the sheet's voter follows it.
         .onChange(of: selectedVotingKeyCheckRaw) { _, _ in publish() }
-        // Once per pick: a key never checked, or not checked last time, is
-        // checked when its identity is picked.
+        // Once per pick: the key is checked when Rust says to check it
+        // before use.
         .task(id: selectedIdentityId) { await checkSelectedVotingKeyIfNeeded() }
         .onChange(of: useTypedProTxHash) { _, isOn in
             #if DEBUG
@@ -313,11 +315,10 @@ struct MasternodeVoterSection: View {
         return Text("\(name) (\(identity.identityTypeEnum.rawValue)\(suffix)\(mismatch))")
     }
 
-    /// Whether Platform proved the identity's stored voting key cannot vote
-    /// for it.
+    /// Whether the identity's stored voting key may not vote, as Rust
+    /// decides from the check recorded for it.
     private static func isRefused(_ identity: PersistentIdentity) -> Bool {
-        if case .invalid = identity.votingKeyCheck { return true }
-        return false
+        !MasternodeRecordedVotingKeyUse(recorded: identity.votingKeyCheck).canVote
     }
 
     /// A pro_tx_hash typed with no key, available in every build: reads
@@ -380,15 +381,15 @@ struct MasternodeVoterSection: View {
     private func selectDefaultIfNeeded() {
         let candidates = votingIdentities
         if selectedIdentityId == nil || !candidates.contains(where: { $0.identityId == selectedIdentityId }) {
-            // Prefer an identity whose voting key Platform did not refuse.
+            // Prefer an identity whose voting key may vote.
             selectedIdentityId = (candidates.first { !Self.isRefused($0) } ?? candidates.first)?.identityId
         }
         publish()
     }
 
     /// Checks the picked identity's stored voting key against Platform when
-    /// it was never checked or could not be checked, and records the verdict
-    /// on its row. The check reads only the key's voting address
+    /// Rust says to check it before use, and records on its row what Rust's
+    /// outcome says to record. The check reads only the key's voting address
     /// (`KeychainSigner.storedMasternodeVotingAddress`); the key is not made
     /// signable.
     private func checkSelectedVotingKeyIfNeeded() async {
@@ -397,11 +398,8 @@ struct MasternodeVoterSection: View {
               let sdk = appState.sdk else {
             return
         }
-        switch identity.votingKeyCheck {
-        case .valid, .invalid:
+        guard MasternodeRecordedVotingKeyUse(recorded: identity.votingKeyCheck).checkBeforeUse else {
             return
-        case .undetermined, nil:
-            break
         }
         let network = appState.currentNetwork
         checkingIdentityId = identityId
@@ -442,7 +440,11 @@ struct MasternodeVoterSection: View {
               storedAddress == checkedAddress, !Task.isCancelled else {
             return
         }
-        row.votingKeyCheck = check
+        // The stored key is the checked key (the address re-read above), so
+        // the slot holds the same key with what its row recorded.
+        if let record = check.outcome(slot: .sameKey(recorded: row.votingKeyCheck)).record {
+            row.votingKeyCheck = record
+        }
         do {
             try modelContext.save()
             if checkFailure?.identityId == identityId { checkFailure = nil }
@@ -474,7 +476,7 @@ struct MasternodeVoterSection: View {
             voter = Self.decode32(proTxHashHex).map { .typedProTxHash($0) }
             return
         }
-        // An identity whose voting key Platform refused does not vote.
+        // An identity whose voting key may not vote is not published.
         if let selected = votingIdentities.first(where: { $0.identityId == selectedIdentityId }),
            Self.isRefused(selected) {
             voter = nil

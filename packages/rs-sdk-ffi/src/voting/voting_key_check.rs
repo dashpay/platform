@@ -5,6 +5,11 @@
 //! entered rather than when a vote is refused. rs-sdk's `check_masternode_voting_key` decides,
 //! by one proof-verified fetch of the voter identity; this module reads the arguments, runs
 //! it and words the verdict for the host.
+//!
+//! What the host then does with the key (store it or refuse it, what to record for it, and
+//! whether a stored key may vote or is checked again first) is decided by rs-sdk's
+//! `voting_key_check_outcome` and `recorded_voting_key_use`. The two pure functions here only
+//! marshal their arguments and results.
 
 use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;
@@ -12,7 +17,9 @@ use crate::voting::masternode_vote::{pro_tx_hash_from_wire_order, voting_key_pro
 use crate::{DashSDKResult, FFIError};
 use dash_sdk::dpp::dashcore::ProTxHash;
 use dash_sdk::platform::transition::masternode_vote_keys::{
-    check_masternode_voting_key, VotingKeyCheck,
+    check_masternode_voting_key, recorded_voting_key_use, voting_key_check_outcome,
+    RecordedVotingKeyCheck, RecordedVotingKeyUse, VotingKeyCheck, VotingKeyCheckOutcome,
+    VotingKeySlot,
 };
 use dash_sdk::Error;
 use std::ffi::CString;
@@ -149,6 +156,169 @@ fn undetermined_message(error: &Error) -> String {
     )
 }
 
+/// What a host recorded for its stored voting key: rs-sdk's `RecordedVotingKeyCheck`, or
+/// `None` when nothing was recorded.
+///
+/// cbindgen:prefix-with-name
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DashSDKRecordedVotingKeyCheck {
+    /// Nothing is recorded: the key was never checked, such as a key stored before checks
+    /// existed.
+    None = 0,
+    /// The last check was `Valid`.
+    Valid = 1,
+    /// The last check was `Invalid`.
+    Invalid = 2,
+    /// The last check was `Undetermined`.
+    Undetermined = 3,
+}
+
+impl From<DashSDKRecordedVotingKeyCheck> for Option<RecordedVotingKeyCheck> {
+    fn from(recorded: DashSDKRecordedVotingKeyCheck) -> Self {
+        match recorded {
+            DashSDKRecordedVotingKeyCheck::None => None,
+            DashSDKRecordedVotingKeyCheck::Valid => Some(RecordedVotingKeyCheck::Valid),
+            DashSDKRecordedVotingKeyCheck::Invalid => Some(RecordedVotingKeyCheck::Invalid),
+            DashSDKRecordedVotingKeyCheck::Undetermined => {
+                Some(RecordedVotingKeyCheck::Undetermined)
+            }
+        }
+    }
+}
+
+impl From<Option<RecordedVotingKeyCheck>> for DashSDKRecordedVotingKeyCheck {
+    fn from(recorded: Option<RecordedVotingKeyCheck>) -> Self {
+        match recorded {
+            None => DashSDKRecordedVotingKeyCheck::None,
+            Some(RecordedVotingKeyCheck::Valid) => DashSDKRecordedVotingKeyCheck::Valid,
+            Some(RecordedVotingKeyCheck::Invalid) => DashSDKRecordedVotingKeyCheck::Invalid,
+            Some(RecordedVotingKeyCheck::Undetermined) => {
+                DashSDKRecordedVotingKeyCheck::Undetermined
+            }
+        }
+    }
+}
+
+impl From<DashSDKVotingKeyVerdict> for RecordedVotingKeyCheck {
+    fn from(verdict: DashSDKVotingKeyVerdict) -> Self {
+        match verdict {
+            DashSDKVotingKeyVerdict::Valid => RecordedVotingKeyCheck::Valid,
+            DashSDKVotingKeyVerdict::Invalid => RecordedVotingKeyCheck::Invalid,
+            DashSDKVotingKeyVerdict::Undetermined => RecordedVotingKeyCheck::Undetermined,
+        }
+    }
+}
+
+/// What the host's voting key slot for the masternode holds, compared with the key that was
+/// checked: rs-sdk's `VotingKeySlot` without its payload, which travels beside it
+/// (`recorded_for_same_key` of `dash_sdk_masternode_voting_key_check_outcome`).
+///
+/// cbindgen:prefix-with-name
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DashSDKVotingKeySlot {
+    /// No voting key is stored for the masternode.
+    Empty = 0,
+    /// Exactly the checked key is stored.
+    SameKey = 1,
+    /// A different key is stored.
+    DifferentKey = 2,
+}
+
+/// The rs-sdk slot for `slot`, with `recorded_for_same_key` read only for `SameKey`.
+fn voting_key_slot(
+    slot: DashSDKVotingKeySlot,
+    recorded_for_same_key: DashSDKRecordedVotingKeyCheck,
+) -> VotingKeySlot {
+    match slot {
+        DashSDKVotingKeySlot::Empty => VotingKeySlot::Empty,
+        DashSDKVotingKeySlot::SameKey => VotingKeySlot::SameKey(recorded_for_same_key.into()),
+        DashSDKVotingKeySlot::DifferentKey => VotingKeySlot::DifferentKey,
+    }
+}
+
+/// What a host does with a voting key once checked: rs-sdk's `VotingKeyCheckOutcome`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DashSDKVotingKeyCheckOutcome {
+    /// Whether the host stores the checked key.
+    pub store_key: bool,
+    /// Whether the host keeps what it already recorded for the key (rs-sdk's `record` is
+    /// `None`). `record` is then `None`.
+    pub keeps_record: bool,
+    /// What the host records for the checked key once it is in the slot, or for the stored key
+    /// when it is the same one. Read only when `keeps_record` is false.
+    pub record: DashSDKRecordedVotingKeyCheck,
+}
+
+impl From<VotingKeyCheckOutcome> for DashSDKVotingKeyCheckOutcome {
+    fn from(outcome: VotingKeyCheckOutcome) -> Self {
+        DashSDKVotingKeyCheckOutcome {
+            store_key: outcome.store_key,
+            keeps_record: outcome.record.is_none(),
+            record: outcome.record.into(),
+        }
+    }
+}
+
+/// What a host does with a voting key after checking it
+/// (`dash_sdk_masternode_check_voting_key`), given what its voting key slot holds: rs-sdk's
+/// `voting_key_check_outcome`, which holds the rules.
+///
+/// # Parameters
+/// * `verdict` - The verdict of the check.
+/// * `slot` - What the host's voting key slot for the masternode holds, compared with the
+///   checked key.
+/// * `recorded_for_same_key` - What the host recorded for the stored key. Read only when
+///   `slot` is `SameKey`.
+///
+/// # Returns
+/// Whether to store the key, and what to record for it (or that what is recorded is kept).
+#[no_mangle]
+pub extern "C" fn dash_sdk_masternode_voting_key_check_outcome(
+    verdict: DashSDKVotingKeyVerdict,
+    slot: DashSDKVotingKeySlot,
+    recorded_for_same_key: DashSDKRecordedVotingKeyCheck,
+) -> DashSDKVotingKeyCheckOutcome {
+    voting_key_check_outcome(verdict.into(), voting_key_slot(slot, recorded_for_same_key)).into()
+}
+
+/// How a host may use a stored voting key: rs-sdk's `RecordedVotingKeyUse`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DashSDKRecordedVotingKeyUse {
+    /// Whether the key is offered for voting.
+    pub can_vote: bool,
+    /// Whether the host checks the key (`dash_sdk_masternode_check_voting_key`) before using
+    /// it.
+    pub check_before_use: bool,
+}
+
+impl From<RecordedVotingKeyUse> for DashSDKRecordedVotingKeyUse {
+    fn from(key_use: RecordedVotingKeyUse) -> Self {
+        DashSDKRecordedVotingKeyUse {
+            can_vote: key_use.can_vote,
+            check_before_use: key_use.check_before_use,
+        }
+    }
+}
+
+/// How a host may use a stored voting key whose last recorded check is `recorded`: rs-sdk's
+/// `recorded_voting_key_use`, which holds the rules.
+///
+/// # Parameters
+/// * `recorded` - What the host recorded for the stored key, `None` when nothing was.
+///
+/// # Returns
+/// Whether the key may vote, and whether it is checked before it is used.
+#[no_mangle]
+pub extern "C" fn dash_sdk_masternode_recorded_voting_key_use(
+    recorded: DashSDKRecordedVotingKeyCheck,
+) -> DashSDKRecordedVotingKeyUse {
+    recorded_voting_key_use(recorded.into()).into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -253,6 +423,182 @@ mod tests {
             assert!(!message.contains(".."), "message ends twice: {message}");
             destroy_mock_sdk_handle(handle);
         }
+    }
+
+    // ---- marshalling the host rules -----------------------------------------
+    //
+    // The rules are rs-sdk's and tested there; these only show that each case crosses the C
+    // ABI as rs-sdk says it.
+
+    const EVERY_RECORDED: [(
+        DashSDKRecordedVotingKeyCheck,
+        Option<RecordedVotingKeyCheck>,
+    ); 4] = [
+        (DashSDKRecordedVotingKeyCheck::None, None),
+        (
+            DashSDKRecordedVotingKeyCheck::Valid,
+            Some(RecordedVotingKeyCheck::Valid),
+        ),
+        (
+            DashSDKRecordedVotingKeyCheck::Invalid,
+            Some(RecordedVotingKeyCheck::Invalid),
+        ),
+        (
+            DashSDKRecordedVotingKeyCheck::Undetermined,
+            Some(RecordedVotingKeyCheck::Undetermined),
+        ),
+    ];
+
+    const EVERY_VERDICT: [(DashSDKVotingKeyVerdict, RecordedVotingKeyCheck); 3] = [
+        (
+            DashSDKVotingKeyVerdict::Valid,
+            RecordedVotingKeyCheck::Valid,
+        ),
+        (
+            DashSDKVotingKeyVerdict::Invalid,
+            RecordedVotingKeyCheck::Invalid,
+        ),
+        (
+            DashSDKVotingKeyVerdict::Undetermined,
+            RecordedVotingKeyCheck::Undetermined,
+        ),
+    ];
+
+    #[test]
+    fn should_map_each_recorded_check_both_ways() {
+        for (ffi, recorded) in EVERY_RECORDED {
+            assert_eq!(Option::<RecordedVotingKeyCheck>::from(ffi), recorded);
+            assert_eq!(DashSDKRecordedVotingKeyCheck::from(recorded), ffi);
+        }
+        for (ffi, recorded) in EVERY_VERDICT {
+            assert_eq!(RecordedVotingKeyCheck::from(ffi), recorded);
+        }
+    }
+
+    /// Every verdict in every slot, with every record of the same key, returns what rs-sdk
+    /// returns, and `keeps_record` says exactly when rs-sdk keeps the record.
+    #[test]
+    fn should_return_rs_sdk_outcome_for_every_verdict_and_slot() {
+        let mut slots = vec![
+            (
+                DashSDKVotingKeySlot::Empty,
+                DashSDKRecordedVotingKeyCheck::None,
+                VotingKeySlot::Empty,
+            ),
+            (
+                DashSDKVotingKeySlot::DifferentKey,
+                DashSDKRecordedVotingKeyCheck::None,
+                VotingKeySlot::DifferentKey,
+            ),
+        ];
+        for (ffi, recorded) in EVERY_RECORDED {
+            slots.push((
+                DashSDKVotingKeySlot::SameKey,
+                ffi,
+                VotingKeySlot::SameKey(recorded),
+            ));
+        }
+        for (verdict, check) in EVERY_VERDICT {
+            for (slot, recorded_for_same_key, rs_slot) in &slots {
+                let expected = voting_key_check_outcome(check, *rs_slot);
+                let outcome = dash_sdk_masternode_voting_key_check_outcome(
+                    verdict,
+                    *slot,
+                    *recorded_for_same_key,
+                );
+                assert_eq!(
+                    outcome.store_key, expected.store_key,
+                    "{verdict:?} {rs_slot:?}"
+                );
+                assert_eq!(
+                    outcome.keeps_record,
+                    expected.record.is_none(),
+                    "{verdict:?} {rs_slot:?}"
+                );
+                assert_eq!(
+                    outcome.record,
+                    expected.record.into(),
+                    "{verdict:?} {rs_slot:?}"
+                );
+            }
+        }
+    }
+
+    /// The record of the stored key is read only for the same key.
+    #[test]
+    fn should_ignore_the_recorded_check_unless_the_slot_holds_the_same_key() {
+        for slot in [
+            DashSDKVotingKeySlot::Empty,
+            DashSDKVotingKeySlot::DifferentKey,
+        ] {
+            for (verdict, _) in EVERY_VERDICT {
+                let unrecorded = dash_sdk_masternode_voting_key_check_outcome(
+                    verdict,
+                    slot,
+                    DashSDKRecordedVotingKeyCheck::None,
+                );
+                for (recorded, _) in EVERY_RECORDED {
+                    assert_eq!(
+                        dash_sdk_masternode_voting_key_check_outcome(verdict, slot, recorded),
+                        unrecorded,
+                        "{verdict:?} {slot:?} {recorded:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Two cases spelled out, so a mapping that agreed with itself but not with rs-sdk's
+    /// meaning would still show: a refusal of the same stored key is recorded, and a check
+    /// that could not run keeps a proven record of the same key.
+    #[test]
+    fn should_carry_a_recorded_refusal_and_a_kept_record() {
+        assert_eq!(
+            dash_sdk_masternode_voting_key_check_outcome(
+                DashSDKVotingKeyVerdict::Invalid,
+                DashSDKVotingKeySlot::SameKey,
+                DashSDKRecordedVotingKeyCheck::Valid,
+            ),
+            DashSDKVotingKeyCheckOutcome {
+                store_key: false,
+                keeps_record: false,
+                record: DashSDKRecordedVotingKeyCheck::Invalid,
+            }
+        );
+        assert_eq!(
+            dash_sdk_masternode_voting_key_check_outcome(
+                DashSDKVotingKeyVerdict::Undetermined,
+                DashSDKVotingKeySlot::SameKey,
+                DashSDKRecordedVotingKeyCheck::Valid,
+            ),
+            DashSDKVotingKeyCheckOutcome {
+                store_key: true,
+                keeps_record: true,
+                record: DashSDKRecordedVotingKeyCheck::None,
+            }
+        );
+    }
+
+    #[test]
+    fn should_return_rs_sdk_use_for_every_recorded_check() {
+        for (ffi, recorded) in EVERY_RECORDED {
+            let expected = recorded_voting_key_use(recorded);
+            assert_eq!(
+                dash_sdk_masternode_recorded_voting_key_use(ffi),
+                DashSDKRecordedVotingKeyUse {
+                    can_vote: expected.can_vote,
+                    check_before_use: expected.check_before_use,
+                },
+                "{ffi:?}"
+            );
+        }
+        assert_eq!(
+            dash_sdk_masternode_recorded_voting_key_use(DashSDKRecordedVotingKeyCheck::Invalid),
+            DashSDKRecordedVotingKeyUse {
+                can_vote: false,
+                check_before_use: false,
+            }
+        );
     }
 
     #[test]
