@@ -34,6 +34,13 @@ final class GiveUpNamePresentationTests: XCTestCase {
             ),
             .unconfirmed("no result in time")
         )
+        // Reopened while the earlier give-up is unresolved: Rust refuses the read the same way
+        XCTAssertEqual(
+            GiveUpNameUI.loadFailure(
+                PlatformWalletError.transactionBroadcastUnconfirmed("an earlier give-up is unconfirmed")
+            ),
+            .unconfirmed("an earlier give-up is unconfirmed")
+        )
     }
 
     func testOtherLoadErrorsAreShownForRetry() {

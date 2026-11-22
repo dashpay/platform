@@ -265,6 +265,8 @@ struct GiveUpNameView: View {
                 phase = .notAvailable(message)
             case .sdkPinned(let message):
                 phase = .sdkPinned(message)
+            case .unconfirmed(let message):
+                phase = .unconfirmed(message)
             case .failed(let message):
                 phase = .failed(message)
             }
@@ -343,6 +345,8 @@ enum GiveUpNameUI {
         case notAvailable(String)
         /// This app's SDK is pinned below the protocol version.
         case sdkPinned(String)
+        /// An earlier give-up of the name was sent and is not confirmed yet.
+        case unconfirmed(String)
         case failed(String)
     }
 
@@ -402,6 +406,8 @@ enum GiveUpNameUI {
             return .notAvailable(message)
         case .sdkPinnedBelowProtocolVersion(let message)?:
             return .sdkPinned(message)
+        case .transactionBroadcastUnconfirmed(let message)?:
+            return .unconfirmed(message)
         default:
             return .failed(DpnsMarketplaceUI.error(error))
         }
