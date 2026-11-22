@@ -572,6 +572,7 @@ struct LoadIdentityView: View {
                     // identifier, and the Keychain its previous key, in
                     // place; it is reported below.
                     var unstoredKeys: [String] = []
+                    var storedKeys: [String] = []
                     if let votingKey = capturedVotingKey {
                         if let identifier = KeychainManager.shared.storeSpecialKey(
                             votingKey,
@@ -579,6 +580,7 @@ struct LoadIdentityView: View {
                             keyType: .voting
                         ) {
                             row.votingPrivateKeyIdentifier = identifier
+                            storedKeys.append("voting")
                         } else {
                             unstoredKeys.append("voting")
                         }
@@ -590,6 +592,7 @@ struct LoadIdentityView: View {
                             keyType: .owner
                         ) {
                             row.ownerPrivateKeyIdentifier = identifier
+                            storedKeys.append("owner")
                         } else {
                             unstoredKeys.append("owner")
                         }
@@ -601,6 +604,7 @@ struct LoadIdentityView: View {
                             keyType: .payout
                         ) {
                             row.payoutPrivateKeyIdentifier = identifier
+                            storedKeys.append("payout")
                         } else {
                             unstoredKeys.append("payout")
                         }
@@ -611,7 +615,15 @@ struct LoadIdentityView: View {
                     do {
                         try modelContext.save()
                     } catch {
-                        errorMessage = "The identity could not be saved: \(error.localizedDescription)"
+                        var text = "The identity could not be saved: \(error.localizedDescription)"
+                        if !storedKeys.isEmpty {
+                            // The Keychain writes are not undone, so say
+                            // which keys already changed.
+                            let names = ListFormatter.localizedString(byJoining: storedKeys)
+                            let noun = storedKeys.count == 1 ? "private key was" : "private keys were"
+                            text += " The \(names) \(noun) already stored in the Keychain. Load the identity again to finish."
+                        }
+                        errorMessage = text
                         isLoading = false
                         loadStartTime = nil
                         return
@@ -626,7 +638,7 @@ struct LoadIdentityView: View {
                         if unstoredKeys.contains("voting") {
                             text += row.votingPrivateKeyIdentifier == nil
                                 ? " The identity cannot vote until it is loaded again."
-                                : " It still votes with the voting key stored before."
+                                : " The voting key stored before was left in the Keychain."
                         }
                         errorMessage = text
                         isLoading = false
