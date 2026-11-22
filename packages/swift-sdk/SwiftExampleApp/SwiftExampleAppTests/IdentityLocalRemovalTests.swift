@@ -81,6 +81,8 @@ final class IdentityLocalRemovalTests: XCTestCase {
         var specialKeyDeletes: [SpecialKeyType] = []
         var identifierDeletes: [String] = []
         var rowsLeftAtKeychainCall: [Int] = []
+        var sweeps: [(Data, String)] = []
+        let expectedBase58 = doomed.identityIdBase58
         let identityRowCount = { [doomedId] () -> Int in
             let target = doomedId
             let rows = try? ModelContext(container).fetch(FetchDescriptor<PersistentIdentity>(
@@ -102,16 +104,22 @@ final class IdentityLocalRemovalTests: XCTestCase {
                 rowsLeftAtKeychainCall.append(identityRowCount())
                 identifierDeletes.append(identifier)
                 return true
+            },
+            deleteAllForIdentity: { identityId, identityIdBase58 in
+                rowsLeftAtKeychainCall.append(identityRowCount())
+                sweeps.append((identityId, identityIdBase58))
             }
         )
 
         XCTAssertEqual(keysLeft, [])
+        XCTAssertEqual(sweeps.map { $0.0 }, [doomedId])
+        XCTAssertEqual(sweeps.map { $0.1 }, [expectedBase58])
         XCTAssertEqual(specialKeyDeletes, [.voting, .owner, .payout])
         XCTAssertEqual(
             identifierDeletes,
             ["privkey_key_0", "privkey_key_1", "specialkey_voting", "specialkey_owner"]
         )
-        XCTAssertEqual(rowsLeftAtKeychainCall, Array(repeating: 0, count: 7))
+        XCTAssertEqual(rowsLeftAtKeychainCall, Array(repeating: 0, count: 8))
         try assertNoRows(in: container)
     }
 
@@ -128,11 +136,33 @@ final class IdentityLocalRemovalTests: XCTestCase {
             deleteSpecialKey: { _, keyType in keyType != .voting },
             deleteKeyData: { identifier in
                 identifier != "privkey_key_1" && identifier != "specialkey_voting"
-            }
+            },
+            deleteAllForIdentity: { _, _ in }
         )
 
         // The refused voting slot and its row identifier are one key, named once.
         XCTAssertEqual(keysLeft, ["voting key", "key 1"])
+        try assertNoRows(in: container)
+    }
+
+    func testRemoveIdentityLocallyReportsAFailedSweepByIdentityId() throws {
+        struct Refused: Error {}
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        let doomed = makeIdentity(doomedId, label: "doomed", keySeed: 0x30, in: context)
+        try context.save()
+
+        let keysLeft = try IdentitiesContentView.removeIdentityLocally(
+            doomed,
+            modelContext: context,
+            deleteSpecialKey: { _, _ in true },
+            deleteKeyData: { _ in true },
+            deleteAllForIdentity: { _, _ in throw Refused() }
+        )
+
+        // Keys the row no longer references are still reported when the
+        // sweep is refused, and the rows are gone either way.
+        XCTAssertEqual(keysLeft, ["other private keys"])
         try assertNoRows(in: container)
     }
 

@@ -366,18 +366,21 @@ enum WalletKeyHealthChecker {
     /// Cascade-delete an orphan identity from SwiftData AND wipe its
     /// associated Keychain entries.
     ///
-    /// Ordering:
-    ///  1. Wipe Keychain first (`identity_privkey.*` rows whose
-    ///     metadata matches this identity). Idempotent on retry.
-    ///  2. Delete the identity's SwiftData rows children first
+    /// Ordering, so a failed delete cannot leave a listed identity
+    /// whose keys are gone:
+    ///  1. Delete the identity's SwiftData rows children first
     ///     (`PersistentIdentity.deleteChildrenFirst`): the children
     ///     with a non-optional inverse to it are deleted and saved
     ///     before the identity, because SwiftData fatals in `save()`
     ///     when it has to null such an inverse. A failed save rolls
-    ///     the context back and throws.
+    ///     the context back and throws, and the Keychain is not
+    ///     touched.
+    ///  2. Only then wipe the Keychain (`identity_privkey.*` items
+    ///     whose metadata matches this identity). The sweep reads
+    ///     only the Base58 id captured before step 1, not the row.
     ///
     /// Returns a per-side outcome so the caller can distinguish
-    /// "fully clean" from "SwiftData clean, Keychain warning" —
+    /// "fully clean" from "SwiftData clean, Keychain warning";
     /// the latter shouldn't prevent the sheet from dropping the
     /// now-deleted row from its in-memory `reports` list.
     /// Genuine SwiftData failures still throw (they're the ones
@@ -387,9 +390,12 @@ enum WalletKeyHealthChecker {
         identity: PersistentIdentity,
         modelContext: ModelContext
     ) throws -> OrphanDeleteOutcome {
-        // Snapshot the base58 id BEFORE the delete — once the row
+        // Snapshot the base58 id BEFORE the delete: once the row
         // is removed its computed accessor is invalid.
         let identityIdBase58 = identity.identityIdBase58
+
+        try PersistentIdentity.deleteChildrenFirst(identity, in: modelContext)
+
         var keychainError: Error?
         do {
             try KeychainManager.shared.deleteAllIdentityPrivateKeys(
@@ -398,8 +404,6 @@ enum WalletKeyHealthChecker {
         } catch {
             keychainError = error
         }
-
-        try PersistentIdentity.deleteChildrenFirst(identity, in: modelContext)
 
         return OrphanDeleteOutcome(
             swiftDataDeleted: true,
@@ -663,7 +667,7 @@ struct WalletKeyHealthSheet: View {
             }
             if let keychainError = outcome.keychainError {
                 actionMessage = "Deleted orphan identity \(report.identityIdBase58.prefix(12))…"
-                errorMessage = "Keychain cleanup warning: \(keychainError.localizedDescription) — re-running Verify Identity Keys can retry."
+                errorMessage = "Keychain cleanup warning: \(keychainError.localizedDescription). The identity was removed, but some of its private keys may still be in the Keychain."
             } else {
                 actionMessage = "Deleted orphan identity \(report.identityIdBase58.prefix(12))…"
                 errorMessage = nil

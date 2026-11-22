@@ -484,7 +484,7 @@ struct IdentitiesContentView: View {
     /// Delete a single identity from this device. This does **not** touch
     /// Dash Platform: the identity on chain is untouched and can be loaded
     /// again later with its keys. Runs
-    /// `removeIdentityLocally(_:modelContext:deleteSpecialKey:deleteKeyData:)`
+    /// `removeIdentityLocally(_:modelContext:deleteSpecialKey:deleteKeyData:deleteAllForIdentity:)`
     /// with the shared Keychain and reports what it could not do.
     private func removeIdentityLocally(_ identity: PersistentIdentity) {
         let keychain = KeychainManager.shared
@@ -494,11 +494,15 @@ struct IdentitiesContentView: View {
                 identity,
                 modelContext: modelContext,
                 deleteSpecialKey: { keychain.deleteSpecialKey(identityId: $0, keyType: $1) },
-                deleteKeyData: { keychain.deleteKeyData(identifier: $0) }
+                deleteKeyData: { keychain.deleteKeyData(identifier: $0) },
+                deleteAllForIdentity: { identityId, identityIdBase58 in
+                    try keychain.deleteAllKeychainItems(forIdentityId: identityId)
+                    try keychain.deleteAllIdentityPrivateKeys(forIdentityIdBase58: identityIdBase58)
+                }
             )
         } catch {
             platformState.showError(
-                message: "The identity was not removed from this device: \(error.localizedDescription). Its keys were not deleted."
+                message: "The identity was not removed from this device: \(error.localizedDescription). Its keys were not deleted. Its DPNS names and DashPay data on this device, including ignored senders, may already be deleted; remove it again to finish."
             )
             return
         }
@@ -506,7 +510,7 @@ struct IdentitiesContentView: View {
         let names = ListFormatter.localizedString(byJoining: keysLeft)
         let (stays, them) = keysLeft.count == 1 ? ("It stays", "it") : ("They stay", "them")
         platformState.showError(
-            message: "The identity was removed from this device, but the Keychain refused to delete its \(names). \(stays) in the Keychain with no identity using \(them). Loading the identity again with its keys reuses or replaces \(them), and removing it again while the device is unlocked deletes \(them)."
+            message: "The identity was removed from this device, but the Keychain refused to delete its \(names). \(stays) in the Keychain. If you load this identity again, the app can find and use \(them); removing the identity again while the device is unlocked deletes \(them)."
         )
     }
 
@@ -533,23 +537,29 @@ struct IdentitiesContentView: View {
     ///     stored without a row reference (a load whose save failed) goes
     ///     too and a later load can store the key again, then delete the
     ///     snapshotted identifiers.
+    ///  4. Sweep the Keychain by identity id (`deleteAllForIdentity`: the
+    ///     `privkey_<identityHex>_*` and `specialkey_<identityHex>_*`
+    ///     accounts, and the `identity_privkey.*` items whose metadata
+    ///     names this identity). This also deletes keys the row no longer
+    ///     references, for example a key left by an earlier removal the
+    ///     Keychain refused, which a reload can find by identity id and key
+    ///     index but does not overwrite (a reload stores a `privkey_*`
+    ///     account, not the old `identity_privkey.*` one). So removing the
+    ///     identity again cleans up what an earlier removal left behind.
     ///
-    /// A failed Keychain delete in step 3 (for example while the device is
-    /// locked) is returned rather than ignored. The row is gone by then and
-    /// the key left behind is harmless: loading the identity again
-    /// overwrites a private key (`storePrivateKey`,
-    /// `storeIdentityPrivateKey`), keeps a special key holding the same
-    /// bytes, and asks before replacing a different one; voting also needs
-    /// the row's `votingPrivateKeyIdentifier`, which a reload without the
-    /// voting key leaves unset. Deleting the Keychain items before the rows
-    /// would instead turn a failed save into a row with no keys.
+    /// A failed Keychain delete in steps 3 and 4 (for example while the
+    /// device is locked) is returned rather than ignored. Deleting the
+    /// Keychain items before the rows would instead turn a failed save into
+    /// a row with no keys.
     static func removeIdentityLocally(
         _ identity: PersistentIdentity,
         modelContext: ModelContext,
         deleteSpecialKey: (Data, SpecialKeyType) -> Bool,
-        deleteKeyData: (String) -> Bool
+        deleteKeyData: (String) -> Bool,
+        deleteAllForIdentity: (Data, String) throws -> Void
     ) throws -> [String] {
         let identityId = identity.identityId
+        let identityIdBase58 = identity.identityIdBase58
         var referenced: [(name: String, identifier: String)] = []
         for publicKey in identity.publicKeys.sorted(by: { $0.keyId < $1.keyId }) {
             if let identifier = publicKey.privateKeyKeychainIdentifier {
@@ -580,6 +590,11 @@ struct IdentitiesContentView: View {
             if !deleteKeyData(item.identifier) && !keysLeft.contains(item.name) {
                 keysLeft.append(item.name)
             }
+        }
+        do {
+            try deleteAllForIdentity(identityId, identityIdBase58)
+        } catch {
+            keysLeft.append("other private keys")
         }
         return keysLeft
     }
