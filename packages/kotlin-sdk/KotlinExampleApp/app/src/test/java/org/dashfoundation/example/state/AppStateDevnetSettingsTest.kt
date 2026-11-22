@@ -228,8 +228,11 @@ class AppStateDevnetSettingsTest {
                 assertEquals(noServer, AppState.DEVNET_QUORUM_URL_NOT_HTTPS, refused.message)
             }
             // A port and a base path are fine, in any letter case.
-            for (usable in listOf("https://10.0.2.2:8443", "HTTPS://quorums.example.org/base/")) {
+            for (usable in listOf("https://10.0.2.2:8443", "HTTPS://quorums.example.org/base")) {
                 appState.setDevnetQuorumUrl(usable)
+                assertEquals(usable, appState.resolvedDevnetQuorumUrl())
+                // Trailing slashes are dropped: endpoint paths are appended.
+                appState.setDevnetQuorumUrl("$usable//")
                 assertEquals(usable, appState.resolvedDevnetQuorumUrl())
             }
 

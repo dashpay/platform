@@ -576,7 +576,10 @@ class AppState(
         }
         val explicit = url.trim().takeIf { it.isNotEmpty() } ?: return derived
         require(isHttpsUrlWithHost(explicit)) { DEVNET_QUORUM_URL_NOT_HTTPS }
-        return explicit
+        // Endpoint paths are appended to this string, by the masternode
+        // lookup and by the SDK's quorum requests: without the trim a
+        // trailing slash would ask the server for `//quorums`.
+        return explicit.trimEnd('/')
     }
 
     private fun devnetSettingsResolve(): Boolean =

@@ -562,7 +562,8 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
             format!(
                 "no usable SPV peer: restrict_to_configured_peers needs at least one IP:port \
-                 address with a non-zero port, got {peer_list:?}"
+                 address with a non-zero port, and none of the {peer_count} given is one{}",
+                peer_examples(&peer_list)
             ),
         );
     }
@@ -580,6 +581,26 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
     start_spv_outside_registry(handle, move |spv, still_owned| {
         block_on_worker(async move { spv.start_and_spawn(config, still_owned).await })
     })
+}
+
+/// How many refused peers an error message quotes, and how much of each.
+const MAX_PEER_EXAMPLES: usize = 3;
+const MAX_PEER_EXAMPLE_CHARS: usize = 64;
+
+/// The first few of `peer_list`, each cut short, for an error message. The
+/// entries come from the host (or a service it asked), so the message must
+/// not grow with them.
+fn peer_examples(peer_list: &[String]) -> String {
+    let shown: Vec<String> = peer_list
+        .iter()
+        .take(MAX_PEER_EXAMPLES)
+        .map(|peer| peer.chars().take(MAX_PEER_EXAMPLE_CHARS).collect())
+        .collect();
+    if shown.is_empty() {
+        String::new()
+    } else {
+        format!(", for example {shown:?}")
+    }
 }
 
 /// The entries of `peer_list` an SPV client can dial: `IP:port` with a
@@ -744,7 +765,26 @@ mod spv_start_peer_tests {
             result.code,
             PlatformWalletFFIResultCode::ErrorInvalidParameter
         );
+        let message = unsafe { CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert!(message.ends_with("none of the 2 given is one"), "{message}");
         unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    #[test]
+    fn should_quote_only_a_few_short_examples_of_the_refused_peers() {
+        let long = "x".repeat(10_000);
+        let peers: Vec<&str> = vec![long.as_str(); 50];
+        let (code, message) = restricted_start(&peers);
+        assert_eq!(code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        assert!(message.contains("none of the 50 given is one"), "{message}");
+        assert_eq!(
+            message.matches(&"x".repeat(MAX_PEER_EXAMPLE_CHARS)).count(),
+            MAX_PEER_EXAMPLES,
+            "{message}"
+        );
+        assert!(message.len() < 1_000, "{} bytes", message.len());
     }
 
     #[test]
