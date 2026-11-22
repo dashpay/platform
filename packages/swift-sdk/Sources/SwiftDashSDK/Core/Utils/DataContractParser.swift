@@ -192,8 +192,10 @@ public struct DataContractParser {
     // first parse, into a row that is never inserted, and its values are
     // copied onto the stored row with the same unique id. The stored row
     // keeps its identity and relationships: a token's balances and history,
-    // a document type's documents. Every stored attribute the parser writes
-    // must be copied here, or a refresh keeps the old value.
+    // a document type's documents. Every definition attribute the parser
+    // writes must be copied here, or a refresh keeps the old value. An
+    // attribute the parser only seeds and live state owns afterwards is not
+    // copied.
 
     private static func replaceDefinition(of token: PersistentToken, with parsed: PersistentToken) {
         token.name = parsed.name
@@ -201,7 +203,10 @@ public struct DataContractParser {
         token.maxSupply = parsed.maxSupply
         token.decimals = parsed.decimals
         token.localizations = parsed.localizations
-        token.isPaused = parsed.isPaused
+        // `isPaused` is not copied. The parser seeds it from the contract's
+        // `startAsPaused`, but the stored value is the token's live paused
+        // status (written by the pause and resume actions and the token
+        // status sync), which the contract definition does not carry.
         token.allowTransferToFrozenBalance = parsed.allowTransferToFrozenBalance
         token.keepsTransferHistory = parsed.keepsTransferHistory
         token.keepsFreezingHistory = parsed.keepsFreezingHistory

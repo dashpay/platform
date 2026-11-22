@@ -12,7 +12,7 @@ final class DataContractParserRefreshTests: XCTestCase {
 
     private let contractId = Data(repeating: 0xD4, count: 32)
 
-    private func noteType(withBody: Bool) -> [String: Any] {
+    private func noteType(withBody: Bool, withIndex: Bool = true) -> [String: Any] {
         var properties: [String: Any] = [
             "message": ["type": "string", "maxLength": 63, "position": 0]
         ]
@@ -21,12 +21,27 @@ final class DataContractParserRefreshTests: XCTestCase {
                 "type": "string", "maxLength": 255, "position": 1, "description": "Body"
             ]
         }
-        return [
+        var type: [String: Any] = [
             "type": "object",
             "properties": properties,
-            "indices": [["name": "byMessage", "properties": [["message": "asc"]]]],
             "additionalProperties": false
         ]
+        if withIndex {
+            type["indices"] = [["name": "byMessage", "properties": [["message": "asc"]]]]
+        }
+        return type
+    }
+
+    private func insertFixtureContract(into context: ModelContext) throws {
+        context.insert(
+            PersistentDataContract(
+                id: contractId,
+                name: "Fixture",
+                serializedContract: Data(),
+                network: .testnet
+            )
+        )
+        try context.save()
     }
 
     private let token: [String: Any] = [
@@ -166,5 +181,77 @@ final class DataContractParserRefreshTests: XCTestCase {
             FetchDescriptor<PersistentProperty>(predicate: #Predicate { $0.contractId == id })
         )
         XCTAssertEqual(properties.map(\.name), ["message"])
+    }
+
+    /// The fixture need not be an update Platform would accept: it only
+    /// checks that the stored index rows follow the re-parsed definition.
+    func testShouldRemoveAnIndexTheReparsedTypeNoLongerDeclares() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        defer { withExtendedLifetime(container) {} }
+        try insertFixtureContract(into: context)
+
+        let id = contractId
+        let indexRows = FetchDescriptor<PersistentIndex>(predicate: #Predicate { $0.contractId == id })
+        for withIndex in [true, false] {
+            try DataContractParser.parseDataContract(
+                contractData: ["documents": ["note": noteType(withBody: false, withIndex: withIndex)]],
+                contractId: contractId,
+                modelContext: context
+            )
+            try context.save()
+            XCTAssertEqual(try context.fetch(indexRows).count, withIndex ? 1 : 0)
+        }
+
+        let noteRow = try XCTUnwrap(
+            try context.fetch(
+                FetchDescriptor<PersistentDocumentType>(predicate: #Predicate { $0.contractId == id })
+            ).first
+        )
+        XCTAssertEqual(noteRow.indices?.count ?? 0, 0)
+    }
+
+    /// A stored token's `isPaused` is its live paused status (the pause and
+    /// resume actions and the token status sync write it); the contract's
+    /// `startAsPaused` only seeds it on the first parse.
+    func testShouldKeepAStoredTokensPausedStatusOnAReparse() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        defer { withExtendedLifetime(container) {} }
+        try insertFixtureContract(into: context)
+
+        var unpausedToken = token
+        unpausedToken["startAsPaused"] = false
+        try DataContractParser.parseDataContract(
+            contractData: ["tokens": ["0": unpausedToken]],
+            contractId: contractId,
+            modelContext: context
+        )
+        try context.save()
+
+        let id = contractId
+        let tokenRows = FetchDescriptor<PersistentToken>(predicate: #Predicate { $0.contractId == id })
+        let tokenRow = try XCTUnwrap(try context.fetch(tokenRows).first)
+        XCTAssertFalse(tokenRow.isPaused)
+        tokenRow.isPaused = true
+        try context.save()
+
+        // The re-parsed definition changes, so the refresh does run.
+        unpausedToken["conventions"] = [
+            "decimals": 3,
+            "localizations": ["en": ["singularForm": "Coin", "pluralForm": "Coins"]]
+        ]
+        try DataContractParser.parseDataContract(
+            contractData: ["tokens": ["0": unpausedToken]],
+            contractId: contractId,
+            modelContext: context
+        )
+        try context.save()
+
+        let refreshed = try context.fetch(tokenRows)
+        XCTAssertEqual(refreshed.count, 1)
+        XCTAssertTrue(refreshed.first === tokenRow)
+        XCTAssertEqual(tokenRow.decimals, 3)
+        XCTAssertTrue(tokenRow.isPaused)
     }
 }

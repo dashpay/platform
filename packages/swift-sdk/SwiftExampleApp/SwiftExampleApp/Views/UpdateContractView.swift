@@ -168,7 +168,7 @@ struct UpdateContractView: View {
         } header: {
             Text("Token Schemas (JSON, optional)")
         } footer: {
-            Text("Keyed by token position. Merged the same way: omitted tokens keep their on-chain definition.")
+            Text("Keyed by token position. This update can add new tokens; Platform refuses a change to an existing token. Omitted tokens keep their on-chain definition.")
         }
     }
 
@@ -179,7 +179,7 @@ struct UpdateContractView: View {
         } header: {
             Text("Groups (JSON, optional)")
         } footer: {
-            Text("Keyed by group position, or a list of groups each with an `id`. Merged the same way: omitted groups keep their on-chain definition.")
+            Text("Keyed by group position, or a list of groups each with an `id`. This update can add new groups; Platform refuses a change to an existing group. Omitted groups keep their on-chain definition.")
         }
     }
 
@@ -216,6 +216,8 @@ struct UpdateContractView: View {
             }
             .disabled(isBusy || ownerWallet == nil)
             .accessibilityIdentifier("updateContract.reviewButton")
+        } footer: {
+            Text("The review lists what the update would change. Platform decides whether the update is accepted when it is broadcast.")
         }
 
         if let review {
@@ -394,6 +396,9 @@ struct UpdateContractView: View {
                 groupsJSON: arguments.groups,
                 keywordsJSON: arguments.keywords,
                 description: arguments.description,
+                // Bind the update to the reviewed contract: if the contract
+                // changed since the review, the wallet refuses the update.
+                expectedCurrentVersion: review.preview.currentVersion,
                 signer: signer
             )
             // Keepalive: see the KeychainSigner lifetime contract on
@@ -423,6 +428,11 @@ struct UpdateContractView: View {
             outcome = Outcome(title: "Update Unconfirmed", message: message, dismissesScreen: false)
         } catch {
             _ = signer
+            // A failed submit may leave the reviewed contract behind (it may
+            // have changed, or this update may have reached Platform), so
+            // the review is cleared and Update Contract stays off until the
+            // changes are reviewed again.
+            self.review = nil
             errorMessage = Self.describe(error)
         }
     }
@@ -531,7 +541,6 @@ private struct UpdateContractPreviewSection: View {
                 sectionRows(title: "Groups", changes: preview.groups)
                 flagRow("Keywords", changed: preview.keywordsChanged)
                 flagRow("Description", changed: preview.descriptionChanged)
-                flagRow("Configuration", changed: preview.configChanged)
             } else {
                 Text("No changes")
                     .foregroundColor(.secondary)

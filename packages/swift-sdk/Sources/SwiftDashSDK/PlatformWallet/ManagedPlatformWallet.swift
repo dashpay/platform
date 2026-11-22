@@ -4587,6 +4587,17 @@ extension ManagedPlatformWallet {
     /// `contractId` is the id of the existing contract to update.
     /// Returns the (unchanged) contract id of the updated contract.
     ///
+    /// `expectedCurrentVersion` is the contract version the caller
+    /// reviewed (`DataContractUpdatePreview.currentVersion`). When
+    /// it is set and the live contract is at another version, Rust
+    /// refuses the update before any nonce is read; review again.
+    /// `nil` (passed to Rust as `0`, never a real contract version)
+    /// updates whatever version is live.
+    ///
+    /// A broadcast whose result could not be confirmed throws
+    /// `ErrorTransactionBroadcastUnconfirmed`: the update may have
+    /// executed.
+    ///
     /// Lifetime contract: the `signer` instance MUST stay alive for
     /// the duration of the `await` (Rust holds a `passUnretained`
     /// ctx pointer to the underlying `KeychainSigner`). A
@@ -4601,10 +4612,12 @@ extension ManagedPlatformWallet {
         keywordsJSON: String? = nil,
         description: String? = nil,
         contractConfigJSON: String? = nil,
+        expectedCurrentVersion: UInt32? = nil,
         signer: KeychainSigner
     ) async throws -> Identifier {
         let handle = self.handle
         let signerHandle = signer.handle
+        let expectedVersion: UInt32 = expectedCurrentVersion ?? 0
         let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
@@ -4641,6 +4654,7 @@ extension ManagedPlatformWallet {
                                                     keywordsPtr,
                                                     descriptionPtr,
                                                     configPtr,
+                                                    expectedVersion,
                                                     signerHandle,
                                                     outBp.baseAddress!
                                                 )

@@ -1,3 +1,4 @@
+import SwiftDashSDK
 import XCTest
 @testable import SwiftExampleApp
 
@@ -273,5 +274,83 @@ final class PasteboardContractCandidateTests: XCTestCase {
             candidate.summary.contains("1 tokens"),
             "Should not pluralize a single token"
         )
+    }
+
+    // MARK: - Position-keyed groups JSON
+
+    /// Decode the helper's output back into a dictionary for comparison.
+    private func decodedGroups(_ raw: String) throws -> [String: [String: Any]] {
+        let json = try XCTUnwrap(PasteboardContractCandidate.positionKeyedGroupsJSON(from: raw))
+        let object = try JSONSerialization.jsonObject(with: Data(json.utf8))
+        return try XCTUnwrap(object as? [String: [String: Any]])
+    }
+
+    /// The helper throws `SDKError.serializationError` for a payload it
+    /// cannot re-key.
+    private func assertGroupsSerializationError(
+        _ raw: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertThrowsError(
+            try PasteboardContractCandidate.positionKeyedGroupsJSON(from: raw),
+            file: file,
+            line: line
+        ) { error in
+            guard case SDKError.serializationError = error else {
+                return XCTFail("Expected SDKError.serializationError, got \(error)", file: file, line: line)
+            }
+        }
+    }
+
+    func test_positionKeyedGroupsJSON_blankInput_isNil() throws {
+        XCTAssertNil(try PasteboardContractCandidate.positionKeyedGroupsJSON(from: ""))
+        XCTAssertNil(try PasteboardContractCandidate.positionKeyedGroupsJSON(from: "  \n\t "))
+    }
+
+    func test_positionKeyedGroupsJSON_positionKeyedMap_passesThrough() throws {
+        let groups = try decodedGroups(#"{"0":{"members":{},"requiredPower":1},"2":{"requiredPower":3}}"#)
+        XCTAssertEqual(groups.keys.sorted(), ["0", "2"])
+        XCTAssertEqual(groups["0"]?["requiredPower"] as? Int, 1)
+        XCTAssertNotNil(groups["0"]?["members"] as? [String: Any])
+        XCTAssertEqual(groups["2"]?["requiredPower"] as? Int, 3)
+    }
+
+    func test_positionKeyedGroupsJSON_arrayWithIntIds_isRekeyedWithoutId() throws {
+        let groups = try decodedGroups(#"[{"id":0,"requiredPower":1},{"id":4,"requiredPower":2}]"#)
+        XCTAssertEqual(groups.keys.sorted(), ["0", "4"])
+        XCTAssertEqual(groups["0"]?["requiredPower"] as? Int, 1)
+        XCTAssertEqual(groups["4"]?["requiredPower"] as? Int, 2)
+        XCTAssertNil(groups["0"]?["id"])
+        XCTAssertNil(groups["4"]?["id"])
+    }
+
+    func test_positionKeyedGroupsJSON_arrayWithStringIds_isRekeyedWithoutId() throws {
+        let groups = try decodedGroups(#"[{"id":"1","requiredPower":5}]"#)
+        XCTAssertEqual(groups.keys.sorted(), ["1"])
+        XCTAssertEqual(groups["1"]?["requiredPower"] as? Int, 5)
+        XCTAssertNil(groups["1"]?["id"])
+    }
+
+    func test_positionKeyedGroupsJSON_entryWithoutId_throws() {
+        assertGroupsSerializationError(#"[{"requiredPower":1}]"#)
+    }
+
+    func test_positionKeyedGroupsJSON_entryWithUnsupportedIdType_throws() {
+        assertGroupsSerializationError(#"[{"id":{"position":0},"requiredPower":1}]"#)
+        assertGroupsSerializationError(#"[{"id":1.5,"requiredPower":1}]"#)
+    }
+
+    func test_positionKeyedGroupsJSON_duplicatePosition_throws() {
+        assertGroupsSerializationError(#"[{"id":0,"requiredPower":1},{"id":"0","requiredPower":2}]"#)
+    }
+
+    func test_positionKeyedGroupsJSON_topLevelNeitherObjectNorArrayOfObjects_throws() {
+        // A top-level scalar is refused by the JSON reader itself or by the
+        // helper's shape check; either way nothing is returned.
+        XCTAssertThrowsError(try PasteboardContractCandidate.positionKeyedGroupsJSON(from: "42"))
+        XCTAssertThrowsError(try PasteboardContractCandidate.positionKeyedGroupsJSON(from: #""groups""#))
+        // An array whose entries are not objects reaches the shape check.
+        assertGroupsSerializationError("[1, 2]")
     }
 }
