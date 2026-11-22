@@ -53,7 +53,7 @@ use dash_sdk::dpp::prelude::DataContract;
 /// returns. Four places is what the iOS and Android example apps showed
 /// when they divided locally (`%.4f`). Private so cbindgen does not
 /// export it into the C header.
-const AVERAGE_FRACTION_DIGITS: u32 = 4;
+const AVERAGE_FRACTION_DIGITS: u8 = 4;
 
 /// The verified `(count, sum)` pair for a single key, plus their average.
 /// `count` is a JSON number (`u64`); `sum` is a signed `i128` written as

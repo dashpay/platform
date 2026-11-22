@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.dashfoundation.example.di.LocalAppState
@@ -42,13 +43,14 @@ import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.LenientJson
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.truncateMiddle
-import java.util.Locale
 
 /**
  * Sum/average aggregate form — port of `SumAverageDocumentsView.swift`.
  * Contract + document type arrive preselected from the document-type
- * screen. Averages display as `sum / count` to four decimals, with the
- * raw `n=count, Σ=sum` pair alongside, matching the iOS renderer.
+ * screen. Averages display the exact average Rust computed (four places),
+ * with the `n=count, Σ=sum` pair alongside, matching the iOS renderer.
+ * Sums are shown as the decimal strings the FFI returns: from protocol
+ * version 15 a sum can pass 64 bits.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -266,11 +268,13 @@ private enum class Operation(val label: String) {
     AVERAGE("Average"),
 }
 
-/** One average entry — the raw `(count, sum)` pair the FFI returns. */
-internal data class AverageEntry(val count: Long, val sum: Long) {
-    fun displayAverage(): String =
-        if (count == 0L) "—"
-        else String.format(Locale.US, "%.4f", sum.toDouble() / count.toDouble())
+/**
+ * One average entry as the FFI returns it: the count, the sum as the decimal
+ * string Rust wrote (it can pass 64 bits), and the average Rust computed
+ * exactly to four places, or null when no document matched.
+ */
+internal data class AverageEntry(val count: String, val sum: String, val average: String?) {
+    fun displayAverage(): String = average ?: "—"
 }
 
 internal data class AverageResult(
@@ -279,30 +283,51 @@ internal data class AverageResult(
 )
 
 /**
- * Parse the average result: group key → `{count, sum}` objects, with the
- * empty-string key as the overall entry; a bare `{count, sum}` object is
- * an ungrouped total. The FFI wraps the map in an `{"averages": {...}}`
+ * Parse the average result: group key → `{count, sum, average}` objects,
+ * with the empty-string key as the overall entry; a bare entry object is an
+ * ungrouped total. The FFI wraps the map in an `{"averages": {...}}`
  * envelope (see `dash_sdk_document_average`'s contract) — unwrap it first.
+ *
+ * Marshals only: the sum stays the decimal string the FFI wrote, and the
+ * average is the one Rust computed. An entry that does not have that shape
+ * throws, so the screen reports it instead of leaving the row out.
  */
 internal fun parseAverageResult(response: String?): AverageResult? {
     if (response.isNullOrBlank()) return null
-    var root = LenientJson.parseToJsonElement(response) as? JsonObject ?: return null
+    var root = LenientJson.parseToJsonElement(response) as? JsonObject
+        ?: throw IllegalArgumentException("Expected a JSON object in the average result")
     if (root.size == 1) (root["averages"] as? JsonObject)?.let { root = it }
 
-    fun entryOf(obj: JsonObject): AverageEntry? {
-        val count = (obj["count"] as? JsonPrimitive)?.content?.toLongOrNull() ?: return null
-        val sum = (obj["sum"] as? JsonPrimitive)?.content?.toLongOrNull() ?: return null
-        return AverageEntry(count, sum)
+    if (root.containsKey("count")) {
+        return AverageResult(total = averageEntryOf("total", root), groups = emptyMap())
     }
-
-    entryOf(root)?.let { return AverageResult(total = it, groups = emptyMap()) }
-
-    val entries = root.entries.mapNotNull { (key, value) ->
-        (value as? JsonObject)?.let { obj -> entryOf(obj)?.let { key to it } }
-    }.toMap()
+    val entries = root.mapValues { (key, value) ->
+        averageEntryOf(
+            key,
+            value as? JsonObject
+                ?: throw IllegalArgumentException("Expected an object for average entry \"$key\""),
+        )
+    }
     if (entries.isEmpty()) return null
     return AverageResult(
         total = entries[""] ?: entries["total"],
         groups = entries.filterKeys { it.isNotEmpty() && it != "total" },
     )
+}
+
+/** Read one `{count, sum, average}` entry; throws on any other shape. */
+internal fun averageEntryOf(key: String, obj: JsonObject): AverageEntry {
+    val count = (obj["count"] as? JsonPrimitive)?.content
+        ?.takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
+        ?: throw IllegalArgumentException("Expected a count for average entry \"$key\"")
+    val sum = (obj["sum"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        ?.takeIf { it.toBigIntegerOrNull() != null }
+        ?: throw IllegalArgumentException("Expected a decimal sum for average entry \"$key\"")
+    val average = when (val value = obj["average"]) {
+        null, JsonNull -> null
+        is JsonPrimitive -> value.takeIf { it.isString }?.content
+            ?: throw IllegalArgumentException("Expected a decimal average for average entry \"$key\"")
+        else -> throw IllegalArgumentException("Expected a decimal average for average entry \"$key\"")
+    }
+    return AverageEntry(count, sum, average)
 }

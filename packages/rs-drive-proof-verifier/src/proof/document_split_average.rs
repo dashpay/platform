@@ -51,7 +51,7 @@ impl SplitAverageEntry {
     /// `fraction_digits` places
     /// ([`super::document_average::average_to_decimal_string`]), or
     /// `None` if the entry was proven absent or has zero count.
-    pub fn to_decimal_string(&self, fraction_digits: u32) -> Option<String> {
+    pub fn to_decimal_string(&self, fraction_digits: u8) -> Option<String> {
         super::document_average::average_to_decimal_string(self.count?, self.sum?, fraction_digits)
     }
 }

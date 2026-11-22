@@ -133,7 +133,7 @@ impl DocumentAverage {
     /// The average `sum / count` as a decimal string, exact to
     /// `fraction_digits` places ([`average_to_decimal_string`]).
     /// `None` when `count == 0`.
-    pub fn to_decimal_string(&self, fraction_digits: u32) -> Option<String> {
+    pub fn to_decimal_string(&self, fraction_digits: u8) -> Option<String> {
         average_to_decimal_string(self.count, self.sum, fraction_digits)
     }
 }
@@ -146,7 +146,8 @@ impl DocumentAverage {
 /// The division is done on integers, so the result is exact to the last
 /// digit for every `sum` an `i128` holds, where an `f64` would already
 /// lose digits past 2^53. A negative average that rounds to zero is
-/// written without a sign (`"0.0000"`).
+/// written without a sign (`"0.0000"`). `fraction_digits` is a `u8`, so
+/// the work and the string are bounded (at most 255 places).
 ///
 /// ```
 /// use drive_proof_verifier::average_to_decimal_string;
@@ -155,7 +156,7 @@ impl DocumentAverage {
 /// assert_eq!(average_to_decimal_string(3, -20, 2).as_deref(), Some("-6.67"));
 /// assert_eq!(average_to_decimal_string(0, 10, 4), None);
 /// ```
-pub fn average_to_decimal_string(count: u64, sum: i128, fraction_digits: u32) -> Option<String> {
+pub fn average_to_decimal_string(count: u64, sum: i128, fraction_digits: u8) -> Option<String> {
     if count == 0 {
         return None;
     }
@@ -163,7 +164,7 @@ pub fn average_to_decimal_string(count: u64, sum: i128, fraction_digits: u32) ->
     let magnitude = sum.unsigned_abs();
     let mut integer_part = magnitude / count;
     let mut remainder = magnitude % count;
-    let mut fraction = Vec::with_capacity(fraction_digits as usize);
+    let mut fraction = Vec::with_capacity(usize::from(fraction_digits));
     for _ in 0..fraction_digits {
         // `remainder < count <= u64::MAX`, so ten times it fits a `u128`.
         remainder *= 10;
@@ -387,6 +388,14 @@ mod tests {
             average_to_decimal_string(3, -10, 4).as_deref(),
             Some("-3.3333")
         );
+    }
+
+    #[test]
+    fn should_write_the_widest_precision_a_u8_allows() {
+        let average = average_to_decimal_string(3, 1, u8::MAX).expect("an average");
+        assert_eq!(average.len(), "0.".len() + usize::from(u8::MAX));
+        assert!(average.starts_with("0.3333"));
+        assert!(average.ends_with('3'));
     }
 
     #[test]
