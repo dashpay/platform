@@ -247,6 +247,18 @@ extension PersistentIdentity {
     /// be found by that fallback and re-linked, and cold restore, which reads
     /// the identity's linked rows, would then restore the wrong key.
     ///
+    /// For identities no wallet holds only. A wallet-held identity's key
+    /// rows are written by the wallet's persister alone, through its proved
+    /// refresh, which never lets an older answer undo a newer one; callers
+    /// must not merge a plain fetch into them.
+    ///
+    /// A matched key's state (disabled, limits) is taken from the fetch as
+    /// it is. The SDK accepts proofs one block behind, so an older response
+    /// can show a disabled key as enabled, or a raised limit lower, until
+    /// the next current fetch. The rule that reconciles a fetch with stored
+    /// state by revision lives in platform-wallet; exposing it for these
+    /// identities is tracked in dashpay/platform#6100.
+    ///
     /// Keychain items are never touched here. Does not save; the caller
     /// saves the context.
     public func mergeFetchedPublicKeys(_ fetched: [PersistentPublicKey]) {

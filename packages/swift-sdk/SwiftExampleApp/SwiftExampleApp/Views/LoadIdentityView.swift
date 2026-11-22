@@ -478,9 +478,18 @@ struct LoadIdentityView: View {
                         in: modelContext,
                         identityId: validIdData
                     )
+                    // A wallet that holds this identity is the only writer
+                    // of its key rows and balance (the persister, through
+                    // the wallet's proved refresh, which never lets an older
+                    // answer undo a newer one). A plain fetch here could be
+                    // a block behind, so it leaves both alone and only
+                    // records what the user entered.
+                    let walletHeld = existing?.wallet != nil
                     let row: PersistentIdentity
                     if let existing = existing {
-                        existing.balance = Int64(bitPattern: fetchedBalance)
+                        if !walletHeld {
+                            existing.balance = Int64(bitPattern: fetchedBalance)
+                        }
                         existing.alias = trimmedAlias
                         // The user just added/reloaded this identity
                         // by hand — mark the provenance. (This flow
@@ -515,11 +524,13 @@ struct LoadIdentityView: View {
                     }
 
                     // Keep the fetched keys' DPP projection for matching the
-                    // entered private keys, then bring the rows in line with
-                    // them, keeping each unchanged key's local signing
-                    // references.
+                    // entered private keys, then (for an identity no wallet
+                    // holds) bring the rows in line with them, keeping each
+                    // unchanged key's local signing references.
                     let capturedPublicKeys = fetchedKeys.compactMap { $0.toIdentityPublicKey() }
-                    row.mergeFetchedPublicKeys(fetchedKeys)
+                    if !walletHeld {
+                        row.mergeFetchedPublicKeys(fetchedKeys)
+                    }
 
                     // Match each user-provided private key to its
                     // public key and stash it in the keychain.
@@ -529,7 +540,10 @@ struct LoadIdentityView: View {
                             publicKeys: capturedPublicKeys,
                             network: network
                         ), let persistentKey = row.publicKeys.first(
-                            where: { $0.keyId == Int32(bitPattern: matched.id) }
+                            where: {
+                                $0.keyId == Int32(bitPattern: matched.id)
+                                    && $0.publicKeyData == matched.data
+                            }
                         ), let keychainId = KeychainManager.shared.storePrivateKey(
                             privateKey,
                             identityId: validIdData,
