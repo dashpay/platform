@@ -37,9 +37,9 @@
 //! [`policy_revision`](ContextProvider::policy_revision), which advances on
 //! every quorum mode change, before it is sent. The set is stored only if
 //! both are unchanged when it arrives, and returned only while they still
-//! match. A provider whose revision cannot be read is never cached against,
-//! so a spend never reuses evidence that an earlier verification policy
-//! accepted.
+//! match. A provider that reports no revision, which is the default, is
+//! never cached against, so a spend never reuses evidence that an earlier
+//! verification policy accepted.
 //!
 //! An anchor pruned after the cached fetch can still be selected, where a
 //! fresh fetch would already omit it. Platform then rejects the spend after
@@ -47,7 +47,8 @@
 //! sync resolves the spend.
 //!
 //! The spend path also refetches when the cached set covers none of the
-//! wallet's checkpoints, and drops the cache after any failed spend. The
+//! wallet's checkpoints. Failures during anchor selection, proving, or
+//! broadcast handling invalidate the cache; earlier failures do not. The
 //! stranded-reservation release pass never reads the cache (its fund-safety
 //! argument needs a set fetched right before its note scan); it only fills it.
 

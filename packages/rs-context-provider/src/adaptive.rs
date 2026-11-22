@@ -299,8 +299,11 @@ impl ContextProvider for AdaptiveContextProvider {
         })
     }
 
+    /// Its own mode changes plus the trusted provider's revision. The SPV
+    /// route is strict SPV however the published client changes.
     fn policy_revision(&self) -> Option<u64> {
-        Some(self.mode_and_revision.load(Ordering::Acquire) >> 8)
+        let own = self.mode_and_revision.load(Ordering::Acquire) >> 8;
+        Some(own.wrapping_add(self.trusted.policy_revision()?))
     }
 
     fn set_quorum_mode(&self, mode: ContextProviderMode) -> Result<(), ContextProviderError> {
@@ -390,6 +393,28 @@ mod tests {
         assert_eq!(adaptive.policy_revision(), Some(start + 3));
         adaptive.set_quorum_mode(ContextProviderMode::Spv).unwrap();
         assert_eq!(adaptive.policy_revision(), Some(start + 3));
+    }
+
+    #[test]
+    fn should_advance_the_policy_revision_when_the_trusted_delegate_changes() {
+        let delegate = Arc::new(adaptive());
+        let outer = AdaptiveContextProvider::new(
+            Arc::clone(&delegate) as Arc<dyn ContextProvider>,
+            Arc::new(TestContracts),
+            Network::Testnet,
+        )
+        .unwrap();
+        let start = outer.policy_revision().unwrap();
+        delegate.set_quorum_mode(ContextProviderMode::Spv).unwrap();
+        assert_eq!(outer.policy_revision(), Some(start + 1));
+
+        let unreported = AdaptiveContextProvider::new(
+            Arc::new(std::sync::Mutex::new(adaptive())),
+            Arc::new(TestContracts),
+            Network::Testnet,
+        )
+        .unwrap();
+        assert_eq!(unreported.policy_revision(), None);
     }
 
     #[test]

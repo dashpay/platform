@@ -231,17 +231,18 @@ pub trait ContextProvider: Send + Sync {
         None
     }
 
-    /// A revision that changes whenever this provider changes how it
-    /// verifies proofs, such as on every
-    /// [`set_quorum_mode`](Self::set_quorum_mode), so a caller can tell
-    /// whether results verified earlier came from the policy now in force.
-    /// It never blocks. While it returns `None` no earlier result may be
-    /// reused, and a change made meanwhile must still advance the revision.
-    /// The default, `Some(0)`, suits a provider whose policy never changes; a
-    /// provider that overrides `set_quorum_mode` overrides this too, and a
-    /// wrapper whose inner provider can be replaced returns `None`.
+    /// A revision of how this provider verifies proofs, so a caller can tell
+    /// whether results verified earlier came from the policy now in force. It
+    /// never decreases, and increases on every change, such as every
+    /// [`set_quorum_mode`](Self::set_quorum_mode) that changes the mode, so
+    /// the sum of a provider's and its delegates' revisions is one too. It
+    /// never blocks.
+    ///
+    /// The default, `None`, makes no claim, and no earlier result may be
+    /// reused. A provider opts in only when it can report every change,
+    /// including those of the providers it delegates quorum lookups to.
     fn policy_revision(&self) -> Option<u64> {
-        Some(0)
+        None
     }
 
     /// Change which source later quorum lookups use, on a provider that
@@ -504,6 +505,10 @@ impl Default for MockContextProvider {
 
 #[cfg(feature = "mocks")]
 impl ContextProvider for MockContextProvider {
+    fn policy_revision(&self) -> Option<u64> {
+        Some(0)
+    }
+
     /// Mock implementation of [ContextProvider] that returns keys from files saved on disk.
     ///
     /// Use [dash_sdk::SdkBuilder::with_dump_dir()] to generate quorum keys files.
