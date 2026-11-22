@@ -294,6 +294,18 @@ impl From<SdkError> for WasmSdkError {
                 None,
                 retriable,
             ),
+            error @ ContactRequestIdentityNotFound(_) => Self::new(
+                WasmSdkErrorKind::NotFound,
+                error.to_string(),
+                None,
+                retriable,
+            ),
+            error @ ContactRequestKeyNotValid { .. } => Self::new(
+                WasmSdkErrorKind::InvalidArgument,
+                error.to_string(),
+                None,
+                retriable,
+            ),
             EncryptedFor(e) => e.into(),
             error @ ProtocolVersionNotActive { .. } => {
                 // The SDK's message names what is missing; a failed query for the network's

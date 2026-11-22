@@ -11,6 +11,8 @@ use dpp::consensus::basic::state_transition::{
 };
 use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressNotEnoughFundsError};
 use dpp::consensus::ConsensusError;
+use dpp::identity::KeyID;
+use dpp::prelude::{Identifier, TimestampMillis};
 use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersionError;
@@ -152,6 +154,26 @@ pub enum Error {
     #[error(transparent)]
     EncryptedFor(#[from] EncryptedForError),
 
+    /// An identity a new contact request names is not on Platform.
+    #[error("identity {0} named by the contact request is not on Platform")]
+    ContactRequestIdentityNotFound(Identifier),
+
+    /// A new contact request names a key the identity, as Platform holds it now, does not
+    /// have or has disabled: the request would encrypt the payment xpub to a key that is no
+    /// longer valid.
+    #[error(
+        "key {key_id} of identity {identity_id} {}; a new contact request needs a valid key",
+        describe_contact_request_key(*.disabled_at)
+    )]
+    ContactRequestKeyNotValid {
+        /// The identity holding (or lacking) the key.
+        identity_id: Identifier,
+        /// The key the request names.
+        key_id: KeyID,
+        /// When Platform shows the key disabled; `None` when the identity has no such key.
+        disabled_at: Option<TimestampMillis>,
+    },
+
     /// The request uses a feature that not every node of the network serves yet, so the
     /// SDK refused it without sending it: nodes of an older release would answer
     /// UNIMPLEMENTED or a different question, and get banned for it.
@@ -184,6 +206,14 @@ pub enum Error {
         #[source]
         cause: Option<Box<Error>>,
     },
+}
+
+/// Why [`Error::ContactRequestKeyNotValid`]'s key is not valid.
+fn describe_contact_request_key(disabled_at: Option<TimestampMillis>) -> String {
+    match disabled_at {
+        Some(disabled_at) => format!("is disabled on Platform (at timestamp {disabled_at})"),
+        None => "is not on Platform".to_string(),
+    }
 }
 
 /// The feature [`Error::ProtocolVersionNotActive`]'s message names, if any.

@@ -109,7 +109,9 @@ pub fn classify(error: &Error) -> Status {
         | Error::DriveProofError(..)
         | Error::InvalidProvedResponse(_)
         | Error::ExecutionNotProved(_)
-        | Error::ContextProviderError(_) => StatusKind::Rejected,
+        | Error::ContextProviderError(_)
+        | Error::ContactRequestKeyNotValid { .. } => StatusKind::Rejected,
+        Error::ContactRequestIdentityNotFound(_) => StatusKind::NotFound,
         _ => StatusKind::Internal,
     };
     Status::new(kind, error.to_string())
@@ -722,6 +724,18 @@ mod tests {
                     "x".into(),
                 ))),
                 StatusKind::Rejected,
+            ),
+            (
+                Error::ContactRequestKeyNotValid {
+                    identity_id: Identifier::from([1; 32]),
+                    key_id: 1,
+                    disabled_at: Some(1),
+                },
+                StatusKind::Rejected,
+            ),
+            (
+                Error::ContactRequestIdentityNotFound(Identifier::from([1; 32])),
+                StatusKind::NotFound,
             ),
             (Error::Generic("x".into()), StatusKind::Internal),
         ] {

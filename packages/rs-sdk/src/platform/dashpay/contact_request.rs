@@ -256,38 +256,36 @@ fn contact_request_keys<'a>(
         )));
     }
 
-    refuse_disabled_key("Sender", sender_key_index, sender_key)?;
-    refuse_disabled_key("Recipient", recipient_key_index, recipient_key)?;
+    for (side, key_index, key) in [
+        ("Sender", sender_key_index, sender_key),
+        ("Recipient", recipient_key_index, recipient_key),
+    ] {
+        if let Some(disabled_at) = key.disabled_at() {
+            return Err(Error::Generic(format!(
+                "{side} key at index {key_index} is disabled (at timestamp {disabled_at}); a new \
+                 contact request needs a valid key"
+            )));
+        }
+    }
 
     Ok((sender_key, recipient_key))
 }
 
-/// Refuse `key`, named by a new contact request's `side` key index, when it is
-/// disabled.
-fn refuse_disabled_key(side: &str, key_index: u32, key: &IdentityPublicKey) -> Result<(), Error> {
-    match key.disabled_at() {
-        Some(disabled_at) => Err(Error::Generic(format!(
-            "{side} key at index {key_index} is disabled (at timestamp {disabled_at}); a new \
-             contact request needs a valid key"
-        ))),
-        None => Ok(()),
-    }
-}
-
 /// Refuse the key `identity`, as Platform holds it now, has at `key_index`
 /// when it is absent or disabled.
-fn refuse_key_not_current_on_platform(
-    side: &str,
-    identity: &Identity,
-    key_index: u32,
-) -> Result<(), Error> {
-    let key = identity.public_keys().get(&key_index).ok_or_else(|| {
-        Error::Generic(format!(
-            "{side} key at index {key_index} is not on identity {} on Platform",
-            identity.id()
-        ))
-    })?;
-    refuse_disabled_key(side, key_index, key)
+fn refuse_key_not_current_on_platform(identity: &Identity, key_index: u32) -> Result<(), Error> {
+    let disabled_at = match identity.public_keys().get(&key_index) {
+        Some(key) => match key.disabled_at() {
+            None => return Ok(()),
+            disabled_at => disabled_at,
+        },
+        None => None,
+    };
+    Err(Error::ContactRequestKeyNotValid {
+        identity_id: identity.id(),
+        key_id: key_index,
+        disabled_at,
+    })
 }
 
 impl Sdk {
@@ -582,14 +580,14 @@ impl Sdk {
         let sender_id = input.sender_identity.id();
         let sender = Identity::fetch(self, sender_id)
             .await?
-            .ok_or_else(|| Error::Generic(format!("Sender identity {sender_id} not found")))?;
-        refuse_key_not_current_on_platform("Sender", &sender, input.sender_key_index)?;
+            .ok_or(Error::ContactRequestIdentityNotFound(sender_id))?;
+        refuse_key_not_current_on_platform(&sender, input.sender_key_index)?;
         if let RecipientIdentity::Identity(snapshot) = &input.recipient {
             let recipient_id = snapshot.id();
-            let recipient = Identity::fetch(self, recipient_id).await?.ok_or_else(|| {
-                Error::Generic(format!("Recipient identity {recipient_id} not found"))
-            })?;
-            refuse_key_not_current_on_platform("Recipient", &recipient, input.recipient_key_index)?;
+            let recipient = Identity::fetch(self, recipient_id)
+                .await?
+                .ok_or(Error::ContactRequestIdentityNotFound(recipient_id))?;
+            refuse_key_not_current_on_platform(&recipient, input.recipient_key_index)?;
         }
         Ok(())
     }
@@ -909,12 +907,27 @@ mod tests {
         recipient: Identity,
         on_platform: &[Identity],
     ) -> Error {
+        let answers: Vec<_> = on_platform
+            .iter()
+            .map(|identity| (identity.id(), Some(identity.clone())))
+            .collect();
+        send_answered(sender, recipient, &answers).await
+    }
+
+    /// [`send_from_snapshots`], with Platform answering each identity fetch as
+    /// `answers` says.
+    #[cfg(feature = "mocks")]
+    async fn send_answered(
+        sender: Identity,
+        recipient: Identity,
+        answers: &[(Identifier, Option<Identity>)],
+    ) -> Error {
         use crate::sdk::put_test_support::CountingSigner;
         use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
         let mut sdk = crate::SdkBuilder::new_mock().build().expect("mock sdk");
-        for identity in on_platform {
+        for (id, answer) in answers {
             sdk.mock()
-                .expect_fetch(identity.id(), Some(identity.clone()))
+                .expect_fetch(*id, answer.clone())
                 .await
                 .expect("identity expectation");
         }
@@ -962,12 +975,18 @@ mod tests {
         disabled.add_public_key(key);
         let recipient = with_id(identity_with_key(Purpose::DECRYPTION, None), 3);
 
+        let sender_id = sender.id();
         let error = send_from_snapshots(sender, recipient.clone(), &[disabled, recipient]).await;
 
         assert!(
-            error
-                .to_string()
-                .contains("Sender key at index 0 is disabled"),
+            matches!(
+                error,
+                Error::ContactRequestKeyNotValid {
+                    identity_id,
+                    key_id: 0,
+                    disabled_at: Some(1_700_000_000_000),
+                } if identity_id == sender_id
+            ),
             "{error}"
         );
     }
@@ -983,12 +1002,48 @@ mod tests {
         key.set_disabled_at(1_700_000_000_000);
         disabled.add_public_key(key);
 
+        let recipient_id = recipient.id();
         let error = send_from_snapshots(sender.clone(), recipient, &[sender, disabled]).await;
 
         assert!(
-            error
-                .to_string()
-                .contains("Recipient key at index 0 is disabled"),
+            matches!(
+                error,
+                Error::ContactRequestKeyNotValid {
+                    identity_id,
+                    key_id: 0,
+                    disabled_at: Some(1_700_000_000_000),
+                } if identity_id == recipient_id
+            ),
+            "{error}"
+        );
+    }
+
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_refuse_a_send_whose_sender_key_or_identity_is_not_on_platform() {
+        use dpp::identity::accessors::IdentitySettersV0;
+        let sender = identity_with_key(Purpose::ENCRYPTION, None);
+        let recipient = with_id(identity_with_key(Purpose::DECRYPTION, None), 3);
+        let sender_id = sender.id();
+        let mut keyless = sender.clone();
+        keyless.set_public_keys(BTreeMap::new());
+
+        let error = send_from_snapshots(sender.clone(), recipient.clone(), &[keyless]).await;
+        assert!(
+            matches!(
+                error,
+                Error::ContactRequestKeyNotValid {
+                    identity_id,
+                    key_id: 0,
+                    disabled_at: None,
+                } if identity_id == sender_id
+            ),
+            "{error}"
+        );
+
+        let error = send_answered(sender, recipient, &[(sender_id, None)]).await;
+        assert!(
+            matches!(error, Error::ContactRequestIdentityNotFound(id) if id == sender_id),
             "{error}"
         );
     }

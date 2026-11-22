@@ -75,8 +75,9 @@ pub mod ffi {
         /// Nothing was proved: transport failure, timeout, proxy failure,
         /// no usable endpoint, or the client is shut down.
         Unavailable = 2,
-        /// A response failed verification (proof, quorum, staleness) or a
-        /// node refused the request.
+        /// A response failed verification (proof, quorum, staleness), a
+        /// node refused the request, or the SDK refused it against proved
+        /// state (a contact request naming a key no longer valid).
         Rejected = 3,
         /// Platform rejected a state transition; see `consensus_code`.
         Consensus = 4,
