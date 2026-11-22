@@ -765,9 +765,10 @@ public enum PlatformWalletError: LocalizedError {
     /// SDK error it is never a possibly delivered operation.
     case identityLookupFailed(String)
     /// A creation key's format is not active at the wallet's protocol version
-    /// (code 82). Nothing was funded, signed or broadcast. On an unpinned SDK
-    /// the network refuses the format and it lifts when the network upgrades;
-    /// meanwhile register with the Rust identity key layout's keys.
+    /// (code 82). Nothing was funded, signed or broadcast. The version is the
+    /// newest the SDK knows, refreshed best-effort on an unpinned SDK, so a
+    /// retry can pass once it learns a newer network version. Keys of the Rust
+    /// identity key layout are admitted at every version.
     case identityKeyFormatNotActive(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition never

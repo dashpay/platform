@@ -788,9 +788,9 @@ pub enum PlatformWalletFFIResultCode {
     /// Maps `IdentityCreationKeysError::InactiveKeyFormat`: a creation key
     /// uses a format (a version 1 key, or one bound to a contract group) the
     /// wallet's protocol version does not admit. Nothing was funded, signed or
-    /// broadcast. An unpinned SDK first learns the network's version, so there
-    /// the network runs a version that refuses the format, and the refusal
-    /// lifts when the network upgrades; a pinned SDK keeps its pin. Register
+    /// broadcast. The version is the newest the SDK knows: an
+    /// unpinned SDK refreshes it first, best-effort, so a retry can pass once
+    /// the SDK learns a newer network version; a pinned SDK keeps its pin. Register
     /// with keys that version admits, such as the Rust identity key layout's.
     ErrorIdentityKeyFormatNotActive = 82,
 
