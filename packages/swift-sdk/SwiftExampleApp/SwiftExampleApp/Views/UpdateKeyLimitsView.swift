@@ -458,10 +458,14 @@ struct UpdateKeyLimitsView: View {
                 return
             }
             isSubmitting = false
-            // Nothing landed: preview again if the form still shows what was
-            // submitted. An edit made meanwhile has its own preview.
+            // Refused: offer the reviewed preview again, its absolute limits
+            // unchanged, if the form still shows what was submitted. A fresh
+            // preview could read a copy a refresh moved meanwhile and offer
+            // the increment on top of it; the reviewed one is refused by Rust
+            // before a nonce if the copy moved. An edit made meanwhile has
+            // its own preview.
             if change == inputs {
-                await previewInputs(change)
+                inputPreview = .ready(reviewed, for: change)
             }
             return
         }

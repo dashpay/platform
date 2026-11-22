@@ -287,15 +287,15 @@ impl IdentityWallet {
             let mut wm = self.wallet_manager.write().await;
             let info = self.current_wallet_info_mut(&mut wm)?;
             // The identity can have been removed from the wallet while the update waited for
-            // its proof. The raise landed on Platform all the same, so this is not reported as
-            // success, and not as a refusal that invites sending it again.
+            // its proof. The requested limits were proved on Platform all the same, so this is
+            // not reported as success, and not as a refusal that invites sending it again.
             let managed = info
                 .identity_manager
                 .managed_identity_mut(identity_id)
                 .ok_or_else(|| {
                     PlatformWalletError::Persistence(format!(
-                        "the key limits update of key {key_id} landed, but identity {identity_id} \
-                         is no longer held by this wallet: nothing was applied locally"
+                        "the requested limits of key {key_id} were proved on Platform, but identity \
+                         {identity_id} is no longer held by this wallet: nothing was applied locally"
                     ))
                 })?;
             let merged = merge_proved_key(
