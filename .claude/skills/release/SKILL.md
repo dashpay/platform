@@ -86,6 +86,7 @@ Tagging is a **separate manual step after the release PR is merged** into the de
 
 1. Confirm the release PR is merged and the dev-branch tip carries the version bump.
 2. Write concise, **non-technical** release notes: a short highlights list (main features) + a bug-fixes/hardening summary + a link to the changelog. Summarize from the version's `CHANGELOG.md` section (its `### Features` / `### Bug Fixes` blocks) — don't paste the raw commit list.
+   - **Upgrade notices are not in the changelog.** `CHANGELOG.md` is regenerated from commit titles, so what operators and app developers must do lives in the book and has to be carried into the notes' **Upgrading** section by hand. For a release line that brings a new protocol version, check the book for an "Updating Apps for Protocol Version N" chapter and state its requirement under **Upgrading → App developers**, with a link. For 5.1 (protocol version 15) that is `book/src/sdk/protocol-version-15-upgrade.md`: wallets and apps must update to a 5.1 SDK before protocol version 15 activates, because a 5.0.x client can no longer read DPNS, DashPay, contracts created at protocol version 15, document history or 128-bit sums. Include it in every 5.1 prerelease's notes too, since testnet activates first.
 3. Create the release, pinned to the merge commit, marked `--prerelease` for `-beta`/`-rc`/`-dev`/`-alpha` (drop it for a stable release). This is outward-facing and triggers builds — confirm the notes with the user first.
 
 ```sh

@@ -791,10 +791,38 @@ mod tests {
     /// What the SDK's retry loop ends a document request with when its node answered at an
     /// older protocol version than the SDK's and then no node was left to ask.
     async fn every_node_answered_at_an_older_protocol_version() -> dash_sdk::Error {
+        every_node_answered_with(|| {
+            dash_sdk::Error::StaleNode(dash_sdk::error::StaleNodeError::ProtocolVersion {
+                expected_protocol_version: 14,
+                received_protocol_version: 13,
+            })
+        })
+        .await
+    }
+
+    /// What the SDK's retry loop ends a request with when its node gave an answer this build
+    /// could not read, on a network proven to run a protocol version newer than the build
+    /// knows, and then no node was left to ask. The verifier's own text holds words the
+    /// fallbacks below read as a timeout, a connection failure and a DAPI error.
+    async fn every_node_answered_in_a_form_of_a_newer_protocol_version() -> dash_sdk::Error {
+        every_node_answered_with(|| {
+            dash_sdk::Error::StaleNode(dash_sdk::error::StaleNodeError::NewerProtocolVersion {
+                supported_protocol_version: 15,
+                network_protocol_version: 16,
+                error: Box::new(drive_proof_verifier::Error::ProtocolError {
+                    error: "timeout on a DAPI connection".to_string(),
+                }),
+            })
+        })
+        .await
+    }
+
+    /// What the SDK's retry loop ends a request with when its node answered with `spared`,
+    /// an answer that does not get the node banned, and then no node was left to ask.
+    async fn every_node_answered_with(spared: fn() -> dash_sdk::Error) -> dash_sdk::Error {
         use dash_sdk::dapi_client::{
             Address, AddressList, DapiClientError, ExecutionError, ExecutionResponse,
         };
-        use dash_sdk::error::StaleNodeError;
         use std::sync::atomic::{AtomicBool, Ordering};
 
         let node: Address = "http://127.0.0.1:1".parse().expect("address");
@@ -812,10 +840,7 @@ mod tests {
                 Err::<ExecutionResponse<()>, _>(if first {
                     ExecutionError {
                         possibly_accepted: false,
-                        inner: dash_sdk::Error::StaleNode(StaleNodeError::ProtocolVersion {
-                            expected_protocol_version: 14,
-                            received_protocol_version: 13,
-                        }),
+                        inner: spared(),
                         retries: 0,
                         address: Some(node),
                     }
@@ -843,6 +868,20 @@ mod tests {
     ) {
         let error = every_node_answered_at_an_older_protocol_version().await;
 
+        assert_eq!(classify(error), DashSDKErrorCode::ProtocolError);
+    }
+
+    /// No node can help an SDK older than its network: the app has to update it. The host
+    /// gets a protocol error whatever the verifier said about the answer it could not read.
+    #[tokio::test]
+    async fn should_report_a_request_no_node_could_answer_readably_on_a_newer_network_as_protocol_error(
+    ) {
+        let error = every_node_answered_in_a_form_of_a_newer_protocol_version().await;
+
+        assert!(
+            matches!(&error, dash_sdk::Error::Config(reason) if reason.contains("update the SDK")),
+            "{error:?}"
+        );
         assert_eq!(classify(error), DashSDKErrorCode::ProtocolError);
     }
 

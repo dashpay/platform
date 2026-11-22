@@ -724,7 +724,7 @@ mod tests {
             Error::ExecutionNotProved("affected-state snapshot only".into()),
             Error::TimeoutReached(Duration::from_secs(10), "no verified result".into()),
         ] {
-            let expected = format!("state transition outcome is unconfirmed; reconcile the original operation before submitting a replacement: {wait_error}");
+            let expected = format!("state transition outcome is unconfirmed: a node accepted it or may have received it; reconcile the original operation before submitting a replacement; last error: {wait_error}");
             let result: Result<(), Error> = wait_after_broadcast(
                 Err(Error::AlreadyExists("tx already exists in cache".into())),
                 async { Err(wait_error) },

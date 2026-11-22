@@ -4198,6 +4198,108 @@ mod tests {
         assert_eq!(validation_result.errors.len(), 0);
     }
 
+    /// The fee estimate reads the stored keys an update disables; a key id the identity does
+    /// not have must be refused with the consensus error before it, not fail as a Drive
+    /// internal error, while a key it has passes the check and gets its fee estimated.
+    /// Checked at protocol version 14 and the latest version.
+    #[tokio::test]
+    async fn should_refuse_identity_update_disabling_a_missing_key_with_a_consensus_error() {
+        for (protocol_version, disable_key_id) in [14, PlatformVersion::latest().protocol_version]
+            .into_iter()
+            .flat_map(|version| [(version, 42), (version, 1)])
+        {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected a platform version");
+
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_initial_protocol_version(protocol_version)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let (identity, signer, _, key) =
+                setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+
+            let platform_state = platform.state.load();
+
+            let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: vec![],
+                disable_public_keys: vec![disable_key_id],
+                user_fee_increase: 0,
+                signature_public_key_id: key.id(),
+                signature: Default::default(),
+            }
+            .into();
+
+            let mut update_transition: StateTransition = update_transition.into();
+
+            let data = update_transition
+                .signable_bytes()
+                .expect("expected signable bytes");
+            update_transition.set_signature(
+                signer
+                    .sign(&key, data.as_slice())
+                    .await
+                    .expect("expected to sign"),
+            );
+
+            let update_transition_bytes = update_transition
+                .serialize_to_bytes()
+                .expect("expected to serialize");
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let validation_result = platform
+                .check_tx(
+                    update_transition_bytes.as_slice(),
+                    FirstTimeCheck,
+                    &platform_ref,
+                    platform_version,
+                )
+                .expect("expected a consensus error, not an internal error");
+
+            if disable_key_id == 42 {
+                assert_matches!(
+                    validation_result.errors.as_slice(),
+                    [ConsensusError::StateError(
+                        StateError::MissingIdentityPublicKeyIdsError(error)
+                    )] if error.ids() == &vec![42],
+                    "protocol version {protocol_version}"
+                );
+            } else {
+                assert!(
+                    validation_result.errors.is_empty(),
+                    "protocol version {protocol_version}: {:?}",
+                    validation_result.errors
+                );
+                assert!(
+                    validation_result
+                        .data
+                        .as_ref()
+                        .and_then(|result| result.fee_result.as_ref())
+                        .is_some(),
+                    "protocol version {protocol_version}: expected a fee estimate"
+                );
+            }
+        }
+    }
+
     #[tokio::test]
     async fn token_mint_confirmation_check_tx() {
         let platform_config = PlatformConfig {
