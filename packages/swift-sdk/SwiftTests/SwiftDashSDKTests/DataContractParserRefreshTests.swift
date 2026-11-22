@@ -328,4 +328,37 @@ final class DataContractParserRefreshTests: XCTestCase {
         XCTAssertEqual(tokenRow.decimals, 3)
         XCTAssertTrue(tokenRow.isPaused)
     }
+
+    /// An explicit `maxSupply` of 0 is a cap of zero, not "no cap", and a
+    /// re-parse keeps that difference both ways.
+    func testShouldKeepAnExplicitZeroMaxSupplyApartFromNoCapOnAReparse() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        defer { withExtendedLifetime(container) {} }
+        try insertFixtureContract(into: context)
+
+        let id = contractId
+        let tokenRows = FetchDescriptor<PersistentToken>(predicate: #Predicate { $0.contractId == id })
+        func parse(maxSupply: Any?) throws -> PersistentToken {
+            var cappedToken = token
+            if let maxSupply {
+                cappedToken["maxSupply"] = maxSupply
+            }
+            try DataContractParser.parseDataContract(
+                contractData: ["tokens": ["0": cappedToken]],
+                contractId: contractId,
+                modelContext: context
+            )
+            try context.save()
+            let rows = try context.fetch(tokenRows)
+            XCTAssertEqual(rows.count, 1)
+            return try XCTUnwrap(rows.first)
+        }
+
+        XCTAssertEqual(try parse(maxSupply: 0).maxSupply, "0")
+        XCTAssertNil(try parse(maxSupply: nil).maxSupply)
+        XCTAssertEqual(try parse(maxSupply: 0).maxSupply, "0")
+        XCTAssertNil(try parse(maxSupply: NSNull()).maxSupply)
+        XCTAssertEqual(try parse(maxSupply: 5000).maxSupply, "5000")
+    }
 }

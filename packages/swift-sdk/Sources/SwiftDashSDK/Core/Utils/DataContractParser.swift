@@ -880,9 +880,11 @@ public struct DataContractParser {
 
     private static func parseTokenConfiguration(token: PersistentToken, from tokenDict: [String: Any]) {
         // Basic properties
-        let maxSupplyStr = extractTokenSupply(from: tokenDict, key: "maxSupply")
-        if maxSupplyStr != "0" {
-            token.maxSupply = maxSupplyStr
+        // `maxSupply` is optional: absent or null means no cap, and an
+        // explicit 0 is a cap of zero. `extractTokenSupply` answers "0" for
+        // both, so the cap is read only when the field holds a value.
+        if let maxSupply = tokenDict["maxSupply"], !(maxSupply is NSNull) {
+            token.maxSupply = extractTokenSupply(from: tokenDict, key: "maxSupply")
         }
 
         if let decimals = tokenDict["decimals"] as? Int {
