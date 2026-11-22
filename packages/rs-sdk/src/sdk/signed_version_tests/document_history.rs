@@ -101,10 +101,7 @@ impl Fixture {
             .build()
             .expect("fresh unpinned SDK");
         assert!(!sdk.version_pinned);
-        assert_eq!(
-            sdk.protocol_version_number(),
-            if network == Network::Devnet { 14 } else { 13 }
-        );
+        assert_eq!(sdk.protocol_version_number(), 14);
         sdk
     }
 
