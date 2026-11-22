@@ -109,6 +109,12 @@ struct PlatformBlocksView: View {
         }
         .navigationTitle("Block Explorer")
         .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: startHeightText) { _, _ in
+            clearForEditedParameters()
+        }
+        .onChange(of: countText) { _, _ in
+            clearForEditedParameters()
+        }
         .onChange(of: appState.sdkGeneration) { _, _ in
             // A read still running, or an error shown, answers for the replaced SDK; blocks
             // already shown stay, marked as read from it
@@ -116,6 +122,14 @@ struct PlatformBlocksView: View {
             isRunning = false
             errorMessage = nil
         }
+    }
+
+    /// The result shown, and a read running, answer the old start height and count.
+    private func clearForEditedParameters() {
+        submissions.invalidate()
+        answer = nil
+        errorMessage = nil
+        isRunning = false
     }
 
     private func run() {
