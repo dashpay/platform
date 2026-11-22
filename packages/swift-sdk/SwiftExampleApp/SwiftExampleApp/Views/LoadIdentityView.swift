@@ -473,11 +473,24 @@ struct LoadIdentityView: View {
                         return
                     }
 
-                    // Upsert the PersistentIdentity row.
-                    let existing = PersistentIdentity.fetch(
-                        in: modelContext,
-                        identityId: validIdData
-                    )
+                    // Upsert the PersistentIdentity row. A failed read is
+                    // not "no row": inserting then could add a second row
+                    // for the identity, and whether a wallet owns it would be
+                    // unknown, so stop before writing anything.
+                    let existing: PersistentIdentity?
+                    do {
+                        let target = validIdData
+                        existing = try modelContext.fetch(
+                            FetchDescriptor<PersistentIdentity>(
+                                predicate: #Predicate { $0.identityId == target }
+                            )
+                        ).first
+                    } catch {
+                        errorMessage = "The stored identity could not be read, so nothing was saved: \(error.localizedDescription)"
+                        isLoading = false
+                        loadStartTime = nil
+                        return
+                    }
                     // A wallet that holds this identity is the only writer
                     // of its key rows and balance (the persister, through
                     // the wallet's proved refresh, which never lets an older
@@ -534,23 +547,33 @@ struct LoadIdentityView: View {
 
                     // Match each user-provided private key to its
                     // public key and stash it in the keychain.
+                    // A key that matches a fetched key but has no stored row
+                    // with the same id, type and bytes (a wallet-held identity
+                    // whose wallet has not refreshed since the key was added),
+                    // or that the Keychain refused, is reported rather than
+                    // dropped silently.
+                    var unlinkedKeyIds: [UInt32] = []
                     for privateKey in capturedPrivateKeys {
-                        if let matched = KeyValidation.matchPrivateKeyToPublicKeys(
+                        guard let matched = KeyValidation.matchPrivateKeyToPublicKeys(
                             privateKeyData: privateKey,
                             publicKeys: capturedPublicKeys,
                             network: network
-                        ), let persistentKey = row.publicKeys.first(
-                            where: {
-                                $0.keyId == Int32(bitPattern: matched.id)
-                                    && $0.publicKeyData == matched.data
-                            }
-                        ), let keychainId = KeychainManager.shared.storePrivateKey(
+                        ) else {
+                            continue
+                        }
+                        guard let persistentKey = row.publicKeys.first(where: {
+                            $0.keyId == Int32(bitPattern: matched.id)
+                                && $0.keyTypeEnum == matched.keyType
+                                && $0.publicKeyData == matched.data
+                        }), let keychainId = KeychainManager.shared.storePrivateKey(
                             privateKey,
                             identityId: validIdData,
                             keyIndex: persistentKey.keyId
-                        ) {
-                            persistentKey.privateKeyKeychainIdentifier = keychainId
+                        ) else {
+                            unlinkedKeyIds.append(matched.id)
+                            continue
                         }
+                        persistentKey.privateKeyKeychainIdentifier = keychainId
                     }
 
                     // Masternode-/evonode-specific keys go to the
@@ -620,7 +643,7 @@ struct LoadIdentityView: View {
                         return
                     }
 
-                    if unstoredKeys.isEmpty && conflictingKeys.isEmpty {
+                    if unstoredKeys.isEmpty && conflictingKeys.isEmpty && unlinkedKeyIds.isEmpty {
                         showSuccess = true
                     } else {
                         var parts: [String] = []
@@ -637,12 +660,27 @@ struct LoadIdentityView: View {
                             }
                             unstoredNote = note
                         }
+                        if !unlinkedKeyIds.isEmpty {
+                            let ids = ListFormatter.localizedString(byJoining: unlinkedKeyIds.sorted().map(String.init))
+                            let noun = unlinkedKeyIds.count == 1 ? "key" : "keys"
+                            parts.append("the private \(noun) entered for key ID \(ids) could not be saved on this device")
+                            let retry = walletHeld
+                                ? "Refresh the identity from the wallet that holds it, then load it again."
+                                : "Load the identity again."
+                            let note = "The private \(noun) entered for key ID \(ids) could not be saved on this device. \(retry)"
+                            unstoredNote = unstoredNote.map { $0 + " " + note } ?? note
+                        }
                         if !conflictingKeys.isEmpty {
                             let names = ListFormatter.localizedString(byJoining: conflictingKeys)
                             let noun = conflictingKeys.count == 1 ? "private key is" : "private keys are"
                             parts.append("a different \(names) \(noun) already stored for this identity and was kept")
                         }
                         var text = "The identity was loaded, but " + parts.joined(separator: ", and ") + "."
+                        if !unlinkedKeyIds.isEmpty {
+                            text += walletHeld
+                                ? " Refresh the identity from the wallet that holds it, then load it again."
+                                : " Load the identity again."
+                        }
                         if !conflictingKeys.isEmpty {
                             text += " You can replace the stored key with the one you entered when asked, or load the identity again later to be asked again."
                         }
