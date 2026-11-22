@@ -249,7 +249,122 @@ public struct DpnsPriceChange: Sendable, Equatable {
     }
 }
 
+/// The way the identity holding a DPNS name gives it up, from Platform
+/// protocol version 15.
+public enum DpnsNameGiveUpMethod: Sendable, Equatable, CaseIterable {
+    /// The name's `domain` document is deleted. The name is free again:
+    /// anybody, someone else included, may register it.
+    case delete
+    /// A `tombstone` document takes the name's place. The name is gone and
+    /// nobody can register it again. This can not be undone, by anybody,
+    /// the identity that created it included.
+    case tombstone
+
+    /// The byte the FFI takes and returns for this method
+    /// (`DPNS_NAME_GIVE_UP_METHOD_*`).
+    var ffiValue: UInt8 {
+        switch self {
+        case .delete:
+            return UInt8(DPNS_NAME_GIVE_UP_METHOD_DELETE)
+        case .tombstone:
+            return UInt8(DPNS_NAME_GIVE_UP_METHOD_TOMBSTONE)
+        }
+    }
+
+    /// The method an FFI byte names, or nil for a byte this build does not
+    /// know.
+    init?(ffiValue: UInt8) {
+        switch ffiValue {
+        case UInt8(DPNS_NAME_GIVE_UP_METHOD_DELETE):
+            self = .delete
+        case UInt8(DPNS_NAME_GIVE_UP_METHOD_TOMBSTONE):
+            self = .tombstone
+        default:
+            return nil
+        }
+    }
+}
+
+/// Which ways the network accepts for giving up one name a wallet identity
+/// holds (``ManagedPlatformWallet/dpnsNameGiveUpChoices(ownerIdentityId:name:)``).
+///
+/// The rule behind the two flags is the protocol's, applied in Rust: a
+/// contested name can only be tombstoned, any other name either way. A host
+/// offers exactly the ways whose flag is `true` and decides nothing itself.
+public struct DpnsNameGiveUpChoices: Sendable, Equatable {
+    /// The name's `domain` document id.
+    public let documentId: Data
+    /// Whether the network accepts ``DpnsNameGiveUpMethod/delete`` for this
+    /// name.
+    public let canDelete: Bool
+    /// Whether the network accepts ``DpnsNameGiveUpMethod/tombstone`` for
+    /// this name.
+    public let canTombstone: Bool
+
+    public init(documentId: Data, canDelete: Bool, canTombstone: Bool) {
+        self.documentId = documentId
+        self.canDelete = canDelete
+        self.canTombstone = canTombstone
+    }
+}
+
+/// A DPNS name given up, as the network confirmed it
+/// (``ManagedPlatformWallet/giveUpDpnsName(ownerIdentityId:name:method:signer:)``).
+public struct DpnsNameGivenUp: Sendable, Equatable {
+    /// The id of the `domain` document that no longer exists.
+    public let documentId: Data
+    /// How the name was given up.
+    public let method: DpnsNameGiveUpMethod
+    /// The id of the tombstone the network stored; set exactly for
+    /// ``DpnsNameGiveUpMethod/tombstone``.
+    public let tombstoneId: Data?
+
+    public init(documentId: Data, method: DpnsNameGiveUpMethod, tombstoneId: Data?) {
+        self.documentId = documentId
+        self.method = method
+        self.tombstoneId = tombstoneId
+    }
+}
+
 // MARK: - FFI decoding
+
+extension DpnsNameGiveUpChoices {
+    init(ffi: DpnsNameGiveUpChoicesFFI) {
+        var documentTuple = ffi.document_id
+        self.init(
+            documentId: Swift.withUnsafeBytes(of: &documentTuple) { Data($0) },
+            canDelete: ffi.can_delete,
+            canTombstone: ffi.can_tombstone
+        )
+    }
+}
+
+extension DpnsNameGivenUp {
+    /// Copy a confirmed give-up into an owned Swift value. Returns nil for
+    /// a method byte this build does not know, or for a tombstone id that
+    /// does not match the method (a tombstone without one, a delete with
+    /// one): the result is not presented as something this build cannot
+    /// establish.
+    init?(ffi: DpnsNameGivenUpFFI) {
+        guard let method = DpnsNameGiveUpMethod(ffiValue: ffi.method) else { return nil }
+        var documentTuple = ffi.document_id
+        var tombstoneTuple = ffi.tombstone_id
+        let tombstoneId: Data? = ffi.has_tombstone
+            ? Swift.withUnsafeBytes(of: &tombstoneTuple) { Data($0) }
+            : nil
+        switch (method, tombstoneId) {
+        case (.delete, .none), (.tombstone, .some):
+            break
+        default:
+            return nil
+        }
+        self.init(
+            documentId: Swift.withUnsafeBytes(of: &documentTuple) { Data($0) },
+            method: method,
+            tombstoneId: tombstoneId
+        )
+    }
+}
 
 extension DpnsMarketplaceName {
     /// Copy a Rust-owned row into an owned Swift value. Every `has_*`
@@ -613,6 +728,104 @@ extension ManagedPlatformWallet {
             }
             try result.check()
             return try Self.takeConfirmedState(outPtr, operation: "dpns_delist_name")
+        }.value
+    }
+
+    /// Which ways the network accepts for `ownerIdentityId` to give up
+    /// `name` (`"alice"` or `"alice.dash"`). Nothing is signed or
+    /// broadcast.
+    ///
+    /// Offer exactly the ways whose flag is `true`: a contested name can
+    /// only be tombstoned, which Rust decides and reports here as
+    /// `canDelete == false`. A delete frees the name for anybody to register
+    /// again; a tombstone can not be undone, by anybody.
+    ///
+    /// Needs Platform protocol version 15. On a network proven below it
+    /// this throws `PlatformWalletError.protocolVersionNotActive` and no
+    /// name can be given up there. Throws `.notFound` when the name is not
+    /// registered and `.invalidParameter` when another identity holds it.
+    public func dpnsNameGiveUpChoices(
+        ownerIdentityId: Identifier,
+        name: String
+    ) async throws -> DpnsNameGiveUpChoices {
+        let handle = self.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) { () -> DpnsNameGiveUpChoices in
+            var out = DpnsNameGiveUpChoicesFFI()
+            let result = ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                name.withCString { namePtr in
+                    platform_wallet_dpns_name_give_up_choices(
+                        handle,
+                        ownerBp.baseAddress!,
+                        namePtr,
+                        &out
+                    )
+                }
+            }
+            try result.check()
+            return DpnsNameGiveUpChoices(ffi: out)
+        }.value
+    }
+
+    /// Give up `name`, held by `ownerIdentityId`, by `method`.
+    ///
+    /// ``DpnsNameGiveUpMethod/delete`` frees the name: anybody may register
+    /// it again. ``DpnsNameGiveUpMethod/tombstone`` removes it for good:
+    /// nobody can register it again and nobody can undo the tombstone, its
+    /// creator included. A contested name can only be tombstoned; ask
+    /// ``dpnsNameGiveUpChoices(ownerIdentityId:name:)`` first and offer only
+    /// what it allows. Rust reads the name again before signing and throws
+    /// `.invalidParameter` for a method the network does not accept.
+    ///
+    /// Needs Platform protocol version 15. On a network proven below it
+    /// this throws `PlatformWalletError.protocolVersionNotActive` and
+    /// nothing is signed. Also throws `.notFound` (name not registered),
+    /// `.invalidParameter` (held by another identity) and
+    /// `.signingKeyUnavailable`.
+    ///
+    /// The wallet's stored state changes only after the network confirmed
+    /// the name gone: the persister removes it from the identity's names, so
+    /// views observing `PersistentDPNSName` drop it on their own.
+    ///
+    /// Same signer lifetime contract as ``setDpnsNamePrice(ownerIdentityId:name:priceCredits:signer:)``.
+    @discardableResult
+    public func giveUpDpnsName(
+        ownerIdentityId: Identifier,
+        name: String,
+        method: DpnsNameGiveUpMethod,
+        signer: KeychainSigner
+    ) async throws -> DpnsNameGivenUp {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let methodByte = method.ffiValue
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) { () -> DpnsNameGivenUp in
+            var out = DpnsNameGivenUpFFI()
+            let result = withExtendedLifetime(signer) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    name.withCString { namePtr in
+                        platform_wallet_dpns_give_up_name(
+                            handle,
+                            ownerBp.baseAddress!,
+                            namePtr,
+                            methodByte,
+                            signerHandle,
+                            &out
+                        )
+                    }
+                }
+            }
+            try result.check()
+            guard let givenUp = DpnsNameGivenUp(ffi: out) else {
+                throw PlatformWalletError.walletOperation(
+                    "dpns_give_up_name reported success but returned an unreadable result"
+                )
+            }
+            return givenUp
         }.value
     }
 
