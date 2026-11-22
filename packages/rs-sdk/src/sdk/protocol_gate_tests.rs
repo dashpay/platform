@@ -79,6 +79,10 @@ use dapi_grpc::platform::v0::{
     GetShieldedNullifiersRequest, GetShieldedPoolStateRequest, GetYesNoVotePollStateRequest, Proof,
     ResponseMetadata,
 };
+use dapi_grpc::platform::v0::{
+    get_data_contract_request, get_data_contract_response, get_epochs_info_response,
+    GetDataContractRequest, GetDataContractResponse,
+};
 use dapi_grpc::tonic::Status;
 use dapi_grpc::Message;
 use dash_context_provider::{ContextProvider, ContextProviderError};
@@ -659,6 +663,227 @@ async fn should_refuse_when_the_network_proves_protocol_13() {
     assert_eq!(probes(&sdk).await, 1);
     assert_eq!(sent(&sdk, &fee_pots()).await, 0);
     assert!(!sdk.address_list().is_banned(&node()));
+}
+
+/// A proved contract request and an answer to it that this build cannot read: its proof is
+/// not one GroveDB decodes. The answer names protocol version `named`.
+fn unreadable_contract_answer(named: u32) -> (GetDataContractRequest, GetDataContractResponse) {
+    let request = GetDataContractRequest {
+        version: Some(get_data_contract_request::Version::V0(
+            get_data_contract_request::GetDataContractRequestV0 {
+                id: vec![7; 32],
+                prove: true,
+            },
+        )),
+    };
+    let response = GetDataContractResponse {
+        version: Some(get_data_contract_response::Version::V0(
+            get_data_contract_response::GetDataContractResponseV0 {
+                result: Some(
+                    get_data_contract_response::get_data_contract_response_v0::Result::Proof(
+                        Proof {
+                            grovedb_proof: vec![0xff; 16],
+                            ..Default::default()
+                        },
+                    ),
+                ),
+                metadata: Some(ResponseMetadata {
+                    protocol_version: named,
+                    height: 10,
+                    time_ms: chrono::Utc::now().timestamp_millis() as u64,
+                    ..Default::default()
+                }),
+            },
+        )),
+    };
+    (request, response)
+}
+
+/// A fresh SDK has no verified answer yet. When its first request meets a form it cannot
+/// read, in an answer naming a protocol version newer than the build knows, it asks the
+/// network for its version before deciding about the node: on a network that proves such a
+/// version the node is not banned, and the request fails as a configuration error naming the
+/// update. A pinned SDK asks too. Once the newer version is verified, nothing more is asked.
+#[tokio::test]
+async fn should_ask_the_network_before_banning_a_node_for_an_answer_it_cannot_read() {
+    let latest = PlatformVersion::latest().protocol_version;
+    for pinned in [false, true] {
+        let sdk = mock_sdk(latest, pinned, 0);
+        answer_probe(&sdk, "newer").await;
+        let (request, response) = unreadable_contract_answer(NEWER);
+        answer(&sdk, &request, Ok(response)).await;
+        for call in 1..=2 {
+            let error = DataContract::fetch_with_settings(&sdk, Identifier::new([7; 32]), once())
+                .await
+                .expect_err("the answer cannot be read");
+            assert!(
+                matches!(
+                    &error,
+                    Error::Config(reason) if reason.contains("update the SDK")
+                        && reason.contains(&format!("runs protocol version {NEWER}"))
+                ),
+                "pinned {pinned}, call {call}: {error:?}"
+            );
+            assert_eq!(probes(&sdk).await, 1, "pinned {pinned}, call {call}");
+            assert_eq!(sent(&sdk, &request).await, call, "pinned {pinned}");
+            assert!(!sdk.address_list().is_banned(&node()), "pinned {pinned}");
+        }
+        assert_eq!(verified(&sdk), NEWER, "pinned {pinned}");
+    }
+}
+
+/// Requests made together on a fresh SDK each meet a form the build cannot read. The one
+/// that asks the network for its version does so while the others wait for the answer: one
+/// probe serves them all, and none bans its node before the answer is known.
+#[tokio::test]
+async fn should_wait_for_the_network_version_being_asked_before_banning_a_node() {
+    let sdk = mock_sdk(PlatformVersion::latest().protocol_version, false, 0);
+    answer_probe(&sdk, "newer").await;
+    let (request, response) = unreadable_contract_answer(NEWER);
+    answer(&sdk, &request, Ok(response)).await;
+    let fetch = || DataContract::fetch_with_settings(&sdk, Identifier::new([7; 32]), once());
+    // The node answers only once every call waits for it, so each call gets its answer
+    // before any of them has asked the network for its version.
+    let held = sdk.mock_dapi().lock().await;
+    let answer_all = async move {
+        tokio::task::yield_now().await;
+        drop(held);
+    };
+    let (first, second, third, ()) = tokio::join!(fetch(), fetch(), fetch(), answer_all);
+    for (call, result) in [first, second, third].into_iter().enumerate() {
+        let error = result.expect_err("the answer cannot be read");
+        assert!(
+            matches!(&error, Error::Config(reason) if reason.contains("update the SDK")),
+            "call {call}: {error:?}"
+        );
+    }
+    assert_eq!(probes(&sdk).await, 1);
+    assert_eq!(sent(&sdk, &request).await, 3);
+    assert!(!sdk.address_list().is_banned(&node()));
+}
+
+/// A probe that fails serves the calls that waited for it as it serves the call that asked:
+/// each decides without it, and none asks again, so calls made together cost one question
+/// of one attempt, whatever the SDK's own retry settings.
+#[tokio::test]
+async fn should_ask_once_when_the_question_fails_for_calls_made_together() {
+    let sdk = mock_sdk(PlatformVersion::latest().protocol_version, false, 0);
+    answer(
+        &sdk,
+        &probe_request(),
+        Err(Status::unavailable("node unreachable")),
+    )
+    .await;
+    let (request, response) = unreadable_contract_answer(NEWER);
+    answer(&sdk, &request, Ok(response)).await;
+    let fetch = || DataContract::fetch_with_settings(&sdk, Identifier::new([7; 32]), once());
+    let held = sdk.mock_dapi().lock().await;
+    let answer_all = async move {
+        tokio::task::yield_now().await;
+        drop(held);
+    };
+    let (first, second, third, ()) = tokio::join!(fetch(), fetch(), fetch(), answer_all);
+    for (call, result) in [first, second, third].into_iter().enumerate() {
+        let error = result.expect_err("the answer cannot be read");
+        assert!(matches!(error, Error::Proof(_)), "call {call}: {error:?}");
+    }
+    assert_eq!(probes(&sdk).await, 1);
+    assert_eq!(verified(&sdk), 0);
+}
+
+/// An answer to the probe itself that the build cannot read is classified as it is: the
+/// probe does not wait for itself, the request it served ends, and its node is banned.
+#[tokio::test]
+async fn should_not_wait_for_itself_when_the_probe_answer_cannot_be_read() {
+    let sdk = mock_sdk(PlatformVersion::latest().protocol_version, false, 0);
+    let mut unreadable_probe: GetEpochsInfoResponse = vector("epoch-probe-newer.bin");
+    let Some(get_epochs_info_response::Version::V0(v0)) = unreadable_probe.version.as_mut() else {
+        panic!("v0 probe answer")
+    };
+    v0.result = Some(
+        get_epochs_info_response::get_epochs_info_response_v0::Result::Proof(Proof {
+            grovedb_proof: vec![0xff; 16],
+            ..Default::default()
+        }),
+    );
+    answer(&sdk, &probe_request(), Ok(unreadable_probe)).await;
+    let (request, response) = unreadable_contract_answer(NEWER);
+    answer(&sdk, &request, Ok(response)).await;
+    let error = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        DataContract::fetch_with_settings(&sdk, Identifier::new([7; 32]), once()),
+    )
+    .await
+    .expect("the probe does not wait for itself")
+    .expect_err("the answer cannot be read");
+    assert!(matches!(error, Error::Proof(_)), "{error:?}");
+    assert_eq!(verified(&sdk), 0);
+    assert!(sdk.address_list().is_banned(&node()));
+}
+
+/// The version an unread answer names is only a reason to ask. When the network proves a
+/// version this build knows, the answer is its node's fault, and the node is banned.
+#[tokio::test]
+async fn should_ban_a_node_for_an_unreadable_answer_when_the_network_proves_a_known_version() {
+    let sdk = mock_sdk(PlatformVersion::latest().protocol_version, false, 0);
+    answer_probe(&sdk, "pv14").await;
+    let (request, response) = unreadable_contract_answer(NEWER);
+    answer(&sdk, &request, Ok(response)).await;
+    let error = DataContract::fetch_with_settings(&sdk, Identifier::new([7; 32]), once())
+        .await
+        .expect_err("the answer cannot be read");
+    assert!(matches!(error, Error::Proof(_)), "{error:?}");
+    assert_eq!(probes(&sdk).await, 1);
+    assert_eq!(verified(&sdk), V14);
+    assert!(sdk.address_list().is_banned(&node()));
+    // The question is not followed by the epoch query that holds the gate's probes.
+    assert_eq!(sdk.probe_hold.get(), None);
+    assert_eq!(
+        sdk.mock_dapi().lock().await.request_count(&probe_request()),
+        1
+    );
+}
+
+/// The hold of an earlier probe can outlast the epoch it proved, so it does not stand in for
+/// asking: an unreadable answer naming a newer version is asked about while a hold covers,
+/// and the node is not banned once the network proves the newer version.
+#[tokio::test]
+async fn should_ask_about_an_unreadable_answer_while_an_earlier_probe_holds() {
+    let latest = PlatformVersion::latest().protocol_version;
+    let sdk = mock_sdk(latest, false, latest);
+    sdk.probe_hold.set(ProbeHold {
+        network: latest,
+        epoch: 2,
+        until_ms: u64::MAX,
+    });
+    answer_probe(&sdk, "newer").await;
+    let (request, response) = unreadable_contract_answer(NEWER);
+    answer(&sdk, &request, Ok(response)).await;
+    let error = DataContract::fetch_with_settings(&sdk, Identifier::new([7; 32]), once())
+        .await
+        .expect_err("the answer cannot be read");
+    assert!(
+        matches!(&error, Error::Config(reason) if reason.contains("update the SDK")),
+        "{error:?}"
+    );
+    assert_eq!(probes(&sdk).await, 1);
+    assert!(!sdk.address_list().is_banned(&node()));
+}
+
+/// An unreadable answer that names a version this build knows gives no reason to ask.
+#[tokio::test]
+async fn should_not_ask_the_network_about_an_unreadable_answer_naming_a_known_version() {
+    let sdk = mock_sdk(PlatformVersion::latest().protocol_version, false, 0);
+    answer_probe(&sdk, "newer").await;
+    let (request, response) =
+        unreadable_contract_answer(PlatformVersion::latest().protocol_version);
+    answer(&sdk, &request, Ok(response)).await;
+    let error = DataContract::fetch_with_settings(&sdk, Identifier::new([7; 32]), once())
+        .await
+        .expect_err("the answer cannot be read");
+    assert!(matches!(error, Error::Proof(_)), "{error:?}");
+    assert_eq!(probes(&sdk).await, 0);
+    assert!(sdk.address_list().is_banned(&node()));
 }
 
 /// A pin at 13 speaks 13 even on a network at 14, so there is nothing to ask.

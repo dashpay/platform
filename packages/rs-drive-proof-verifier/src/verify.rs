@@ -1,7 +1,7 @@
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::bls;
 
-use crate::error::MapGroveDbError;
+use crate::error::{MapGroveDbError, UNDECODABLE_GROVEDB_PROOF_ENVELOPE};
 use crate::Error;
 use dpp::bls::Signature;
 use tenderdash_abci::{
@@ -47,7 +47,7 @@ pub(crate) fn require_supported_grovedb_proof_bytes(grovedb_proof: &[u8]) -> Res
     require_supported_grovedb_proof_envelope(grovedb_proof, "proof").map_err(|error| match error {
         DriveError::Proof(ProofError::InvalidGroveDBProofEnvelope { reason, .. }) => {
             Error::ResponseDecodeError {
-                error: format!("invalid GroveDB proof envelope: {reason}"),
+                error: format!("{UNDECODABLE_GROVEDB_PROOF_ENVELOPE}: {reason}"),
             }
         }
         error => error.into(),
