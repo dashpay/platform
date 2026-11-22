@@ -1077,6 +1077,13 @@ struct CreateIdentityView: View {
     /// The walletless raw-proof branch stays disabled via `canSubmit`
     /// until its FFI entry point lands.
     private func submit() {
+        // A rebuild counts every in-flight registration, whatever funds it,
+        // before it stops SPV, so none may start once the rebuild has
+        // reserved its slot. Checked before any key is persisted.
+        if let refusal = AppState.fundingRefusal(isRebuildingSdk: platformState.isRebuildingSdk) {
+            submitError = .init(message: refusal)
+            return
+        }
         guard
             let identityIndex = identityIndex,
             case .wallet(let walletId) = walletSelection
