@@ -4572,10 +4572,17 @@ extension ManagedPlatformWallet {
     /// and broadcast the change to Platform.
     ///
     /// Companion to `createDataContract`. The wallet fetches the
-    /// live contract from Platform, bumps its version, and applies
-    /// the supplied schemas / config at the next version — the
-    /// caller does NOT track contract version state. Every JSON
-    /// input has the same shape as `createDataContract`.
+    /// live contract from Platform, checks that `ownerIdentityId`
+    /// owns it, raises its version by one, and merges the supplied
+    /// sections onto it: document types, tokens and groups are
+    /// added or replaced key by key (omitted keys keep their
+    /// on-chain definition), and keywords, description and config
+    /// replace the live ones only when supplied. The caller does
+    /// NOT track contract version state. Every JSON input has the
+    /// same shape as `createDataContract`. Platform decides whether
+    /// the update is allowed when it is broadcast;
+    /// `previewDataContractUpdate` reports what the same arguments
+    /// would change without broadcasting.
     ///
     /// `contractId` is the id of the existing contract to update.
     /// Returns the (unchanged) contract id of the updated contract.
@@ -4649,6 +4656,92 @@ extension ManagedPlatformWallet {
 
             try result.check()
             return Data(contractIdBytes)
+        }.value
+    }
+
+    /// Report what `updateDataContract`, called with the same
+    /// arguments, would change in the contract `contractId`, without
+    /// signing or broadcasting anything.
+    ///
+    /// Routes through `IdentityWallet::preview_data_contract_update`
+    /// (via `platform_wallet_preview_data_contract_update`): the
+    /// wallet fetches the live contract, checks that
+    /// `ownerIdentityId` owns it, merges the supplied sections onto
+    /// it and builds the updated contract as the update does, then
+    /// compares the two. It consumes no nonce. JSON that does not
+    /// parse or a schema the contract parser rejects is the same
+    /// error the update would give.
+    ///
+    /// The preview says what changes, not whether Platform accepts
+    /// the update: the network checks the contract update rules when
+    /// the update is broadcast. `hasChanges` is computed by Rust.
+    public func previewDataContractUpdate(
+        ownerIdentityId: Identifier,
+        contractId: Identifier,
+        documentSchemasJSON: String,
+        tokenSchemasJSON: String? = nil,
+        groupsJSON: String? = nil,
+        keywordsJSON: String? = nil,
+        description: String? = nil,
+        contractConfigJSON: String? = nil
+    ) async throws -> DataContractUpdatePreview {
+        let handle = self.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            // Receives an owned JSON C string on success; freed with
+            // `platform_wallet_string_free` on every path.
+            var previewJsonPtr: UnsafeMutablePointer<CChar>? = nil
+            defer { if let p = previewJsonPtr { platform_wallet_string_free(p) } }
+
+            // Pin the wallet (whose deinit destroys the handle) and every
+            // borrowed payload across the FFI call. Rust dereferences the
+            // C-string pointers synchronously inside `block_on_worker`,
+            // so the `withCString` scopes are long enough.
+            let result = withExtendedLifetime(self) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentSchemasJSON.withCString { docsPtr in
+                            Self.withOptionalCString(tokenSchemasJSON) { tokensPtr in
+                                Self.withOptionalCString(groupsJSON) { groupsPtr in
+                                    Self.withOptionalCString(keywordsJSON) { keywordsPtr in
+                                        Self.withOptionalCString(description) { descriptionPtr in
+                                            Self.withOptionalCString(contractConfigJSON) { configPtr in
+                                                platform_wallet_preview_data_contract_update(
+                                                    handle,
+                                                    ownerBp.baseAddress!,
+                                                    contractBp.baseAddress!,
+                                                    docsPtr,
+                                                    tokensPtr,
+                                                    groupsPtr,
+                                                    keywordsPtr,
+                                                    descriptionPtr,
+                                                    configPtr,
+                                                    &previewJsonPtr
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            // On success the Rust side always writes the JSON; a null
+            // pointer is an FFI contract violation.
+            guard let jsonPtr = previewJsonPtr else {
+                throw PlatformWalletError.walletOperation(
+                    "preview_data_contract_update returned no preview JSON"
+                )
+            }
+            return try DataContractUpdatePreview.decode(fromJSON: String(cString: jsonPtr))
         }.value
     }
 
