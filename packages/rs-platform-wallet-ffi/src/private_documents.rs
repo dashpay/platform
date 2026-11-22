@@ -148,8 +148,8 @@ pub struct PrivateDocumentCursorFFI {
     /// The fingerprint of the keys the reads scanned with. Opaque: hand it
     /// back as it came.
     pub key_set: [u8; 32],
-    /// The fingerprint of the store (contract id and type name) the reads
-    /// read. Opaque: hand it back as it came.
+    /// The fingerprint of the store (network, contract id and type name) the
+    /// reads read. Opaque: hand it back as it came.
     pub store: [u8; 32],
     /// Whether a page was ever proved, so `proved_total_count` holds the
     /// store size. `false` means the store's size is unknown, not 0.
@@ -227,9 +227,15 @@ pub struct PrivateDocumentReadFFI {
     /// index and a key an entry can be sealed to. With none, nothing was
     /// read.
     pub identity_count: u32,
+    /// Keys of the wallet's identities an entry could be sealed to that the
+    /// wallet does not derive at their identity key slot, such as a DashPay
+    /// Connect application key: the read did not scan with them, so no entry
+    /// sealed to them is in it, whether or not the read is complete.
+    pub unscanned_key_count: u32,
     /// Whether the read reached the store's last entry, as large a store as
-    /// any page proved. A later read from `cursor` reads the entries appended
-    /// since. `false` with `pages_read` 0 means nothing was read: no identity
+    /// any page proved, with every key but the unscanned ones
+    /// (`unscanned_key_count`). A later read from `cursor` reads the entries
+    /// appended since. `false` with `pages_read` 0 means nothing was read: no identity
     /// can open entries, or the page budget was 0, and reading again changes
     /// nothing until that does.
     pub complete: bool,
@@ -241,19 +247,20 @@ pub struct PrivateDocumentReadFFI {
 
 // Expected `PrivateDocumentReadFFI` layout on 64-bit targets:
 //
-//   0..=7     entries         *mut PrivateDocumentEntryFFI
-//   8..=15    entry_count     usize
-//   16..=103  cursor          PrivateDocumentCursorFFI (88 bytes)
-//   104..=107 pages_read      u32
-//   108..=111 rejected_count  u32
-//   112..=115 identity_count  u32
-//   116       complete        bool
-//   117       restarted       bool
-//   118..=119 (tail padding to 8)
+//   0..=7     entries              *mut PrivateDocumentEntryFFI
+//   8..=15    entry_count          usize
+//   16..=103  cursor               PrivateDocumentCursorFFI (88 bytes)
+//   104..=107 pages_read           u32
+//   108..=111 rejected_count       u32
+//   112..=115 identity_count       u32
+//   116..=119 unscanned_key_count  u32
+//   120       complete             bool
+//   121       restarted            bool
+//   122..=127 (tail padding to 8)
 //
-// Total size = 120, alignment = 8.
+// Total size = 128, alignment = 8.
 #[cfg(target_pointer_width = "64")]
-const _: [u8; 120] = [0u8; std::mem::size_of::<PrivateDocumentReadFFI>()];
+const _: [u8; 128] = [0u8; std::mem::size_of::<PrivateDocumentReadFFI>()];
 #[cfg(target_pointer_width = "64")]
 const _: [u8; 8] = [0u8; std::mem::align_of::<PrivateDocumentReadFFI>()];
 #[cfg(target_pointer_width = "64")]
@@ -267,9 +274,11 @@ const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, rejected_coun
 #[cfg(target_pointer_width = "64")]
 const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, identity_count) == 112);
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, complete) == 116);
+const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, unscanned_key_count) == 116);
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, restarted) == 117);
+const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, complete) == 120);
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, restarted) == 121);
 
 impl PrivateDocumentReadFFI {
     /// No entries, every count zero, a zeroed cursor: the value an
@@ -282,6 +291,7 @@ impl PrivateDocumentReadFFI {
             pages_read: 0,
             rejected_count: 0,
             identity_count: 0,
+            unscanned_key_count: 0,
             complete: false,
             restarted: false,
         }
@@ -402,9 +412,33 @@ fn private_document_read_ffi(
         pages_read: saturating_count(read.pages_read),
         rejected_count: saturating_count(read.rejected.len()),
         identity_count: saturating_count(read.identities.len()),
+        unscanned_key_count: saturating_count(read.unscanned_keys.len()),
         complete: read.complete,
         restarted: read.restarted,
     })
+}
+
+/// What a host should know after a read panicked: a read sends nothing and
+/// keeps nothing, so this call changed nothing and the cursor passed in still
+/// holds.
+const READ_PANIC_GUIDANCE: &str = "The read sent nothing and kept nothing; no result was \
+     written, and the cursor passed in still holds.";
+
+/// Run the read export's body with a panic turned into an
+/// `ErrorWalletOperation` result instead of unwinding into the C caller:
+/// `block_on_worker` re-raises a worker's panic on the calling thread,
+/// inside the `extern "C"` frame, where it would abort the host. The code
+/// promises no write: a read leaves nothing behind to reconcile.
+fn catch_read_panic(
+    operation: &str,
+    body: impl FnOnce() -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    catch_panic_to_code(
+        operation,
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        READ_PANIC_GUIDANCE,
+        body,
+    )
 }
 
 /// The cursor `from` points to; `None` for null, which reads from the store's
@@ -446,6 +480,12 @@ unsafe fn read_cursor(from: *const PrivateDocumentCursorFFI) -> Option<PrivateDo
 /// private type, or a failed page fetch, with the code the wallet error maps
 /// to.
 ///
+/// A panic in the read or its marshalling is returned as
+/// `ErrorWalletOperation`, with `*out_read` left the empty value, on builds
+/// where panics unwind (Android and host builds). The iOS profiles build with
+/// `panic = "abort"`, so there a panic still aborts the process before this
+/// guard can see it.
+///
 /// `*out_read` is reset to the empty value first, so it is well-defined on
 /// every return; release it with
 /// [`platform_wallet_private_document_read_free`].
@@ -474,53 +514,58 @@ pub unsafe extern "C" fn platform_wallet_read_private_document_entries(
     // Publish the empty value before any fallible work, so every early
     // return leaves the out-param well-defined.
     unsafe { *out_read = PrivateDocumentReadFFI::empty() };
-    check_ptr!(core_signer_handle);
-    check_ptr!(data_contract_id);
-    check_ptr!(document_type_name);
-    let data_contract_id = unwrap_result_or_return!(unsafe { read_identifier(data_contract_id) });
-    let document_type_name =
-        unwrap_result_or_return!(unsafe { CStr::from_ptr(document_type_name) }.to_str())
-            .to_string();
-    // SAFETY: the caller guarantees a non-null `from` is readable.
-    let from = unsafe { read_cursor(from) };
+    catch_read_panic("private document read", || {
+        check_ptr!(core_signer_handle);
+        check_ptr!(data_contract_id);
+        check_ptr!(document_type_name);
+        let data_contract_id =
+            unwrap_result_or_return!(unsafe { read_identifier(data_contract_id) });
+        let document_type_name =
+            unwrap_result_or_return!(unsafe { CStr::from_ptr(document_type_name) }.to_str())
+                .to_string();
+        // SAFETY: the caller guarantees a non-null `from` is readable.
+        let from = unsafe { read_cursor(from) };
 
-    // Look the wallet up under the registry guard, but run the read outside
-    // it: a read fetches many pages, and a registry read guard held across
-    // that wait would stall `platform_wallet_destroy` and every other
-    // registry reader.
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        (
-            wallet.identity().clone(),
-            wallet.wallet_id(),
-            wallet.network(),
-        )
-    });
-    let (identity, wallet_id, network) = unwrap_option_or_return!(option);
-    // SAFETY: the caller pins the resolver handle for the duration of this
-    // call.
-    let provider =
-        unsafe { resolver_contact_crypto_provider(core_signer_handle, wallet_id, network) };
-    let result = block_on_worker(async move {
-        identity
-            .read_private_document_entries(
-                &provider,
-                data_contract_id,
-                &document_type_name,
-                from,
-                max_pages as usize,
+        // Look the wallet up under the registry guard, but run the read
+        // outside it: a read fetches many pages, and a registry read guard
+        // held across that wait would stall `platform_wallet_destroy` and
+        // every other registry reader.
+        let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+            (
+                wallet.identity().clone(),
+                wallet.wallet_id(),
+                wallet.network(),
             )
-            .await
-    });
-    let read = match result {
-        Ok(read) => read,
-        Err(error) => return seed_mismatch_result(error).unwrap_or_else(|error| error.into()),
-    };
-    let read = match private_document_read_ffi(read) {
-        Ok(read) => read,
-        Err(result) => return result,
-    };
-    unsafe { *out_read = read };
-    PlatformWalletFFIResult::ok()
+        });
+        let (identity, wallet_id, network) = unwrap_option_or_return!(option);
+        // SAFETY: the caller pins the resolver handle for the duration of
+        // this call.
+        let provider =
+            unsafe { resolver_contact_crypto_provider(core_signer_handle, wallet_id, network) };
+        let result = block_on_worker(async move {
+            identity
+                .read_private_document_entries(
+                    &provider,
+                    data_contract_id,
+                    &document_type_name,
+                    from,
+                    max_pages as usize,
+                )
+                .await
+        });
+        let read = match result {
+            Ok(read) => read,
+            Err(error) => return seed_mismatch_result(error).unwrap_or_else(|error| error.into()),
+        };
+        let read = match private_document_read_ffi(read) {
+            Ok(read) => read,
+            Err(result) => return result,
+        };
+        // The last step: nothing after it can panic, so a caught panic
+        // leaves `*out_read` the empty value.
+        unsafe { *out_read = read };
+        PlatformWalletFFIResult::ok()
+    })
 }
 
 /// Release what a [`platform_wallet_read_private_document_entries`] wrote
@@ -643,6 +688,10 @@ mod tests {
                 block_height: 11,
                 error: PrivateDocumentEnvelopeError::WrongRecipient,
             }],
+            unscanned_keys: vec![
+                (Identifier::from(WALLET_IDENTITY), 7),
+                (Identifier::from(WALLET_IDENTITY), 9),
+            ],
             pages_read: 2,
             cursor: PrivateDocumentCursor {
                 position: 4,
@@ -671,8 +720,13 @@ mod tests {
             }
         );
         assert_eq!(
-            (read.pages_read, read.rejected_count, read.identity_count),
-            (2, 1, 1)
+            (
+                read.pages_read,
+                read.rejected_count,
+                read.identity_count,
+                read.unscanned_key_count
+            ),
+            (2, 1, 1, 2)
         );
         assert!(read.complete);
         assert!(read.restarted);
@@ -744,7 +798,14 @@ mod tests {
         })
         .expect("the read marshals");
         assert!(read.entries.is_null());
-        assert_eq!((read.entry_count, read.identity_count), (0, 0));
+        assert_eq!(
+            (
+                read.entry_count,
+                read.identity_count,
+                read.unscanned_key_count
+            ),
+            (0, 0, 0)
+        );
         assert_eq!(read.cursor.position, 5);
         // No page proved: the size is unknown, not 0.
         assert!(!read.cursor.has_proved_total_count);
@@ -849,6 +910,7 @@ mod tests {
             pages_read: 9,
             rejected_count: 9,
             identity_count: 9,
+            unscanned_key_count: 9,
             complete: true,
             restarted: true,
         }
@@ -863,10 +925,11 @@ mod tests {
                 read.pages_read,
                 read.rejected_count,
                 read.identity_count,
+                read.unscanned_key_count,
                 read.complete,
                 read.restarted,
             ),
-            (0, 0, 0, 0, false, false)
+            (0, 0, 0, 0, 0, false, false)
         );
     }
 
@@ -935,5 +998,26 @@ mod tests {
             assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
             assert_empty(&read);
         }
+    }
+
+    #[test]
+    fn should_return_a_worker_panic_as_a_wallet_operation_error() {
+        // The read's worker panicking: `block_on_worker` re-raises it on the
+        // calling thread, which the guard turns into a result. The export
+        // itself cannot be made to panic here without a real wallet.
+        let mut result = catch_read_panic("private document read", || {
+            block_on_worker(async {
+                panic!("worker boom");
+            });
+            PlatformWalletFFIResult::ok()
+        });
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        let message = text_of(result.message);
+        assert!(message.starts_with("private document read panicked"));
+        assert!(message.ends_with(READ_PANIC_GUIDANCE));
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
     }
 }

@@ -207,12 +207,25 @@ struct PrivateDocumentEntriesView: View {
                     value: read.cursor.provedTotalCount.map { "\($0)" } ?? "Unknown"
                 )
                 InfoRow(label: "Next position:", value: "\(read.cursor.position)")
-                InfoRow(label: "Refused entries:", value: "\(rejectedTotal)")
+                // Entries that opened for the wallet but whose envelope was
+                // refused; a payload the schema refused shows on its row.
+                InfoRow(label: "Refused envelopes:", value: "\(rejectedTotal)")
                 InfoRow(label: "Read to the end:", value: read.complete ? "Yes" : "No")
             }
             .font(.caption)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("privateEntries.status")
+
+            if read.unscannedKeyCount > 0 {
+                VStack(alignment: .leading, spacing: 4) {
+                    InfoRow(label: "Keys not scanned:", value: "\(read.unscannedKeyCount)")
+                    Text("Entries sealed to these keys (such as a DashPay Connect app key) are not read.")
+                        .foregroundColor(.secondary)
+                }
+                .font(.caption)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("privateEntries.unscannedKeys")
+            }
         }
     }
 

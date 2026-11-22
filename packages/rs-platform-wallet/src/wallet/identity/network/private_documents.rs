@@ -37,7 +37,7 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
-use dpp::secp256k1::SecretKey;
+use dpp::secp256k1::{PublicKey, SecretKey};
 use futures::StreamExt;
 use key_wallet::bip32::{DerivationPath, KeyDerivationType};
 use key_wallet::Network;
@@ -148,6 +148,10 @@ pub(super) fn scanning_key(key: &IdentityPublicKey) -> bool {
     key.key_type() == KeyType::ECDSA_SECP256K1 && recipient_key_purpose_is_valid(key.purpose())
 }
 
+/// The public key data of each key of the wallet's identities an entry may be
+/// sealed to, by identity and key id.
+type RegisteredKeys = BTreeMap<(Identifier, KeyID), Vec<u8>>;
+
 /// How many fetched pages a read scans at once, one key derivation for them
 /// all: at most the pages in flight.
 const PRIVATE_DOCUMENT_SCAN_BATCH_PAGES: usize = MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES;
@@ -211,24 +215,28 @@ pub struct PrivateDocumentCursor {
     /// The fingerprint of the keys those reads scanned with
     /// ([`PrivateDocumentKeyPaths::fingerprint`]). When the wallet's keys no
     /// longer match it, the next read starts over from the store's start:
-    /// the positions read before may hold entries the new keys open. The
-    /// key paths name the network's coin type, so a cursor of another network
-    /// never matches.
+    /// the positions read before may hold entries the new keys open.
     pub key_set: [u8; 32],
-    /// The store those reads read ([`private_document_store_fingerprint`]):
-    /// a cursor is refused by a read of another store, whose position and
-    /// size it does not describe.
+    /// The store those reads read, on its network
+    /// ([`private_document_store_fingerprint`]): a cursor is refused by a
+    /// read of another store, whose position and size it does not describe.
     pub store: [u8; 32],
 }
 
 /// A fingerprint of the store of the private type `document_type_name` of
-/// `data_contract_id`, which a [`PrivateDocumentCursor`] names.
+/// `data_contract_id` on `network`, which a [`PrivateDocumentCursor`] names.
+/// The network is named: a system contract such as DashPay has the same id on
+/// every network.
 pub fn private_document_store_fingerprint(
+    network: Network,
     data_contract_id: &Identifier,
     document_type_name: &str,
 ) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(b"Dash/PrivateDocumentStore");
+    let network = network.to_string();
+    hasher.update((network.len() as u64).to_le_bytes());
+    hasher.update(network.as_bytes());
     hasher.update(data_contract_id.as_bytes());
     hasher.update((document_type_name.len() as u64).to_le_bytes());
     hasher.update(document_type_name.as_bytes());
@@ -247,6 +255,11 @@ pub struct PrivateDocumentRead {
     pub entries: Vec<OpenedPrivateDocument>,
     /// Entries that decrypted under one of the wallet's keys but are refused.
     pub rejected: Vec<RejectedPrivateDocumentEntry>,
+    /// Keys of the wallet's identities an entry could be sealed to that the
+    /// wallet does not derive at their identity key slot, such as a DashPay
+    /// Connect application key: the read did not scan with them, so no entry
+    /// sealed to them is in it, whether or not the read is complete.
+    pub unscanned_keys: Vec<(Identifier, KeyID)>,
     /// The store pages read.
     pub pages_read: usize,
     /// Where to read on from: hand it to the next read.
@@ -256,7 +269,7 @@ pub struct PrivateDocumentRead {
     /// reads rather than follow them.
     pub restarted: bool,
     /// Whether the read reached the store's last entry, as large a store as
-    /// any page proved. A later read from [`Self::cursor`] reads the entries
+    /// any page proved, with every key but [`Self::unscanned_keys`]. A later read from [`Self::cursor`] reads the entries
     /// appended since. `false` with no page read means nothing was read: no
     /// identity can open entries, or the page budget was 0, and reading again
     /// changes nothing until that does. Such a read asks the network nothing
@@ -314,13 +327,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// they are of.
     async fn private_document_key_paths(
         &self,
-    ) -> Result<(Vec<Identifier>, PrivateDocumentKeyPaths), PlatformWalletError> {
+    ) -> Result<(Vec<Identifier>, PrivateDocumentKeyPaths, RegisteredKeys), PlatformWalletError>
+    {
         let wm = self.wallet_manager.read().await;
         let info = wm
             .get_wallet_info(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
         let mut identities = Vec::new();
         let mut paths = PrivateDocumentKeyPaths::default();
+        let mut registered = RegisteredKeys::new();
         for identity in info.identity_manager.all_identities() {
             let identity_id = identity.id();
             let Some(identity_index) = info
@@ -332,9 +347,60 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             };
             if paths.add_identity(self.sdk.network, identity_index, identity)? {
                 identities.push(identity_id);
+                for (key_id, key) in identity.public_keys() {
+                    if scanning_key(key) {
+                        registered.insert((identity_id, *key_id), key.data().to_vec());
+                    }
+                }
             }
         }
-        Ok((identities, paths))
+        Ok((identities, paths, registered))
+    }
+
+    /// `paths` with only the keys whose path derives, inside `crypto`, the
+    /// public key the identity registered under that key id, and the keys left
+    /// out. A key registered from another path, such as a DashPay Connect
+    /// application key, derives some other key at its identity key slot,
+    /// which would open nothing sealed to it: it is reported, not scanned with.
+    /// An identity left with no key is dropped.
+    async fn keys_the_wallet_derives<C>(
+        crypto: &C,
+        paths: PrivateDocumentKeyPaths,
+        registered: &RegisteredKeys,
+    ) -> Result<(PrivateDocumentKeyPaths, Vec<(Identifier, KeyID)>), PlatformWalletError>
+    where
+        C: ContactCryptoProvider + Sync,
+    {
+        let mut derived = PrivateDocumentKeyPaths::default();
+        let mut unscanned = Vec::new();
+        for (identity_id, keys) in paths.recipients {
+            let mut kept = Vec::with_capacity(keys.len());
+            for (key_id, path) in keys {
+                let derived = crypto
+                    .receiving_xpub(&path)
+                    .await?
+                    .public_key
+                    .to_compressed();
+                let matches = registered
+                    .get(&(identity_id, key_id))
+                    .and_then(|data| PublicKey::from_slice(data).ok())
+                    .is_some_and(|registered| registered.serialize()[..] == derived[..]);
+                if matches {
+                    kept.push((key_id, path));
+                } else {
+                    unscanned.push((identity_id, key_id));
+                }
+            }
+            if !kept.is_empty() {
+                derived.recipients.push((identity_id, kept));
+            }
+        }
+        derived.senders = paths
+            .senders
+            .into_iter()
+            .filter(|(identity_id, key_id, _)| !unscanned.contains(&(*identity_id, *key_id)))
+            .collect();
+        Ok((derived, unscanned))
     }
 
     /// The contract `data_contract_id` as the network proves it now, when it is
@@ -387,6 +453,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// such read, whatever the pages hold for the wallet, so the requests a
     /// node sees do not show whether an entry opened.
     ///
+    /// Each key is scanned with only once the public key its identity key
+    /// slot derives inside `crypto` is the one registered: a key registered
+    /// from another path, such as a DashPay Connect application key, is left
+    /// out and listed in [`PrivateDocumentRead::unscanned_keys`], rather than
+    /// scanned with a key that opens nothing sealed to it.
+    ///
     /// A cursor of another store is refused with
     /// [`PlatformWalletError::InvalidParameter`].
     ///
@@ -413,21 +485,45 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     where
         C: ContactCryptoProvider + Sync,
     {
-        let store = private_document_store_fingerprint(&data_contract_id, document_type_name);
+        let store = private_document_store_fingerprint(
+            self.sdk.network,
+            &data_contract_id,
+            document_type_name,
+        );
         if from.is_some_and(|cursor| cursor.store != store) {
             return Err(PlatformWalletError::InvalidParameter(format!(
                 "the cursor was read from another store than the private type \
                  \"{document_type_name}\" of contract {data_contract_id}"
             )));
         }
-        let (identities, paths) = self.private_document_key_paths().await?;
+        let (identities, paths, registered) = self.private_document_key_paths().await?;
+        if identities.is_empty() || max_pages == 0 {
+            // Nothing is read: the cursor goes back as it came.
+            return Ok(PrivateDocumentRead {
+                identities,
+                cursor: from.unwrap_or(PrivateDocumentCursor {
+                    key_set: paths.fingerprint(),
+                    store,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            });
+        }
+        self.verify_seed_binds(crypto).await?;
+        let (paths, unscanned_keys) =
+            Self::keys_the_wallet_derives(crypto, paths, &registered).await?;
         let key_set = paths.fingerprint();
         let restarted = from.is_some_and(|cursor| cursor.key_set != key_set);
         let start_position = from
             .filter(|cursor| cursor.key_set == key_set)
             .map_or(0, |cursor| cursor.position);
         let mut read = PrivateDocumentRead {
-            identities,
+            identities: paths
+                .recipients
+                .iter()
+                .map(|(identity_id, _)| *identity_id)
+                .collect(),
+            unscanned_keys,
             cursor: PrivateDocumentCursor {
                 position: start_position,
                 // The store's size does not depend on the keys.
@@ -438,23 +534,38 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             restarted,
             ..Default::default()
         };
-        if read.identities.is_empty() || max_pages == 0 {
+        if read.identities.is_empty() {
             return Ok(read);
         }
-        self.verify_seed_binds(crypto).await?;
+        // Whether the provider held the contract with the type before this
+        // read: when it did not, the fetch below gets it from the network, and
+        // a second fetch would only repeat it.
+        let held_before = self.sdk.context_provider().is_some_and(|provider| {
+            provider
+                .get_data_contract(&data_contract_id, self.sdk.version())
+                .ok()
+                .flatten()
+                .is_some_and(|held| {
+                    held.document_type_for_name(document_type_name)
+                        .is_ok_and(|document_type| document_type.is_private())
+                })
+        });
         // The contract the pages are verified against, with the type, which
         // each payload is read against.
         let mut contract = self
             .sdk
             .fetch_private_document_contract(data_contract_id, document_type_name)
             .await?;
-        // On every read, whatever opens: a fetch only when a payload is
-        // refused would tell the node that the reader opened an entry.
-        if let Some(newer) = self
-            .newer_private_document_contract(&contract, data_contract_id, document_type_name)
-            .await?
-        {
-            contract = newer;
+        // Fetched again on every read whatever opens, as the cache alone
+        // decides: a fetch only when a payload is refused would tell the node
+        // that the reader opened an entry.
+        if held_before {
+            if let Some(newer) = self
+                .newer_private_document_contract(&contract, data_contract_id, document_type_name)
+                .await?
+            {
+                contract = newer;
+            }
         }
         let platform_version = self.sdk.version();
 
@@ -583,7 +694,7 @@ mod tests {
         PrivateDocumentTarget,
     };
     use serde_json::json;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     const ALICE_PHRASE: &str = "abandon abandon abandon abandon abandon abandon abandon abandon \
                                 abandon abandon abandon about";
@@ -626,7 +737,8 @@ mod tests {
     impl PlatformEventHandler for NoopEventHandler {}
 
     /// A context provider holding the test contract.
-    struct HeldContract(Arc<DataContract>);
+    /// What it holds, or nothing; a contract it is given takes its place.
+    struct HeldContract(Mutex<Option<Arc<DataContract>>>);
 
     impl ContextProvider for HeldContract {
         fn get_data_contract(
@@ -634,7 +746,17 @@ mod tests {
             id: &Identifier,
             _platform_version: &PlatformVersion,
         ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-            Ok((*id == self.0.id()).then(|| Arc::clone(&self.0)))
+            Ok(self
+                .0
+                .lock()
+                .expect("the lock")
+                .as_ref()
+                .filter(|held| held.id() == *id)
+                .cloned())
+        }
+
+        fn register_data_contract(&self, contract: Arc<DataContract>) {
+            *self.0.lock().expect("the lock") = Some(contract);
         }
 
         fn get_token_configuration(
@@ -801,21 +923,21 @@ mod tests {
         phrase: &str,
         own: &Identity,
     ) -> (PlatformWalletManager<NoPersistence>, Arc<PlatformWallet>) {
-        wallet_with(phrase, own, contract(), Some(contract())).await
+        wallet_with(phrase, own, Some(contract()), Some(contract())).await
     }
 
-    /// [`wallet`], its context provider holding `held` and a fetch of the
-    /// contract answered with `proved`, or not answered at all when `None`.
+    /// [`wallet`], its context provider holding `held`, or nothing, and a fetch
+    /// of the contract answered with `proved`, or not answered at all.
     async fn wallet_with(
         phrase: &str,
         own: &Identity,
-        held: DataContract,
+        held: Option<DataContract>,
         proved: Option<DataContract>,
     ) -> (PlatformWalletManager<NoPersistence>, Arc<PlatformWallet>) {
         let mut sdk = dash_sdk::SdkBuilder::new_mock()
             .with_network(Network::Testnet)
             .with_version(PlatformVersion::latest())
-            .with_context_provider(HeldContract(Arc::new(held)))
+            .with_context_provider(HeldContract(Mutex::new(held.map(Arc::new))))
             .build()
             .expect("mock sdk");
         if let Some(proved) = proved {
@@ -1241,7 +1363,7 @@ mod tests {
     async fn should_read_a_payload_written_under_a_newer_version_of_the_type() {
         let alice = identity(ALICE_PHRASE, ALICE, true);
         let (_manager, wallet) =
-            wallet_with(ALICE_PHRASE, &alice, contract(), Some(contract_at(2))).await;
+            wallet_with(ALICE_PHRASE, &alice, Some(contract()), Some(contract_at(2))).await;
         let newer = contract_at(2);
         serve_page(
             &wallet,
@@ -1276,7 +1398,11 @@ mod tests {
 
     /// The fingerprint of the test store.
     fn test_store() -> [u8; 32] {
-        private_document_store_fingerprint(&Identifier::from(CONTRACT_ID), TYPE_NAME)
+        private_document_store_fingerprint(
+            Network::Testnet,
+            &Identifier::from(CONTRACT_ID),
+            TYPE_NAME,
+        )
     }
 
     /// The contract is fetched on every read that reads a page, whatever the
@@ -1295,7 +1421,8 @@ mod tests {
             1,
         );
 
-        let (_manager, unanswered) = wallet_with(ALICE_PHRASE, &alice, contract(), None).await;
+        let (_manager, unanswered) =
+            wallet_with(ALICE_PHRASE, &alice, Some(contract()), None).await;
         serve_page(&unanswered, 0, vec![not_for_alice.clone()], 1).await;
         let crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
         unanswered
@@ -1317,6 +1444,76 @@ mod tests {
         assert!(read.complete);
     }
 
+    /// With no contract held, the read fetches it once to verify the pages
+    /// and reads under it.
+    #[tokio::test]
+    async fn should_read_with_no_contract_held_yet() {
+        let alice = identity(ALICE_PHRASE, ALICE, true);
+        let (_manager, wallet) = wallet_with(ALICE_PHRASE, &alice, None, Some(contract())).await;
+        serve_page(
+            &wallet,
+            0,
+            vec![to_alice(&payload(json!({ "text": "hello Alice" })), 1)],
+            1,
+        )
+        .await;
+
+        let read = read_from(&wallet, None, usize::MAX).await;
+
+        assert_eq!(read.entries.len(), 1);
+        assert!(read.entries[0].properties.is_ok());
+        assert!(read.complete);
+    }
+
+    /// A key the identity registered that its identity key slot does not
+    /// derive, as a DashPay Connect application key, is not scanned with and
+    /// is listed as such; the identity's other keys still open its entries.
+    #[tokio::test]
+    async fn should_list_a_key_its_identity_key_slot_does_not_derive_as_unscanned() {
+        let mut alice = identity(ALICE_PHRASE, ALICE, true);
+        let application_key = other_key(0x33);
+        alice.public_keys_mut().insert(
+            3,
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: 3,
+                purpose: Purpose::DECRYPTION,
+                security_level: SecurityLevel::MEDIUM,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(
+                    PublicKey::from_secret_key(&application_key)
+                        .serialize()
+                        .to_vec(),
+                ),
+                disabled_at: None,
+            }),
+        );
+        let (_manager, wallet) = wallet(ALICE_PHRASE, &alice).await;
+        let hello = payload(json!({ "text": "hello Alice" }));
+        let to_application_key = seal(
+            ALICE,
+            &application_key,
+            &PrivateDocumentSender::Anonymous,
+            &other_key(0xC0),
+            &hello,
+            2,
+        );
+        serve_page(&wallet, 0, vec![to_alice(&hello, 1), to_application_key], 2).await;
+
+        let read = read_from(&wallet, None, usize::MAX).await;
+
+        assert_eq!(read.unscanned_keys, vec![(Identifier::from(ALICE), 3)]);
+        assert_eq!(read.identities, vec![Identifier::from(ALICE)]);
+        assert_eq!(
+            read.entries
+                .iter()
+                .map(|entry| (entry.position, entry.wallet_key_id))
+                .collect::<Vec<_>>(),
+            vec![(0, DECRYPTION_KEY_ID)]
+        );
+    }
+
     /// A cursor of another store is refused: its position and size describe
     /// that store, not this one.
     #[tokio::test]
@@ -1328,7 +1525,11 @@ mod tests {
             position: 3,
             proved_total_count: Some(3),
             key_set: [0; 32],
-            store: private_document_store_fingerprint(&Identifier::from(CONTRACT_ID), "other"),
+            store: private_document_store_fingerprint(
+                Network::Testnet,
+                &Identifier::from(CONTRACT_ID),
+                "other",
+            ),
         };
 
         let error = wallet

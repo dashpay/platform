@@ -135,8 +135,8 @@ public struct PrivateDocumentReadCursor: Sendable, Equatable {
     /// The fingerprint of the keys the reads scanned with, 32 bytes. Opaque
     /// to Swift: it only crosses back.
     let keySet: Data
-    /// The fingerprint of the store (contract id and type name) the reads
-    /// read, 32 bytes. Opaque to Swift: it only crosses back.
+    /// The fingerprint of the store (network, contract id and type name) the
+    /// reads read, 32 bytes. Opaque to Swift: it only crosses back.
     let store: Data
 
     init(ffi: PrivateDocumentCursorFFI) {
@@ -182,8 +182,14 @@ public struct PrivateDocumentEntriesRead: Sendable, Equatable {
     /// index and a key an entry can be sealed to. With none, nothing was
     /// read.
     public let identityCount: UInt32
+    /// Keys of the wallet's identities an entry could be sealed to that the
+    /// wallet does not derive at their identity key slot, such as a DashPay
+    /// Connect application key: the read did not scan with them, so no entry
+    /// sealed to them is in it, whether or not the read is complete.
+    public let unscannedKeyCount: UInt32
     /// Whether the read reached the store's last entry, as large a store as
-    /// any page proved. A later read from `cursor` reads the entries
+    /// any page proved, with every key but the unscanned ones
+    /// (`unscannedKeyCount`). A later read from `cursor` reads the entries
     /// appended since. `false` with `pagesRead` 0 means nothing was read (no
     /// identity can open entries, or a page budget of 0), and reading again
     /// changes nothing until that does.
@@ -232,15 +238,15 @@ extension ManagedPlatformWallet {
             throw PlatformWalletError.invalidParameter(
                 "documentTypeName contains an embedded NUL byte")
         }
-        let handle = self.handle
         let coreSigner = MnemonicResolver()
         return try await Task.detached(priority: .userInitiated) {
-            () -> PrivateDocumentEntriesRead in
+            [self] () -> PrivateDocumentEntriesRead in
             var read = PrivateDocumentReadFFI()
             let fromFFI = from?.ffi
-            // Keep the resolver alive across the synchronous FFI call: its
-            // vtable callback fires during it.
-            let result = withExtendedLifetime(coreSigner) {
+            // Keep the wallet and the resolver alive across the synchronous
+            // FFI call: the wallet's `deinit` destroys the handle the call
+            // uses, and the resolver's vtable callback fires during it.
+            let result = withExtendedLifetime((self, coreSigner)) {
                 contractId.withFFIBytes { contractPtr in
                     documentTypeName.withCString { namePtr in
                         withOptionalPointer(to: fromFFI) { fromPtr in
@@ -274,6 +280,7 @@ extension ManagedPlatformWallet {
                 pagesRead: read.pages_read,
                 rejectedCount: read.rejected_count,
                 identityCount: read.identity_count,
+                unscannedKeyCount: read.unscanned_key_count,
                 complete: read.complete
             )
         }.value
