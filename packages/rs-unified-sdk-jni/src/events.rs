@@ -33,7 +33,9 @@ use platform_wallet_ffi::event_handler::{
     DpnsSyncWalletResultFFI, EventHandlerCallbacks, EventHandlerCallbacksExtension,
 };
 use platform_wallet_ffi::platform_address_sync::PlatformAddressSyncWalletResultFFI;
-use platform_wallet_ffi::shielded_types::ShieldedSyncWalletResultFFI;
+use platform_wallet_ffi::shielded_types::{
+    ShieldedBalanceAccountFFI, ShieldedBalanceUpdateFFI, ShieldedSyncWalletResultFFI,
+};
 use std::ffi::{c_void, CStr};
 use std::os::raw::c_char;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -341,6 +343,108 @@ unsafe extern "C" fn tramp_shielded_tree_progress(
     });
 }
 
+// ── on_shielded_balance_changed ───────────────────────────────────────
+
+/// Number of `long` values per account row handed to
+/// `onShieldedBalanceChanged`: account index, spendable credits, established
+/// (0 or 1), has last scanned index (0 or 1), last scanned index, source.
+const SHIELDED_BALANCE_ACCOUNT_LONGS: usize = 6;
+
+/// JNI descriptor of `NativeWalletEventBridge.onShieldedBalanceChanged`:
+/// wallet id, revision, status, ordinary spendable credits, ordinary balance
+/// established, account rows. The Kotlin unit test
+/// `NativeWalletEventBridgeTest` pins the same signature on its side.
+const SHIELDED_BALANCE_CHANGED_DESCRIPTOR: &str = "([BJIJZ[J)V";
+
+/// One wallet's shielded balance state after it changed. The update and its
+/// account array are only valid during this call, so the accounts are copied
+/// into a `long[]` (rows of [`SHIELDED_BALANCE_ACCOUNT_LONGS`]) before the
+/// bridge is called. Indices are `u64` bit patterns; amounts go through
+/// [`kotlin_amount`].
+unsafe extern "C" fn tramp_shielded_balance_changed(
+    context: *mut c_void,
+    update: *const ShieldedBalanceUpdateFFI,
+) {
+    // SAFETY: the FFI passes a pointer valid for the callback window, or null.
+    let Some(update) = update.as_ref() else {
+        return;
+    };
+    // Kotlin orders updates by a signed revision. One past `i64::MAX` has no
+    // place in that order, so it is not delivered; the host keeps its last.
+    let Ok(revision) = i64::try_from(update.revision) else {
+        return;
+    };
+    let rows =
+        shielded_balance_account_longs(slice_or_empty(update.accounts, update.accounts_count));
+    let (ordinary_credits, ordinary_established) = kotlin_amount(
+        update.ordinary_spendable_credits,
+        update.ordinary_balance_established,
+    );
+    with_bridge(context, |env, bridge| {
+        env.with_local_frame(16, |env| -> Result<(), jni::errors::Error> {
+            let wid = id32(env, &update.wallet_id)?;
+            let Ok(length) = jni::sys::jsize::try_from(rows.len()) else {
+                // More account values than a JVM array holds: nothing a
+                // real wallet reaches. The host keeps its last update.
+                return Ok(());
+            };
+            let accounts = env.new_long_array(length)?;
+            env.set_long_array_region(&accounts, 0, &rows)?;
+            env.call_method(
+                bridge,
+                "onShieldedBalanceChanged",
+                SHIELDED_BALANCE_CHANGED_DESCRIPTOR,
+                &[
+                    (&wid).into(),
+                    JValue::Long(revision),
+                    JValue::Int(update.status as i32),
+                    JValue::Long(ordinary_credits),
+                    JValue::Bool(ordinary_established as u8),
+                    (&accounts).into(),
+                ],
+            )?;
+            Ok(())
+        })
+    });
+}
+
+/// An amount as Kotlin receives it. Kotlin's `Long` is signed, so credits
+/// past `i64::MAX` cannot be passed on as they are: such an amount goes over
+/// as zero and not established, which a host shows as unknown, in place of a
+/// negative number flagged as a known balance.
+fn kotlin_amount(credits: u64, established: bool) -> (i64, bool) {
+    match i64::try_from(credits) {
+        Ok(credits) => (credits, established),
+        Err(_) => (0, false),
+    }
+}
+
+/// A scan index as Kotlin receives it: one past `i64::MAX` goes over as "no
+/// index known", in place of a negative watermark.
+fn kotlin_scan_index(has_index: bool, index: u64) -> (bool, i64) {
+    match i64::try_from(index) {
+        Ok(index) if has_index => (true, index),
+        _ => (false, 0),
+    }
+}
+
+/// Lay `accounts` out as the flat rows `onShieldedBalanceChanged` documents.
+fn shielded_balance_account_longs(accounts: &[ShieldedBalanceAccountFFI]) -> Vec<i64> {
+    let mut values = Vec::with_capacity(accounts.len() * SHIELDED_BALANCE_ACCOUNT_LONGS);
+    for account in accounts {
+        values.push(i64::from(account.account_index));
+        let (credits, established) = kotlin_amount(account.spendable_credits, account.established);
+        values.push(credits);
+        values.push(i64::from(established));
+        let (has_last_scanned_index, last_scanned_index) =
+            kotlin_scan_index(account.has_last_scanned_index, account.last_scanned_index);
+        values.push(i64::from(has_last_scanned_index));
+        values.push(last_scanned_index);
+        values.push(account.source as i64);
+    }
+    values
+}
+
 // ── Vtable ────────────────────────────────────────────────────────────
 
 /// Build the full event vtable pointing at `context` (a boxed
@@ -368,6 +472,7 @@ pub(crate) fn build_event_vtable(context: *mut c_void) -> EventHandlerCallbacks 
 pub(crate) fn build_event_extension() -> EventHandlerCallbacksExtension {
     EventHandlerCallbacksExtension {
         on_dpns_marketplace_sync_completed_fn: Some(tramp_dpns_marketplace_sync_completed),
+        on_shielded_balance_changed_fn: Some(tramp_shielded_balance_changed),
         ..EventHandlerCallbacksExtension::default()
     }
 }
@@ -384,5 +489,64 @@ pub(crate) fn build_event_extension() -> EventHandlerCallbacksExtension {
 unsafe extern "C" fn release_event_ctx(context: *mut c_void) {
     if !context.is_null() {
         drop(Box::from_raw(context as *mut KotlinEventCtx));
+    }
+}
+
+#[cfg(test)]
+mod shielded_balance_tests {
+    use super::*;
+    use platform_wallet_ffi::shielded_types::ShieldedBalanceSourceFFI;
+
+    #[test]
+    fn should_lay_out_one_row_per_account() {
+        let accounts = [
+            ShieldedBalanceAccountFFI {
+                account_index: 0,
+                spendable_credits: 100,
+                established: false,
+                last_scanned_index: 0,
+                has_last_scanned_index: false,
+                source: ShieldedBalanceSourceFFI::NoHistory,
+            },
+            ShieldedBalanceAccountFFI {
+                account_index: 0x4000_0000,
+                spendable_credits: u64::MAX,
+                established: true,
+                last_scanned_index: 42,
+                has_last_scanned_index: true,
+                source: ShieldedBalanceSourceFFI::ScannedThisSession,
+            },
+        ];
+        assert_eq!(
+            shielded_balance_account_longs(&accounts),
+            vec![0, 100, 0, 0, 0, 0, 0x4000_0000, 0, 0, 1, 42, 2]
+        );
+        assert!(shielded_balance_account_longs(&[]).is_empty());
+    }
+
+    #[test]
+    fn should_pass_an_amount_past_a_kotlin_long_as_unknown() {
+        assert_eq!(kotlin_amount(0, true), (0, true));
+        assert_eq!(kotlin_amount(i64::MAX as u64, true), (i64::MAX, true));
+        assert_eq!(kotlin_amount(i64::MAX as u64 + 1, true), (0, false));
+        assert_eq!(kotlin_amount(u64::MAX, true), (0, false));
+        // An amount Rust did not establish stays not established.
+        assert_eq!(kotlin_amount(7, false), (7, false));
+    }
+
+    #[test]
+    fn should_pass_a_scan_index_past_a_kotlin_long_as_not_known() {
+        assert_eq!(kotlin_scan_index(true, 0), (true, 0));
+        assert_eq!(kotlin_scan_index(true, i64::MAX as u64), (true, i64::MAX));
+        assert_eq!(kotlin_scan_index(true, i64::MAX as u64 + 1), (false, 0));
+        // An index that is not set stays not set, whatever the field holds.
+        assert_eq!(kotlin_scan_index(false, 42), (false, 0));
+    }
+
+    #[test]
+    fn should_call_the_bridge_with_the_signature_kotlin_declares() {
+        // byte[] walletId, long revision, int status, long credits,
+        // boolean established, long[] accounts, returning void.
+        assert_eq!(SHIELDED_BALANCE_CHANGED_DESCRIPTOR, "([BJIJZ[J)V");
     }
 }
