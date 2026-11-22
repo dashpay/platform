@@ -15,8 +15,16 @@
 //! it is; a page without one is the last.
 //!
 //! A refusal from the node (a list the contract does not keep, a document type that keeps no
-//! removal records, a contract that is not elected, a network below protocol version 14)
-//! comes back as the error, not as an empty result.
+//! removal records, a contract that is not elected) comes back as the error, not as an empty
+//! result.
+//!
+//! Below protocol version 14 none of these requests is sent: the SDK's protocol gate refuses
+//! it first (`Sdk::ensure_network_serves`, `dash_sdk::Error::ProtocolVersionNotActive`). The
+//! error code tells why (`is_transient_protocol_version_refusal` decides it):
+//! * `ProtocolError` when the network is proven below 14, or the SDK is pinned below 14:
+//!   check the pin, or wait for the network to activate 14;
+//! * `NetworkError` when the query for the network's version failed for a reason that can
+//!   pass: retry.
 //!
 //! # Enumerated arguments
 //!

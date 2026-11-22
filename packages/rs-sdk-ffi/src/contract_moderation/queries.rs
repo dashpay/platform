@@ -5,7 +5,9 @@
 //! query: a null handle, a null or non-base58 id, a byte that names no list or status, a limit
 //! above `u16::MAX`, an inclusion flag without the action it includes, a null array with a
 //! count. Everything else (a limit of 0 or above the page cap, an empty id or list selection, a
-//! list the contract does not keep) is the node's to refuse.
+//! list the contract does not keep) is the node's to refuse. Below protocol version 14 every
+//! function here is refused by the SDK's protocol gate before its request is sent; see the
+//! module documentation for how to tell why.
 
 use super::json::{
     action_counts_json, entries_json, fee_pots_json, removals_json, status_json,
@@ -108,8 +110,8 @@ unsafe fn identifiers(
 ///   1 suspensions, 2 warnings) that must be a list the contract keeps. The selection is
 ///   resolved by `ContractModerationStatusQuery::resolve`:
 ///   - null with a `lists_count` of 0: no selection; every list the contract keeps is read,
-///     which fetches the contract first (refused, before the contract is fetched, on a network
-///     below the status read's protocol version);
+///     which fetches the contract first (refused by the SDK's protocol gate, before the
+///     contract is fetched, below the status read's protocol version 14);
 ///   - non-null with a `lists_count` of 0: an explicit empty selection, sent as it is for the
 ///     node to judge;
 ///   - non-null with a `lists_count` above 0: the lists named, sent as they are;

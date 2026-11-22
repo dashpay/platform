@@ -265,6 +265,12 @@ impl From<FFIError> for DashSDKError {
                     // emit only the inner Drive message so downstream FFI consumers
                     // don't double-render the "Drive internal error: " prefix.
                     (DashSDKErrorCode::DriveInternalError, inner.clone())
+                } else if matches!(sdk_err, dash_sdk::Error::MissingDependency(..)) {
+                    // A proved absence of something the request needs. Its message names
+                    // the missing object by its id, a base58 string that can hold
+                    // "dapi", "timeout" or "connection", so it is classified by its
+                    // variant before the substring fallbacks below.
+                    (DashSDKErrorCode::NotFound, error_str)
                 } else if let dash_sdk::Error::InvalidRequest(reason) = sdk_err {
                     // The caller's request has to change: no node answers it as the
                     // requested result type, whatever words its message holds.
@@ -913,6 +919,17 @@ mod tests {
         };
         assert_eq!(dash_sdk_error.code, DashSDKErrorCode::DriveInternalError);
         assert_eq!(message, "storage layer constraint");
+    }
+
+    #[test]
+    fn missing_dependency_maps_to_not_found_whatever_its_id_spells() {
+        // A base58 id can spell words the substring fallbacks look for; a proved absence
+        // stays NotFound rather than surfacing as a timeout or a network failure.
+        for id in ["3dapiXk9", "7timeoutQ2", "connection8Zz", "DAPItimeout"] {
+            let err =
+                dash_sdk::Error::MissingDependency("DataContract".to_string(), id.to_string());
+            assert_eq!(classify(err), DashSDKErrorCode::NotFound, "{id}");
+        }
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 use super::common::{bootstrap_mock_sdk_to_latest, mock_data_contract, mock_document_type};
 use dash_sdk::{
-    platform::{DocumentQuery, DocumentQuerySdk, Fetch},
+    platform::{DocumentQuery, DocumentQuerySdk, Fetch, Query},
     Sdk, SdkBuilder,
 };
 use dpp::{
@@ -750,6 +750,12 @@ async fn should_refuse_kept_values_when_every_contract_answer_is_older_than_the_
         .await
         .expect_err("a contract older than the records cannot read their values");
 
+    // The first contract request and two more, every answer older than the records
+    let contract_request: dapi_grpc::platform::v0::GetDataContractRequest = contract_id
+        .query(&sdk.query_settings())
+        .expect("the contract request");
+    assert_eq!(sdk.mock().request_count(&contract_request).await, 3);
+
     assert!(
         matches!(
             refused,
@@ -798,6 +804,12 @@ async fn should_refuse_kept_values_as_stale_when_every_contract_absence_is_older
         .fetch_with_kept_values(&sdk)
         .await
         .expect_err("an absence older than the records does not show the contract gone");
+
+    // The first contract request and two more, every answer older than the records
+    let contract_request: dapi_grpc::platform::v0::GetDataContractRequest = contract_id
+        .query(&sdk.query_settings())
+        .expect("the contract request");
+    assert_eq!(sdk.mock().request_count(&contract_request).await, 3);
 
     assert!(
         matches!(
