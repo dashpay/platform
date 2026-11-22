@@ -382,41 +382,60 @@ public final class KeychainManager: Sendable {
 
     /// Store arbitrary data in the keychain with a custom identifier
     ///
-    /// The previous item is deleted and the new one added with the
-    /// device-only protection class, in `accessGroup` or the default
-    /// group. When the add fails, the previous data is added back the same
-    /// way, so a failed replacement does not lose the old secret.
+    /// Nothing is deleted. With no item under `identifier` yet, a new one is
+    /// added with the device-only protection class, in `accessGroup` or the
+    /// default group. With exactly one, that item, in its own access group,
+    /// is updated in place to the new data and the same protection class, so
+    /// a failed write leaves the previous secret as it was. More than one
+    /// item under `identifier` (possible only when `accessGroup` is `nil` in
+    /// a host with several access groups) is ambiguous, and nothing is
+    /// written.
     /// - Parameters:
     ///   - keyData: The data to store
     ///   - identifier: A unique identifier for the stored data
     /// - Returns: The identifier if storage succeeded, or nil if it failed
     @discardableResult
     public func storeKeyData(_ keyData: Data, identifier: String) -> String? {
-        var query: [String: Any] = [
+        var match: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: identifier,
-            kSecValueData as String: keyData,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            kSecAttrSynchronizable as String: false
         ]
-
         if let accessGroup = accessGroup {
-            query[kSecAttrAccessGroup as String] = accessGroup
+            match[kSecAttrAccessGroup as String] = accessGroup
         }
 
-        let previous = retrieveKeyData(identifier: identifier)
-        SecItemDelete(query as CFDictionary)
-
-        let status = SecItemAdd(query as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            if let previous {
-                query[kSecValueData as String] = previous
-                SecItemAdd(query as CFDictionary, nil)
+        // Find the existing items by their attributes only; the secret is not read.
+        var lookup = match
+        lookup[kSecMatchLimit as String] = kSecMatchLimitAll
+        lookup[kSecReturnAttributes as String] = true
+        var found: AnyObject?
+        switch SecItemCopyMatching(lookup as CFDictionary, &found) {
+        case errSecItemNotFound:
+            var add = match
+            add[kSecValueData as String] = keyData
+            add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            add[kSecAttrSynchronizable as String] = false
+            return SecItemAdd(add as CFDictionary, nil) == errSecSuccess ? identifier : nil
+        case errSecSuccess:
+            guard let items = found as? [[String: Any]],
+                items.count == 1,
+                let itemGroup = items[0][kSecAttrAccessGroup as String] as? String
+            else {
+                return nil
             }
+            // Pinned to the one item's own group, so no other item changes.
+            var target = match
+            target[kSecAttrAccessGroup as String] = itemGroup
+            let attributes: [String: Any] = [
+                kSecValueData as String: keyData,
+                kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            ]
+            let status = SecItemUpdate(target as CFDictionary, attributes as CFDictionary)
+            return status == errSecSuccess ? identifier : nil
+        default:
             return nil
         }
-        return identifier
     }
 
     /// Retrieve data from the keychain by identifier.

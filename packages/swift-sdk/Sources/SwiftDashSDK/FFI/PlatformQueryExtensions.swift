@@ -2084,7 +2084,8 @@ extension SDK {
                     }
                 }
             }
-            try Self.processVoidResult(result)
+            // Keeps the Rust error code (e.g. InvalidParameter); no data on success.
+            try DecisionProposalFFI.throwIfFailed(result)
         }
     }
 

@@ -27,7 +27,7 @@ pub enum PrivateKeyTextError {
     /// The 32 bytes are not a secp256k1 secret key: zero, or not below the
     /// curve order.
     NotASecretKey,
-    /// The text is longer than any WIF private key.
+    /// The text is longer than 64 hex characters, the longest accepted form.
     TooLong,
 }
 
@@ -43,7 +43,7 @@ impl fmt::Display for PrivateKeyTextError {
                 "the private key is not a secp256k1 secret key (zero, or not below the curve \
                  order)"
             }
-            Self::TooLong => "the private key text is too long to be hex or WIF",
+            Self::TooLong => "the private key text is longer than 64 hex characters",
         };
         f.write_str(message)
     }
@@ -72,8 +72,13 @@ pub fn private_key_from_text(text: &str) -> Result<Zeroizing<[u8; 32]>, PrivateK
         validated.non_secure_erase();
         return Ok(secret);
     }
-    if text.len() > MAX_WIF_LEN {
+    if text.len() > PRIVATE_KEY_HEX_LEN {
         return Err(PrivateKeyTextError::TooLong);
+    }
+    // Between a WIF and hex in length (a few hex digits short, say): neither
+    // form, refused before the base58 decoding.
+    if text.len() > MAX_WIF_LEN {
+        return Err(PrivateKeyTextError::NotHexOrWif);
     }
     // A checksummed WIF whose 32 bytes are not a secret key is refused for
     // the key, not the encoding.
@@ -167,16 +172,27 @@ mod tests {
     #[test]
     fn should_refuse_text_longer_than_a_wif() {
         assert_eq!(
-            private_key_from_text(&"c".repeat(MAX_WIF_LEN + 1)).as_deref(),
-            Err(&PrivateKeyTextError::TooLong)
-        );
-        assert_eq!(
             private_key_from_text(&"ab".repeat(33)).as_deref(),
             Err(&PrivateKeyTextError::TooLong)
         );
         assert_eq!(
-            private_key_from_text(&"ab".repeat(31)).as_deref(),
+            private_key_from_text(&"c".repeat(PRIVATE_KEY_HEX_LEN + 1)).as_deref(),
             Err(&PrivateKeyTextError::TooLong)
         );
+    }
+
+    #[test]
+    fn should_refuse_text_between_a_wif_and_hex_in_length_as_neither_form() {
+        for text in [
+            "c".repeat(MAX_WIF_LEN + 1),
+            "ab".repeat(31),
+            format!("{}a", "ab".repeat(31)),
+        ] {
+            assert_eq!(
+                private_key_from_text(&text).as_deref(),
+                Err(&PrivateKeyTextError::NotHexOrWif),
+                "{text}"
+            );
+        }
     }
 }

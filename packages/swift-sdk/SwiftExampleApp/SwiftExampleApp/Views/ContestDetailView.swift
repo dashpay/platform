@@ -639,6 +639,8 @@ private struct CastVoteSheet: View {
                         .disabled(isCasting)
                 }
             }
+            // A swipe would hide the broadcast in flight; keep the sheet up.
+            .interactiveDismissDisabled(isCasting)
         }
     }
 
