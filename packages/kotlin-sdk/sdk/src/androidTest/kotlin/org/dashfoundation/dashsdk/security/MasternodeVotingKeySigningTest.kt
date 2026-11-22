@@ -60,14 +60,14 @@ class MasternodeVotingKeySigningTest {
     }
 
     @After
-    fun tearDown() = runBlocking {
+    fun tearDown() = runBlocking<Unit> {
         keys.deleteAll()
         if (::sdk.isInitialized) runCatching { sdk.close() }
         database.close()
     }
 
     @Test
-    fun shouldSignWithTheStoredKeyOnlyThroughTheVotesOwnSigner() = runBlocking {
+    fun shouldSignWithTheStoredKeyOnlyThroughTheVotesOwnSigner() = runBlocking<Unit> {
         val identifier = keys.store(identityId, keyOne)
         val votingAddress = keys.votingAddressOf(identifier)
         assertEquals(keyOneVotingAddressHex, votingAddress.joinToString("") { "%02x".format(it) })
@@ -109,7 +109,7 @@ class MasternodeVotingKeySigningTest {
     }
 
     @Test
-    fun shouldRefuseAnIdentityWithNoStoredKey() = runBlocking {
+    fun shouldRefuseAnIdentityWithNoStoredKey() = runBlocking<Unit> {
         sdk = Sdk.create(SdkConfig(network = Network.TESTNET))
         val identifier = MasternodeVotingKeyStore.identifierFor(identityId, ByteArray(20) { 9 })
         PlatformWalletManager(sdk, Network.TESTNET, database, storage).use { manager ->
@@ -120,7 +120,7 @@ class MasternodeVotingKeySigningTest {
     }
 
     @Test
-    fun shouldRewriteTheEntryWhenTheSameKeyIsStoredAgain() = runBlocking {
+    fun shouldRewriteTheEntryWhenTheSameKeyIsStoredAgain() = runBlocking<Unit> {
         val first = keys.store(identityId, keyOne)
         val second = keys.store(identityId, keyOne)
         assertEquals(first, second)
