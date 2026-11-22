@@ -207,11 +207,17 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
     }
 
     /// Manually drop a controller from the map. Used by the UI's
-    /// "Dismiss" action on a `.failed` row (failures stay
-    /// indefinitely until acknowledged so the user can read the
-    /// error).
-    func dismiss(walletId: Data, recipientRaw43: Data) {
-        let key = SlotKey(walletId: walletId, recipientRaw43: recipientRaw43)
+    /// "Done" and "Dismiss" actions (failures stay indefinitely until
+    /// acknowledged so the user can read the error).
+    ///
+    /// Removes the slot only while `controller` still holds it: a
+    /// completed controller's sheet can stay open after `startFunding`
+    /// hands the slot to a new operation, and dropping that newer,
+    /// still running controller would hide it from
+    /// `hasInFlightFundings`, which the SDK rebuild guard reads.
+    func dismiss(_ controller: ShieldedFundFromAssetLockController) {
+        let key = SlotKey(walletId: controller.walletId, recipientRaw43: controller.recipientRaw43)
+        guard controllers[key] === controller else { return }
         controllers.removeValue(forKey: key)
     }
 

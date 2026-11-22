@@ -85,17 +85,22 @@ final class WalletDrainCoordinator: ObservableObject {
 
     nonisolated static let controllerOperationIdPrefix = "drain:"
 
-    /// Shown when a Max or its Resume is tapped while an SDK rebuild runs.
-    /// The rebuild stops SPV, which a funding needs for its ChainLock, so
-    /// the views refuse to start one until it ends.
+    /// Shown when a Core-funded shield (a Max, its Resume, a resumed lock or
+    /// a fresh shield) is tapped while an SDK rebuild runs. The rebuild
+    /// stops SPV, which a funding needs for its ChainLock, so the views
+    /// refuse to start one until it ends.
     nonisolated static let rebuildInProgressMessage =
         "Nothing was sent: the app is applying a network or settings change. "
             + "Try again once it finishes."
 
     /// Shown when a Resume finds no tracked asset lock for the outpoint.
+    /// "Not tracked" only means the outpoint is not in the wallet's live
+    /// map: a stored row may still exist and be rebroadcast after a
+    /// restart, so this claims nothing about what was sent or which coins
+    /// are free, and points at the status read instead.
     nonisolated static let assetLockNotTrackedMessage =
-        "This asset lock was never stored, so nothing was sent. Restart the app to "
-            + "release the coins; after that this transfer clears itself and a new Max can start."
+        "The wallet is not tracking this asset lock right now. Restart the app, then "
+            + "check this transfer again and follow the status it reports."
 
     /// The error a resume throws for `error`: a lock the wallet does not
     /// track gets a message that says how to recover, any other error

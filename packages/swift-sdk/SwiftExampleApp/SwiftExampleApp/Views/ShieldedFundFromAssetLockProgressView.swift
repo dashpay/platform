@@ -389,10 +389,7 @@ struct ShieldedFundFromAssetLockProgressView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                     Button {
-                        walletManager.shieldedFundFromAssetLockCoordinator.dismiss(
-                            walletId: controller.walletId,
-                            recipientRaw43: controller.recipientRaw43
-                        )
+                        walletManager.shieldedFundFromAssetLockCoordinator.dismiss(controller)
                         dismiss()
                     } label: {
                         Text("Done")
@@ -413,10 +410,7 @@ struct ShieldedFundFromAssetLockProgressView: View {
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
                     Button {
-                        walletManager.shieldedFundFromAssetLockCoordinator.dismiss(
-                            walletId: controller.walletId,
-                            recipientRaw43: controller.recipientRaw43
-                        )
+                        walletManager.shieldedFundFromAssetLockCoordinator.dismiss(controller)
                         dismiss()
                     } label: {
                         Text("Dismiss")

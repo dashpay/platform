@@ -468,9 +468,15 @@ final class WalletDrainRecoveryTests: XCTestCase {
         )
         let error = try XCTUnwrap(mapped as? WalletDrainAttemptError)
         XCTAssertEqual(error.message, WalletDrainCoordinator.assetLockNotTrackedMessage)
-        XCTAssertTrue(error.message.contains("never stored, so nothing was sent"))
+        XCTAssertTrue(error.message.contains("not tracking this asset lock right now"))
         XCTAssertTrue(error.message.contains("Restart the app"))
-        XCTAssertTrue(error.message.contains("a new Max can start"))
+        XCTAssertTrue(error.message.contains("check this transfer again"))
+        // A stored row may still be rebroadcast after a restart, so the
+        // message must not promise any of these.
+        let lowered = error.message.lowercased()
+        XCTAssertFalse(lowered.contains("nothing was sent"))
+        XCTAssertFalse(lowered.contains("release"))
+        XCTAssertFalse(lowered.contains("new max"))
     }
 
     private struct OtherError: Error, Equatable {
@@ -495,5 +501,17 @@ final class WalletDrainRecoveryTests: XCTestCase {
     func testShouldRefuseANewMaxOnMainnetOnly() {
         XCTAssertFalse(ShieldedFundFromAssetLockView.isNewMaxAllowed(on: .mainnet))
         XCTAssertTrue(ShieldedFundFromAssetLockView.isNewMaxAllowed(on: .testnet))
+    }
+
+    // MARK: - SDK rebuild
+
+    /// Every Core-funded submit (Max, resumed lock, fresh shield) goes
+    /// through this rule before it starts anything.
+    func testShouldRefuseACoreFundingOnlyWhileAnSdkRebuildRuns() {
+        XCTAssertEqual(
+            ShieldedFundFromAssetLockView.coreFundingRefusal(isRebuildingSdk: true),
+            WalletDrainCoordinator.rebuildInProgressMessage
+        )
+        XCTAssertNil(ShieldedFundFromAssetLockView.coreFundingRefusal(isRebuildingSdk: false))
     }
 }
