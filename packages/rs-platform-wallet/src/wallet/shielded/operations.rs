@@ -1133,11 +1133,9 @@ pub(in crate::wallet) async fn shield_from_identity_to<
         PlatformWalletError::ShieldedBuildError(format!("compute identity shield fee: {e}"))
     })?;
     let required = amount.saturating_add(fee);
+    // A failed read keeps its typed SDK cause; no balance at all is its own refusal.
     let available = IdentityBalance::fetch(sdk, identity_id)
-        .await
-        .map_err(|e| {
-            PlatformWalletError::ShieldedBuildError(format!("fetch identity balance: {e}"))
-        })?
+        .await?
         .ok_or(PlatformWalletError::IdentityBalanceUnavailable(identity_id))?;
     if available < required {
         return Err(PlatformWalletError::InsufficientIdentityCredits {
