@@ -44,7 +44,7 @@
 //! Every type also implements [`FetchUnproved`] for the unverified fast path.
 
 use crate::platform::{Fetch, FetchUnproved, Identifier, Query, QuerySettings};
-use crate::Error;
+use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::get_contract_document_removals_request::get_contract_document_removals_request_v0::Selection;
 use dapi_grpc::platform::v0::get_contract_document_removals_request::{
     DocumentIds, GetContractDocumentRemovalsRequestV0, Page,
@@ -69,7 +69,9 @@ use dapi_grpc::platform::v0::{
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::DataContract;
+use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 pub use drive_proof_verifier::types::contract_moderation::{
     default_contract_document_removals_limit, default_contract_moderation_entries_limit,
     list_to_request, ContractDocumentRemoval, ContractDocumentRemovalEntry,
@@ -80,6 +82,7 @@ pub use drive_proof_verifier::types::contract_moderation::{
     ContractTeamActionSigners, ContractTeamActions, ContractTeamActionsQuery, ContractWarning,
     GroupActionStatus,
 };
+use std::collections::BTreeMap;
 
 /// Query for one identity's status on a moderated contract.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,6 +104,35 @@ impl ContractModerationStatusQuery {
             contract_id: contract.id(),
             identity_id,
             lists,
+        })
+    }
+
+    /// The status of `identity_id` on every list the contract `contract_id` keeps, for a
+    /// caller that holds only the contract's id: fetches the contract and reads its lists with
+    /// [`for_contract`](Self::for_contract). Which lists a contract keeps is fixed when it is
+    /// created, so the query stays valid for as long as the contract exists.
+    ///
+    /// # Errors
+    /// * [`Error::MissingDependency`] when the network holds no such contract;
+    /// * [`Error::InvalidRequest`] when the contract is not moderated, or is moderated and
+    ///   keeps no list (its moderators only delete documents): no identity has a status on it,
+    ///   and the node would refuse the query.
+    pub async fn for_contract_id(
+        sdk: &Sdk,
+        contract_id: Identifier,
+        identity_id: Identifier,
+    ) -> Result<Self, Error> {
+        let contract = DataContract::fetch(sdk, contract_id)
+            .await?
+            .ok_or_else(|| {
+                Error::MissingDependency("DataContract".to_string(), format!("{contract_id}"))
+            })?;
+        Self::for_contract(&contract, identity_id).ok_or_else(|| {
+            let reason = match contract.config().moderation() {
+                Some(_) => "keeps no moderation list, so no identity has a status on it",
+                None => "is not moderated",
+            };
+            Error::InvalidRequest(format!("data contract {contract_id} {reason}"))
         })
     }
 }
@@ -274,6 +306,81 @@ impl ContractDocumentRemovalsPageQuery {
             query,
         })
     }
+
+    /// Reads the records this query names, each with the values it keeps of its document
+    /// ([`ContractDocumentRemoval::kept_values`]), and the query of the page after them. The
+    /// kept values are encoded under the document's type, so the contract is fetched when a
+    /// record keeps any; a read whose records keep none costs the records' request alone.
+    /// `None` when [`ContractDocumentRemovals::fetch`] returns none.
+    ///
+    /// # Errors
+    /// Those of [`ContractDocumentRemovals::fetch`], and, when a record keeps values:
+    /// * [`Error::MissingDependency`] when the network holds no such contract;
+    /// * [`Error::Protocol`] when the contract declares no such document type, or the record's
+    ///   values do not read under it.
+    pub async fn fetch_with_kept_values(
+        &self,
+        sdk: &Sdk,
+    ) -> Result<Option<ContractDocumentRemovalsWithKeptValues>, Error> {
+        let Some(page) = ContractDocumentRemovals::fetch(sdk, self.clone()).await? else {
+            return Ok(None);
+        };
+        let next = self.after(&page);
+        let keeps_values = page
+            .removals()
+            .iter()
+            .any(|entry| !entry.removal.kept_fields.is_empty());
+        let contract = if keeps_values {
+            let contract = DataContract::fetch(sdk, self.contract_id)
+                .await?
+                .ok_or_else(|| {
+                    Error::MissingDependency(
+                        "DataContract".to_string(),
+                        format!("{}", self.contract_id),
+                    )
+                })?;
+            Some(contract)
+        } else {
+            None
+        };
+        let document_type = contract
+            .as_ref()
+            .map(|contract| {
+                contract
+                    .document_type_for_name(&self.query.document_type_name)
+                    .map_err(ProtocolError::from)
+            })
+            .transpose()?;
+        let removals = page
+            .0
+            .into_iter()
+            .map(|entry| {
+                // A record that keeps nothing reads as no values under any type
+                let kept_values = match document_type {
+                    Some(document_type) => entry.removal.kept_values(document_type)?,
+                    None => BTreeMap::new(),
+                };
+                Ok((entry, kept_values))
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        Ok(Some(ContractDocumentRemovalsWithKeptValues {
+            removals,
+            next,
+        }))
+    }
+}
+
+/// Removal records of one document type, each with the values it keeps read under that type:
+/// what [`ContractDocumentRemovalsPageQuery::fetch_with_kept_values`] returns.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContractDocumentRemovalsWithKeptValues {
+    /// The records, in document id order, each with the values it keeps by property path
+    /// (`moderatorAbilities.deleteKeepsFields`): empty when it keeps none, and a path the
+    /// document held no value at left out.
+    pub removals: Vec<(ContractDocumentRemovalEntry, BTreeMap<String, Value>)>,
+    /// The query of the next page; `None` when the page held fewer records than the limit and
+    /// so was the last, and for a read by ids, which has no page after it.
+    pub next: Option<ContractDocumentRemovalsPageQuery>,
 }
 
 impl Query<GetContractDocumentRemovalsRequest> for ContractDocumentRemovalsPageQuery {

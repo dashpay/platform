@@ -46,7 +46,9 @@ use std::ffi::{c_char, CStr, CString};
 ///
 /// # Safety
 /// `sdk_handle` must be null or point to an initialized `SDKHandle` that outlives `'a`.
-unsafe fn sdk_wrapper<'a>(sdk_handle: *const SDKHandle) -> Result<&'a SDKWrapper, FFIError> {
+pub(crate) unsafe fn sdk_wrapper<'a>(
+    sdk_handle: *const SDKHandle,
+) -> Result<&'a SDKWrapper, FFIError> {
     if sdk_handle.is_null() {
         return Err(FFIError::InvalidParameter("SDK handle is null".to_string()));
     }
@@ -57,7 +59,10 @@ unsafe fn sdk_wrapper<'a>(sdk_handle: *const SDKHandle) -> Result<&'a SDKWrapper
 ///
 /// # Safety
 /// `ptr` must be null or point to a NUL-terminated string that outlives `'a`.
-unsafe fn required_str<'a>(ptr: *const c_char, field: &str) -> Result<&'a str, FFIError> {
+pub(crate) unsafe fn required_str<'a>(
+    ptr: *const c_char,
+    field: &str,
+) -> Result<&'a str, FFIError> {
     if ptr.is_null() {
         return Err(FFIError::InvalidParameter(format!("{field} is null")));
     }
@@ -82,7 +87,10 @@ unsafe fn optional_str<'a>(ptr: *const c_char, field: &str) -> Result<Option<&'a
 ///
 /// # Safety
 /// `ptr` must be null or point to a NUL-terminated string.
-unsafe fn required_identifier(ptr: *const c_char, field: &str) -> Result<Identifier, FFIError> {
+pub(crate) unsafe fn required_identifier(
+    ptr: *const c_char,
+    field: &str,
+) -> Result<Identifier, FFIError> {
     parse_identifier(required_str(ptr, field)?, field)
 }
 
@@ -90,7 +98,7 @@ unsafe fn required_identifier(ptr: *const c_char, field: &str) -> Result<Identif
 ///
 /// # Safety
 /// `ptr` must be null or point to a NUL-terminated string.
-unsafe fn optional_identifier(
+pub(crate) unsafe fn optional_identifier(
     ptr: *const c_char,
     field: &str,
 ) -> Result<Option<Identifier>, FFIError> {
@@ -115,7 +123,7 @@ fn string_result(string: Result<Option<String>, FFIError>) -> DashSDKResult {
 }
 
 /// A result holding `json` written as a string, or no data for `None`.
-fn json_result(json: Result<Option<serde_json::Value>, FFIError>) -> DashSDKResult {
+pub(crate) fn json_result(json: Result<Option<serde_json::Value>, FFIError>) -> DashSDKResult {
     string_result(json.and_then(|json| {
         json.map(|json| serde_json::to_string(&json))
             .transpose()

@@ -285,3 +285,272 @@ async fn should_fetch_mocked_team_actions_with_their_approval_counts() {
 
     assert_eq!(fetched, expected);
 }
+
+/// A mock contract declaring `moderation`, or unmoderated for `None`.
+fn mock_contract_with_moderation(
+    moderation: Option<dpp::data_contract::config::moderation::ContractModerationConfig>,
+) -> DataContract {
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+
+    let mut contract = mock_data_contract(Some(&mock_document_type()));
+    let config = contract.config().clone().with_moderation(moderation);
+    contract.set_config(config);
+    contract
+}
+
+#[tokio::test]
+/// Given only the id of a moderated contract, when I build an identity's status query from it,
+/// then the query names every list the contract keeps and no other
+async fn should_build_a_moderation_status_query_over_the_lists_a_contract_keeps() {
+    use dash_sdk::platform::contract_moderation::{
+        ContractModerationList, ContractModerationStatusQuery,
+    };
+    use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+
+    let mut sdk = Sdk::new_mock();
+    bootstrap_mock_sdk_to_latest(&mut sdk).await;
+
+    let contract = mock_contract_with_moderation(Some(ContractModerationConfig {
+        banlist: true,
+        suspensions: false,
+        moderators: ContractModerators::ContractOwner,
+        warnings: true,
+    }));
+    let contract_id = contract.id();
+    let identity_id = Identifier::from([3u8; 32]);
+    sdk.mock()
+        .expect_fetch(contract_id, Some(contract))
+        .await
+        .unwrap();
+
+    let query = ContractModerationStatusQuery::for_contract_id(&sdk, contract_id, identity_id)
+        .await
+        .expect("a moderated contract has a status query");
+
+    assert_eq!(
+        query,
+        ContractModerationStatusQuery {
+            contract_id,
+            identity_id,
+            lists: vec![
+                ContractModerationList::Banlist,
+                ContractModerationList::Warnings
+            ],
+        }
+    );
+}
+
+#[tokio::test]
+/// Given the id of a contract with no list to read (not moderated, moderated without a list, or
+/// absent), when I build a status query from it, then it is refused before any status request
+async fn should_refuse_a_moderation_status_query_for_a_contract_without_lists() {
+    use dash_sdk::platform::contract_moderation::ContractModerationStatusQuery;
+    use dash_sdk::Error;
+    use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+
+    let mut sdk = Sdk::new_mock();
+    bootstrap_mock_sdk_to_latest(&mut sdk).await;
+    let identity_id = Identifier::from([3u8; 32]);
+
+    let unmoderated = mock_contract_with_moderation(None);
+    let unmoderated_id = unmoderated.id();
+    sdk.mock()
+        .expect_fetch(unmoderated_id, Some(unmoderated))
+        .await
+        .unwrap();
+    let refused = ContractModerationStatusQuery::for_contract_id(&sdk, unmoderated_id, identity_id)
+        .await
+        .expect_err("an unmoderated contract has no status to read");
+    assert!(
+        matches!(&refused, Error::InvalidRequest(reason) if reason.contains("is not moderated")),
+        "{refused}"
+    );
+
+    let listless = mock_contract_with_moderation(Some(ContractModerationConfig {
+        banlist: false,
+        suspensions: false,
+        moderators: ContractModerators::ContractOwner,
+        warnings: false,
+    }));
+    let listless_id = listless.id();
+    sdk.mock()
+        .expect_fetch(listless_id, Some(listless))
+        .await
+        .unwrap();
+    let refused = ContractModerationStatusQuery::for_contract_id(&sdk, listless_id, identity_id)
+        .await
+        .expect_err("a contract that keeps no list has no status to read");
+    assert!(
+        matches!(&refused, Error::InvalidRequest(reason) if reason.contains("keeps no moderation list")),
+        "{refused}"
+    );
+
+    let absent_id = Identifier::from([9u8; 32]);
+    sdk.mock()
+        .expect_fetch(absent_id, None as Option<DataContract>)
+        .await
+        .unwrap();
+    let refused = ContractModerationStatusQuery::for_contract_id(&sdk, absent_id, identity_id)
+        .await
+        .expect_err("a contract the network does not hold has no status to read");
+    assert!(
+        matches!(&refused, Error::MissingDependency(what, _) if what == "DataContract"),
+        "{refused}"
+    );
+}
+
+/// A removal record of document `[seed; 32]` keeping `kept_fields`.
+fn mock_removal_entry(
+    seed: u8,
+    kept_fields: Vec<u8>,
+) -> dash_sdk::platform::contract_moderation::ContractDocumentRemovalEntry {
+    use dash_sdk::platform::contract_moderation::{
+        ContractDocumentRemoval, ContractDocumentRemovalEntry,
+    };
+    use dpp::data_contract::config::moderation::ContractModerationReason;
+
+    ContractDocumentRemovalEntry {
+        document_id: Identifier::from([seed; 32]),
+        removal: ContractDocumentRemoval {
+            document_owner_id: Identifier::from([20u8; 32]),
+            moderator_id: Identifier::from([21u8; 32]),
+            reason: ContractModerationReason::from_text("off topic"),
+            removed_at: 1_700_000_000_000,
+            document_hash: [0xab; 32],
+            restoration: None,
+            kept_fields,
+        },
+    }
+}
+
+#[tokio::test]
+/// Given removal records that keep no values, when I read them with their kept values, then
+/// each reads as no values and the contract is never fetched (the mock holds no contract)
+async fn should_read_removals_keeping_no_values_without_fetching_the_contract() {
+    use dash_sdk::platform::contract_moderation::{
+        ContractDocumentRemovals, ContractDocumentRemovalsPageQuery,
+    };
+    use std::collections::BTreeMap;
+
+    let mut sdk = Sdk::new_mock();
+    bootstrap_mock_sdk_to_latest(&mut sdk).await;
+
+    let query = ContractDocumentRemovalsPageQuery::new(
+        Identifier::from([1u8; 32]),
+        "post".to_string(),
+        sdk.version(),
+    );
+    let page = ContractDocumentRemovals(vec![mock_removal_entry(3, vec![])]);
+    sdk.mock()
+        .expect_fetch(query.clone(), Some(page.clone()))
+        .await
+        .unwrap();
+
+    let read = query
+        .fetch_with_kept_values(&sdk)
+        .await
+        .expect("records keeping nothing need no contract")
+        .expect("the records are there");
+
+    assert_eq!(read.removals, vec![(page.0[0].clone(), BTreeMap::new())]);
+    assert_eq!(read.next, None);
+}
+
+#[tokio::test]
+/// Given a removal record keeping a value of its document, when I read it with its kept values,
+/// then the value reads under the document's type, and the page's cursor is rs-sdk's
+async fn should_read_the_values_a_removal_record_keeps_under_its_document_type() {
+    use dash_sdk::platform::contract_moderation::{
+        ContractDocumentRemovals, ContractDocumentRemovalsPageQuery,
+    };
+    use dpp::data_contract::config::moderation::{
+        encode_kept_fields, ContractModerationConfig, ContractModerators,
+    };
+    use dpp::data_contract::config::DataContractConfig;
+    use dpp::data_contract::document_type::DocumentType;
+    use dpp::document::DocumentV0;
+    use dpp::platform_value::{platform_value, Value};
+    use std::collections::BTreeMap;
+
+    let mut sdk = Sdk::new_mock();
+    bootstrap_mock_sdk_to_latest(&mut sdk).await;
+    let platform_version = PlatformVersion::latest();
+
+    let moderation = ContractModerationConfig {
+        banlist: false,
+        suspensions: false,
+        moderators: ContractModerators::ContractOwner,
+        warnings: false,
+    };
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("a default config")
+        .with_moderation(Some(moderation.clone()));
+    let mut contract = mock_contract_with_moderation(Some(moderation));
+    let post = DocumentType::try_from_schema(
+        contract.id(),
+        1,
+        config.version(),
+        "post",
+        platform_value!({
+            "type": "object",
+            "properties": {
+                "hashtag": { "type": "string", "maxLength": 61, "position": 0 },
+            },
+            "additionalProperties": false,
+            "moderatorAbilities": {
+                "delete": true,
+                "deleteKeepsFields": ["hashtag"],
+            },
+        }),
+        None,
+        &BTreeMap::new(),
+        &config,
+        true,
+        &mut vec![],
+        platform_version,
+    )
+    .expect("a post type keeping its hashtag");
+    let kept_fields = encode_kept_fields(
+        &Document::V0(DocumentV0 {
+            id: Identifier::from([3u8; 32]),
+            properties: BTreeMap::from([("hashtag".to_string(), Value::Text("dash".into()))]),
+            ..Default::default()
+        }),
+        post.as_ref(),
+    )
+    .expect("encodes");
+    contract
+        .document_types_mut()
+        .insert("post".to_string(), post);
+    let contract_id = contract.id();
+
+    let query =
+        ContractDocumentRemovalsPageQuery::new(contract_id, "post".to_string(), sdk.version())
+            .with_limit(1);
+    let page = ContractDocumentRemovals(vec![mock_removal_entry(3, kept_fields)]);
+    sdk.mock()
+        .expect_fetch(query.clone(), Some(page.clone()))
+        .await
+        .unwrap();
+    sdk.mock()
+        .expect_fetch(contract_id, Some(contract))
+        .await
+        .unwrap();
+
+    let read = query
+        .fetch_with_kept_values(&sdk)
+        .await
+        .expect("reads")
+        .expect("the records are there");
+
+    assert_eq!(
+        read.removals,
+        vec![(
+            page.0[0].clone(),
+            BTreeMap::from([("hashtag".to_string(), Value::Text("dash".into()))])
+        )]
+    );
+    // A full page has a page after it, the one rs-sdk's `after` gives
+    assert_eq!(read.next, query.after(&page));
+    assert!(read.next.is_some());
+}
