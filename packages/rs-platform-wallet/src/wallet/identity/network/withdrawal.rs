@@ -12,6 +12,8 @@ use dpp::ProtocolError;
 
 use dpp::identity::signer::Signer;
 
+use dash_sdk::platform::documents::page::DocumentsPage;
+use dash_sdk::platform::identity_withdrawals::IdentityWithdrawalsPage;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::withdraw_from_identity::{
     WithdrawFromIdentity, WithdrawFromIdentityWithMetadata,
@@ -137,6 +139,25 @@ impl IdentityWallet {
         }
 
         Ok(())
+    }
+
+    /// One page of the withdrawals of `identity_id` to Core, most recently updated first,
+    /// read with a proof from the withdrawals system contract: each one's amount,
+    /// destination, status, and the asset unlock transaction that carries it once Platform
+    /// pooled it. [`IdentityWithdrawalsPage::next`] gives the next page.
+    ///
+    /// Any identity can be asked for, not only the wallet's. Withdrawals from Platform
+    /// addresses and from the shielded pool are not found: the withdrawals contract stores
+    /// them under its own owner, not under anything the wallet keeps.
+    pub async fn identity_withdrawals(
+        &self,
+        identity_id: &Identifier,
+        page: DocumentsPage,
+    ) -> Result<IdentityWithdrawalsPage, PlatformWalletError> {
+        Ok(self
+            .sdk
+            .fetch_identity_withdrawals(*identity_id, page)
+            .await?)
     }
 
     /// Withdraw credits using an externally-provided identity and signer.
