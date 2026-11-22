@@ -5501,6 +5501,7 @@ dependencies = [
  "lazy_static",
  "once_cell",
  "parking_lot",
+ "platform-encryption",
  "platform-wallet",
  "rs-sdk-ffi",
  "serde_json",
