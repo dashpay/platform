@@ -82,6 +82,10 @@ struct UpdateKeyLimitsView: View {
     /// stop if the wallet manager now holds a different one for the id (the
     /// wallet was reloaded and its copy did not go through that refresh).
     @State private var refreshedWallet: ManagedPlatformWallet?
+    /// Bumped when a submission starts and when its reviewed preview is
+    /// offered again: a form preview started before then may not publish
+    /// its answer over the reviewed one.
+    @State private var previewEpoch = 0
 
     var body: some View {
         NavigationStack {
@@ -176,6 +180,9 @@ struct UpdateKeyLimitsView: View {
         } footer: {
             Text("The amount is added to the total budget and to what is left of it. Limits can only be raised.")
         }
+        // Frozen while a submission and its recovery run, so no new form
+        // preview can start then.
+        .disabled(isSubmitting || outcomeUnknown)
     }
 
     @ViewBuilder
@@ -380,6 +387,7 @@ struct UpdateKeyLimitsView: View {
             return
         }
         inputPreview = .checking
+        let epoch = previewEpoch
         // Light debounce: a new keystroke cancels this task.
         do {
             try await Task.sleep(nanoseconds: 300_000_000)
@@ -387,8 +395,9 @@ struct UpdateKeyLimitsView: View {
             return
         }
         let result = await preview(addBudget: inputs.addBudget, expiresAt: inputs.expiresAt)
-        // Only an answer for what the form shows now may replace the current one.
-        guard !Task.isCancelled, inputs == self.inputs else { return }
+        // Only an answer for what the form shows now, asked since the last
+        // submission started, may replace the current one.
+        guard !Task.isCancelled, inputs == self.inputs, epoch == previewEpoch else { return }
         switch result {
         case .answered(let preview):
             inputPreview = .ready(preview, for: inputs)
@@ -413,6 +422,7 @@ struct UpdateKeyLimitsView: View {
         }
 
         isSubmitting = true
+        previewEpoch += 1
         submitError = nil
         submitConsensusCode = nil
 
@@ -465,6 +475,7 @@ struct UpdateKeyLimitsView: View {
             // before a nonce if the copy moved. An edit made meanwhile has
             // its own preview.
             if change == inputs {
+                previewEpoch += 1
                 inputPreview = .ready(reviewed, for: change)
             }
             return
