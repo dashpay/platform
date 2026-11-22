@@ -288,6 +288,12 @@ extension PlatformWalletManager {
     /// in storage but the shield ST never landed, and the user
     /// picks the lock from a "Resumable Funding" surface.
     ///
+    /// The call holds the manager's native-operation admission until it
+    /// returns, like `shieldedFundFromWalletDrain`: `deleteWallet` refuses
+    /// and `shutdown()` waits for it. Its ChainLock wait has no deadline, so
+    /// do not stop SPV while it is in flight; shutdown cannot interrupt it
+    /// yet (#6003).
+    ///
     /// - Parameters:
     ///   - walletId: 32-byte wallet identifier.
     ///   - outPointTxid: 32-byte raw txid (little-endian wire
