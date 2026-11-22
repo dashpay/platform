@@ -9,7 +9,9 @@ import SwiftDashSDK
 ///
 /// The refresh writes in a context of its own: a refused refresh leaves an
 /// unrelated pending edit in the main context alone (no rollback of it), a
-/// successful one saves only its own rows, and the main context sees them.
+/// successful one saves only its own rows, and the main context sees them
+/// (the refresh fetches them again there; a context does not take in another
+/// context's save by itself).
 @MainActor
 final class ContractRefreshApplyTests: XCTestCase {
 
@@ -78,15 +80,6 @@ final class ContractRefreshApplyTests: XCTestCase {
         )
     }
 
-    /// Run the main run loop until `condition` holds or two seconds pass,
-    /// for the main context to merge another context's save.
-    private func waitForMainContext(_ condition: () -> Bool) {
-        let deadline = Date().addingTimeInterval(2)
-        while !condition() && Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
-        }
-    }
-
     // MARK: - Refused
 
     func testShouldRefuseAnOlderContractAndLeaveTheMainContextsPendingEdit() throws {
@@ -104,7 +97,7 @@ final class ContractRefreshApplyTests: XCTestCase {
                     fetched: try fetched(["version": refusal.version, "description": "Older"]),
                     toContractWithId: contractId,
                     minimumVersion: refusal.minimumVersion,
-                    container: fixture.container
+                    modelContext: fixture.container.mainContext
                 ) { _ in registered = true },
                 "\(refusal)"
             ) { error in
@@ -139,7 +132,7 @@ final class ContractRefreshApplyTests: XCTestCase {
             fetched: try fetched(["version": 3, "description": "New", "keywords": ["beta", "gamma"]]),
             toContractWithId: contractId,
             minimumVersion: 3,
-            container: fixture.container
+            modelContext: fixture.container.mainContext
         ) { registered = $0 }
         XCTAssertEqual(registered, Data([0x01, 0x02]))
 
@@ -160,8 +153,7 @@ final class ContractRefreshApplyTests: XCTestCase {
         XCTAssertEqual(fixture.other.name, "Edited")
         XCTAssertEqual(try storedRow(otherContractId, in: fixture.container).name, "Other")
 
-        // The main context sees the refreshed row.
-        waitForMainContext { fixture.contract.version == 3 }
+        // The main context sees the refreshed row as soon as `apply` returns.
         XCTAssertEqual(fixture.contract.version, 3)
         XCTAssertEqual(fixture.contract.contractDescription, "New")
         XCTAssertEqual(fixture.contract.keywords.sorted(), ["beta", "gamma"])
@@ -177,7 +169,7 @@ final class ContractRefreshApplyTests: XCTestCase {
             fetched: try fetched(["version": 3, "tokens": ["0": token]]),
             toContractWithId: contractId,
             minimumVersion: nil,
-            container: fixture.container
+            modelContext: fixture.container.mainContext
         ) { _ in }
 
         let stored = try storedRow(contractId, in: fixture.container)
@@ -187,7 +179,7 @@ final class ContractRefreshApplyTests: XCTestCase {
         XCTAssertNil(stored.contractDescription)
         XCTAssertEqual(stored.keywords, [])
 
-        waitForMainContext { fixture.contract.hasTokens }
+        // The main context sees the refreshed row as soon as `apply` returns.
         XCTAssertTrue(fixture.contract.hasTokens)
         XCTAssertEqual(fixture.contract.tokens?.count, 1)
     }
@@ -214,7 +206,7 @@ final class ContractRefreshApplyTests: XCTestCase {
             fetched: try fetched(["version": 3, "keywords": [composed]]),
             toContractWithId: contractId,
             minimumVersion: nil,
-            container: fixture.container
+            modelContext: fixture.container.mainContext
         ) { _ in }
         XCTAssertEqual(try storedKeywordBytes(in: fixture.container), [Array(composed.utf8)])
 
@@ -222,7 +214,7 @@ final class ContractRefreshApplyTests: XCTestCase {
             fetched: try fetched(["version": 4, "keywords": [decomposed]]),
             toContractWithId: contractId,
             minimumVersion: nil,
-            container: fixture.container
+            modelContext: fixture.container.mainContext
         ) { _ in }
         XCTAssertEqual(try storedKeywordBytes(in: fixture.container), [Array(decomposed.utf8)])
 
@@ -230,7 +222,7 @@ final class ContractRefreshApplyTests: XCTestCase {
             fetched: try fetched(["version": 5, "keywords": [composed, decomposed]]),
             toContractWithId: contractId,
             minimumVersion: nil,
-            container: fixture.container
+            modelContext: fixture.container.mainContext
         ) { _ in }
         XCTAssertEqual(
             try storedKeywordBytes(in: fixture.container),
