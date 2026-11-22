@@ -15,7 +15,7 @@ pub use dash_platform_queries::documents::document_history_query::history_reques
 use dash_platform_queries::Error as QueriesError;
 use drive::error::Error as DriveError;
 use drive_proof_verifier::types::{DocumentHistory, DocumentHistoryProofInfo};
-use rs_dapi_client::transport::TransportError;
+use rs_dapi_client::transport::{older_query_version_refusal, TransportError};
 use rs_dapi_client::{DapiClientError, RequestSettings};
 
 /// What needs protocol 15 in a history request, when the network is below it.
@@ -70,12 +70,14 @@ pub async fn fetch_document_history_with_lifecycle(
 /// Otherwise the request is unchanged, and the protocol gate decides whether V1 is sent: a
 /// network proven at 15 serves it, and an SDK that cannot learn the network's version, or
 /// is pinned below 15 on a network at 15, refuses it as before. Both versions are encoded
-/// from `query` after the version check, as every fetch is.
+/// from `query` after the version check, as every fetch is. A request refused as written
+/// is refused before the network is asked for its version.
 ///
 /// When a node refuses V0 as a query version it no longer serves, the network may have
-/// reached 15 since it was proven below it. The probe hold is dropped, the network is
-/// asked once more, and V1 goes to the gate when it has reached 15. Any other failure is
-/// returned as it is, after the caller's usual retries.
+/// reached 15 since it was proven below it. The network is asked once more, past the probe
+/// hold, and V1 goes to the gate when it has reached 15. When that probe fails, the read is
+/// refused with the probe's error as the cause, as when the first probe fails. Any other
+/// failure is returned as it is, after the caller's usual retries.
 async fn fetch_history<T, Q>(
     sdk: &Sdk,
     query: Q,
@@ -92,49 +94,37 @@ where
     else {
         return fetch_proved::<T, _>(sdk, query, request_settings).await;
     };
+    let not_active = |feature: Option<&'static str>, cause: Option<Error>| {
+        sdk.protocol_version_not_active(
+            requirement.protocol_version,
+            requirement.method,
+            feature,
+            cause,
+        )
+    };
     // A request refused as written is refused before the network is asked for its version,
     // not with what that answer, or its failure, would say.
     check_before_sending::<GetDocumentHistoryRequest, T>(&request, settings.protocol_version)?;
+    request_below_protocol_15(request)?;
     let proven_below = sdk
         .network_proven_below_with_settings(requirement.protocol_version, request_settings)
         .await
-        .map_err(|error| {
-            sdk.protocol_version_not_active(
-                requirement.protocol_version,
-                requirement.method,
-                None,
-                Some(error),
-            )
-        })?;
+        .map_err(|error| not_active(None, Some(error)))?;
     if !proven_below {
         return fetch_proved::<T, _>(sdk, query, request_settings).await;
     }
     // Asking the network for its version may have changed the version requests are
     // encoded with.
     let request = query.query(&sdk.query_settings())?;
-    let legacy = history_request_below_protocol_15(request)
-        .map_err(|error| match error {
-            // Refused as written, like the typed query's own validation.
-            QueriesError::Drive(DriveError::Query(error)) => {
-                Error::InvalidRequest(error.to_string())
-            }
-            error => Error::from(error),
-        })?
-        .ok_or_else(|| {
-            sdk.protocol_version_not_active(
-                requirement.protocol_version,
-                requirement.method,
-                Some(REVISION_AND_CURSOR_FILTERS),
-                None,
-            )
-        })?;
+    let legacy = request_below_protocol_15(request)?
+        .ok_or_else(|| not_active(Some(REVISION_AND_CURSOR_FILTERS), None))?;
     match fetch_proved::<T, _>(sdk, legacy, request_settings).await {
-        Err(error) if refuses_history_query_version(&error) => {
-            sdk.forget_probe_hold();
-            if !sdk
+        Err(error) if refuses_history_v0(&error) => {
+            let reached = sdk
                 .network_reached_past_hold(requirement.protocol_version, request_settings)
                 .await
-            {
+                .map_err(|probe_error| not_active(None, Some(probe_error)))?;
+            if !reached {
                 return Err(error);
             }
             tracing::debug!(%error, "history request V0 refused on a network now at protocol 15; sending V1");
@@ -144,13 +134,24 @@ where
     }
 }
 
-/// The start of the status message Drive refuses a query version it does not serve with,
-/// for history (`QueryError::UnsupportedQueryVersion`).
-const HISTORY_QUERY_VERSION_REFUSAL: &str = "unsupported version for query: document_history";
+/// [`history_request_below_protocol_15`], with a request Drive refuses as written reported
+/// as [`Error::InvalidRequest`], like the typed query's own validation.
+fn request_below_protocol_15(
+    request: GetDocumentHistoryRequest,
+) -> Result<Option<GetDocumentHistoryRequest>, Error> {
+    history_request_below_protocol_15(request).map_err(|error| match error {
+        QueriesError::Drive(DriveError::Query(error)) => Error::InvalidRequest(error.to_string()),
+        error => Error::from(error),
+    })
+}
 
-/// Whether `error` is a node refusing the history request's version, as a node at protocol
-/// 15 refuses V0.
-fn refuses_history_query_version(error: &Error) -> bool {
+/// The name Drive refuses a history query version under.
+const HISTORY_QUERY: &str = "document_history";
+
+/// Whether `error` is a node refusing history request V0 as older than the versions it
+/// serves, as a node at protocol 15 does. The dapi client reads the refusal
+/// ([`older_query_version_refusal`]), and neither retries nor bans the node for it.
+fn refuses_history_v0(error: &Error) -> bool {
     let transport = match error {
         Error::DapiClientError(DapiClientError::Transport(transport)) => transport,
         Error::DapiClientError(DapiClientError::NoAvailableAddressesToRetry(transport)) => {
@@ -159,7 +160,8 @@ fn refuses_history_query_version(error: &Error) -> bool {
         _ => return false,
     };
     matches!(transport, TransportError::Grpc(status)
-        if status.message().starts_with(HISTORY_QUERY_VERSION_REFUSAL))
+        if older_query_version_refusal(status)
+            .is_some_and(|refusal| refusal.query == HISTORY_QUERY && refusal.given == 0))
 }
 
 #[cfg(all(test, feature = "mocks"))]
@@ -393,27 +395,33 @@ mod tests {
         };
         let refusal = "unsupported version for query: document_history, currently supporting \
                        versions 1 to 1 on platform protocol 15, given 0";
-        assert!(refuses_history_query_version(&status(
-            Code::Unknown,
-            refusal
-        )));
-        assert!(refuses_history_query_version(&Error::DapiClientError(
+        assert!(refuses_history_v0(&status(Code::Unknown, refusal)));
+        assert!(refuses_history_v0(&Error::DapiClientError(
             DapiClientError::NoAvailableAddressesToRetry(Box::new(TransportError::Grpc(
                 Status::unknown(refusal)
             )))
         )));
-        assert!(!refuses_history_query_version(&status(
+        assert!(!refuses_history_v0(&status(
             Code::Unknown,
             "unsupported version for query: identity_keys_remaining_budgets, currently \
              supporting versions 0 to 0 on platform protocol 14, given 1"
         )));
-        assert!(!refuses_history_query_version(&status(
+        assert!(!refuses_history_v0(&status(
             Code::NotFound,
             "document not found"
         )));
-        assert!(!refuses_history_query_version(&Error::Generic(
-            refusal.to_string()
+        // The same reading as the dapi client's: the status code and the versions count.
+        assert!(!refuses_history_v0(&status(Code::NotFound, refusal)));
+        assert!(!refuses_history_v0(&status(
+            Code::Unknown,
+            "unsupported version for query: document_history"
         )));
+        assert!(!refuses_history_v0(&status(
+            Code::Unknown,
+            "unsupported version for query: document_history, currently supporting versions \
+             0 to 0 on platform protocol 14, given 1"
+        )));
+        assert!(!refuses_history_v0(&Error::Generic(refusal.to_string())));
     }
 
     #[test]

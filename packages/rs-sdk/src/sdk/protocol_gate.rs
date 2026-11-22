@@ -165,12 +165,6 @@ impl SharedProbeHold {
         }
     }
 
-    pub(super) fn clear(&self) {
-        if let Ok(mut current) = self.hold.lock() {
-            *current = None;
-        }
-    }
-
     fn answered(&self) -> u64 {
         self.answered.load(Ordering::Acquire)
     }
@@ -346,32 +340,38 @@ impl Sdk {
         Ok(verified != 0 && verified < protocol_version)
     }
 
-    /// Forget the probe hold, for a caller with a sign that the network moved past the
-    /// version the hold shows, such as a node refusing what that version serves. The next
-    /// request that needs more asks the network again.
-    pub(crate) fn forget_probe_hold(&self) {
-        self.probe_hold.clear();
-    }
-
     /// Whether a verified answer shows the network at or above `protocol_version` after
     /// asking it once more, past the probe hold ([`ProbeHold`]), under the caller's request
     /// `settings`: for a call that sent what the network served before `protocol_version`
-    /// and failed, as the network may have reached it since. A hold can outlast its epoch
-    /// (when the epoch's first block came late), and the network can reach the version
-    /// between a probe and the request. `false` when the probe fails.
+    /// and was refused, as the network may have reached it since. A hold can outlast its
+    /// epoch (when the epoch's first block came late), and the network can reach the
+    /// version between a probe and the request.
+    ///
+    /// The hold itself is kept: a refusal is one node's word, not a verified answer. An
+    /// answer that shows `protocol_version` makes the hold moot, and one that shows the
+    /// network still below it renews the hold. The probe's failure is the error, unless
+    /// another call proved the version meanwhile.
     pub(crate) async fn network_reached_past_hold(
         &self,
         protocol_version: u32,
         settings: Option<RequestSettings>,
-    ) -> bool {
+    ) -> Result<bool, Error> {
         let state = self.gate_state();
-        if state.enforced && state.has_context_provider {
+        let failure = if state.enforced && state.has_context_provider {
             self.probe_once_while(protocol_version, settings, |sdk| {
                 sdk.query_settings().verified_protocol_version < protocol_version
             })
-            .await;
+            .await
+        } else {
+            None
+        };
+        if self.query_settings().verified_protocol_version >= protocol_version {
+            return Ok(true);
         }
-        self.query_settings().verified_protocol_version >= protocol_version
+        match failure {
+            Some(failure) => Err(*failure),
+            None => Ok(false),
+        }
     }
 
     /// Take `protocol_version` as the network's verified version, as if a proved answer had
