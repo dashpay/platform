@@ -317,12 +317,41 @@ public final class KeychainManager: Sendable {
         let identifier = generateSpecialKeyIdentifier(identityId: identityId, keyType: keyType)
         switch readKeyData(identifier: identifier) {
         case .success(nil):
-            return storeKeyData(keyData, identifier: identifier) == nil
-                ? .failed
-                : .stored(identifier: identifier)
+            // Add only, with no delete first: if another writer filled the
+            // slot since the read, the add reports a duplicate and the slot
+            // is compared again instead of being overwritten.
+            var add: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: serviceName,
+                kSecAttrAccount as String: identifier,
+                kSecValueData as String: keyData,
+                kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+                kSecAttrSynchronizable as String: false,
+            ]
+            if let accessGroup = accessGroup {
+                add[kSecAttrAccessGroup as String] = accessGroup
+            }
+            switch SecItemAdd(add as CFDictionary, nil) {
+            case errSecSuccess:
+                return .stored(identifier: identifier)
+            case errSecDuplicateItem:
+                return compareStoredKey(keyData, identifier: identifier)
+            default:
+                return .failed
+            }
         case .success(let existing?):
             return existing == keyData ? .alreadyStored(identifier: identifier) : .conflicting
         case .failure:
+            return .failed
+        }
+    }
+
+    /// The outcome for `keyData` against what the slot holds now.
+    private func compareStoredKey(_ keyData: Data, identifier: String) -> SpecialKeyStoreOutcome {
+        switch readKeyData(identifier: identifier) {
+        case .success(let existing?):
+            return existing == keyData ? .alreadyStored(identifier: identifier) : .conflicting
+        case .success(nil), .failure:
             return .failed
         }
     }

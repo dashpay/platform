@@ -529,6 +529,12 @@ struct IdentitiesContentView: View {
         if let payoutIdentifier = identity.payoutPrivateKeyIdentifier {
             _ = keychain.deleteKeyData(identifier: payoutIdentifier)
         }
+        // Also clear the special-key slots by identity id, so a key stored
+        // without a row reference (a load whose save failed) goes too and a
+        // later load can store the key again.
+        for keyType in [SpecialKeyType.voting, .owner, .payout] {
+            _ = keychain.deleteSpecialKey(identityId: identity.identityId, keyType: keyType)
+        }
 
         modelContext.delete(identity)
         do {

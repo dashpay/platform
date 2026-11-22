@@ -1030,8 +1030,14 @@ extension KeychainSigner {
     ) async throws -> T {
         // A status-preserving read: `retrieveSpecialKey` returns `nil` for a
         // locked Keychain too, which would read as a key never stored.
+        // Read on a worker: `SecItemCopyMatching` is synchronous, and the
+        // caller is often the main actor.
+        let keychain = self.keychain
+        let read = await Task.detached {
+            keychain.readSpecialKey(identityId: identityId, keyType: .voting)
+        }.value
         var privateKey: Data
-        switch keychain.readSpecialKey(identityId: identityId, keyType: .voting) {
+        switch read {
         case .success(let stored?):
             privateKey = stored
         case .success(nil):

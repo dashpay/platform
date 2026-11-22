@@ -646,7 +646,7 @@ struct LoadIdentityView: View {
                         }
                         var text = "The identity was loaded, but " + parts.joined(separator: ", and ") + "."
                         if !conflictingKeys.isEmpty {
-                            text += " To replace a stored key, remove the identity from the app and load it again."
+                            text += " To replace a stored key, remove the identity from the app, which deletes every key stored for it, then load it again with all its keys."
                         }
                         if unstoredKeys.contains("voting") && row.votingPrivateKeyIdentifier == nil {
                             text += " The identity cannot vote until it is loaded again."
