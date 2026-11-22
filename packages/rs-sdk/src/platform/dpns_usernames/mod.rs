@@ -1611,6 +1611,42 @@ mod tests {
         );
     }
 
+    /// An SDK pinned below protocol version 15 can not build a give-up whatever the network
+    /// runs: both the read and the delete of a given domain are refused as pinned, before
+    /// anything is read (this SDK expects no request)
+    #[tokio::test]
+    async fn should_refuse_give_up_on_an_sdk_pinned_below_protocol_version_15() {
+        let provider = DpnsV2ContextProvider::default();
+        let sdk = sdk_with_a_dpns_v2_provider(&provider, |builder| {
+            builder.with_version(PlatformVersion::get(14).expect("protocol version 14"))
+        });
+        let pinned = |error: &Error| {
+            matches!(
+                error,
+                Error::ProtocolVersionNotActive {
+                    required: 15,
+                    pinned: true,
+                    ..
+                }
+            )
+        };
+
+        let read = sdk
+            .dpns_name_give_up_options("Bob7")
+            .await
+            .expect_err("the read is refused");
+        assert!(pinned(&read), "{read:?}");
+        let deleted = sdk
+            .delete_dpns_domain(
+                stored_domain("Bob7", Identifier::new([1u8; 32])),
+                &signing_key(),
+                &UnusedSigner,
+            )
+            .await
+            .expect_err("the delete is refused");
+        assert!(pinned(&deleted), "{deleted:?}");
+    }
+
     /// On a network whose DPNS contract declares no tombstone (before protocol version 15) a
     /// name can not be tombstoned: the tombstone stops with that reason once it has fetched
     /// the contract the network stores, before anything is signed.

@@ -236,7 +236,13 @@ async fn should_refuse_to_give_up_a_name_on_a_network_below_protocol_version_15(
         DpnsNameGiveUpMethod::Tombstone,
     ] {
         let written = wallet
-            .give_up_dpns_name(&owner, PLAIN_LABEL, method, &lock_checking_signer(&wallet))
+            .give_up_dpns_name(
+                &owner,
+                PLAIN_LABEL,
+                &Identifier::from(DOCUMENT),
+                method,
+                &lock_checking_signer(&wallet),
+            )
             .await
             .expect_err("the give-up is refused");
         assert!(not_active(&written), "{method:?}: {written:?}");
@@ -259,6 +265,7 @@ async fn should_refuse_to_delete_a_contested_name_before_anything_is_signed() {
         .give_up_dpns_name(
             &owner,
             CONTESTED_LABEL,
+            &Identifier::from(DOCUMENT),
             DpnsNameGiveUpMethod::Delete,
             &lock_checking_signer(&wallet),
         )
@@ -291,6 +298,7 @@ async fn should_keep_a_name_whose_give_up_was_not_accepted() {
         .give_up_dpns_name(
             &owner,
             PLAIN_LABEL,
+            &Identifier::from(DOCUMENT),
             DpnsNameGiveUpMethod::Delete,
             &lock_checking_signer(&wallet),
         )
@@ -341,10 +349,10 @@ fn owned_row(document_id: Identifier, owner: Identifier, label: &str) -> DpnsNam
 }
 
 /// Once the network confirmed a name gone the wallet drops the name's marketplace rows (the
-/// checked one and a registration made again elsewhere) and its label in ONE stored
-/// changeset, and keeps the owner's other names
+/// checked one and a registration made again elsewhere), then its label, and keeps the
+/// owner's other names
 #[tokio::test]
-async fn should_forget_a_given_up_name_in_one_changeset_and_keep_the_others() {
+async fn should_forget_a_given_up_name_rows_first_and_keep_the_others() {
     let owner = Identifier::from(OWNER);
     let document_id = Identifier::from(DOCUMENT);
     let again = Identifier::from([0xC3; 32]);
@@ -371,7 +379,7 @@ async fn should_forget_a_given_up_name_in_one_changeset_and_keep_the_others() {
         vec![KEPT_LABEL.to_string()]
     );
     let stored = mirror.stored_dpns.lock().expect("stored log").clone();
-    assert_eq!(stored.len(), stores_before + 1, "one changeset");
+    assert_eq!(stored.len(), stores_before + 1, "one row removal");
     assert_eq!(
         stored.last().expect("the give-up changeset").removed,
         [document_id, again].into_iter().collect()
@@ -390,10 +398,10 @@ async fn should_forget_a_given_up_name_in_one_changeset_and_keep_the_others() {
     );
 }
 
-/// A backend that refuses the give-up changeset leaves the wallet as it was: the label
-/// stays, so the next marketplace sync pass finds the name gone and removes it
+/// A backend that refuses the row removal leaves the wallet as it was: the label stays, so
+/// the next marketplace sync pass finds the name gone and removes it
 #[tokio::test]
-async fn should_keep_the_label_when_the_give_up_changeset_is_not_stored() {
+async fn should_keep_the_label_when_the_row_removal_is_not_stored() {
     let owner = Identifier::from(OWNER);
     let document_id = Identifier::from(DOCUMENT);
     let (wallet, mirror) = wallet_with_name(PLAIN_LABEL, owner).await;
@@ -445,7 +453,13 @@ async fn should_send_each_give_up_to_the_network_and_change_nothing_before_it_is
             .await;
 
         let error = wallet
-            .give_up_dpns_name(&owner, PLAIN_LABEL, method, &signer_with_every_key())
+            .give_up_dpns_name(
+                &owner,
+                PLAIN_LABEL,
+                &Identifier::from(DOCUMENT),
+                method,
+                &signer_with_every_key(),
+            )
             .await
             .expect_err("the mock answers no nonce");
         assert!(
@@ -470,4 +484,38 @@ async fn should_send_each_give_up_to_the_network_and_change_nothing_before_it_is
             "{method:?}"
         );
     }
+}
+
+/// The user is shown one registration; a name deleted and registered again since (here the
+/// network holds another document) is refused before anything is signed
+#[tokio::test]
+async fn should_refuse_to_give_up_a_registration_the_user_was_not_shown() {
+    let owner = Identifier::from(OWNER);
+    let (wallet, mirror) = wallet_with_name(PLAIN_LABEL, owner).await;
+
+    for method in [
+        DpnsNameGiveUpMethod::Delete,
+        DpnsNameGiveUpMethod::Tombstone,
+    ] {
+        let error = wallet
+            .give_up_dpns_name(
+                &owner,
+                PLAIN_LABEL,
+                &Identifier::from([0xEE; 32]),
+                method,
+                &lock_checking_signer(&wallet),
+            )
+            .await
+            .expect_err("another registration is refused");
+        assert!(
+            matches!(error, PlatformWalletError::InvalidParameter(ref message)
+                if message.contains("registered again")),
+            "{method:?}: {error:?}"
+        );
+    }
+    assert_eq!(
+        dpns_labels(&wallet, &owner).await,
+        vec![PLAIN_LABEL.to_string(), KEPT_LABEL.to_string()]
+    );
+    assert!(mirror.stored_dpns_removals().is_empty());
 }

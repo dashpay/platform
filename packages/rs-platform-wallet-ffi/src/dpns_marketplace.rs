@@ -279,7 +279,10 @@ pub struct DpnsNameGiveUpChoicesFFI {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DpnsNameGivenUpFFI {
-    /// The id of the `domain` document that no longer exists.
+    /// The `domain` document checked before signing. A delete removed exactly
+    /// this one. A tombstone consumed the owner's domain of the name at
+    /// execution, which is this one unless the name was deleted and
+    /// registered again in the moments between.
     pub document_id: [u8; 32],
     /// How it was given up: [`DPNS_NAME_GIVE_UP_METHOD_DELETE`] or
     /// [`DPNS_NAME_GIVE_UP_METHOD_TOMBSTONE`].
@@ -913,15 +916,16 @@ pub unsafe extern "C" fn platform_wallet_dpns_name_give_up_choices(
     let owner_id = unwrap_result_or_return!(unsafe { read_identifier(owner_identity_id) });
     let name_str = unwrap_result_or_return!(unsafe { CStr::from_ptr(name) }.to_str()).to_string();
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        block_on_worker(async move {
-            identity
-                .dpns_name_give_up_choices(&owner_id, &name_str)
-                .await
-        })
+    // The wallet registry's lock is released before the network read, so a wallet torn down
+    // meanwhile (another alias, on another thread) does not wait on it.
+    let identity = unwrap_option_or_return!(
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone())
+    );
+    let result = block_on_worker(async move {
+        identity
+            .dpns_name_give_up_choices(&owner_id, &name_str)
+            .await
     });
-    let result = unwrap_option_or_return!(option);
     let choices = unwrap_result_or_return!(result);
     unsafe { *out_choices = DpnsNameGiveUpChoicesFFI::from_choices(&choices) };
     PlatformWalletFFIResult::ok()
@@ -934,10 +938,15 @@ pub unsafe extern "C" fn platform_wallet_dpns_name_give_up_choices(
 /// value is refused with `ErrorInvalidParameter` before the wallet is
 /// touched.
 ///
+/// `expected_document_id` is the 32-byte `domain` document id the host showed
+/// its user (`DpnsNameGiveUpChoicesFFI::document_id`): a name deleted and
+/// registered again since is refused with `ErrorInvalidParameter` before
+/// anything is signed.
+///
 /// Goes through `IdentityWallet::give_up_dpns_name`, which reads the name
 /// again before signing (protocol version 15, registered, held by
-/// `owner_identity_id`, `method` accepted for it), selects the signing key
-/// on the owner, and broadcasts. The wallet's stored state changes only
+/// `owner_identity_id`, still `expected_document_id`, `method` accepted for
+/// it), selects the signing key on the owner, and broadcasts. The wallet's stored state changes only
 /// once the network confirmed the name gone: the persister receives the
 /// name's marketplace-row removal and an identity snapshot without the
 /// label. On any error nothing stored changes.
@@ -949,8 +958,11 @@ pub unsafe extern "C" fn platform_wallet_dpns_name_give_up_choices(
 /// - `ErrorUnknown` for a refusal whose version probe failed; it may pass
 ///   on a retry.
 /// - `NotFound`: the name is not registered.
-/// - `ErrorInvalidParameter`: another identity holds it, or the network
-///   does not accept `method` for it.
+/// - `ErrorInvalidParameter`: another identity holds it, it is no longer
+///   `expected_document_id`, or the network does not accept `method` for it.
+/// - `ErrorTransactionBroadcastUnconfirmed` (20): the
+///   transition may have been delivered; do not give the name up again
+///   until a read shows whether it was.
 /// - `ErrorSigningKeyUnavailable` (31): the signer has no key for the
 ///   selected public key.
 ///
@@ -964,6 +976,7 @@ pub unsafe extern "C" fn platform_wallet_dpns_give_up_name(
     wallet_handle: Handle,
     owner_identity_id: *const u8,
     name: *const c_char,
+    expected_document_id: *const u8,
     method: u8,
     signer_handle: *mut SignerHandle,
     out_given_up: *mut DpnsNameGivenUpFFI,
@@ -984,20 +997,24 @@ pub unsafe extern "C" fn platform_wallet_dpns_give_up_name(
         );
     };
     let owner_id = unwrap_result_or_return!(unsafe { read_identifier(owner_identity_id) });
+    let expected_id = unwrap_result_or_return!(unsafe { read_identifier(expected_document_id) });
     let name_str = unwrap_result_or_return!(unsafe { CStr::from_ptr(name) }.to_str()).to_string();
 
     let signer_addr = signer_handle as usize;
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        block_on_worker(async move {
-            let signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
-            identity
-                .give_up_dpns_name(&owner_id, &name_str, give_up_method, signer)
-                .await
-        })
+    // The wallet registry's lock is released before the operation, which waits on the host's
+    // signer and persistence callbacks: one of them tearing down a wallet (this one under
+    // another alias, or any other) takes that lock for writing, and would otherwise wait on
+    // this call while it waits on the callback.
+    let identity = unwrap_option_or_return!(
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone())
+    );
+    let result = block_on_worker(async move {
+        let signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
+        identity
+            .give_up_dpns_name(&owner_id, &name_str, &expected_id, give_up_method, signer)
+            .await
     });
-    let result = unwrap_option_or_return!(option);
     let given_up = unwrap_result_or_return!(result);
     unsafe { *out_given_up = DpnsNameGivenUpFFI::from_given_up(&given_up) };
     PlatformWalletFFIResult::ok()
@@ -1735,6 +1752,7 @@ mod tests {
                 bogus,
                 [0u8; 32].as_ptr(),
                 name.as_ptr(),
+                [1u8; 32].as_ptr(),
                 2,
                 signer,
                 &mut out,
@@ -1748,6 +1766,7 @@ mod tests {
                 bogus,
                 [0u8; 32].as_ptr(),
                 name.as_ptr(),
+                [1u8; 32].as_ptr(),
                 DPNS_NAME_GIVE_UP_METHOD_TOMBSTONE,
                 signer,
                 &mut out,
@@ -1806,6 +1825,7 @@ mod tests {
                 bogus,
                 owner.as_ptr(),
                 name.as_ptr(),
+                [1u8; 32].as_ptr(),
                 DPNS_NAME_GIVE_UP_METHOD_DELETE,
                 ptr::null_mut(),
                 &mut given_up,
@@ -1820,6 +1840,7 @@ mod tests {
                 bogus,
                 owner.as_ptr(),
                 name.as_ptr(),
+                [1u8; 32].as_ptr(),
                 DPNS_NAME_GIVE_UP_METHOD_DELETE,
                 signer,
                 ptr::null_mut(),

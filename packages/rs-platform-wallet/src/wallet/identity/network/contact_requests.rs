@@ -7699,13 +7699,22 @@ enum SigningGate {
 /// send's bookkeeping run under the gate, while the host's signing prompt
 /// does not. A signature made after the wallet was removed, or re-created
 /// under its id, is refused, so nothing is published.
-struct GatedSigner<'a, S: ?Sized, B: TransactionBroadcaster + ?Sized> {
+pub(super) struct GatedSigner<'a, S: ?Sized, B: TransactionBroadcaster + ?Sized> {
     signer: &'a S,
     wallet: &'a IdentityWallet<B>,
     gate: std::sync::Mutex<SigningGate>,
 }
 
-impl<S: ?Sized, B: TransactionBroadcaster + ?Sized> GatedSigner<'_, S, B> {
+impl<'a, S: ?Sized, B: TransactionBroadcaster + ?Sized> GatedSigner<'a, S, B> {
+    /// `signer`, gated on `wallet`'s generation: nothing is held until a signature returns.
+    pub(super) fn new(signer: &'a S, wallet: &'a IdentityWallet<B>) -> Self {
+        Self {
+            signer,
+            wallet,
+            gate: std::sync::Mutex::new(SigningGate::Unsigned),
+        }
+    }
+
     fn gate(&self) -> std::sync::MutexGuard<'_, SigningGate> {
         self.gate
             .lock()
@@ -7714,7 +7723,7 @@ impl<S: ?Sized, B: TransactionBroadcaster + ?Sized> GatedSigner<'_, S, B> {
 
     /// Whether a signature was refused because the wallet was removed or
     /// replaced while the host signed.
-    fn removed(&self) -> bool {
+    pub(super) fn removed(&self) -> bool {
         matches!(*self.gate(), SigningGate::Removed)
     }
 

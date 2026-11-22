@@ -484,11 +484,17 @@ impl Sdk {
         Ok(self.dpns_name_state(normalized_label).await? == DpnsNameState::Tombstoned)
     }
 
-    /// Fails with [`Error::ProtocolVersionNotActive`] when a verified answer shows the
-    /// network below the protocol version names can be given up from
-    /// ([`Sdk::network_proven_below`]), or when the network's version could not be learned
-    /// (the refusal then carries why, and may pass). A give-up broadcast to such a network
-    /// is refused only once it is sent.
+    /// Fails with [`Error::ProtocolVersionNotActive`] when this SDK can not build a give-up
+    /// the network accepts:
+    ///
+    /// - the SDK is pinned to a version before the one names can be given up from, whatever
+    ///   the network runs (the refusal says `pinned`, and only the host can lift it);
+    /// - a verified answer shows the network below that version
+    ///   ([`Sdk::network_proven_below`]);
+    /// - the network's version could not be learned (the refusal then carries why, and may
+    ///   pass).
+    ///
+    /// A give-up broadcast to such a network would be refused only once it is sent.
     async fn require_network_gives_up_names(&self) -> Result<(), Error> {
         let not_active = |cause| {
             self.protocol_version_not_active(
@@ -498,6 +504,9 @@ impl Sdk {
                 cause,
             )
         };
+        if self.is_pinned_below(FIRST_PROTOCOL_VERSION_GIVING_UP_NAMES) {
+            return Err(not_active(None));
+        }
         match self
             .network_proven_below(FIRST_PROTOCOL_VERSION_GIVING_UP_NAMES)
             .await
@@ -650,7 +659,8 @@ impl Sdk {
     /// network refuses the delete of the document that no longer exists.
     ///
     /// A contested name can not be deleted, only tombstoned, and is refused before anything
-    /// is signed, as by [`Sdk::delete_dpns_name`].
+    /// is signed, as by [`Sdk::delete_dpns_name`]. So is a delete this SDK can not build for
+    /// the network, as [`Sdk::dpns_name_give_up_options`] refuses it.
     ///
     /// # Arguments
     ///
@@ -660,15 +670,17 @@ impl Sdk {
     ///
     /// # Errors
     ///
-    /// Returns an error if the name is contested, or the delete is refused (the document no
-    /// longer exists, the signing identity does not hold it, or the network runs a protocol
-    /// version before 15).
+    /// Returns [`Error::ProtocolVersionNotActive`] before anything is read or signed when
+    /// the SDK is pinned below protocol version 15 or a verified answer shows the network
+    /// below it, and an error if the name is contested, or the delete is refused (the
+    /// document no longer exists, or the signing identity does not hold it).
     pub async fn delete_dpns_domain<S: Signer<IdentityPublicKey>>(
         &self,
         domain: Document,
         identity_public_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<DocumentDeleteResult, Error> {
+        self.require_network_gives_up_names().await?;
         let dpns_contract = self.fetch_dpns_contract().await?;
         let registered = self.judged_dpns_domain(dpns_contract, domain)?;
         self.delete_registered_dpns_domain(registered, identity_public_key, signer)
