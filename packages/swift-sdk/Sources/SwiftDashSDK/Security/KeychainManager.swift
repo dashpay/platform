@@ -359,6 +359,30 @@ public final class KeychainManager: Sendable {
         }
     }
 
+    /// Replace the key in one special-key slot. Used only after the user
+    /// confirmed replacing a conflicting key, which is why the slot is
+    /// deleted before the add: the user chose to give up the old key.
+    ///
+    /// Returns `.failed` with the old key untouched when the Keychain
+    /// refuses the delete. Once the delete succeeded the result is that of
+    /// `storeSpecialKeyIfAbsent(_:identityId:keyType:)`, so `.failed` there
+    /// leaves the slot empty and `.conflicting` means another writer filled
+    /// it in between.
+    /// - Parameters:
+    ///   - keyData: The key data
+    ///   - identityId: The identity ID (32 bytes)
+    ///   - keyType: The type of special key
+    public func replaceSpecialKey(
+        _ keyData: Data,
+        identityId: Data,
+        keyType: SpecialKeyType
+    ) -> SpecialKeyStoreOutcome {
+        guard deleteSpecialKey(identityId: identityId, keyType: keyType) else {
+            return .failed
+        }
+        return storeSpecialKeyIfAbsent(keyData, identityId: identityId, keyType: keyType)
+    }
+
     /// The outcome for `keyData` against what the slot holds now.
     private func compareStoredKey(_ keyData: Data, identifier: String) -> SpecialKeyStoreOutcome {
         switch readKeyData(identifier: identifier) {

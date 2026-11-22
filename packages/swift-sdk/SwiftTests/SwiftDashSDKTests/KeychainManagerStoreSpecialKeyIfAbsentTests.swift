@@ -63,6 +63,33 @@ final class KeychainManagerStoreSpecialKeyIfAbsentTests: XCTestCase {
         )
     }
 
+    /// A confirmed replacement stores the conflicting key in the slot.
+    func testReplacingAConflictingKeyStoresTheNewKey() throws {
+        let keychain = KeychainManager(serviceName: "org.dashfoundation.tests.\(UUID().uuidString)")
+        let identityId = Data(repeating: 0x34, count: 32)
+        addTeardownBlock { @MainActor in
+            _ = keychain.deleteSpecialKey(identityId: identityId, keyType: .voting)
+        }
+
+        let stored = Data(repeating: 0x07, count: 32)
+        let replacement = Data(repeating: 0x08, count: 32)
+        guard case .stored = keychain.storeSpecialKeyIfAbsent(stored, identityId: identityId, keyType: .voting) else {
+            return XCTFail("an empty slot stores the key")
+        }
+        XCTAssertEqual(
+            keychain.storeSpecialKeyIfAbsent(replacement, identityId: identityId, keyType: .voting),
+            .conflicting
+        )
+
+        guard case .stored = keychain.replaceSpecialKey(replacement, identityId: identityId, keyType: .voting) else {
+            return XCTFail("a confirmed replacement stores the new key")
+        }
+        XCTAssertEqual(
+            try keychain.readSpecialKey(identityId: identityId, keyType: .voting).get(),
+            replacement
+        )
+    }
+
     /// Another writer fills the slot after it was read as empty: the add
     /// reports a duplicate and the slot is compared, never overwritten.
     func testAWriterFillingTheSlotAfterTheEmptyReadIsComparedNotOverwritten() throws {

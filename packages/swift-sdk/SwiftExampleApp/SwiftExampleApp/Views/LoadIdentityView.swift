@@ -33,6 +33,25 @@ struct LoadIdentityView: View {
     @State private var showInfoPopup = false
     @State private var infoPopupMessage = ""
 
+    /// A masternode key the user typed for a slot that already holds a
+    /// different key.
+    private struct PendingKeyReplacement {
+        let keyType: SpecialKeyType
+        let keyData: Data
+    }
+
+    /// The conflicting keys of the last load, offered for replacement.
+    private struct PendingKeyReplacements {
+        let identityId: Data
+        let keys: [PendingKeyReplacement]
+        /// What the load reported about keys that could not be stored,
+        /// repeated in the report after the replacement.
+        let unstoredNote: String?
+    }
+
+    /// Held only until the replacement dialog is answered, then cleared.
+    @State private var pendingKeyReplacements: PendingKeyReplacements?
+
     var body: some View {
         NavigationView {
             if showSuccess {
@@ -126,6 +145,40 @@ struct LoadIdentityView: View {
         .disabled(isLoading)
         .sheet(isPresented: $showInfoPopup) {
             InfoPopupView(message: infoPopupMessage)
+        }
+        .confirmationDialog(
+            "Replace the stored key?",
+            isPresented: Binding(
+                get: { pendingKeyReplacements != nil },
+                set: { newValue in
+                    // Every answer, cancel included, drops the typed bytes;
+                    // the buttons act on the value they were given.
+                    if !newValue { pendingKeyReplacements = nil }
+                }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingKeyReplacements
+        ) { pending in
+            ForEach(pending.keys, id: \.keyType) { key in
+                Button("Replace stored \(key.keyType.rawValue) key", role: .destructive) {
+                    replaceStoredKeys([key], of: pending)
+                }
+                .accessibilityIdentifier("loadIdentity.replaceKey.\(key.keyType.rawValue)")
+            }
+            if pending.keys.count > 1 {
+                Button("Replace all stored keys", role: .destructive) {
+                    replaceStoredKeys(pending.keys, of: pending)
+                }
+                .accessibilityIdentifier("loadIdentity.replaceKey.all")
+            }
+            Button("Keep stored keys", role: .cancel) {
+                pendingKeyReplacements = nil
+            }
+            .accessibilityIdentifier("loadIdentity.replaceKey.cancel")
+        } message: { _ in
+            Text(
+                "This identity already has a different key stored. Replacing it deletes the stored key from this device and stores the one you entered. Keeping it leaves everything as it is."
+            )
         }
     }
 
@@ -516,9 +569,6 @@ struct LoadIdentityView: View {
                         existing.identityType = identityType.rawValue
                         existing.network = network
                         existing.lastUpdated = Date()
-                        // Replace public keys wholesale with the
-                        // freshly fetched set.
-                        existing.publicKeys.removeAll()
                         row = existing
                     } else {
                         row = PersistentIdentity(
@@ -543,16 +593,10 @@ struct LoadIdentityView: View {
                         )
                     }
 
-                    // Insert PersistentPublicKey rows for every key
-                    // the network returned.
-                    for publicKey in capturedPublicKeys {
-                        if let persistentKey = PersistentPublicKey.from(
-                            publicKey,
-                            identityId: validIdData.toHexString()
-                        ) {
-                            row.addPublicKey(persistentKey)
-                        }
-                    }
+                    // Bring the rows in line with the keys the network
+                    // returned, keeping each unchanged key's local signing
+                    // references.
+                    Self.mergeFetchedPublicKeys(capturedPublicKeys, into: row)
 
                     // Match each user-provided private key to its
                     // public key and stash it in the keychain.
@@ -576,9 +620,12 @@ struct LoadIdentityView: View {
                     // keychain under their dedicated slots, only into an
                     // empty slot: a stored key is never replaced or
                     // deleted here, so a failed or refused write keeps the
-                    // previous key and the row's identifier. Reported below.
+                    // previous key and the row's identifier. Reported below;
+                    // a conflicting key is replaced only once the user
+                    // confirms it.
                     var unstoredKeys: [String] = []
                     var conflictingKeys: [String] = []
+                    var conflictingReplacements: [PendingKeyReplacement] = []
                     var storedKeys: [String] = []
                     @MainActor
                     func storeSlot(_ key: Data?, _ keyType: SpecialKeyType, named name: String) -> String? {
@@ -595,6 +642,9 @@ struct LoadIdentityView: View {
                             return identifier
                         case .conflicting:
                             conflictingKeys.append(name)
+                            conflictingReplacements.append(
+                                PendingKeyReplacement(keyType: keyType, keyData: key)
+                            )
                             return nil
                         case .failed:
                             unstoredKeys.append(name)
@@ -634,10 +684,18 @@ struct LoadIdentityView: View {
                         showSuccess = true
                     } else {
                         var parts: [String] = []
+                        // Kept apart so the report after a replacement can
+                        // still say which keys were not stored.
+                        var unstoredNote: String?
                         if !unstoredKeys.isEmpty {
                             let names = ListFormatter.localizedString(byJoining: unstoredKeys)
                             let noun = unstoredKeys.count == 1 ? "private key" : "private keys"
                             parts.append("the \(names) \(noun) could not be stored in the Keychain")
+                            var note = "The \(names) \(noun) could not be stored in the Keychain."
+                            if unstoredKeys.contains("voting") && row.votingPrivateKeyIdentifier == nil {
+                                note += " The identity cannot vote until it is loaded again."
+                            }
+                            unstoredNote = note
                         }
                         if !conflictingKeys.isEmpty {
                             let names = ListFormatter.localizedString(byJoining: conflictingKeys)
@@ -646,7 +704,7 @@ struct LoadIdentityView: View {
                         }
                         var text = "The identity was loaded, but " + parts.joined(separator: ", and ") + "."
                         if !conflictingKeys.isEmpty {
-                            text += " To replace a stored key, remove the identity from the app, which deletes every key stored for it, then load it again with all its keys."
+                            text += " You can replace the stored key with the one you entered when asked, or load the identity again later to be asked again."
                         }
                         if unstoredKeys.contains("voting") && row.votingPrivateKeyIdentifier == nil {
                             text += " The identity cannot vote until it is loaded again."
@@ -654,6 +712,13 @@ struct LoadIdentityView: View {
                         errorMessage = text
                         isLoading = false
                         loadStartTime = nil
+                        if !conflictingReplacements.isEmpty {
+                            pendingKeyReplacements = PendingKeyReplacements(
+                                identityId: validIdData,
+                                keys: conflictingReplacements,
+                                unstoredNote: unstoredNote
+                            )
+                        }
                     }
 
                     // Also fetch DPNS names for the identity
@@ -690,6 +755,147 @@ struct LoadIdentityView: View {
                 isLoading = false
                 loadStartTime = nil
             }
+        }
+    }
+
+    /// Replace the stored masternode keys in `keys` after the user confirmed
+    /// it, leaving the identity and its other keys as they are.
+    private func replaceStoredKeys(_ keys: [PendingKeyReplacement], of pending: PendingKeyReplacements) {
+        pendingKeyReplacements = nil
+        let keychain = KeychainManager.shared
+        guard let row = PersistentIdentity.fetch(in: modelContext, identityId: pending.identityId) else {
+            errorMessage = "The identity is no longer on this device, so no key was replaced. Load it again."
+            return
+        }
+
+        var replaced: [String] = []
+        var kept: [String] = []
+        var removed: [String] = []
+        for key in keys {
+            let name = key.keyType.rawValue
+            let identifier: String?
+            switch keychain.replaceSpecialKey(key.keyData, identityId: pending.identityId, keyType: key.keyType) {
+            case .stored(let stored), .alreadyStored(let stored):
+                identifier = stored
+                replaced.append(name)
+            case .conflicting:
+                // Another writer filled the emptied slot; its key is kept.
+                identifier = nil
+                kept.append(name)
+            case .failed:
+                // A refused delete keeps the old key; a failed add after
+                // the delete leaves the slot empty.
+                if case .success(nil) = keychain.readSpecialKey(identityId: pending.identityId, keyType: key.keyType) {
+                    removed.append(name)
+                    switch key.keyType {
+                    case .voting: row.votingPrivateKeyIdentifier = nil
+                    case .owner: row.ownerPrivateKeyIdentifier = nil
+                    case .payout: row.payoutPrivateKeyIdentifier = nil
+                    }
+                } else {
+                    kept.append(name)
+                }
+                identifier = nil
+            }
+            if let identifier {
+                switch key.keyType {
+                case .voting: row.votingPrivateKeyIdentifier = identifier
+                case .owner: row.ownerPrivateKeyIdentifier = identifier
+                case .payout: row.payoutPrivateKeyIdentifier = identifier
+                }
+            }
+        }
+
+        var parts: [String] = []
+        var saved = true
+        do {
+            try modelContext.save()
+        } catch {
+            saved = false
+            parts.append("The identity could not be saved: \(error.localizedDescription). Load it again to finish.")
+        }
+        if !replaced.isEmpty {
+            let names = ListFormatter.localizedString(byJoining: replaced)
+            let noun = replaced.count == 1 ? "key was" : "keys were"
+            parts.append("The stored \(names) \(noun) replaced.")
+        }
+        if !kept.isEmpty {
+            let names = ListFormatter.localizedString(byJoining: kept)
+            let noun = kept.count == 1 ? "key" : "keys"
+            parts.append("The \(names) \(noun) could not be replaced; the stored one was kept.")
+        }
+        if !removed.isEmpty {
+            let names = ListFormatter.localizedString(byJoining: removed)
+            let noun = removed.count == 1 ? "key was" : "keys were"
+            parts.append("The stored \(names) \(noun) removed, but the new one could not be stored. Load the identity again with it.")
+            if removed.contains("voting") {
+                parts.append("The identity cannot vote until it is loaded again.")
+            }
+        }
+        let notChosen = pending.keys.map(\.keyType.rawValue).filter { name in
+            !keys.contains { $0.keyType.rawValue == name }
+        }
+        if !notChosen.isEmpty {
+            let names = ListFormatter.localizedString(byJoining: notChosen)
+            let noun = notChosen.count == 1 ? "key was" : "keys were"
+            parts.append("The stored \(names) \(noun) kept.")
+        }
+        if let unstoredNote = pending.unstoredNote {
+            parts.append(unstoredNote)
+        }
+
+        if saved && kept.isEmpty && removed.isEmpty && notChosen.isEmpty && pending.unstoredNote == nil {
+            // Every conflicting key was replaced and saved, so the load
+            // ended as a plain success.
+            errorMessage = nil
+            showSuccess = true
+        } else {
+            errorMessage = parts.joined(separator: " ")
+        }
+    }
+
+    /// Bring `identity`'s public-key rows in line with the keys fetched from
+    /// Platform. A row whose key id, key type and bytes are unchanged is
+    /// updated in place, so its local signing references (Keychain
+    /// identifier, wallet id, derivation path) survive a reload; any other
+    /// fetched key gets a new row. Rows for keys no longer fetched, or whose
+    /// bytes changed, are taken off the identity as before, and their
+    /// Keychain items are left alone.
+    @MainActor
+    private static func mergeFetchedPublicKeys(_ fetched: [IdentityPublicKey], into identity: PersistentIdentity) {
+        let identityHex = identity.identityId.toHexString()
+        var matched = Set<ObjectIdentifier>()
+        var additions: [PersistentPublicKey] = []
+        for publicKey in fetched {
+            // Built the same way as a new row, so the in-place update
+            // writes exactly the columns a new row would have.
+            guard let fresh = PersistentPublicKey.from(publicKey, identityId: identityHex) else {
+                continue
+            }
+            guard let current = identity.publicKeys.first(where: {
+                !matched.contains(ObjectIdentifier($0))
+                    && $0.keyId == fresh.keyId
+                    && $0.keyType == fresh.keyType
+                    && $0.publicKeyData == fresh.publicKeyData
+            }) else {
+                additions.append(fresh)
+                continue
+            }
+            matched.insert(ObjectIdentifier(current))
+            current.purpose = fresh.purpose
+            current.securityLevel = fresh.securityLevel
+            current.readOnly = fresh.readOnly
+            current.disabledAt = fresh.disabledAt
+            current.totalBudget = fresh.totalBudget
+            current.expiresAt = fresh.expiresAt
+            current.contractBoundsData = fresh.contractBoundsData
+            current.contractBoundsDocumentTypeName = fresh.contractBoundsDocumentTypeName
+            current.contractBoundsKind = fresh.contractBoundsKind
+            current.identityId = fresh.identityId
+        }
+        identity.publicKeys.removeAll { !matched.contains(ObjectIdentifier($0)) }
+        for addition in additions {
+            identity.addPublicKey(addition)
         }
     }
 
