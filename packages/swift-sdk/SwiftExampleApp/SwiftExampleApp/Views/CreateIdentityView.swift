@@ -248,23 +248,6 @@ struct CreateIdentityView: View {
     @Query(sort: [SortDescriptor(\PersistentAssetLock.updatedAt, order: .reverse)])
     private var allAssetLocks: [PersistentAssetLock]
 
-    /// All wallets' unspent account-0 shielded notes. The shielded funding
-    /// picker spans multiple wallets, so this uses the all-wallets
-    /// predicate and `shieldedPoolBalance(for:)` scopes by walletId in
-    /// memory — a single-walletId `@Query` couldn't serve every row
-    /// the picker needs. Being a `@Query` (rather than a one-off
-    /// `modelContext.fetch`) makes the funding option and denomination
-    /// list update live: rows arriving while this sheet is open
-    /// re-render the view.
-    @Query(filter: CreateIdentityView.shieldedFundingPredicate)
-    private var unspentShieldedNotes: [PersistentShieldedNote]
-
-    static var shieldedFundingPredicate: Predicate<PersistentShieldedNote> {
-        #Predicate<PersistentShieldedNote> {
-            $0.accountIndex == 0 && $0.isSpent == false
-        }
-    }
-
     // MARK: - Selection state
 
     /// The source wallet selection. `nil` encodes "pick nothing yet";
@@ -661,6 +644,7 @@ struct CreateIdentityView: View {
         // Whether to surface the shielded-pool funding row. Computed
         // once so the picker body and the footer text stay in lockstep.
         let showShielded = shieldedOptionAvailable(for: walletId)
+        let shieldedPending = shieldedBalancePending(for: walletId)
         Section {
             Picker("Funding Source", selection: $fundingSelection) {
                 Text("Select…")
@@ -691,6 +675,14 @@ struct CreateIdentityView: View {
                 // denomination on every funding-source change.
                 amountDash = defaultAmountString(for: newValue)
                 selectedDenomination = nil
+            }
+            if shieldedPending {
+                // The option appears once the wallet's shielded balance
+                // is known and positive.
+                Text("Shielded Balance: waiting for this wallet's shielded balance.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .accessibilityIdentifier("createIdentity.fundingSource.shieldedPending")
             }
         } header: {
             Text("Funding Source")
@@ -780,14 +772,22 @@ struct CreateIdentityView: View {
         // which requires a wallet selection, so `selectedWalletId` is
         // non-nil here; the `?? 0` is a defensive fallback that yields an
         // empty `affordable` list rather than a crash.
-        let poolBalance = selectedWalletId.map { shieldedPoolBalance(for: $0) } ?? 0
+        let knownPoolBalance = selectedWalletId.flatMap { knownShieldedPoolBalance(for: $0) }
+        let poolBalance = knownPoolBalance ?? 0
         // Denominations the pool can cover. Computed off the live
         // per-wallet pool balance so the list shrinks as the pool
         // drains (e.g. after a prior shielded spend this session).
         let affordable = shieldedIdentityCreateDenominations
             .filter { $0 <= poolBalance }
         Section {
-            if affordable.isEmpty {
+            if knownPoolBalance == nil {
+                // The balance went out of the cache after the option was
+                // picked (for example a Clear or a failed bind): say so
+                // rather than advising to shield more on an assumed zero.
+                Text("The shielded balance is not known yet.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else if affordable.isEmpty {
                 // Defensive: the option is gated on `shieldedBalance > 0`,
                 // but the smallest denomination can still exceed a
                 // small positive balance. Surface why no denomination
@@ -819,10 +819,10 @@ struct CreateIdentityView: View {
         } header: {
             Text("Denomination")
         } footer: {
-            let available = Self.formatDash(
-                raw: poolBalance,
-                divisor: Double(Self.creditsPerDash)
-            )
+            // A figure only for a known balance; a known zero still shows 0.
+            let available: String = knownPoolBalance.map {
+                Self.formatDash(raw: $0, divisor: Double(Self.creditsPerDash))
+            } ?? "not known yet"
             Text(
                 "Available shielded: \(available). The whole denomination "
                 + "leaves the pool; the metered fee is taken FROM it (the new "
@@ -1817,31 +1817,41 @@ struct CreateIdentityView: View {
         // pool balance > 0 + a Type-20 fallback platform address exists.
         // No longer gated on the single UI mirror (`boundWalletId`), so
         // ANY loaded+bound wallet can fund from its own pool.
+        shieldedFundingEligible(for: walletId)
+            && shieldedPoolBalance(for: walletId) > 0
+    }
+
+    /// Whether the wallet meets every shielded funding condition except the
+    /// balance: engine-bound (its default Orchard address resolves) and a
+    /// Type-20 fallback platform address exists.
+    private func shieldedFundingEligible(for walletId: Data) -> Bool {
         let engineBound = (try? walletManager.shieldedDefaultAddress(
             walletId: walletId,
             account: 0
         )) != nil
-        return engineBound
-            && shieldedPoolBalance(for: walletId) > 0
-            && shieldedFallbackAddressBytes(for: walletId) != nil
+        return engineBound && shieldedFallbackAddressBytes(for: walletId) != nil
     }
 
-    /// Per-wallet shielded funding balance: sum of `walletId`'s unspent
-    /// account-0 `PersistentShieldedNote` values, filtered in memory from the
-    /// `unspentShieldedNotes` `@Query` (rather than the single-mirror
-    /// `shieldedService.shieldedBalance`). Correct for ANY loaded
-    /// wallet, not just the mirror's `firstWallet`.
-    ///
-    /// Reactive via `@Query`: note rows arriving while this sheet is
-    /// open re-render the view, so the funding option and denomination
-    /// list stay live (vs. the previous one-off `modelContext.fetch`,
-    /// which froze the balance at first render). One shared query
-    /// materialized once per render also removes the per-call-site
-    /// FetchDescriptor round-trip.
+    /// Whether the shielded option is missing only because the wallet's
+    /// shielded balance is not known yet, so the section can say so.
+    private func shieldedBalancePending(for walletId: Data) -> Bool {
+        knownShieldedPoolBalance(for: walletId) == nil && shieldedFundingEligible(for: walletId)
+    }
+
+    /// Per-wallet shielded funding balance: account 0's spendable credits
+    /// as Rust pushes them, because shielded identity funding spends from
+    /// account 0. Read per wallet from `walletManager.shieldedBalances`
+    /// (rather than the single-mirror `shieldedService.shieldedBalance`),
+    /// so it is correct for ANY loaded wallet, not just the mirror's
+    /// `firstWallet`. Not known yet counts as 0, so the shielded option is
+    /// not offered.
     private func shieldedPoolBalance(for walletId: Data) -> UInt64 {
-        unspentShieldedNotes
-            .filter { $0.walletId == walletId }
-            .reduce(0) { $0 + $1.value }
+        knownShieldedPoolBalance(for: walletId) ?? 0
+    }
+
+    /// Account 0's spendable credits, or `nil` while not known yet.
+    private func knownShieldedPoolBalance(for walletId: Data) -> UInt64? {
+        walletManager.spendableShieldedCredits(walletId: walletId, account: 0)
     }
 
     /// The wallet id currently chosen in the source-wallet picker, or

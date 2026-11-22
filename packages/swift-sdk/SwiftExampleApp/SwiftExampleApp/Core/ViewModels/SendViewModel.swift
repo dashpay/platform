@@ -13,6 +13,16 @@ enum SendFlow: Equatable {
     case shieldedToCore          // Withdrawal from shielded to L1
     case identityToShielded      // Shield from an identity's credit balance (Type 21)
 
+    /// Whether the flow spends this wallet's account-0 shielded notes.
+    var spendsShieldedNotes: Bool {
+        switch self {
+        case .shieldedToShielded, .shieldedToPlatform, .shieldedToCore:
+            return true
+        case .coreToCore, .coreToShielded, .platformToPlatform, .platformToShielded:
+            return false
+        }
+    }
+
     var displayName: String {
         switch self {
         case .coreToCore: return "Core Payment"
@@ -132,7 +142,25 @@ class SendViewModel: ObservableObject {
     /// at 32 UTF-8 bytes and does the 36-byte encoding.
     @Published var memoText = ""
     @Published var detectedAddressType: DashAddressType = .unknown
-    @Published var selectedSource: FundSource = .core
+    /// The source the send is funded from. Changed only through
+    /// [`selectSource(_:)`] (the user's tap) and
+    /// [`reconcileSource(available:)`] (the screen's offered sources).
+    @Published private(set) var selectedSource: FundSource = .core
+    /// The sources the screen currently offers, as last passed to
+    /// [`reconcileSource(available:)`]. A send is allowed only from one
+    /// of these.
+    @Published private(set) var offeredSources: [FundSource] = []
+    /// Whether `selectedSource` is the user's explicit choice rather than
+    /// the automatic default. An explicit choice is never replaced by
+    /// another source: when it stops being offered it stays selected and
+    /// Send is disabled until the user picks again. It ends only when the
+    /// user picks another source or the recipient changes to a different
+    /// known kind (Core, Orchard, Platform). Another address of the same
+    /// kind keeps it, and so does passing through an unparsable or empty
+    /// recipient while the user edits the address.
+    private(set) var sourceChosenByUser = false
+    /// The kind of the last recipient that parsed to a known kind.
+    private var lastRecipientKind: DashAddressType.Kind?
     @Published var detectedFlow: SendFlow?
     @Published var estimatedFee: UInt64?
     @Published var isSending = false
@@ -372,6 +400,9 @@ class SendViewModel: ObservableObject {
 
     var canSend: Bool {
         guard let flow = detectedFlow, !isSending else { return false }
+        // A source the screen no longer offers (its balance went away, or
+        // it was never offered) must not be sent from.
+        guard offeredSources.contains(selectedSource) else { return false }
         // An over-limit memo would be rejected by Rust; block here so
         // the user sees the red counter rather than a backend error.
         // Only the shielded → shielded path carries a memo, so a stale
@@ -487,11 +518,89 @@ class SendViewModel: ObservableObject {
         }
 
         let parsed = DashAddress.parse(trimmed, network: network)
+        noteRecipientKind(parsed.type.kind)
         detectedAddressType = parsed.type
         updateFlow()
     }
 
+    /// A recipient of a different known kind offers different sources,
+    /// so the next reconcile picks that kind's default again. An unknown
+    /// recipient is an address being edited, not a new kind.
+    private func noteRecipientKind(_ kind: DashAddressType.Kind) {
+        guard kind != .unknown else { return }
+        if let lastRecipientKind, lastRecipientKind != kind {
+            sourceChosenByUser = false
+        }
+        lastRecipientKind = kind
+    }
+
+    // MARK: - Source selection
+
+    /// The user picked `source` from the offered list.
+    func selectSource(_ source: FundSource) {
+        guard offeredSources.contains(source) else { return }
+        selectedSource = source
+        sourceChosenByUser = true
+        updateFlow()
+    }
+
+    /// Apply the screen's currently offered sources (in their default
+    /// order). Call it whenever the offered list changes, for example when
+    /// a balance that gates a source arrives after the recipient was
+    /// typed. Without an explicit choice the first offered source is
+    /// selected. An explicit choice stays selected whether or not it is
+    /// offered: a send never moves to a source the user did not pick (a
+    /// shielded payment silently becoming a transparent one).
+    func reconcileSource(available: [FundSource]) {
+        offeredSources = available
+        if !sourceChosenByUser, let first = available.first {
+            selectedSource = first
+        }
+        updateFlow()
+    }
+
+    /// Whether the user's explicit choice is not offered right now for a
+    /// recipient the screen understands. The screen says so and Send
+    /// stays disabled until the user picks an offered source.
+    var chosenSourceUnavailable: Bool {
+        sourceChosenByUser
+            && detectedAddressType.kind != .unknown
+            && !offeredSources.contains(selectedSource)
+    }
+
+    static let routeChangedMessage =
+        "The payment route or recipient changed after Send was tapped. Review it and tap Send again."
+
+    /// Whether `flow` may be dispatched given the account-0 shielded
+    /// balance read from the published wallet state at dispatch time. A
+    /// shielded spend needs a known, non-zero balance; the offered list
+    /// can lag behind a balance update that landed after the tap. Other
+    /// flows do not spend shielded notes and are not affected.
+    nonisolated static func mayDispatch(_ flow: SendFlow, accountZeroShieldedBalance: UInt64?) -> Bool {
+        guard flow.spendsShieldedNotes else { return true }
+        guard let balance = accountZeroShieldedBalance else { return false }
+        return balance > 0
+    }
+
+    /// The flow to send when Send was tapped while `tappedFlow` was shown
+    /// for `tappedRecipient`: `nil` unless that is still the current flow,
+    /// its source is still offered, and the recipient text is unchanged,
+    /// so an asynchronous send never runs a route or pays a recipient
+    /// other than the one the user confirmed.
+    func flowToSend(tappedFlow: SendFlow?, tappedRecipient: String) -> SendFlow? {
+        guard let tappedFlow, tappedFlow == detectedFlow,
+              recipientAddress == tappedRecipient,
+              offeredSources.contains(selectedSource) else { return nil }
+        return tappedFlow
+    }
+
     func updateFlow() {
+        guard offeredSources.contains(selectedSource) else {
+            // A source that is not offered has no route to show or send.
+            detectedFlow = nil
+            estimatedFee = nil
+            return
+        }
         switch (detectedAddressType, selectedSource) {
         case (.core, .core):
             detectedFlow = .coreToCore
@@ -559,16 +668,25 @@ class SendViewModel: ObservableObject {
     func executeSend(
         sdk: SDK,
         walletManager: PlatformWalletManager,
-        shieldedService: ShieldedService,
         platformState: AppState,
         wallet: PersistentWallet,
         platformWallet: ManagedPlatformWallet?,
         platformAddressWallet: ManagedPlatformAddressWallet?,
         signer: KeychainSigner?,
         senderAccountIndex: UInt32,
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        tappedFlow: SendFlow?,
+        tappedRecipient: String
     ) async {
-        guard let flow = detectedFlow else { return }
+        guard let flow = flowToSend(tappedFlow: tappedFlow, tappedRecipient: tappedRecipient),
+              Self.mayDispatch(
+                  flow,
+                  accountZeroShieldedBalance: walletManager.spendableShieldedCredits(
+                      walletId: wallet.walletId, account: 0))
+        else {
+            error = Self.routeChangedMessage
+            return
+        }
 
         isSending = true
         error = nil
