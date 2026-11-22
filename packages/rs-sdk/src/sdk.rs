@@ -138,11 +138,19 @@ pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// Per-network *default* seed used only when an unpinned SDK has no explicit
 /// initial version.
 ///
-/// Mainnet, testnet and regtest seed at protocol version 13, the lowest version
-/// any of those networks still runs. Devnets seed at 14, the lowest version
-/// a development network may still run. Proved reads can use a newer version named in
-/// their signed response metadata even when the SDK starts with a lower seed;
-/// the stored version ratchets only after proof and signature verification.
+/// Every network seeds at protocol version 14, the version mainnet and testnet
+/// run and the lowest a development network may still run. A lower seed has the
+/// SDK build state transitions in a version those networks no longer accept
+/// until a proved read has ratcheted it. Proved reads can use a newer version
+/// named in their signed response metadata even when the SDK starts with a lower
+/// seed; the stored version ratchets only after proof and signature verification.
+///
+/// This is a startup default, not the oldest version a chain can run: a local
+/// chain can still be at protocol version 13. The stored version is never
+/// lowered, so against such a chain an SDK left at this default fails proved
+/// document reads with [`Error::Config`], their answers being signed below it.
+/// Seed it with [`SdkBuilder::with_initial_version`] at 13 to keep auto-detect,
+/// or pin it with [`SdkBuilder::with_version`].
 ///
 /// Not a runtime clamp: [`SdkBuilder::with_initial_version`] can seed an unpinned
 /// SDK *below* this value (no construction-time floor), and auto-detect
@@ -150,10 +158,9 @@ pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// *upward* via `fetch_max` when the network reports a newer one.
 pub const fn min_protocol_version(network: Network) -> u32 {
     match network {
-        Network::Mainnet => dpp::version::v13::PROTOCOL_VERSION_13,
-        Network::Testnet => dpp::version::v13::PROTOCOL_VERSION_13,
-        Network::Devnet => dpp::version::v14::PROTOCOL_VERSION_14,
-        Network::Regtest => dpp::version::v13::PROTOCOL_VERSION_13,
+        Network::Mainnet | Network::Testnet | Network::Devnet | Network::Regtest => {
+            dpp::version::v14::PROTOCOL_VERSION_14
+        }
     }
 }
 
@@ -2803,9 +2810,14 @@ pub(crate) mod test {
         assert_eq!(sdk.protocol_version_number(), pinned.protocol_version);
         assert!(sdk.version_pinned);
 
-        // Network reports version 14 (> pinned) — should be ignored because version is pinned
+        // Network reports version 15 (> pinned) — should be ignored because version is pinned
+        let newer = dpp::version::v15::PROTOCOL_VERSION_15;
+        assert!(
+            newer > pinned.protocol_version,
+            "reported version must exceed the pin"
+        );
         let metadata = ResponseMetadata {
-            protocol_version: dpp::version::v14::PROTOCOL_VERSION_14,
+            protocol_version: newer,
             height: 1,
             ..Default::default()
         };
@@ -2856,7 +2868,7 @@ pub(crate) mod test {
         assert_eq!(sdk.protocol_version_number(), floor);
 
         // And a newer network version still ratchets upward.
-        let newer = dpp::version::v14::PROTOCOL_VERSION_14;
+        let newer = dpp::version::v15::PROTOCOL_VERSION_15;
         assert!(newer > floor, "ratchet target must exceed the floor");
         let metadata = ResponseMetadata {
             protocol_version: newer,
@@ -2992,12 +3004,12 @@ pub(crate) mod test {
         let floor = min_protocol_version(Network::Mainnet);
         assert_eq!(sdk.protocol_version_number(), floor);
 
-        // Ratchet to a fixed known target (PV14), not `floor + N`: stays valid as the
+        // Ratchet to a fixed known target (PV15), not `floor + N`: stays valid as the
         // floor advances, and `maybe_update_protocol_version` only accepts known versions.
-        let target = dpp::version::v14::PROTOCOL_VERSION_14;
+        let target = dpp::version::v15::PROTOCOL_VERSION_15;
         assert!(
             target > floor,
-            "ratchet test target must exceed the floor; bump it if the floor reaches v14"
+            "ratchet test target must exceed the floor; bump it if the floor reaches v15"
         );
         sdk.maybe_update_protocol_version(target);
         assert_eq!(
@@ -3108,19 +3120,20 @@ pub(crate) mod test {
         assert!(!sdk.version_pinned);
     }
 
-    /// Each network seeds at the lowest protocol version it may still run.
+    /// Every network's startup default is protocol version 14. It is a default,
+    /// not the oldest version a chain can run.
     #[test]
     fn test_per_network_floors() {
-        assert_eq!(
-            min_protocol_version(Network::Devnet),
-            dpp::version::v14::PROTOCOL_VERSION_14,
-            "devnet floor must support networks still running protocol 14"
-        );
-        for network in [Network::Mainnet, Network::Testnet, Network::Regtest] {
+        for network in [
+            Network::Mainnet,
+            Network::Testnet,
+            Network::Devnet,
+            Network::Regtest,
+        ] {
             assert_eq!(
                 min_protocol_version(network),
-                dpp::version::v13::PROTOCOL_VERSION_13,
-                "{network} floor must be the lowest version the network runs"
+                dpp::version::v14::PROTOCOL_VERSION_14,
+                "{network} must start at protocol version 14 by default"
             );
         }
         let sdk = SdkBuilder::new_mock()
@@ -3132,6 +3145,34 @@ pub(crate) mod test {
             min_protocol_version(Network::Devnet)
         );
         assert!(!sdk.version_pinned);
+    }
+
+    /// Protocol version 14 refuses `ShieldFromAssetLock` version 0. An unpinned SDK
+    /// that has verified no answer yet must already select version 1, the version
+    /// the transition's builders read from this table, or a transfer built before
+    /// the first proved read is refused by the network.
+    #[test]
+    fn should_select_shield_from_asset_lock_version_1_before_any_proved_read() {
+        for network in [
+            Network::Mainnet,
+            Network::Testnet,
+            Network::Devnet,
+            Network::Regtest,
+        ] {
+            let sdk = SdkBuilder::new_mock()
+                .with_network(network)
+                .build()
+                .expect("mock Sdk should be created");
+            assert_eq!(
+                sdk.version()
+                    .dpp
+                    .state_transition_serialization_versions
+                    .shield_from_asset_lock_state_transition
+                    .default_current_version,
+                1,
+                "a fresh {network} SDK must select the version the network accepts"
+            );
+        }
     }
 
     /// The observer fires once per upward ratchet with the new version, and stays
@@ -3152,7 +3193,7 @@ pub(crate) mod test {
             .build()
             .expect("mock Sdk should be created");
         let floor = min_protocol_version(Network::Mainnet);
-        let target = dpp::version::v14::PROTOCOL_VERSION_14;
+        let target = dpp::version::v15::PROTOCOL_VERSION_15;
         assert!(target > floor, "ratchet target must exceed the floor");
 
         sdk.maybe_update_protocol_version(floor);
