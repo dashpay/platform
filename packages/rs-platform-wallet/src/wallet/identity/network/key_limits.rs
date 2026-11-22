@@ -426,6 +426,7 @@ mod tests {
     use tokio::sync::Notify;
 
     use crate::test_support::test_platform_wallet_manager;
+    use dash_sdk::query_types::IdentityNonceFetcher;
 
     const EXPIRES_AT: TimestampMillis = 1_800_000_000_000;
 
@@ -861,35 +862,62 @@ mod tests {
         }
     }
 
-    /// `submit_key_limits_update` signs through `GatedSigner`, and the SDK broadcasts only a
-    /// signature it was handed. A wallet removed while the host signs gets the signature
-    /// refused, so nothing is broadcast and the call reports `WalletRemovedBeforeSend`.
+    /// A wallet removed while the host signs a reviewed key limits update gets the signature
+    /// refused through the public submission: nothing is broadcast (the mock answers no
+    /// broadcast, and a refused signature fails the transition before one), and the call
+    /// reports `WalletRemovedBeforeSend`.
     #[tokio::test]
-    async fn should_refuse_a_signature_that_returns_after_the_wallet_was_removed() {
+    async fn should_refuse_a_reviewed_update_signed_after_the_wallet_was_removed() {
         let (manager, wallet_id) = test_platform_wallet_manager().await;
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let held = identity();
+        let identity_id = held.id();
+        let mut sdk = manager.sdk().clone();
+        sdk.mock()
+            .expect_fetch::<IdentityNonceFetcher, _>(identity_id, Some(IdentityNonceFetcher(0)))
+            .await
+            .expect("expects the nonce read");
+        {
+            let identity_wallet = wallet.identity();
+            let mut wm = identity_wallet.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet_id)
+                .expect("wallet info")
+                .identity_manager
+                .add_identity(held, 0, wallet_id, &identity_wallet.persister)
+                .expect("held identity");
+        }
         let host = PausingSigner {
             reached: Arc::new(Notify::new()),
             release: Arc::new(Notify::new()),
         };
-        let gated = GatedSigner {
-            signer: &host,
-            wallet: wallet.identity(),
-            gate: std::sync::Mutex::new(SigningGate::Unsigned),
-        };
-        let key = authentication_key(0, SecurityLevel::MASTER);
+        let reviewed = wallet
+            .identity()
+            .preview_identity_key_limits_update(&identity_id, 2, Some(500), None, &host)
+            .await
+            .expect("reviewed preview");
 
-        let mut signing = Box::pin(gated.sign(&key, b"key limits update"));
+        let mut update = Box::pin(
+            wallet
+                .identity()
+                .update_identity_key_limits_as_reviewed_with_external_signer(
+                    &reviewed, &host, None,
+                ),
+        );
         tokio::select! {
-            signed = &mut signing => panic!("the host signed without being released: {signed:?}"),
+            updated = &mut update => panic!("the update ended before the host signed: {updated:?}"),
             _ = host.reached.notified() => {}
         }
         // The host's prompt holds no gate, so the removal completes while it is open.
         manager.remove_wallet(&wallet_id).await.expect("removed");
         host.release.notify_one();
 
-        let signed = signing.await;
-        assert!(signed.is_err(), "{signed:?}");
-        assert!(gated.removed());
+        let updated = update.await;
+        assert!(
+            matches!(
+                updated,
+                Err(PlatformWalletError::WalletRemovedBeforeSend(_))
+            ),
+            "{updated:?}"
+        );
     }
 }
