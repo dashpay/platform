@@ -3,7 +3,7 @@
 //! the SDK runs. Its SPV route reads the same kind of [`SpvSourceSlot`] as
 //! [`SpvContextProvider`](crate::SpvContextProvider).
 
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use dpp::dashcore::Network;
@@ -51,7 +51,8 @@ pub struct AdaptiveContextProvider {
     trusted: Arc<dyn ContextProvider>,
     spv: Arc<SpvSourceSlot>,
     contracts: Arc<dyn ContractSource>,
-    mode: AtomicU8,
+    /// The mode in the low byte, and above it a count of mode changes.
+    mode_and_revision: AtomicU64,
     network: Network,
 }
 
@@ -80,14 +81,14 @@ impl AdaptiveContextProvider {
             trusted,
             spv: Arc::default(),
             contracts,
-            mode: AtomicU8::new(ContextProviderMode::Auto as u8),
+            mode_and_revision: AtomicU64::new(ContextProviderMode::Auto as u64),
             network,
         })
     }
 
     /// Where lookups go.
     pub fn mode(&self) -> ContextProviderMode {
-        ContextProviderMode::try_from(self.mode.load(Ordering::Acquire))
+        ContextProviderMode::try_from(self.mode_and_revision.load(Ordering::Acquire) as u8)
             .expect("context-provider mode is only written from validated values")
     }
 
@@ -298,12 +299,17 @@ impl ContextProvider for AdaptiveContextProvider {
         })
     }
 
-    fn quorum_mode(&self) -> Option<ContextProviderMode> {
-        Some(self.mode())
+    fn policy_revision(&self) -> Option<u64> {
+        Some(self.mode_and_revision.load(Ordering::Acquire) >> 8)
     }
 
     fn set_quorum_mode(&self, mode: ContextProviderMode) -> Result<(), ContextProviderError> {
-        self.mode.store(mode as u8, Ordering::Release);
+        let _ = self
+            .mode_and_revision
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |state| {
+                (state as u8 != mode as u8)
+                    .then(|| ((state >> 8).wrapping_add(1) << 8) | mode as u64)
+            });
         Ok(())
     }
 
@@ -369,6 +375,21 @@ mod tests {
 
     fn fetch(adaptive: &AdaptiveContextProvider) -> Option<QuorumKeyFuture> {
         adaptive.fetch_quorum_public_key(platform_quorum_type(), [2; 32], 3)
+    }
+
+    #[test]
+    fn should_change_the_policy_revision_on_every_mode_change() {
+        let adaptive = adaptive();
+        let start = adaptive.policy_revision().unwrap();
+        adaptive.set_quorum_mode(ContextProviderMode::Spv).unwrap();
+        adaptive
+            .set_quorum_mode(ContextProviderMode::Trusted)
+            .unwrap();
+        adaptive.set_quorum_mode(ContextProviderMode::Spv).unwrap();
+        assert_eq!(adaptive.mode(), ContextProviderMode::Spv);
+        assert_eq!(adaptive.policy_revision(), Some(start + 3));
+        adaptive.set_quorum_mode(ContextProviderMode::Spv).unwrap();
+        assert_eq!(adaptive.policy_revision(), Some(start + 3));
     }
 
     #[test]

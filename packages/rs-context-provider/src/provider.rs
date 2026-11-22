@@ -224,18 +224,22 @@ pub trait ContextProvider: Send + Sync {
     /// the trusted source then.
     ///
     /// The default, `None`, makes no claim. A provider wrapping another
-    /// forwards this and the two methods below, or the wrapped provider
-    /// reads as one that says nothing, has no mode and no SPV slot.
+    /// forwards this, `policy_revision`, `set_quorum_mode` and
+    /// `spv_source_slot`, or the wrapped provider reads as one that says
+    /// nothing, never changes policy, has no mode and no SPV slot.
     fn quorum_source(&self) -> Option<QuorumKeySource> {
         None
     }
 
-    /// The mode last set with [`set_quorum_mode`](Self::set_quorum_mode), on
-    /// a provider that switches between sources at run time. Unlike
-    /// [`quorum_source`](Self::quorum_source) it never asks a source whether
-    /// it is ready, so it does not block. The default, `None`, has no mode.
-    fn quorum_mode(&self) -> Option<ContextProviderMode> {
-        None
+    /// A revision that changes whenever this provider changes how it
+    /// verifies proofs, such as on every
+    /// [`set_quorum_mode`](Self::set_quorum_mode), so a caller can tell
+    /// whether results verified earlier came from the policy now in force.
+    /// It never blocks; `None` means it could not be read without blocking.
+    /// The default, `Some(0)`, suits a provider whose policy never changes; a
+    /// provider that overrides `set_quorum_mode` overrides this too.
+    fn policy_revision(&self) -> Option<u64> {
+        Some(0)
     }
 
     /// Change which source later quorum lookups use, on a provider that
@@ -322,8 +326,8 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
         self.as_ref().quorum_source()
     }
 
-    fn quorum_mode(&self) -> Option<ContextProviderMode> {
-        self.as_ref().quorum_mode()
+    fn policy_revision(&self) -> Option<u64> {
+        self.as_ref().policy_revision()
     }
 
     fn set_quorum_mode(&self, mode: ContextProviderMode) -> Result<(), ContextProviderError> {
@@ -412,9 +416,8 @@ where
         lock.quorum_source()
     }
 
-    fn quorum_mode(&self) -> Option<ContextProviderMode> {
-        let lock = self.lock().expect("lock poisoned");
-        lock.quorum_mode()
+    fn policy_revision(&self) -> Option<u64> {
+        self.try_lock().ok()?.policy_revision()
     }
 
     fn set_quorum_mode(&self, mode: ContextProviderMode) -> Result<(), ContextProviderError> {
@@ -707,6 +710,15 @@ mod tests {
             assert_eq!(provider.network(), Some(Network::Testnet));
             assert!(provider.requires_proofs());
         }
+    }
+
+    #[test]
+    fn should_not_block_reading_the_policy_revision_of_a_held_mutex() {
+        let mutex = Mutex::new(FetchingProvider::default());
+        assert_eq!(mutex.policy_revision(), Some(0));
+        let held = mutex.lock().unwrap();
+        assert_eq!(mutex.policy_revision(), None);
+        drop(held);
     }
 
     /// A provider that does not say where its quorum keys come from is

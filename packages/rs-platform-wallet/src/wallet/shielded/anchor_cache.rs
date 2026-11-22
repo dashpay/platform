@@ -33,8 +33,11 @@
 //! anchor for up to the TTL, where a fresh fetch would retry the node's luck.
 //!
 //! A third guard ties the set to how it was verified: it is dropped when the
-//! SDK's context provider is replaced or its quorum mode is changed, so a
-//! spend never reuses evidence that an earlier verification policy accepted.
+//! SDK's context provider is replaced or reports a new
+//! [`policy_revision`](ContextProvider::policy_revision), as on every quorum
+//! mode change, and the cache is bypassed while the revision cannot be read
+//! without blocking. A spend never reuses evidence that an earlier
+//! verification policy accepted.
 //!
 //! An anchor pruned after the cached fetch can still be selected, where a
 //! fresh fetch would already omit it. Platform then rejects the spend after
@@ -51,7 +54,7 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError, Weak};
 use std::time::{Duration, Instant, SystemTime};
 
 use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
-use dash_sdk::platform::{ContextProvider, ContextProviderMode};
+use dash_sdk::platform::ContextProvider;
 
 /// How long a fetched recorded-anchor set may be reused by the spend path.
 ///
@@ -69,35 +72,36 @@ pub struct RecordedAnchorCache {
 }
 
 /// What verifies the SDK's proofs: the installed context provider and its
-/// quorum mode, which an adaptive provider changes in place. Reading it never
-/// blocks.
+/// policy revision, which an adaptive provider advances on every mode change.
 #[derive(Debug)]
 struct ProofPolicy {
     provider: Weak<dyn ContextProvider>,
-    quorum_mode: Option<ContextProviderMode>,
+    revision: u64,
 }
 
 impl ProofPolicy {
-    fn of(sdk: &dash_sdk::Sdk) -> Self {
+    /// `None` when the revision cannot be read without blocking.
+    fn of(sdk: &dash_sdk::Sdk) -> Option<Self> {
         let provider = sdk.context_provider_arc();
-        Self {
-            quorum_mode: provider.quorum_mode(),
+        Some(Self {
+            revision: provider.policy_revision()?,
             provider: Arc::downgrade(&provider),
-        }
+        })
     }
 }
 
 impl PartialEq for ProofPolicy {
     fn eq(&self, other: &Self) -> bool {
-        self.provider.ptr_eq(&other.provider) && self.quorum_mode == other.quorum_mode
+        self.provider.ptr_eq(&other.provider) && self.revision == other.revision
     }
 }
 
 #[derive(Debug, Default)]
 struct CacheState {
     entry: Option<CachedAnchorSet>,
-    /// The policy [`RecordedAnchorCache::observe_policy`] last saw.
-    policy: Option<ProofPolicy>,
+    /// The policy [`RecordedAnchorCache::observe_policy`] last saw, `None`
+    /// inside when it could not be read.
+    policy: Option<Option<ProofPolicy>>,
     /// When [`RecordedAnchorCache::invalidate`] last ran. Requests sent
     /// before it may carry the set it meant to discard, so they are dropped.
     invalidated_at: Option<Instant>,
@@ -186,25 +190,24 @@ impl RecordedAnchorCache {
         if !owner.ptr_eq(&Arc::downgrade(sdk)) {
             return None;
         }
-        self.observe_policy(sdk);
-        Some(self)
+        self.observe_policy(sdk).then_some(self)
     }
 
-    /// Drop the cached set, and any fetch already sent, if `sdk` no longer
-    /// verifies proofs the way it did when last observed. Every reader calls
+    /// Drop the cached set, and any fetch already sent, unless `sdk` still
+    /// verifies proofs under the policy last observed. Every reader calls
     /// this before [`get`](Self::get) and every fetch before
     /// [`insert`](Self::insert), so a set verified under an earlier policy is
-    /// neither reused nor stored.
-    pub(crate) fn observe_policy(&self, sdk: &dash_sdk::Sdk) {
+    /// neither reused nor stored. Returns whether the policy could be read.
+    pub(crate) fn observe_policy(&self, sdk: &dash_sdk::Sdk) -> bool {
         let policy = ProofPolicy::of(sdk);
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        if state.policy.as_ref() == Some(&policy) {
-            return;
-        }
-        if state.policy.replace(policy).is_some() {
+        let known = policy.is_some();
+        if !known || state.policy.as_ref().is_some_and(|seen| *seen != policy) {
             state.entry = None;
             state.invalidated_at = Some(Instant::now());
         }
+        state.policy = Some(policy);
+        known
     }
 
     /// The cached set, if one is younger than the TTL and was fetched while
@@ -295,7 +298,10 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct SwitchingProvider(std::sync::atomic::AtomicU8);
+    struct SwitchingProvider {
+        revision: std::sync::atomic::AtomicU64,
+        busy: std::sync::atomic::AtomicBool,
+    }
 
     impl ContextProvider for SwitchingProvider {
         fn get_data_contract(
@@ -330,11 +336,8 @@ mod tests {
             panic!("the cache must not probe source readiness")
         }
 
-        fn quorum_mode(&self) -> Option<ContextProviderMode> {
-            Some(match self.0.load(Ordering::SeqCst) {
-                0 => ContextProviderMode::Auto,
-                _ => ContextProviderMode::Spv,
-            })
+        fn policy_revision(&self) -> Option<u64> {
+            (!self.busy.load(Ordering::SeqCst)).then(|| self.revision.load(Ordering::SeqCst))
         }
     }
 
@@ -348,7 +351,7 @@ mod tests {
     }
 
     #[test]
-    fn should_drop_a_set_verified_before_the_provider_switched_quorum_mode() {
+    fn should_drop_a_set_verified_before_the_provider_changed_policy() {
         let provider = Arc::new(SwitchingProvider::default());
         let sdk = sdk_with(Arc::clone(&provider));
         let cache = RecordedAnchorCache::new();
@@ -358,7 +361,7 @@ mod tests {
             .insert(set(&[1]), FetchStamp::now(), 10, 100);
         assert!(cache.for_sdk(&sdk).unwrap().get(10).is_some());
 
-        provider.0.store(1, Ordering::SeqCst);
+        provider.revision.fetch_add(1, Ordering::SeqCst);
 
         assert!(cache.for_sdk(&sdk).unwrap().get(10).is_none());
     }
@@ -379,18 +382,41 @@ mod tests {
     }
 
     #[test]
-    fn should_not_store_a_fetch_that_spanned_a_policy_change() {
+    fn should_not_store_a_fetch_that_spanned_two_policy_changes() {
         let provider = Arc::new(SwitchingProvider::default());
         let sdk = sdk_with(Arc::clone(&provider));
         let cache = RecordedAnchorCache::new();
         let cache = cache.for_sdk(&sdk).unwrap();
         let sent = FetchStamp::now();
 
-        provider.0.store(1, Ordering::SeqCst);
-        cache.observe_policy(&sdk);
+        provider.revision.fetch_add(2, Ordering::SeqCst);
+        assert!(cache.observe_policy(&sdk));
         cache.insert(set(&[1]), sent, 10, 100);
 
         assert!(cache.get(10).is_none());
+    }
+
+    #[test]
+    fn should_bypass_the_cache_while_the_policy_cannot_be_read() {
+        let provider = Arc::new(SwitchingProvider::default());
+        let sdk = sdk_with(Arc::clone(&provider));
+        let cache = RecordedAnchorCache::new();
+        cache
+            .for_sdk(&sdk)
+            .unwrap()
+            .insert(set(&[1]), FetchStamp::now(), 10, 100);
+        let sent = FetchStamp::now();
+
+        provider.busy.store(true, Ordering::SeqCst);
+        assert!(cache.for_sdk(&sdk).is_none());
+        provider.busy.store(false, Ordering::SeqCst);
+
+        let cache = cache.for_sdk(&sdk).unwrap();
+        cache.insert(set(&[2]), sent, 10, 100);
+        assert!(cache.get(10).is_none());
+
+        cache.insert(set(&[3]), FetchStamp::now(), 10, 100);
+        assert!(cache.get(10).is_some());
     }
 
     #[test]
