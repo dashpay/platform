@@ -288,6 +288,12 @@ extension PlatformWalletManager {
     /// in storage but the shield ST never landed, and the user
     /// picks the lock from a "Resumable Funding" surface.
     ///
+    /// The call holds the manager's native-operation admission until it
+    /// returns, like `shieldedFundFromWalletDrain`: `deleteWallet` refuses
+    /// and `shutdown()` waits for it. Its ChainLock wait has no deadline, so
+    /// do not stop SPV while it is in flight; shutdown cannot interrupt it
+    /// yet (#6003).
+    ///
     /// - Parameters:
     ///   - walletId: 32-byte wallet identifier.
     ///   - outPointTxid: 32-byte raw txid (little-endian wire
@@ -319,11 +325,13 @@ extension PlatformWalletManager {
             recipients: recipients
         )
 
-        let handle = self.handle
         let recipientRaw43 = recipients[0].recipientRaw43
         let coreSigner = MnemonicResolver()
 
-        try await Task.detached(priority: .userInitiated) {
+        // Admitted because this call also recovers a wallet drain by its
+        // exact outpoint: `deleteWallet` must refuse and `shutdown()` must
+        // wait until it returns, as for the drain call itself.
+        try await withAdmittedNativeOperation("shieldedResumeFundFromAssetLock") { handle -> Void in
             var txidTuple:
                 (
                     UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -374,7 +382,7 @@ extension PlatformWalletManager {
                     }
                 }
             }
-        }.value
+        }
     }
 
     /// Seed the shielded pool's anonymity set up to `targetTotalNotes`
