@@ -138,13 +138,19 @@ pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// Per-network *default* seed used only when an unpinned SDK has no explicit
 /// initial version.
 ///
-/// Every network seeds at protocol version 14, the lowest version mainnet and
-/// testnet run and the lowest a development network may still run. A lower seed
-/// has the SDK build state transitions in a version those networks no longer
-/// accept until a proved read has ratcheted it. Proved reads can use a newer
-/// version named in their signed response metadata even when the SDK starts with
-/// a lower seed; the stored version ratchets only after proof and signature
-/// verification.
+/// Every network seeds at protocol version 14, the version mainnet and testnet
+/// run and the lowest a development network may still run. A lower seed has the
+/// SDK build state transitions in a version those networks no longer accept
+/// until a proved read has ratcheted it. Proved reads can use a newer version
+/// named in their signed response metadata even when the SDK starts with a lower
+/// seed; the stored version ratchets only after proof and signature verification.
+///
+/// This is a startup default, not the oldest version a chain can run: a local
+/// chain can still be at protocol version 13. The stored version is never
+/// lowered, so against such a chain an SDK left at this default fails proved
+/// document reads with [`Error::Config`], their answers being signed below it.
+/// Seed it with [`SdkBuilder::with_initial_version`] at 13 to keep auto-detect,
+/// or pin it with [`SdkBuilder::with_version`].
 ///
 /// Not a runtime clamp: [`SdkBuilder::with_initial_version`] can seed an unpinned
 /// SDK *below* this value (no construction-time floor), and auto-detect
@@ -3114,8 +3120,8 @@ pub(crate) mod test {
         assert!(!sdk.version_pinned);
     }
 
-    /// Every network seeds at protocol version 14, the lowest version any of them
-    /// may still run.
+    /// Every network's startup default is protocol version 14. It is a default,
+    /// not the oldest version a chain can run.
     #[test]
     fn test_per_network_floors() {
         for network in [
@@ -3127,7 +3133,7 @@ pub(crate) mod test {
             assert_eq!(
                 min_protocol_version(network),
                 dpp::version::v14::PROTOCOL_VERSION_14,
-                "{network} floor must be the lowest version the network runs"
+                "{network} must start at protocol version 14 by default"
             );
         }
         let sdk = SdkBuilder::new_mock()
@@ -3142,10 +3148,11 @@ pub(crate) mod test {
     }
 
     /// Protocol version 14 refuses `ShieldFromAssetLock` version 0. An unpinned SDK
-    /// that has verified no answer yet must already build version 1, or a transfer
-    /// built before the first proved read is refused by the network.
+    /// that has verified no answer yet must already select version 1, the version
+    /// the transition's builders read from this table, or a transfer built before
+    /// the first proved read is refused by the network.
     #[test]
-    fn should_build_shield_from_asset_lock_version_1_before_any_proved_read() {
+    fn should_select_shield_from_asset_lock_version_1_before_any_proved_read() {
         for network in [
             Network::Mainnet,
             Network::Testnet,
@@ -3163,7 +3170,7 @@ pub(crate) mod test {
                     .shield_from_asset_lock_state_transition
                     .default_current_version,
                 1,
-                "a fresh {network} SDK must build the version the network accepts"
+                "a fresh {network} SDK must select the version the network accepts"
             );
         }
     }
