@@ -879,11 +879,7 @@ impl IdentityWallet {
         identity_id: Option<&Identifier>,
     ) -> Result<Vec<DpnsNameStateEntry>, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
-        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-            PlatformWalletError::WalletNotFound(
-                "Wallet info not found in wallet manager".to_string(),
-            )
-        })?;
+        let info = self.current_wallet_info(&wm)?;
         Ok(info
             .dpns_name_states
             .values()
@@ -993,11 +989,7 @@ impl IdentityWallet {
             .security_level_requirement();
         let allowed_levels = allowed_signing_security_levels(required_level);
         let wm = self.wallet_manager.read().await;
-        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-            PlatformWalletError::WalletNotFound(
-                "Wallet info not found in wallet manager".to_string(),
-            )
-        })?;
+        let info = self.current_wallet_info(&wm)?;
         let identity = info
             .identity_manager
             .wallet_identity(&self.wallet_id, identity_id)
@@ -1042,7 +1034,7 @@ impl IdentityWallet {
         }
         cs.removed.extend(removed);
         let mut wm = self.wallet_manager.write().await;
-        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+        let Ok(info) = self.current_wallet_info_mut(&mut wm) else {
             return;
         };
         info.dpns_name_states.extend(cs.names.clone());
@@ -1066,7 +1058,7 @@ impl IdentityWallet {
         acquired_at: Option<u64>,
     ) {
         let mut wm = self.wallet_manager.write().await;
-        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+        let Ok(info) = self.current_wallet_info_mut(&mut wm) else {
             return;
         };
         let Some(managed) = info
@@ -1092,7 +1084,7 @@ impl IdentityWallet {
     /// in this wallet.
     async fn remove_dpns_label(&self, identity_id: &Identifier, label: &str) {
         let mut wm = self.wallet_manager.write().await;
-        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+        let Ok(info) = self.current_wallet_info_mut(&mut wm) else {
             return;
         };
         let Some(managed) = info
@@ -1122,7 +1114,7 @@ impl IdentityWallet {
     /// Whether `identity_id` is one of this wallet's identities.
     async fn is_wallet_identity(&self, identity_id: &Identifier) -> bool {
         let wm = self.wallet_manager.read().await;
-        wm.get_wallet_info(&self.wallet_id)
+        self.current_wallet_info(&wm)
             .map(|info| {
                 info.identity_manager
                     .wallet_identity(&self.wallet_id, identity_id)
@@ -1425,11 +1417,7 @@ impl IdentityWallet {
         // local balance.
         let available = {
             let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
+            let info = self.current_wallet_info(&wm)?;
             info.identity_manager
                 .wallet_identity(&self.wallet_id, purchaser_identity_id)
                 .map(|m| m.balance())
@@ -1644,11 +1632,7 @@ impl IdentityWallet {
         // Snapshot identity ids, their label lists, and the current rows.
         let (identity_ids, labels_by_identity, previous_rows) = {
             let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
+            let info = self.current_wallet_info(&wm)?;
             let ids = info.identity_manager.wallet_identity_ids(&self.wallet_id);
             let labels: BTreeMap<Identifier, Vec<DpnsNameInfo>> = info
                 .identity_manager
@@ -2337,6 +2321,7 @@ mod tests {
     use super::super::signing_key::tests::{identity, lock_checking_signer};
     use super::*;
     use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
+    use crate::wallet::core::WalletGeneration;
     use dpp::identity::accessors::IdentitySettersV0;
     use dpp::identity::SecurityLevel;
 
@@ -4070,6 +4055,80 @@ mod tests {
             #[cfg(feature = "shielded")]
             contact_shielded_addresses: Default::default(),
         }
+    }
+
+    /// A handle whose wallet was removed and re-created under the same id (a new
+    /// generation) writes nothing into the replacement: a marketplace pass or trade that
+    /// started on the old generation finishes without touching the new one's labels, rows
+    /// or persister.
+    #[tokio::test]
+    async fn a_handle_of_a_replaced_generation_writes_nothing() {
+        let mirror = Arc::new(MirrorPersister::hydrated(Vec::new()));
+        let wallet = mirror_backed_identity_wallet(Arc::clone(&mirror));
+        let mut owner = identity(
+            Purpose::AUTHENTICATION,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_SECP256K1,
+        );
+        let owner_id = Identifier::from([0xE1; 32]);
+        owner.set_id(owner_id);
+        {
+            let mut wm = wallet.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet.wallet_id)
+                .expect("wallet info");
+            info.identity_manager
+                .add_identity(owner, 0, wallet.wallet_id, &wallet.persister)
+                .expect("add identity");
+            info.identity_manager
+                .managed_identity_mut(&owner_id)
+                .expect("the identity")
+                .set_dpns_names(
+                    vec![DpnsNameInfo {
+                        label: DEPARTED_LABEL.to_string(),
+                        acquired_at: Some(1),
+                    }],
+                    &wallet.persister,
+                );
+            // The wallet is removed and re-created under its id
+            info.generation = Arc::new(WalletGeneration::new());
+        }
+        let stores_before = mirror.store_order().len();
+
+        let mut row = name_state_entry(
+            Identifier::from([0xE2; 32]),
+            owner_id,
+            DpnsNameSaleStatus::Owned,
+        );
+        row.label = "Bob".to_string();
+        wallet.record_dpns_name_states(vec![row], vec![]).await;
+        wallet.remove_dpns_label(&owner_id, DEPARTED_LABEL).await;
+        wallet
+            .add_dpns_label_if_missing(&owner_id, "Bob", Some(2))
+            .await;
+
+        assert_eq!(
+            mirror.store_order().len(),
+            stores_before,
+            "nothing is stored"
+        );
+        assert!(!wallet.is_wallet_identity(&owner_id).await);
+        let wm = wallet.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet.wallet_id).expect("wallet info");
+        assert!(info.dpns_name_states.is_empty(), "no row is written");
+        let labels: Vec<String> = info
+            .identity_manager
+            .managed_identity(&owner_id)
+            .expect("the identity")
+            .dpns_names
+            .iter()
+            .map(|name| name.label.clone())
+            .collect();
+        assert_eq!(
+            labels,
+            vec![DEPARTED_LABEL.to_string()],
+            "labels are untouched"
+        );
     }
 
     // -----------------------------------------------------------------
