@@ -574,16 +574,19 @@ private struct MultipleChoiceProposalVoteSheet: View {
                 proposalId: proposalId,
                 proTxHash: proTxHash
             )
-            // The voter changed while the read was in flight: this answer
-            // is not the picked masternode's.
-            guard self.voter?.wireOrderProTxHash == proTxHash else { return }
+            // The voter or the network changed while the read was in
+            // flight: this answer is not the picked masternode's on the
+            // network now shown.
+            guard self.voter?.wireOrderProTxHash == proTxHash,
+                  appState.sdk === sdk else { return }
             if let current {
                 show("Current answer: \(describe(current)).", isError: false)
             } else {
                 show("This masternode has no answer in the vote (none yet, or the vote has ended).", isError: false)
             }
         } catch {
-            guard self.voter?.wireOrderProTxHash == proTxHash else { return }
+            guard self.voter?.wireOrderProTxHash == proTxHash,
+                  appState.sdk === sdk else { return }
             show("Reading the answer failed: \(error.localizedDescription)", isError: true)
         }
     }

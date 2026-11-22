@@ -1968,6 +1968,13 @@ extension SDK {
             if case let .towardsIdentity(id) = choice { return id }
             return nil
         }()
+        try Self.refuseEmbeddedNul([
+            ("dataContractId", dataContractId),
+            ("documentTypeName", documentTypeName),
+            ("indexName", indexName),
+            ("indexValues", indexValuesJson),
+            ("contenderId", contenderId),
+        ])
         let networkValue = network.ffiValue
 
         try await performBlockingQuery { handle in
@@ -2047,6 +2054,13 @@ extension SDK {
             if case let .towardsIdentity(id) = choice { return id }
             return nil
         }()
+        try Self.refuseEmbeddedNul([
+            ("dataContractId", dataContractId),
+            ("documentTypeName", documentTypeName),
+            ("indexName", indexName),
+            ("indexValues", indexValuesJson),
+            ("contenderId", contenderId),
+        ])
 
         try await performBlockingQuery { handle in
             // The signer's FFI handle holds an unretained pointer to
@@ -2071,6 +2085,20 @@ extension SDK {
                 }
             }
             try Self.processVoidResult(result)
+        }
+    }
+
+    /// Refuses, as `SDKError.invalidParameter` naming the field, a string
+    /// with an embedded NUL: C reads each string only up to its first NUL, so
+    /// it would act on a prefix. The same check the proposal wrappers make
+    /// (``withDecisionProposalCString(_:field:invalid:_:)``); `nil` passes.
+    private nonisolated static func refuseEmbeddedNul(_ fields: [(name: String, value: String?)]) throws {
+        for field in fields {
+            try withDecisionProposalCString(
+                field.value,
+                field: field.name,
+                invalid: SDKError.invalidParameter
+            ) { _ in }
         }
     }
 

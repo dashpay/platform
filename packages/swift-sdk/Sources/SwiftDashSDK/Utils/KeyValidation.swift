@@ -56,13 +56,19 @@ public enum KeyValidation {
 
     /// The 32 secret bytes of a private key typed as 64 hex characters or in
     /// WIF (`dash_sdk_private_key_bytes_from_text`). Rust reads the text and
-    /// decides which form it is; `nil` when it is neither, or not a secp256k1
-    /// secret key.
-    public static func privateKeyBytes(fromText text: String) -> Data? {
+    /// decides which form it is.
+    ///
+    /// - Throws: `SDKError.invalidParameter` carrying Rust's reason when the
+    ///   text is neither form, an uncompressed WIF, or not a secp256k1 secret
+    ///   key, or when it contains a NUL character. The reason never contains
+    ///   the text.
+    public static func privateKeyBytes(fromText text: String) throws -> Data {
         // C reads only up to the first NUL, so text with an embedded one
         // would be judged by its prefix alone.
-        guard !text.contains("\0") else {
-            return nil
+        guard !text.utf8.contains(0) else {
+            throw SDKError.invalidParameter(
+                "the private key contains a NUL character, which a C string cannot carry"
+            )
         }
         var secret = [UInt8](repeating: 0, count: 32)
         defer {
@@ -78,8 +84,10 @@ public enum KeyValidation {
             }
         }
         if let error = result.error {
-            dash_sdk_error_free(error)
-            return nil
+            defer { dash_sdk_error_free(error) }
+            let reason = error.pointee.message.map { String(cString: $0) }
+                ?? "the private key was refused"
+            throw SDKError.invalidParameter(reason)
         }
         return Data(secret)
     }

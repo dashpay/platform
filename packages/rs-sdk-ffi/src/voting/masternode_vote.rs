@@ -359,7 +359,7 @@ mod tests {
     /// the key the vote names.
     #[test]
     fn should_derive_a_voting_key_the_signer_signs_with() {
-        let pro_tx_hash = [1u8; 32];
+        let pro_tx_hash: [u8; 32] = std::array::from_fn(|i| i as u8);
         let key = [2u8; 32];
         let voter = unsafe {
             MasternodeVoter::from_raw(pro_tx_hash.as_ptr(), key.as_ptr(), FFINetwork::Testnet)
@@ -486,7 +486,7 @@ mod tests {
     async fn should_ask_the_signer_for_the_voting_key_of_the_voting_address() {
         let (signer, capture) = capturing_signer();
         let signer_handle = &signer as *const VTableSigner as *const SignerHandle;
-        let pro_tx_hash = [1u8; 32];
+        let pro_tx_hash: [u8; 32] = std::array::from_fn(|i| i as u8);
         let voting_address = [3u8; 20];
         let voter = unsafe {
             MasternodeVoter::from_signer_handle(

@@ -538,9 +538,11 @@ private struct DecisionProposalVoteSheet: View {
                 proposalId: proposalId,
                 proTxHash: proTxHash
             )
-            // The voter changed while the read was in flight: this answer
-            // is not the picked masternode's.
-            guard self.voter?.wireOrderProTxHash == proTxHash else { return }
+            // The voter or the network changed while the read was in
+            // flight: this answer is not the picked masternode's on the
+            // network now shown.
+            guard self.voter?.wireOrderProTxHash == proTxHash,
+                  appState.sdk === sdk else { return }
             if let vote {
                 show(
                     "Current answer: \(vote.choice.rawValue), voted \(vote.timesVoted) time\(vote.timesVoted == 1 ? "" : "s").",
@@ -550,7 +552,8 @@ private struct DecisionProposalVoteSheet: View {
                 show("This masternode has no answer on the poll (none yet, or the poll has finished).", isError: false)
             }
         } catch {
-            guard self.voter?.wireOrderProTxHash == proTxHash else { return }
+            guard self.voter?.wireOrderProTxHash == proTxHash,
+                  appState.sdk === sdk else { return }
             show("Reading the answer failed: \(error.localizedDescription)", isError: true)
         }
     }
