@@ -281,9 +281,14 @@ fn consensus_refusal() -> Status {
 /// The status of an attempt that never connected to its node. tonic wraps failures from
 /// its connector before mapping them to Unavailable.
 fn connect_failure() -> Status {
+    connect_failure_to("a node")
+}
+
+/// A [`connect_failure`] whose text names the node, to tell one attempt's from another's.
+fn connect_failure_to(node: &str) -> Status {
     let status = Status::from_error(Box::new(ConnectError(Box::new(io::Error::new(
         io::ErrorKind::NetworkUnreachable,
-        "Network is unreachable",
+        format!("Network is unreachable ({node})"),
     )))));
     assert_eq!(status.code(), Code::Unavailable);
     status
@@ -340,24 +345,26 @@ async fn should_fail_plainly_when_every_attempt_fails_to_connect() {
 }
 
 /// A transfer sent on an open connection that then broke, with every later node
-/// unreachable, for the result check too (the palmatum upgrade rehearsal,
-/// dashpay/platform#6020 item 7). The first node may have received the transition, so the
-/// outcome is unconfirmed. The error still ends on the last failure, a failure to connect,
-/// so its text says a node may have received the transition and marks that failure as the
-/// last error: on its own it reads as if nothing had been sent.
+/// unreachable (the palmatum upgrade rehearsal, dashpay/platform#6020 item 7). The first
+/// node may have received the transition, so the outcome is unconfirmed. The error still
+/// ends on the last failure, a failure to connect, so its text says a node may have
+/// received the transition and marks that failure as the last error: on its own it reads
+/// as if nothing had been sent.
+///
+/// The result check that follows is not replayed: its error is given, as the bare
+/// transport error it ended on in the rehearsal, to show how it is wrapped.
 #[tokio::test(start_paused = true)]
 async fn should_say_a_node_may_have_received_a_transition_whose_last_error_is_a_connect_failure() {
     const UNCONFIRMED: &str = "state transition outcome is unconfirmed: a node accepted it or may have received it; reconcile the original operation before submitting a replacement; last error: ";
-    let last_broadcast_error = Error::DapiClientError(DapiClientError::Transport(
-        TransportError::Grpc(connect_failure()),
-    ));
+    let transport =
+        |status| Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(status)));
     let (outcome, sent, executions) = retrying_broadcast(
         &signed_transition(),
         vec![
             Attempt::Error(Status::unknown("transport error")),
-            Attempt::Error(connect_failure()),
-            Attempt::Error(connect_failure()),
-            Attempt::Error(connect_failure()),
+            Attempt::Error(connect_failure_to("second node")),
+            Attempt::Error(connect_failure_to("third node")),
+            Attempt::Error(connect_failure_to("fourth node")),
         ],
         3,
     )
@@ -368,12 +375,13 @@ async fn should_say_a_node_may_have_received_a_transition_whose_last_error_is_a_
     assert!(broadcast_error.is_state_transition_result_unconfirmed());
     assert_eq!(
         broadcast_error.to_string(),
-        format!("{UNCONFIRMED}{last_broadcast_error}")
+        format!(
+            "{UNCONFIRMED}{}",
+            transport(connect_failure_to("fourth node"))
+        )
     );
 
-    let wait_error = Error::NoAvailableAddressesToRetry(Box::new(Error::DapiClientError(
-        DapiClientError::Transport(TransportError::Grpc(connect_failure())),
-    )));
+    let wait_error = transport(connect_failure_to("result check"));
     let expected = format!("{UNCONFIRMED}{wait_error}");
     let result: Result<(), Error> = wait_after_broadcast(outcome, async { Err(wait_error) }).await;
     let error = result.unwrap_err();
