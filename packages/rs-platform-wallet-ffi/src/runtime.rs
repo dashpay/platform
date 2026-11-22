@@ -7,6 +7,10 @@
 //! enough to blow past that — we've seen `EXC_BAD_ACCESS` at
 //! `verify_state_transition_was_executed_with_proof`'s function
 //! prologue, which is the classic fingerprint of a stack-guard hit.
+//! Android is the same case: a Kotlin `Dispatchers.IO` thread has about
+//! 1 MiB, and the wide frames of an unoptimized build overflow it in the
+//! first DashPay contract parse a wallet create reaches
+//! (dashpay/platform#6020).
 //!
 //! Two mitigations together:
 //!
@@ -17,6 +21,8 @@
 //!    (small-stacked) calling thread. `block_on` itself still runs
 //!    on the caller, but it parks almost immediately — all the
 //!    compute happens on the tokio worker.
+
+use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
 
 /// Worker thread stack size for the shared runtime. 8 MB gives proof
 /// verification + GroveDB comfortable headroom without meaningfully
@@ -87,6 +93,19 @@ pub(crate) fn run_on_big_stack_thread<T: Send>(f: impl FnOnce() -> T + Send) -> 
             .spawn_scoped(scope, f)?;
         Ok(handle.join().expect("big-stack FFI thread panicked"))
     })
+}
+
+/// What an export returns when [`run_on_big_stack_thread`] could not spawn
+/// its thread: `ErrorWalletOperation`, as the startup and asset-lock resume
+/// exports report it.
+pub(crate) fn big_stack_spawn_failed(
+    operation: &str,
+    error: std::io::Error,
+) -> PlatformWalletFFIResult {
+    PlatformWalletFFIResult::err(
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        format!("failed to spawn the big-stack thread for {operation}: {error}"),
+    )
 }
 
 #[cfg(test)]

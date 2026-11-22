@@ -20,7 +20,7 @@ use platform_wallet::PlatformWalletError;
 
 use crate::error::*;
 use crate::handle::*;
-use crate::runtime::{block_on_worker, runtime};
+use crate::runtime::{big_stack_spawn_failed, block_on_worker, run_on_big_stack_thread, runtime};
 use crate::shielded_types::{
     ShieldedBalanceSourceFFI, ShieldedLocalAccountBalanceFFI, ShieldedLocalBalanceSnapshotFFI,
     ShieldedLocalBalanceStatusFFI, ShieldedSyncWalletResultFFI,
@@ -480,14 +480,23 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
     // requested account has no persisted row — only then is the
     // mnemonic resolved. Persisted-key load/restore errors propagate without
     // resolving the seed; fallback must not mask a persistence failure.
-    match runtime()
-        .block_on(wallet_arc.bind_shielded_from_persisted(accounts.as_slice(), &coordinator))
-    {
-        Ok(true) => return PlatformWalletFFIResult::ok(),
-        Ok(false) => {}
-        Err(e) => {
+    //
+    // Both binds are polled on the big-stack thread, not the caller's: the
+    // install restores the wallet's private payments, which parses the
+    // DashPay contract, and its unoptimized frames overflow a ~1 MiB host
+    // thread (dashpay/platform#6020). The resolver between them stays on
+    // the caller's thread.
+    let from_persisted = run_on_big_stack_thread(|| {
+        runtime()
+            .block_on(wallet_arc.bind_shielded_from_persisted(accounts.as_slice(), &coordinator))
+    });
+    match from_persisted {
+        Ok(Ok(true)) => return PlatformWalletFFIResult::ok(),
+        Ok(Ok(false)) => {}
+        Ok(Err(e)) => {
             return map_shielded_error(e, "bind_shielded_from_persisted");
         }
+        Err(e) => return big_stack_spawn_failed("shielded bind", e),
     }
 
     // Fallback: resolve the mnemonic via the host callback and
@@ -501,12 +510,17 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
         Err(result) => return result,
     };
 
-    if let Err(e) = runtime().block_on(wallet_arc.bind_shielded(
-        seed.as_ref(),
-        accounts.as_slice(),
-        &coordinator,
-    )) {
-        return map_shielded_error(e, "bind_shielded");
+    let bound = run_on_big_stack_thread(|| {
+        runtime().block_on(wallet_arc.bind_shielded(
+            seed.as_ref(),
+            accounts.as_slice(),
+            &coordinator,
+        ))
+    });
+    match bound {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => return map_shielded_error(e, "bind_shielded"),
+        Err(e) => return big_stack_spawn_failed("shielded bind", e),
     }
 
     PlatformWalletFFIResult::ok()
@@ -547,9 +561,17 @@ pub unsafe extern "C" fn platform_wallet_manager_configure_shielded(
         }
     };
 
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.configure_shielded(&db_path))
+    // Big-stack polling: configuring restores the held wallets' private
+    // payments, which parses the DashPay contract (see the bind above).
+    let spawned = run_on_big_stack_thread(|| {
+        PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+            runtime().block_on(manager.configure_shielded(&db_path))
+        })
     });
+    let option = match spawned {
+        Ok(option) => option,
+        Err(e) => return big_stack_spawn_failed("shielded configure", e),
+    };
     let result = unwrap_option_or_return!(option);
     if let Err(e) = result {
         return map_shielded_error(e, "configure_shielded");
