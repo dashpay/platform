@@ -36,6 +36,9 @@ struct WalletDetailView: View {
     @State private var showSeedShieldedPool = false
     /// Set by `PendingPlatformFundFromAssetLocksList`'s Resume tap.
     @State private var resumingAssetLock: PersistentAssetLock?
+    /// Operation ids with a stored Max-transfer marker, mirrored from
+    /// `walletDrainCoordinator` so the generic list can hide their locks.
+    @State private var drainMarkedOperationIds: Set<UUID> = []
 
     @Query private var walletAssetLocks: [PersistentAssetLock]
 
@@ -157,10 +160,17 @@ struct WalletDetailView: View {
                 .accessibilityIdentifier("walletDetail.seedPoolNotesButton")
             }
 
+            UnfinishedWalletDrainsList(
+                drainCoordinator: walletManager.walletDrainCoordinator,
+                fundingCoordinator: walletManager.shieldedFundFromAssetLockCoordinator,
+                walletId: wallet.walletId
+            )
+
             PendingPlatformFundFromAssetLocksList(
                 coordinator: walletManager.addressFundFromAssetLockCoordinator,
                 walletId: wallet.walletId,
                 assetLocks: walletAssetLocks,
+                drainMarkedOperationIds: drainMarkedOperationIds,
                 resumingAssetLock: $resumingAssetLock
             )
             .padding(.top, 8)
@@ -310,6 +320,18 @@ struct WalletDetailView: View {
         }
         .onChange(of: wallet.walletId) { _, newId in
             shieldedService.switchTo(walletId: newId)
+        }
+        .onReceive(walletManager.walletDrainCoordinator.$markedOperationIds) { ids in
+            drainMarkedOperationIds = ids
+        }
+        .task(id: wallet.walletId) {
+            // Read this wallet's unfinished Max transfers, so one cut off by
+            // process death is listed with what Rust reports for it.
+            await walletManager.walletDrainCoordinator.reconcile(
+                walletManager: walletManager,
+                networkRaw: platformState.currentNetwork.rawValue,
+                walletIds: [wallet.walletId]
+            )
         }
     }
 }
@@ -978,6 +1000,18 @@ struct WalletInfoView: View {
                 isDeleting = false
             }
             return
+        }
+
+        // Max-transfer markers are app-side, so the SDK wipe above does not
+        // reach them; a re-imported wallet with the same id would list them.
+        // The wallet is already gone, so a failure is logged and the screen
+        // still closes: keeping it up would render a deleted SwiftData row.
+        do {
+            try walletManager.walletDrainCoordinator.forgetWallet(walletId: walletId)
+        } catch {
+            SDKLogger.error(
+                "Wallet deleted, but its Max transfer markers were not removed: \(error.localizedDescription)"
+            )
         }
 
         await MainActor.run {

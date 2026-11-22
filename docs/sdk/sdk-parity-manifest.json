@@ -2001,9 +2001,9 @@
       "hosts": {
         "swift": {
           "sdk": "supported",
-          "example_app": "unsupported",
+          "example_app": "partial",
           "restart": "tested",
-          "reason": "Swift exposes preview, execution, and status with durable operation UUIDs. Restart recovery resumes the exact asset-lock outpoint: a fresh Type18 that Platform executes, or that Platform rejects because the outpoint was already consumed by an earlier attempt, durably completes the operation. Unit tests cover store reopen, failed persistence and the terminal DrainCompleted rule. An iOS wallet testnet process-death test confirmed recovery after dispatch and enabled a subsequent Max transfer. SwiftExampleApp does not yet expose this flow."
+          "reason": "Swift exposes preview, execution, and status with durable operation UUIDs. Restart recovery resumes the exact asset-lock outpoint: a fresh Type18 that Platform executes, or that Platform rejects because the outpoint was already consumed by an earlier attempt, durably completes the operation. Unit tests cover store reopen, failed persistence and the terminal DrainCompleted rule. An iOS wallet testnet process-death test confirmed recovery after dispatch and enabled a subsequent Max transfer. SwiftExampleApp exposes the flow (TEST_PLAN SH-18 to SH-20): a Max toggle on the Core to shielded screen shows the preview and runs the drain, the operation UUID is written to a file before the call, the status is read at launch, and an unfinished transfer is listed on the wallet screen and resumed from the exact asset-lock outpoint its status names. Max in the app is shield-to-self only. The app is partial because only its unit tests have run (marker store reopen, the rule for forgetting a marker, the resume-list filter): the funded testnet run and the process-death run of SH-19 have not been executed in SwiftExampleApp, and the CoinJoin drain is not exposed there."
         },
         "kotlin": {
           "sdk": "unsupported",
@@ -2028,6 +2028,14 @@
           "id": "testOperationIdSurvivesConsumptionAndStoreReopen",
           "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -sdk iphonesimulator -destination \"platform=iOS Simulator,name=iPhone 17\" ARCHS=arm64 -only-testing:SwiftDashSDKTests/AssetLockOperationPersistenceTests",
           "covers_restart": true
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/WalletDrainRecoveryTests.swift",
+          "id": "testShouldReadARecordBackFromANewStoreOnTheSameDirectory",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SwiftExampleAppTests/WalletDrainRecoveryTests",
+          "covers_restart": false
         },
         {
           "host": "shared",

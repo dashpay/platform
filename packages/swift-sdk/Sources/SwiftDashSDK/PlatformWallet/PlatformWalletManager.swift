@@ -705,6 +705,21 @@ public class PlatformWalletManager: ObservableObject {
         }
     }
 
+    /// Run `body` on a detached task with the captured handle, holding
+    /// admission through the native call and its result conversion, so
+    /// `shutdown()` waits for it and `deleteWallet` refuses meanwhile.
+    /// Cancellation of the awaiting task does not release the admission early.
+    func withAdmittedNativeOperation<T: Sendable>(
+        _ name: String, body: @escaping @Sendable (Handle) throws -> T
+    ) async throws -> T {
+        try admitNativeOp(name)
+        defer { finishNativeOp() }
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) {
+            try body(handle)
+        }.value
+    }
+
     /// Validate a handle captured inside a balanced admit/finish scope.
     /// Public revocation does not invalidate an operation already in that
     /// scope; native teardown cannot destroy its handle until it finishes.

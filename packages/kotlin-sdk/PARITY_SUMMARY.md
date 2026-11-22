@@ -9,7 +9,7 @@ Capabilities tracked: **31**
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
 | Swift | SDK | 17 | 12 | 1 | 1 |
-| Swift | Example app | 5 | 15 | 2 | 9 |
+| Swift | Example app | 5 | 16 | 1 | 9 |
 | Kotlin | SDK | 14 | 14 | 2 | 1 |
 | Kotlin | Example app | 6 | 13 | 2 | 10 |
 
@@ -53,7 +53,7 @@ Capabilities tracked: **31**
 | `errors.platform_wallet_not_found_typed` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
 | `persistence.pending_identity_key_repair` | unsupported / unsupported / not_applicable | supported / not-applicable / tested |
 | `errors.signing_key_unavailable_discriminator` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
-| `shielded.core_wallet_drain` | supported / unsupported / tested | unsupported / unsupported / not_applicable |
+| `shielded.core_wallet_drain` | supported / partial / tested | unsupported / unsupported / not_applicable |
 | `network.adaptive_quorum_source` | supported / supported / tested | supported / supported / tested |
 
 Source: [`docs/sdk/sdk-parity-manifest.json`](../../docs/sdk/sdk-parity-manifest.json).
