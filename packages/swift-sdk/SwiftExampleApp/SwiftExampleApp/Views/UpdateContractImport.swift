@@ -96,6 +96,18 @@ enum UpdateContractImport {
             return !definitions.isEmpty
         }
 
+        // A bare document schemas map is read first: Platform allows a
+        // document type named `documents`, `description`, `groups`, ..., and
+        // reading such a name as a contract section would unwrap or refuse
+        // it. A wrapped contract never qualifies, since its sections and
+        // other members (`id`, `version`, a description string, a map of
+        // types) do not look like document schemas.
+        if !object.isEmpty, object.values.allSatisfy(looksLikeDocumentSchema) {
+            var fields = Fields.empty
+            fields.documents = try json(object)
+            return Imported(fields: fields, carriesSharedDefinitions: carriesSharedDefinitions)
+        }
+
         let documents = try section(object, "documents", "documentSchemas")
         let tokens = try section(object, "tokens", "tokenSchemas")
         let groups = object["groups"]

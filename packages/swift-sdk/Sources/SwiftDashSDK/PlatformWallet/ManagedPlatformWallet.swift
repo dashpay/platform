@@ -4626,6 +4626,11 @@ extension ManagedPlatformWallet {
         )
         let handle = self.handle
         let signerHandle = signer.handle
+        // 0 is the FFI's "no check" value, so an explicit 0 would silently
+        // update whatever version is live. Contract versions start at 1.
+        if expectedCurrentVersion == 0 {
+            throw PlatformWalletError.invalidParameter("expectedCurrentVersion must be greater than zero")
+        }
         let expectedVersion: UInt32 = expectedCurrentVersion ?? 0
         let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))

@@ -535,17 +535,23 @@ public enum ContractDownloader {
         row.contractDescription = contractData["description"] as? String
         row.hasTokens = !((contractData["tokens"] as? [String: Any]) ?? [:]).isEmpty
 
+        // Keywords are matched by their UTF-8 bytes, as Platform compares
+        // them. Swift `String` equality treats canonically equivalent
+        // spellings (`caf\u{E9}` and `cafe\u{301}`) as equal, which would keep
+        // a replaced keyword's row or drop one of two distinct keywords.
+        var fetchedBytes = Set<Data>()
         var fetchedKeywords: [String] = []
-        for keyword in contractData["keywords"] as? [String] ?? [] where !fetchedKeywords.contains(keyword) {
+        for keyword in contractData["keywords"] as? [String] ?? []
+        where fetchedBytes.insert(Data(keyword.utf8)).inserted {
             fetchedKeywords.append(keyword)
         }
         let storedRows = row.keywordRelations
-        let kept = storedRows.filter { fetchedKeywords.contains($0.keyword) }
-        let keptKeywords = Set(kept.map(\.keyword))
+        let kept = storedRows.filter { fetchedBytes.contains(Data($0.keyword.utf8)) }
+        let keptBytes = Set(kept.map { Data($0.keyword.utf8) })
         let added = fetchedKeywords
-            .filter { !keptKeywords.contains($0) }
+            .filter { !keptBytes.contains(Data($0.utf8)) }
             .map { PersistentKeyword(keyword: $0, contractId: row.idBase58) }
-        for stale in storedRows where !fetchedKeywords.contains(stale.keyword) {
+        for stale in storedRows where !fetchedBytes.contains(Data(stale.keyword.utf8)) {
             context.delete(stale)
         }
         for keyword in added {

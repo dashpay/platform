@@ -276,7 +276,7 @@ struct UpdateContractView: View {
             .accessibilityIdentifier("updateContract.submitButton")
 
             if unconfirmedUpdateSent {
-                Text("An update was sent and its outcome is unknown: it may still land. Do not send another update now. Check the contract's version on the contract screen later, then try again if it did not change.")
+                Text("An update was sent and its outcome is unknown: it may still land. This screen will not send another. Later, reopen it and review again: the review reads the live version. An unchanged version does not prove the first update failed, and a second update sent while the first is pending can be refused for a fee.")
                     .font(.caption)
                     .foregroundColor(.orange)
                     .accessibilityIdentifier("updateContract.unconfirmedHold")
@@ -531,7 +531,7 @@ struct UpdateContractView: View {
             unconfirmedUpdateSent = true
             let currentVersion = Int(review.preview.currentVersion)
             let refreshFailure = await refreshStoredContract(minimumVersion: currentVersion)
-            var message = "The update was sent, but its outcome is unknown: it may have executed, or may still. It was not retried. Do not send another update now: check the contract's version on the contract screen later before trying again.\n\n\(detail)"
+            var message = "The update was sent, but its outcome is unknown: it may have executed, or may still. It was not retried, and this screen will not send another. Later, reopen it and review again: the review reads the live version. An unchanged version does not prove the first update failed, and a second update sent while the first is pending can be refused for a fee.\n\n\(detail)"
             if let refreshFailure {
                 pendingRefreshFloor = currentVersion
                 self.refreshFailure = refreshFailure

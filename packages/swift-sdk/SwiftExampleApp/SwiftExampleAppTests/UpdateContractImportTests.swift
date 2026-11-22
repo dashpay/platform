@@ -131,6 +131,21 @@ final class UpdateContractImportTests: XCTestCase {
         XCTAssertEqual(fields, expected)
     }
 
+    /// Platform allows document types named like a contract section; a bare
+    /// map of them is still read as document schemas.
+    func testShouldImportABareMapWhoseTypeNamesMatchSectionNames() throws {
+        let map = """
+            {"documents":{"type":"object","properties":{"title":{"type":"string","position":0}}},\
+            "description":{"type":"object","properties":{"text":{"type":"string","position":0}}}}
+            """
+
+        let fields = try UpdateContractImport.fields(from: map)
+
+        var expected = UpdateContractImport.Fields.empty
+        expected.documents = try canonical(map)
+        XCTAssertEqual(fields, expected)
+    }
+
     func testShouldRefuseANonObject() {
         for text in ["[1, 2]", "\"text\"", "42", "not json"] {
             XCTAssertThrowsError(try UpdateContractImport.fields(from: text), text)

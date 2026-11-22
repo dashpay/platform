@@ -191,4 +191,50 @@ final class ContractRefreshApplyTests: XCTestCase {
         XCTAssertTrue(fixture.contract.hasTokens)
         XCTAssertEqual(fixture.contract.tokens?.count, 1)
     }
+
+    /// The UTF-8 bytes of the stored keyword rows, sorted.
+    private func storedKeywordBytes(in container: ModelContainer) throws -> [[UInt8]] {
+        let base58 = contractId.toBase58String()
+        return try ModelContext(container).fetch(
+            FetchDescriptor<PersistentKeyword>(predicate: #Predicate { $0.contractId == base58 })
+        )
+        .map { Array($0.keyword.utf8) }
+        .sorted { $0.lexicographicallyPrecedes($1) }
+    }
+
+    /// Keywords that differ only in Unicode form are distinct to Platform:
+    /// one replaces the other, and both can be kept side by side.
+    func testShouldMatchKeywordsByTheirBytes() throws {
+        let fixture = try makeFixture()
+        defer { withExtendedLifetime(fixture.container) {} }
+        let composed = "caf\u{00E9}"
+        let decomposed = "cafe\u{0301}"
+
+        try ContractDownloader.apply(
+            fetched: try fetched(["version": 3, "keywords": [composed]]),
+            toContractWithId: contractId,
+            minimumVersion: nil,
+            container: fixture.container
+        ) { _ in }
+        XCTAssertEqual(try storedKeywordBytes(in: fixture.container), [Array(composed.utf8)])
+
+        try ContractDownloader.apply(
+            fetched: try fetched(["version": 4, "keywords": [decomposed]]),
+            toContractWithId: contractId,
+            minimumVersion: nil,
+            container: fixture.container
+        ) { _ in }
+        XCTAssertEqual(try storedKeywordBytes(in: fixture.container), [Array(decomposed.utf8)])
+
+        try ContractDownloader.apply(
+            fetched: try fetched(["version": 5, "keywords": [composed, decomposed]]),
+            toContractWithId: contractId,
+            minimumVersion: nil,
+            container: fixture.container
+        ) { _ in }
+        XCTAssertEqual(
+            try storedKeywordBytes(in: fixture.container),
+            [Array(composed.utf8), Array(decomposed.utf8)].sorted { $0.lexicographicallyPrecedes($1) }
+        )
+    }
 }
