@@ -64,6 +64,7 @@ fn preview_key_limits_update<S>(
     key_id: KeyID,
     add_budget: Option<Credits>,
     expires_at: Option<TimestampMillis>,
+    proved_time: Option<TimestampMillis>,
     signer: &S,
 ) -> Result<IdentityKeyLimitsUpdatePreview, PlatformWalletError>
 where
@@ -83,6 +84,25 @@ where
                 "key {key_id} has no budget and no expiry: limits can be raised, not added"
             ))
         })?;
+    // A change whose resulting key is already expired at a block the wallet proved would be
+    // refused by Platform (40219) and charged for. Asked with no change, the key is still
+    // answered, so an expired key can be revived by a late enough extension.
+    if add_budget.is_some() || expires_at.is_some() {
+        if let Some(proved_time) = proved_time {
+            // A limit the change leaves alone (`None`) keeps its current value.
+            let resulting = key.clone().with_limits(
+                new_total_budget.or(key.total_budget()),
+                new_expires_at.or(key.expires_at()),
+            );
+            if resulting.is_expired_at(proved_time) {
+                return Err(PlatformWalletError::InvalidIdentityData(format!(
+                    "key {key_id} would still be expired after this update: its expiry is not \
+                     later than the block time {proved_time} the wallet already proved; \
+                     extend it past that"
+                )));
+            }
+        }
+    }
     let signing_key_id = signing_key_for_key_limits_update(identity, signer)
         .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
 
@@ -108,6 +128,7 @@ fn preview_to_submit<S>(
     key_id: KeyID,
     add_budget: Option<Credits>,
     expires_at: Option<TimestampMillis>,
+    proved_time: Option<TimestampMillis>,
     reviewed: Option<&IdentityKeyLimitsUpdatePreview>,
     signer: &S,
 ) -> Result<IdentityKeyLimitsUpdatePreview, PlatformWalletError>
@@ -119,7 +140,14 @@ where
             "a key limits update of key {key_id} needs a budget to add or a new expiry"
         )));
     }
-    let preview = preview_key_limits_update(identity, key_id, add_budget, expires_at, signer)?;
+    let preview = preview_key_limits_update(
+        identity,
+        key_id,
+        add_budget,
+        expires_at,
+        proved_time,
+        signer,
+    )?;
     if let Some(reviewed) = reviewed {
         if *reviewed != preview {
             return Err(PlatformWalletError::InvalidIdentityData(format!(
@@ -142,8 +170,9 @@ impl IdentityWallet {
     /// the change is not a raise, or the signer holds no MASTER key and no CRITICAL
     /// authentication key without limits and without contract bounds.
     ///
-    /// The answer is computed from the identity as the wallet holds it. Whether the key is
-    /// still expired after the update is decided by the block time, so Platform answers that.
+    /// The answer is computed from the identity as the wallet holds it. A change that leaves
+    /// the key expired at the latest block time the wallet proved is refused; one that expires
+    /// between that block and inclusion can only be refused by Platform.
     pub async fn preview_identity_key_limits_update<S>(
         &self,
         identity_id: &Identifier,
@@ -155,21 +184,39 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        let identity = self.held_identity(identity_id).await?;
-        preview_key_limits_update(&identity, key_id, add_budget, expires_at, signer)
+        let (identity, proved_time) = self.held_identity(identity_id).await?;
+        preview_key_limits_update(
+            &identity,
+            key_id,
+            add_budget,
+            expires_at,
+            proved_time,
+            signer,
+        )
     }
 
-    /// The identity as this handle's wallet generation holds it: a wallet removed and
-    /// imported again under the same id is another generation and is not read.
+    /// The identity as this handle's wallet generation holds it, with the latest block time
+    /// the wallet proved for it (its balance or keys), if any: a wallet removed and imported
+    /// again under the same id is another generation and is not read.
     async fn held_identity(
         &self,
         identity_id: &Identifier,
-    ) -> Result<Identity, PlatformWalletError> {
+    ) -> Result<(Identity, Option<TimestampMillis>), PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
         let info = self.current_wallet_info(&wm)?;
         info.identity_manager
             .identity(identity_id)
-            .map(|m| m.identity.clone())
+            .map(|m| {
+                let proved_time = [
+                    m.last_updated_balance_block_time,
+                    m.last_synced_keys_block_time,
+                ]
+                .into_iter()
+                .flatten()
+                .map(|block_time| block_time.timestamp)
+                .max();
+                (m.identity.clone(), proved_time)
+            })
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))
     }
 
@@ -201,8 +248,16 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        let identity = self.held_identity(identity_id).await?;
-        let preview = preview_to_submit(&identity, key_id, add_budget, expires_at, None, signer)?;
+        let (identity, proved_time) = self.held_identity(identity_id).await?;
+        let preview = preview_to_submit(
+            &identity,
+            key_id,
+            add_budget,
+            expires_at,
+            proved_time,
+            None,
+            signer,
+        )?;
         self.submit_key_limits_update(identity, identity_id, key_id, preview, signer, settings)
             .await
     }
@@ -225,13 +280,14 @@ impl IdentityWallet {
     {
         let identity_id = &reviewed.identity_id;
         let key_id = reviewed.key_id;
-        let identity = self.held_identity(identity_id).await?;
+        let (identity, proved_time) = self.held_identity(identity_id).await?;
         let (add_budget, expires_at) = reviewed_change(key_id, reviewed)?;
         let preview = preview_to_submit(
             &identity,
             key_id,
             add_budget,
             expires_at,
+            proved_time,
             Some(reviewed),
             signer,
         )?;
@@ -442,7 +498,7 @@ mod tests {
 
     #[test]
     fn should_report_the_limits_a_key_carries_and_the_signing_key_when_no_change_is_asked() {
-        let preview = preview_key_limits_update(&identity(), 2, None, None, &master_signer())
+        let preview = preview_key_limits_update(&identity(), 2, None, None, None, &master_signer())
             .expect("expected a budgeted key to be raisable");
         assert_eq!(
             preview,
@@ -457,7 +513,7 @@ mod tests {
             }
         );
 
-        let preview = preview_key_limits_update(&identity(), 3, None, None, &master_signer())
+        let preview = preview_key_limits_update(&identity(), 3, None, None, None, &master_signer())
             .expect("expected an expiring key to be raisable");
         assert_eq!(preview.current_total_budget, None);
         assert_eq!(preview.current_expires_at, Some(EXPIRES_AT));
@@ -470,6 +526,7 @@ mod tests {
             4,
             Some(500),
             Some(EXPIRES_AT + 1),
+            None,
             &master_signer(),
         )
         .expect("expected a raise of both limits");
@@ -502,7 +559,8 @@ mod tests {
             (identity(), 9, "no key 9"),
             (disabled, 2, "disabled"),
         ] {
-            let result = preview_key_limits_update(&identity, key_id, None, None, &master_signer());
+            let result =
+                preview_key_limits_update(&identity, key_id, None, None, None, &master_signer());
             assert!(
                 matches!(
                     &result,
@@ -527,6 +585,7 @@ mod tests {
                 key_id,
                 add_budget,
                 expires_at,
+                None,
                 &master_signer(),
             );
             assert!(
@@ -538,7 +597,7 @@ mod tests {
 
     #[test]
     fn should_refuse_to_submit_an_update_that_raises_nothing() {
-        let result = preview_to_submit(&identity(), 2, None, None, None, &master_signer());
+        let result = preview_to_submit(&identity(), 2, None, None, None, None, &master_signer());
         assert!(
             matches!(
                 &result,
@@ -550,14 +609,16 @@ mod tests {
 
     #[test]
     fn should_submit_only_the_limits_and_signing_key_that_were_reviewed() {
-        let reviewed = preview_key_limits_update(&identity(), 2, Some(500), None, &master_signer())
-            .expect("expected a raise");
+        let reviewed =
+            preview_key_limits_update(&identity(), 2, Some(500), None, None, &master_signer())
+                .expect("expected a raise");
         assert_eq!(reviewed.new_total_budget, Some(1_500));
 
         let submitted = preview_to_submit(
             &identity(),
             2,
             Some(500),
+            None,
             None,
             Some(&reviewed),
             &master_signer(),
@@ -577,6 +638,7 @@ mod tests {
             2,
             Some(500),
             None,
+            None,
             Some(&reviewed),
             &master_signer(),
         );
@@ -595,8 +657,15 @@ mod tests {
             5,
             authentication_key(5, SecurityLevel::HIGH).with_limits(Some(1_000), None),
         );
-        let result =
-            preview_to_submit(&twin, 5, Some(500), None, Some(&reviewed), &master_signer());
+        let result = preview_to_submit(
+            &twin,
+            5,
+            Some(500),
+            None,
+            None,
+            Some(&reviewed),
+            &master_signer(),
+        );
         assert!(
             matches!(&result, Err(PlatformWalletError::InvalidIdentityData(_))),
             "{result:?}"
@@ -611,6 +680,7 @@ mod tests {
             &critical,
             2,
             Some(500),
+            None,
             None,
             Some(&reviewed),
             &KeyIdSigner(vec![5]),
@@ -628,6 +698,7 @@ mod tests {
             4,
             Some(500),
             Some(EXPIRES_AT + 1),
+            None,
             &master_signer(),
         )
         .expect("expected a raise of both limits");
@@ -681,10 +752,71 @@ mod tests {
     }
 
     #[test]
+    fn should_refuse_a_change_that_leaves_the_key_expired_at_a_proved_block() {
+        // Key 3 expires at EXPIRES_AT; the wallet proved a block 10 ms after it.
+        let proved_time = Some(EXPIRES_AT + 10);
+        let signer = master_signer();
+
+        // An extension that is later than the expiry but not past the proved block.
+        let result = preview_key_limits_update(
+            &identity(),
+            3,
+            None,
+            Some(EXPIRES_AT + 5),
+            proved_time,
+            &signer,
+        );
+        assert!(
+            matches!(
+                &result,
+                Err(PlatformWalletError::InvalidIdentityData(message)) if message.contains("still be expired")
+            ),
+            "{result:?}"
+        );
+        // A budget top-up of key 4, which expires at EXPIRES_AT too, leaves it expired.
+        let result =
+            preview_key_limits_update(&identity(), 4, Some(10), None, proved_time, &signer);
+        assert!(result.is_err(), "{result:?}");
+        // So does a reviewed submission of such an extension.
+        let result = preview_to_submit(
+            &identity(),
+            3,
+            None,
+            Some(EXPIRES_AT + 5),
+            proved_time,
+            None,
+            &signer,
+        );
+        assert!(result.is_err(), "{result:?}");
+
+        // An extension past the proved block revives the key.
+        let preview = preview_key_limits_update(
+            &identity(),
+            3,
+            None,
+            Some(EXPIRES_AT + 20),
+            proved_time,
+            &signer,
+        )
+        .expect("a late enough extension");
+        assert_eq!(preview.new_expires_at, Some(EXPIRES_AT + 20));
+        // Asked with no change, the expired key is still answered.
+        let preview = preview_key_limits_update(&identity(), 3, None, None, proved_time, &signer)
+            .expect("no-change answer");
+        assert_eq!(preview.current_expires_at, Some(EXPIRES_AT));
+    }
+
+    #[test]
     fn should_refuse_a_signer_that_holds_no_key_allowed_to_raise_limits() {
         // Key 1 is HIGH and key 4 is limited: neither may sign a key limits update.
-        let result =
-            preview_key_limits_update(&identity(), 2, Some(10), None, &KeyIdSigner(vec![1, 4]));
+        let result = preview_key_limits_update(
+            &identity(),
+            2,
+            Some(10),
+            None,
+            None,
+            &KeyIdSigner(vec![1, 4]),
+        );
         assert!(
             matches!(
                 &result,
