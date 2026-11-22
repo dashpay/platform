@@ -17,6 +17,7 @@ struct AddressQueriesView: View {
         }
         .padding(.vertical, 4)
       }
+      .accessibilityIdentifier("addressQueries.getAddressInfo")
 
       NavigationLink(destination: GetAddressesInfosView()) {
         VStack(alignment: .leading, spacing: 4) {
@@ -29,6 +30,7 @@ struct AddressQueriesView: View {
         }
         .padding(.vertical, 4)
       }
+      .accessibilityIdentifier("addressQueries.getAddressesInfos")
 
       NavigationLink(destination: GetTrunkStateView()) {
         VStack(alignment: .leading, spacing: 4) {
@@ -41,6 +43,7 @@ struct AddressQueriesView: View {
         }
         .padding(.vertical, 4)
       }
+      .accessibilityIdentifier("addressQueries.getAddressesTrunkState")
 
       NavigationLink(destination: GetBranchStateView()) {
         VStack(alignment: .leading, spacing: 4) {
@@ -53,6 +56,7 @@ struct AddressQueriesView: View {
         }
         .padding(.vertical, 4)
       }
+      .accessibilityIdentifier("addressQueries.getAddressesBranchState")
 
       NavigationLink(destination: GetRecentBalanceChangesView()) {
         VStack(alignment: .leading, spacing: 4) {
@@ -65,6 +69,7 @@ struct AddressQueriesView: View {
         }
         .padding(.vertical, 4)
       }
+      .accessibilityIdentifier("addressQueries.getRecentAddressBalanceChanges")
 
       NavigationLink(destination: GetCompactedBalanceChangesView()) {
         VStack(alignment: .leading, spacing: 4) {
@@ -77,6 +82,7 @@ struct AddressQueriesView: View {
         }
         .padding(.vertical, 4)
       }
+      .accessibilityIdentifier("addressQueries.getRecentCompactedAddressBalanceChanges")
     }
     .navigationTitle("Address Operations")
     .navigationBarTitleDisplayMode(.inline)
@@ -640,6 +646,18 @@ struct GetTrunkStateView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                         }
+
+                        NavigationLink(
+                          destination: GetBranchStateView(
+                            keyHex: boundary.keyHex,
+                            expectedHashHex: boundary.hashHex,
+                            checkpointHeight: "\(state.checkpointHeight)"
+                          )
+                        ) {
+                          Label("Query this branch", systemImage: "arrow.branch")
+                            .font(.caption)
+                        }
+                        .accessibilityIdentifier("addressQueries.trunk.queryBranch.\(index)")
                       }
                       .padding(8)
                       .frame(maxWidth: .infinity, alignment: .leading)
@@ -701,6 +719,15 @@ struct GetBranchStateView: View {
   @State private var result: PlatformBranchState?
   @State private var errorMessage: String?
   @State private var showResult = false
+
+  /// Empty fields by default; the trunk state view's "Query this branch"
+  /// passes one leaf boundary's key and hash plus the trunk's checkpoint
+  /// height so nothing has to be copied by hand.
+  init(keyHex: String = "", expectedHashHex: String = "", checkpointHeight: String = "") {
+    _keyHex = State(initialValue: keyHex)
+    _expectedHashHex = State(initialValue: expectedHashHex)
+    _checkpointHeight = State(initialValue: checkpointHeight)
+  }
 
   var body: some View {
     ScrollView {

@@ -31,6 +31,8 @@ struct WalletDetailView: View {
     @State private var showFundPlatformAddress = false
     @State private var showTransferPlatformAddress = false
     @State private var showWithdrawPlatformAddress = false
+    /// Platform address balance change history (ADDR-10).
+    @State private var showPlatformBalanceHistory = false
     @State private var showShieldFromAssetLock = false
     /// Devnet/testnet-only shielded pool seeding sheet (Seed Pool Notes).
     @State private var showSeedShieldedPool = false
@@ -119,6 +121,7 @@ struct WalletDetailView: View {
                 onFundPlatform: { showFundPlatformAddress = true },
                 onTransferPlatform: { showTransferPlatformAddress = true },
                 onWithdrawPlatform: { showWithdrawPlatformAddress = true },
+                onPlatformBalanceHistory: { showPlatformBalanceHistory = true },
                 onFundShielded: { showShieldFromAssetLock = true }
             )
                 .padding()
@@ -286,6 +289,9 @@ struct WalletDetailView: View {
         }
         .sheet(isPresented: $showWithdrawPlatformAddress) {
             WithdrawPlatformAddressView(wallet: wallet)
+        }
+        .sheet(isPresented: $showPlatformBalanceHistory) {
+            PlatformAddressBalanceHistoryView(wallet: wallet)
         }
         .sheet(item: $resumingAssetLock) { lock in
             // Route by funding type. Both top-up types reach this sheet from
@@ -1036,6 +1042,9 @@ struct BalanceCardView: View {
     /// Opens the wallet-signed Platform→Core L1 withdrawal sheet
     /// (`WithdrawPlatformAddressView`, ADDR-04).
     var onWithdrawPlatform: (() -> Void)?
+    /// Opens the Platform address balance change history sheet
+    /// (`PlatformAddressBalanceHistoryView`, ADDR-10).
+    var onPlatformBalanceHistory: (() -> Void)?
     /// Same shape as `onFundPlatform`, for the Shielded Balance row.
     /// Opens the Core L1 → shielded-pool funding sheet
     /// (`ShieldedFundFromAssetLockView`, Type 18).
@@ -1054,12 +1063,14 @@ struct BalanceCardView: View {
         onFundPlatform: (() -> Void)? = nil,
         onTransferPlatform: (() -> Void)? = nil,
         onWithdrawPlatform: (() -> Void)? = nil,
+        onPlatformBalanceHistory: (() -> Void)? = nil,
         onFundShielded: (() -> Void)? = nil
     ) {
         self.wallet = wallet
         self.onFundPlatform = onFundPlatform
         self.onTransferPlatform = onTransferPlatform
         self.onWithdrawPlatform = onWithdrawPlatform
+        self.onPlatformBalanceHistory = onPlatformBalanceHistory
         self.onFundShielded = onFundShielded
         let walletId = wallet.walletId
         let walletNetworkRaw = (wallet.network ?? .testnet).rawValue
@@ -1159,6 +1170,16 @@ struct BalanceCardView: View {
                 )
             )
         }
+        if let history = onPlatformBalanceHistory {
+            items.append(
+                WalletBalanceRow.TrailingMenuItem(
+                    title: "Balance History",
+                    systemImage: "clock.arrow.circlepath",
+                    accessibilityIdentifier: "balanceCard.platform.history",
+                    action: history
+                )
+            )
+        }
         return items
     }
 
@@ -1196,7 +1217,8 @@ struct BalanceCardView: View {
                 // Platform Balance row — on the editable Wallet Detail
                 // surface this exposes a trailing menu with Top Up
                 // (Core→Platform), Transfer (Platform→Platform,
-                // ADDR-02), and Withdraw (Platform→Core L1, ADDR-04).
+                // ADDR-02), Withdraw (Platform→Core L1, ADDR-04) and
+                // Balance History (ADDR-10).
                 // Read-only call sites pass `nil` for all three and the
                 // affordance disappears. A single Top Up closure with no
                 // transfer/withdraw still renders the legacy `+` button.
