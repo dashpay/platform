@@ -185,15 +185,19 @@ version verified answers have shown and the newest one the build knows, and says
 to be updated.
 
 Only a failure to read what a proof holds counts: its envelope, its GroveDB proof, the state
-it proves, or an object decoded from it. An answer without a proof, or one whose signature is
-refused, is its node's fault on any network, and that node is banned.
+it proves, or an object decoded from it. A GroveDB proof that does not verify counts whatever
+reason GroveDB gives, a hash that does not match included: each protocol version selects its
+GroveDB version, which decides the proof layout and what a node's hash covers, so the build
+cannot tell an honest proof of a newer version from a forged one. An answer without a proof,
+or one whose signature is refused, is its node's fault on any network, and that node is banned.
 
 The version an unverified answer names is a reason to ask, not evidence. When an answer the SDK
 could not read names a version the build does not know, and no verified answer has shown one,
 the SDK first asks the network for its version, with the probe described under [Requests only
 newer nodes serve](#requests-only-newer-nodes-serve). Here the probe bans no node, a pinned SDK
 asks too, and nothing is asked again while the epoch the last probe proved can still be
-running. When the probe shows a version the build knows, or fails, the node is banned as for
+running. Calls that get such an answer while one of them asks wait for its answer, so none
+bans a node before it is known. When the probe shows a version the build knows, or fails, the node is banned as for
 any unusable proof. A node is also banned when its unread answer names a version the build
 knows, since that node is behind its network or the answer is unusable for another reason, and
 when the answer is outside the height or time tolerance.

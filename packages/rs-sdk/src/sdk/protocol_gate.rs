@@ -445,25 +445,33 @@ impl Sdk {
     /// it this build cannot read says as little about its node.
     ///
     /// Nothing is asked when nothing can be learned: by an SDK without nodes or a context
-    /// provider, once a verified answer has shown a newer version, while the last probe's
-    /// epoch has not ended ([`ProbeHold`]), or while a probe runs, which may be the one this
-    /// answer belongs to.
+    /// provider, once a verified answer has shown a newer version, or while the last probe's
+    /// epoch has not ended ([`ProbeHold`]). Nor is it asked about an answer to a probe
+    /// itself, which would wait for the probe it belongs to.
+    ///
+    /// While another call probes, this one waits for that answer, so that no node is banned
+    /// before it is known, and asks only if that probe failed.
     pub(super) async fn probe_for_newer_network(&self) {
         let required = PlatformVersion::latest().protocol_version.saturating_add(1);
-        let state = self.gate_state();
-        let verified = state.settings.verified_protocol_version;
-        if !state.enforced
-            || !state.has_context_provider
-            || verified >= required
-            || state
-                .hold
-                .is_some_and(|hold| hold.covers(required, verified, state.now_ms))
-        {
+        let nothing_to_learn = || {
+            let state = self.gate_state();
+            let verified = state.settings.verified_protocol_version;
+            !state.enforced
+                || !state.has_context_provider
+                || verified >= required
+                || state
+                    .hold
+                    .is_some_and(|hold| hold.covers(required, verified, state.now_ms))
+        };
+        if self.inside_version_probe || nothing_to_learn() {
             return;
         }
-        let Ok(_probing) = self.probe_hold.probing.try_lock() else {
+        let answered = self.probe_hold.answered();
+        let _probing = self.probe_hold.probing.lock().await;
+        // A probe answered while this call waited, whatever it showed.
+        if self.probe_hold.answered() != answered || nothing_to_learn() {
             return;
-        };
+        }
         let settings = RequestSettings {
             ban_failed_address: Some(false),
             ..Default::default()
@@ -488,24 +496,30 @@ impl Sdk {
         required: u32,
         settings: Option<RequestSettings>,
     ) -> Result<(), Error> {
+        // The probe's requests run on a clone that knows it probes: an answer to one of
+        // them that cannot be read is classified as it is ([`Self::probe_for_newer_network`]).
+        let sdk = &Sdk {
+            inside_version_probe: true,
+            ..self.clone()
+        };
         let request = current_epoch_probe_query().query(&QuerySettings {
             prove: true,
-            ..self.query_settings()
+            ..sdk.query_settings()
         })?;
         let mut settings = settings.unwrap_or_default();
-        if !self.prove() {
+        if !sdk.prove() {
             // An SDK that does not ask for proofs may hold a context provider that cannot
             // give quorum keys. Its probe then fails on every node, which says nothing
             // about the nodes, so it bans none of them.
             settings.ban_failed_address = Some(false);
         }
         let (genesis, metadata) =
-            ExtendedEpochInfo::fetch_with_metadata(self, request, Some(settings)).await?;
+            ExtendedEpochInfo::fetch_with_metadata(sdk, request, Some(settings)).await?;
         if let (Some(genesis), true) = (
             genesis.filter(|genesis| genesis.index() == GENESIS_EPOCH_INDEX),
-            self.query_settings().network_protocol_basis() < required,
+            sdk.query_settings().network_protocol_basis() < required,
         ) {
-            self.hold_probes(
+            sdk.hold_probes(
                 genesis.first_block_time(),
                 epoch_hint_from_metadata(&metadata),
                 settings,

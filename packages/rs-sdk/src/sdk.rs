@@ -102,6 +102,12 @@ impl<T: VersionedGrpcResponse> ProofResponseMetadata for T {
 /// network's protocol version fails this way on forms that version introduced. An answer
 /// without a proof, or one whose signature is refused, does not: that is its node's fault
 /// whatever the network runs.
+///
+/// A GroveDB proof that does not verify counts whatever the reason GroveDB gives, a hash
+/// that does not match included. Each protocol version selects its GroveDB version, which
+/// decides the proof layout and what a node's hash covers, so an honest proof of a newer
+/// version can fail this build's hash check as a forged one does, and this build cannot
+/// tell the two apart.
 fn may_be_an_unreadable_format(error: &drive_proof_verifier::Error) -> bool {
     matches!(
         error,
@@ -351,6 +357,11 @@ pub struct Sdk {
     /// running, so that calls made meanwhile wait for its answer. Shared between clones.
     probe_hold: Arc<protocol_gate::SharedProbeHold>,
 
+    /// Whether this clone runs a probe of the network's protocol version. An answer to the
+    /// probe that cannot be read is classified without asking the network again, which
+    /// would wait for the probe it belongs to.
+    inside_version_probe: bool,
+
     /// Enforce the protocol version gate on a mock SDK, as on a network one.
     #[cfg(all(test, feature = "mocks"))]
     enforce_protocol_gate_on_mock: bool,
@@ -393,6 +404,7 @@ impl Clone for Sdk {
             verified_protocol_version: Arc::clone(&self.verified_protocol_version),
             protocol_version_observer: self.protocol_version_observer.clone(),
             probe_hold: Arc::clone(&self.probe_hold),
+            inside_version_probe: self.inside_version_probe,
             #[cfg(all(test, feature = "mocks"))]
             enforce_protocol_gate_on_mock: self.enforce_protocol_gate_on_mock,
             metadata_last_seen_height: Arc::clone(&self.metadata_last_seen_height),
@@ -1816,6 +1828,7 @@ impl SdkBuilder {
                     version_pinned: self.version_pinned,
                     verified_protocol_version: Arc::new(atomic::AtomicU32::new(0)),
                     probe_hold: Arc::default(),
+                    inside_version_probe: false,
                     protocol_version_observer: self.protocol_version_observer.clone(),
                     #[cfg(all(test, feature = "mocks"))]
                     enforce_protocol_gate_on_mock: false,
@@ -1864,6 +1877,7 @@ impl SdkBuilder {
                     version_pinned: self.version_pinned,
                     verified_protocol_version: Arc::new(atomic::AtomicU32::new(0)),
                     probe_hold: Arc::default(),
+                    inside_version_probe: false,
                     protocol_version_observer: self.protocol_version_observer.clone(),
                     #[cfg(all(test, feature = "mocks"))]
                     enforce_protocol_gate_on_mock: false,
