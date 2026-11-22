@@ -1038,3 +1038,99 @@ async fn should_keep_the_label_when_the_stored_rows_can_not_be_read() {
         vec![PLAIN_LABEL.to_string(), KEPT_LABEL.to_string()]
     );
 }
+
+/// The identity also owns the same label under another parent (a subdomain registration).
+/// Giving up the `dash` registration leaves that registration's row, its sale price and the
+/// shared label alone.
+#[tokio::test]
+async fn should_leave_a_registration_of_the_label_under_another_parent_alone() {
+    let owner = Identifier::from(OWNER);
+    let sibling = Identifier::from([0xC6; 32]);
+    let (wallet, mirror) = wallet_with_name(PLAIN_LABEL, owner).await;
+    let mut sibling_row = owned_row(sibling, owner, PLAIN_LABEL);
+    sibling_row.normalized_parent_domain_name = "f00.dash".to_string();
+    sibling_row.price = Some(5_000);
+    wallet
+        .record_dpns_name_states(
+            vec![
+                owned_row(Identifier::from(DOCUMENT), owner, PLAIN_LABEL),
+                sibling_row.clone(),
+            ],
+            vec![],
+        )
+        .await;
+
+    wallet
+        .forget_given_up_dpns_name(&owner, &plain_target(owner))
+        .await;
+
+    assert_eq!(
+        mirror.stored_dpns_removals(),
+        vec![Identifier::from(DOCUMENT)]
+    );
+    let rows = wallet
+        .local_dpns_name_states(Some(&owner))
+        .await
+        .expect("the rows are read");
+    assert_eq!(rows, vec![sibling_row]);
+    assert_eq!(
+        dpns_labels(&wallet, &owner).await,
+        vec![PLAIN_LABEL.to_string(), KEPT_LABEL.to_string()],
+        "the other registration still needs the label"
+    );
+}
+
+/// An owner whose only authentication key is an `ECDSA_HASH160` one the signer can use gets
+/// a give-up to the network: the key is selected and the write reaches its nonce read
+#[tokio::test]
+async fn should_give_up_with_an_ecdsa_hash160_key() {
+    let owner = Identifier::from(OWNER);
+    let sdk = sdk_holding(
+        PLAIN_LABEL,
+        Some(domain_document(
+            PLAIN_LABEL,
+            Identifier::from(DOCUMENT),
+            owner,
+        )),
+    )
+    .await;
+    let mirror = Arc::new(MirrorPersister::hydrated(Vec::new()));
+    let wallet = mirror_backed_identity_wallet_with_sdk(Arc::clone(&mirror), Arc::new(sdk));
+    let mut hash160_owner = identity(
+        Purpose::AUTHENTICATION,
+        SecurityLevel::CRITICAL,
+        KeyType::ECDSA_HASH160,
+    );
+    hash160_owner.set_id(owner);
+    wallet
+        .wallet_manager
+        .write()
+        .await
+        .get_wallet_info_mut(&wallet.wallet_id)
+        .expect("wallet info")
+        .identity_manager
+        .add_identity(hash160_owner, 0, wallet.wallet_id, &wallet.persister)
+        .expect("add identity");
+
+    for method in [
+        DpnsNameGiveUpMethod::Delete,
+        DpnsNameGiveUpMethod::Tombstone,
+    ] {
+        let error = wallet
+            .give_up_dpns_name(
+                &owner,
+                PLAIN_LABEL,
+                &Identifier::from(DOCUMENT),
+                method,
+                &signer_with_every_key(),
+            )
+            .await
+            .expect_err("the mock answers no nonce");
+        assert!(
+            error
+                .to_string()
+                .contains("GetIdentityContractNonceRequest"),
+            "{method:?}: expected the give-up to reach its nonce read, got {error}"
+        );
+    }
+}

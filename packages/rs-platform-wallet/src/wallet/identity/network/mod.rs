@@ -118,8 +118,9 @@ pub use discovery::IdentityDiscoveryOptions;
 pub use dpns::{ContestContender, ContestVoteState, ContestWinner};
 pub use dpns_marketplace::{
     DepartedDpnsName, DpnsDomainState, DpnsMarketplaceSyncSummary, DpnsNameGiveUpChoices,
-    DpnsNameGiveUpMethod, DpnsNameGivenUp, DpnsNameHistoryEvent, DpnsNameHistoryEventKind,
-    DpnsPriceChange, FailedDpnsDeparture, DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS,
+    DpnsNameGiveUpMethod, DpnsNameGiveUpOutcome, DpnsNameGivenUp, DpnsNameHistoryEvent,
+    DpnsNameHistoryEventKind, DpnsPriceChange, FailedDpnsDeparture,
+    DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS,
 };
 pub use identity_handle::{
     derive_connect_keypair_from_master, derive_ecdsa_identity_auth_keypair_from_master,

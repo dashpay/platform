@@ -48,8 +48,8 @@ use std::ptr;
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{DpnsNameSaleStatus, DpnsNameStateEntry};
 use platform_wallet::wallet::identity::network::{
-    DpnsDomainState, DpnsNameGiveUpChoices, DpnsNameGiveUpMethod, DpnsNameGivenUp,
-    DpnsNameHistoryEvent, DpnsNameHistoryEventKind,
+    DpnsDomainState, DpnsNameGiveUpChoices, DpnsNameGiveUpMethod, DpnsNameGiveUpOutcome,
+    DpnsNameGivenUp, DpnsNameHistoryEvent, DpnsNameHistoryEventKind,
 };
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
@@ -471,15 +471,16 @@ impl DpnsNameGiveUpChoicesFFI {
 }
 
 impl DpnsNameGivenUpFFI {
-    /// Flatten a confirmed give-up.
+    /// Flatten a confirmed give-up. Every field is derived from its outcome, so a
+    /// tombstone id crosses exactly with a tombstone.
     fn from_given_up(given_up: &DpnsNameGivenUp) -> Self {
-        let (has_tombstone, tombstone_id) = match given_up.tombstone_id {
-            Some(id) => (true, id.to_buffer()),
-            None => (false, [0u8; 32]),
+        let (has_tombstone, tombstone_id) = match given_up.outcome {
+            DpnsNameGiveUpOutcome::Tombstoned { tombstone_id } => (true, tombstone_id.to_buffer()),
+            DpnsNameGiveUpOutcome::Deleted => (false, [0u8; 32]),
         };
         Self {
             document_id: given_up.document_id.to_buffer(),
-            method: give_up_method_to_u8(given_up.method),
+            method: give_up_method_to_u8(given_up.outcome.method()),
             has_tombstone,
             tombstone_id,
         }
@@ -1711,8 +1712,7 @@ mod tests {
         let deleted = DpnsNameGivenUpFFI::from_given_up(&DpnsNameGivenUp {
             document_id: Identifier::from([1u8; 32]),
             label: "Alice".to_string(),
-            method: DpnsNameGiveUpMethod::Delete,
-            tombstone_id: None,
+            outcome: DpnsNameGiveUpOutcome::Deleted,
         });
         assert_eq!(deleted.document_id, [1u8; 32]);
         assert_eq!(deleted.method, DPNS_NAME_GIVE_UP_METHOD_DELETE);
@@ -1722,8 +1722,9 @@ mod tests {
         let tombstoned = DpnsNameGivenUpFFI::from_given_up(&DpnsNameGivenUp {
             document_id: Identifier::from([1u8; 32]),
             label: "Alice".to_string(),
-            method: DpnsNameGiveUpMethod::Tombstone,
-            tombstone_id: Some(Identifier::from([9u8; 32])),
+            outcome: DpnsNameGiveUpOutcome::Tombstoned {
+                tombstone_id: Identifier::from([9u8; 32]),
+            },
         });
         assert_eq!(tombstoned.method, DPNS_NAME_GIVE_UP_METHOD_TOMBSTONE);
         assert!(tombstoned.has_tombstone);

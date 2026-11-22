@@ -61,7 +61,9 @@ use super::*;
 mod give_up;
 
 pub(crate) use give_up::DpnsOperationGate;
-pub use give_up::{DpnsNameGiveUpChoices, DpnsNameGiveUpMethod, DpnsNameGivenUp};
+pub use give_up::{
+    DpnsNameGiveUpChoices, DpnsNameGiveUpMethod, DpnsNameGiveUpOutcome, DpnsNameGivenUp,
+};
 
 /// DPNS document type carrying registered names.
 const DPNS_DOCUMENT_TYPE: &str = "domain";
@@ -1003,12 +1005,13 @@ impl IdentityWallet {
             contract.id(),
             document_type_name,
             &allowed_levels,
-            &[KeyType::ECDSA_SECP256K1],
+            // Both ECDSA representations sign a document batch, as for DashPay profiles
+            &[KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160],
         )?
         .cloned()
         .ok_or_else(|| {
             PlatformWalletError::InvalidIdentityData(format!(
-                "No ECDSA authentication key at a security level satisfying \
+                "No ECDSA (or ECDSA_HASH160) authentication key at a security level satisfying \
                  {required_level}, with contract bounds allowing the DPNS \
                  {document_type_name} type, found on identity {identity_id}"
             ))
