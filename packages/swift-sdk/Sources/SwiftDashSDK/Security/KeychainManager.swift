@@ -316,29 +316,7 @@ public final class KeychainManager: Sendable {
         identityId: Data,
         keyType: SpecialKeyType
     ) -> Result<Data?, KeychainError> {
-        var query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: generateSpecialKeyIdentifier(identityId: identityId, keyType: keyType),
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-
-        if let accessGroup = accessGroup {
-            query[kSecAttrAccessGroup as String] = accessGroup
-        }
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        switch status {
-        case errSecSuccess:
-            guard let data = result as? Data else { return .failure(.invalidData) }
-            return .success(data)
-        case errSecItemNotFound:
-            return .success(nil)
-        default:
-            return .failure(.retrieveFailed(status))
-        }
+        readKeyData(identifier: generateSpecialKeyIdentifier(identityId: identityId, keyType: keyType))
     }
 
     /// Delete a special key from the keychain
@@ -403,6 +381,11 @@ public final class KeychainManager: Sendable {
     // MARK: - Generic Key Storage
 
     /// Store arbitrary data in the keychain with a custom identifier
+    ///
+    /// The previous item is deleted and the new one added with the
+    /// device-only protection class, in `accessGroup` or the default
+    /// group. When the add fails, the previous data is added back the same
+    /// way, so a failed replacement does not lose the old secret.
     /// - Parameters:
     ///   - keyData: The data to store
     ///   - identifier: A unique identifier for the stored data
@@ -422,10 +405,18 @@ public final class KeychainManager: Sendable {
             query[kSecAttrAccessGroup as String] = accessGroup
         }
 
+        let previous = retrieveKeyData(identifier: identifier)
         SecItemDelete(query as CFDictionary)
 
         let status = SecItemAdd(query as CFDictionary, nil)
-        return status == errSecSuccess ? identifier : nil
+        guard status == errSecSuccess else {
+            if let previous {
+                query[kSecValueData as String] = previous
+                SecItemAdd(query as CFDictionary, nil)
+            }
+            return nil
+        }
+        return identifier
     }
 
     /// Retrieve data from the keychain by identifier.
@@ -437,6 +428,15 @@ public final class KeychainManager: Sendable {
     /// - Parameter identifier: The identifier for the stored data
     /// - Returns: The stored data, or nil if not found
     public nonisolated func retrieveKeyData(identifier: String) -> Data? {
+        (try? readKeyData(identifier: identifier).get()) ?? nil
+    }
+
+    /// The one lookup behind `retrieveKeyData(identifier:)` and
+    /// `readSpecialKey(identityId:keyType:)`, keeping the status:
+    /// `errSecItemNotFound` is `.success(nil)`, any other failure is
+    /// `.failure(.retrieveFailed(status))`, and an item that holds no data
+    /// is `.failure(.invalidData)`.
+    nonisolated func readKeyData(identifier: String) -> Result<Data?, KeychainError> {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
@@ -451,8 +451,15 @@ public final class KeychainManager: Sendable {
 
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        return status == errSecSuccess ? result as? Data : nil
+        switch status {
+        case errSecSuccess:
+            guard let data = result as? Data else { return .failure(.invalidData) }
+            return .success(data)
+        case errSecItemNotFound:
+            return .success(nil)
+        default:
+            return .failure(.retrieveFailed(status))
+        }
     }
 
     /// Delete data from the keychain by identifier

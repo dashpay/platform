@@ -501,6 +501,9 @@ private struct MultipleChoiceProposalVoteSheet: View {
             .onChange(of: voter) { _, _ in message = nil }
             // So does a message read on the previous network.
             .onChange(of: appState.currentNetwork) { _, _ in message = nil }
+            // Options can publish a new SDK on the same network; an answer
+            // shown from the previous SDK no longer applies.
+            .onChange(of: appState.sdk.map { ObjectIdentifier($0) }) { _, _ in message = nil }
         }
     }
 
