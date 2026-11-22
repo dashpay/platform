@@ -14,6 +14,10 @@ enum MasternodeVoter: Equatable {
     /// key (Identities, Load Identity). The key stays in the Keychain and
     /// signs through `KeychainSigner`.
     case storedKey(identityId: Data)
+    /// A pro_tx_hash (wire order) typed into the sheet, with no key: enough
+    /// to read any masternode's answer, never to cast. Available in every
+    /// build.
+    case typedProTxHash(Data)
     #if DEBUG
     /// Debug builds only: a pro_tx_hash (wire order) and a voting private key
     /// typed into the sheet, for testing with arbitrary credentials. The key
@@ -23,11 +27,14 @@ enum MasternodeVoter: Equatable {
     #endif
 
     /// Whether a vote can be cast as this voter. A stored key always can;
-    /// typed credentials only with a voting private key.
+    /// a typed pro_tx_hash never; typed credentials only with a voting
+    /// private key.
     var canCast: Bool {
         switch self {
         case .storedKey:
             return true
+        case .typedProTxHash:
+            return false
         #if DEBUG
         case .typedCredentials(_, let votingPrivateKey):
             return votingPrivateKey != nil
@@ -41,6 +48,8 @@ enum MasternodeVoter: Equatable {
         switch self {
         case .storedKey(let identityId):
             return Self.wireOrderProTxHash(identityId: identityId)
+        case .typedProTxHash(let proTxHash):
+            return proTxHash
         #if DEBUG
         case .typedCredentials(let proTxHash, _):
             return proTxHash
@@ -110,6 +119,8 @@ struct MasternodeVoteCall {
                 try await withSigner(proTxHash, votingAddress, signer)
             }
             _ = signer  // keepalive: see KeychainSigner lifetime contract.
+        case .typedProTxHash:
+            throw MasternodeVoteCallError.typedProTxHashCannotCast
         #if DEBUG
         case .typedCredentials(let proTxHash, let votingPrivateKey):
             guard let withTypedKey else {
@@ -124,21 +135,26 @@ struct MasternodeVoteCall {
     }
 }
 
-#if DEBUG
 enum MasternodeVoteCallError: LocalizedError {
+    case typedProTxHashCannotCast
+    #if DEBUG
     case typedCredentialsUnsupported
     case typedCredentialsWithoutKey
+    #endif
 
     var errorDescription: String? {
         switch self {
+        case .typedProTxHashCannotCast:
+            return "A typed pro_tx_hash only reads a masternode's answer. Pick a loaded masternode to cast a vote."
+        #if DEBUG
         case .typedCredentialsUnsupported:
             return "This vote cannot be cast with typed credentials."
         case .typedCredentialsWithoutKey:
             return "Enter the voting private key to cast a vote with typed credentials."
+        #endif
         }
     }
 }
-#endif
 
 // MARK: - Picking the voter
 
@@ -149,19 +165,38 @@ enum MasternodeVoteCallError: LocalizedError {
 /// `accessibilityPrefix` names the sheet (`contestVote`,
 /// `decisionProposalVote`, `multipleChoiceProposalVote`); the picker is
 /// `<prefix>.voter`.
+///
+/// With `allowsTypedProTxHash`, a sheet that reads a masternode's answer
+/// also offers, in every build, a typed pro_tx_hash with no key
+/// (`<prefix>.useTypedProTxHash`, field `<prefix>.proTxHash`), published as
+/// `.typedProTxHash`: it reads any masternode's answer and casts nothing.
 struct MasternodeVoterSection: View {
     let accessibilityPrefix: String
     @Binding var voter: MasternodeVoter?
+    /// Offer a typed pro_tx_hash for reading an answer. Set by the sheets
+    /// that have a "read this masternode's answer" action.
+    var allowsTypedProTxHash: Bool = false
 
     @EnvironmentObject private var appState: AppState
     @Query private var identities: [PersistentIdentity]
 
     @State private var selectedIdentityId: Data?
+    @State private var useTypedProTxHash = false
+    /// Shared by the typed pro_tx_hash and, in Debug, the typed credentials;
+    /// their toggles are mutually exclusive.
+    @State private var proTxHashHex = ""
     #if DEBUG
     @State private var useTypedCredentials = false
-    @State private var proTxHashHex = ""
     @State private var votingKeyHex = ""
     #endif
+
+    /// Whether a typed input, not the picked identity, names the voter.
+    private var usesTypedInput: Bool {
+        #if DEBUG
+        if useTypedCredentials { return true }
+        #endif
+        return allowsTypedProTxHash && useTypedProTxHash
+    }
 
     /// Loaded masternode and evonode identities on the current network that
     /// carry a stored voting key.
@@ -180,6 +215,9 @@ struct MasternodeVoterSection: View {
     var body: some View {
         Section {
             storedKeyRows
+            if allowsTypedProTxHash {
+                typedProTxHashRows
+            }
             #if DEBUG
             typedCredentialRows
             #endif
@@ -192,10 +230,22 @@ struct MasternodeVoterSection: View {
         // `@Query` updates while the sheet is open can add or remove an
         // eligible identity; keep the selection on one that still is.
         .onChange(of: votingIdentities.map(\.identityId)) { _, _ in selectDefaultIfNeeded() }
+        // A network switch changes which identities are eligible even when
+        // the id list compares equal; re-check the selection.
+        .onChange(of: appState.currentNetwork) { _, _ in selectDefaultIfNeeded() }
         .onChange(of: selectedIdentityId) { _, _ in publish() }
-        #if DEBUG
-        .onChange(of: useTypedCredentials) { _, _ in publish() }
+        .onChange(of: useTypedProTxHash) { _, isOn in
+            #if DEBUG
+            if isOn { useTypedCredentials = false }
+            #endif
+            publish()
+        }
         .onChange(of: proTxHashHex) { _, _ in publish() }
+        #if DEBUG
+        .onChange(of: useTypedCredentials) { _, isOn in
+            if isOn { useTypedProTxHash = false }
+            publish()
+        }
         .onChange(of: votingKeyHex) { _, _ in publish() }
         #endif
     }
@@ -216,6 +266,7 @@ struct MasternodeVoterSection: View {
                 }
             }
             .accessibilityIdentifier("\(accessibilityPrefix).voter")
+            .disabled(usesTypedInput)
         }
     }
 
@@ -223,32 +274,26 @@ struct MasternodeVoterSection: View {
         Text("\(identity.displayName) (\(identity.identityTypeEnum.rawValue))")
     }
 
-    #if DEBUG
-    // Debug-only raw credential entry. Gated behind `#if DEBUG` so a
-    // Release/TestFlight build cannot direct users to paste a raw voting
-    // private key, bypassing the `KeychainSigner` boundary the stored-key
-    // path enforces (the same rule as the raw address forms in
-    // `TransitionCategoryView`). In Release neither these fields nor the
-    // hex decoding below are compiled.
+    /// A pro_tx_hash typed with no key, available in every build: reads
+    /// any masternode's answer, casts nothing.
     @ViewBuilder
-    private var typedCredentialRows: some View {
-        Toggle("Use typed test credentials (debug only)", isOn: $useTypedCredentials)
-            .accessibilityIdentifier("\(accessibilityPrefix).useTypedCredentials")
-        if useTypedCredentials {
-            TextField("pro_tx_hash, wire order (64 hex chars)", text: $proTxHashHex)
-                .font(.system(.caption, design: .monospaced))
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-                .accessibilityIdentifier("\(accessibilityPrefix).proTxHash")
-            SecureField("voting private key (64 hex chars)", text: $votingKeyHex)
-                .font(.system(.caption, design: .monospaced))
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-                .accessibilityIdentifier("\(accessibilityPrefix).votingKey")
-            Text("Debug builds only. The pro_tx_hash goes in wire order, the reverse of the hex Core displays.")
+    private var typedProTxHashRows: some View {
+        Toggle("Read another masternode's answer", isOn: $useTypedProTxHash)
+            .accessibilityIdentifier("\(accessibilityPrefix).useTypedProTxHash")
+        if useTypedProTxHash {
+            proTxHashField
+            Text("Reads the answer of the masternode with this pro_tx_hash; no key is needed and no vote can be cast. The pro_tx_hash goes in wire order, the reverse of the hex Core displays.")
                 .font(.caption2)
                 .foregroundColor(.secondary)
         }
+    }
+
+    private var proTxHashField: some View {
+        TextField("pro_tx_hash, wire order (64 hex chars)", text: $proTxHashHex)
+            .font(.system(.caption, design: .monospaced))
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.never)
+            .accessibilityIdentifier("\(accessibilityPrefix).proTxHash")
     }
 
     /// Decode a 32-byte value typed as 64 hex characters. `Data(hexString:)`
@@ -259,6 +304,30 @@ struct MasternodeVoterSection: View {
             return nil
         }
         return data
+    }
+
+    #if DEBUG
+    // Debug-only raw credential entry. Gated behind `#if DEBUG` so a
+    // Release/TestFlight build cannot direct users to paste a raw voting
+    // private key, bypassing the `KeychainSigner` boundary the stored-key
+    // path enforces (the same rule as the raw address forms in
+    // `TransitionCategoryView`). In Release neither the key field nor its
+    // decoding in `publish()` is compiled.
+    @ViewBuilder
+    private var typedCredentialRows: some View {
+        Toggle("Use typed test credentials (debug only)", isOn: $useTypedCredentials)
+            .accessibilityIdentifier("\(accessibilityPrefix).useTypedCredentials")
+        if useTypedCredentials {
+            proTxHashField
+            SecureField("voting private key (64 hex chars)", text: $votingKeyHex)
+                .font(.system(.caption, design: .monospaced))
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .accessibilityIdentifier("\(accessibilityPrefix).votingKey")
+            Text("Debug builds only. The pro_tx_hash goes in wire order, the reverse of the hex Core displays.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
     }
     #endif
 
@@ -291,6 +360,10 @@ struct MasternodeVoterSection: View {
             return
         }
         #endif
+        if allowsTypedProTxHash && useTypedProTxHash {
+            voter = Self.decode32(proTxHashHex).map { .typedProTxHash($0) }
+            return
+        }
         voter = selectedIdentityId.map { .storedKey(identityId: $0) }
     }
 }

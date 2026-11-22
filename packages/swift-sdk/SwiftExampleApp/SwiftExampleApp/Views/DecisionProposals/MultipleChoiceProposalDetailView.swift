@@ -444,7 +444,11 @@ private struct MultipleChoiceProposalVoteSheet: View {
                     Text("When the vote ends the choice with the most votes is kept, unless the votes for none of the choices outnumber it.")
                 }
 
-                MasternodeVoterSection(accessibilityPrefix: "multipleChoiceProposalVote", voter: $voter)
+                MasternodeVoterSection(
+                    accessibilityPrefix: "multipleChoiceProposalVote",
+                    voter: $voter,
+                    allowsTypedProTxHash: true
+                )
 
                 Section {
                     Button {

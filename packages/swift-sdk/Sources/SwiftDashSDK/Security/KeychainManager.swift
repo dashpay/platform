@@ -299,6 +299,48 @@ public final class KeychainManager: Sendable {
         return retrieveKeyData(identifier: keyIdentifier)
     }
 
+    /// Read a special key from the keychain, telling a missing key apart
+    /// from a Keychain that could not be read.
+    ///
+    /// `retrieveSpecialKey` returns `nil` for every failed lookup, so a
+    /// locked device looks like a key that was never stored. This read
+    /// keeps the status: `errSecItemNotFound` is `.success(nil)`, any
+    /// other failure is `.failure(.retrieveFailed(status))`, and an item
+    /// that holds no data is `.failure(.invalidData)`.
+    ///
+    /// `nonisolated` for the same reason as `retrieveKeyData(identifier:)`.
+    /// - Parameters:
+    ///   - identityId: The identity ID (32 bytes)
+    ///   - keyType: The type of special key
+    public nonisolated func readSpecialKey(
+        identityId: Data,
+        keyType: SpecialKeyType
+    ) -> Result<Data?, KeychainError> {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: generateSpecialKeyIdentifier(identityId: identityId, keyType: keyType),
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+
+        if let accessGroup = accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        switch status {
+        case errSecSuccess:
+            guard let data = result as? Data else { return .failure(.invalidData) }
+            return .success(data)
+        case errSecItemNotFound:
+            return .success(nil)
+        default:
+            return .failure(.retrieveFailed(status))
+        }
+    }
+
     /// Delete a special key from the keychain
     /// - Parameters:
     ///   - identityId: The identity ID (32 bytes)
@@ -459,7 +501,9 @@ public final class KeychainManager: Sendable {
         return "privkey_\(identityId.toHexString())_\(keyIndex)"
     }
 
-    private func generateSpecialKeyIdentifier(identityId: Data, keyType: SpecialKeyType) -> String {
+    /// Nonisolated for the same reason as `generateKeyIdentifier`: it is
+    /// shared with the off-actor `readSpecialKey`.
+    private nonisolated func generateSpecialKeyIdentifier(identityId: Data, keyType: SpecialKeyType) -> String {
         return "specialkey_\(identityId.toHexString())_\(keyType.rawValue)"
     }
 }

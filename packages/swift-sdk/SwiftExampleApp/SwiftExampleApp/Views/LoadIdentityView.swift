@@ -135,16 +135,20 @@ struct LoadIdentityView: View {
                 Text("Voting Private Key")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                TextField("Hex or WIF", text: $votingPrivateKeyInput)
+                SecureField("Hex or WIF", text: $votingPrivateKeyInput)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
             }
 
             VStack(alignment: .leading) {
                 Text("Owner Private Key")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                TextField("Hex or WIF", text: $ownerPrivateKeyInput)
+                SecureField("Hex or WIF", text: $ownerPrivateKeyInput)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
             }
 
             if selectedIdentityType == .evonode {
@@ -152,8 +156,10 @@ struct LoadIdentityView: View {
                     Text("Payout Address Private Key")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    TextField("Hex or WIF", text: $payoutPrivateKeyInput)
+                    SecureField("Hex or WIF", text: $payoutPrivateKeyInput)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                 }
             }
         }
@@ -287,8 +293,14 @@ struct LoadIdentityView: View {
                     return
                 }
 
-                // Convert private key strings to Data
-                let privateKeyData = privateKeys.compactMap { keyString -> Data? in
+                let identityType = selectedIdentityType
+                let isMasternodeType = identityType == .masternode || identityType == .evonode
+
+                // Convert private key strings to Data. The "Private Keys"
+                // form is shown only for a type that is neither masternode
+                // nor evonode, so its fields are read only then; keys typed
+                // before switching the type are not stored.
+                let privateKeyData: [Data] = isMasternodeType ? [] : privateKeys.compactMap { keyString -> Data? in
                     let trimmed = keyString.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmed.isEmpty else { return nil }
                     return Data(hexString: trimmed)
@@ -301,8 +313,6 @@ struct LoadIdentityView: View {
                 // fields the selected identity type shows are read: voting
                 // and owner for a masternode or evonode, payout for an
                 // evonode only.
-                let identityType = selectedIdentityType
-                let isMasternodeType = identityType == .masternode || identityType == .evonode
                 var unreadableKeys: [String] = []
                 func masternodeKey(_ input: String, named name: String) -> Data? {
                     guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {

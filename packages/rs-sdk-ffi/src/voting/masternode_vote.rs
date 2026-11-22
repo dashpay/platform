@@ -67,12 +67,11 @@
 use crate::signer::{VTableSigner, VTableSignerRef};
 use crate::types::{FFINetwork, Network, SignerHandle};
 use crate::{DashSDKResult, FFIError};
-use dash_sdk::dpp::dashcore::hashes::hash160;
 use dash_sdk::dpp::dashcore::ProTxHash;
 use dash_sdk::dpp::identity::signer::Signer;
+use dash_sdk::dpp::identity::KeyType;
 use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::dpp::prelude::IdentityPublicKey;
-use dash_sdk::dpp::secp256k1::{PublicKey, SecretKey};
 use dash_sdk::dpp::voting::votes::Vote;
 use dash_sdk::platform::transition::masternode_vote_keys::{
     put_masternode_vote, MasternodeVoteFailure, VotingKeyProblem,
@@ -207,6 +206,7 @@ pub(crate) unsafe fn pro_tx_hash_from_wire_order(
 /// * `voting_private_key` - Pointer to the 32-byte masternode voting private key. It is read
 ///   into a buffer that is zeroed on return and never leaves this call.
 /// * `out_voting_address` - Pointer to 20 writable bytes that receive the voting address.
+///   They need not be initialized.
 ///
 /// # Returns
 /// No data on success, with the address written. `InvalidParameter` for a null pointer or a
@@ -230,7 +230,9 @@ pub unsafe extern "C" fn dash_sdk_masternode_voting_address_from_private_key(
     })();
     match result {
         Ok(voting_address) => {
-            std::slice::from_raw_parts_mut(out_voting_address, 20).copy_from_slice(&voting_address);
+            // A raw copy: the caller's buffer may be uninitialized, so no `&mut [u8]` is
+            // formed over it.
+            std::ptr::copy_nonoverlapping(voting_address.as_ptr(), out_voting_address, 20);
             DashSDKResult::success(std::ptr::null_mut())
         }
         Err(error) => DashSDKResult::error(error.into()),
@@ -254,12 +256,19 @@ unsafe fn read_voting_private_key(
     Ok(key)
 }
 
-/// The voting address of `key`: hash160 of its compressed public key.
+/// The voting address of `key`: the data of its `ECDSA_HASH160` key, hash160 of its
+/// compressed public key, derived by DPP so it cannot drift from how Platform forms it.
 fn voting_address_of(key: &Zeroizing<[u8; 32]>) -> Result<[u8; 20], FFIError> {
-    let secret_key = SecretKey::from_secret_bytes(**key)
+    // DPP ignores the network for `ECDSA_HASH160`: the key data is the same on every network.
+    let data = KeyType::ECDSA_HASH160
+        .public_key_data_from_private_key_data(key, Network::Mainnet)
         .map_err(|e| invalid(&format!("Invalid voting private key: {}", e)))?;
-    let public_key = PublicKey::from_secret_key(&secret_key);
-    Ok(hash160::Hash::hash(&public_key.serialize()).to_byte_array())
+    <[u8; 20]>::try_from(data.as_slice()).map_err(|_| {
+        FFIError::InternalError(format!(
+            "An ECDSA_HASH160 key has {} bytes of data, not 20",
+            data.len()
+        ))
+    })
 }
 
 fn invalid(message: &str) -> FFIError {
@@ -299,9 +308,9 @@ mod tests {
     use crate::signer::{SignCompletionCallback, SignerVTable};
     use crate::{dash_sdk_error_free, DashSDKErrorCode};
     use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-    use dash_sdk::dpp::identity::KeyType;
     use dash_sdk::platform::transition::masternode_vote_keys::voter_identity_voting_key;
     use std::ffi::c_void;
+    use std::mem::MaybeUninit;
     use std::sync::Mutex;
 
     #[test]
@@ -518,8 +527,10 @@ mod tests {
 
     // ---- dash_sdk_masternode_voting_address_from_private_key -----------------
 
+    /// The address is DPP's `ECDSA_HASH160` key data for the key, the one the raw voter names
+    /// and its signer signs with.
     #[test]
-    fn should_give_the_voting_address_the_raw_voter_derives() {
+    fn should_give_dpp_s_ecdsa_hash160_data_as_the_voting_address() {
         let pro_tx_hash = [1u8; 32];
         let key = [2u8; 32];
         let voter = unsafe {
@@ -535,7 +546,32 @@ mod tests {
         };
         assert!(result.error.is_null());
         assert!(result.data.is_null());
+
+        let dpp_data = KeyType::ECDSA_HASH160
+            .public_key_data_from_private_key_data(&key, Network::Testnet)
+            .expect("a valid key");
+        assert_eq!(voting_address.as_slice(), dpp_data.as_slice());
         assert_eq!(voting_address, voter.voting_address);
+        assert!(voter
+            .signer
+            .can_sign_with(&voter_identity_voting_key(&voting_address)));
+    }
+
+    #[test]
+    fn should_write_the_voting_address_into_an_uninitialized_buffer() {
+        let key = [2u8; 32];
+        let mut out = MaybeUninit::<[u8; 20]>::uninit();
+        let voting_address = unsafe {
+            let result = dash_sdk_masternode_voting_address_from_private_key(
+                key.as_ptr(),
+                out.as_mut_ptr().cast::<u8>(),
+            );
+            assert!(result.error.is_null());
+            assert!(result.data.is_null());
+            out.assume_init()
+        };
+        let expected = voting_address_of(&Zeroizing::new(key)).expect("a valid key");
+        assert_eq!(voting_address, expected);
     }
 
     #[test]

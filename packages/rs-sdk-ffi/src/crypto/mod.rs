@@ -278,16 +278,18 @@ pub unsafe extern "C" fn dash_sdk_public_key_data_from_private_key_data(
 ///
 /// Leading and trailing whitespace is ignored. Exactly 64 characters are read as hex;
 /// anything else is read as WIF, whatever network the WIF names (the secret is the same on
-/// every network).
+/// every network). A WIF must mark the key compressed: Platform keys are formed from the
+/// compressed public key, so an uncompressed WIF names a different key and is refused.
 ///
 /// # Parameters
 /// * `text` - The key as typed, a NUL-terminated string.
-/// * `out_private_key` - Pointer to 32 writable bytes that receive the secret.
+/// * `out_private_key` - Pointer to 32 writable bytes that receive the secret. They need not
+///   be initialized.
 ///
 /// # Returns
 /// No data on success, with the secret written. `InvalidParameter` for a null pointer, text
-/// that is neither form, or a value that is not a secp256k1 secret key (zero, or not below
-/// the curve order); nothing is written then.
+/// that is neither form, an uncompressed WIF, or a value that is not a secp256k1 secret key
+/// (zero, or not below the curve order); nothing is written then.
 ///
 /// # Safety
 /// `text` must be null or a valid NUL-terminated string, and `out_private_key` null or point
@@ -323,6 +325,13 @@ pub unsafe extern "C" fn dash_sdk_private_key_bytes_from_text(
         }
     } else {
         match PrivateKey::from_wif(text) {
+            Ok(private_key) if !private_key.compressed => {
+                return invalid(
+                    "uncompressed WIF keys are not supported; Platform keys use the compressed \
+                     public key"
+                        .to_string(),
+                )
+            }
             Ok(private_key) => secret = private_key.inner.to_bytes(),
             Err(e) => {
                 return invalid(format!(
@@ -333,7 +342,8 @@ pub unsafe extern "C" fn dash_sdk_private_key_bytes_from_text(
         }
     }
 
-    std::slice::from_raw_parts_mut(out_private_key, 32).copy_from_slice(secret.as_slice());
+    // A raw copy: the caller's buffer may be uninitialized, so no `&mut [u8]` is formed over it.
+    std::ptr::copy_nonoverlapping(secret.as_ptr(), out_private_key, 32);
     DashSDKResult::success(std::ptr::null_mut())
 }
 
@@ -342,6 +352,7 @@ mod tests {
     use super::*;
     use crate::dash_sdk_error_free;
     use std::ffi::CString;
+    use std::mem::MaybeUninit;
 
     /// The secret written for `text`, or the error code; the error is freed.
     fn read(text: &str) -> Result<[u8; 32], DashSDKErrorCode> {
@@ -369,6 +380,31 @@ mod tests {
         assert_eq!(read(&hex::encode(secret)), Ok(secret));
         assert_eq!(read(&format!("  {}\n", hex::encode(secret))), Ok(secret));
         assert_eq!(read(&wif), Ok(secret));
+    }
+
+    #[test]
+    fn should_refuse_an_uncompressed_wif() {
+        let secret = [2u8; 32];
+        let mut private_key =
+            PrivateKey::from_byte_array(&secret, Network::Testnet).expect("a secret key");
+        private_key.compressed = false;
+        let wif = private_key.to_wif();
+        assert_eq!(read(&wif), Err(DashSDKErrorCode::InvalidParameter));
+    }
+
+    #[test]
+    fn should_write_the_secret_into_an_uninitialized_buffer() {
+        let secret = [2u8; 32];
+        let text = CString::new(hex::encode(secret)).expect("no NUL");
+        let mut out = MaybeUninit::<[u8; 32]>::uninit();
+        let out = unsafe {
+            let result =
+                dash_sdk_private_key_bytes_from_text(text.as_ptr(), out.as_mut_ptr().cast::<u8>());
+            assert!(result.error.is_null());
+            assert!(result.data.is_null());
+            out.assume_init()
+        };
+        assert_eq!(out, secret);
     }
 
     #[test]

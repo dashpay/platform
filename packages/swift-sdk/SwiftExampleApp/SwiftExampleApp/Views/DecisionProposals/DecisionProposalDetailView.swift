@@ -418,7 +418,11 @@ private struct DecisionProposalVoteSheet: View {
                     .accessibilityIdentifier("decisionProposalVote.choice")
                 }
 
-                MasternodeVoterSection(accessibilityPrefix: "decisionProposalVote", voter: $voter)
+                MasternodeVoterSection(
+                    accessibilityPrefix: "decisionProposalVote",
+                    voter: $voter,
+                    allowsTypedProTxHash: true
+                )
 
                 actionSection
             }

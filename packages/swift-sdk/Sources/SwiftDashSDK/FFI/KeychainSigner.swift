@@ -183,6 +183,11 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         /// evonode identity. Load the identity again with its voting key.
         case votingKeyNotStored(identityIdHex: String)
         /// ``KeychainSigner/withStoredMasternodeVotingKey(identityId:isolation:perform:)``:
+        /// the Keychain refused the read with `status` (for example
+        /// `errSecInteractionNotAllowed` while the device is locked), so
+        /// whether a voting key is stored is unknown.
+        case votingKeyUnreadable(status: Int32)
+        /// ``KeychainSigner/withStoredMasternodeVotingKey(identityId:isolation:perform:)``:
         /// the stored voting key is not a usable secp256k1 secret key, so
         /// no voting address could be formed from it.
         case invalidVotingKey(message: String)
@@ -212,6 +217,9 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
             case .votingKeyNotStored(let identityIdHex):
                 return "No voting key is stored for masternode identity \(identityIdHex). "
                     + "Load the masternode or evonode identity again with its voting private key."
+            case .votingKeyUnreadable(let status):
+                return "The Keychain could not be read (status \(status)), for example because the device is locked. "
+                    + "Unlock the device and try again."
             case .invalidVotingKey(let message):
                 return "The stored voting key is not usable: \(message)"
             }
@@ -1011,21 +1019,27 @@ extension KeychainSigner {
     ///     ``withAdditionalSigningKeys(_:isolation:perform:)``.
     ///   - body: Runs with the key signable; receives the voting address.
     /// - Throws: ``Error/votingKeyNotStored(identityIdHex:)`` when no voting
-    ///   key is stored for `identityId`, ``Error/invalidVotingKey(message:)``
-    ///   when the stored bytes are not a secret key, and whatever `body`
-    ///   throws.
+    ///   key is stored for `identityId`, ``Error/votingKeyUnreadable(status:)``
+    ///   when the Keychain could not be read (for example while the device
+    ///   is locked), ``Error/invalidVotingKey(message:)`` when the stored
+    ///   bytes are not a secret key, and whatever `body` throws.
     public func withStoredMasternodeVotingKey<T: Sendable>(
         identityId: Data,
         isolation: isolated (any Actor)? = #isolation,
         perform body: (_ votingAddress: Data) async throws -> T
     ) async throws -> T {
-        // `KeychainManager` is main-actor isolated; the result is plain
-        // `Data`, so hopping for the read is safe from any isolation.
-        guard var privateKey = await keychain.retrieveSpecialKey(
-            identityId: identityId,
-            keyType: .voting
-        ) else {
+        // A status-preserving read: `retrieveSpecialKey` returns `nil` for a
+        // locked Keychain too, which would read as a key never stored.
+        var privateKey: Data
+        switch keychain.readSpecialKey(identityId: identityId, keyType: .voting) {
+        case .success(let stored?):
+            privateKey = stored
+        case .success(nil):
             throw Error.votingKeyNotStored(identityIdHex: identityId.toHexString())
+        case .failure(.retrieveFailed(let status)):
+            throw Error.votingKeyUnreadable(status: status)
+        case .failure(let error):
+            throw Error.invalidVotingKey(message: error.localizedDescription)
         }
         defer { privateKey.resetBytes(in: 0..<privateKey.count) }
 
