@@ -301,20 +301,28 @@ pub(crate) async fn wait_after_broadcast<T>(
     broadcast: Result<(), Error>,
     wait: impl Future<Output = Result<T, Error>>,
 ) -> Result<T, Error> {
-    if let Err(error) = broadcast {
-        if !broadcast_may_have_been_accepted(&error) {
-            return Err(error);
+    let uncertain_broadcast = match broadcast {
+        Ok(()) => None,
+        Err(error) if broadcast_may_have_been_accepted(&error) => {
+            // A later node's reported refusal cannot erase an earlier possible delivery.
+            // Its error metadata does not prove that the signed bytes were never accepted.
+            debug!(
+                ?error,
+                "checking the original submission after an uncertain acknowledgement"
+            );
+            Some(error)
         }
-        // A later node's reported refusal cannot erase an earlier possible delivery.
-        // Its error metadata does not prove that the signed bytes were never accepted.
-        debug!(
-            ?error,
-            "checking the original submission after an uncertain acknowledgement"
-        );
-    }
+        Err(error) => return Err(error),
+    };
     // Result-stream errors are decoded before proof/signature verification. Even a typed
     // consensus cause does not authenticate failure of the original submission.
-    wait.await.map_err(Error::into_unconfirmed)
+    wait.await.map_err(|wait_error| match uncertain_broadcast {
+        // A wait that reached no node says nothing about the submission. Reported as the
+        // cause, it reads as if nothing had been sent; the broadcast's own error says why
+        // the outcome is unknown.
+        Some(broadcast_error) if wait_error.reached_no_node() => broadcast_error.into_unconfirmed(),
+        _ => wait_error.into_unconfirmed(),
+    })
 }
 
 fn broadcast_may_have_been_accepted(error: &Error) -> bool {

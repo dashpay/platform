@@ -17,8 +17,8 @@ use crate::transport::Socks5Proxy;
 use crate::transport::{self, TransportError};
 use crate::{
     transport::{TransportClient, TransportRequest},
-    AddressList, CanRetry, DapiRequestExecutor, ExecutionError, ExecutionResponse, ExecutionResult,
-    RequestSettings,
+    Address, AddressList, CanRetry, DapiRequestExecutor, ExecutionError, ExecutionResponse,
+    ExecutionResult, RequestSettings,
 };
 
 /// Intended minimum for the Envoy-advertised `RateLimit-Reset` ban duration.
@@ -206,6 +206,27 @@ impl DapiClient {
     /// ```
     pub fn get_live_addresses(&self) -> Vec<crate::Address> {
         self.address_list.get_live_addresses()
+    }
+}
+
+/// The transport error and node a failed request reports, given its last
+/// attempt's: the last attempt's own, unless that attempt never connected to
+/// its node while an earlier one may have delivered the request.
+///
+/// An attempt that never connected says nothing about the request. Reported
+/// as the cause, it reads as if the request never left, while the request's
+/// outcome is unknown. The earlier attempt's error says why it is unknown, and
+/// its node is the one that may hold the request.
+fn failure_to_report(
+    last_error: TransportError,
+    last_address: Option<Address>,
+    possibly_accepted_attempt: &Option<(TransportError, Address)>,
+) -> (TransportError, Option<Address>) {
+    match possibly_accepted_attempt {
+        Some((error, address)) if last_error.is_connect_failure() => {
+            (error.clone(), Some(address.clone()))
+        }
+        _ => (last_error, last_address),
     }
 }
 
@@ -792,6 +813,259 @@ mod tests {
         assert!(display.contains("address list error"));
     }
 
+    /// Executor-level coverage for the attempt a failed broadcast reports.
+    mod reported_attempt {
+        use super::*;
+        use crate::transport::BoxFuture;
+        use crate::Uri;
+        use dapi_grpc::platform::v0::BroadcastStateTransitionRequest;
+        use dapi_grpc::tonic::{Code, ConnectError};
+        use std::collections::VecDeque;
+        use std::io;
+        use std::sync::{Arc, Mutex};
+
+        struct NodeClient {
+            uri: Uri,
+        }
+
+        impl TransportClient for NodeClient {
+            fn with_uri(uri: Uri, _pool: &ConnectionPool) -> Result<Self, TransportError> {
+                Ok(Self { uri })
+            }
+
+            fn with_uri_and_settings(
+                uri: Uri,
+                _settings: &AppliedRequestSettings,
+                pool: &ConnectionPool,
+            ) -> Result<Self, TransportError> {
+                Self::with_uri(uri, pool)
+            }
+        }
+
+        #[derive(Debug)]
+        struct Accepted;
+
+        impl Mockable for Accepted {}
+
+        /// Fails each attempt with the next scripted status, classified as a
+        /// broadcast is, and records the node it was sent to.
+        #[derive(Clone, Debug)]
+        struct ScriptedBroadcast {
+            failures: Arc<Mutex<VecDeque<Status>>>,
+            nodes: Arc<Mutex<Vec<Uri>>>,
+        }
+
+        impl ScriptedBroadcast {
+            fn new(failures: impl IntoIterator<Item = Status>) -> Self {
+                Self {
+                    failures: Arc::new(Mutex::new(failures.into_iter().collect())),
+                    nodes: Arc::default(),
+                }
+            }
+
+            fn nodes(&self) -> Vec<Uri> {
+                self.nodes.lock().expect("nodes lock").clone()
+            }
+        }
+
+        impl Mockable for ScriptedBroadcast {}
+
+        impl TransportRequest for ScriptedBroadcast {
+            type Client = NodeClient;
+            type Response = Accepted;
+
+            const SETTINGS_OVERRIDES: RequestSettings = RequestSettings::default();
+
+            fn method_name(&self) -> &'static str {
+                "scripted_broadcast"
+            }
+
+            fn classify_error(
+                &self,
+                error: &TransportError,
+            ) -> transport::RequestErrorClassification {
+                BroadcastStateTransitionRequest::default().classify_error(error)
+            }
+
+            fn execute_transport<'c>(
+                self,
+                client: &'c mut Self::Client,
+                _settings: &AppliedRequestSettings,
+            ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
+                self.nodes
+                    .lock()
+                    .expect("nodes lock")
+                    .push(client.uri.clone());
+                let failure = self
+                    .failures
+                    .lock()
+                    .expect("failures lock")
+                    .pop_front()
+                    .expect("a scripted failure for every attempt");
+                Box::pin(async { Err(TransportError::Grpc(failure)) })
+            }
+        }
+
+        /// What tonic reports for an attempt whose connection was never
+        /// established.
+        fn connect_failure() -> Status {
+            Status::from_error(Box::new(ConnectError(Box::new(io::Error::new(
+                io::ErrorKind::NetworkUnreachable,
+                "Network is unreachable",
+            )))))
+        }
+
+        /// What tonic reports when an established connection breaks under a
+        /// request.
+        fn broken_connection() -> Status {
+            Status::unknown("transport error")
+        }
+
+        fn client(nodes: usize) -> DapiClient {
+            let addresses = (0..nodes)
+                .map(|node| format!("http://127.0.0.1:{}", 3001 + node))
+                .collect::<Vec<_>>()
+                .join(",");
+            DapiClient::new(
+                addresses.parse().expect("valid address list"),
+                RequestSettings::default(),
+            )
+        }
+
+        fn retries(retries: usize) -> RequestSettings {
+            RequestSettings {
+                retries: Some(retries),
+                ..RequestSettings::default()
+            }
+        }
+
+        fn reported_code(error: &ExecutionError<DapiClientError>) -> Code {
+            match &error.inner {
+                DapiClientError::Transport(TransportError::Grpc(status)) => status.code(),
+                DapiClientError::NoAvailableAddressesToRetry(error) => {
+                    let TransportError::Grpc(status) = error.as_ref();
+                    status.code()
+                }
+                other => panic!("expected a transport error, got {other:?}"),
+            }
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn should_report_the_possibly_delivered_attempt_when_later_attempts_fail_to_connect()
+        {
+            let request =
+                ScriptedBroadcast::new([broken_connection(), connect_failure(), connect_failure()]);
+
+            let error = client(4)
+                .execute(request.clone(), retries(2))
+                .await
+                .expect_err("every attempt fails");
+
+            assert!(error.is_possibly_accepted());
+            assert_eq!(error.retries, 2);
+            assert_eq!(reported_code(&error), Code::Unknown);
+            assert!(matches!(error.inner, DapiClientError::Transport(_)));
+            let nodes = request.nodes();
+            assert_eq!(nodes.len(), 3);
+            assert_eq!(
+                error
+                    .address
+                    .expect("the node that may hold the request")
+                    .uri(),
+                &nodes[0]
+            );
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn should_report_the_possibly_delivered_attempt_when_no_node_is_left() {
+            let request = ScriptedBroadcast::new([broken_connection(), connect_failure()]);
+
+            let error = client(2)
+                .execute(request.clone(), retries(5))
+                .await
+                .expect_err("every attempt fails");
+
+            assert!(error.is_possibly_accepted());
+            assert!(matches!(
+                error.inner,
+                DapiClientError::NoAvailableAddressesToRetry(_)
+            ));
+            assert_eq!(reported_code(&error), Code::Unknown);
+            assert_eq!(
+                error
+                    .address
+                    .expect("the node that may hold the request")
+                    .uri(),
+                &request.nodes()[0]
+            );
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn should_report_the_latest_attempt_that_may_have_delivered_the_request() {
+            let request = ScriptedBroadcast::new([
+                broken_connection(),
+                Status::deadline_exceeded("no acknowledgement"),
+                connect_failure(),
+            ]);
+
+            let error = client(4)
+                .execute(request.clone(), retries(2))
+                .await
+                .expect_err("every attempt fails");
+
+            assert!(error.is_possibly_accepted());
+            assert_eq!(reported_code(&error), Code::DeadlineExceeded);
+            assert_eq!(
+                error
+                    .address
+                    .expect("the node that may hold the request")
+                    .uri(),
+                &request.nodes()[1]
+            );
+        }
+
+        /// A node's own answer still ends the request with that answer.
+        #[tokio::test(start_paused = true)]
+        async fn should_report_a_later_refusal_by_a_node_as_before() {
+            let request = ScriptedBroadcast::new([
+                broken_connection(),
+                Status::resource_exhausted("mempool is full"),
+            ]);
+
+            let error = client(4)
+                .execute(request.clone(), retries(1))
+                .await
+                .expect_err("every attempt fails");
+
+            assert!(error.is_possibly_accepted());
+            assert_eq!(reported_code(&error), Code::ResourceExhausted);
+            assert_eq!(
+                error.address.expect("the refusing node").uri(),
+                &request.nodes()[1]
+            );
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn should_report_a_connect_failure_when_no_attempt_connected() {
+            let request = ScriptedBroadcast::new([connect_failure(), connect_failure()]);
+
+            let error = client(4)
+                .execute(request.clone(), retries(1))
+                .await
+                .expect_err("every attempt fails");
+
+            assert!(!error.is_possibly_accepted());
+            assert!(matches!(
+                &error.inner,
+                DapiClientError::Transport(error) if error.is_connect_failure()
+            ));
+            assert_eq!(
+                error.address.expect("the last node tried").uri(),
+                &request.nodes()[1]
+            );
+        }
+    }
+
     /// Executor-level coverage for evicting the pooled connection of a node
     /// whose attempt missed its deadline.
     #[cfg(not(target_arch = "wasm32"))]
@@ -1160,6 +1434,8 @@ impl DapiRequestExecutor for DapiClient {
 
         let mut retries: usize = 0;
         let mut possibly_accepted = false;
+        // The latest attempt that may have delivered the request, and its node.
+        let mut possibly_accepted_attempt: Option<(TransportError, Address)> = None;
         // Track the last transport error for when all addresses get exhausted
         let mut last_transport_error: Option<TransportError> = None;
 
@@ -1168,22 +1444,25 @@ impl DapiRequestExecutor for DapiClient {
                 // Try to get an address to initialize transport on:
                 let Some(address) = self.address_list.get_live_address() else {
                     // No available addresses - wrap with last meaningful error if we have one
-                    let error = if let Some(transport_error) = last_transport_error.take() {
-                        tracing::debug!(
-                            "no addresses available, returning last transport error"
-                        );
-                        DapiClientError::NoAvailableAddressesToRetry(Box::new(
-                            transport_error,
-                        ))
-                    } else {
-                        DapiClientError::NoAvailableAddresses
+                    let Some(transport_error) = last_transport_error.take() else {
+                        return Err(ExecutionError {
+                            possibly_accepted,
+                            inner: DapiClientError::NoAvailableAddresses,
+                            retries,
+                            address: None,
+                        });
                     };
+                    tracing::debug!("no addresses available, returning last transport error");
+                    let (transport_error, address) =
+                        failure_to_report(transport_error, None, &possibly_accepted_attempt);
 
                     return Err(ExecutionError {
                         possibly_accepted,
-                        inner: error,
+                        inner: DapiClientError::NoAvailableAddressesToRetry(Box::new(
+                            transport_error,
+                        )),
                         retries,
-                        address: None,
+                        address,
                     });
                 };
 
@@ -1301,6 +1580,10 @@ impl DapiRequestExecutor for DapiClient {
                     }
                     Err(transport_error) => {
                         tracing::debug!(error = ?transport_error, "received error: {transport_error}");
+                        if classification.is_some_and(|outcome| outcome.possibly_accepted) {
+                            possibly_accepted_attempt =
+                                Some((transport_error.clone(), address.clone()));
+                        }
                         Err(ExecutionError {
                             possibly_accepted,
                             inner: DapiClientError::Transport(transport_error),
@@ -1335,7 +1618,19 @@ impl DapiRequestExecutor for DapiClient {
                             continue;
                         }
 
-                        return Err(error);
+                        let DapiClientError::Transport(transport_error) = error.inner else {
+                            return Err(error);
+                        };
+                        let (transport_error, address) = failure_to_report(
+                            transport_error,
+                            error.address,
+                            &possibly_accepted_attempt,
+                        );
+                        return Err(ExecutionError {
+                            inner: DapiClientError::Transport(transport_error),
+                            address,
+                            ..error
+                        });
                     }
                 }
             }

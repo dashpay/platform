@@ -231,6 +231,21 @@ impl Error {
         }
     }
 
+    /// Whether the request this error ended reached no node: its reported attempt failed
+    /// before a connection was established, or no node was left to ask. Such an error says
+    /// nothing about what a node did with an earlier request.
+    pub(crate) fn reached_no_node(&self) -> bool {
+        match self {
+            Self::DapiClientError(DapiClientError::Transport(error)) => error.is_connect_failure(),
+            Self::DapiClientError(DapiClientError::NoAvailableAddressesToRetry(error)) => {
+                error.is_connect_failure()
+            }
+            Self::DapiClientError(DapiClientError::NoAvailableAddresses) => true,
+            Self::NoAvailableAddressesToRetry(inner) => inner.reached_no_node(),
+            _ => false,
+        }
+    }
+
     /// Inspect the typed duplicate cause, including unresolved/retry envelopes.
     pub(crate) fn is_already_exists(&self) -> bool {
         match self {

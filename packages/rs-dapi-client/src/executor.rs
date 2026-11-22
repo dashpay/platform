@@ -39,11 +39,15 @@ pub trait InnerInto<T> {
 pub struct ExecutionError<E> {
     /// Some attempt may have delivered this request; not evidence of execution.
     pub possibly_accepted: bool,
-    /// The cause of error
+    /// The cause of error: the last attempt's, unless that attempt never
+    /// connected to its node while an earlier one may have delivered the
+    /// request. A failure to connect says nothing about the request, so
+    /// [DapiClient](crate::DapiClient) then reports the latest attempt that
+    /// may have delivered it.
     pub inner: E,
     /// How many times the request was retried
     pub retries: usize,
-    /// The address of the node that was used for the request
+    /// The address of the node the attempt behind `inner` was sent to
     pub address: Option<Address>,
 }
 

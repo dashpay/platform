@@ -1,8 +1,7 @@
 //! Classification belongs to the broadcast transport, never to generic reads.
 use crate::transport::{RequestErrorClassification, TransportError};
 use crate::CanRetry;
-use dapi_grpc::tonic::{Code, ConnectError};
-use std::error::Error;
+use dapi_grpc::tonic::Code;
 
 const PROCESSING_REJECTION: &str = "State Transition processing error. Please report faulty state transition and try to create a new state transition with different hash as a workaround.";
 
@@ -16,12 +15,8 @@ pub(super) fn classify_error(error: &TransportError) -> RequestErrorClassificati
         possibly_accepted: true,
         retry,
     };
-    let mut source = status.source();
-    while let Some(cause) = source {
-        if cause.is::<ConnectError>() {
-            return definite(error.can_retry());
-        }
-        source = cause.source();
+    if error.is_connect_failure() {
+        return definite(error.can_retry());
     }
     // An application refusal ends sending, even under an unusual gRPC code.
     // It says nothing about earlier attempts, whose history the executor retains.

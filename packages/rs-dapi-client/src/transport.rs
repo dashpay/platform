@@ -12,8 +12,10 @@ use crate::connection_pool::ConnectionPool;
 pub use crate::request_settings::AppliedRequestSettings;
 use crate::{CanRetry, RequestSettings, Uri};
 use dapi_grpc::mock::Mockable;
+use dapi_grpc::tonic::ConnectError;
 pub use futures::future::BoxFuture;
 use std::any;
+use std::error::Error as _;
 use std::fmt::Debug;
 use std::time::Duration;
 
@@ -151,6 +153,27 @@ impl Clone for TransportError {
 }
 
 impl TransportError {
+    /// Whether the attempt failed before a connection to the node was
+    /// established (a [ConnectError] is in the error's source chain): name
+    /// resolution, the TCP connect, the proxy tunnel or the TLS handshake. No
+    /// part of the request was written, so the node never saw it.
+    ///
+    /// False for every failure on an established connection, such as a reset
+    /// or a timeout after the request was written: the node may have received
+    /// it. Also false where the transport does not report how the attempt
+    /// failed (the browser's fetch).
+    pub fn is_connect_failure(&self) -> bool {
+        let TransportError::Grpc(status) = self;
+        let mut source = status.source();
+        while let Some(cause) = source {
+            if cause.is::<ConnectError>() {
+                return true;
+            }
+            source = cause.source();
+        }
+        false
+    }
+
     /// Whether the request failed because the SOCKS5 proxy failed rather
     /// than the node (a [ProxyError] is in the error's source chain). Such
     /// a failure says nothing about the node, so it is neither retried nor
@@ -328,6 +351,36 @@ mod tests {
                 !status.can_retry(),
                 "Expected code {:?} to be non-retryable",
                 code
+            );
+        }
+    }
+
+    #[test]
+    fn should_tell_a_connect_failure_from_a_failure_on_an_established_connection() {
+        use dapi_grpc::tonic::{ConnectError, Status};
+        use std::io;
+
+        let never_connected = Status::from_error(Box::new(ConnectError(Box::new(io::Error::new(
+            io::ErrorKind::NetworkUnreachable,
+            "Network is unreachable",
+        )))));
+        assert_eq!(never_connected.code(), Code::Unavailable);
+        assert!(TransportError::Grpc(never_connected).is_connect_failure());
+
+        // The same code without the connector's error: a node, or a proxy in
+        // front of one, answered.
+        for after_connecting in [
+            Status::unavailable("tcp connect error"),
+            Status::unknown("transport error"),
+            Status::deadline_exceeded("no complete response"),
+            Status::from_error(Box::new(io::Error::new(
+                io::ErrorKind::ConnectionReset,
+                "connection reset by peer",
+            ))),
+        ] {
+            assert!(
+                !TransportError::Grpc(after_connecting.clone()).is_connect_failure(),
+                "{after_connecting:?}"
             );
         }
     }
