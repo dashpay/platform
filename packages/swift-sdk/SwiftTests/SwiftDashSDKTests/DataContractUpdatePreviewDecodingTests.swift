@@ -84,4 +84,56 @@ final class DataContractUpdatePreviewDecodingTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - Arguments that cannot cross the FFI
+
+    /// A string with a NUL would reach Rust cut at the NUL, so the update
+    /// and its preview refuse it, naming the argument, before any FFI call.
+    func testShouldRefuseAnUpdateArgumentThatHoldsANUL() {
+        func check(
+            documents: String = "{}",
+            tokens: String? = nil,
+            groups: String? = nil,
+            keywords: String? = nil,
+            description: String? = nil,
+            config: String? = nil
+        ) throws {
+            try ManagedPlatformWallet.requireNoNULInDataContractUpdateArguments(
+                documentSchemasJSON: documents,
+                tokenSchemasJSON: tokens,
+                groupsJSON: groups,
+                keywordsJSON: keywords,
+                description: description,
+                contractConfigJSON: config
+            )
+        }
+
+        let cases: [(name: String, run: () throws -> Void)] = [
+            ("documentSchemasJSON", { try check(documents: "{\"note\":{}}\u{0}{}") }),
+            ("tokenSchemasJSON", { try check(tokens: "\u{0}") }),
+            ("groupsJSON", { try check(groups: "{}\u{0}") }),
+            ("keywordsJSON", { try check(keywords: "[\"a\u{0}b\"]") }),
+            ("description", { try check(description: "short\u{0} and the rest") }),
+            ("contractConfigJSON", { try check(config: "{}\u{0}") }),
+        ]
+        for testCase in cases {
+            XCTAssertThrowsError(try testCase.run(), testCase.name) { error in
+                guard case PlatformWalletError.invalidParameter(let message) = error else {
+                    return XCTFail("expected invalidParameter, got \(error)")
+                }
+                XCTAssertTrue(message.contains(testCase.name), message)
+            }
+        }
+
+        XCTAssertNoThrow(
+            try check(
+                documents: "{}",
+                tokens: "{}",
+                groups: "{}",
+                keywords: "[\"alpha\"]",
+                description: "A description",
+                config: "{}"
+            )
+        )
+    }
 }

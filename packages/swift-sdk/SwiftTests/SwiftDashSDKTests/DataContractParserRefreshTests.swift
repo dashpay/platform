@@ -211,6 +211,80 @@ final class DataContractParserRefreshTests: XCTestCase {
         XCTAssertEqual(noteRow.indices?.count ?? 0, 0)
     }
 
+    /// A property or index row id is the contract id, the type name and the
+    /// property or index name with no separator, so `note`.`title` and
+    /// `notet`.`itle` (and the indexes `note`.`tbyItle` and `notet`.`byItle`)
+    /// share one. A type added later with a colliding definition must not
+    /// take over, or rewrite, the row of the type that has it.
+    func testShouldKeepATypesPropertyRowWhenAnotherTypesPropertyIdCollidesWithIt() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        defer { withExtendedLifetime(container) {} }
+        try insertFixtureContract(into: context)
+
+        let note: [String: Any] = [
+            "type": "object",
+            "properties": ["title": ["type": "string", "maxLength": 10, "position": 0]],
+            "indices": [["name": "tbyItle", "properties": [["title": "asc"]]]],
+            "additionalProperties": false
+        ]
+        let notet: [String: Any] = [
+            "type": "object",
+            "properties": ["itle": ["type": "string", "maxLength": 99, "position": 0]],
+            "indices": [["name": "byItle", "properties": [["itle": "asc"]]]],
+            "additionalProperties": false
+        ]
+        XCTAssertEqual(
+            PersistentProperty(contractId: contractId, documentTypeName: "note", name: "title", type: "string").id,
+            PersistentProperty(contractId: contractId, documentTypeName: "notet", name: "itle", type: "string").id
+        )
+
+        // `notet` is added by an update, then the contract is parsed again.
+        let parses: [[String: Any]] = [
+            ["note": note],
+            ["note": note, "notet": notet],
+            ["note": note, "notet": notet]
+        ]
+        for documents in parses {
+            try DataContractParser.parseDataContract(
+                contractData: ["documents": documents],
+                contractId: contractId,
+                modelContext: context
+            )
+            try context.save()
+        }
+
+        let id = contractId
+        let types = try context.fetch(
+            FetchDescriptor<PersistentDocumentType>(predicate: #Predicate { $0.contractId == id })
+        )
+        let noteRow = try XCTUnwrap(types.first { $0.name == "note" })
+        let notetRow = try XCTUnwrap(types.first { $0.name == "notet" })
+
+        let properties = try context.fetch(
+            FetchDescriptor<PersistentProperty>(predicate: #Predicate { $0.contractId == id })
+        )
+        XCTAssertEqual(properties.count, 1)
+        let title = try XCTUnwrap(properties.first)
+        XCTAssertEqual(title.documentTypeName, "note")
+        XCTAssertEqual(title.name, "title")
+        XCTAssertEqual(title.maxLength, 10)
+        XCTAssertTrue(title.documentType === noteRow)
+        XCTAssertEqual(noteRow.propertiesList?.count, 1)
+        XCTAssertEqual(notetRow.propertiesList?.count ?? 0, 0)
+
+        let indices = try context.fetch(
+            FetchDescriptor<PersistentIndex>(predicate: #Predicate { $0.contractId == id })
+        )
+        XCTAssertEqual(indices.count, 1)
+        let index = try XCTUnwrap(indices.first)
+        XCTAssertEqual(index.documentTypeName, "note")
+        XCTAssertEqual(index.name, "tbyItle")
+        XCTAssertEqual(index.properties, ["title"])
+        XCTAssertTrue(index.documentType === noteRow)
+        XCTAssertEqual(notetRow.indices?.count ?? 0, 0)
+    }
+
     /// A stored token's `isPaused` is its live paused status (the pause and
     /// resume actions and the token status sync write it); the contract's
     /// `startAsPaused` only seeds it on the first parse.

@@ -41,6 +41,11 @@ struct UpdateContractView: View {
     @State private var sourceMessage: String?
     @State private var errorMessage: String?
     @State private var outcome: Outcome?
+    /// Set once an update was sent and its outcome could not be confirmed.
+    /// Update Contract then stays off for the rest of this screen's life, so
+    /// a second update is not sent while the first may still land. Held by
+    /// this screen only, not persisted.
+    @State private var unconfirmedUpdateSent = false
 
     var body: some View {
         Form {
@@ -186,7 +191,7 @@ struct UpdateContractView: View {
     @ViewBuilder
     private var metadataSection: some View {
         Section {
-            TextField("Keywords (comma separated)", text: $keywords)
+            TextField("Keywords (comma separated or a JSON array)", text: $keywords)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .disabled(isBusy)
@@ -197,7 +202,7 @@ struct UpdateContractView: View {
         } header: {
             Text("Metadata (Optional)")
         } footer: {
-            Text("Replace the live keywords or description when given; left empty, the on-chain values are kept.")
+            Text("Replace the live keywords or description when given; left empty, the on-chain values are kept. Keywords are comma separated, or a JSON array such as [\"alpha,beta\", \"gamma\"] for keywords that contain a comma. The description is sent as typed.")
         }
     }
 
@@ -241,8 +246,17 @@ struct UpdateContractView: View {
             }
             .disabled(!canSubmit)
             .accessibilityIdentifier("updateContract.submitButton")
+
+            if unconfirmedUpdateSent {
+                Text("An update was sent and its outcome is unknown: it may still land. Do not send another update now. Check the contract's version on the contract screen later, then try again if it did not change.")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .accessibilityIdentifier("updateContract.unconfirmedHold")
+            }
         } footer: {
-            if review?.preview.hasChanges == false {
+            if unconfirmedUpdateSent {
+                EmptyView()
+            } else if review?.preview.hasChanges == false {
                 Text("The update would change nothing, so it is not offered.")
             } else if review == nil {
                 Text("Review the changes first.")
@@ -267,8 +281,8 @@ struct UpdateContractView: View {
     }
 
     /// The raw text of the five inputs. Any change clears the review.
-    private var inputs: Inputs {
-        Inputs(
+    private var inputs: UpdateContractImport.Fields {
+        UpdateContractImport.Fields(
             documents: documentsJSON,
             tokens: tokensJSON,
             groups: groupsJSON,
@@ -285,8 +299,9 @@ struct UpdateContractView: View {
 
     /// The paid-no-op guard: the update is offered only for a review of the
     /// inputs on screen that reports a change. `hasChanges` comes from Rust.
+    /// Never after an update whose outcome is unknown.
     private var canSubmit: Bool {
-        guard !isBusy, ownerWallet != nil, let review else { return false }
+        guard !isBusy, !unconfirmedUpdateSent, ownerWallet != nil, let review else { return false }
         return review.inputs == inputs && review.preview.hasChanges
     }
 
@@ -320,24 +335,27 @@ struct UpdateContractView: View {
         }
     }
 
-    /// Run `text` through the register flow's classifier and fill all five
-    /// fields from what it recognises; a field the source does not carry is
-    /// cleared.
+    /// Fill all five fields from `text` with `UpdateContractImport`, which
+    /// writes each supplied section as given; a field the source does not
+    /// carry is reset.
     private func fill(from text: String, source: String) {
-        switch PasteboardContractCandidate.classify(text) {
-        case .empty:
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             sourceMessage = "The \(source) holds no contract JSON."
-        case .invalid(let reason):
-            sourceMessage = reason
-        case .valid(let candidate):
-            let fields = candidate.formInputs
-            documentsJSON = fields["documentSchemas"] ?? "{}"
-            tokensJSON = fields["tokenSchemas"] ?? ""
-            groupsJSON = fields["groups"] ?? ""
-            keywords = fields["keywords"] ?? ""
-            descriptionText = fields["description"] ?? ""
-            sourceMessage = "Filled from \(source): \(candidate.summary)."
+            return
         }
+        let fields: UpdateContractImport.Fields
+        do {
+            fields = try UpdateContractImport.fields(from: text)
+        } catch {
+            sourceMessage = "Nothing filled from \(source): \(Self.describe(error))"
+            return
+        }
+        documentsJSON = fields.documents
+        tokensJSON = fields.tokens
+        groupsJSON = fields.groups
+        keywords = fields.keywords
+        descriptionText = fields.description
+        sourceMessage = "Filled from \(source)."
     }
 
     // MARK: - Actions
@@ -348,9 +366,9 @@ struct UpdateContractView: View {
             return
         }
         let reviewedInputs = inputs
-        let arguments: WalletArguments
+        let arguments: UpdateContractImport.WalletArguments
         do {
-            arguments = try WalletArguments(reviewedInputs)
+            arguments = try UpdateContractImport.WalletArguments(reviewedInputs)
         } catch {
             errorMessage = Self.describe(error)
             return
@@ -405,23 +423,29 @@ struct UpdateContractView: View {
             // `updateDataContract`.
             _ = signer
 
-            let refreshFailure = await refreshStoredContract()
-            let version = refreshFailure == nil
-                ? contract.version.map { String($0) } ?? "unknown"
-                : "\(review.preview.newVersion) (as reviewed)"
-            var message = "Contract id:\n\(contractId.toBase58String())\n\nVersion: \(version)"
+            // Platform holds at least the reviewed new version now, so an
+            // older copy from a lagging node is not stored.
+            let refreshFailure = await refreshStoredContract(
+                minimumVersion: Int(review.preview.newVersion)
+            )
+            // The confirmed update gave the contract the reviewed new
+            // version. Read it from the review, not the stored row, which
+            // the refresh writes through another context.
+            var message = "Contract id:\n\(contractId.toBase58String())\n\nVersion: \(review.preview.newVersion)"
             if let refreshFailure {
                 message += "\n\nThe contract was updated, but the local copy could not be refreshed: \(refreshFailure)"
             }
             outcome = Outcome(title: "Contract Updated", message: message, dismissesScreen: true)
         } catch PlatformWalletError.transactionBroadcastUnconfirmed(let detail) {
             _ = signer
-            // The update may have executed. It is not retried: the review is
-            // cleared, and a new review after the refresh shows whether the
-            // change is on chain.
+            // The update may have executed, or may still. It is not retried,
+            // and no other update is offered from this screen. The refresh
+            // has only the stored version as its floor: the update's new
+            // version is not known to be on chain.
             self.review = nil
-            let refreshFailure = await refreshStoredContract()
-            var message = "The update was sent, but its outcome is unknown: it may have executed. It was not retried. Review the changes again to see whether it landed.\n\n\(detail)"
+            unconfirmedUpdateSent = true
+            let refreshFailure = await refreshStoredContract(minimumVersion: nil)
+            var message = "The update was sent, but its outcome is unknown: it may have executed, or may still. It was not retried. Do not send another update now: check the contract's version on the contract screen later before trying again.\n\n\(detail)"
             if let refreshFailure {
                 message += "\n\nThe local copy could not be refreshed: \(refreshFailure)"
             }
@@ -437,9 +461,10 @@ struct UpdateContractView: View {
         }
     }
 
-    /// Bring the stored contract up to date with Platform. Returns why it
-    /// failed, or nil.
-    private func refreshStoredContract() async -> String? {
+    /// Bring the stored contract up to date with Platform, refusing a
+    /// fetched version below `minimumVersion` or the stored one. Returns why
+    /// it failed, or nil.
+    private func refreshStoredContract(minimumVersion: Int?) async -> String? {
         guard let sdk = appState.sdk else {
             return "the SDK is not initialized"
         }
@@ -447,7 +472,8 @@ struct UpdateContractView: View {
             try await ContractDownloader.refreshPersistedContract(
                 contract,
                 sdk: sdk,
-                modelContext: modelContext
+                modelContext: modelContext,
+                minimumVersion: minimumVersion
             )
             return nil
         } catch {
@@ -475,48 +501,9 @@ struct UpdateContractView: View {
 // MARK: - Supporting types
 
 private extension UpdateContractView {
-    struct Inputs: Equatable {
-        let documents: String
-        let tokens: String
-        let groups: String
-        let keywords: String
-        let description: String
-    }
-
-    /// The five inputs in the form the wallet calls take. Converts text
-    /// formats only; what the contents mean is the wallet's and Platform's
-    /// to decide.
-    struct WalletArguments {
-        let documents: String
-        let tokens: String?
-        let groups: String?
-        let keywords: String?
-        let description: String?
-
-        init(_ inputs: Inputs) throws {
-            let documents = inputs.documents.trimmingCharacters(in: .whitespacesAndNewlines)
-            self.documents = documents.isEmpty ? "{}" : documents
-            let tokens = inputs.tokens.trimmingCharacters(in: .whitespacesAndNewlines)
-            self.tokens = tokens.isEmpty ? nil : tokens
-            self.groups = try PasteboardContractCandidate.positionKeyedGroupsJSON(from: inputs.groups)
-            let keywordList = inputs.keywords
-                .split(separator: ",")
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty }
-            if keywordList.isEmpty {
-                self.keywords = nil
-            } else {
-                let data = try JSONSerialization.data(withJSONObject: keywordList)
-                self.keywords = String(data: data, encoding: .utf8)
-            }
-            let description = inputs.description.trimmingCharacters(in: .whitespacesAndNewlines)
-            self.description = description.isEmpty ? nil : description
-        }
-    }
-
     struct Review {
-        let inputs: Inputs
-        let arguments: WalletArguments
+        let inputs: UpdateContractImport.Fields
+        let arguments: UpdateContractImport.WalletArguments
         let preview: DataContractUpdatePreview
     }
 

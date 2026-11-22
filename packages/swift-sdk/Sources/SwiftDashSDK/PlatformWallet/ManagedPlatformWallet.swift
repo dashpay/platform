@@ -4615,6 +4615,14 @@ extension ManagedPlatformWallet {
         expectedCurrentVersion: UInt32? = nil,
         signer: KeychainSigner
     ) async throws -> Identifier {
+        try Self.requireNoNULInDataContractUpdateArguments(
+            documentSchemasJSON: documentSchemasJSON,
+            tokenSchemasJSON: tokenSchemasJSON,
+            groupsJSON: groupsJSON,
+            keywordsJSON: keywordsJSON,
+            description: description,
+            contractConfigJSON: contractConfigJSON
+        )
         let handle = self.handle
         let signerHandle = signer.handle
         let expectedVersion: UInt32 = expectedCurrentVersion ?? 0
@@ -4699,6 +4707,14 @@ extension ManagedPlatformWallet {
         description: String? = nil,
         contractConfigJSON: String? = nil
     ) async throws -> DataContractUpdatePreview {
+        try Self.requireNoNULInDataContractUpdateArguments(
+            documentSchemasJSON: documentSchemasJSON,
+            tokenSchemasJSON: tokenSchemasJSON,
+            groupsJSON: groupsJSON,
+            keywordsJSON: keywordsJSON,
+            description: description,
+            contractConfigJSON: contractConfigJSON
+        )
         let handle = self.handle
         let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
@@ -4757,6 +4773,36 @@ extension ManagedPlatformWallet {
             }
             return try DataContractUpdatePreview.decode(fromJSON: String(cString: jsonPtr))
         }.value
+    }
+
+    /// Refuse a string argument of `updateDataContract` or
+    /// `previewDataContractUpdate` that holds a NUL. `withCString` hands
+    /// Rust a C string that ends at the first NUL, so Rust would preview or
+    /// update with a prefix of the argument. Throws
+    /// `PlatformWalletError.invalidParameter` naming the first such
+    /// argument. Checks only that the strings can cross the boundary; what
+    /// they say is the wallet's and Platform's to judge.
+    static func requireNoNULInDataContractUpdateArguments(
+        documentSchemasJSON: String,
+        tokenSchemasJSON: String?,
+        groupsJSON: String?,
+        keywordsJSON: String?,
+        description: String?,
+        contractConfigJSON: String?
+    ) throws {
+        let arguments: [(name: String, value: String?)] = [
+            ("documentSchemasJSON", documentSchemasJSON),
+            ("tokenSchemasJSON", tokenSchemasJSON),
+            ("groupsJSON", groupsJSON),
+            ("keywordsJSON", keywordsJSON),
+            ("description", description),
+            ("contractConfigJSON", contractConfigJSON)
+        ]
+        for argument in arguments {
+            if let value = argument.value {
+                try KeyDerivation.requireNoNUL(value, argument.name)
+            }
+        }
     }
 
     /// Create + broadcast a new revision-1 document on `contractId`'s

@@ -388,33 +388,44 @@ public enum ContractDownloader {
     /// contract), and runs `DataContractParser.parseDataContract` again,
     /// which refreshes the version, groups, tokens and document types in
     /// place. The row keeps its identity, so the contract's documents,
-    /// token balances and token history stay attached.
+    /// token balances and token history stay attached. The description,
+    /// keywords and `hasTokens` are refreshed from the fetched contract too.
     ///
+    /// The fetch can return a valid proof of an older contract than the one
+    /// stored or just updated (a node one block behind), so the fetched
+    /// `version` must be at least the stored row's version and at least
+    /// `minimumVersion`; otherwise nothing is registered or written.
+    ///
+    /// The rows are written in a context of their own on
+    /// `modelContext.container`, saved once at the end. A failure drops that
+    /// context, so nothing pending in `modelContext` (the caller's, usually
+    /// the app's main context) is saved or discarded by this call.
+    ///
+    /// - Parameter minimumVersion: The version the caller knows Platform
+    ///   holds, such as the new version of an update just confirmed. `nil`
+    ///   applies only the stored version as the floor.
     /// - Throws: `ContractDownloadError.notFound` / `.fetchFailed` when the
-    ///   fetch fails, the response is for another contract, or the trusted
-    ///   context refuses the binary; any error the parser or the save
-    ///   throws. On a throw the row is left as it was.
+    ///   fetch fails, the response is for another contract or for an older
+    ///   version, or the trusted context refuses the binary; any error the
+    ///   parser or the save throws. On a throw the stored rows are left as
+    ///   they were.
     public static func refreshPersistedContract(
         _ contract: PersistentDataContract,
         sdk: SDK,
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        minimumVersion: Int? = nil
     ) async throws {
         let requestedId = contract.idBase58
         let fetched = try fetchContract(contractId: requestedId, sdk: sdk)
-        let contractIdData = try resolveContractId(
-            contractData: fetched.contractData,
-            requestedId: requestedId
-        )
-        guard contractIdData == contract.id else {
-            throw ContractDownloadError.fetchFailed(
-                "The fetch returned contract \(contractIdData.toBase58String()), not \(requestedId)"
-            )
-        }
-
-        // Unlike the first download, a failure here is reported: the
-        // trusted context would otherwise keep validating against the
-        // contract as it was before the update.
-        if let binaryData = fetched.binaryData {
+        try apply(
+            fetched: fetched,
+            toContractWithId: contract.id,
+            minimumVersion: minimumVersion,
+            container: modelContext.container
+        ) { binaryData in
+            // Unlike the first download, a failure here is reported: the
+            // trusted context would otherwise keep validating against the
+            // contract as it was before the update.
             do {
                 try sdk.addContractToContext(
                     contractId: requestedId,
@@ -426,32 +437,128 @@ public enum ContractDownloader {
                 )
             }
         }
+    }
 
-        do {
-            contract.serializedContract = fetched.jsonData
-            contract.binarySerialization = fetched.binaryData
-            contract.lastUpdated = Date()
-            contract.lastSyncedAt = Date()
-            try DataContractParser.parseDataContract(
-                contractData: fetched.contractData,
-                contractId: contract.id,
-                modelContext: modelContext
+    /// The part of `refreshPersistedContract` after the fetch: check the
+    /// fetched contract against the stored row, then write it, in a context
+    /// of its own on `container`.
+    ///
+    /// `registerBinary` is called with the fetched binary serialization
+    /// after the checks pass and before any row is written; a throw from it
+    /// stops the refresh. Internal so tests can run it without the network.
+    static func apply(
+        fetched: FetchedContract,
+        toContractWithId contractId: Data,
+        minimumVersion: Int?,
+        container: ModelContainer,
+        registerBinary: (Data) throws -> Void
+    ) throws {
+        let requestedId = contractId.toBase58String()
+        let fetchedId = try resolveContractId(
+            contractData: fetched.contractData,
+            requestedId: requestedId
+        )
+        guard fetchedId == contractId else {
+            throw ContractDownloadError.fetchFailed(
+                "The fetch returned contract \(fetchedId.toBase58String()), not \(requestedId)"
             )
-            ContractIdentityLinker.linkContractToOwner(
-                contract: contract,
-                modelContext: modelContext
-            )
-            try modelContext.save()
-        } catch {
-            modelContext.rollback()
-            throw error
         }
+
+        // Dropped unsaved on any throw below.
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        let row = try context.fetch(
+            FetchDescriptor<PersistentDataContract>(predicate: #Predicate { $0.id == contractId })
+        ).first
+        guard let row else {
+            throw ContractDownloadError.fetchFailed(
+                "Contract \(requestedId) is not stored locally, so there is nothing to refresh"
+            )
+        }
+
+        let floor = max(row.version ?? 0, minimumVersion ?? 0)
+        guard let fetchedVersion = contractVersion(of: fetched.contractData) else {
+            throw ContractDownloadError.fetchFailed(
+                "The fetched contract \(requestedId) carries no version, so the local copy was not changed"
+            )
+        }
+        guard fetchedVersion >= floor else {
+            throw ContractDownloadError.fetchFailed(
+                "Platform returned version \(fetchedVersion) of contract \(requestedId), older than version \(floor); the local copy was not changed. Refresh again later."
+            )
+        }
+
+        if let binaryData = fetched.binaryData {
+            try registerBinary(binaryData)
+        }
+
+        row.serializedContract = fetched.jsonData
+        row.binarySerialization = fetched.binaryData
+        row.lastUpdated = Date()
+        row.lastSyncedAt = Date()
+        try DataContractParser.parseDataContract(
+            contractData: fetched.contractData,
+            contractId: contractId,
+            modelContext: context
+        )
+        refreshMetadataProjections(of: row, from: fetched.contractData, in: context)
+        ContractIdentityLinker.linkContractToOwner(
+            contract: row,
+            modelContext: context
+        )
+        try context.save()
+    }
+
+    /// The contract JSON's `version`, or nil when it has no integer one.
+    private static func contractVersion(of contractData: [String: Any]) -> Int? {
+        guard let value = contractData["version"] as? NSNumber,
+              CFGetTypeID(value as CFTypeRef) != CFBooleanGetTypeID()
+        else {
+            return nil
+        }
+        return Int(exactly: value)
+    }
+
+    /// Bring the row's stored copies of the contract's description, keywords
+    /// and token presence in line with `contractData`. The parser does not
+    /// write these; `downloadAndPersistContract` leaves them as the row was
+    /// created.
+    ///
+    /// A keyword the contract still has keeps its row (the id is the
+    /// contract id and the keyword, unique); the others are deleted and the
+    /// new ones inserted.
+    private static func refreshMetadataProjections(
+        of row: PersistentDataContract,
+        from contractData: [String: Any],
+        in context: ModelContext
+    ) {
+        row.contractDescription = contractData["description"] as? String
+        row.hasTokens = !((contractData["tokens"] as? [String: Any]) ?? [:]).isEmpty
+
+        var fetchedKeywords: [String] = []
+        for keyword in contractData["keywords"] as? [String] ?? [] where !fetchedKeywords.contains(keyword) {
+            fetchedKeywords.append(keyword)
+        }
+        let storedRows = row.keywordRelations
+        let kept = storedRows.filter { fetchedKeywords.contains($0.keyword) }
+        let keptKeywords = Set(kept.map(\.keyword))
+        let added = fetchedKeywords
+            .filter { !keptKeywords.contains($0) }
+            .map { PersistentKeyword(keyword: $0, contractId: row.idBase58) }
+        for stale in storedRows where !fetchedKeywords.contains(stale.keyword) {
+            context.delete(stale)
+        }
+        for keyword in added {
+            context.insert(keyword)
+        }
+        row.keywordRelations = kept + added
     }
 
     // MARK: - Shared fetch
 
-    /// What `fetchContract` copies out of the FFI result.
-    private struct FetchedContract {
+    /// What `fetchContract` copies out of the FFI result. Internal so tests
+    /// can hand `apply` a fetched contract.
+    struct FetchedContract {
         /// The contract JSON as returned.
         let jsonData: Data
         /// `jsonData` parsed into a dictionary.

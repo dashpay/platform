@@ -553,16 +553,27 @@ public struct DataContractParser {
             }
 
             let indexId = index.id
-            parsedIds.insert(indexId)
             if let existing = try modelContext.fetch(
                 FetchDescriptor<PersistentIndex>(predicate: #Predicate { $0.id == indexId })
             ).first {
+                // See `definitionRowIdCollides`.
+                if definitionRowIdCollides(
+                    storedTypeName: existing.documentTypeName,
+                    storedName: existing.name,
+                    parsedTypeName: documentTypeName,
+                    parsedName: name
+                ) {
+                    print("⚠️ Skipping index \(documentTypeName).\(name): its row id is taken by index \(existing.documentTypeName).\(existing.name)")
+                    continue
+                }
+                parsedIds.insert(indexId)
                 replaceDefinition(of: existing, with: index)
                 existing.documentType = documentType
                 continue
             }
 
             // Link to document type
+            parsedIds.insert(indexId)
             index.documentType = documentType
 
             modelContext.insert(index)
@@ -674,16 +685,27 @@ public struct DataContractParser {
             property.isRequired = requiredFields.contains(propertyName)
 
             let propertyId = property.id
-            parsedIds.insert(propertyId)
             if let existing = try modelContext.fetch(
                 FetchDescriptor<PersistentProperty>(predicate: #Predicate { $0.id == propertyId })
             ).first {
+                // See `definitionRowIdCollides`.
+                if definitionRowIdCollides(
+                    storedTypeName: existing.documentTypeName,
+                    storedName: existing.name,
+                    parsedTypeName: documentTypeName,
+                    parsedName: propertyName
+                ) {
+                    print("⚠️ Skipping property \(documentTypeName).\(propertyName): its row id is taken by property \(existing.documentTypeName).\(existing.name)")
+                    continue
+                }
+                parsedIds.insert(propertyId)
                 replaceDefinition(of: existing, with: property)
                 existing.documentType = documentType
                 continue
             }
 
             // Link to document type
+            parsedIds.insert(propertyId)
             property.documentType = documentType
 
             modelContext.insert(property)
@@ -693,6 +715,22 @@ public struct DataContractParser {
     }
 
     // MARK: - Helper Methods
+
+    /// Whether the stored row found under a parsed index or property's id
+    /// belongs to another definition. The id is the contract id, the type
+    /// name and the index or property name concatenated without a
+    /// separator, so `note`.`title` and `notet`.`itle` share one. Such a row
+    /// is neither refreshed nor moved to the parsed type, and the parsed
+    /// definition is skipped, since inserting it would collide on the unique
+    /// id. The id scheme stays: the stored ids predate this check.
+    private static func definitionRowIdCollides(
+        storedTypeName: String,
+        storedName: String,
+        parsedTypeName: String,
+        parsedName: String
+    ) -> Bool {
+        storedTypeName != parsedTypeName || storedName != parsedName
+    }
 
     /// The definition a property schema's `$ref` names, when the reference is
     /// `#/$defs/<name>` and `definitions` holds a dictionary under `<name>`;
