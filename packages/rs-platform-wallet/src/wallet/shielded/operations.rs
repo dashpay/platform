@@ -18,6 +18,8 @@
 //! - **Withdraw** (Type 19): shielded pool → Core L1 address
 //! - **IdentityCreateFromShieldedPool** (Type 20): shielded pool → a brand-new Platform identity
 //!   funded by a fixed denomination leaving the pool (any excess re-enters as a change note)
+//! - **TokenPurchaseFromShieldedPool** (Type 28): shielded pool → a token bought at its direct
+//!   purchase price, minted as a note to the wallet's own address in the token's shielded pool
 
 use super::activity::{ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection};
 use super::activity_recorder::{
@@ -60,6 +62,8 @@ use dash_sdk::query_types::{IdentityBalance, IdentityNonceFetcher};
 use dpp::address_funds::{
     AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, OrchardAddress, PlatformAddress,
 };
+use dpp::balances::credits::TokenAmount;
+use dpp::data_contract::TokenContractPosition;
 use dpp::fee::Credits;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::core_script::CoreScript;
@@ -78,12 +82,14 @@ use dpp::shielded::builder::{
     build_private_document_create_from_shielded_pool_transition,
     build_shield_from_identity_transition, build_shield_transition,
     build_shielded_transfer_transition, build_shielded_withdrawal_transition,
-    build_unshield_transition, OrchardProver, SpendableNote,
+    build_token_purchase_from_shielded_pool_transition, build_unshield_transition, OrchardProver,
+    ShieldedFeePayer, SpendableNote,
 };
 use dpp::shielded::{compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee};
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::StateTransition;
+use dpp::tokens::calculate_token_id;
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
 use dpp::ProtocolError;
@@ -295,6 +301,7 @@ fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] 
     use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
     use dpp::state_transition::unshield_transition::accessors::UnshieldTransitionAccessorsV0;
     use dpp::state_transition::private_document_create_from_shielded_pool_transition::accessors::PrivateDocumentCreateFromShieldedPoolTransitionAccessorsV0;
+    use dpp::state_transition::token_purchase_from_shielded_pool_transition::accessors::TokenPurchaseFromShieldedPoolTransitionAccessorsV0;
 
     match st {
         StateTransition::Shield(ShieldTransition::V0(v0)) => &v0.actions,
@@ -306,6 +313,10 @@ fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] 
         StateTransition::ShieldFromIdentity(t) => t.actions(),
         StateTransition::IdentityTopUpFromShieldedPool(t) => t.actions(),
         StateTransition::PrivateDocumentCreateFromShieldedPool(t) => t.actions(),
+        // The credit pool fee bundle only: its change is what the wallet's scan sees. The token
+        // bundle's note sits in the token's shielded pool, which the wallet does not scan, so
+        // counting it would key the entry by a commitment no rescan finds.
+        StateTransition::TokenPurchaseFromShieldedPool(t) => t.fee_actions(),
         _ => &[],
     }
 }
@@ -1723,6 +1734,194 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
             &pending_entry,
             reservation,
             "identity top up from shielded pool",
+            failure,
+        )
+        .await),
+    }
+}
+
+// -------------------------------------------------------------------------
+// TokenPurchaseFromShieldedPool: shielded pool -> a token's shielded pool (Type 28)
+// -------------------------------------------------------------------------
+
+/// Buy `token_count` tokens of the token at `token_contract_position` of
+/// `data_contract_id` at its direct purchase price
+/// (`TokenPurchaseFromShieldedPool`, type 28), paying `total_agreed_price`
+/// plus the fee from `account`'s notes, the change going back to the account.
+/// No identity is involved. `total_agreed_price` is the price the buyer agreed
+/// to: Drive refuses the purchase unless it covers the token's configured
+/// price for `token_count`.
+///
+/// The bought tokens are minted as one note to the account's own default
+/// Orchard address in the token's shielded pool, encrypted to the account's
+/// keys. The wallet syncs only the credit pool, so that note is neither
+/// tracked nor shown until a token pool note sync exists; spending it (a token
+/// shielded transfer or unshield) needs that sync too.
+///
+/// Waits for the token pool's state at the proof's block: type 28 proves the
+/// affected state only, as type 22 does (see
+/// [`identity_top_up_from_pool_with_metadata`]), so the strict wait would
+/// reject every success.
+#[allow(clippy::too_many_arguments)]
+pub async fn token_purchase_from_pool<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    data_contract_id: Identifier,
+    token_contract_position: TokenContractPosition,
+    token_count: TokenAmount,
+    total_agreed_price: Credits,
+    prover: &P,
+) -> Result<(), PlatformWalletError> {
+    let views = keys.viewing_keys();
+    // The bought tokens and the change both go to the account's default
+    // address, under the same keys.
+    let own_addr = default_orchard_address(&views)?;
+    let id = SubwalletId::new(wallet_id, account);
+    let token_id = Identifier::from(calculate_token_id(
+        &data_contract_id.to_buffer(),
+        token_contract_position,
+    ));
+
+    // The price is what is selected for, the fee comes on top. The fee bundle
+    // spends the selected notes and always carries the change output, so it
+    // has `max(selected, 2)` actions, the count the builder prices it at.
+    let (selected_notes, total_input, exact_fee, mut reservation) = reserve_notes_covering(
+        sdk,
+        store,
+        id,
+        total_agreed_price,
+        2,
+        ShieldedFeeKind::TokenPurchase,
+    )
+    .await?;
+
+    info!(
+        account,
+        token = %token_id,
+        token_count,
+        price = total_agreed_price,
+        fee = exact_fee,
+        inputs = selected_notes.len(),
+        total_input,
+        "TokenPurchaseFromShieldedPool"
+    );
+
+    let mut pending_entry = None;
+    let result = async {
+        let (spends, anchor, anchor_height) =
+            extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
+        let anchor_bytes = anchor.to_bytes();
+
+        let (state_transition, fee_used) = build_token_purchase_from_shielded_pool_transition(
+            token_id,
+            data_contract_id,
+            token_contract_position,
+            &own_addr,
+            &keys.full_viewing_key,
+            token_count,
+            total_agreed_price,
+            [0u8; 36],
+            ShieldedFeePayer {
+                spends,
+                change_address: &own_addr,
+                fvk: &keys.full_viewing_key,
+                ask: &keys.spend_auth_key,
+                anchor,
+            },
+            prover,
+            sdk.version(),
+        )
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+        debug_assert_eq!(
+            fee_used, exact_fee,
+            "builder fee must match the reserved token purchase fee"
+        );
+
+        // The price leaves the wallet for the token; the token id is the
+        // counterparty. Only the fee bundle's change keys the entry
+        // (`shielded_actions`).
+        pending_entry = record_pending_activity(
+            store,
+            persister,
+            wallet_id,
+            id,
+            &views,
+            LiveEntryParams {
+                kind: ShieldedActivityKind::TokenPurchase,
+                direction: ShieldedDirection::Out,
+                amount: total_agreed_price,
+                fee: Some(fee_used),
+                counterparty: Some(token_id.to_vec()),
+                memo: None,
+                actions: shielded_actions(&state_transition),
+                spent_notes: &selected_notes,
+            },
+        )
+        .await;
+
+        trace!("TokenPurchaseFromShieldedPool: state transition built, saving and broadcasting...");
+        broadcast_shielded_spend_with_redrive(
+            sdk,
+            store,
+            id,
+            &pending_entry,
+            anchor_bytes,
+            anchor_height,
+            &selected_notes,
+            &mut reservation,
+            &state_transition,
+            "token purchase from shielded pool",
+            SpendResultWait::AffectedState,
+        )
+        .await
+    }
+    .await;
+
+    match result {
+        Ok(_) => {
+            // It executed: the outcome owns the notes, which it marks spent.
+            // Confirmed on the type 22 top-up's policy: only this wallet's
+            // spending key can spend the notes it reserved.
+            reservation.hand_over();
+            record_activity_status(
+                store,
+                persister,
+                wallet_id,
+                id,
+                &pending_entry,
+                ShieldedActivityStatus::Confirmed,
+                None,
+            )
+            .await;
+            if let Err(e) = finalize_pending(store, persister, wallet_id, id, &selected_notes).await
+            {
+                warn!(
+                    account,
+                    error = %e,
+                    "TokenPurchaseFromShieldedPool broadcast succeeded but local spent-state \
+                     update failed; will heal on next sync"
+                );
+            }
+            info!(
+                account,
+                token = %token_id,
+                token_count,
+                "TokenPurchaseFromShieldedPool broadcast succeeded"
+            );
+            Ok(())
+        }
+        Err(failure) => Err(settle_failed_spend(
+            store,
+            persister,
+            wallet_id,
+            id,
+            &pending_entry,
+            reservation,
+            "token purchase from shielded pool",
             failure,
         )
         .await),
@@ -8812,5 +9011,128 @@ mod select_recorded_spends_tests {
             Err(other) => panic!("expected ShieldedNoRecordedAnchor, got error: {other:?}"),
             Ok(_) => panic!("expected ShieldedNoRecordedAnchor, got Ok"),
         }
+    }
+}
+
+#[cfg(test)]
+mod token_purchase_from_pool_tests {
+    use super::*;
+    use crate::wallet::shielded::note_selection::compute_token_purchase_from_pool_fee;
+    use crate::wallet::shielded::InMemoryShieldedStore;
+    use dashcore::Network;
+    use grovedb_commitment_tree::ProvingKey;
+
+    const WALLET_ID: [u8; 32] = [0x71; 32];
+
+    /// A prover the purchases here never reach: each stops before the build.
+    struct UnreachableProver;
+    impl OrchardProver for UnreachableProver {
+        fn proving_key(&self) -> &ProvingKey {
+            panic!("nothing is proved")
+        }
+    }
+
+    fn note(value: u64) -> ShieldedNote {
+        ShieldedNote {
+            position: 0,
+            cmx: [1; 32],
+            nullifier: [0x5B; 32],
+            block_height: 1,
+            is_spent: false,
+            value,
+            note_data: vec![],
+        }
+    }
+
+    async fn store_with(note: &ShieldedNote) -> Arc<RwLock<InMemoryShieldedStore>> {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        store
+            .write()
+            .await
+            .save_note(SubwalletId::new(WALLET_ID, 0), note)
+            .expect("a note");
+        store
+    }
+
+    async fn purchase(
+        sdk: &Arc<dash_sdk::Sdk>,
+        store: &Arc<RwLock<InMemoryShieldedStore>>,
+        price: Credits,
+    ) -> Result<(), PlatformWalletError> {
+        let keys = OrchardKeySet::from_seed(&[0x42; 64], Network::Testnet, 0).expect("keys");
+        token_purchase_from_pool(
+            sdk,
+            store,
+            None,
+            WALLET_ID,
+            &keys,
+            0,
+            Identifier::from([0x44; 32]),
+            0,
+            10,
+            price,
+            &UnreachableProver,
+        )
+        .await
+    }
+
+    async fn unspent_nullifiers(store: &Arc<RwLock<InMemoryShieldedStore>>) -> Vec<[u8; 32]> {
+        store
+            .read()
+            .await
+            .get_unspent_notes(SubwalletId::new(WALLET_ID, 0))
+            .expect("notes")
+            .iter()
+            .map(|note| note.nullifier)
+            .collect()
+    }
+
+    /// Notes one credit short of the price plus the fee the builder would
+    /// charge are refused before any request, and stay spendable.
+    #[tokio::test]
+    async fn should_refuse_a_token_purchase_its_notes_cannot_pay_without_reserving_them() {
+        let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+        let price = 1_000_000;
+        let fee = compute_token_purchase_from_pool_fee(2, sdk.version()).expect("the fee");
+        let short = note(price + fee - 1);
+        let store = store_with(&short).await;
+
+        let err = purchase(&sdk, &store, price)
+            .await
+            .expect_err("the notes cannot pay price plus fee");
+        assert!(
+            matches!(
+                err,
+                PlatformWalletError::ShieldedInsufficientBalance { available, required }
+                    if available == price + fee - 1 && required == price + fee
+            ),
+            "got {err:?}"
+        );
+        assert_eq!(unspent_nullifiers(&store).await, vec![short.nullifier]);
+    }
+
+    /// A purchase that fails before its record is saved (here the recorded
+    /// anchor set cannot be read) releases the notes it reserved and records
+    /// no activity.
+    #[tokio::test]
+    async fn should_release_the_notes_of_a_token_purchase_that_fails_before_its_broadcast() {
+        let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+        let funded = note(1_000_000_000_000);
+        let store = store_with(&funded).await;
+
+        purchase(&sdk, &store, 1_000_000)
+            .await
+            .expect_err("the mock SDK has no recorded anchors to read");
+        assert_eq!(
+            unspent_nullifiers(&store).await,
+            vec![funded.nullifier],
+            "the note is spendable again"
+        );
+        assert!(store
+            .read()
+            .await
+            .get_activity(SubwalletId::new(WALLET_ID, 0), 0, 10)
+            .expect("activity")
+            .is_empty());
     }
 }

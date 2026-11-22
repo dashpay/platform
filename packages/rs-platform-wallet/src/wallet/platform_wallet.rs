@@ -65,7 +65,9 @@ use {
     },
     dash_sdk::dapi_grpc::platform::v0::ResponseMetadata,
     dash_sdk::platform::dashpay::PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+    dpp::balances::credits::TokenAmount,
     dpp::data_contract::accessors::v0::DataContractV0Getters,
+    dpp::data_contract::TokenContractPosition,
     dpp::data_contracts::SystemDataContract,
     dpp::platform_value::BinaryData,
     dpp::serialization::PlatformDeserializableTrusted,
@@ -2058,6 +2060,44 @@ impl PlatformWallet {
         }
 
         Ok(proven_balance)
+    }
+
+    /// Buy `token_count` tokens of the token at `token_contract_position` of
+    /// `data_contract_id` at its direct purchase price from `account`'s
+    /// shielded notes (`TokenPurchaseFromShieldedPool`, type 28): the notes pay
+    /// `total_agreed_price` plus the pool-paid fee, and the tokens are minted as
+    /// a note to the account's own default address in the token's shielded
+    /// pool. The wallet does not sync token pool notes yet, so that note is not
+    /// tracked or shown. `seed` supplies the transient spend authority (see
+    /// [`shielded_transfer_to`](Self::shielded_transfer_to)).
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn shielded_token_purchase_from_pool<P: dpp::shielded::builder::OrchardProver>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        seed: &[u8],
+        account: u32,
+        data_contract_id: &Identifier,
+        token_contract_position: TokenContractPosition,
+        token_count: TokenAmount,
+        total_agreed_price: Credits,
+        prover: P,
+    ) -> Result<(), PlatformWalletError> {
+        let keyset = self.derive_spend_keyset(seed, account).await?;
+        super::shielded::operations::token_purchase_from_pool(
+            &self.sdk,
+            coordinator.store(),
+            Some(&self.persister),
+            self.wallet_id,
+            &keyset,
+            account,
+            *data_contract_id,
+            token_contract_position,
+            token_count,
+            total_agreed_price,
+            &prover,
+        )
+        .await
     }
 
     /// Send a DashPay private contact request (protocol version 15) from

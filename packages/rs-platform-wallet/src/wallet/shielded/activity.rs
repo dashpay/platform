@@ -118,6 +118,12 @@ pub enum ShieldedActivityKind {
     /// path. Carries `fee: None` because the exact fee is underivable
     /// from scan data alone.
     ShieldedSpend,
+    /// Type 28: shielded pool → a token bought at its direct purchase
+    /// price, minted as a note in the token's shielded pool. The amount is
+    /// the price paid; the entry's counterparty is the 32-byte token id.
+    /// Recorded only by the live path: the scan sees the credit pool
+    /// change alone and derives [`Self::ShieldedSpend`].
+    TokenPurchase,
 }
 
 impl ShieldedActivityKind {
@@ -137,6 +143,7 @@ impl ShieldedActivityKind {
             ShieldedActivityKind::ShieldedSpend => 7,
             ShieldedActivityKind::ShieldFromIdentity { .. } => 8,
             ShieldedActivityKind::IdentityTopUp { .. } => 9,
+            ShieldedActivityKind::TokenPurchase => 10,
         }
     }
 }
@@ -1199,6 +1206,7 @@ mod tests {
             ShieldedActivityKind::IdentityTopUp {
                 identity_id: [0u8; 32],
             },
+            ShieldedActivityKind::TokenPurchase,
         ];
         let tags: Set<u8> = kinds.iter().map(|k| k.tag()).collect();
         assert_eq!(tags.len(), kinds.len(), "every kind tag must be distinct");
