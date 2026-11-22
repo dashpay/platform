@@ -43,7 +43,7 @@ struct KeyDetailView: View {
     }
 
     var hasPrivateKey: Bool {
-        let result = KeychainManager.shared.hasPrivateKey(identityId: identity.identityId, keyIndex: Int32(publicKey.id))
+        let result = KeychainManager.shared.hasPrivateKey(identityId: identity.identityId, keyIndex: Int32(bitPattern: publicKey.id))
         print("🔑 KeyDetailView: hasPrivateKey for key \(publicKey.id) = \(result)")
         return result
     }
@@ -495,7 +495,7 @@ struct KeyDetailView: View {
                 let stored = KeychainManager.shared.storePrivateKey(
                     privateKeyData,
                     identityId: identity.identityId,
-                    keyIndex: Int32(publicKey.id)
+                    keyIndex: Int32(bitPattern: publicKey.id)
                 )
                 print("🔑 Storage result: \(stored != nil ? "Success" : "Failed")")
 
@@ -558,6 +558,7 @@ struct KeyDetailView: View {
             // without a manual pull-to-refresh.
             try? await IdentityKeyRefresher.refreshBalanceAndKeys(
                 identity: identity,
+                wallet: identity.wallet.flatMap { walletManager.wallet(for: $0.walletId) },
                 sdk: sdk,
                 modelContext: modelContext
             )
@@ -572,14 +573,14 @@ struct KeyDetailView: View {
 
     private func forgetPrivateKey() {
         // Remove from keychain
-        let removed = KeychainManager.shared.deletePrivateKey(identityId: identity.identityId, keyIndex: Int32(publicKey.id))
+        let removed = KeychainManager.shared.deletePrivateKey(identityId: identity.identityId, keyIndex: Int32(bitPattern: publicKey.id))
 
         if removed {
             // Clear the keychain reference on the matching
             // PersistentPublicKey so the UI no longer thinks this
             // key has a stored private key.
             if let persistedKey = identity.publicKeys.first(
-                where: { $0.keyId == Int32(publicKey.id) }
+                where: { $0.keyId == Int32(bitPattern: publicKey.id) }
             ) {
                 persistedKey.privateKeyKeychainIdentifier = nil
                 try? modelContext.save()

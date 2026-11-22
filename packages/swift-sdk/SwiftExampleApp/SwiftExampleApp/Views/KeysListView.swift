@@ -138,9 +138,9 @@ struct KeysListView: View {
     }
     .sheet(item: $limitsKey) { selected in
       if let key = publicKeys.first(where: { $0.id == UInt32(selected.id) }) {
-        UpdateKeyLimitsView(identity: identity, publicKey: key) {
-          Task { await loadRemainingBudgets() }
-        }
+        // No reload from here: the remaining-budget task is keyed on each
+        // key's total, so the raised total that reaches the row starts it.
+        UpdateKeyLimitsView(identity: identity, publicKey: key)
       }
     }
     .sheet(item: $showingPrivateKey) { keyId in
@@ -270,6 +270,7 @@ struct KeysListView: View {
 
       try? await IdentityKeyRefresher.refreshBalanceAndKeys(
         identity: identity,
+        wallet: identity.wallet.flatMap { walletManager.wallet(for: $0.walletId) },
         sdk: sdk,
         modelContext: modelContext
       )
@@ -299,6 +300,8 @@ struct KeysListView: View {
         identityId: identity.identityIdBase58,
         keyIds: Array(totals.keys)
       )
+      // A newer load (the totals changed) replaced this one: do not publish.
+      guard !Task.isCancelled else { return }
       var readings: [UInt32: (forTotal: UInt64, remaining: UInt64?)] = [:]
       for (keyId, total) in totals {
         if let remaining = budgets[keyId] {
@@ -331,7 +334,7 @@ struct KeysListView: View {
     // definitely have them but the UI says we don't" diagnostic
     // mismatch.
     let km = KeychainManager.shared
-    if km.hasPrivateKey(identityId: identity.identityId, keyIndex: Int32(publicKey.id)) {
+    if km.hasPrivateKey(identityId: identity.identityId, keyIndex: Int32(bitPattern: publicKey.id)) {
       return true
     }
     let publicKeyHex = publicKey.data.toHexString()

@@ -18,11 +18,21 @@ import SwiftDashSDK
 /// orchestration of multi-step Rust pipelines.
 enum IdentityKeyRefresher {
     /// Re-fetch `identity`'s balance + public keys from Platform and
-    /// persist them, replacing the existing `PersistentPublicKey` rows.
+    /// persist them.
     ///
-    /// Carries over any `privateKeyKeychainIdentifier` we already knew
-    /// for a given keyId so a refresh doesn't orphan the matching
-    /// Keychain reference.
+    /// When `wallet` holds the identity, the refresh is the wallet's own
+    /// proved one (`refreshIdentity`): Rust folds the fetch into its copy
+    /// and upserts the changed key rows through the persister, keeping
+    /// each row's wallet id, derivation path and Keychain reference, and
+    /// never letting a lagging node roll back a raise or a disable. Swift
+    /// does not write those rows itself then, so the wallet stays their
+    /// only writer.
+    ///
+    /// Without a wallet (an identity only looked up, not held), the
+    /// identity is fetched and its rows are replaced from the response,
+    /// carrying over any `privateKeyKeychainIdentifier` already known for
+    /// a key id so a refresh doesn't orphan the matching Keychain
+    /// reference.
     ///
     /// Mutates SwiftData on the `modelContext`'s actor; call from the
     /// main actor (the SwiftData container the views use is main-actor
@@ -30,9 +40,15 @@ enum IdentityKeyRefresher {
     @MainActor
     static func refreshBalanceAndKeys(
         identity: PersistentIdentity,
+        wallet: ManagedPlatformWallet?,
         sdk: SDK,
         modelContext: ModelContext
     ) async throws {
+        if let wallet {
+            try await wallet.refreshIdentity(identityId: identity.identityId)
+            return
+        }
+
         let fetchedIdentity = try await sdk.identityGet(
             identityId: identity.identityIdBase58
         )
@@ -120,15 +136,7 @@ enum IdentityKeyRefresher {
             },
             uniquingKeysWith: { first, _ in first }
         )
-        // Delete the old rows, not only unlink them: an unlinked row with the
-        // same (identityId, keyId) stays in the store, and the wallet's key
-        // upserts, which look a row up by those two fields, could land on it
-        // instead of the row the screens show.
-        let oldRows = identity.publicKeys
         identity.publicKeys.removeAll()
-        for row in oldRows {
-            modelContext.delete(row)
-        }
         let identityHex = identity.identityIdBase58
         for publicKey in parsedPublicKeys {
             guard let persistentKey = PersistentPublicKey.from(publicKey, identityId: identityHex) else {

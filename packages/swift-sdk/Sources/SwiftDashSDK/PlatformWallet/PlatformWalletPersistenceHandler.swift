@@ -4263,7 +4263,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
 
             let row: PersistentPublicKey
-            if let existing = try? backgroundContext.fetch(descriptor).first {
+            // Prefer the row linked to its identity: an older refresh could
+            // leave an unlinked row with the same (identityId, keyId) behind,
+            // and updating that one would leave the row the screens read stale.
+            let matches = (try? backgroundContext.fetch(descriptor)) ?? []
+            if let existing = matches.first(where: { $0.identity != nil }) ?? matches.first {
                 row = existing
             } else {
                 let purposeEnum = KeyPurpose(rawValue: entry.purpose) ?? .authentication

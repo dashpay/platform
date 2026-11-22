@@ -528,16 +528,18 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         {
             let mut wm = self.wallet_manager.write().await;
             let info = self.current_wallet_info_mut(&mut wm)?;
-            if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                managed.status = IdentityStatus::Active;
-                if let Err(e) =
-                    managed.store_fetched_identity(&identity, block_time, &self.persister)
-                {
-                    tracing::error!("Failed to persist changeset: {}", e);
-                }
-                // The cache as folded.
-                identity = managed.identity.clone();
+            // Removed from the wallet while the fetch was in flight: say so rather than
+            // report a refresh that folded nothing.
+            let managed = info
+                .identity_manager
+                .managed_identity_mut(identity_id)
+                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+            managed.status = IdentityStatus::Active;
+            if let Err(e) = managed.store_fetched_identity(&identity, block_time, &self.persister) {
+                tracing::error!("Failed to persist changeset: {}", e);
             }
+            // The cache as folded.
+            identity = managed.identity.clone();
         }
 
         Ok((identity, proved_at))
