@@ -130,7 +130,8 @@ pub enum ExternalAccountRegistration {
     /// xpub by this call.
     Built,
     /// An account row already existed for the `(index, user, friend)` key;
-    /// nothing was decrypted or replaced.
+    /// nothing was replaced. Where the channel was marked broken beside an
+    /// account the supplied payload builds, the flag was cleared.
     AlreadyExisted,
     /// The contact's live incoming request no longer carries the supplied
     /// encrypted xpub — a rotation landed after the caller read it. Nothing
@@ -486,7 +487,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let account_index: u32 = 0;
         let contact_identity_id = contact_identity.id();
 
-        // --- 1. Early-exit if the external account already exists. ---
+        // --- 1. Early-exit if the external account already exists, unless
+        //        the channel is marked broken beside it (repaired below). ---
         //
         // On this handle's wallet generation only: a wallet re-created under
         // this id since may hold an account of its own, which would answer
@@ -500,11 +502,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 user_identity_id: our_identity_id.to_buffer(),
                 friend_identity_id: contact_identity_id.to_buffer(),
             };
-            if info
-                .core_wallet
-                .accounts
-                .dashpay_external_accounts
-                .contains_key(&key)
+            let channel_broken = info
+                .identity_manager
+                .managed_identity(our_identity_id)
+                .and_then(|managed| managed.established_contact(&contact_identity_id))
+                .is_some_and(|contact| contact.payment_channel_broken);
+            if !channel_broken
+                && info
+                    .core_wallet
+                    .accounts
+                    .dashpay_external_accounts
+                    .contains_key(&key)
             {
                 return Ok(ExternalAccountRegistration::AlreadyExisted);
             }
@@ -625,6 +633,56 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .dashpay_external_accounts
             .contains_key(&key)
         {
+            // A channel marked broken beside its account: a host whose rounds
+            // are not atomic stored the account and lost the contact row that
+            // cleared the flag. When the account is the one the live request
+            // builds, the flag is cleared now; the sweep queues a broken
+            // channel's request once per launch, so this does not depend on
+            // the backend.
+            let existing_xpub = wallet
+                .accounts
+                .dashpay_external_accounts
+                .get(&key)
+                .map(|account| account.account_xpub);
+            let repaired = info
+                .identity_manager
+                .managed_identity(our_identity_id)
+                .and_then(|managed| managed.established_contact(&contact_identity_id))
+                .filter(|contact| {
+                    contact.payment_channel_broken
+                        && contact.incoming_request.encrypted_public_key == contact_encrypted_xpub
+                        && existing_xpub == Some(contact_xpub)
+                })
+                .map(|contact| {
+                    let mut repaired = contact.clone();
+                    repaired.payment_channel_broken = false;
+                    repaired.external_account_reference =
+                        Some(contact.incoming_request.account_reference);
+                    repaired
+                });
+            if let Some(repaired) = repaired {
+                let mut contacts = crate::changeset::ContactChangeSet::default();
+                contacts.established.insert(
+                    crate::changeset::SentContactRequestKey {
+                        owner_id: *our_identity_id,
+                        recipient_id: contact_identity_id,
+                    },
+                    repaired.clone(),
+                );
+                self.persister.store(contacts.into()).map_err(|e| {
+                    Transient(PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to persist the repaired contact beside its external account: {e}"
+                    )))
+                })?;
+                if let Some(contact) = info
+                    .identity_manager
+                    .managed_identity_mut(our_identity_id)
+                    .and_then(|managed| managed.established_contact_mut(&contact_identity_id))
+                {
+                    contact.payment_channel_broken = false;
+                    contact.external_account_reference = repaired.external_account_reference;
+                }
+            }
             return Ok(ExternalAccountRegistration::AlreadyExisted);
         }
 

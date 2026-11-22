@@ -2472,8 +2472,9 @@ pub(super) fn tear_down_stale_external_accounts(
 ///
 /// Only a **registered** account (`has_external == true`) can be stale — a
 /// missing account is handled by the ordinary build-candidate collection,
-/// which queues a broken contact's missing account once per launch.
-/// A registered account of a broken channel is left alone. The staleness test
+/// which also queues a broken contact's request once per launch, account or
+/// not. A registered account of a broken channel is not torn down here. The
+/// staleness test
 /// is `external_account_reference != Some(incoming_request.account_reference)`:
 /// a mismatch (or a `None` marker from a cold restart on a host that did not
 /// carry it — the in-tree hosts persist it on the established rows, so a
@@ -3183,7 +3184,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
     /// Collect missing receiving accounts and recoverable external accounts.
     /// Broken outbound channels remain eligible for receiving recovery, and
-    /// their missing external account is collected once per launch
+    /// their external account, stored or not, is collected once per launch
     /// (`DashPayState::broken_channel_requeued`).
     /// Runs under the caller's write guard without awaiting or re-locking.
     pub(super) fn collect_account_build_candidates(
@@ -3232,13 +3233,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .dashpay_external_accounts
                 .contains_key(&key);
             // A broken outbound channel must not prevent receiving recovery.
-            // Its stored request is queued again once per launch: the drain
-            // may accept it now (a key disabled since it was sent, which an
-            // earlier version refused) and then clears the flag.
-            let external = if has_external
-                || (contact.payment_channel_broken
-                    && managed.dashpay().broken_channel_requeued(contact_id))
-            {
+            // Its stored request is queued again once per launch, with or
+            // without an account: the drain may accept it now (a key disabled
+            // since it was sent, which an earlier version refused), or find
+            // the account it builds already stored, and then clears the flag.
+            let skip_external = if contact.payment_channel_broken {
+                managed.dashpay().broken_channel_requeued(contact_id)
+            } else {
+                has_external
+            };
+            let external = if skip_external {
                 None
             } else {
                 let incoming = &contact.incoming_request;
@@ -8079,7 +8083,7 @@ mod receiving_restore_tests {
         );
         // The mock answers no contact identity fetch, so this external
         // operation stays queued through the drain below.
-        let rechecks_broken_channel = channel_broken && !has_external;
+        let rechecks_broken_channel = channel_broken;
         {
             let mut wm = iw.wallet_manager.write().await;
             let (core_wallet, info) = wm
