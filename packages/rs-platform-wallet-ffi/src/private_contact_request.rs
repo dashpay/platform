@@ -84,11 +84,13 @@ use crate::shielded_send::{
 /// 32-byte transmission key.
 const SHIELDED_ADDRESS_LEN: usize = 43;
 
-/// A private sync, and the store read a send or accept makes first, check
-/// that the resolver's seed is the wallet's before reading anything. A
+/// A private sync, the store read a send or accept makes first, and a read
+/// of any private document type's entries
+/// (`platform_wallet_read_private_document_entries`) check that the
+/// resolver's seed is the wallet's before reading anything. A
 /// mismatch takes the code every DashPay export gives it, and the seed
 /// check reports (`ErrorInvalidParameter`); any other error is handed back.
-fn seed_mismatch_result(
+pub(crate) fn seed_mismatch_result(
     error: PlatformWalletError,
 ) -> Result<PlatformWalletFFIResult, PlatformWalletError> {
     match error {
@@ -138,7 +140,7 @@ const _: () =
     assert!(std::mem::offset_of!(PrivateContactSyncReportFFI, unpersisted_identity_count) == 16);
 const _: () = assert!(std::mem::offset_of!(PrivateContactSyncReportFFI, complete) == 20);
 
-fn saturating_count(count: usize) -> u32 {
+pub(crate) fn saturating_count(count: usize) -> u32 {
     u32::try_from(count).unwrap_or(u32::MAX)
 }
 

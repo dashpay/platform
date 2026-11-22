@@ -1137,6 +1137,18 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
             .map_err(private_document_signer_error)
     }
 
+    async fn extended_public_keys(
+        &self,
+        paths: &[key_wallet::bip32::DerivationPath],
+    ) -> Result<Vec<key_wallet::bip32::ExtendedPubKey>, platform_wallet::PlatformWalletError> {
+        // One Keychain read for every path, so a private document read does not
+        // re-derive the seed per scanning key. A missing mnemonic stays the
+        // key-unavailable outcome, as for `receiving_xpub`.
+        self.signer
+            .extended_public_keys(paths)
+            .map_err(private_document_signer_error)
+    }
+
     async fn ecdh_shared_secret(
         &self,
         path: &key_wallet::bip32::DerivationPath,

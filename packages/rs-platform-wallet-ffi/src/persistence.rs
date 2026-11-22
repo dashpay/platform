@@ -10603,7 +10603,9 @@ mod tests {
     /// - a host that hands back no record registers normally either way.
     #[test]
     fn a_recreated_wallet_must_clear_coverage_the_ffi_host_handed_back() {
-        use crate::event_handler::{EventHandlerCallbacks, FFIEventHandler};
+        use crate::event_handler::{
+            EventExtensionCallbacks, EventHandlerCallbacks, FFIEventHandler,
+        };
         use crate::runtime::runtime;
         use crate::wallet_restore_types::WalletRestoreEntryFFI;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
@@ -10722,7 +10724,7 @@ mod tests {
                     on_shielded_tree_progress_fn: None,
                     release_fn: None,
                 },
-                None,
+                EventExtensionCallbacks::default(),
             );
             let _runtime_guard = runtime().enter();
             PlatformWalletManager::new(

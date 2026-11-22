@@ -70,6 +70,23 @@ pub trait ContactCryptoProvider {
         path: &key_wallet::bip32::DerivationPath,
     ) -> Result<key_wallet::bip32::ExtendedPubKey, PlatformWalletError>;
 
+    /// Extended public keys at each of `paths`, in their order: what
+    /// [`Self::receiving_xpub`] derives, for several paths at once. A provider
+    /// backed by a seed it must resolve resolves it once for all of them.
+    ///
+    /// Defaulted to one [`Self::receiving_xpub`] call per path, so adding this
+    /// method is not a source-breaking change.
+    async fn extended_public_keys(
+        &self,
+        paths: &[key_wallet::bip32::DerivationPath],
+    ) -> Result<Vec<key_wallet::bip32::ExtendedPubKey>, PlatformWalletError> {
+        let mut keys = Vec::with_capacity(paths.len());
+        for path in paths {
+            keys.push(self.receiving_xpub(path).await?);
+        }
+        Ok(keys)
+    }
+
     /// ECDH shared secret between our key at `path` and the contact's `peer`
     /// pubkey. Returned in [`zeroize::Zeroizing`] so the DIP-15 friendship AES
     /// key is scrubbed on drop — it stays wrapped through the send / accept /
@@ -283,6 +300,8 @@ pub(crate) struct SeedCryptoProvider {
     /// How many times the private document scan keys were derived: once per scan call, a
     /// page's or a batch's.
     pub(crate) scan_key_derivations: std::sync::atomic::AtomicUsize,
+    /// How many `extended_public_keys` calls it answered, each for all its paths at once.
+    pub(crate) public_key_batches: std::sync::atomic::AtomicUsize,
 }
 
 #[cfg(test)]
@@ -294,6 +313,7 @@ impl SeedCryptoProvider {
             wallet: Wallet::from_seed_bytes(seed, network, WalletAccountCreationOptions::None)
                 .expect("test seed wallet"),
             scan_key_derivations: std::sync::atomic::AtomicUsize::new(0),
+            public_key_batches: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 }
@@ -308,6 +328,25 @@ impl ContactCryptoProvider for SeedCryptoProvider {
         self.wallet.derive_extended_public_key(path).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!("test receiving_xpub: {e}"))
         })
+    }
+
+    async fn extended_public_keys(
+        &self,
+        paths: &[key_wallet::bip32::DerivationPath],
+    ) -> Result<Vec<key_wallet::bip32::ExtendedPubKey>, PlatformWalletError> {
+        // Once for the batch, as a signer-backed provider resolves its seed once.
+        self.public_key_batches
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        paths
+            .iter()
+            .map(|path| {
+                self.wallet.derive_extended_public_key(path).map_err(|e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "test extended_public_keys: {e}"
+                    ))
+                })
+            })
+            .collect()
     }
 
     async fn ecdh_shared_secret(
