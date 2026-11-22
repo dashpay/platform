@@ -98,4 +98,60 @@ class VoteCasting internal constructor() {
             )
         }
     }
+
+    /**
+     * Cast a masternode contested-resource vote signed by a host signer that
+     * holds the voting key, and wait for the response: the vote of the
+     * `votingPrivateKey` overload, for a key the app stores
+     * ([org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore]) rather
+     * than one pasted for the call. Port of Swift
+     * `SDK.castContestedResourceVote(..., votingAddress:, signer:)`
+     * (`PlatformQueryExtensions.swift`).
+     *
+     * Rust builds the ECDSA_HASH160 voting key from [votingAddress] and asks
+     * the signer to sign with it, so the signer receives the 20 address bytes
+     * with key type ECDSA_HASH160. A signer that holds no key for that
+     * address fails the call with the signer's error.
+     *
+     * @param indexValues as for the `votingPrivateKey` overload.
+     * @param proTxHash 32-byte masternode pro_tx_hash in **wire order**, as
+     *   for the `votingPrivateKey` overload.
+     * @param votingAddress 20-byte voting address: the hash160 of the
+     *   compressed voting public key
+     *   ([org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore.votingAddressOf]).
+     * @param signerHandle the native handle of the signer that holds the
+     *   voting key, `PlatformWalletManager.signerHandle`. The caller keeps the
+     *   owning signer (its manager) open until this returns.
+     */
+    suspend fun castVote(
+        sdk: org.dashfoundation.dashsdk.Sdk,
+        dataContractId: String,
+        documentTypeName: String,
+        indexName: String,
+        indexValues: List<String>,
+        choice: VoteChoice,
+        proTxHash: ByteArray,
+        votingAddress: ByteArray,
+        signerHandle: Long,
+    ) = sdk.queryGate.op {
+        require(proTxHash.size == 32) { "proTxHash must be 32 bytes, got ${proTxHash.size}" }
+        require(votingAddress.size == 20) {
+            "votingAddress must be 20 bytes, got ${votingAddress.size}"
+        }
+        val contender = (choice as? VoteChoice.TowardsIdentity)?.contenderIdentityId
+        mapNativeErrors {
+            TransactionsNative.castContestedResourceVoteWithSigner(
+                sdk.handle,
+                dataContractId,
+                documentTypeName,
+                indexName,
+                encodeIndexValuesJson(indexValues),
+                choice.discriminant,
+                contender,
+                proTxHash,
+                votingAddress,
+                signerHandle,
+            )
+        }
+    }
 }

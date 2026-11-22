@@ -621,6 +621,19 @@ class PlatformWalletManager(
     val signerHandle: Long get() = signer.nativeHandle
 
     /**
+     * Runs [block] with [signerHandle] while keeping this manager's teardown from freeing
+     * the signer until [block] returns. For SDK calls that take a signer handle but do not
+     * run through one of the manager's own gated entry points, such as the masternode votes
+     * signed with a stored voting key (`VoteCasting.castVote`, `DecisionProposals.castVote`
+     * and `MultipleChoiceProposals.castVote` with a `signerHandle`). Without it, a network
+     * switch during the vote could free the signer while Rust still calls into it.
+     *
+     * @throws IllegalStateException once the manager is closing.
+     */
+    suspend fun <T> withSignerHandle(block: suspend (signerHandle: Long) -> T): T =
+        teardownGate.withOp { block(signer.nativeHandle) }
+
+    /**
      * Re-derive the canonical identity-authentication private key for
      * [publicKeyData] from this wallet's mnemonic and re-encrypt it into
      * [walletStorage] under its hex — the repair action behind

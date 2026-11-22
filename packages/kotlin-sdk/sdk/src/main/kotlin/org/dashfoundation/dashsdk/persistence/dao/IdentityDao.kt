@@ -117,6 +117,15 @@ interface IdentityDao {
     @Query("SELECT COUNT(*) FROM identities")
     fun count(): Flow<Long>
 
+    /**
+     * How many identities name the stored voting key [identifier] (the
+     * lowercase hex voting address `MasternodeVotingKeyStore.store` returns).
+     * Several masternodes can share one voting key, so a replaced key is
+     * deleted only when no other row still names it.
+     */
+    @Query("SELECT COUNT(*) FROM identities WHERE votingPrivateKeyIdentifier = :identifier")
+    suspend fun countByVotingPrivateKeyIdentifier(identifier: String): Int
+
     /** StorageExplorer network-scoped row count. */
     @Query("SELECT COUNT(*) FROM identities WHERE networkRaw = :networkRaw")
     fun countByNetwork(networkRaw: Int): Flow<Long>

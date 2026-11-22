@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -16,7 +15,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Scaffold
@@ -30,12 +28,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -43,12 +39,18 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import org.dashfoundation.dashsdk.voting.ContestedIndexValue
 import org.dashfoundation.dashsdk.voting.VoteChoice
+import org.dashfoundation.example.BuildConfig
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.ui.components.AccessiblePicker
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.voting.MasternodeVoteCall
+import org.dashfoundation.example.ui.voting.MasternodeVoteCallException
+import org.dashfoundation.example.ui.voting.MasternodeVoter
+import org.dashfoundation.example.ui.voting.MasternodeVoterSection
+import org.dashfoundation.example.ui.voting.NO_WALLET_MANAGER_MESSAGE
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.LenientJson
 import org.dashfoundation.example.util.hexToBytes
@@ -60,9 +62,11 @@ import org.dashfoundation.example.util.truncateMiddle
  * Live contest state loads through the bridged read query
  * `Voting.contestedResourceVoteState` (`dash_sdk_contested_resource_get_vote_state`,
  * result type `DocumentsAndVoteTally`) over the same DPNS vote-poll tuple
- * the iOS read path uses; vote casting broadcasts through
- * `VoteCasting.castVote` (`dash_sdk_contested_resource_cast_vote`) with the
- * masternode credential form the iOS `CastVoteSheet` collects. The iOS
+ * the iOS read path uses; vote casting broadcasts through the signer form of
+ * `VoteCasting.castVote` (`dash_sdk_contested_resource_cast_vote_with_signer`)
+ * as the masternode picked in [MasternodeVoterSection], signed with its
+ * stored voting key, as the iOS `CastVoteSheet` does. Debug builds also cast
+ * with typed credentials (`dash_sdk_contested_resource_cast_vote`). The iOS
  * wallet path additionally reports the poll's end time; the bridged query
  * carries tallies + winner only, so the status row derives from winner
  * presence alone.
@@ -78,8 +82,6 @@ fun ContestDetailScreen(
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
     val sdk by appState.sdk.collectAsStateWithLifecycle()
-    val network by appState.currentNetwork.collectAsStateWithLifecycle()
-    val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
 
     val viewerBase58 = remember(identityIdHex) {
         identityIdHex.takeIf { it.isNotEmpty() }?.let { Base58.encode(it.hexToBytes()) }
@@ -232,7 +234,7 @@ fun ContestDetailScreen(
                 SubmitButton(
                     text = "Cast Vote…",
                     isLoading = isCastingVote,
-                    enabled = sdk != null && manager != null && !isCastingVote,
+                    enabled = sdk != null && !isCastingVote,
                     modifier = Modifier.fillMaxWidth().testTag("contestDetail.castVote"),
                 ) {
                     voteResultMessage = null
@@ -240,9 +242,9 @@ fun ContestDetailScreen(
                 }
                 Text(
                     "Only masternodes can vote on contested names, using a masternode " +
-                        "voting key tied to a pro_tx_hash. A regular wallet has no " +
-                        "voting key, so a vote here will be rejected by Platform. " +
-                        "Supply real masternode credentials to cast an accepted vote.",
+                        "voting key tied to a pro_tx_hash. Load a masternode or evonode " +
+                        "identity with its voting private key (Identities, Load Identity) " +
+                        "to vote with it here.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -267,48 +269,62 @@ fun ContestDetailScreen(
             viewerBase58 = viewerBase58,
             isCasting = isCastingVote,
             onDismiss = { if (!isCastingVote) showVoteSheet = false },
-            onSubmit = { choice, proTxHashHex, votingKeyHex ->
+            onSubmit = { choice, voter ->
                 val currentSdk = sdk
-                val mgr = manager
-                if (currentSdk == null || mgr == null) {
+                if (currentSdk == null) {
                     voteResultMessage = "SDK not initialized"
                     voteResultIsError = true
                     showVoteSheet = false
                     return@CastVoteDialog
                 }
-                val proTxHash = decode32ByteHex(proTxHashHex)
-                if (proTxHash == null) {
-                    voteResultMessage = "pro_tx_hash must be 32 bytes (64 hex characters)."
-                    voteResultIsError = true
-                    return@CastVoteDialog
-                }
-                val votingKey = decode32ByteHex(votingKeyHex)
-                if (votingKey == null) {
-                    voteResultMessage = "Voting private key must be 32 bytes (64 hex characters)."
-                    voteResultIsError = true
-                    return@CastVoteDialog
+                val indexValues = listOf(
+                    "dash",
+                    ContestedIndexValue.text(currentSdk.dpns.normalizeLabel(contestName)),
+                )
+                val call = MasternodeVoteCall { proTxHash, votingAddress, manager, signerHandle ->
+                    manager.voteCasting.castVote(
+                        sdk = currentSdk,
+                        dataContractId = DPNS_CONTRACT_ID_BASE58,
+                        documentTypeName = DPNS_DOCUMENT_TYPE,
+                        indexName = DPNS_INDEX_NAME,
+                        indexValues = indexValues,
+                        choice = choice,
+                        proTxHash = proTxHash,
+                        votingAddress = votingAddress,
+                        signerHandle = signerHandle,
+                    )
+                }.let { call ->
+                    // Debug builds only: the raw-key call is not reachable in a release build.
+                    if (BuildConfig.DEBUG) {
+                        call.allowingTypedKey { proTxHash, votingPrivateKey ->
+                            val manager = container.walletManagerStore.activeManager.value
+                                ?: throw MasternodeVoteCallException(NO_WALLET_MANAGER_MESSAGE)
+                            manager.voteCasting.castVote(
+                                sdk = currentSdk,
+                                dataContractId = DPNS_CONTRACT_ID_BASE58,
+                                documentTypeName = DPNS_DOCUMENT_TYPE,
+                                indexName = DPNS_INDEX_NAME,
+                                indexValues = indexValues,
+                                choice = choice,
+                                proTxHash = proTxHash,
+                                votingPrivateKey = votingPrivateKey,
+                                networkOrd = currentSdk.network.ffiValue,
+                            )
+                        }
+                    } else {
+                        call
+                    }
                 }
                 isCastingVote = true
                 scope.launch {
                     try {
-                        mgr.voteCasting.castVote(
-                            sdk = currentSdk,
-                            dataContractId = DPNS_CONTRACT_ID_BASE58,
-                            documentTypeName = DPNS_DOCUMENT_TYPE,
-                            indexName = DPNS_INDEX_NAME,
-                            indexValues = listOf(
-                                "dash",
-                                ContestedIndexValue.text(currentSdk.dpns.normalizeLabel(contestName)),
-                            ),
-                            choice = choice,
-                            proTxHash = proTxHash,
-                            votingPrivateKey = votingKey,
-                            networkOrd = network.ffiValue,
-                        )
+                        call.run(voter, container)
                         voteResultMessage = "Vote accepted by Platform."
                         voteResultIsError = false
                         showVoteSheet = false
                         refreshTick++ // pull fresh tallies after a successful cast
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         voteResultMessage = "Vote rejected: ${e.message}"
                         voteResultIsError = true
@@ -323,12 +339,15 @@ fun ContestDetailScreen(
 }
 
 /**
- * Modal for picking a vote choice and entering masternode credentials —
- * port of `CastVoteSheet` in `ContestDetailView.swift`. The voting private
- * key is masked as it is typed and screen capture is blocked while the
- * dialog is open, as in the decision proposal vote dialog
- * ([HoldSecureWindow], [secureDialogProperties]); the dialog cannot be
- * dismissed while the vote is broadcast.
+ * Modal for picking a vote choice and the masternode that votes: port of
+ * `CastVoteSheet` in `ContestDetailView.swift`. The voter is a masternode or
+ * evonode identity loaded with its voting key, picked in the shared
+ * [MasternodeVoterSection]; the key signs through the wallet manager's
+ * signer and is never typed here. Debug builds also offer typed test
+ * credentials, so there the key field is masked and screen capture is
+ * blocked while the dialog is open ([HoldSecureWindow],
+ * [secureDialogProperties]). The dialog cannot be dismissed while the vote
+ * is broadcast.
  */
 @Composable
 private fun CastVoteDialog(
@@ -337,22 +356,25 @@ private fun CastVoteDialog(
     viewerBase58: String?,
     isCasting: Boolean,
     onDismiss: () -> Unit,
-    onSubmit: (VoteChoice, String, String) -> Unit,
+    onSubmit: (VoteChoice, MasternodeVoter) -> Unit,
 ) {
     var selection by remember { mutableStateOf<VoteSelection>(VoteSelection.Abstain) }
-    var proTxHashHex by remember { mutableStateOf("") }
-    var votingKeyHex by remember { mutableStateOf("") }
+    var voter by remember { mutableStateOf<MasternodeVoter?>(null) }
 
     val options = contenders.map { VoteSelection.Contender(it.identityIdBase58) } +
         listOf(VoteSelection.Abstain, VoteSelection.Lock)
 
-    HoldSecureWindow()
+    // Only a debug build can show a raw voting key field (typed test credentials).
+    if (BuildConfig.DEBUG) HoldSecureWindow()
     AlertDialog(
         onDismissRequest = onDismiss,
-        properties = secureDialogProperties(dismissible = !isCasting),
+        properties = secureDialogProperties(dismissible = !isCasting, secure = BuildConfig.DEBUG),
         title = { Text("Cast Vote · $contestName.dash") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+            ) {
                 AccessiblePicker(
                     label = "Vote",
                     options = options,
@@ -372,46 +394,25 @@ private fun CastVoteDialog(
                     testTag = "contestDetail.votePicker",
                     onSelected = { selection = it },
                 )
-                OutlinedTextField(
-                    value = proTxHashHex,
-                    onValueChange = { proTxHashHex = it },
-                    label = { Text("pro_tx_hash (64 hex chars)") },
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodySmall
-                        .copy(fontFamily = FontFamily.Monospace),
-                    modifier = Modifier.fillMaxWidth().testTag("contestDetail.proTxHash"),
-                )
-                OutlinedTextField(
-                    value = votingKeyHex,
-                    onValueChange = { votingKeyHex = it },
-                    label = { Text("voting private key (64 hex chars)") },
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodySmall
-                        .copy(fontFamily = FontFamily.Monospace),
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    modifier = Modifier.fillMaxWidth().testTag("contestDetail.votingKey"),
-                )
-                Text(
-                    "These belong to a masternode. The voting public key " +
-                        "(ECDSA_HASH160) and signer are derived from the private key " +
-                        "on the Rust side; the key bytes are not stored.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                MasternodeVoterSection(
+                    testTagPrefix = "contestVote",
+                    onVoterChange = { voter = it },
+                    enabled = !isCasting,
                 )
             }
         },
         confirmButton = {
             TextButton(
-                enabled = !isCasting && proTxHashHex.isNotBlank() && votingKeyHex.isNotBlank(),
+                enabled = !isCasting && voter?.canCast == true,
                 onClick = {
+                    val picked = voter ?: return@TextButton
                     val choice = when (val current = selection) {
                         is VoteSelection.Contender ->
                             VoteChoice.TowardsIdentity(current.identityIdBase58)
                         VoteSelection.Abstain -> VoteChoice.Abstain
                         VoteSelection.Lock -> VoteChoice.Lock
                     }
-                    onSubmit(choice, proTxHashHex, votingKeyHex)
+                    onSubmit(choice, picked)
                 },
                 modifier = Modifier.testTag("contestDetail.submitVote"),
             ) { Text(if (isCasting) "Broadcasting…" else "Submit Vote") }
@@ -497,8 +498,8 @@ internal fun parseContestVoteState(json: String): ContestVoteState? = try {
 }
 
 /**
- * Decode exactly 32 bytes of hex; null on any other shape. Shared with the
- * decision proposal vote form, which collects the same masternode credentials.
+ * Decode exactly 32 bytes of hex; null on any other shape. Used by the
+ * masternode vote queries in `QueryRegistry` for their typed pro_tx_hash.
  */
 internal fun decode32ByteHex(input: String): ByteArray? {
     val trimmed = input.trim()

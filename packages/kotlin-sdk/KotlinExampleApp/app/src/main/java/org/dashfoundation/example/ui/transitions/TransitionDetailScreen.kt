@@ -43,6 +43,7 @@ import org.dashfoundation.dashsdk.persistence.entities.DataContractEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
 import org.dashfoundation.dashsdk.voting.VoteChoice
+import org.dashfoundation.example.BuildConfig
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.ContestDetail
@@ -88,7 +89,9 @@ import org.dashfoundation.example.util.truncateMiddle
  *   path names the pubkey-returning slot-derive gap, see
  *   [IdentityKeyAdditionFlow.UnbridgedSlotDeriver]).
  * - `masternodeVote` executes inline via
- *   `PlatformWalletManager.voteCasting.castVote`.
+ *   `PlatformWalletManager.voteCasting.castVote` with a typed raw voting
+ *   private key, in debug builds only: a release build neither lists the
+ *   definition ([StateTransitionDefinitions.all]) nor runs this path.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -209,8 +212,15 @@ fun TransitionDetailScreen(transitionKey: String, navController: NavHostControll
         }
     }
 
-    /** The `masternodeVote` inline path over `VoteCasting.castVote`. */
+    /**
+     * The `masternodeVote` inline path over `VoteCasting.castVote`, debug builds only: it
+     * takes a raw voting private key (Swift gates its raw-key forms behind `#if DEBUG`).
+     */
     fun executeMasternodeVote() {
+        if (!BuildConfig.DEBUG) {
+            report("The generic masternode vote is available in debug builds only.", true)
+            return
+        }
         val mgr = manager ?: run { report("Wallet manager not active.", true); return }
         val currentSdk = sdk ?: run { report("SDK not initialized.", true); return }
         val contractInput = textInputs["contractId"].orEmpty().trim()
@@ -433,7 +443,7 @@ fun TransitionDetailScreen(transitionKey: String, navController: NavHostControll
                     definition.dedicatedRoute != null ->
                         executeDedicated(definition.dedicatedRoute)
                     definition.key == "identityUpdate" -> executeIdentityUpdate()
-                    definition.key == "masternodeVote" -> executeMasternodeVote()
+                    definition.key == "masternodeVote" && BuildConfig.DEBUG -> executeMasternodeVote()
                     else -> notBridged = true
                 }
             }

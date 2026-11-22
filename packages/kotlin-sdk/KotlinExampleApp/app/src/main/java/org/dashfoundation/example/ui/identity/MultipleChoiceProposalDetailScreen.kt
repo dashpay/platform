@@ -33,7 +33,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -50,6 +49,7 @@ import org.dashfoundation.dashsdk.voting.MultipleChoiceProposalVote
 import org.dashfoundation.dashsdk.voting.MultipleChoiceVoteChoice
 import org.dashfoundation.dashsdk.voting.ProposalChoice
 import org.dashfoundation.dashsdk.voting.ProposalChoiceParams
+import org.dashfoundation.example.BuildConfig
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.ui.components.AccessiblePicker
@@ -57,6 +57,9 @@ import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
 import org.dashfoundation.example.ui.tokens.displayLabel
+import org.dashfoundation.example.ui.voting.MasternodeVoteCall
+import org.dashfoundation.example.ui.voting.MasternodeVoter
+import org.dashfoundation.example.ui.voting.MasternodeVoterSection
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.formatCredits
 import org.dashfoundation.example.util.formatDate
@@ -71,7 +74,7 @@ import org.dashfoundation.example.util.truncateMiddle
  * kept through `Sdk.multipleChoiceProposals` (each independently, so one failing read
  * leaves the others shown). Shows the choices with their tallies while the vote runs and
  * how it ended afterwards. Offers the masternode vote ([MultipleChoiceVoteDialog], the same
- * credentials [ContestDetailScreen] collects), entering a choice for a local wallet
+ * voter picker [ContestDetailScreen] uses), entering a choice for a local wallet
  * identity ([EnterChoiceDialog]) and, when a local wallet identity filed the proposal, the
  * edit ([EditMultipleChoiceProposalDialog]).
  *
@@ -236,8 +239,9 @@ fun MultipleChoiceProposalDetailScreen(
                 }
                 Text(
                     "Only masternodes vote, with the voting key of a pro_tx_hash: for one " +
-                        "choice, for none of the choices, or abstaining. A regular wallet " +
-                        "has no voting key, so Platform refuses its vote.",
+                        "choice, for none of the choices, or abstaining. Load a masternode " +
+                        "or evonode identity with its voting private key (Identities, Load " +
+                        "Identity) to vote with it here.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -482,15 +486,19 @@ private fun MultipleChoiceVoteChoice.label(vote: MultipleChoiceProposalVote?): S
 }
 
 /**
- * Picks an answer and takes masternode credentials: port of
- * `MultipleChoiceProposalVoteSheet` in `MultipleChoiceProposalDetailView.swift`. Votes
- * through `Sdk.multipleChoiceProposals.castVote`, and reads the masternode's current answer
- * through `Sdk.multipleChoiceProposals.masternodeVote`. The answers offered are the choices
- * the vote holds, each by its document id, none of the choices, and abstaining.
+ * Picks an answer and the masternode that votes: port of `MultipleChoiceProposalVoteSheet`
+ * in `MultipleChoiceProposalDetailView.swift`. The voter is a masternode or evonode identity
+ * loaded with its voting key, picked in the shared [MasternodeVoterSection]; the vote goes
+ * through the signer form of `Sdk.multipleChoiceProposals.castVote`, signed with the stored
+ * key. Reads the picked masternode's current answer through
+ * `Sdk.multipleChoiceProposals.masternodeVote`; in every build the answer of any masternode
+ * can also be read from a typed wire-order pro_tx_hash, which cannot cast. The answers
+ * offered are the choices the vote holds, each by its document id, none of the choices, and
+ * abstaining.
  *
- * The voting private key is masked as it is typed, and screen capture is blocked while the
- * dialog is open (see [HoldSecureWindow]). The dialog cannot be dismissed, by Back or a tap
- * outside, while a call runs.
+ * Debug builds also offer typed test credentials, so there the voting key field is masked
+ * and screen capture is blocked while the dialog is open (see [HoldSecureWindow]). The
+ * dialog cannot be dismissed, by Back or a tap outside, while a call runs.
  */
 @Composable
 private fun MultipleChoiceVoteDialog(
@@ -500,27 +508,35 @@ private fun MultipleChoiceVoteDialog(
     onVoted: (String) -> Unit,
 ) {
     val appState = LocalAppState.current
+    val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
     val sdk by appState.sdk.collectAsStateWithLifecycle()
-    HoldSecureWindow()
+    // Only a debug build can show a raw voting key field (typed test credentials).
+    if (BuildConfig.DEBUG) HoldSecureWindow()
 
     val answers: List<MultipleChoiceVoteChoice> = remember(vote) {
         vote?.choices.orEmpty().map { MultipleChoiceVoteChoice.Choice(it.id) } +
             listOf(MultipleChoiceVoteChoice.NoneOfTheChoices, MultipleChoiceVoteChoice.Abstain)
     }
     var choice by remember { mutableStateOf(answers.first()) }
-    var proTxHashHex by remember { mutableStateOf("") }
-    var votingKeyHex by remember { mutableStateOf("") }
+    var voter by remember { mutableStateOf<MasternodeVoter?>(null) }
     var isBusy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var messageIsError by remember { mutableStateOf(false) }
 
+    // A message names the previous voter's answer, or one read on the previous SDK (a
+    // network switch or new options); drop it.
+    LaunchedEffect(voter, sdk) { message = null }
+
     AlertDialog(
         onDismissRequest = { if (!isBusy) onDismiss() },
-        properties = secureDialogProperties(dismissible = !isBusy),
+        properties = secureDialogProperties(dismissible = !isBusy, secure = BuildConfig.DEBUG),
         title = { Text("Vote · ${truncateMiddle(proposal.title, 20, 8)}") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+            ) {
                 AccessiblePicker(
                     label = "Answer",
                     options = answers,
@@ -530,52 +546,29 @@ private fun MultipleChoiceVoteDialog(
                     enabled = !isBusy,
                     onSelected = { choice = it },
                 )
-                OutlinedTextField(
-                    value = proTxHashHex,
-                    onValueChange = { proTxHashHex = it },
-                    label = { Text("pro_tx_hash (64 hex chars, wire order)") },
-                    singleLine = true,
+                MasternodeVoterSection(
+                    testTagPrefix = "multipleChoiceProposalVote",
+                    onVoterChange = { voter = it },
+                    allowsTypedProTxHash = true,
                     enabled = !isBusy,
-                    textStyle = MaterialTheme.typography.bodySmall
-                        .copy(fontFamily = FontFamily.Monospace),
-                    modifier = Modifier.fillMaxWidth().testTag("multipleChoiceProposalVote.proTxHash"),
-                )
-                OutlinedTextField(
-                    value = votingKeyHex,
-                    onValueChange = { votingKeyHex = it },
-                    label = { Text("voting private key (64 hex chars)") },
-                    singleLine = true,
-                    enabled = !isBusy,
-                    textStyle = MaterialTheme.typography.bodySmall
-                        .copy(fontFamily = FontFamily.Monospace),
-                    // KeyboardType.Password only configures the keyboard; the
-                    // transformation masks what the field shows.
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    modifier = Modifier.fillMaxWidth().testTag("multipleChoiceProposalVote.votingKey"),
-                )
-                Text(
-                    "The pro_tx_hash goes in wire order, the reverse of the hex Core " +
-                        "displays. The voting public key and signer are derived from the " +
-                        "private key on the Rust side; the key bytes are not stored.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 TextButton(
-                    enabled = !isBusy && proTxHashHex.isNotBlank(),
+                    enabled = !isBusy && voter != null,
                     onClick = {
                         val currentSdk = sdk ?: return@TextButton
-                        val proTxHash = decode32ByteHex(proTxHashHex)
-                        if (proTxHash == null) {
-                            message = "pro_tx_hash must be 32 bytes (64 hex characters)."
-                            messageIsError = true
-                            return@TextButton
-                        }
+                        val requested = voter ?: return@TextButton
+                        val proTxHash = requested.wireOrderProTxHash
                         isBusy = true
                         scope.launch {
                             try {
                                 val answer = currentSdk.multipleChoiceProposals
                                     .masternodeVote(proTxHash, proposal.id)
+                                // The voter or the SDK changed while the read was in flight:
+                                // this answer is not the picked masternode's on the network
+                                // now shown.
+                                if (voter != requested || appState.sdk.value !== currentSdk) {
+                                    return@launch
+                                }
                                 message = answer?.let {
                                     "This masternode answered ${it.label(vote)}."
                                 } ?: "This masternode has no answer in the running vote."
@@ -583,6 +576,9 @@ private fun MultipleChoiceVoteDialog(
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {
+                                if (voter != requested || appState.sdk.value !== currentSdk) {
+                                    return@launch
+                                }
                                 message = "Reading the answer failed: ${e.message}"
                                 messageIsError = true
                             } finally {
@@ -608,30 +604,39 @@ private fun MultipleChoiceVoteDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = !isBusy && proTxHashHex.isNotBlank() && votingKeyHex.isNotBlank(),
+                enabled = !isBusy && voter?.canCast == true,
                 onClick = {
                     val currentSdk = sdk ?: return@TextButton
-                    val proTxHash = decode32ByteHex(proTxHashHex)
-                    if (proTxHash == null) {
-                        message = "pro_tx_hash must be 32 bytes (64 hex characters)."
-                        messageIsError = true
-                        return@TextButton
-                    }
-                    val votingKey = decode32ByteHex(votingKeyHex)
-                    if (votingKey == null) {
-                        message = "Voting private key must be 32 bytes (64 hex characters)."
-                        messageIsError = true
-                        return@TextButton
+                    val picked = voter ?: return@TextButton
+                    val pickedChoice = choice
+                    val call = MasternodeVoteCall { proTxHash, votingAddress, _, signerHandle ->
+                        currentSdk.multipleChoiceProposals.castVote(
+                            proposalId = proposal.id,
+                            choice = pickedChoice,
+                            proTxHash = proTxHash,
+                            votingAddress = votingAddress,
+                            signerHandle = signerHandle,
+                        )
+                    }.let { call ->
+                        // Debug builds only: the raw-key call is not reachable in a release
+                        // build.
+                        if (BuildConfig.DEBUG) {
+                            call.allowingTypedKey { proTxHash, votingPrivateKey ->
+                                currentSdk.multipleChoiceProposals.castVote(
+                                    proposalId = proposal.id,
+                                    choice = pickedChoice,
+                                    proTxHash = proTxHash,
+                                    votingPrivateKey = votingPrivateKey,
+                                )
+                            }
+                        } else {
+                            call
+                        }
                     }
                     isBusy = true
                     scope.launch {
                         try {
-                            currentSdk.multipleChoiceProposals.castVote(
-                                proposalId = proposal.id,
-                                choice = choice,
-                                proTxHash = proTxHash,
-                                votingPrivateKey = votingKey,
-                            )
+                            call.run(picked, container)
                             onVoted("Vote accepted by Platform.")
                         } catch (e: CancellationException) {
                             throw e
@@ -639,7 +644,6 @@ private fun MultipleChoiceVoteDialog(
                             message = "Vote rejected: ${e.message}"
                             messageIsError = true
                         } finally {
-                            votingKey.fill(0)
                             isBusy = false
                         }
                     }
