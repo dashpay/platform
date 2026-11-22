@@ -51,6 +51,27 @@ final class UpdateContractImportTests: XCTestCase {
         XCTAssertEqual(fields.description, "A contract")
     }
 
+    /// A contract without a description exports `"description": null`.
+    func testShouldImportAnExportedContractWithoutADescription() throws {
+        let exported = """
+            {"$formatVersion":"1","id":"GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",\
+            "ownerId":"4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF","version":1,\
+            "config":{"$formatVersion":"0","canBeDeleted":false},"schemaDefs":null,\
+            "documentSchemas":{"note":{"type":"object","properties":{}}},"tokens":{},"groups":{},\
+            "keywords":[],"description":null}
+            """
+
+        let fields = try UpdateContractImport.fields(from: exported)
+
+        XCTAssertEqual(fields.description, "")
+        XCTAssertNil(try UpdateContractImport.WalletArguments(fields).description)
+        XCTAssertEqual(fields.documents, #"{"note":{"properties":{},"type":"object"}}"#)
+    }
+
+    func testShouldStillRefuseADescriptionThatIsNotAString() {
+        XCTAssertThrowsError(try UpdateContractImport.fields(from: #"{"description":5}"#))
+    }
+
     func testShouldKeepAKeywordThatContainsAComma() throws {
         let fields = try UpdateContractImport.fields(from: #"{"keywords":["alpha,beta","gamma"]}"#)
 

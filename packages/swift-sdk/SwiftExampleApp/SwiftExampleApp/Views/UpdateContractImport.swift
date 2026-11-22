@@ -105,7 +105,11 @@ enum UpdateContractImport {
             }
             fields.keywords = try json(keywords)
         }
-        if let description {
+        // An exported contract without a description writes
+        // `"description": null` (the serialization format's description is
+        // an optional it does not skip), which means no description: the
+        // field stays empty and the live one is kept.
+        if let description, !(description is NSNull) {
             guard let descriptionText = description as? String else {
                 throw ImportError.unsupportedValue(section: "description", expected: "a JSON string")
             }
