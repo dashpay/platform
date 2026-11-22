@@ -123,6 +123,12 @@ struct ContactDetailView: View {
     var body: some View {
         List {
             headerSection
+            DashPayPublishedPaymentAddressesSection(
+                profile: profile,
+                network: identity.network,
+                identifierPrefix: "dashpay.contact.paymentAddress",
+                showsUnpublished: false
+            )
             sendSection
             paymentsSection
             localSettingsSection

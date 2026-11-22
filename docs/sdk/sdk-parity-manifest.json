@@ -49,6 +49,8 @@
     "dash_sdk_system_get_owner_transactions_in_block": "packages/rs-sdk-ffi/src/system/queries/blocks.rs",
     "dash_sdk_system_get_recent_state_transition_status": "packages/rs-sdk-ffi/src/system/queries/transition_status.rs",
     "dash_sdk_system_get_state_transition_status_by_hash": "packages/rs-sdk-ffi/src/system/queries/transition_status.rs",
+    "dashpay_profile_payment_address_from_string": "packages/rs-platform-wallet-ffi/src/dashpay_profile_payment_address.rs",
+    "dashpay_profile_payment_address_to_string": "packages/rs-platform-wallet-ffi/src/dashpay_profile_payment_address.rs",
     "dpns_name_array_free": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "managed_identity_get_contested_dpns_names": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "managed_identity_get_dashpay_payments": "packages/rs-platform-wallet-ffi/src/dashpay_payment.rs",
@@ -68,6 +70,8 @@
     "platform_wallet_claim_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
     "platform_wallet_create_document_with_signer": "packages/rs-platform-wallet-ffi/src/document.rs",
     "platform_wallet_create_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
+    "platform_wallet_create_or_update_dashpay_profile_with_addresses_with_signer": "packages/rs-platform-wallet-ffi/src/dashpay_profile.rs",
+    "platform_wallet_dashpay_profile_payment_address_support": "packages/rs-platform-wallet-ffi/src/dashpay_profile_payment_address.rs",
     "platform_wallet_dpns_give_up_name": "packages/rs-platform-wallet-ffi/src/dpns_marketplace.rs",
     "platform_wallet_dpns_name_give_up_choices": "packages/rs-platform-wallet-ffi/src/dpns_marketplace.rs",
     "platform_wallet_drain_pending_contact_crypto": "packages/rs-platform-wallet-ffi/src/dashpay.rs",
@@ -2844,6 +2848,72 @@
           "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
           "id": "should_refuse_a_token_purchase_for_a_token_without_a_shielded_pool",
           "command": "cargo test -p platform-wallet --features shielded --lib token_purchase_from_pool_tests",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "dashpay.profile_payment_addresses",
+      "title": "Set, change and remove a DashPay profile's public payment addresses and show a contact's",
+      "area": "shared_policy",
+      "shared_apis": [
+        "dashpay_profile_payment_address_from_string",
+        "dashpay_profile_payment_address_to_string",
+        "platform_wallet_create_or_update_dashpay_profile_with_addresses_with_signer",
+        "platform_wallet_dashpay_profile_payment_address_support"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "ManagedPlatformWallet.dashPayPaymentAddressSupport, DashPayProfile.paymentAddressBytes/paymentAddressString and the profile editor and contact detail screens are in place, but only the Rust FFI unit tests cover them: the Swift wrappers have no unit test and DP-20/DP-21 have not been run against a network."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI bridge or Kotlin wrapper for profile payment addresses, and DashPayProfileScreen neither edits nor shows them."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/dashpay_profile_payment_address.rs",
+          "id": "should_round_trip_a_core_address_through_its_stored_bytes",
+          "command": "cargo test -p platform-wallet-ffi --features shielded --lib should_round_trip_a_core_address_through_its_stored_bytes",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/dashpay_profile_payment_address.rs",
+          "id": "should_refuse_an_address_of_another_network_with_a_message",
+          "command": "cargo test -p platform-wallet-ffi --features shielded --lib should_refuse_an_address_of_another_network_with_a_message",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/profile.rs",
+          "id": "should_report_each_payment_address_the_network_contract_has",
+          "command": "cargo test -p platform-wallet --lib should_report_each_payment_address_the_network_contract_has",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DP-20",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DP-21",
           "covers_restart": false
         }
       ]

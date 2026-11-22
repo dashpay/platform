@@ -1194,8 +1194,30 @@ struct DashPayProfileEditorView: View {
     @State private var avatarUrl: String = ""
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @StateObject private var paymentAddresses: DashPayPaymentAddressEditorModel
+
+    init(
+        identityId: Data,
+        walletId: Data?,
+        existing: DashPayProfile?,
+        onSaved: @escaping (DashPayProfile) -> Void
+    ) {
+        self.identityId = identityId
+        self.walletId = walletId
+        self.existing = existing
+        self.onSaved = onSaved
+        _paymentAddresses = StateObject(
+            wrappedValue: DashPayPaymentAddressEditorModel(existing: existing)
+        )
+    }
 
     private var isCreating: Bool { existing == nil }
+
+    /// Wallet that owns the identity, falling back to `firstWallet` for
+    /// legacy rows that predate walletId denormalization.
+    private var resolvedWallet: ManagedPlatformWallet? {
+        walletId.flatMap { walletManager.wallet(for: $0) } ?? walletManager.firstWallet
+    }
 
     /// DashPay `profile` contract limits — live counters below gate
     /// Save instead of failing at broadcast time.
@@ -1249,6 +1271,13 @@ struct DashPayProfileEditorView: View {
                         .foregroundColor(.secondary)
                 }
 
+                DashPayPaymentAddressEditorSection(
+                    model: paymentAddresses,
+                    wallet: resolvedWallet,
+                    walletId: resolvedWallet?.walletId,
+                    identityId: identityId
+                )
+
                 if let err = errorMessage {
                     Section {
                         Text(err)
@@ -1273,7 +1302,7 @@ struct DashPayProfileEditorView: View {
                         ProgressView()
                     } else {
                         Button(isCreating ? "Create" : "Save") { save() }
-                            .disabled(overLimit)
+                            .disabled(overLimit || paymentAddresses.hasIncompleteSet)
                             .accessibilityIdentifier("dashpay.profile.save")
                     }
                 }
@@ -1286,6 +1315,7 @@ struct DashPayProfileEditorView: View {
                     avatarUrl = existing.avatarUrl ?? ""
                 }
             }
+            .task { await paymentAddresses.start(wallet: resolvedWallet) }
         }
     }
 
@@ -1327,6 +1357,18 @@ struct DashPayProfileEditorView: View {
         let urlChanged = cleanedUrl != (existing?.avatarUrl ?? "")
         let shouldFetchBytes = !cleanedUrl.isEmpty && (isCreating || urlChanged)
 
+        let coreAddress: DashPayPaymentAddressUpdate
+        let platformAddress: DashPayPaymentAddressUpdate
+        let shieldedAddress: DashPayPaymentAddressUpdate
+        do {
+            coreAddress = try paymentAddresses.update(for: .core)
+            platformAddress = try paymentAddresses.update(for: .platform)
+            shieldedAddress = try paymentAddresses.update(for: .shielded)
+        } catch {
+            errorMessage = error.localizedDescription
+            return
+        }
+
         isSaving = true
         errorMessage = nil
 
@@ -1344,15 +1386,16 @@ struct DashPayProfileEditorView: View {
                     displayName: cleanedDisplay.isEmpty ? nil : cleanedDisplay,
                     publicMessage: cleanedMsg.isEmpty ? nil : cleanedMsg,
                     avatarUrl: cleanedUrl.isEmpty ? nil : cleanedUrl,
-                    avatarBytes: avatarBytes
+                    avatarBytes: avatarBytes,
+                    corePaymentAddress: coreAddress,
+                    platformPaymentAddress: platformAddress,
+                    shieldedAddress: shieldedAddress
                 )
 
                 // Resolve the wallet via the identity's `walletId`;
                 // fall back to `firstWallet` for legacy data rows
                 // that predate walletId denormalization.
-                let wallet = walletId.flatMap { walletManager.wallet(for: $0) }
-                    ?? walletManager.firstWallet
-                guard let wallet else {
+                guard let wallet = resolvedWallet else {
                     errorMessage = "No wallet available for this identity"
                     return
                 }
