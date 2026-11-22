@@ -9,7 +9,8 @@
 //!
 //! A form asks [`IdentityWallet::preview_identity_key_limits_update`] first: whether the key
 //! can be raised at all, which key would sign, and what the update would set. The update runs
-//! the same preview, so the two cannot disagree.
+//! the same preview, and when it is handed the preview the user reviewed it refuses to sign
+//! anything else, so a cache that moved in between cannot raise a limit further than shown.
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::update_identity_key_limits::{
@@ -85,6 +86,40 @@ where
     })
 }
 
+/// The preview an update of the key `key_id` of `identity` signs. Unlike the preview a form
+/// asks for, it needs a change: an update that raises nothing would be refused by Platform
+/// (10539). When `reviewed` is the preview the caller showed, any difference from what would
+/// be signed now (another total, another expiry, another signing key, because the held
+/// identity moved in between) is refused before a nonce is taken, so the caller can show the
+/// new preview instead.
+fn preview_to_submit<S>(
+    identity: &Identity,
+    key_id: KeyID,
+    add_budget: Option<Credits>,
+    expires_at: Option<TimestampMillis>,
+    reviewed: Option<&IdentityKeyLimitsUpdatePreview>,
+    signer: &S,
+) -> Result<IdentityKeyLimitsUpdatePreview, PlatformWalletError>
+where
+    S: Signer<IdentityPublicKey>,
+{
+    if add_budget.is_none() && expires_at.is_none() {
+        return Err(PlatformWalletError::InvalidIdentityData(format!(
+            "a key limits update of key {key_id} needs a budget to add or a new expiry"
+        )));
+    }
+    let preview = preview_key_limits_update(identity, key_id, add_budget, expires_at, signer)?;
+    if let Some(reviewed) = reviewed {
+        if *reviewed != preview {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "the limits of key {key_id} changed since they were reviewed \
+                 (reviewed {reviewed:?}, now {preview:?}); nothing was signed, review the update again"
+            )));
+        }
+    }
+    Ok(preview)
+}
+
 impl IdentityWallet {
     /// What [`Self::update_identity_key_limits_with_external_signer`] would do for the same
     /// arguments, without signing or sending anything: the key that would sign, the limits
@@ -136,6 +171,11 @@ impl IdentityWallet {
     /// [`Self::preview_identity_key_limits_update`] refuses it: a disabled key, a limit the
     /// key does not have, a zero top-up, an expiry that is not later.
     ///
+    /// `reviewed` is the preview the caller showed for these arguments. When given, the update
+    /// is refused, before a nonce is taken or anything is signed, if what it would sign now
+    /// differs from it: the held identity moved in between (a refresh, another update), so the
+    /// absolute limits or the signing key are no longer the ones the user saw.
+    ///
     /// Signing is routed through the supplied `&S: Signer<IdentityPublicKey>`, which must hold
     /// the identity's MASTER key or a CRITICAL authentication key without limits and without
     /// contract bounds. No identity revision is claimed or bumped, so the cached identity only
@@ -144,12 +184,14 @@ impl IdentityWallet {
     /// Resolves to the key as stored after the update, which is also laid over the cached
     /// identity and upserted through the persister, as
     /// [`Self::update_identity_with_external_signer`] does for an added key.
+    #[allow(clippy::too_many_arguments)]
     pub async fn update_identity_key_limits_with_external_signer<S>(
         &self,
         identity_id: &Identifier,
         key_id: KeyID,
         add_budget: Option<Credits>,
         expires_at: Option<TimestampMillis>,
+        reviewed: Option<&IdentityKeyLimitsUpdatePreview>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<IdentityPublicKey, PlatformWalletError>
@@ -158,7 +200,8 @@ impl IdentityWallet {
     {
         let identity = self.held_identity(identity_id).await?;
 
-        let preview = preview_key_limits_update(&identity, key_id, add_budget, expires_at, signer)?;
+        let preview =
+            preview_to_submit(&identity, key_id, add_budget, expires_at, reviewed, signer)?;
         let signing_key = identity.public_keys().get(&preview.signing_key_id);
 
         let updated_key = identity
@@ -369,6 +412,77 @@ mod tests {
                 "key {key_id} {add_budget:?} {expires_at:?} must be refused: {result:?}"
             );
         }
+    }
+
+    #[test]
+    fn should_refuse_to_submit_an_update_that_raises_nothing() {
+        let result = preview_to_submit(&identity(), 2, None, None, None, &master_signer());
+        assert!(
+            matches!(
+                &result,
+                Err(PlatformWalletError::InvalidIdentityData(message)) if message.contains("needs a budget to add")
+            ),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn should_submit_only_the_limits_and_signing_key_that_were_reviewed() {
+        let reviewed = preview_key_limits_update(&identity(), 2, Some(500), None, &master_signer())
+            .expect("expected a raise");
+        assert_eq!(reviewed.new_total_budget, Some(1_500));
+
+        let submitted = preview_to_submit(
+            &identity(),
+            2,
+            Some(500),
+            None,
+            Some(&reviewed),
+            &master_signer(),
+        )
+        .expect("expected the reviewed preview to be submitted");
+        assert_eq!(submitted, reviewed);
+
+        // The held key's total moved from 1_000 to 1_200 after the review: the same
+        // increment would now sign 1_700, which the user never saw.
+        let mut moved = identity();
+        let raised = moved.public_keys()[&2]
+            .clone()
+            .with_limits(Some(1_200), None);
+        moved.public_keys_mut().insert(2, raised);
+        let result = preview_to_submit(
+            &moved,
+            2,
+            Some(500),
+            None,
+            Some(&reviewed),
+            &master_signer(),
+        );
+        assert!(
+            matches!(
+                &result,
+                Err(PlatformWalletError::InvalidIdentityData(message)) if message.contains("changed since they were reviewed")
+            ),
+            "{result:?}"
+        );
+
+        // Same limits, another signing key: refused too.
+        let mut critical = identity();
+        critical
+            .public_keys_mut()
+            .insert(5, authentication_key(5, SecurityLevel::CRITICAL));
+        let result = preview_to_submit(
+            &critical,
+            2,
+            Some(500),
+            None,
+            Some(&reviewed),
+            &KeyIdSigner(vec![5]),
+        );
+        assert!(
+            matches!(result, Err(PlatformWalletError::InvalidIdentityData(_))),
+            "{result:?}"
+        );
     }
 
     #[test]

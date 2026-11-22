@@ -4055,6 +4055,13 @@ extension ManagedPlatformWallet {
     /// and an expiry that is not later are refused before anything is
     /// signed, because Platform would refuse them and charge for it.
     ///
+    /// `reviewedPreview` is the preview `previewIdentityKeyLimitsUpdate`
+    /// returned for the same arguments and the caller showed. When given,
+    /// Rust refuses the update before anything is signed if what it would
+    /// sign now differs from it (another total, expiry or signing key,
+    /// because the wallet's identity moved in between); preview again and
+    /// show the new values.
+    ///
     /// No identity revision is claimed or bumped. The cached key and its
     /// `PersistentPublicKey` row follow through the persist-identity-keys
     /// callback, the same way an added key does.
@@ -4063,36 +4070,64 @@ extension ManagedPlatformWallet {
         keyId: UInt32,
         addBudget: UInt64? = nil,
         expiresAt: UInt64? = nil,
+        reviewedPreview: IdentityKeyLimitsUpdatePreview? = nil,
         signer: KeychainSigner
     ) async throws {
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("identityId must be 32 bytes")
+        }
         guard addBudget != nil || expiresAt != nil else {
             throw PlatformWalletError.walletOperation(
                 "updateIdentityKeyLimits needs a budget to add or a new expiry"
             )
         }
-        let handle = self.handle
-        let signerHandle = signer.handle
-        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
-            Array(UnsafeBufferPointer(start: ptr, count: 32))
-        }
+        let idBytes = [UInt8](identityId)
         let budgetToAdd = addBudget
         let newExpiresAt = expiresAt
-        try await Task.detached(priority: .userInitiated) {
-            _ = signer
-            let result = idBytes.withUnsafeBufferPointer {
-                idBp -> PlatformWalletFFIResult in
-                platform_wallet_update_identity_key_limits_with_signer(
-                    handle,
-                    idBp.baseAddress!,
-                    keyId,
-                    budgetToAdd != nil,
-                    budgetToAdd ?? 0,
-                    newExpiresAt != nil,
-                    newExpiresAt ?? 0,
-                    signerHandle
-                )
+        let reviewed = reviewedPreview.map(IdentityKeyLimitsUpdatePreviewFFI.init)
+        try await Task.detached(priority: .userInitiated) { [self] in
+            // Pin the wallet and the signer through the synchronous FFI call:
+            // Rust calls back into the signer from a worker, and each object
+            // destroys its native handle in `deinit`.
+            try withExtendedLifetime((self, signer)) {
+                let result = idBytes.withUnsafeBufferPointer {
+                    idBp -> PlatformWalletFFIResult in
+                    withOptionalPreviewPointer(reviewed) { reviewedPtr in
+                        platform_wallet_update_identity_key_limits_with_signer(
+                            handle,
+                            idBp.baseAddress!,
+                            keyId,
+                            budgetToAdd != nil,
+                            budgetToAdd ?? 0,
+                            newExpiresAt != nil,
+                            newExpiresAt ?? 0,
+                            reviewedPtr,
+                            signer.handle
+                        )
+                    }
+                }
+                try result.check()
             }
-            try result.check()
+        }.value
+    }
+
+    /// Fetch one of this wallet's identities from Platform with a proof and
+    /// fold it into the wallet (`IdentityWallet::refresh_identity`). Keys
+    /// added or changed on another client are taken in, a node behind what
+    /// the wallet already holds cannot roll an update back, and changed key
+    /// rows arrive through the persist-identity-keys callback.
+    public func refreshIdentity(identityId: Identifier) async throws {
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("identityId must be 32 bytes")
+        }
+        let idBytes = [UInt8](identityId)
+        try await Task.detached(priority: .userInitiated) { [self] in
+            try withExtendedLifetime(self) {
+                let result = idBytes.withUnsafeBufferPointer { idBp in
+                    platform_wallet_refresh_identity(handle, idBp.baseAddress!)
+                }
+                try result.check()
+            }
         }.value
     }
 
@@ -4125,6 +4160,16 @@ extension ManagedPlatformWallet {
             self.newTotalBudget = newTotalBudget
             self.newExpiresAt = newExpiresAt
         }
+
+        init(ffi: IdentityKeyLimitsUpdatePreviewFFI) {
+            self.init(
+                signingKeyId: ffi.signing_key_id,
+                currentTotalBudget: ffi.has_current_total_budget ? ffi.current_total_budget : nil,
+                currentExpiresAt: ffi.has_current_expires_at ? ffi.current_expires_at : nil,
+                newTotalBudget: ffi.has_new_total_budget ? ffi.new_total_budget : nil,
+                newExpiresAt: ffi.has_new_expires_at ? ffi.new_expires_at : nil
+            )
+        }
     }
 
     /// Ask the wallet what raising the limits of one of an identity's keys
@@ -4145,39 +4190,45 @@ extension ManagedPlatformWallet {
         expiresAt: UInt64? = nil,
         signer: KeychainSigner
     ) async throws -> IdentityKeyLimitsUpdatePreview {
-        let handle = self.handle
-        let signerHandle = signer.handle
-        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
-            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("identityId must be 32 bytes")
         }
+        let idBytes = [UInt8](identityId)
         let budgetToAdd = addBudget
         let newExpiresAt = expiresAt
-        return try await Task.detached(priority: .userInitiated) {
-            _ = signer
-            var out = IdentityKeyLimitsUpdatePreviewFFI()
-            let result = idBytes.withUnsafeBufferPointer {
-                idBp -> PlatformWalletFFIResult in
-                platform_wallet_preview_identity_key_limits_update(
-                    handle,
-                    idBp.baseAddress!,
-                    keyId,
-                    budgetToAdd != nil,
-                    budgetToAdd ?? 0,
-                    newExpiresAt != nil,
-                    newExpiresAt ?? 0,
-                    signerHandle,
-                    &out
-                )
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            // Pinned as in `updateIdentityKeyLimits`: the preview asks the
+            // signer which keys it holds through a callback.
+            try withExtendedLifetime((self, signer)) {
+                var out = IdentityKeyLimitsUpdatePreviewFFI()
+                let result = idBytes.withUnsafeBufferPointer {
+                    idBp -> PlatformWalletFFIResult in
+                    platform_wallet_preview_identity_key_limits_update(
+                        handle,
+                        idBp.baseAddress!,
+                        keyId,
+                        budgetToAdd != nil,
+                        budgetToAdd ?? 0,
+                        newExpiresAt != nil,
+                        newExpiresAt ?? 0,
+                        signer.handle,
+                        &out
+                    )
+                }
+                try result.check()
+                return IdentityKeyLimitsUpdatePreview(ffi: out)
             }
-            try result.check()
-            return IdentityKeyLimitsUpdatePreview(
-                signingKeyId: out.signing_key_id,
-                currentTotalBudget: out.has_current_total_budget ? out.current_total_budget : nil,
-                currentExpiresAt: out.has_current_expires_at ? out.current_expires_at : nil,
-                newTotalBudget: out.has_new_total_budget ? out.new_total_budget : nil,
-                newExpiresAt: out.has_new_expires_at ? out.new_expires_at : nil
-            )
         }.value
+    }
+
+    /// `body` with a pointer to `preview`, or with nil when there is none:
+    /// the nullable `reviewed_preview` argument of the update FFI.
+    private func withOptionalPreviewPointer<R>(
+        _ preview: IdentityKeyLimitsUpdatePreviewFFI?,
+        _ body: (UnsafePointer<IdentityKeyLimitsUpdatePreviewFFI>?) throws -> R
+    ) rethrows -> R {
+        guard var preview else { return try body(nil) }
+        return try withUnsafePointer(to: &preview) { try body($0) }
     }
 
     /// Parse a raw `IdentityUpdateTransition` from DPP bytes without
@@ -5869,5 +5920,23 @@ extension ManagedPlatformWallet {
             try releaseReservation(token: payment.reservationToken)
             payment.close()
         }
+    }
+}
+
+extension IdentityKeyLimitsUpdatePreviewFFI {
+    /// The C form of a preview, handed back to the update so Rust can check
+    /// it still signs what was shown.
+    init(_ preview: ManagedPlatformWallet.IdentityKeyLimitsUpdatePreview) {
+        self.init(
+            signing_key_id: preview.signingKeyId,
+            has_current_total_budget: preview.currentTotalBudget != nil,
+            current_total_budget: preview.currentTotalBudget ?? 0,
+            has_current_expires_at: preview.currentExpiresAt != nil,
+            current_expires_at: preview.currentExpiresAt ?? 0,
+            has_new_total_budget: preview.newTotalBudget != nil,
+            new_total_budget: preview.newTotalBudget ?? 0,
+            has_new_expires_at: preview.newExpiresAt != nil,
+            new_expires_at: preview.newExpiresAt ?? 0
+        )
     }
 }

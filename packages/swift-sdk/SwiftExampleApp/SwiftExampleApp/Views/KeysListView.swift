@@ -284,6 +284,9 @@ struct KeysListView: View {
       remainingBudgets = [:]
       return
     }
+    // Drop the previous reading first: after a raise it no longer matches
+    // the totals on the rows, and a failed read must not leave it in place.
+    remainingBudgets = [:]
     do {
       remainingBudgets = try await sdk.fetchKeysRemainingBudgets(
         identityId: identity.identityIdBase58,

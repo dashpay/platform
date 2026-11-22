@@ -13,15 +13,22 @@ struct KeyDetailView: View {
     @State private var showDisableConfirm = false
     @State private var isDisabling = false
     @State private var disableError: String?
-    /// What Platform says is left of this key's budget. `.some(nil)` means
-    /// the node answered that the key carries no budget.
-    @State private var remainingBudget: UInt64?? = nil
+    /// What Platform says is left of this key's budget, with the total
+    /// budget the screen showed when it asked. `.some(nil)` means the node
+    /// answered that the key carries no budget. A reading taken for another
+    /// total is not shown, so a raised total is never set against what was
+    /// left before the raise.
+    @State private var remainingReading: (forTotal: UInt64, remaining: UInt64?)?
     @State private var remainingBudgetError: String?
     @State private var isLoadingRemainingBudget = false
     /// Rust's answer to "can this key's limits be raised at all": `nil`
     /// while asking, then `.allowed` or `.refused` with Rust's reason.
     @State private var updateLimitsGate: UpdateLimitsGate?
     @State private var showUpdateLimits = false
+    /// The wallet's copy of the identity was refreshed from Platform once
+    /// on this screen, so a key added or raised on another client is known
+    /// to the Rust preview too.
+    @State private var walletRefreshed = false
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var appState: AppState
@@ -153,11 +160,10 @@ struct KeyDetailView: View {
         .navigationTitle("Key #\(publicKey.id)")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showUpdateLimits) {
-            UpdateKeyLimitsView(identity: identity, publicKey: currentKey) {
-                // The new limits arrive through the refreshed rows; what is
-                // left of the budget is Platform's, so ask again.
-                Task { await loadRemainingBudget() }
-            }
+            // The new limits reach this screen through the key row the
+            // wallet persists; the limits task below is keyed on them, so it
+            // reads what is left of the budget again on its own.
+            UpdateKeyLimitsView(identity: identity, publicKey: currentKey)
         }
         .alert("Success", isPresented: $showSuccessAlert) {
             Button("OK") {
@@ -224,7 +230,7 @@ struct KeyDetailView: View {
                     Spacer()
                     if isLoadingRemainingBudget {
                         ProgressView().controlSize(.small)
-                    } else if let remaining = remainingBudget, let remaining {
+                    } else if let remaining = remainingBudget(for: totalBudget) {
                         Text(KeyLimitsFormatting.dash(remaining))
                             .fontWeight(.medium)
                             .foregroundColor(remaining == 0 ? .red : .primary)
@@ -236,7 +242,9 @@ struct KeyDetailView: View {
                             .foregroundColor(.secondary)
                     }
                 }
-                if let remaining = remainingBudget, let remaining, remaining <= totalBudget {
+                if !isLoadingRemainingBudget,
+                   let remaining = remainingBudget(for: totalBudget),
+                   remaining <= totalBudget {
                     HStack {
                         Text("Spent")
                         Spacer()
@@ -338,6 +346,9 @@ struct KeyDetailView: View {
     }
 
     /// Ask Rust, with no change, whether this key's limits can be raised.
+    /// The first time on this screen the wallet's copy of the identity is
+    /// refreshed from Platform first (best effort), so a key added or raised
+    /// on another client is not refused as unknown.
     @MainActor
     private func loadUpdateLimitsGate() async {
         guard currentKey.hasLimits else { return }
@@ -345,6 +356,14 @@ struct KeyDetailView: View {
               let wallet = walletManager.wallet(for: walletId) else {
             updateLimitsGate = .refused("Wallet not loaded; this identity's keys cannot sign here.")
             return
+        }
+        if !walletRefreshed {
+            walletRefreshed = true
+            do {
+                try await wallet.refreshIdentity(identityId: identity.identityId)
+            } catch {
+                print("🔑 KeyDetailView: wallet identity refresh failed: \(error.localizedDescription)")
+            }
         }
         do {
             let signer = KeychainSigner(modelContainer: modelContext.container)
@@ -360,9 +379,20 @@ struct KeyDetailView: View {
         }
     }
 
+    /// The remaining budget, only when it was read for `total`.
+    private func remainingBudget(for total: UInt64) -> UInt64? {
+        guard let reading = remainingReading, reading.forTotal == total else { return nil }
+        return reading.remaining
+    }
+
     @MainActor
     private func loadRemainingBudget() async {
-        guard currentKey.totalBudget != nil, let sdk = appState.sdk else { return }
+        guard let total = currentKey.totalBudget, let sdk = appState.sdk else {
+            remainingReading = nil
+            return
+        }
+        remainingReading = nil
+        remainingBudgetError = nil
         isLoadingRemainingBudget = true
         defer { isLoadingRemainingBudget = false }
         do {
@@ -370,9 +400,12 @@ struct KeyDetailView: View {
                 identityId: identity.identityIdBase58,
                 keyIds: [publicKey.id]
             )
-            remainingBudget = budgets[publicKey.id]
-            remainingBudgetError = nil
+            // A newer total arrived while this was in flight: its own load
+            // reads again, so this answer is dropped.
+            guard currentKey.totalBudget == total else { return }
+            remainingReading = (forTotal: total, remaining: budgets[publicKey.id] ?? nil)
         } catch {
+            guard currentKey.totalBudget == total else { return }
             remainingBudgetError = error.localizedDescription
         }
     }

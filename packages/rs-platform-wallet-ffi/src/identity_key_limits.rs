@@ -50,6 +50,24 @@ pub struct IdentityKeyLimitsUpdatePreviewFFI {
     pub new_expires_at: u64,
 }
 
+impl From<IdentityKeyLimitsUpdatePreviewFFI> for IdentityKeyLimitsUpdatePreview {
+    fn from(preview: IdentityKeyLimitsUpdatePreviewFFI) -> Self {
+        Self {
+            signing_key_id: preview.signing_key_id,
+            current_total_budget: preview
+                .has_current_total_budget
+                .then_some(preview.current_total_budget),
+            current_expires_at: preview
+                .has_current_expires_at
+                .then_some(preview.current_expires_at),
+            new_total_budget: preview
+                .has_new_total_budget
+                .then_some(preview.new_total_budget),
+            new_expires_at: preview.has_new_expires_at.then_some(preview.new_expires_at),
+        }
+    }
+}
+
 impl From<IdentityKeyLimitsUpdatePreview> for IdentityKeyLimitsUpdatePreviewFFI {
     fn from(preview: IdentityKeyLimitsUpdatePreview) -> Self {
         Self {
@@ -103,16 +121,18 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_key_limits_update(
 
     let signer_addr = signer_handle as usize;
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity_wallet = wallet.identity().clone();
-        block_on_worker(async move {
-            let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-            identity_wallet
-                .preview_identity_key_limits_update(&id, key_id, add_budget, expires_at, signer)
-                .await
-        })
+    // Clone the identity wallet under the registry guard, but run outside it: the preview
+    // calls the host signer's `can_sign_with`, and a host that destroys a wallet handle from
+    // that callback would wait for the registry write guard this call would still hold.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity_wallet = unwrap_option_or_return!(option);
+    let result = block_on_worker(async move {
+        let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+        identity_wallet
+            .preview_identity_key_limits_update(&id, key_id, add_budget, expires_at, signer)
+            .await
     });
-    let result = unwrap_option_or_return!(option);
     let preview = unwrap_result_or_return!(result);
     *out_preview = preview.into();
     PlatformWalletFFIResult::ok()
@@ -125,6 +145,12 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_key_limits_update(
 /// disabled key, a limit the key does not have, a zero top-up and an expiry
 /// that is not later are refused before anything is signed, since Platform
 /// would refuse them and charge for it.
+///
+/// `reviewed_preview` may be null. When it points to the preview
+/// [`platform_wallet_preview_identity_key_limits_update`] returned for the
+/// same arguments and the caller showed, the update is refused before a
+/// nonce is taken or anything is signed if what it would sign now differs
+/// (the wallet's identity moved in between).
 ///
 /// The cached identity carries the key as stored after the update, and the
 /// client's key row follows through the persistence changeset, as an
@@ -139,6 +165,7 @@ pub unsafe extern "C" fn platform_wallet_update_identity_key_limits_with_signer(
     add_budget: u64,
     has_expires_at: bool,
     expires_at: u64,
+    reviewed_preview: *const IdentityKeyLimitsUpdatePreviewFFI,
     signer_handle: *mut SignerHandle,
 ) -> PlatformWalletFFIResult {
     check_ptr!(signer_handle);
@@ -154,20 +181,29 @@ pub unsafe extern "C" fn platform_wallet_update_identity_key_limits_with_signer(
     let add_budget = has_add_budget.then_some(add_budget);
     let expires_at = has_expires_at.then_some(expires_at);
 
+    let reviewed: Option<IdentityKeyLimitsUpdatePreview> =
+        reviewed_preview.as_ref().map(|preview| (*preview).into());
+
     let signer_addr = signer_handle as usize;
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity_wallet = wallet.identity().clone();
-        block_on_worker(async move {
-            let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-            identity_wallet
-                .update_identity_key_limits_with_external_signer(
-                    &id, key_id, add_budget, expires_at, signer, None,
-                )
-                .await
-        })
+    // Run outside the registry guard, as the preview does: signing calls back into the host.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity_wallet = unwrap_option_or_return!(option);
+    let result = block_on_worker(async move {
+        let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+        identity_wallet
+            .update_identity_key_limits_with_external_signer(
+                &id,
+                key_id,
+                add_budget,
+                expires_at,
+                reviewed.as_ref(),
+                signer,
+                None,
+            )
+            .await
     });
-    let result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(result);
     PlatformWalletFFIResult::ok()
 }
@@ -240,6 +276,19 @@ mod tests {
         // no change at all, so it reaches the wallet lookup.
         assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
         assert_eq!(out, IdentityKeyLimitsUpdatePreviewFFI::default());
+    }
+
+    #[test]
+    fn should_read_back_the_preview_it_wrote() {
+        let preview = IdentityKeyLimitsUpdatePreview {
+            signing_key_id: 1,
+            current_total_budget: None,
+            current_expires_at: Some(10),
+            new_total_budget: None,
+            new_expires_at: Some(20),
+        };
+        let ffi: IdentityKeyLimitsUpdatePreviewFFI = preview.into();
+        assert_eq!(IdentityKeyLimitsUpdatePreview::from(ffi), preview);
     }
 
     #[test]

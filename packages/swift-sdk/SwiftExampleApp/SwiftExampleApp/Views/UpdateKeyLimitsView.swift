@@ -11,7 +11,11 @@ import SwiftUI
 /// change, and renders the limits the preview reports or Rust's refusal.
 /// The only input handling here is turning the DASH text into credits and
 /// the picked date into milliseconds. Submit is offered only while the
-/// latest preview for the current inputs succeeded.
+/// latest preview for the current inputs succeeded, and it hands that
+/// preview back to Rust, which refuses to sign anything other than what it
+/// shows. When the sheet opens, the wallet's copy of the identity is first
+/// refreshed from Platform (best effort), so the preview starts from the
+/// chain rather than from an older copy.
 struct UpdateKeyLimitsView: View {
     let identity: PersistentIdentity
     let publicKey: IdentityPublicKey
@@ -35,8 +39,13 @@ struct UpdateKeyLimitsView: View {
         var expiresAt: UInt64?
         /// Budget text was typed but is not an amount of DASH.
         var budgetTextInvalid: Bool
+        /// Extend expiry is on but the picked date cannot be sent (before
+        /// 1970). Kept apart from "no expiry asked for", so the change is
+        /// never sent without the expiry the person asked for.
+        var expiryUnrepresentable: Bool
 
-        var isEmpty: Bool { addBudget == nil && expiresAt == nil && !budgetTextInvalid }
+        var isInvalid: Bool { budgetTextInvalid || expiryUnrepresentable }
+        var isEmpty: Bool { addBudget == nil && expiresAt == nil && !isInvalid }
     }
 
     /// The preview of the inputs the form describes.
@@ -44,6 +53,7 @@ struct UpdateKeyLimitsView: View {
         case none
         case checking
         case invalidAmount
+        case invalidExpiry
         case ready(ManagedPlatformWallet.IdentityKeyLimitsUpdatePreview, for: Inputs)
         case refused(String, for: Inputs)
     }
@@ -62,6 +72,12 @@ struct UpdateKeyLimitsView: View {
     @State private var isSubmitting = false
     @State private var submitError: String?
     @State private var submitConsensusCode: UInt32?
+    /// The last submission's outcome is unknown: it may have landed. No
+    /// further submission is offered from this sheet, since a second one
+    /// against the same reviewed limits could only be refused, for a fee.
+    @State private var outcomeUnknown = false
+    /// Why the opening refresh from Platform failed, when it did.
+    @State private var refreshNote: String?
 
     var body: some View {
         NavigationStack {
@@ -124,6 +140,11 @@ struct UpdateKeyLimitsView: View {
             }
             LabeledContent("Signed by", value: "Key #\(current.signingKeyId)")
                 .accessibilityIdentifier("keyLimits.update.signingKey")
+            if let refreshNote {
+                Text(refreshNote)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
     }
 
@@ -175,6 +196,13 @@ struct UpdateKeyLimitsView: View {
                     .foregroundColor(.red)
                     .accessibilityIdentifier("keyLimits.update.error")
             }
+        case .invalidExpiry:
+            Section("After the update") {
+                Text("Pick an expiry date after 1970.")
+                    .font(.callout)
+                    .foregroundColor(.red)
+                    .accessibilityIdentifier("keyLimits.update.error")
+            }
         case .refused(let reason, _):
             Section("After the update") {
                 Text(reason)
@@ -191,6 +219,9 @@ struct UpdateKeyLimitsView: View {
                     if let expiresAt = preview.newExpiresAt {
                         Text("New expiry \(KeyLimitsFormatting.expiryDate(expiresAt))")
                     }
+                    Text("Signed by key #\(preview.signingKeyId)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("keyLimits.update.preview")
@@ -212,7 +243,7 @@ struct UpdateKeyLimitsView: View {
                 }
             }
             .buttonStyle(.borderedProminent)
-            .disabled(!canSubmit || isSubmitting)
+            .disabled(!canSubmit || isSubmitting || outcomeUnknown)
             .accessibilityIdentifier("keyLimits.update.submit")
 
             if let submitError {
@@ -239,17 +270,19 @@ struct UpdateKeyLimitsView: View {
     private var inputs: Inputs {
         let text = addBudgetText.trimmingCharacters(in: .whitespacesAndNewlines)
         let parsedBudget = text.isEmpty ? nil : KeyLimitsFormatting.credits(fromDash: text)
+        let pickedExpiry = extendExpiry ? KeyLimitsFormatting.millis(from: newExpiry) : nil
         return Inputs(
             addBudget: parsedBudget,
-            expiresAt: extendExpiry ? KeyLimitsFormatting.millis(from: newExpiry) : nil,
-            budgetTextInvalid: !text.isEmpty && parsedBudget == nil
+            expiresAt: pickedExpiry,
+            budgetTextInvalid: !text.isEmpty && parsedBudget == nil,
+            expiryUnrepresentable: extendExpiry && pickedExpiry == nil
         )
     }
 
     private var canSubmit: Bool {
-        guard case .ready(_, let previewed) = inputPreview else { return false }
+        guard !outcomeUnknown, case .ready(_, let previewed) = inputPreview else { return false }
         let current = inputs
-        return previewed == current && !current.isEmpty && !current.budgetTextInvalid
+        return previewed == current && !current.isEmpty && !current.isInvalid
     }
 
     // MARK: Rust calls
@@ -289,6 +322,15 @@ struct UpdateKeyLimitsView: View {
 
     @MainActor
     private func loadGate() async {
+        // Start from the chain: a key added or raised on another client is
+        // otherwise unknown to, or stale in, the wallet's copy.
+        if case .answered(let wallet) = resolveWallet() {
+            do {
+                try await wallet.refreshIdentity(identityId: identity.identityId)
+            } catch {
+                refreshNote = "Could not refresh from Platform (\(error.localizedDescription)); showing the wallet's copy."
+            }
+        }
         switch await preview(addBudget: nil, expiresAt: nil) {
         case .answered(let current):
             if let expiresAt = current.currentExpiresAt {
@@ -307,6 +349,10 @@ struct UpdateKeyLimitsView: View {
         guard case .ready = gate else { return }
         if inputs.budgetTextInvalid {
             inputPreview = .invalidAmount
+            return
+        }
+        if inputs.expiryUnrepresentable {
+            inputPreview = .invalidExpiry
             return
         }
         if inputs.isEmpty {
@@ -332,7 +378,9 @@ struct UpdateKeyLimitsView: View {
 
     @MainActor
     private func submit() async {
-        guard canSubmit else { return }
+        // `canSubmit` is false while a submission is in flight only through
+        // the disabled button; a queued tap must not start a second one.
+        guard !isSubmitting, canSubmit, case .ready(let reviewed, _) = inputPreview else { return }
         let change = inputs
         let wallet: ManagedPlatformWallet
         switch resolveWallet() {
@@ -354,6 +402,7 @@ struct UpdateKeyLimitsView: View {
                 keyId: publicKey.id,
                 addBudget: change.addBudget,
                 expiresAt: change.expiresAt,
+                reviewedPreview: reviewed,
                 signer: signer
             )
             _ = signer  // keepalive: see KeychainSigner lifetime contract.
@@ -361,23 +410,23 @@ struct UpdateKeyLimitsView: View {
             isSubmitting = false
             submitError = error.localizedDescription
             submitConsensusCode = (error as? PlatformWalletError)?.consensusError?.code
+            if let walletError = error as? PlatformWalletError,
+               case .transactionBroadcastUnconfirmed = walletError {
+                // It may have landed. Do not offer the same raise again.
+                outcomeUnknown = true
+                submitError = "\(error.localizedDescription)\nThe update may have landed. Close this sheet and check the key before trying again."
+                return
+            }
+            // Preview the same inputs again: if the wallet's copy moved
+            // (the update landed but was not stored, or another client
+            // raised the key), the sheet shows what would be signed now.
+            await previewInputs(change)
             return
         }
 
-        // The update landed. A failed refresh must not hide that: the
-        // persister already wrote the key row with the new limits.
-        if let sdk = appState.sdk {
-            do {
-                try await IdentityKeyRefresher.refreshBalanceAndKeys(
-                    identity: identity,
-                    sdk: sdk,
-                    modelContext: modelContext
-                )
-            } catch {
-                print("🔑 UpdateKeyLimitsView: refresh after the update failed: \(error.localizedDescription)")
-            }
-        }
-
+        // The update landed and the wallet already stored the proved key
+        // row through the persister. No second fetch here: a node one block
+        // behind could answer with the limits from before the raise.
         isSubmitting = false
         onUpdated()
         dismiss()
