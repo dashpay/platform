@@ -220,6 +220,7 @@ final class WalletDrainRecoveryTests: XCTestCase {
     private struct FakeLock: ShieldedProgressLockRow, Equatable {
         let outPointHex: String
         let operationId: Data?
+        var createdAt: Date = .distantPast
     }
 
     func testShouldMatchADrainControllerToTheLockWithItsOperationId() {
@@ -233,6 +234,7 @@ final class WalletDrainRecoveryTests: XCTestCase {
         XCTAssertEqual(
             ShieldedFundFromAssetLockProgressSection.matchingLock(
                 controllerOperationId: WalletDrainCoordinator.controllerOperationId(id),
+                submittedAt: .distantFuture,
                 newestFirst: rows
             ),
             mine
@@ -247,12 +249,14 @@ final class WalletDrainRecoveryTests: XCTestCase {
         XCTAssertNil(
             ShieldedFundFromAssetLockProgressSection.matchingLock(
                 controllerOperationId: WalletDrainCoordinator.controllerOperationId(UUID()),
+                submittedAt: .distantPast,
                 newestFirst: rows
             )
         )
         XCTAssertNil(
             ShieldedFundFromAssetLockProgressSection.matchingLock(
                 controllerOperationId: "drain:not-a-uuid",
+                submittedAt: .distantPast,
                 newestFirst: rows
             )
         )
@@ -264,6 +268,7 @@ final class WalletDrainRecoveryTests: XCTestCase {
         XCTAssertEqual(
             ShieldedFundFromAssetLockProgressSection.matchingLock(
                 controllerOperationId: "resume:bb:1",
+                submittedAt: .distantFuture,
                 newestFirst: rows
             ),
             mine
@@ -271,30 +276,84 @@ final class WalletDrainRecoveryTests: XCTestCase {
         XCTAssertNil(
             ShieldedFundFromAssetLockProgressSection.matchingLock(
                 controllerOperationId: "resume:dd:0",
+                submittedAt: .distantPast,
                 newestFirst: rows
             )
         )
     }
 
-    func testShouldMatchAFreshShieldToTheNewestLockWithoutAnOperationId() {
-        let newestUnmarked = FakeLock(outPointHex: "bb:0", operationId: nil)
+    func testShouldMatchAFreshShieldToTheNewestUntaggedLockCreatedSinceItsSubmission() {
+        let submittedAt = Date(timeIntervalSince1970: 1_000)
+        let newestUnmarked = FakeLock(
+            outPointHex: "bb:0",
+            operationId: nil,
+            createdAt: submittedAt.addingTimeInterval(5)
+        )
         let rows = [
-            FakeLock(outPointHex: "aa:0", operationId: bytes(UUID())),
+            FakeLock(outPointHex: "aa:0", operationId: bytes(UUID()), createdAt: submittedAt.addingTimeInterval(9)),
             newestUnmarked,
-            FakeLock(outPointHex: "cc:0", operationId: nil),
+            FakeLock(outPointHex: "cc:0", operationId: nil, createdAt: submittedAt),
         ]
         XCTAssertEqual(
             ShieldedFundFromAssetLockProgressSection.matchingLock(
                 controllerOperationId: "shield:\(UUID().uuidString)",
+                submittedAt: submittedAt,
                 newestFirst: rows
             ),
             newestUnmarked
         )
+        // Created in the same instant as the submission still belongs to it.
+        let sameInstant = FakeLock(outPointHex: "dd:0", operationId: nil, createdAt: submittedAt)
+        XCTAssertEqual(
+            ShieldedFundFromAssetLockProgressSection.matchingLock(
+                controllerOperationId: "shield:\(UUID().uuidString)",
+                submittedAt: submittedAt,
+                newestFirst: [sameInstant]
+            ),
+            sameInstant
+        )
         XCTAssertNil(
             ShieldedFundFromAssetLockProgressSection.matchingLock(
                 controllerOperationId: "shield:\(UUID().uuidString)",
-                newestFirst: [FakeLock(outPointHex: "aa:0", operationId: bytes(UUID()))]
+                submittedAt: submittedAt,
+                newestFirst: [FakeLock(outPointHex: "aa:0", operationId: bytes(UUID()), createdAt: submittedAt)]
             )
+        )
+    }
+
+    func testShouldIgnoreAnUntaggedLockCreatedBeforeAFreshShieldWasSubmitted() {
+        let submittedAt = Date(timeIntervalSince1970: 1_000)
+        // An older untagged lock, such as a RecoveredFromChain one (status 5),
+        // newest by `updatedAt` but created before this attempt.
+        let olderUntagged = FakeLock(
+            outPointHex: "aa:0",
+            operationId: nil,
+            createdAt: submittedAt.addingTimeInterval(-1)
+        )
+        XCTAssertNil(
+            ShieldedFundFromAssetLockProgressSection.matchingLock(
+                controllerOperationId: "shield:\(UUID().uuidString)",
+                submittedAt: submittedAt,
+                newestFirst: [olderUntagged]
+            )
+        )
+        // No submission yet: nothing can belong to the attempt.
+        XCTAssertNil(
+            ShieldedFundFromAssetLockProgressSection.matchingLock(
+                controllerOperationId: nil,
+                submittedAt: nil,
+                newestFirst: [olderUntagged]
+            )
+        )
+        // The attempt's own lock is matched even when the older one sorts first.
+        let mine = FakeLock(outPointHex: "bb:0", operationId: nil, createdAt: submittedAt.addingTimeInterval(2))
+        XCTAssertEqual(
+            ShieldedFundFromAssetLockProgressSection.matchingLock(
+                controllerOperationId: "shield:\(UUID().uuidString)",
+                submittedAt: submittedAt,
+                newestFirst: [olderUntagged, mine]
+            ),
+            mine
         )
     }
 

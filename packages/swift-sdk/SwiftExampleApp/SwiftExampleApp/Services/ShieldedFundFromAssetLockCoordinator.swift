@@ -106,7 +106,8 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
     ///    would silently drop the second lock's resume body. A
     ///    DIFFERENT operation is `.blockedByOtherWalletFunding` while
     ///    the slot is in flight, and replaces the retained controller
-    ///    once it has completed. Fresh shields mint a NEW id per
+    ///    once it has completed or failed (only the SAME operation
+    ///    retries on a failed controller). Fresh shields mint a NEW id per
     ///    submission for the same reason: a fixed marker would match
     ///    the retained completed controller and suppress the next
     ///    fresh shield's body.
@@ -146,12 +147,19 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
                 // is identity-guarded, so the old retention timer can't
                 // evict the replacement).
             case .idle, .failed:
-                // Legitimate restart paths. We've already checked
+                guard existing.operationId == operationId else {
+                    // A different operation is a fresh start, not a
+                    // retry: fall through and REPLACE the controller, as
+                    // for `.completed`. Reusing it would show the new
+                    // operation's progress and success on the old
+                    // operation's failed sheet, which observes it.
+                    break
+                }
+                // Retry of the same operation. We've already checked
                 // the same-recipient slot here; before letting the
-                // restart proceed, fall through to the per-wallet
-                // check below so two concurrent .failed retries on
-                // different recipients can't both unblock at the
-                // same time.
+                // retry proceed, run the per-wallet check so two
+                // concurrent .failed retries on different recipients
+                // can't both unblock at the same time.
                 if let blocker = inFlightOnWalletExcluding(
                     walletId: walletId,
                     excludingRecipient: recipientRaw43

@@ -192,4 +192,49 @@ final class ShieldedFundFromAssetLockCoordinatorTests: XCTestCase {
         }
         XCTAssertFalse(afterSuccessScheduled)
     }
+
+    func testShouldGiveADifferentOperationAFreshControllerWhenTheSlotHoldsAFailedOne() async throws {
+        let coordinator = ShieldedFundFromAssetLockCoordinator()
+        let walletId = Data(repeating: 0xA4, count: 32)
+        let recipient = Data(repeating: 0x5F, count: 43)
+
+        guard case .started(let failedA, _) = coordinator.startFunding(
+            walletId: walletId,
+            recipientRaw43: recipient,
+            operationId: "shield:a",
+            body: { throw Refused() }
+        ) else {
+            return XCTFail("operation A did not start")
+        }
+        try await waitUntil { self.isFailed(failedA) }
+
+        let gate = Gate()
+        guard case .started(let b, let bScheduled) = coordinator.startFunding(
+            walletId: walletId,
+            recipientRaw43: recipient,
+            operationId: "shield:b",
+            body: { await gate.hold() }
+        ) else {
+            gate.open()
+            return XCTFail("operation B did not start")
+        }
+        XCTAssertTrue(bScheduled)
+        XCTAssertFalse(b === failedA)
+        XCTAssertEqual(b.operationId, "shield:b")
+        XCTAssertEqual(b.phase, .inFlight)
+        XCTAssertTrue(coordinator.controller(walletId: walletId, recipientRaw43: recipient) === b)
+        // A's sheet still observes A, so it must still show A's failure.
+        XCTAssertTrue(isFailed(failedA))
+        XCTAssertEqual(failedA.operationId, "shield:a")
+
+        // A's stale sheet taps Dismiss: the slot belongs to B now.
+        coordinator.dismiss(failedA)
+        XCTAssertTrue(coordinator.controller(walletId: walletId, recipientRaw43: recipient) === b)
+        XCTAssertTrue(coordinator.hasInFlightFundings)
+
+        gate.open()
+        try await waitUntil { b.phase == .completed }
+        XCTAssertTrue(isFailed(failedA))
+        XCTAssertEqual(failedA.operationId, "shield:a")
+    }
 }
