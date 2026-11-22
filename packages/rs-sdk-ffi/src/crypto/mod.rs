@@ -2,7 +2,9 @@
 
 use crate::types::{FFINetwork, Network};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
+use dash_sdk::dpp::dashcore::PrivateKey;
 use dash_sdk::dpp::identity::KeyType;
+use dash_sdk::dpp::secp256k1::SecretKey;
 use std::ffi::{c_char, CStr};
 use zeroize::Zeroizing;
 
@@ -268,5 +270,131 @@ pub unsafe extern "C" fn dash_sdk_public_key_data_from_private_key_data(
             DashSDKErrorCode::CryptoError,
             format!("Failed to derive public key: {}", e),
         )),
+    }
+}
+
+/// Reads a secp256k1 private key typed by a person, as 64 hex characters or in WIF, and
+/// writes its 32 secret bytes to `out_private_key`.
+///
+/// Leading and trailing whitespace is ignored. Exactly 64 characters are read as hex;
+/// anything else is read as WIF, whatever network the WIF names (the secret is the same on
+/// every network).
+///
+/// # Parameters
+/// * `text` - The key as typed, a NUL-terminated string.
+/// * `out_private_key` - Pointer to 32 writable bytes that receive the secret.
+///
+/// # Returns
+/// No data on success, with the secret written. `InvalidParameter` for a null pointer, text
+/// that is neither form, or a value that is not a secp256k1 secret key (zero, or not below
+/// the curve order); nothing is written then.
+///
+/// # Safety
+/// `text` must be null or a valid NUL-terminated string, and `out_private_key` null or point
+/// to 32 writable bytes, for the duration of the call.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_private_key_bytes_from_text(
+    text: *const c_char,
+    out_private_key: *mut u8,
+) -> DashSDKResult {
+    let invalid = |message: String| {
+        DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            message,
+        ))
+    };
+    if text.is_null() || out_private_key.is_null() {
+        return invalid("text or out_private_key is null".to_string());
+    }
+    let text = match CStr::from_ptr(text).to_str() {
+        Ok(text) => text.trim(),
+        Err(e) => return invalid(format!("Invalid private key string: {}", e)),
+    };
+
+    let mut secret = Zeroizing::new([0u8; 32]);
+    if text.len() == 64 {
+        let bytes = match hex::decode(text) {
+            Ok(bytes) => Zeroizing::new(bytes),
+            Err(e) => return invalid(format!("Invalid private key hex: {}", e)),
+        };
+        secret.copy_from_slice(&bytes);
+        if let Err(e) = SecretKey::from_secret_bytes(*secret) {
+            return invalid(format!("Invalid private key: {}", e));
+        }
+    } else {
+        match PrivateKey::from_wif(text) {
+            Ok(private_key) => secret = private_key.inner.to_bytes(),
+            Err(e) => {
+                return invalid(format!(
+                    "The private key is neither 64 hex characters nor WIF: {}",
+                    e
+                ))
+            }
+        }
+    }
+
+    std::slice::from_raw_parts_mut(out_private_key, 32).copy_from_slice(secret.as_slice());
+    DashSDKResult::success(std::ptr::null_mut())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dash_sdk_error_free;
+    use std::ffi::CString;
+
+    /// The secret written for `text`, or the error code; the error is freed.
+    fn read(text: &str) -> Result<[u8; 32], DashSDKErrorCode> {
+        let text = CString::new(text).expect("no NUL");
+        let mut out = [0xEEu8; 32];
+        unsafe {
+            let result = dash_sdk_private_key_bytes_from_text(text.as_ptr(), out.as_mut_ptr());
+            assert!(result.data.is_null());
+            if result.error.is_null() {
+                return Ok(out);
+            }
+            let code = (*result.error).code;
+            dash_sdk_error_free(result.error);
+            assert_eq!(out, [0xEEu8; 32], "nothing is written on a refusal");
+            Err(code)
+        }
+    }
+
+    #[test]
+    fn should_read_a_hex_key_and_the_same_key_in_wif() {
+        let secret = [2u8; 32];
+        let wif = PrivateKey::from_byte_array(&secret, Network::Testnet)
+            .expect("a secret key")
+            .to_wif();
+        assert_eq!(read(&hex::encode(secret)), Ok(secret));
+        assert_eq!(read(&format!("  {}\n", hex::encode(secret))), Ok(secret));
+        assert_eq!(read(&wif), Ok(secret));
+    }
+
+    #[test]
+    fn should_refuse_text_that_is_not_a_private_key() {
+        for text in [
+            "",
+            &"0".repeat(64),
+            &"zz".repeat(32),
+            &"ab".repeat(31),
+            "cNotAWifKey",
+        ] {
+            assert_eq!(
+                read(text),
+                Err(DashSDKErrorCode::InvalidParameter),
+                "{text}"
+            );
+        }
+        unsafe {
+            let mut out = [0u8; 32];
+            let result = dash_sdk_private_key_bytes_from_text(std::ptr::null(), out.as_mut_ptr());
+            assert!(!result.error.is_null());
+            dash_sdk_error_free(result.error);
+            let text = CString::new(hex::encode([2u8; 32])).expect("no NUL");
+            let result = dash_sdk_private_key_bytes_from_text(text.as_ptr(), std::ptr::null_mut());
+            assert!(!result.error.is_null());
+            dash_sdk_error_free(result.error);
+        }
     }
 }
