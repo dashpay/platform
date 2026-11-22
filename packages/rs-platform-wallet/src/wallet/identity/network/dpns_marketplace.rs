@@ -27,7 +27,6 @@
 //! in the documents tree at all.
 
 use super::contact_requests::GatedSigner;
-use super::signing_key::AvailableSigningKey;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
@@ -37,7 +36,7 @@ use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{IdentityPublicKey, KeyType, Purpose};
+use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Value;
 use dpp::prelude::{DataContract, Identifier};
@@ -996,22 +995,24 @@ impl IdentityWallet {
             .map(|m| m.identity.clone())
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
         drop(wm);
-        identity
-            .available_signing_key(
-                signer,
-                Purpose::AUTHENTICATION,
-                &allowed_levels,
-                &[KeyType::ECDSA_SECP256K1],
-                false,
-            )?
-            .cloned()
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "No ECDSA authentication key at a security level satisfying \
-                     {required_level} found on identity {identity_id} \
-                     (required to sign a DPNS {document_type_name} state transition)"
-                ))
-            })
+        // The key's contract bounds must allow this document type of this contract: a key
+        // bound elsewhere could sign, and the network would refuse the transition
+        usable_authentication_key(
+            &identity,
+            signer,
+            contract.id(),
+            document_type_name,
+            &allowed_levels,
+            &[KeyType::ECDSA_SECP256K1],
+        )?
+        .cloned()
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "No ECDSA authentication key at a security level satisfying \
+                 {required_level}, with contract bounds allowing the DPNS \
+                 {document_type_name} type, found on identity {identity_id}"
+            ))
+        })
     }
 
     // -----------------------------------------------------------------
@@ -1832,6 +1833,13 @@ impl IdentityWallet {
             self.refresh_identity_after_trade(&seller, "marketplace sync (sold name)")
                 .await;
         }
+        // A pass that finished after this wallet was removed and re-created under its id
+        // applied nothing (every write above is fenced to this handle's generation), so it
+        // is reported as discarded, not as a refresh the host could record
+        {
+            let wm = self.wallet_manager.read().await;
+            self.current_wallet_info(&wm)?;
+        }
         summary.sync_unix_ms = now_ms();
         Ok(summary)
     }
@@ -2318,11 +2326,13 @@ fn required_purchase_credits(expected_price: Credits) -> Result<Credits, Platfor
 mod tests {
     mod give_up;
 
-    use super::super::signing_key::tests::{identity, lock_checking_signer};
+    use super::super::signing_key::tests::{identity, lock_checking_signer, KeyFilter};
     use super::*;
     use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
     use crate::wallet::core::WalletGeneration;
     use dpp::identity::accessors::IdentitySettersV0;
+    use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+    use dpp::identity::Purpose;
     use dpp::identity::SecurityLevel;
 
     fn name_state_entry(
@@ -4055,6 +4065,83 @@ mod tests {
             #[cfg(feature = "shielded")]
             contact_shielded_addresses: Default::default(),
         }
+    }
+
+    /// A sync pass on a handle whose wallet was removed and re-created under its id is
+    /// reported as discarded (the wallet is not found), not as a successful refresh. Here the
+    /// replacement happens before the pass, so its snapshot read refuses it; a pass that
+    /// resumes after a replacement is refused the same way by the check before it returns.
+    #[tokio::test]
+    async fn a_sync_pass_of_a_replaced_generation_reports_the_wallet_gone() {
+        let identity_id = Identifier::from([0xE4; 32]);
+        let sdk = sdk_for_departed_identity_sync(&identity_id, DEPARTED_LABEL).await;
+        let wallet = mirror_backed_identity_wallet_with_sdk(
+            Arc::new(MirrorPersister::hydrated(Vec::new())),
+            sdk,
+        );
+        // The wallet is replaced before the pass gets to apply anything
+        wallet
+            .wallet_manager
+            .write()
+            .await
+            .get_wallet_info_mut(&wallet.wallet_id)
+            .expect("wallet info")
+            .generation = Arc::new(WalletGeneration::new());
+
+        let error = wallet
+            .sync_dpns_marketplace()
+            .await
+            .expect_err("the pass is discarded");
+        assert!(
+            matches!(error, PlatformWalletError::WalletNotFound(_)),
+            "{error:?}"
+        );
+    }
+
+    /// A trade write's key must be allowed the `domain` type: a signer-reachable key bound
+    /// to another contract is skipped for a later key without bounds.
+    #[tokio::test]
+    async fn trade_writes_skip_a_key_bound_to_another_contract() {
+        let wallet = mirror_backed_identity_wallet(Arc::new(MirrorPersister::hydrated(Vec::new())));
+        let owner_id = Identifier::from([0xE3; 32]);
+        let mut owner = identity(
+            Purpose::AUTHENTICATION,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_SECP256K1,
+        );
+        owner.set_id(owner_id);
+        let mut bound = owner.public_keys().get(&1).cloned().expect("key 1");
+        if let IdentityPublicKey::V0(key) = &mut bound {
+            key.contract_bounds = Some(ContractBounds::SingleContract {
+                id: Identifier::from([0x0E; 32]),
+            });
+        }
+        owner.add_public_key(bound);
+        wallet
+            .wallet_manager
+            .write()
+            .await
+            .get_wallet_info_mut(&wallet.wallet_id)
+            .expect("wallet info")
+            .identity_manager
+            .add_identity(owner, 0, wallet.wallet_id, &wallet.persister)
+            .expect("add identity");
+        let contract = dpp::system_data_contracts::load_system_data_contract(
+            dpp::data_contracts::SystemDataContract::DPNS,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .expect("bundled DPNS contract");
+
+        let key = wallet
+            .select_signing_key_for_document_type(
+                &owner_id,
+                &contract,
+                DPNS_DOCUMENT_TYPE,
+                &KeyFilter(|_| true),
+            )
+            .await
+            .expect("a key is selected");
+        assert_eq!(key.id(), 2, "the key bound to another contract is skipped");
     }
 
     /// A handle whose wallet was removed and re-created under the same id (a new
