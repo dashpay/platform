@@ -1824,6 +1824,156 @@ fn should_hold_every_list_of_what_an_update_gains_in_a_type_it_has() {
             })),
             expected: Expected::Refused(10276, "documents stored before hold"),
         },
+        Case {
+            name: "an entry beside a kept $ref for a string member the definition gains, with a \
+                   required the string ignores",
+            old: document_type_schema(
+                platform_value!({
+                    "a": string(0, 10),
+                    "meta": meta_ref(Some((
+                        "properties",
+                        platform_value!({ "w": { "type": "boolean" } }),
+                    ))),
+                }),
+                platform_value!(["a"]),
+            ),
+            new: document_type_schema(
+                platform_value!({
+                    "a": string(0, 10),
+                    "meta": meta_ref(Some((
+                        "properties",
+                        platform_value!({
+                            "w": { "type": "boolean" },
+                            "s": { "$ref": "#/$defs/label", "required": ["a.b"] },
+                        }),
+                    ))),
+                }),
+                platform_value!(["a"]),
+            ),
+            old_defs: Some(platform_value!({
+                "m": {
+                    "type": "object",
+                    "properties": { "k": boolean(0) },
+                    "additionalProperties": false,
+                },
+                "label": { "type": "string", "maxLength": 5 },
+            })),
+            new_defs: Some(platform_value!({
+                "m": {
+                    "type": "object",
+                    "properties": {
+                        "k": boolean(0),
+                        "s": { "type": "string", "maxLength": 5, "position": 1 },
+                    },
+                    "additionalProperties": false,
+                },
+                "label": { "type": "string", "maxLength": 5 },
+            })),
+            expected: Expected::Accepted,
+        },
+        Case {
+            name: "a required written deeper below a kept $ref's entry for a string member",
+            old: document_type_schema(
+                platform_value!({
+                    "a": string(0, 10),
+                    "meta": meta_ref(Some((
+                        "properties",
+                        platform_value!({
+                            "s": {
+                                "properties": { "u": { "type": "string", "maxLength": 5 } },
+                                "additionalProperties": false,
+                            },
+                        }),
+                    ))),
+                }),
+                platform_value!(["a"]),
+            ),
+            new: document_type_schema(
+                platform_value!({
+                    "a": string(0, 10),
+                    "meta": meta_ref(Some((
+                        "properties",
+                        platform_value!({
+                            "s": {
+                                "properties": {
+                                    "u": { "type": "string", "maxLength": 5 },
+                                    "t": {
+                                        "type": "object",
+                                        "properties": {
+                                            "x": { "type": "string", "maxLength": 5, "position": 0 },
+                                        },
+                                        "required": ["a.b"],
+                                        "additionalProperties": false,
+                                    },
+                                },
+                                "additionalProperties": false,
+                            },
+                        }),
+                    ))),
+                }),
+                platform_value!(["a"]),
+            ),
+            old_defs: definitions(platform_value!({ "s": string(0, 10) })),
+            new_defs: definitions(platform_value!({ "s": string(0, 10) })),
+            expected: Expected::Accepted,
+        },
+        Case {
+            name: "an entry beside a kept $ref for an object the definition gains, whose string \
+                   member's entry writes a required the string ignores",
+            old: document_type_schema(
+                platform_value!({
+                    "a": string(0, 10),
+                    "meta": meta_ref(Some((
+                        "properties",
+                        platform_value!({ "w": { "type": "boolean" } }),
+                    ))),
+                }),
+                platform_value!(["a"]),
+            ),
+            new: document_type_schema(
+                platform_value!({
+                    "a": string(0, 10),
+                    "meta": meta_ref(Some((
+                        "properties",
+                        platform_value!({
+                            "w": { "type": "boolean" },
+                            "o": {
+                                "type": "object",
+                                "properties": {
+                                    "s": {
+                                        "$ref": "#/$defs/label",
+                                        "position": 0,
+                                        "required": ["a.b"],
+                                    },
+                                },
+                                "additionalProperties": false,
+                            },
+                        }),
+                    ))),
+                }),
+                platform_value!(["a"]),
+            ),
+            old_defs: Some(platform_value!({
+                "m": {
+                    "type": "object",
+                    "properties": { "k": boolean(0) },
+                    "additionalProperties": false,
+                },
+                "label": { "type": "string", "maxLength": 5 },
+            })),
+            new_defs: Some(platform_value!({
+                "m": {
+                    "type": "object",
+                    "properties": {
+                        "k": boolean(0),
+                        "o": object(platform_value!({ "s": string(0, 5) }), 1, None),
+                    },
+                    "additionalProperties": false,
+                },
+                "label": { "type": "string", "maxLength": 5 },
+            })),
+            expected: Expected::Accepted,
+        },
         case(
             "the type's own required growing past its maxProperties",
             capped(

@@ -266,6 +266,35 @@ mod tests {
         .validate_basic_structure(Network::Testnet, platform_version)
         .expect("expected the structure to be judged");
         assert!(result.is_valid(), "{:?}", result.errors);
+
+        // A `$ref` cycle in the `$defs` of a new contract, which no document type may reach
+        let cyclic = BTreeMap::from([(
+            "loop".to_string(),
+            object(
+                vec![(
+                    Value::Text("next".to_string()),
+                    platform_value!({ "$ref": "#/$defs/loop", "position": 0 }),
+                )],
+                0,
+            ),
+        )]);
+        let result = create_transition(
+            object(vec![string_member("a", 0)], 0),
+            Some(cyclic),
+            platform_version,
+        )
+        .validate_basic_structure(Network::Testnet, platform_version)
+        .expect("expected the structure to be judged");
+        assert!(
+            matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(BasicError::ContractError(
+                    DataContractError::InvalidContractStructure(details)
+                ))] if details.contains("reaches the schema it is written in")
+            ),
+            "a cycle in $defs: {:?}",
+            result.errors
+        );
     }
 
     /// Protocol version 14 registers such a contract, as it always did.

@@ -18,9 +18,11 @@ use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::util::storage_flags::StorageFlags;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::v1::DataContractConfigSettersV1;
 use dpp::data_contract::config::DataContractConfig;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::DataContractFactory;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
@@ -1439,4 +1441,108 @@ fn should_expire_a_document_stored_at_protocol_version_14_whose_object_is_out_of
             "required {required:?}: the document is gone"
         );
     }
+}
+
+/// A document stored under protocol version 14 in an object that lists its members out of
+/// their `position` order reads back with its values after an update applied at protocol
+/// version 15 appends a member to the object at its next free position: the object is stored
+/// in map order before and after, and the appended member reads as absent. Whether such an
+/// update is admitted is DPP's to judge (contract `validate_update` 2, whose tests pin an
+/// existing object gaining a member at its next free position); Drive's tests do not build it.
+#[test]
+fn should_read_a_document_stored_at_protocol_version_14_after_its_object_gains_a_member_at_15() {
+    let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+    let latest = PlatformVersion::latest();
+    let contract = page_listing_its_object_out_of_position_order(&[], protocol_version_14);
+    let drive = setup_drive_with_initial_state_structure(Some(protocol_version_14));
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            None,
+            None,
+            protocol_version_14,
+        )
+        .expect("the contract applies at protocol version 14");
+    let mut id = [6u8; 32];
+    id[1..9].copy_from_slice(&START_MS.to_be_bytes());
+    let metadata = Value::Map(vec![
+        (Value::Text("slug".into()), Value::Text("the-slug".into())),
+        (Value::Text("title".into()), Value::Text("the-title".into())),
+        (
+            Value::Text("description".into()),
+            Value::Text("the-desc".into()),
+        ),
+    ]);
+    let document = Document::V0(DocumentV0 {
+        id: Identifier::from(id),
+        owner_id: Identifier::from(OWNER),
+        properties: BTreeMap::from([("metadata".to_string(), metadata.clone())]),
+        revision: Some(1),
+        created_at: Some(START_MS),
+        ..Default::default()
+    });
+    insert_at_version(
+        &drive,
+        &contract,
+        "page",
+        &document,
+        true,
+        protocol_version_14,
+    );
+    drive.cache.data_contracts.clear();
+
+    let mut page = contract
+        .document_type_for_name("page")
+        .expect("document type")
+        .schema()
+        .clone();
+    let Some(Value::Map(object)) = page
+        .get_optional_value_at_path("properties.metadata")
+        .ok()
+        .flatten()
+        .cloned()
+    else {
+        panic!("expected the object metadata");
+    };
+    let object = object
+        .into_iter()
+        .map(|(key, value)| match (key.as_text(), value) {
+            (Some("properties"), Value::Map(mut members)) => {
+                members.push((
+                    Value::Text("extra".into()),
+                    platform_value!({ "type": "string", "maxLength": 20, "position": 3 }),
+                ));
+                (key, Value::Map(members))
+            }
+            (_, value) => (key, value),
+        })
+        .collect();
+    page.set_value_at_full_path("properties.metadata", Value::Map(object))
+        .expect("expected the object to be replaced");
+    let mut updated = contract.clone();
+    updated.set_version(2);
+    updated
+        .set_document_schema("page", page, true, &mut Vec::new(), latest)
+        .expect("the updated type parses at the latest protocol version");
+    drive
+        .apply_contract(&updated, BlockInfo::default(), true, None, None, latest)
+        .expect("the update applies at the latest protocol version");
+    drive.cache.data_contracts.clear();
+
+    let Some(Element::Item(bytes, _)) =
+        stored_document(&drive, &updated, "page", Identifier::from(id))
+    else {
+        panic!("expected the stored document");
+    };
+    let read = Document::from_bytes(
+        &bytes,
+        updated
+            .document_type_for_name("page")
+            .expect("document type"),
+        latest,
+    )
+    .expect("the document stored at 14 decodes with the updated type");
+    assert_eq!(read.properties().get("metadata"), Some(&metadata));
 }

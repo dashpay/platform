@@ -1121,7 +1121,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///       does not grow past the object's `maxProperties`; nor does the type's own.
 ///     - No `required` list gains a dotted name, or loses one no other list still requires,
 ///       including the type's own list, those of the objects the update adds, and entries
-///       written at any depth beside a `$ref` (`DocumentTypeUpdateError`,
+///       written at any depth beside a `$ref`, but for a list written for a member the type
+///       parses as anything but an object, which names nothing (`DocumentTypeUpdateError`,
 ///       `DataContractInvalidRequiredFieldsUpdateError`). A member the type requires only through
 ///       a dotted name may be added to its object's own `required`, after which the dotted name
 ///       may go.
@@ -1158,8 +1159,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///       objects, and those its own `$ref`s reach, are listed the same way
 ///       (`InvalidContractStructure`). A `$ref` the contract keeps is judged through the schema
 ///       it points at, as an object the contract has. A schema reached deeper than the parse
-///       admits, or a `$ref` reaching the schema it is written in, is refused
-///       (`InvalidContractStructure`), as the parse refuses either in a document type.
+///       admits, or a `$ref` the contract gains reaching the schema it is written in, is
+///       refused (`InvalidContractStructure`), as the parse refuses either in a document type;
+///       a cycle a token-only contract stored earlier in `$defs` no parse reads ends the walk
+///       of an update that keeps it.
 ///     - An object a contract has keeps the order of its members, and a member it gains comes
 ///       after them at its next free position. The first check that finds a breach reports it:
 ///       the walk of each document type (`DocumentTypeUpdateError`, or

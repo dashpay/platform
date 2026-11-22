@@ -540,7 +540,13 @@ fn first_required_list_change(
     // The `properties` written beside a `$ref` are not parsed, but the document validator reads
     // them, so an entry an update writes there, at any depth, holds no dotted name either
     if has_ref(new_schema) {
-        return first_dotted_name_in_entries_added(old_schema, new_schema, Some(old), path);
+        return first_dotted_name_in_entries_added(
+            old_schema,
+            new_schema,
+            Some(old),
+            Parsed::Object(new),
+            path,
+        );
     }
     None
 }
@@ -548,16 +554,19 @@ fn first_required_list_change(
 /// The first entry of `new_schema`'s `properties`, as written beside a `$ref` the type keeps,
 /// that `old_schema`'s does not have and that is refused, at any depth below the entries both
 /// have: one written for a member the stored type parses (`old_members`, the members of the
-/// object the entries are written for), which the validator would hold every document stored
-/// before to, or one holding a `required` list no document could meet. A schema written inline
-/// with another type than `object` holds no members.
+/// object the entries are written for, `new` what the new type parses there), which the
+/// validator would hold every document stored before to, or one holding a `required` list no
+/// document could meet. A schema written inline with another type than `object`, or written
+/// for a member the new type parses as anything but an object, holds no members: the lists
+/// written for it, and below it, name none.
 fn first_dotted_name_in_entries_added(
     old_schema: &Value,
     new_schema: &Value,
     old_members: Option<&IndexMap<String, DocumentProperty>>,
+    new: Parsed,
     path: Option<&str>,
 ) -> Option<String> {
-    if is_inline_scalar(new_schema) {
+    if is_inline_scalar(new_schema) || matches!(new, Parsed::NotAnObject) {
         return None;
     }
     let old_entries = properties_as_written(old_schema);
@@ -567,25 +576,59 @@ fn first_dotted_name_in_entries_added(
             let entry_path = member_path(path, name);
             let old_member = old_members.and_then(|old_members| old_members.get(name));
             match old_entries.get(name) {
-                Some(old_entry) => {
-                    let old_member_members = match old_member.map(|member| &member.property_type) {
-                        Some(DocumentPropertyType::Object(members)) => Some(members),
-                        _ => None,
-                    };
-                    first_dotted_name_in_entries_added(
-                        old_entry,
-                        entry,
-                        old_member_members,
-                        Some(&entry_path),
-                    )
-                }
+                Some(old_entry) => first_dotted_name_in_entries_added(
+                    old_entry,
+                    entry,
+                    object_members(old_member),
+                    new.member(name),
+                    Some(&entry_path),
+                ),
                 None if old_member.is_some() => Some(format!(
                     "an entry can not be written beside the $ref for '{entry_path}', a member \
                      documents stored before hold: the document validator would hold them to it"
                 )),
-                None => first_unmeetable_list_in_entry(entry, &entry_path),
+                None => first_unmeetable_list_in_entry(entry, &entry_path, new.member(name)),
             }
         })
+}
+
+/// What the new type parses at the place an entry written beside a `$ref` is for.
+#[derive(Clone, Copy)]
+enum Parsed<'a> {
+    /// An object, with these members.
+    Object(&'a IndexMap<String, DocumentProperty>),
+    /// A member the type parses as anything but an object, which holds no members.
+    NotAnObject,
+    /// No member the type parses: the entry is for a key the object does not have.
+    Nothing,
+}
+
+impl<'a> Parsed<'a> {
+    fn of(member: Option<&'a DocumentProperty>) -> Self {
+        match member.map(|member| &member.property_type) {
+            Some(DocumentPropertyType::Object(members)) => Parsed::Object(members),
+            Some(_) => Parsed::NotAnObject,
+            None => Parsed::Nothing,
+        }
+    }
+
+    /// What the type parses for the member `name` of what it parses here.
+    fn member(self, name: &str) -> Self {
+        match self {
+            Parsed::Object(members) => Parsed::of(members.get(name)),
+            Parsed::NotAnObject | Parsed::Nothing => Parsed::Nothing,
+        }
+    }
+}
+
+/// The members of `member` when the type parses it as an object.
+fn object_members(
+    member: Option<&DocumentProperty>,
+) -> Option<&IndexMap<String, DocumentProperty>> {
+    match member.map(|member| &member.property_type) {
+        Some(DocumentPropertyType::Object(members)) => Some(members),
+        _ => None,
+    }
 }
 
 /// The entries of `schema`'s `properties` map as written, beside a `$ref` too.
@@ -643,11 +686,12 @@ fn holding_object_refusal(schema: &Value, path: &str) -> Option<String> {
 /// reads as a property named with a dot, or more names than the entry's `maxProperties` lets an
 /// object hold. An entry beside a `$ref` restates members its definition supplies, so its names
 /// are not checked against the entry's own `properties`. A schema written inline with another
-/// type than `object` holds no members: the validator reads neither the `required` nor the
-/// `properties` written on it, and what the parser collects from them names no member it
+/// type than `object`, or written for a member the type parses (`parsed`) as anything but an
+/// object, holds no members: the validator reads neither the `required` nor the `properties`
+/// written for it as an object's, and what the parser collects from them names no member it
 /// parses, so the walk stops there.
-fn first_unmeetable_list_in_entry(schema: &Value, path: &str) -> Option<String> {
-    if is_inline_scalar(schema) {
+fn first_unmeetable_list_in_entry(schema: &Value, path: &str, parsed: Parsed) -> Option<String> {
+    if is_inline_scalar(schema) || matches!(parsed, Parsed::NotAnObject) {
         return None;
     }
     let names = required_names(schema);
@@ -660,12 +704,16 @@ fn first_unmeetable_list_in_entry(schema: &Value, path: &str) -> Option<String> 
     properties_as_written(schema)
         .into_iter()
         .find_map(|(name, entry)| {
-            first_unmeetable_list_in_entry(entry, &member_path(Some(path), name))
+            first_unmeetable_list_in_entry(
+                entry,
+                &member_path(Some(path), name),
+                parsed.member(name),
+            )
         })
 }
 
 /// What the walk of the objects a contract gains in a document type reads: the type's schema
-/// and the contract's `$defs`, where a `$ref` resolves as the parser resolves it.
+/// and the contract's `$defs`, where a `$ref` resolves as the document validator resolves it.
 struct GainedObjects<'a> {
     type_schema: &'a Value,
     definitions: &'a DefinitionsRoot<'a>,
@@ -684,7 +732,7 @@ impl GainedObjects<'_> {
         schemas: Vec<&Value>,
         path: Option<&str>,
     ) -> Option<String> {
-        let read = self.schemas_read(schemas)?;
+        let read = self.schemas_read(schemas);
         new.iter().find_map(|(name, new_property)| {
             let DocumentPropertyType::Object(new_members) = &new_property.property_type else {
                 return None;
@@ -720,7 +768,7 @@ impl GainedObjects<'_> {
         members: &IndexMap<String, DocumentProperty>,
         path: &str,
     ) -> Option<String> {
-        let read = self.schemas_read(schemas)?;
+        let read = self.schemas_read(schemas);
         let mut names = BTreeSet::new();
         for name in read.iter().copied().flat_map(required_names) {
             if name.contains('.') {
@@ -764,20 +812,22 @@ impl GainedObjects<'_> {
     }
 
     /// Every schema the validator applies to an object written as `schemas`: each of them, and
-    /// the schema each `$ref` among them points at, resolved as the parser resolves it. `None`
-    /// when one points at nothing, which the parse refuses.
-    fn schemas_read<'s>(&'s self, schemas: Vec<&'s Value>) -> Option<Vec<&'s Value>> {
+    /// the schema each `$ref` among them points at, resolved as the validator resolves it (a
+    /// `$ref` the parser reads too resolves alike for both, or the validation schema refuses the
+    /// contract). A `$ref` that points at nothing adds no schema: the validation schema refuses
+    /// it, and the lists of the others are still read.
+    fn schemas_read<'s>(&'s self, schemas: Vec<&'s Value>) -> Vec<&'s Value> {
         let mut read = Vec::with_capacity(schemas.len() * 2);
         for schema in schemas {
             read.push(schema);
-            if let Some(reference) = reference_of(schema) {
-                read.push(
-                    self.definitions
-                        .resolve(reference, Some(self.type_schema))?,
-                );
+            if let Some(target) = reference_of(schema).and_then(|reference| {
+                self.definitions
+                    .resolve_as_validated(reference, Some(self.type_schema))
+            }) {
+                read.push(target);
             }
         }
-        Some(read)
+        read
     }
 }
 

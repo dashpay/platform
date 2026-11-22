@@ -188,6 +188,9 @@ mod tests {
     use crate::consensus::state::state_error::StateError;
     use crate::consensus::ConsensusError;
     use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use crate::data_contract::accessors::v1::DataContractV1Setters;
+    use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+    use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
     use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use crate::data_contract::document_type::DocumentPropertyType;
     use crate::data_contract::errors::DataContractError;
@@ -1546,6 +1549,124 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A `$ref` only the validator reads, written in an entry beside another `$ref`, is
+    /// resolved as the validator resolves it, a number in its pointer indexing an array: the
+    /// lists of the schema it reaches are held to the members the type parses, as every other
+    /// list the validator reads for the object.
+    #[test]
+    fn should_read_a_ref_only_the_validator_reads_as_the_validator_resolves_it() {
+        let platform_version = PlatformVersion::latest();
+        let boolean_at =
+            |position: u64| platform_value!({ "type": "boolean", "position": position });
+        let definitions = BTreeMap::from([
+            (
+                "n".to_string(),
+                object_of(vec![(
+                    "inner",
+                    with_position(object_of(vec![("p", boolean_at(0))]), 0),
+                )]),
+            ),
+            (
+                "shapes".to_string(),
+                platform_value!({
+                    "type": "object",
+                    "properties": { "p": boolean_at(0) },
+                    "additionalProperties": false,
+                    "enum": [{
+                        "type": "object",
+                        "properties": { "p": { "type": "boolean" } },
+                        "required": ["zzz"],
+                        "additionalProperties": false,
+                    }],
+                }),
+            ),
+        ]);
+        let stored = type_with(vec![("q", string_at(0))]);
+        let added = platform_value!({
+            "type": "object",
+            "properties": {
+                "meta": {
+                    "$ref": "#/$defs/n",
+                    "position": 0,
+                    "required": ["inner"],
+                    "properties": { "inner": { "$ref": "#/$defs/shapes/enum/0" } },
+                },
+            },
+            "additionalProperties": false,
+        });
+        let (stored_contract, mut updated) = stored_and_updated(
+            stored.clone(),
+            Some(definitions.clone()),
+            stored,
+            Some(definitions),
+            platform_version,
+        );
+        updated
+            .set_document_schema("added", added, true, &mut Vec::new(), platform_version)
+            .expect("expected the new type to parse under full validation");
+        let result = stored_contract
+            .validate_update(&updated, &BlockInfo::default(), platform_version)
+            .expect("expected the update to be judged");
+        assert!(
+            matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::DataContractInvalidRequiredFieldsUpdateError(e)
+                )] if e.details().contains("'zzz'")
+            ),
+            "{:?}",
+            result.errors
+        );
+    }
+
+    /// A `$ref` cycle a token-only contract stored before protocol version 15 in its `$defs`
+    /// (no document type reads them, so no parse refused it) leaves the contract updatable: an
+    /// update at protocol version 15 that keeps the cycle is accepted. A contract with a
+    /// document type can hold no such cycle: its parse refuses one.
+    #[test]
+    fn should_keep_a_contract_updatable_whose_stored_definitions_hold_a_cycle() {
+        let cyclic = BTreeMap::from([(
+            "loop".to_string(),
+            object_of(vec![(
+                "next",
+                platform_value!({ "$ref": "#/$defs/loop", "position": 0 }),
+            )]),
+        )]);
+        let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+        let mut stored = get_data_contract_fixture(
+            None,
+            IdentityNonce::default(),
+            protocol_version_14.protocol_version,
+        )
+        .data_contract_owned();
+        stored.set_tokens(BTreeMap::from([(
+            0,
+            TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+        )]));
+        stored
+            .set_document_schemas(
+                BTreeMap::new(),
+                None,
+                true,
+                &mut Vec::new(),
+                protocol_version_14,
+            )
+            .expect("expected a token-only contract to register at 14");
+        stored
+            .set_schema_defs(Some(cyclic), true, &mut Vec::new(), protocol_version_14)
+            .expect("expected a token-only contract holding the cycle to register at 14");
+        assert!(stored.document_types().is_empty());
+        assert!(stored
+            .schema_defs()
+            .is_some_and(|definitions| definitions.contains_key("loop")));
+        let mut updated = stored.clone();
+        updated.set_version(stored.version() + 1);
+        let result = stored
+            .validate_update(&updated, &BlockInfo::default(), PlatformVersion::latest())
+            .expect("expected the update to be judged");
+        assert!(result.is_valid(), "{:?}", result.errors);
     }
 
     /// A position a contract stored before protocol version 15 that no integer reads (a float
