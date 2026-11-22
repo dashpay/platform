@@ -158,6 +158,7 @@ impl DpnsOperationGate {
     }
 
     /// Whether nothing is held.
+    #[cfg(test)]
     pub(super) fn holds_nothing(&self) -> bool {
         self.unresolved().is_empty()
     }
