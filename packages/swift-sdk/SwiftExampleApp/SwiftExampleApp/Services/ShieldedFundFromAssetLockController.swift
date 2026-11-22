@@ -116,12 +116,16 @@ final class ShieldedFundFromAssetLockController: ObservableObject {
     /// the next sync, not from the broadcast call — so the controller
     /// flips `phase` to `.completed` (no balance payload) / `.failed`
     /// accordingly.
-    func submit(operationId: String, body: @escaping () async throws -> Void) {
+    ///
+    /// Returns `true` when it started the task, `false` when the phase
+    /// refused it. Callers that count running bodies read this rather
+    /// than inferring acceptance from the controller's state.
+    func submit(operationId: String, body: @escaping () async throws -> Void) -> Bool {
         switch phase {
         case .idle, .failed:
             break
         case .inFlight, .completed:
-            return
+            return false
         }
         self.operationId = operationId
         phase = .inFlight
@@ -138,5 +142,6 @@ final class ShieldedFundFromAssetLockController: ObservableObject {
                 }
             }
         }
+        return true
     }
 }

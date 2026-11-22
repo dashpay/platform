@@ -1,15 +1,18 @@
 import XCTest
 @testable import SwiftExampleApp
 
-/// Pins that dismissing a funding's sheet removes only that funding. A
-/// completed controller's sheet can stay open while `startFunding` hands
-/// its slot to a new operation (a Max to the same own address, say). The
-/// SDK rebuild guard reads `hasInFlightFundings`, so dropping the newer,
-/// still running controller would let a rebuild stop SPV under it.
+/// Pins that dismissing a funding's sheet never removes a running funding.
+/// A completed controller's sheet can stay open while `startFunding` hands
+/// its slot to a new operation (a Max to the same own address, say), and a
+/// failed sheet can stay open while a retry puts the SAME controller back
+/// in flight. The SDK rebuild guard reads `hasInFlightFundings`, so
+/// dropping a running controller would let a rebuild stop SPV under it.
+/// Also pins that `startFunding` reports whether it scheduled the body.
 @MainActor
 final class ShieldedFundFromAssetLockCoordinatorTests: XCTestCase {
 
     private struct TimedOut: Error {}
+    private struct Refused: Error {}
 
     /// A funding body held open until the test opens it.
     @MainActor
@@ -39,12 +42,17 @@ final class ShieldedFundFromAssetLockCoordinatorTests: XCTestCase {
         }
     }
 
+    private func isFailed(_ controller: ShieldedFundFromAssetLockController) -> Bool {
+        if case .failed = controller.phase { return true }
+        return false
+    }
+
     func testShouldKeepANewerInFlightFundingWhenAStaleSheetIsDismissed() async throws {
         let coordinator = ShieldedFundFromAssetLockCoordinator()
         let walletId = Data(repeating: 0xA1, count: 32)
         let recipient = Data(repeating: 0x5C, count: 43)
 
-        guard case .started(let first) = coordinator.startFunding(
+        guard case .started(let first, _) = coordinator.startFunding(
             walletId: walletId,
             recipientRaw43: recipient,
             operationId: "shield:first",
@@ -55,7 +63,7 @@ final class ShieldedFundFromAssetLockCoordinatorTests: XCTestCase {
         try await waitUntil { first.phase == .completed }
 
         let gate = Gate()
-        guard case .started(let second) = coordinator.startFunding(
+        guard case .started(let second, _) = coordinator.startFunding(
             walletId: walletId,
             recipientRaw43: recipient,
             operationId: "shield:second",
@@ -79,5 +87,109 @@ final class ShieldedFundFromAssetLockCoordinatorTests: XCTestCase {
 
         coordinator.dismiss(second)
         XCTAssertNil(coordinator.controller(walletId: walletId, recipientRaw43: recipient))
+    }
+
+    func testShouldKeepARetriedFundingWhenItsFailedSheetIsDismissed() async throws {
+        let coordinator = ShieldedFundFromAssetLockCoordinator()
+        let walletId = Data(repeating: 0xA2, count: 32)
+        let recipient = Data(repeating: 0x5D, count: 43)
+
+        guard case .started(let first, _) = coordinator.startFunding(
+            walletId: walletId,
+            recipientRaw43: recipient,
+            operationId: "shield:retried",
+            body: { throw Refused() }
+        ) else {
+            return XCTFail("the first attempt did not start")
+        }
+        try await waitUntil { self.isFailed(first) }
+
+        let gate = Gate()
+        guard case .started(let retry, _) = coordinator.startFunding(
+            walletId: walletId,
+            recipientRaw43: recipient,
+            operationId: "shield:retried",
+            body: { await gate.hold() }
+        ) else {
+            gate.open()
+            return XCTFail("the retry did not start")
+        }
+        XCTAssertTrue(retry === first)
+        XCTAssertEqual(first.phase, .inFlight)
+
+        // The first attempt's failed sheet taps Dismiss after the retry
+        // started: the controller is running again, so it stays.
+        coordinator.dismiss(first)
+        XCTAssertTrue(coordinator.controller(walletId: walletId, recipientRaw43: recipient) === first)
+        XCTAssertTrue(coordinator.hasInFlightFundings)
+
+        gate.open()
+        try await waitUntil { first.phase == .completed }
+        XCTAssertFalse(coordinator.hasInFlightFundings)
+
+        coordinator.dismiss(first)
+        XCTAssertNil(coordinator.controller(walletId: walletId, recipientRaw43: recipient))
+    }
+
+    func testShouldReportBodyScheduledOnlyWhenStartFundingStartedTheBody() async throws {
+        let coordinator = ShieldedFundFromAssetLockCoordinator()
+        let walletId = Data(repeating: 0xA3, count: 32)
+        let recipient = Data(repeating: 0x5E, count: 43)
+        let gate = Gate()
+
+        guard case .started(let controller, let firstScheduled) = coordinator.startFunding(
+            walletId: walletId,
+            recipientRaw43: recipient,
+            operationId: "drain:op",
+            body: {
+                await gate.hold()
+                throw Refused()
+            }
+        ) else {
+            gate.open()
+            return XCTFail("the first attempt did not start")
+        }
+        XCTAssertTrue(firstScheduled)
+
+        // A re-tap of the in-flight operation only re-presents it.
+        guard case .started(let reTapped, let reTapScheduled) = coordinator.startFunding(
+            walletId: walletId,
+            recipientRaw43: recipient,
+            operationId: "drain:op",
+            body: {}
+        ) else {
+            gate.open()
+            return XCTFail("the in-flight re-tap was not re-presented")
+        }
+        XCTAssertTrue(reTapped === controller)
+        XCTAssertFalse(reTapScheduled)
+
+        gate.open()
+        try await waitUntil { self.isFailed(controller) }
+
+        // A retry on the failed slot reuses the same controller and does
+        // run its body.
+        guard case .started(let retried, let retryScheduled) = coordinator.startFunding(
+            walletId: walletId,
+            recipientRaw43: recipient,
+            operationId: "drain:op",
+            body: {}
+        ) else {
+            return XCTFail("the retry did not start")
+        }
+        XCTAssertTrue(retried === controller)
+        XCTAssertTrue(retryScheduled)
+        try await waitUntil { controller.phase == .completed }
+
+        // A re-tap after success re-presents the terminal state only.
+        guard case .started(_, let afterSuccessScheduled) = coordinator.startFunding(
+            walletId: walletId,
+            recipientRaw43: recipient,
+            operationId: "drain:op",
+            body: {}
+        ) else {
+            return XCTFail("the completed re-tap was not re-presented")
+        }
+        XCTAssertFalse(afterSuccessScheduled)
     }
 }

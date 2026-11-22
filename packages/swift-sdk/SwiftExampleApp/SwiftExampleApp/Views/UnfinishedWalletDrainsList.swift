@@ -128,7 +128,7 @@ struct UnfinishedWalletDrainsList: View {
             return
         }
         switch drainCoordinator.resume(record, outpoint: outpoint, walletManager: walletManager) {
-        case .started(let controller):
+        case .started(let controller, _):
             presented = PresentedProgress(controller: controller)
         case .blockedByOtherWalletFunding(let blocker):
             resumeError = ResumeError(

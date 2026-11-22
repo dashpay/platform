@@ -55,8 +55,9 @@ extension PersistentAssetLock: ShieldedProgressLockRow {}
 /// app is hung.
 ///
 /// One of steps 3/4 is `.skipped` only when the lock shows which
-/// finality lane ran (`stepState`); at statuses 5 and 6 the proof is
-/// gone, so both show done once passed.
+/// finality lane ran (`stepState`). When it does not (statuses 5 and 6,
+/// whose proof is gone, or no row), both show `.finalityKindUnknown`
+/// once passed, never two green checks that would claim both proofs.
 struct ShieldedFundFromAssetLockProgressSection: View {
     @ObservedObject var controller: ShieldedFundFromAssetLockController
 
@@ -106,18 +107,17 @@ struct ShieldedFundFromAssetLockProgressSection: View {
             )
             let isFailed = isFailed
             let errorMessage = failureMessage
+            let states = (1...5).map {
+                Self.stepState($0, currentStep: step, isFailed: isFailed, lockStatusRaw: lockStatusRaw)
+            }
+            let finalityKindUnknown = states.contains(.finalityKindUnknown)
 
             Section {
                 ForEach(1...5, id: \.self) { idx in
                     stepRow(
                         index: idx,
                         title: stepTitle(idx),
-                        state: Self.stepState(
-                            idx,
-                            currentStep: step,
-                            isFailed: isFailed,
-                            lockStatusRaw: lockStatusRaw
-                        )
+                        state: states[idx - 1]
                     )
                     // Under the step that failed, which is step 1 when the
                     // attempt was refused before any lock was stored.
@@ -131,7 +131,7 @@ struct ShieldedFundFromAssetLockProgressSection: View {
             } header: {
                 Text("Shield Progress")
             } footer: {
-                Text(footerText(step: step, isFailed: isFailed))
+                Text(footerText(step: step, isFailed: isFailed, finalityKindUnknown: finalityKindUnknown))
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
@@ -245,15 +245,21 @@ struct ShieldedFundFromAssetLockProgressSection: View {
         }
     }
 
-    enum StepState { case done, active, pending, skipped, failed }
+    enum StepState {
+        case done, active, pending, skipped, failed
+        /// A passed finality step (3 or 4) whose lane is not recorded:
+        /// finality was reached, but by which proof is unknown.
+        case finalityKindUnknown
+    }
 
     /// The state of step `idx` given `currentStep`. A passed finality lane
     /// is skipped only when the lock shows the other one ran: status 2
     /// (InstantSend proof) skips step 4, status 3 (ChainLock proof) skips
     /// step 3, and a Broadcast lock (1) waiting on step 4 is past the
-    /// InstantSend timeout, so step 3 is skipped. Any other status shows
-    /// both as done: `complete_wallet_drain` clears the proof, so at
-    /// RecoveredFromChain (5), DrainCompleted (6) or with no row the lane
+    /// InstantSend timeout, so step 3 is skipped. With any other status
+    /// both passed lanes are `.finalityKindUnknown`: `complete_wallet_drain`
+    /// clears the proof, so at RecoveredFromChain (5), DrainCompleted (6),
+    /// with no row, or with a row that lags a completed attempt, the lane
     /// that ran is unknown.
     nonisolated static func stepState(
         _ idx: Int,
@@ -270,6 +276,10 @@ struct ShieldedFundFromAssetLockProgressSection: View {
                 return .skipped
             case (3, 1?) where currentStep == 4:
                 return .skipped
+            case (3, 2?), (4, 3?):
+                return .done
+            case (3, _), (4, _):
+                return .finalityKindUnknown
             default:
                 return .done
             }
@@ -319,6 +329,13 @@ struct ShieldedFundFromAssetLockProgressSection: View {
             Image(systemName: "checkmark.circle")
                 .foregroundColor(.secondary)
                 .font(.title3)
+        case .finalityKindUnknown:
+            // Filled but grey: passed, unlike the hollow `.skipped`, yet
+            // not the green check that would claim this proof was used.
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundColor(.secondary)
+                .font(.title3)
+                .accessibilityLabel("Finality confirmed, proof kind unknown")
         case .failed:
             Image(systemName: "xmark.octagon.fill")
                 .foregroundColor(.red)
@@ -332,22 +349,29 @@ struct ShieldedFundFromAssetLockProgressSection: View {
         case .active: return .primary
         case .pending: return .secondary
         case .skipped: return .secondary
+        case .finalityKindUnknown: return .primary
         case .failed: return .red
         }
     }
 
-    private func footerText(step: Int, isFailed: Bool) -> String {
+    private func footerText(step: Int, isFailed: Bool, finalityKindUnknown: Bool) -> String {
+        let stepText: String
         if isFailed {
-            return "Tap Dismiss to clear this entry."
+            stepText = "Tap Dismiss to clear this entry."
+        } else {
+            switch step {
+            case 1: stepText = "Building a Core asset-lock transaction from wallet funds."
+            case 2: stepText = "Sending the asset-lock transaction to peers."
+            case 3: stepText = "Waiting for the InstantSend lock so the asset-lock proof is final."
+            case 4: stepText = "InstantSend timed out; falling back to ChainLock finality (~2 min)."
+            case 5: stepText = "Building the Halo 2 proof (~30s) and submitting the ShieldFromAssetLock state transition to Platform. The shielded note appears in your balance after the next sync pass."
+            default: stepText = ""
+            }
         }
-        switch step {
-        case 1: return "Building a Core asset-lock transaction from wallet funds."
-        case 2: return "Sending the asset-lock transaction to peers."
-        case 3: return "Waiting for the InstantSend lock so the asset-lock proof is final."
-        case 4: return "InstantSend timed out; falling back to ChainLock finality (~2 min)."
-        case 5: return "Building the Halo 2 proof (~30s) and submitting the ShieldFromAssetLock state transition to Platform. The shielded note appears in your balance after the next sync pass."
-        default: return ""
-        }
+        guard finalityKindUnknown else { return stepText }
+        let note = "The asset lock reached finality, but whether by InstantSend or ChainLock "
+            + "is not recorded for this lock, so steps 3 and 4 do not name a proof."
+        return stepText.isEmpty ? note : stepText + "\n" + note
     }
 }
 

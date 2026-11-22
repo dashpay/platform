@@ -269,7 +269,7 @@ final class WalletDrainCoordinator: ObservableObject {
             }
         }
         switch result {
-        case .started(let controller):
+        case .started(let controller, _):
             latest[record.operationId] = Entry(record: record, outpoint: nil, readError: nil)
             refreshFromStore()
             return .started(controller)
@@ -360,21 +360,18 @@ final class WalletDrainCoordinator: ObservableObject {
                 throw failure
             }
         }
-        let coordinator = walletManager.shieldedFundFromAssetLockCoordinator
-        let prior = coordinator.controller(walletId: record.walletId, recipientRaw43: record.recipientRaw43)
-        let priorSubmittedAt = prior?.lastSubmittedAt
-        let result = coordinator.startFunding(
+        let result = walletManager.shieldedFundFromAssetLockCoordinator.startFunding(
             walletId: record.walletId,
             recipientRaw43: record.recipientRaw43,
             operationId: Self.controllerOperationId(id),
             body: body
         )
-        // Undo the running count when the body was not accepted: a blocked
-        // start, or a re-tap that re-presents an existing controller.
+        // Undo the running count when the body was not scheduled, as the
+        // funding coordinator reports it: a blocked start, or a re-tap that
+        // re-presents an existing controller.
         switch result {
-        case .started(let controller):
-            let accepted = controller !== prior || controller.lastSubmittedAt != priorSubmittedAt
-            if !accepted { finishRunning(id) }
+        case .started(_, let bodyScheduled):
+            if !bodyScheduled { finishRunning(id) }
         case .blockedByOtherWalletFunding:
             finishRunning(id)
         }

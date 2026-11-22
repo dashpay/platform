@@ -419,27 +419,36 @@ final class WalletDrainRecoveryTests: XCTestCase {
         XCTAssertEqual(steps(.inFlight, lockStatusRaw: 3), [.done, .done, .skipped, .done, .active])
     }
 
-    func testShouldMarkEveryStepDoneWhenCompleted() {
-        XCTAssertEqual(steps(.completed, lockStatusRaw: nil), [.done, .done, .done, .done, .done])
+    func testShouldMarkTheRecordedLaneWhenCompleted() {
         XCTAssertEqual(steps(.completed, lockStatusRaw: 2), [.done, .done, .done, .skipped, .done])
         XCTAssertEqual(steps(.completed, lockStatusRaw: 3), [.done, .done, .skipped, .done, .done])
     }
 
     /// RecoveredFromChain (5): the lock is confirmed on Core and only the
-    /// shield remains. Its proof is gone, so neither lane is skipped.
+    /// shield remains. Its proof is gone, so neither lane is named: both
+    /// are passed with the proof kind unknown, never two green checks.
     func testShouldPointAtTheShieldForARecoveredLock() {
         XCTAssertEqual(
             Progress.currentStep(phase: .inFlight, lockStatusRaw: 5, secondsSinceLockUpdate: 0),
             5
         )
-        XCTAssertEqual(steps(.inFlight, lockStatusRaw: 5), [.done, .done, .done, .done, .active])
-        XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 5), [.done, .done, .done, .done, .failed])
-        XCTAssertEqual(steps(.completed, lockStatusRaw: 5), [.done, .done, .done, .done, .done])
+        XCTAssertEqual(
+            steps(.inFlight, lockStatusRaw: 5),
+            [.done, .done, .finalityKindUnknown, .finalityKindUnknown, .active]
+        )
+        XCTAssertEqual(
+            steps(.failed("x"), lockStatusRaw: 5),
+            [.done, .done, .finalityKindUnknown, .finalityKindUnknown, .failed]
+        )
+        XCTAssertEqual(
+            steps(.completed, lockStatusRaw: 5),
+            [.done, .done, .finalityKindUnknown, .finalityKindUnknown, .done]
+        )
     }
 
     /// DrainCompleted (6): Rust recorded the shield as done, so every step
-    /// is done in any phase, and the ChainLock lane is not claimed.
-    func testShouldMarkEveryStepDoneForACompletedDrainLock() {
+    /// is passed in any phase, and neither finality lane is named.
+    func testShouldPassEveryStepWithoutNamingALaneForACompletedDrainLock() {
         XCTAssertEqual(
             Progress.currentStep(phase: .inFlight, lockStatusRaw: 6, secondsSinceLockUpdate: 0),
             6
@@ -448,16 +457,20 @@ final class WalletDrainRecoveryTests: XCTestCase {
             Progress.currentStep(phase: .failed("x"), lockStatusRaw: 6, secondsSinceLockUpdate: 0),
             6
         )
-        XCTAssertEqual(steps(.inFlight, lockStatusRaw: 6), [.done, .done, .done, .done, .done])
-        XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 6), [.done, .done, .done, .done, .done])
-        XCTAssertEqual(steps(.completed, lockStatusRaw: 6), [.done, .done, .done, .done, .done])
+        let passed: [Progress.StepState] = [.done, .done, .finalityKindUnknown, .finalityKindUnknown, .done]
+        XCTAssertEqual(steps(.inFlight, lockStatusRaw: 6), passed)
+        XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 6), passed)
+        XCTAssertEqual(steps(.completed, lockStatusRaw: 6), passed)
     }
 
-    /// A completed controller whose row still reads Broadcast (1) does not
-    /// show which lane ran, so InstantSend is not marked skipped.
+    /// A completed controller with no row, or whose row still reads Built
+    /// (0) or Broadcast (1), does not show which lane ran, so neither is
+    /// skipped and neither is claimed.
     func testShouldNotSkipALaneForACompletedAttemptWhoseRowLags() {
-        XCTAssertEqual(steps(.completed, lockStatusRaw: 1), [.done, .done, .done, .done, .done])
-        XCTAssertEqual(steps(.completed, lockStatusRaw: 0), [.done, .done, .done, .done, .done])
+        let passed: [Progress.StepState] = [.done, .done, .finalityKindUnknown, .finalityKindUnknown, .done]
+        XCTAssertEqual(steps(.completed, lockStatusRaw: nil), passed)
+        XCTAssertEqual(steps(.completed, lockStatusRaw: 1), passed)
+        XCTAssertEqual(steps(.completed, lockStatusRaw: 0), passed)
     }
 
     // MARK: - Resume errors

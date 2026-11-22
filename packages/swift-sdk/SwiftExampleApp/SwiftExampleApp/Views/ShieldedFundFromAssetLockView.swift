@@ -892,7 +892,7 @@ struct ShieldedFundFromAssetLockView: View {
             operationId: operationId,
             body: body
         ) {
-        case .started(let controller):
+        case .started(let controller, _):
             activeController = controller
             activePhase = controller.phase
         case .blockedByOtherWalletFunding(let blocker):
