@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import SwiftData
 import SwiftDashSDK
@@ -54,20 +55,20 @@ enum ShieldedActivityKindDisplay {
 }
 
 extension PersistentShieldedActivity {
-    /// 1 DASH = 1e11 Platform credits (distinct from Core's 1e8/DASH).
-    fileprivate static let creditsPerDash = 100_000_000_000.0
-
-    /// Signed amount string, e.g. `-0.5000 DASH` for an out, `+1.0000`
-    /// for an in. `direction`: 0 In, 1 Out, 2 Self.
+    /// Exact signed amount, e.g. `-0.5 DASH` for an out and `+1 DASH` for
+    /// an in, down to one credit. `direction`: 0 In, 1 Out, 2 Self.
     var signedAmountText: String {
-        let dash = Double(amount) / Self.creditsPerDash
+        Self.signedAmountText(amount: amount, direction: direction)
+    }
+
+    static func signedAmountText(amount: UInt64, direction: Int) -> String {
         let sign: String
         switch direction {
         case 0: sign = "+"
         case 1: sign = "-"
         default: sign = ""
         }
-        return String(format: "%@%.4f DASH", sign, dash)
+        return sign + formatCreditsAsDash(amount)
     }
 
     /// Tint for the amount label by direction.
@@ -110,8 +111,13 @@ extension PersistentShieldedActivity {
 /// outgoing-notes UI).
 struct ShieldedActivityListView: View {
     let walletId: Data
+    @EnvironmentObject private var walletManager: PlatformWalletManager
+    @EnvironmentObject private var shieldedService: ShieldedService
     @Query private var entries: [PersistentShieldedActivity]
+    @Query private var identities: [PersistentIdentity]
     @State private var selected: PersistentShieldedActivity?
+    @StateObject private var recovery = ShieldedIdentityDebitRecoveryModel()
+    @State private var checkStatus: ShieldedCheckNowStatus = .idle
 
     init(walletId: Data) {
         self.walletId = walletId
@@ -157,15 +163,41 @@ struct ShieldedActivityListView: View {
             }
     }
 
+    /// This wallet's identities, for labelling identity shield records.
+    private var walletIdentities: [PersistentIdentity] {
+        identities.filter { $0.wallet?.walletId == walletId }
+    }
+
     var body: some View {
         List {
-            if entries.isEmpty {
+            if entries.isEmpty && recovery.state.isKnownEmpty {
                 ContentUnavailableView(
                     "No Shielded Activity",
                     systemImage: "lock.rectangle.stack",
                     description: Text("Shielded sends, receives, and other private operations appear here.")
                 )
             }
+            ShieldedIdentityDebitRecoverySection(
+                model: recovery,
+                identities: walletIdentities,
+                isChecking: shieldedService.isSyncing,
+                canCheck: shieldedService.canResume,
+                checkStatus: checkStatus,
+                onCheckNow: { Task { await checkNow() } },
+                onStopRetrying: { record in
+                    Task {
+                        // Every open list for this wallet, this one included,
+                        // re-reads once from the published change.
+                        await recovery.stopRetryingAndPublish(
+                            accountIndex: record.accountIndex,
+                            activityId: record.activityId,
+                            walletManager: walletManager,
+                            walletId: walletId,
+                            publish: shieldedService.noteRecoveryRecordsChanged
+                        )
+                    }
+                }
+            )
             // Key rows by MODEL identity, not `entryId`: the table is
             // uniqued on (walletId, accountIndex, entryId), so one
             // wallet-level list can legitimately hold the same entryId
@@ -186,6 +218,51 @@ struct ShieldedActivityListView: View {
         .navigationTitle("Shielded Activity")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selected) { ShieldedActivityDetailView(entry: $0) }
+        // Keyed by manager and wallet: a replaced manager resets the list.
+        .task(id: RecoveryReadScope(manager: ObjectIdentifier(walletManager), walletId: walletId)) {
+            await loadRecoveryRecords()
+        }
+        .refreshable { await loadRecoveryRecords() }
+        // A finished sync pass is what resends and resolves the records.
+        // The completion event is used rather than `isSyncing`, which a fast
+        // pass can toggle between two observations.
+        .onReceive(walletManager.$lastShieldedSyncEvent.dropFirst()) { event in
+            if ShieldedSyncEventScope.covers(event, walletId: walletId) {
+                Task { await loadRecoveryRecords() }
+            }
+        }
+        // A Clear purges the records without a sync event.
+        .onReceive(shieldedService.$localStateClearCount.dropFirst()) { _ in
+            recovery.resetSnapshot()
+            Task { await loadRecoveryRecords() }
+        }
+        // Stop Retrying (in any window) or an identity shield from Send
+        // changes a wallet's records; the model re-reads on the change.
+        .onAppear { recovery.observeRecoveryChanges(from: shieldedService) }
+        .alert(
+            "Could not stop retrying",
+            isPresented: Binding(
+                get: { recovery.actionError != nil },
+                set: { if !$0 { recovery.actionError = nil } }
+            )
+        ) {
+            Button("OK") { recovery.actionError = nil }
+        } message: {
+            Text(recovery.actionError ?? "")
+        }
+    }
+
+    private func loadRecoveryRecords() async {
+        await recovery.load(walletManager: walletManager, walletId: walletId)
+    }
+
+    /// The app's existing manual shielded sync; it syncs every bound wallet.
+    private func checkNow() async {
+        checkStatus = .checking
+        let outcome = await shieldedService.manualSync()
+        checkStatus = .after(outcome)
+        // The records stay listed whatever the outcome.
+        await loadRecoveryRecords()
     }
 
     @ViewBuilder
@@ -275,7 +352,7 @@ struct ShieldedActivityDetailView: View {
                     LabeledContent("Type", value: ShieldedActivityKindDisplay.label(entry.kindTag))
                     LabeledContent("Amount", value: entry.signedAmountText)
                     if entry.hasFee {
-                        LabeledContent("Fee", value: String(format: "%.6f DASH", Double(entry.fee) / 100_000_000_000.0))
+                        LabeledContent("Fee", value: formatCreditsAsDash(entry.fee))
                     }
                     LabeledContent("Status", value: statusText)
                     LabeledContent("Direction", value: directionText)
