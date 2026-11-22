@@ -28,6 +28,14 @@
     "core_wallet_tx_builder_change_to_first_input": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
     "core_wallet_tx_builder_finalize": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
     "core_wallet_tx_builder_preserve_output_order": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
+    "dash_sdk_contract_get_fee_pots": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_action_counts": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_document_removals": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_document_removals_by_ids": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_entries": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_status": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_team_action_signers": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_team_actions": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
     "dash_sdk_create_adaptive": "packages/rs-sdk-ffi/src/sdk.rs",
     "dash_sdk_get_context_provider_source": "packages/rs-sdk-ffi/src/sdk.rs",
     "dash_sdk_set_context_provider_mode": "packages/rs-sdk-ffi/src/sdk.rs",
@@ -68,9 +76,11 @@
     "platform_wallet_manager_shielded_wallet_drain_status": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
     "platform_wallet_manager_spv_rescan_filters": "packages/rs-platform-wallet-ffi/src/spv.rs",
     "platform_wallet_manager_sync_fault_detected": "packages/rs-platform-wallet-ffi/src/manager.rs",
+    "platform_wallet_preview_data_contract_update": "packages/rs-platform-wallet-ffi/src/data_contract.rs",
     "platform_wallet_private_document_read_free": "packages/rs-platform-wallet-ffi/src/private_documents.rs",
     "platform_wallet_read_private_document_entries": "packages/rs-platform-wallet-ffi/src/private_documents.rs",
     "platform_wallet_resume_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
+    "platform_wallet_split_contract_update_source": "packages/rs-platform-wallet-ffi/src/data_contract.rs",
     "platform_wallet_sync_contested_dpns_names": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "platform_wallet_sync_private_contact_requests": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_token_purchase": "packages/rs-platform-wallet-ffi/src/tokens/purchase.rs",
@@ -1715,6 +1725,47 @@
       ]
     },
     {
+      "id": "contracts.update_preview",
+      "title": "Data contract update is reviewed through the wallet's preview before it is broadcast",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_preview_data_contract_update",
+        "platform_wallet_split_contract_update_source"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "UpdateContractView (Contracts -> contract -> Update Contract) calls previewDataContractUpdate and offers the update only when the preview reports a change, but the flow has not been driven on a device or simulator yet: TEST_PLAN DC-04 is the manual gate still to run."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "Kotlin's UpdateContractScreen broadcasts without a preview, and the JNI bridge (rs-unified-sdk-jni) does not expose platform_wallet_preview_data_contract_update or platform_wallet_split_contract_update_source."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/DataContractUpdatePreviewDecodingTests.swift",
+          "id": "testShouldDecodeAPreviewWithEveryField",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/DataContractUpdatePreviewDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DC-04",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
       "id": "documents.private_document_entries_read",
       "title": "Read the entries of any private document type a wallet's identities can open (protocol version 15)",
       "area": "example_app",
@@ -2219,6 +2270,69 @@
           "kind": "manual",
           "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "SYS-09",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "contracts.moderation_reads",
+      "title": "Contract moderation and fee pot reads (protocol version 14)",
+      "area": "example_app",
+      "shared_apis": [
+        "dash_sdk_contract_get_fee_pots",
+        "dash_sdk_contract_moderation_get_action_counts",
+        "dash_sdk_contract_moderation_get_document_removals",
+        "dash_sdk_contract_moderation_get_document_removals_by_ids",
+        "dash_sdk_contract_moderation_get_entries",
+        "dash_sdk_contract_moderation_get_status",
+        "dash_sdk_contract_moderation_get_team_action_signers",
+        "dash_sdk_contract_moderation_get_team_actions"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "supported",
+          "restart": "not_applicable",
+          "reason": null
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI bridge, Kotlin wrapper or KotlinExampleApp screen yet for the contract moderation and fee pot reads. Port from packages/swift-sdk/Sources/SwiftDashSDK/ContractModeration and the SwiftExampleApp Views/ContractModeration screens, reusing their contractModeration.* accessibility identifiers as testTags; the list and team action status arguments are the bytes 0 banlist, 1 suspensions, 2 warnings and 0 active, 1 closed."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+          "id": "should_refuse_a_null_handle_or_a_missing_or_malformed_id_before_any_request",
+          "command": "cargo test -p rs-sdk-ffi --lib contract_moderation",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk-ffi/src/contract_moderation/json.rs",
+          "id": "should_write_removals_with_their_kept_fields_and_cursor",
+          "command": "cargo test -p rs-sdk-ffi --lib contract_moderation",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ContractModerationDecodingTests.swift",
+          "id": "testShouldDecodeRemovalsWithKeptFieldsRestorationAndCursor",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ContractModerationDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DC-06",
           "covers_restart": false
         }
       ]

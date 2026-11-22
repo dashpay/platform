@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **32**
+Capabilities tracked: **34**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 18 | 12 | 1 | 1 |
-| Swift | Example app | 5 | 17 | 1 | 9 |
-| Kotlin | SDK | 14 | 14 | 3 | 1 |
-| Kotlin | Example app | 6 | 13 | 3 | 10 |
+| Swift | SDK | 20 | 12 | 1 | 1 |
+| Swift | Example app | 6 | 18 | 1 | 9 |
+| Kotlin | SDK | 14 | 14 | 5 | 1 |
+| Kotlin | Example app | 6 | 13 | 5 | 10 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 11 | 19 |
-| Kotlin | 5 | 8 | 19 |
+| Swift | 2 | 11 | 21 |
+| Kotlin | 5 | 8 | 21 |
 
 ## Capability status
 
@@ -47,6 +47,7 @@ Capabilities tracked: **32**
 | `tokens.direct_purchase_quote` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `protocol.address_validation` | supported / supported / not_applicable | partial / partial / not_applicable |
 | `documents.create_catalog` | supported / supported / not_applicable | supported / supported / not_applicable |
+| `contracts.update_preview` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
 | `documents.private_document_entries_read` | partial / partial / not_applicable | unsupported / unsupported / not_applicable |
 | `tokens.max_supply_proposal_discovery` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `core.immature_balance_display` | supported / supported / not_applicable | supported / supported / not_applicable |
@@ -56,6 +57,7 @@ Capabilities tracked: **32**
 | `errors.signing_key_unavailable_discriminator` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
 | `shielded.core_wallet_drain` | supported / partial / tested | unsupported / unsupported / not_applicable |
 | `network.adaptive_quorum_source` | supported / supported / tested | supported / supported / tested |
+| `contracts.moderation_reads` | supported / supported / not_applicable | unsupported / unsupported / not_applicable |
 
 Source: [`docs/sdk/sdk-parity-manifest.json`](../../docs/sdk/sdk-parity-manifest.json).
 Detailed legacy view mapping remains in [`PARITY.md`](PARITY.md), but its manual totals are not authoritative.
