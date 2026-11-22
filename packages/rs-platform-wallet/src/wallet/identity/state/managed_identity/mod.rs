@@ -11,6 +11,7 @@ mod sync;
 
 pub(crate) use contact_requests::{freshness, predates, SentContactRequestOutcome};
 pub use dashpay::{DashPayState, PrivateContact};
+pub(crate) use identity_ops::with_raised_limits;
 
 // `block_time` + `key_storage` moved to `crate::wallet::identity::types`.
 // Re-export so every `impl ManagedIdentity` block below keeps working
