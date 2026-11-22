@@ -370,7 +370,8 @@ enum GiveUpNameUI {
     static let unconfirmedExplanation =
         "The give-up was sent but Platform has not confirmed it, so it may still take "
             + "effect. To avoid a second paid or permanent change, nothing more is offered "
-            + "here. Close this and refresh the identity later to see whether the name is gone."
+            + "here. To update which names you hold, refresh the Name Marketplace later: "
+            + "its sync finds names that left. A refresh does not show that the give-up failed."
 
     static let deleteExplanation =
         "Deleting makes the name free again. Anybody, including someone else, can then "
