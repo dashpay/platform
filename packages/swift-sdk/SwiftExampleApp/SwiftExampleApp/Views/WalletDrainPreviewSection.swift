@@ -1,30 +1,45 @@
 import SwiftUI
 import SwiftDashSDK
 
+/// A Max estimate together with the scope it was read for. Submit checks
+/// the scope against the current inputs, so a quote for one account index
+/// (or wallet) can never gate a transfer of another.
+struct WalletDrainQuote: Equatable {
+    let walletId: Data
+    let fundingAccountIndex: UInt32
+    let preview: WalletDrainPreview
+
+    func matches(walletId: Data, fundingAccountIndex: UInt32) -> Bool {
+        self.walletId == walletId && self.fundingAccountIndex == fundingAccountIndex
+    }
+}
+
 /// Read-only estimate for a Core-to-shielded Max transfer, shown in place
-/// of the amount field. Every figure is Rust's
-/// `shieldedWalletDrainPreview` except "Stays in Core" (see `staysInCore`).
-/// The loaded preview is written to `preview` so the parent can gate submit.
+/// of the amount field. Every figure is Rust's `shieldedWalletDrainPreview`.
+/// The loaded estimate is written to `quote` with its wallet and account
+/// index so the parent can gate submit on a quote for the current inputs;
+/// it is cleared whenever those inputs change.
 struct WalletDrainPreviewSection: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
 
     let walletId: Data
     let fundingAccountIndex: UInt32
-    @Binding var preview: WalletDrainPreview?
+    @Binding var quote: WalletDrainQuote?
 
     @State private var isLoading = false
     @State private var loadError: String?
     @State private var refreshTick = 0
 
     private struct LoadKey: Hashable {
+        let walletId: Data
         let fundingAccountIndex: UInt32
         let refreshTick: Int
     }
 
     var body: some View {
         Section {
-            if let preview {
-                rows(preview)
+            if let quote, quote.matches(walletId: walletId, fundingAccountIndex: fundingAccountIndex) {
+                rows(quote.preview)
             } else if let loadError {
                 Text(loadError)
                     .font(.caption)
@@ -53,7 +68,9 @@ struct WalletDrainPreviewSection: View {
                     + "transfer runs, because inputs reserved by other operations are counted here."
             )
         }
-        .task(id: LoadKey(fundingAccountIndex: fundingAccountIndex, refreshTick: refreshTick)) {
+        .task(
+            id: LoadKey(walletId: walletId, fundingAccountIndex: fundingAccountIndex, refreshTick: refreshTick)
+        ) {
             await load()
         }
     }
@@ -79,11 +96,6 @@ struct WalletDrainPreviewSection: View {
             "You receive, shielded (est.)",
             preview.estimatedRecipientCredits.map { formatCredits($0) } ?? "not available",
             id: "shieldFromCore.maxPreview.receive"
-        )
-        valueRow(
-            "Stays in Core (est.)",
-            formatDuffs(staysInCore(preview)),
-            id: "shieldFromCore.maxPreview.staysInCore"
         )
         statusRow(preview.status)
     }
@@ -127,27 +139,26 @@ struct WalletDrainPreviewSection: View {
         .accessibilityIdentifier(id)
     }
 
-    /// Display-only difference of two Rust-reported balances: the wallet's
-    /// Core total as the balance card sums it, minus the preview's swept
-    /// candidate balance. Not a Rust figure; saturates at zero.
-    private func staysInCore(_ preview: WalletDrainPreview) -> UInt64 {
-        let total = WalletCoreBalance(
-            accountBalances: walletManager.accountBalances(for: walletId)
-        ).total
-        return total > preview.candidateBalanceDuffs ? total - preview.candidateBalanceDuffs : 0
-    }
-
+    /// Reads the estimate for the inputs captured when the load starts, and
+    /// stores it under that scope, so a load that finishes after the inputs
+    /// changed can never pass as a quote for the new ones.
     private func load() async {
+        let scopeWalletId = walletId
+        let scopeIndex = fundingAccountIndex
         isLoading = true
         loadError = nil
-        preview = nil
+        quote = nil
         do {
             let loaded = try await walletManager.shieldedWalletDrainPreview(
-                walletId: walletId,
-                fundingAccountIndex: fundingAccountIndex
+                walletId: scopeWalletId,
+                fundingAccountIndex: scopeIndex
             )
             guard !Task.isCancelled else { return }
-            preview = loaded
+            quote = WalletDrainQuote(
+                walletId: scopeWalletId,
+                fundingAccountIndex: scopeIndex,
+                preview: loaded
+            )
         } catch {
             guard !Task.isCancelled else { return }
             loadError = "Could not estimate: \(error.localizedDescription)"

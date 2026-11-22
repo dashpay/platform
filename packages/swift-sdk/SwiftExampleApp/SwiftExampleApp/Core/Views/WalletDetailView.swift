@@ -1002,6 +1002,18 @@ struct WalletInfoView: View {
             return
         }
 
+        // Max-transfer markers are app-side, so the SDK wipe above does not
+        // reach them; a re-imported wallet with the same id would list them.
+        // The wallet is already gone, so a failure is logged and the screen
+        // still closes: keeping it up would render a deleted SwiftData row.
+        do {
+            try walletManager.walletDrainCoordinator.forgetWallet(walletId: walletId)
+        } catch {
+            SDKLogger.error(
+                "Wallet deleted, but its Max transfer markers were not removed: \(error.localizedDescription)"
+            )
+        }
+
         await MainActor.run {
             isDeleting = false
             dismiss()
@@ -1076,7 +1088,12 @@ struct BalanceCardView: View {
     /// Reading every component from the same FFI result keeps the card
     /// internally consistent while sync updates account state.
     private var coreBalance: WalletCoreBalance {
-        WalletCoreBalance(accountBalances: walletManager.accountBalances(for: wallet.walletId))
+        walletManager.accountBalances(for: wallet.walletId)
+            .reduce(into: WalletCoreBalance()) { total, account in
+                total.confirmed += account.confirmed
+                total.unconfirmed += account.unconfirmed
+                total.immature += account.immature
+            }
     }
 
     /// Platform balance from BLAST sync (preferred) or identity sum (fallback).
@@ -1235,21 +1252,6 @@ struct WalletCoreBalance {
     var confirmed: UInt64 = 0
     var unconfirmed: UInt64 = 0
     var immature: UInt64 = 0
-}
-
-extension WalletCoreBalance {
-    /// The balance card's sum of one Rust account snapshot. Shared so the
-    /// Max preview's "Stays in Core" uses the same total the card shows.
-    init(accountBalances: [PlatformWalletManager.AccountBalance]) {
-        self.init()
-        for account in accountBalances {
-            confirmed += account.confirmed
-            unconfirmed += account.unconfirmed
-            immature += account.immature
-        }
-    }
-
-    var total: UInt64 { confirmed + unconfirmed + immature }
 }
 
 /// Pure balance-card state used by the SwiftUI view and unit tests. Keeping

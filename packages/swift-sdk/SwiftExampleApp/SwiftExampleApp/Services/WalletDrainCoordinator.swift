@@ -16,13 +16,20 @@ struct WalletDrainAttemptError: LocalizedError, Equatable {
 /// existing `ShieldedFundFromAssetLockCoordinator` so the per-wallet
 /// single-flight rule and the progress UI are shared with the sibling flow.
 ///
-/// Markers are removed only by `reconcile`, from a status Rust returned
-/// (one exception: a start the funding coordinator refused before running
-/// anything).
+/// Only `start` calls `shieldedFundFromWalletDrain`. A resume calls
+/// `shieldedResumeFundFromAssetLock` with the exact outpoint the last
+/// status read returned, which can never build a new lock; a repeated
+/// drain call could, when Rust's state for the id is still "not sent".
+///
+/// Markers are removed by `reconcile`, from a status Rust returned, and by
+/// `forgetWallet` when the wallet is deleted (one more exception: a start
+/// the funding coordinator refused before running anything).
 @MainActor
 final class WalletDrainCoordinator: ObservableObject {
     struct Entry: Identifiable, Equatable {
         let record: WalletDrainOperationRecord
+        /// The asset lock the last successful status read named. `nil`
+        /// when the read failed or named none, so the row offers no spend.
         let outpoint: WalletDrainOutpoint?
         let readError: String?
         var id: UUID { record.operationId }
@@ -43,6 +50,16 @@ final class WalletDrainCoordinator: ObservableObject {
         case started(ShieldedFundFromAssetLockController)
         case blockedByOtherWalletFunding(ShieldedFundFromAssetLockController)
         case markerWriteFailed(String)
+    }
+
+    /// The one action an unfinished-transfer row offers.
+    enum RowAction: Equatable {
+        /// An attempt for this operation is running.
+        case inProgress
+        /// Resume the asset lock at this exact outpoint.
+        case resume(WalletDrainOutpoint)
+        /// No outpoint is known: read the status again, never spend.
+        case checkAgain
     }
 
     /// Unfinished operations with their last reported state.
@@ -66,8 +83,33 @@ final class WalletDrainCoordinator: ObservableObject {
         refreshFromStore()
     }
 
+    nonisolated static let controllerOperationIdPrefix = "drain:"
+
     nonisolated static func controllerOperationId(_ operationId: UUID) -> String {
-        "drain:\(operationId.uuidString)"
+        controllerOperationIdPrefix + operationId.uuidString
+    }
+
+    /// Inverse of `controllerOperationId`. `nil` for any other operation id
+    /// (fresh shields, generic resumes) and for a malformed UUID.
+    nonisolated static func drainOperationId(fromControllerOperationId value: String) -> UUID? {
+        guard value.hasPrefix(controllerOperationIdPrefix) else { return nil }
+        return UUID(uuidString: String(value.dropFirst(controllerOperationIdPrefix.count)))
+    }
+
+    /// The row rule. A running attempt wins; otherwise only an outpoint
+    /// from a status read allows a spend, and that spend is an exact-outpoint
+    /// resume. Without one the row can only read the status again.
+    nonisolated static func rowAction(
+        controllerPhase: ShieldedFundFromAssetLockController.Phase?,
+        outpoint: WalletDrainOutpoint?
+    ) -> RowAction {
+        if case .inFlight? = controllerPhase {
+            return .inProgress
+        }
+        if let outpoint {
+            return .resume(outpoint)
+        }
+        return .checkAgain
     }
 
     /// The marker rule. `completed` is done. `notSent` from a successful
@@ -149,9 +191,11 @@ final class WalletDrainCoordinator: ObservableObject {
                     try store.remove(operationId: id)
                     latest.removeValue(forKey: id)
                 } catch {
+                    // Rust is done with it; only the marker is left, so the
+                    // row offers "Check again", never a spend.
                     latest[id] = Entry(
                         record: record,
-                        outpoint: outpoint,
+                        outpoint: nil,
                         readError: "Could not clear the finished marker: \(error.localizedDescription)"
                     )
                 }
@@ -186,7 +230,18 @@ final class WalletDrainCoordinator: ObservableObject {
                 "Could not save the transfer id, so nothing was sent: \(error.localizedDescription)"
             )
         }
-        switch run(record, walletManager: walletManager) {
+        let result = run(record, walletManager: walletManager) {
+            let outcome = await walletManager.shieldedFundFromWalletDrain(
+                walletId: record.walletId,
+                operationId: record.operationId,
+                fundingAccountIndex: record.fundingAccountIndex,
+                recipientRaw43: record.recipientRaw43
+            )
+            if let error = WalletDrainCoordinator.attemptError(for: outcome) {
+                throw error
+            }
+        }
+        switch result {
         case .started(let controller):
             latest[record.operationId] = Entry(record: record, outpoint: nil, readError: nil)
             refreshFromStore()
@@ -204,37 +259,73 @@ final class WalletDrainCoordinator: ObservableObject {
         }
     }
 
-    /// Runs the stored operation again with the same id and recipient, so
-    /// Rust resumes the same asset lock.
+    /// Finishes the stored operation from the asset lock at `outpoint`,
+    /// paying the stored recipient. Rust writes the drain's completion
+    /// receipt when it succeeds (or Platform reports the lock already
+    /// consumed), so the reconcile that follows forgets the marker.
     func resume(
         _ record: WalletDrainOperationRecord,
+        outpoint: WalletDrainOutpoint,
         walletManager: PlatformWalletManager
     ) -> ShieldedFundFromAssetLockCoordinator.StartFundingResult {
-        run(record, walletManager: walletManager)
+        run(record, walletManager: walletManager) {
+            try await walletManager.shieldedResumeFundFromAssetLock(
+                walletId: record.walletId,
+                outPointTxid: outpoint.txidWire,
+                outPointVout: outpoint.vout,
+                recipients: [
+                    ShieldedFundFromAssetLockRecipient(recipientRaw43: record.recipientRaw43)
+                ]
+            )
+        }
     }
 
-    private func run(
+    /// Reads the operation's status again. The only action for a row
+    /// without an outpoint: it never sends anything.
+    func checkAgain(
         _ record: WalletDrainOperationRecord,
         walletManager: PlatformWalletManager
+    ) async {
+        await reconcile(
+            walletManager: walletManager,
+            networkRaw: record.networkRaw,
+            walletIds: [record.walletId]
+        )
+    }
+
+    /// Drops every marker of a deleted wallet, on every network.
+    func forgetWallet(walletId: Data) throws {
+        try store.remove(walletId: walletId)
+        latest = latest.filter { $0.value.record.walletId != walletId }
+        refreshFromStore()
+    }
+
+    /// Runs `attempt` for `record` through the shielded-funding coordinator
+    /// under the operation's controller id, then reconciles the operation
+    /// and rethrows the attempt's error for the controller to show.
+    private func run(
+        _ record: WalletDrainOperationRecord,
+        walletManager: PlatformWalletManager,
+        attempt: @escaping () async throws -> Void
     ) -> ShieldedFundFromAssetLockCoordinator.StartFundingResult {
         let id = record.operationId
         attemptCounts[id, default: 0] += 1
         runningCounts[id, default: 0] += 1
         let body: () async throws -> Void = { [weak self] in
-            let outcome = await walletManager.shieldedFundFromWalletDrain(
-                walletId: record.walletId,
-                operationId: id,
-                fundingAccountIndex: record.fundingAccountIndex,
-                recipientRaw43: record.recipientRaw43
-            )
+            var failure: Error?
+            do {
+                try await attempt()
+            } catch {
+                failure = error
+            }
             await MainActor.run { self?.finishRunning(id) }
             await self?.reconcile(
                 walletManager: walletManager,
                 networkRaw: record.networkRaw,
                 walletIds: [record.walletId]
             )
-            if let error = Self.attemptError(for: outcome) {
-                throw error
+            if let failure {
+                throw failure
             }
         }
         let coordinator = walletManager.shieldedFundFromAssetLockCoordinator

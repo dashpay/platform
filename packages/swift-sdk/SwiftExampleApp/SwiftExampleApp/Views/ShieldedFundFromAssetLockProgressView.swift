@@ -2,14 +2,29 @@ import SwiftUI
 import SwiftData
 import SwiftDashSDK
 
+/// The fields `ShieldedFundFromAssetLockProgressSection.matchingLock`
+/// reads, so the match is testable on plain values.
+/// `PersistentAssetLock` conforms with its existing properties.
+protocol ShieldedProgressLockRow {
+    var outPointHex: String { get }
+    var operationId: Data? { get }
+}
+
+extension PersistentAssetLock: ShieldedProgressLockRow {}
+
 /// Embeddable 5-step progress section for a shielded
 /// fund-from-asset-lock flow. Mirrors
 /// [`AddressFundFromAssetLockProgressSection`] but for Type 18
 /// (`ShieldFromAssetLockTransition`).
 ///
+/// `activeLock` is the wallet's shielded top-up row that belongs to the
+/// controller's operation (see `matchingLock`), never simply the newest
+/// one: another operation's lock must not drive this progress.
+///
 /// Step mapping:
 ///
-///   1. Building asset-lock tx        → activeLock `statusRaw == 0`
+///   1. Building asset-lock tx        → no matching row yet, or
+///                                      activeLock `statusRaw == 0`
 ///   2. Broadcasting                  → activeLock `statusRaw == 1` and
 ///                                      < `broadcastingWindow` since
 ///                                      the row's `updatedAt`
@@ -101,6 +116,43 @@ struct ShieldedFundFromAssetLockProgressSection: View {
         }
     }
 
+    // MARK: - Lock selection
+
+    /// This controller's lock among the wallet's shielded top-up rows.
+    private var activeLock: PersistentAssetLock? {
+        Self.matchingLock(controllerOperationId: controller.operationId, newestFirst: activeLocks)
+    }
+
+    /// Picks the row that belongs to a controller's operation id:
+    /// `"drain:<uuid>"` matches the row whose `operationId` bytes are that
+    /// UUID, `"resume:<outPointHex>"` the row with that outpoint, and
+    /// anything else (a fresh `"shield:..."`) the newest row without an
+    /// operation id. `nil` when nothing matches, which the steps read as
+    /// "no lock yet"; another operation's row is never borrowed.
+    nonisolated static func matchingLock<R: ShieldedProgressLockRow>(
+        controllerOperationId: String?,
+        newestFirst rows: [R]
+    ) -> R? {
+        guard let controllerOperationId else {
+            return rows.first { $0.operationId == nil }
+        }
+        if controllerOperationId.hasPrefix(WalletDrainCoordinator.controllerOperationIdPrefix) {
+            guard let drainId = WalletDrainCoordinator.drainOperationId(
+                fromControllerOperationId: controllerOperationId
+            ) else { return nil }
+            return rows.first { row in
+                row.operationId.flatMap(WalletDrainOperationRecord.uuid(fromOperationIdBytes:)) == drainId
+            }
+        }
+        // Same prefix `ShieldedFundFromAssetLockView` builds for a resume.
+        let resumePrefix = "resume:"
+        if controllerOperationId.hasPrefix(resumePrefix) {
+            let outPointHex = String(controllerOperationId.dropFirst(resumePrefix.count))
+            return rows.first { $0.outPointHex == outPointHex }
+        }
+        return rows.first { $0.operationId == nil }
+    }
+
     // MARK: - Step computation
 
     private func currentStep(now: Date) -> Int {
@@ -114,7 +166,7 @@ struct ShieldedFundFromAssetLockProgressSection: View {
             // `.done`.
             return 6
         case .failed:
-            if let lock = activeLocks.first {
+            if let lock = activeLock {
                 switch lock.statusRaw {
                 case 0: return 1
                 case 1: return broadcastSubStep(for: lock, now: now)
@@ -124,7 +176,7 @@ struct ShieldedFundFromAssetLockProgressSection: View {
             }
             return 5
         case .inFlight:
-            guard let lock = activeLocks.first else { return 1 }
+            guard let lock = activeLock else { return 1 }
             switch lock.statusRaw {
             case 0:
                 return 1
@@ -157,7 +209,7 @@ struct ShieldedFundFromAssetLockProgressSection: View {
     /// InstantSend-locked (statusRaw == 2) so the CL fallback was
     /// never needed.
     private var step4WasSkipped: Bool {
-        guard let lock = activeLocks.first else { return false }
+        guard let lock = activeLock else { return false }
         return lock.statusRaw == 2
     }
 
@@ -165,7 +217,7 @@ struct ShieldedFundFromAssetLockProgressSection: View {
     /// `step4WasSkipped`. Same semantics as the address-funding
     /// progress section.
     private var step3WasSkipped: Bool {
-        guard let lock = activeLocks.first else { return false }
+        guard let lock = activeLock else { return false }
         return lock.statusRaw != 2
     }
 

@@ -5,15 +5,15 @@ import Foundation
 /// The SDK identifies a drain by `operationId` and requires the caller to
 /// persist it before calling, so a restart can ask Rust what became of it.
 /// Every amount, input and fee is Rust's; this record only names the
-/// operation and the arguments a resume must repeat.
+/// operation, the account index it swept and the recipient a resume pays.
 struct WalletDrainOperationRecord: Codable, Equatable, Identifiable, Sendable {
     let operationId: UUID
     let walletId: Data
     /// `Network.rawValue`, the same value `PersistentWallet.networkRaw` holds.
     let networkRaw: UInt32
     let fundingAccountIndex: UInt32
-    /// A resume must pass the same recipient: Rust refuses a different one
-    /// on a repeated operation id.
+    /// The wallet's own shielded address at submit time. A resume pays it:
+    /// Rust refuses a recipient other than the one recorded on the lock.
     let recipientRaw43: Data
     let createdAt: Date
 
@@ -80,6 +80,18 @@ final class WalletDrainOperationStore: @unchecked Sendable {
         defer { lock.unlock() }
         let current = try readLocked()
         let remaining = current.filter { $0.operationId != operationId }
+        guard remaining.count != current.count else { return }
+        try writeLocked(remaining)
+    }
+
+    /// Removes every record of `walletId`, on every network. Used when the
+    /// wallet itself is deleted, so a re-imported wallet with the same id
+    /// does not inherit markers of transfers the user chose to forget.
+    func remove(walletId: Data) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        let current = try readLocked()
+        let remaining = current.filter { $0.walletId != walletId }
         guard remaining.count != current.count else { return }
         try writeLocked(remaining)
     }

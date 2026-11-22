@@ -46,8 +46,8 @@ struct PendingPlatformFundFromAssetLocksList: View {
     /// another `@Query`.
     let assetLocks: [PersistentAssetLock]
     /// Operation ids of stored Max-transfer markers. Their locks resume
-    /// from `UnfinishedWalletDrainsList` by operation id, so they are not
-    /// offered here as well.
+    /// from `UnfinishedWalletDrainsList` (by the outpoint the drain status
+    /// names), so they are not offered here as well.
     let drainMarkedOperationIds: Set<UUID>
     /// Bound to the parent's "resume sheet" state. Setting non-nil
     /// presents `FundFromAssetLockPlatformAddressView` in resume mode.
