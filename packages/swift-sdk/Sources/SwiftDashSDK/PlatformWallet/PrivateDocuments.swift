@@ -121,9 +121,10 @@ public struct PrivateDocumentEntry: Sendable, Equatable {
 /// `from`: Rust decides from it where that read starts.
 ///
 /// It carries the largest store size a page proved so far, so a page from a
-/// node behind does not end the reading early, and the fingerprint of the
-/// keys the reads used, so a read after the wallet's keys changed starts
-/// over (`PrivateDocumentEntriesRead.restarted`).
+/// node behind does not end the reading early, the fingerprint of the keys
+/// the reads used, so a read after the wallet's keys changed starts over
+/// (`PrivateDocumentEntriesRead.restarted`), and the fingerprint of the
+/// store read, so a read of another contract or type refuses it.
 public struct PrivateDocumentReadCursor: Sendable, Equatable {
     /// The position the next read starts at.
     public let position: UInt64
@@ -134,11 +135,15 @@ public struct PrivateDocumentReadCursor: Sendable, Equatable {
     /// The fingerprint of the keys the reads scanned with, 32 bytes. Opaque
     /// to Swift: it only crosses back.
     let keySet: Data
+    /// The fingerprint of the store (contract id and type name) the reads
+    /// read, 32 bytes. Opaque to Swift: it only crosses back.
+    let store: Data
 
     init(ffi: PrivateDocumentCursorFFI) {
         self.position = ffi.position
         self.provedTotalCount = ffi.has_proved_total_count ? ffi.proved_total_count : nil
         self.keySet = withUnsafeBytes(of: ffi.key_set) { Data($0) }
+        self.store = withUnsafeBytes(of: ffi.store) { Data($0) }
     }
 
     /// The cursor as the FFI takes it back.
@@ -148,6 +153,7 @@ public struct PrivateDocumentReadCursor: Sendable, Equatable {
         cursor.proved_total_count = provedTotalCount ?? 0
         cursor.has_proved_total_count = provedTotalCount != nil
         withUnsafeMutableBytes(of: &cursor.key_set) { $0.copyBytes(from: keySet.prefix($0.count)) }
+        withUnsafeMutableBytes(of: &cursor.store) { $0.copyBytes(from: store.prefix($0.count)) }
         return cursor
     }
 }
@@ -201,8 +207,14 @@ extension ManagedPlatformWallet {
     /// (`PrivateDocumentEntry.claimedSenderIdentityId`): whether that
     /// identity wrote it is not checked here.
     ///
+    /// A read that reads no page (no identity can open entries, or
+    /// `maxPages` is 0) succeeds without asking the network anything: its
+    /// success shows neither that the network serves private types nor
+    /// that the resolver's mnemonic is this wallet's.
+    ///
     /// Throws `PlatformWalletError.invalidParameter` when `contractId` is
-    /// not 32 bytes, when `documentTypeName` holds a NUL, or when the
+    /// not 32 bytes, when `documentTypeName` holds a NUL, when `from` was
+    /// read from another store (another contract or type), or when the
     /// resolver's mnemonic is not this wallet's (before any page is read),
     /// `.protocolVersionNotActive` below protocol version 15, and the error
     /// the wallet reports when the contract declares no such private type.

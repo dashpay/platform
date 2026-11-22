@@ -134,8 +134,9 @@ const _: () = assert!(std::mem::offset_of!(PrivateDocumentEntryFFI, has_claimed_
 /// Where reading a private document type's store goes on from
 /// (`PrivateDocumentCursor`). The caller keeps it between reads and hands it
 /// back unchanged: it carries the largest store size proved so far, so a page
-/// from a node behind does not end the reading early, and the fingerprint of
-/// the keys read with, so a read after the wallet's keys changed starts over.
+/// from a node behind does not end the reading early, the fingerprint of the
+/// keys read with, so a read after the wallet's keys changed starts over, and
+/// the fingerprint of the store read, so a read of another store refuses it.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PrivateDocumentCursorFFI {
@@ -147,6 +148,9 @@ pub struct PrivateDocumentCursorFFI {
     /// The fingerprint of the keys the reads scanned with. Opaque: hand it
     /// back as it came.
     pub key_set: [u8; 32],
+    /// The fingerprint of the store (contract id and type name) the reads
+    /// read. Opaque: hand it back as it came.
+    pub store: [u8; 32],
     /// Whether a page was ever proved, so `proved_total_count` holds the
     /// store size. `false` means the store's size is unknown, not 0.
     pub has_proved_total_count: bool,
@@ -157,12 +161,13 @@ pub struct PrivateDocumentCursorFFI {
 //   0..=7    position                u64
 //   8..=15   proved_total_count      u64
 //   16..=47  key_set                 [u8; 32]
-//   48       has_proved_total_count  bool
-//   49..=55  (tail padding to 8)
+//   48..=79  store                   [u8; 32]
+//   80       has_proved_total_count  bool
+//   81..=87  (tail padding to 8)
 //
-// Total size = 56, alignment = 8.
+// Total size = 88, alignment = 8.
 #[cfg(target_pointer_width = "64")]
-const _: [u8; 56] = [0u8; std::mem::size_of::<PrivateDocumentCursorFFI>()];
+const _: [u8; 88] = [0u8; std::mem::size_of::<PrivateDocumentCursorFFI>()];
 #[cfg(target_pointer_width = "64")]
 const _: [u8; 8] = [0u8; std::mem::align_of::<PrivateDocumentCursorFFI>()];
 #[cfg(target_pointer_width = "64")]
@@ -170,7 +175,9 @@ const _: () = assert!(std::mem::offset_of!(PrivateDocumentCursorFFI, proved_tota
 #[cfg(target_pointer_width = "64")]
 const _: () = assert!(std::mem::offset_of!(PrivateDocumentCursorFFI, key_set) == 16);
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::offset_of!(PrivateDocumentCursorFFI, has_proved_total_count) == 48);
+const _: () = assert!(std::mem::offset_of!(PrivateDocumentCursorFFI, store) == 48);
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(std::mem::offset_of!(PrivateDocumentCursorFFI, has_proved_total_count) == 80);
 
 impl From<PrivateDocumentCursor> for PrivateDocumentCursorFFI {
     fn from(cursor: PrivateDocumentCursor) -> Self {
@@ -178,6 +185,7 @@ impl From<PrivateDocumentCursor> for PrivateDocumentCursorFFI {
             position: cursor.position,
             proved_total_count: cursor.proved_total_count.unwrap_or(0),
             key_set: cursor.key_set,
+            store: cursor.store,
             has_proved_total_count: cursor.proved_total_count.is_some(),
         }
     }
@@ -191,6 +199,7 @@ impl From<PrivateDocumentCursorFFI> for PrivateDocumentCursor {
                 .has_proved_total_count
                 .then_some(cursor.proved_total_count),
             key_set: cursor.key_set,
+            store: cursor.store,
         }
     }
 }
@@ -234,17 +243,17 @@ pub struct PrivateDocumentReadFFI {
 //
 //   0..=7     entries         *mut PrivateDocumentEntryFFI
 //   8..=15    entry_count     usize
-//   16..=71   cursor          PrivateDocumentCursorFFI (56 bytes)
-//   72..=75   pages_read      u32
-//   76..=79   rejected_count  u32
-//   80..=83   identity_count  u32
-//   84        complete        bool
-//   85        restarted       bool
-//   86..=87   (tail padding to 8)
+//   16..=103  cursor          PrivateDocumentCursorFFI (88 bytes)
+//   104..=107 pages_read      u32
+//   108..=111 rejected_count  u32
+//   112..=115 identity_count  u32
+//   116       complete        bool
+//   117       restarted       bool
+//   118..=119 (tail padding to 8)
 //
-// Total size = 88, alignment = 8.
+// Total size = 120, alignment = 8.
 #[cfg(target_pointer_width = "64")]
-const _: [u8; 88] = [0u8; std::mem::size_of::<PrivateDocumentReadFFI>()];
+const _: [u8; 120] = [0u8; std::mem::size_of::<PrivateDocumentReadFFI>()];
 #[cfg(target_pointer_width = "64")]
 const _: [u8; 8] = [0u8; std::mem::align_of::<PrivateDocumentReadFFI>()];
 #[cfg(target_pointer_width = "64")]
@@ -252,15 +261,15 @@ const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, entry_count) 
 #[cfg(target_pointer_width = "64")]
 const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, cursor) == 16);
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, pages_read) == 72);
+const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, pages_read) == 104);
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, rejected_count) == 76);
+const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, rejected_count) == 108);
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, identity_count) == 80);
+const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, identity_count) == 112);
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, complete) == 84);
+const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, complete) == 116);
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, restarted) == 85);
+const _: () = assert!(std::mem::offset_of!(PrivateDocumentReadFFI, restarted) == 117);
 
 impl PrivateDocumentReadFFI {
     /// No entries, every count zero, a zeroed cursor: the value an
@@ -422,14 +431,20 @@ unsafe fn read_cursor(from: *const PrivateDocumentCursorFFI) -> Option<PrivateDo
 /// keys changed since that cursor, the read starts over from the store's
 /// start and sets `restarted`: its entries replace the earlier ones. An
 /// entry's sender is what the entry claims; the read does not check it
-/// against that identity's keys. With no identity able to open entries
-/// (`identity_count` 0) nothing is read.
+/// against that identity's keys.
 ///
-/// Errors: a resolver whose seed is not the wallet's is refused before any
-/// page is read with `ErrorInvalidParameter`, as the private contact request
-/// sync refuses it; a network below protocol version 15 with
-/// `ErrorProtocolVersionNotActive`; a contract that declares no such private
-/// type, or a failed page fetch, with the code the wallet error maps to.
+/// A read that reads no page (no identity can open entries, `identity_count`
+/// 0, or `max_pages` is 0) succeeds without asking the network anything: its
+/// success shows neither that the network serves private types nor that the
+/// resolver's seed is the wallet's.
+///
+/// Errors: a `from` cursor of another store (another contract or type) with
+/// `ErrorInvalidParameter`; a resolver whose seed is not the wallet's is
+/// refused before any page is read with `ErrorInvalidParameter`, as the
+/// private contact request sync refuses it; a network below protocol version
+/// 15 with `ErrorProtocolVersionNotActive`; a contract that declares no such
+/// private type, or a failed page fetch, with the code the wallet error maps
+/// to.
 ///
 /// `*out_read` is reset to the empty value first, so it is well-defined on
 /// every return; release it with
@@ -440,9 +455,11 @@ unsafe fn read_cursor(from: *const PrivateDocumentCursorFFI) -> Option<PrivateDo
 ///   `*mut MnemonicResolverHandle`; the caller pins it for the call.
 /// - `data_contract_id` must point to 32 readable bytes.
 /// - `document_type_name` must be a valid NUL-terminated UTF-8 C string.
-/// - `from`, when non-null, must point to a readable
-///   `PrivateDocumentCursorFFI`, one a read returned.
-/// - `out_read` must be a valid, writable pointer.
+/// - `from`, when non-null, must point to a readable `PrivateDocumentCursorFFI`
+///   returned by a read of this store and must not overlap `out_read`.
+/// - `out_read` must be a valid, writable pointer and must not own a previous
+///   result: the call resets it first. To read on, copy the previous result's
+///   cursor by value, free the previous result, and pass the copy as `from`.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_read_private_document_entries(
     wallet_handle: Handle,
@@ -554,6 +571,7 @@ mod tests {
     const WALLET_IDENTITY: [u8; 32] = [0xA1; 32];
     const OTHER_IDENTITY: [u8; 32] = [0xC2; 32];
     const KEY_SET: [u8; 32] = [0x5E; 32];
+    const STORE: [u8; 32] = [0x57; 32];
 
     fn text_of(string: *mut c_char) -> String {
         assert!(!string.is_null());
@@ -630,6 +648,7 @@ mod tests {
                 position: 4,
                 proved_total_count: Some(4),
                 key_set: KEY_SET,
+                store: STORE,
             },
             restarted: true,
             complete: true,
@@ -647,6 +666,7 @@ mod tests {
                 position: 4,
                 proved_total_count: 4,
                 key_set: KEY_SET,
+                store: STORE,
                 has_proved_total_count: true,
             }
         );
@@ -718,6 +738,7 @@ mod tests {
                 position: 5,
                 proved_total_count: None,
                 key_set: KEY_SET,
+                store: STORE,
             },
             ..Default::default()
         })
@@ -749,6 +770,7 @@ mod tests {
         assert_eq!(text_of(entries[1].properties_json), r#"{"text":"hi"}"#);
         assert_eq!(read.cursor.position, 4);
         assert_eq!(read.cursor.key_set, KEY_SET);
+        assert_eq!(read.cursor.store, STORE);
         assert_eq!(
             (read.pages_read, read.rejected_count, read.identity_count),
             (2, 1, 1)
@@ -781,10 +803,12 @@ mod tests {
                 position: 3,
                 proved_total_count,
                 key_set: KEY_SET,
+                store: STORE,
             };
             let ffi = PrivateDocumentCursorFFI::from(cursor);
             assert_eq!(ffi.has_proved_total_count, proved_total_count.is_some());
             assert_eq!(ffi.proved_total_count, proved_total_count.unwrap_or(0));
+            assert_eq!((ffi.key_set, ffi.store), (KEY_SET, STORE));
             assert_eq!(unsafe { read_cursor(&ffi) }, Some(cursor));
         }
     }
@@ -819,6 +843,7 @@ mod tests {
                 position: 9,
                 proved_total_count: 9,
                 key_set: KEY_SET,
+                store: STORE,
                 has_proved_total_count: true,
             },
             pages_read: 9,

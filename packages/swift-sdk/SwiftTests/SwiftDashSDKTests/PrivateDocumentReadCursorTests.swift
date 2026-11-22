@@ -4,7 +4,8 @@ import XCTest
 @testable import SwiftDashSDK
 
 /// `PrivateDocumentReadCursor` crosses back to Rust exactly as it came: the
-/// position, the proved store size (or its absence) and the key set.
+/// position, the proved store size (or its absence), the key set and the
+/// store.
 final class PrivateDocumentReadCursorTests: XCTestCase {
 
     private func ffiCursor(provedTotalCount: UInt64?) -> PrivateDocumentCursorFFI {
@@ -17,6 +18,11 @@ final class PrivateDocumentReadCursorTests: XCTestCase {
                 bytes[index] = UInt8(index)
             }
         }
+        withUnsafeMutableBytes(of: &ffi.store) { bytes in
+            for index in bytes.indices {
+                bytes[index] = UInt8(0x80 + index)
+            }
+        }
         return ffi
     }
 
@@ -27,6 +33,7 @@ final class PrivateDocumentReadCursorTests: XCTestCase {
             XCTAssertEqual(cursor.position, 3)
             XCTAssertEqual(cursor.provedTotalCount, provedTotalCount)
             XCTAssertEqual(cursor.keySet, Data(0..<32))
+            XCTAssertEqual(cursor.store, Data(0x80..<0xA0))
 
             let back = cursor.ffi
             XCTAssertEqual(back.position, ffi.position)
@@ -35,6 +42,10 @@ final class PrivateDocumentReadCursorTests: XCTestCase {
             XCTAssertEqual(
                 withUnsafeBytes(of: back.key_set) { Data($0) },
                 withUnsafeBytes(of: ffi.key_set) { Data($0) }
+            )
+            XCTAssertEqual(
+                withUnsafeBytes(of: back.store) { Data($0) },
+                withUnsafeBytes(of: ffi.store) { Data($0) }
             )
         }
     }
