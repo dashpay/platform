@@ -294,9 +294,8 @@ impl From<FFIError> for DashSDKError {
                         None => (code, error_str),
                     }
                 } else if let Some(code) = node_refusal_code(sdk_err) {
-                    // The node answered and refused the request itself: the caller has to
-                    // change it, or what it names is not there. Not a network failure, and
-                    // never an empty result.
+                    // The request itself was refused as invalid: the caller has to change
+                    // it. Not a network failure, and never an empty result.
                     (code, error_str)
                 } else if matches!(
                     sdk_err,
@@ -419,11 +418,11 @@ macro_rules! ffi_result {
     };
 }
 
-/// The error code of a node's refusal of the request itself, read from the gRPC status the
-/// node answered with: `InvalidArgument` (for example a moderation list the contract does not
-/// keep) is the caller's to change, `NotFound` (for example a contract that does not exist)
-/// names what is not there. `None` for every other status and every transport failure, which
-/// stay network failures.
+/// The error code of a refusal of the request itself, read from a gRPC `InvalidArgument`
+/// status (for example a moderation list the contract does not keep): the caller has to change
+/// the request. `None` for every other status and every transport failure, which stay network
+/// failures. A gRPC `NotFound` among them: a node's word that something is absent is not
+/// proved, and `NotFound` is kept for an absence a proof showed (`Error::MissingDependency`).
 fn node_refusal_code(error: &dash_sdk::Error) -> Option<DashSDKErrorCode> {
     let dash_sdk::Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(status))) =
         error
@@ -432,7 +431,6 @@ fn node_refusal_code(error: &dash_sdk::Error) -> Option<DashSDKErrorCode> {
     };
     match status.code() {
         Code::InvalidArgument => Some(DashSDKErrorCode::InvalidParameter),
-        Code::NotFound => Some(DashSDKErrorCode::NotFound),
         _ => None,
     }
 }
@@ -951,7 +949,7 @@ mod tests {
     }
 
     #[test]
-    fn should_map_a_nodes_refusal_to_the_callers_error_and_not_to_a_network_failure() {
+    fn should_map_a_refused_request_to_the_callers_error_and_not_to_a_network_failure() {
         use dash_sdk::dapi_grpc::tonic::Status;
 
         // A list the contract does not keep: the request has to change
@@ -961,21 +959,19 @@ mod tests {
             ))),
             DashSDKErrorCode::InvalidParameter
         );
-        // A contract that does not exist
-        assert_eq!(
-            classify(grpc_error(Status::not_found("data contract not found"))),
-            DashSDKErrorCode::NotFound
-        );
     }
 
     #[test]
-    fn should_keep_transport_failures_as_network_errors() {
+    fn should_keep_transport_failures_and_unproved_absences_as_network_errors() {
         use dash_sdk::dapi_grpc::tonic::Status;
 
+        // A node's NotFound is its word, not a proof: NotFound is kept for a proved absence
+        // (MissingDependency), so the node's status stays a network failure.
         for status in [
             Status::unavailable("node is down"),
             Status::deadline_exceeded("too slow"),
             Status::internal("boom"),
+            Status::not_found("data contract not found"),
         ] {
             let code = status.code();
             assert_eq!(

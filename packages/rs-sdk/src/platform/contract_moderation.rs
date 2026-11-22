@@ -384,6 +384,12 @@ impl ContractDocumentRemovalsPageQuery {
     /// fetch's own retry policy, and surfaces as the fetch's error (an exhaustion wrapping a
     /// stale error, for example) instead.
     ///
+    /// The values are read under the document type as the contract holds it now, as Drive and
+    /// every other reader read them: a record stores the members of a kept object by position,
+    /// not by name, and no layout of its own. So on a contract whose protocol 14 update
+    /// reordered the members of a kept object (protocol 15 refuses such an update), a record
+    /// written before the update reads its values under the new order's names.
+    ///
     /// # Errors
     /// Those of [`ContractDocumentRemovals::fetch`], and, when a record keeps values:
     /// * [`Error::MissingDependency`] when the network holds no such contract;
