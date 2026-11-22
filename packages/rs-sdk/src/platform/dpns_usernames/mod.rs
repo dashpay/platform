@@ -1509,6 +1509,10 @@ mod tests {
         let provider = DpnsV2ContextProvider::default();
         let mut sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
         expect_domain_of(&mut sdk, "Bob7", owner).await;
+        // The network is proven at the version names can be given up from, the boundary the
+        // refusal below it pairs with
+        sdk.mock_verified_protocol_version(15)
+            .expect("the mock takes a verified version");
 
         let options = sdk
             .dpns_name_give_up_options("Bob7.dash")

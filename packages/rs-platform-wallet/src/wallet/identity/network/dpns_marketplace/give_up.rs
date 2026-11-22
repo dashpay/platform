@@ -17,18 +17,21 @@ use std::collections::BTreeSet;
 
 use dash_sdk::platform::documents::transitions::DocumentDeleteResult;
 use dash_sdk::platform::dpns_usernames::convert_to_homograph_safe_chars;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::signer::Signer;
-use dpp::identity::IdentityPublicKey;
+use dpp::identity::{IdentityPublicKey, KeyType, SecurityLevel};
+use dpp::prelude::DataContract;
 use dpp::prelude::Identifier;
 
 use crate::changeset::{DpnsNameSaleStatus, DpnsNameStateChangeSet};
 use crate::error::{promote_identity_insufficient_balance_or, PlatformWalletError};
 
 use super::super::contact_requests::GatedSigner;
-use super::{
-    dpns_contract_id, dpns_label, now_ms, DpnsDomainState, IdentityWallet, DPNS_DOCUMENT_TYPE,
-};
+use super::super::document::allowed_signing_security_levels;
+use super::super::usable_authentication_key_for_types;
+use super::{dpns_label, now_ms, DpnsDomainState, IdentityWallet, DPNS_DOCUMENT_TYPE};
 
 /// DPNS document type of a name given up for good, from DPNS v3.
 const DPNS_TOMBSTONE_DOCUMENT_TYPE: &str = "tombstone";
@@ -280,24 +283,51 @@ impl IdentityWallet {
                  name can only be tombstoned"
             )));
         }
-        let gated = GatedSigner::new(signer, self);
+        // Both ways are signed by a key selected against the contract the network stores
+        // now, which the SDK fetches checked against the protocol version it proved (an
+        // ordinary fetch can take an older node's contract, which declares no tombstone).
+        // A tombstone consumes the owner's domain, so its key must be allowed both types.
+        let current_contract = self
+            .sdk
+            .fetch_current_dpns_contract()
+            .await
+            .map_err(|error| give_up_error(error, name))?;
+        let document_types: &[&str] = match method {
+            DpnsNameGiveUpMethod::Delete => &[DPNS_DOCUMENT_TYPE],
+            DpnsNameGiveUpMethod::Tombstone => &[DPNS_TOMBSTONE_DOCUMENT_TYPE, DPNS_DOCUMENT_TYPE],
+        };
+        let signing_key = self
+            .select_give_up_signing_key(
+                owner_identity_id,
+                &current_contract,
+                document_types,
+                signer,
+            )
+            .await?;
+
+        // From here a transition may leave the wallet: the give-up is held as unresolved
+        // until its outcome is known, so even a call dropped while it waits for the result
+        // keeps another give-up of the name from being signed. A failure that shows nothing
+        // was sent, or that the network refused it, releases the hold.
         let unresolved_key = (*owner_identity_id, target.state.normalized_label.clone());
+        self.dpns_operation_gate
+            .unresolved()
+            .insert(unresolved_key.clone());
+        let gated = GatedSigner::new(signer, self);
         let sent_error = |error: dash_sdk::Error| {
-            if gated.removed() {
-                return PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id));
-            }
-            if error.is_state_transition_result_unconfirmed() {
+            let unconfirmed = error.is_state_transition_result_unconfirmed();
+            if !unconfirmed || gated.removed() {
                 self.dpns_operation_gate
                     .unresolved()
-                    .insert(unresolved_key.clone());
+                    .remove(&unresolved_key);
+            }
+            if gated.removed() {
+                return PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id));
             }
             give_up_error(error, name)
         };
         let tombstone_id = match method {
             DpnsNameGiveUpMethod::Delete => {
-                let signing_key = self
-                    .select_dpns_signing_key_for(owner_identity_id, DPNS_DOCUMENT_TYPE, signer)
-                    .await?;
                 let DocumentDeleteResult::Deleted(_) = self
                     .sdk
                     .delete_dpns_domain(target.domain.clone(), &signing_key, &gated)
@@ -306,23 +336,6 @@ impl IdentityWallet {
                 None
             }
             DpnsNameGiveUpMethod::Tombstone => {
-                // The key is selected by the contract the tombstone is built against: the
-                // one the network stores now, which the SDK fetches checked against the
-                // protocol version it proved (an ordinary fetch can take an older node's
-                // contract, which declares no tombstone)
-                let current_contract = self
-                    .sdk
-                    .fetch_current_dpns_contract()
-                    .await
-                    .map_err(|error| give_up_error(error, name))?;
-                let signing_key = self
-                    .select_signing_key_for_document_type(
-                        owner_identity_id,
-                        &current_contract,
-                        DPNS_TOMBSTONE_DOCUMENT_TYPE,
-                        signer,
-                    )
-                    .await?;
                 let tombstone = self
                     .sdk
                     .tombstone_dpns_name(name, *owner_identity_id, signing_key, &gated)
@@ -431,24 +444,63 @@ impl IdentityWallet {
         }
     }
 
-    /// The signing key for a state transition on the DPNS contract's `document_type_name`,
-    /// with the contract fetched for that type so its absence (a network before the type
-    /// existed) is reported before anything is signed.
-    async fn select_dpns_signing_key_for(
+    /// The signing key of a give-up acting on `document_type_names` of `contract`: an
+    /// AUTHENTICATION ECDSA key of `identity_id` at a security level every one of those
+    /// types accepts, whose contract bounds cover all of them
+    /// ([`usable_authentication_key_for_types`]). A key bound to one of the types alone is
+    /// skipped for a later key that covers both, rather than signing a transition the
+    /// network refuses.
+    async fn select_give_up_signing_key(
         &self,
         identity_id: &Identifier,
-        document_type_name: &str,
+        contract: &DataContract,
+        document_type_names: &[&str],
         signer: &impl Signer<IdentityPublicKey>,
     ) -> Result<IdentityPublicKey, PlatformWalletError> {
-        let contract = self
-            .system_contract(dpns_contract_id(), document_type_name)
-            .await?;
-        self.select_signing_key_for_document_type(
-            identity_id,
-            &contract,
-            document_type_name,
+        let mut security_levels: Option<Vec<SecurityLevel>> = None;
+        for document_type_name in document_type_names {
+            let required = contract
+                .document_type_for_name(document_type_name)
+                .map_err(|error| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "DPNS contract has no {document_type_name:?} document type: {error}"
+                    ))
+                })?
+                .security_level_requirement();
+            let allowed = allowed_signing_security_levels(required);
+            security_levels = Some(match security_levels {
+                None => allowed,
+                Some(levels) => levels
+                    .into_iter()
+                    .filter(|level| allowed.contains(level))
+                    .collect(),
+            });
+        }
+        let security_levels = security_levels.unwrap_or_default();
+        let identity = {
+            let wm = self.wallet_manager.read().await;
+            self.current_wallet_info(&wm)?
+                .identity_manager
+                .wallet_identity(&self.wallet_id, identity_id)
+                .map(|managed| managed.identity.clone())
+                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
+        };
+        usable_authentication_key_for_types(
+            &identity,
             signer,
-        )
-        .await
+            contract.id(),
+            document_type_names,
+            &security_levels,
+            &[KeyType::ECDSA_SECP256K1],
+        )?
+        .cloned()
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "No ECDSA authentication key of identity {identity_id} may sign a DPNS \
+                 {} transition: none is at a security level every type accepts with \
+                 contract bounds covering them all",
+                document_type_names.join(" + ")
+            ))
+        })
     }
 }

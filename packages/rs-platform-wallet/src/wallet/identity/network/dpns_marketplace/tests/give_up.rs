@@ -479,6 +479,11 @@ async fn should_send_each_give_up_to_the_network_and_change_nothing_before_it_is
             "{method:?}"
         );
         assert!(mirror.stored_dpns_removals().is_empty(), "{method:?}");
+        // Nothing left the wallet, so the give-up is not held as unresolved
+        assert!(
+            wallet.dpns_operation_gate.unresolved().is_empty(),
+            "{method:?}"
+        );
         assert_eq!(
             wallet
                 .local_dpns_name_states(Some(&owner))

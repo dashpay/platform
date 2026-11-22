@@ -57,7 +57,7 @@ mod top_up_from_addresses;
 mod transfer;
 mod transfer_to_addresses;
 mod update;
-pub(crate) use key_selection::usable_authentication_key;
+pub(crate) use key_selection::{usable_authentication_key, usable_authentication_key_for_types};
 mod withdrawal;
 pub(crate) use withdrawal::{select_owner_withdrawal_key, select_transfer_withdrawal_key};
 
