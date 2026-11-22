@@ -9,15 +9,20 @@
 //!
 //! The wallet forgets a name only once the network confirmed it gone: the identity's label
 //! and the name's marketplace row are removed after the delete or the tombstone is proved,
-//! never before. A give-up whose result was not confirmed leaves both, and the next
-//! marketplace sync pass removes them when it finds the name gone.
+//! never before, and in one changeset, so a backend keeps both or neither. A give-up whose
+//! result was not confirmed, or whose changeset the backend refused, leaves the label; the
+//! next marketplace sync pass then finds the name gone and removes the label and the row.
+
+use std::collections::BTreeSet;
 
 use dash_sdk::platform::documents::transitions::DocumentDeleteResult;
-use dpp::document::DocumentV0Getters;
+use dash_sdk::platform::dpns_usernames::convert_to_homograph_safe_chars;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
 
+use crate::changeset::{DpnsNameSaleStatus, DpnsNameStateChangeSet, PlatformWalletChangeSet};
 use crate::error::{promote_identity_insufficient_balance_or, PlatformWalletError};
 
 use super::{dpns_contract_id, DpnsDomainState, IdentityWallet, DPNS_DOCUMENT_TYPE};
@@ -73,6 +78,16 @@ pub struct DpnsNameGivenUp {
     pub tombstone_id: Option<Identifier>,
 }
 
+/// A name the wallet checked before giving it up: what the network accepts for it, the
+/// `domain` document it read, and the name's normalized label.
+pub(super) struct DpnsGiveUpTarget {
+    pub(super) choices: DpnsNameGiveUpChoices,
+    /// The `domain` document read when the choices were: a delete is built for this very
+    /// document, never for one read again by the name.
+    pub(super) domain: Document,
+    pub(super) normalized_label: String,
+}
+
 /// Map a give-up's SDK error. A protocol version refusal stays the SDK's own error, so a
 /// host is told the network does not serve the feature yet rather than that the operation
 /// failed; a balance refusal, an unavailable signing key and an unconfirmed result stay
@@ -104,6 +119,17 @@ impl IdentityWallet {
         owner_identity_id: &Identifier,
         name: &str,
     ) -> Result<DpnsNameGiveUpChoices, PlatformWalletError> {
+        self.dpns_give_up_target(owner_identity_id, name)
+            .await
+            .map(|target| target.choices)
+    }
+
+    /// [`Self::dpns_name_give_up_choices`], keeping the `domain` document it read.
+    async fn dpns_give_up_target(
+        &self,
+        owner_identity_id: &Identifier,
+        name: &str,
+    ) -> Result<DpnsGiveUpTarget, PlatformWalletError> {
         let options = self
             .sdk
             .dpns_name_give_up_options(name)
@@ -119,11 +145,15 @@ impl IdentityWallet {
             )));
         }
         let state = DpnsDomainState::from_document(&options.domain)?;
-        Ok(DpnsNameGiveUpChoices {
-            document_id: state.document_id,
-            label: state.label,
-            can_delete: options.can_delete,
-            can_tombstone: options.can_tombstone,
+        Ok(DpnsGiveUpTarget {
+            choices: DpnsNameGiveUpChoices {
+                document_id: state.document_id,
+                label: state.label,
+                can_delete: options.can_delete,
+                can_tombstone: options.can_tombstone,
+            },
+            domain: options.domain,
+            normalized_label: state.normalized_label,
         })
     }
 
@@ -135,10 +165,18 @@ impl IdentityWallet {
     /// and the network must accept `method` for it (a contested name can only be
     /// tombstoned). The signing key is selected on the owner, as for the other DPNS writes.
     ///
+    /// A delete is built for the `domain` document read in that check, so it can not remove
+    /// a domain registered again meanwhile (from another client): the network refuses the
+    /// delete of a document that no longer exists. A tombstone takes the owner's domain of
+    /// the name, whichever it is, which is what giving up the name means.
+    ///
     /// The wallet's stored state changes only once the network confirmed the name gone: the
-    /// label leaves the identity's name list, the name's marketplace row is removed, both
-    /// through the persister, and the owner's balance is refreshed (a give-up refunds what
-    /// is left of the name's storage fee). On any error nothing stored changes.
+    /// label leaves the identity's name list and the name's marketplace rows are removed, in
+    /// one changeset ([`Self::forget_given_up_dpns_name`]), and the owner's balance is
+    /// refreshed (a give-up refunds what is left of the name's storage fee). On any error
+    /// before that nothing stored changes. A confirmed give-up is reported as such even when
+    /// the backend refuses that changeset: the next marketplace sync pass removes the name
+    /// then, and broadcasting again would only be refused.
     pub async fn give_up_dpns_name<S>(
         &self,
         owner_identity_id: &Identifier,
@@ -150,10 +188,8 @@ impl IdentityWallet {
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
         let _operation = self.dpns_operation_gate.lock().await;
-        let choices = self
-            .dpns_name_give_up_choices(owner_identity_id, name)
-            .await?;
-        if !choices.allows(method) {
+        let target = self.dpns_give_up_target(owner_identity_id, name).await?;
+        if !target.choices.allows(method) {
             return Err(PlatformWalletError::InvalidParameter(format!(
                 "the network does not accept {method:?} for DPNS name {name:?}: a contested \
                  name can only be tombstoned"
@@ -166,7 +202,7 @@ impl IdentityWallet {
                     .await?;
                 let DocumentDeleteResult::Deleted(_) = self
                     .sdk
-                    .delete_dpns_name(name, &signing_key, signer)
+                    .delete_dpns_domain(target.domain.clone(), &signing_key, signer)
                     .await
                     .map_err(|error| give_up_error(error, name))?;
                 None
@@ -187,31 +223,92 @@ impl IdentityWallet {
                 Some(tombstone.id())
             }
         };
-        self.forget_given_up_dpns_name(owner_identity_id, &choices)
+        self.forget_given_up_dpns_name(owner_identity_id, &target)
             .await;
         self.refresh_identity_after_trade(owner_identity_id, "name give-up")
             .await;
         Ok(DpnsNameGivenUp {
-            document_id: choices.document_id,
-            label: choices.label,
+            document_id: target.choices.document_id,
+            label: target.choices.label,
             method,
             tombstone_id,
         })
     }
 
-    /// Drop a name the network confirmed gone from the wallet's stored state: its
-    /// marketplace row, then its label on `owner_identity_id`. The row goes first so that a
-    /// host mirror which keeps one record per name sees the label leave a record that no
-    /// longer carries marketplace history, and can drop the record whole.
+    /// Drop a name the network confirmed gone from the wallet's stored state, in ONE
+    /// changeset: the identity's snapshot without the name's label, and the removal of the
+    /// name's marketplace rows (the checked document's, and any other `Owned` row this
+    /// identity holds under the same normalized label, such as a registration made again
+    /// from another client). A backend therefore keeps both changes or neither.
+    ///
+    /// The in-memory state follows the backend: when the store fails, the label and the
+    /// rows are kept, so the next marketplace sync pass sees the label, finds the name gone
+    /// on Platform and removes both through its departure path.
     pub(super) async fn forget_given_up_dpns_name(
         &self,
         owner_identity_id: &Identifier,
-        given_up: &DpnsNameGiveUpChoices,
+        target: &DpnsGiveUpTarget,
     ) {
-        self.record_dpns_name_states(vec![], vec![given_up.document_id])
-            .await;
-        self.remove_dpns_label(owner_identity_id, &given_up.label)
-            .await;
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return;
+        };
+        let mut removed: BTreeSet<Identifier> = info
+            .dpns_name_states
+            .values()
+            .filter(|entry| {
+                entry.wallet_identity_id == *owner_identity_id
+                    && entry.normalized_label == target.normalized_label
+                    && matches!(entry.status, DpnsNameSaleStatus::Owned)
+            })
+            .map(|entry| entry.document_id)
+            .collect();
+        removed.insert(target.choices.document_id);
+        let mut changeset = PlatformWalletChangeSet {
+            dpns_name_states: Some(DpnsNameStateChangeSet {
+                removed: removed.clone(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let previous_names = match info
+            .identity_manager
+            .wallet_identity_mut(&self.wallet_id, owner_identity_id)
+        {
+            Some(managed) => {
+                let previous = managed.dpns_names.clone();
+                managed.dpns_names.retain(|known| {
+                    convert_to_homograph_safe_chars(&known.label) != target.normalized_label
+                });
+                changeset.identities = Some(managed.snapshot_changeset());
+                Some(previous)
+            }
+            None => None,
+        };
+
+        match self.persister.store(changeset) {
+            Ok(()) => {
+                for document_id in &removed {
+                    info.dpns_name_states.remove(document_id);
+                }
+            }
+            Err(error) => {
+                tracing::error!(
+                    identity = %owner_identity_id,
+                    document = %target.choices.document_id,
+                    "failed to persist a confirmed DPNS name give-up; keeping the label so \
+                     the next marketplace sync removes the name: {error}"
+                );
+                if let (Some(previous), Some(managed)) = (
+                    previous_names,
+                    info.identity_manager
+                        .wallet_identity_mut(&self.wallet_id, owner_identity_id),
+                ) {
+                    managed.dpns_names = previous;
+                }
+            }
+        }
     }
 
     /// The signing key for a state transition on the DPNS contract's `document_type_name`,

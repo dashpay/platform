@@ -1,6 +1,8 @@
 //! Giving up a DPNS name: what a holder is offered, what is refused before anything is
 //! signed, and that the wallet forgets a name only once the network confirmed it gone.
 
+use super::super::super::signing_key::tests::KeyFilter;
+use super::super::give_up::DpnsGiveUpTarget;
 use super::*;
 use dash_sdk::query_types::Documents;
 use dash_sdk::{Sdk, SdkBuilder};
@@ -316,42 +318,156 @@ async fn should_keep_a_name_whose_give_up_was_not_accepted() {
     );
 }
 
-/// Once the network confirmed a name gone the wallet drops its marketplace row and its
-/// label, both through the persister, and keeps the owner's other names
+/// What [`IdentityWallet::dpns_give_up_target`] read for [`PLAIN_LABEL`], held by `owner`.
+fn plain_target(owner: Identifier) -> DpnsGiveUpTarget {
+    DpnsGiveUpTarget {
+        choices: DpnsNameGiveUpChoices {
+            document_id: Identifier::from(DOCUMENT),
+            label: PLAIN_LABEL.to_string(),
+            can_delete: true,
+            can_tombstone: true,
+        },
+        domain: domain_document(PLAIN_LABEL, Identifier::from(DOCUMENT), owner),
+        normalized_label: convert_to_homograph_safe_chars(PLAIN_LABEL),
+    }
+}
+
+/// An `Owned` marketplace row of `label` under `document_id`, held by `owner`.
+fn owned_row(document_id: Identifier, owner: Identifier, label: &str) -> DpnsNameStateEntry {
+    let mut row = name_state_entry(document_id, owner, DpnsNameSaleStatus::Owned);
+    row.label = label.to_string();
+    row.normalized_label = convert_to_homograph_safe_chars(label);
+    row
+}
+
+/// Once the network confirmed a name gone the wallet drops the name's marketplace rows (the
+/// checked one and a registration made again elsewhere) and its label in ONE stored
+/// changeset, and keeps the owner's other names
 #[tokio::test]
-async fn should_forget_a_given_up_name_and_keep_the_others() {
+async fn should_forget_a_given_up_name_in_one_changeset_and_keep_the_others() {
     let owner = Identifier::from(OWNER);
     let document_id = Identifier::from(DOCUMENT);
+    let again = Identifier::from([0xC3; 32]);
+    let kept = Identifier::from([0xC4; 32]);
     let (wallet, mirror) = wallet_with_name(PLAIN_LABEL, owner).await;
-    let mut row = name_state_entry(document_id, owner, DpnsNameSaleStatus::Owned);
-    row.label = PLAIN_LABEL.to_string();
-    row.normalized_label = convert_to_homograph_safe_chars(PLAIN_LABEL);
-    wallet.record_dpns_name_states(vec![row], vec![]).await;
+    wallet
+        .record_dpns_name_states(
+            vec![
+                owned_row(document_id, owner, PLAIN_LABEL),
+                owned_row(again, owner, PLAIN_LABEL),
+                owned_row(kept, owner, KEPT_LABEL),
+            ],
+            vec![],
+        )
+        .await;
+    let stores_before = mirror.stored_dpns.lock().expect("stored log").len();
 
     wallet
-        .forget_given_up_dpns_name(
-            &owner,
-            &DpnsNameGiveUpChoices {
-                document_id,
-                label: PLAIN_LABEL.to_string(),
-                can_delete: true,
-                can_tombstone: true,
-            },
-        )
+        .forget_given_up_dpns_name(&owner, &plain_target(owner))
         .await;
 
     assert_eq!(
         dpns_labels(&wallet, &owner).await,
         vec![KEPT_LABEL.to_string()]
     );
-    assert_eq!(mirror.stored_dpns_removals(), vec![document_id]);
+    let stored = mirror.stored_dpns.lock().expect("stored log").clone();
+    assert_eq!(stored.len(), stores_before + 1, "one changeset");
+    assert_eq!(
+        stored.last().expect("the give-up changeset").removed,
+        [document_id, again].into_iter().collect()
+    );
     assert_eq!(
         mirror.stored_label_lists(&owner).last(),
         Some(&vec![KEPT_LABEL.to_string()])
     );
-    assert!(wallet
+    let rows = wallet
         .local_dpns_name_states(Some(&owner))
         .await
-        .expect("the rows are read")
-        .is_empty());
+        .expect("the rows are read");
+    assert_eq!(
+        rows.iter().map(|row| row.document_id).collect::<Vec<_>>(),
+        vec![kept]
+    );
+}
+
+/// A backend that refuses the give-up changeset leaves the wallet as it was: the label
+/// stays, so the next marketplace sync pass finds the name gone and removes it
+#[tokio::test]
+async fn should_keep_the_label_when_the_give_up_changeset_is_not_stored() {
+    let owner = Identifier::from(OWNER);
+    let document_id = Identifier::from(DOCUMENT);
+    let (wallet, mirror) = wallet_with_name(PLAIN_LABEL, owner).await;
+    wallet
+        .record_dpns_name_states(vec![owned_row(document_id, owner, PLAIN_LABEL)], vec![])
+        .await;
+    mirror.fail_stores();
+
+    wallet
+        .forget_given_up_dpns_name(&owner, &plain_target(owner))
+        .await;
+
+    assert_eq!(
+        dpns_labels(&wallet, &owner).await,
+        vec![PLAIN_LABEL.to_string(), KEPT_LABEL.to_string()]
+    );
+    assert_eq!(
+        wallet
+            .local_dpns_name_states(Some(&owner))
+            .await
+            .expect("the rows are read")
+            .len(),
+        1
+    );
+}
+
+/// A signer able to sign with every key: key selection passes and the give-up reaches the
+/// network. It is never asked to sign, as the mock SDK answers no nonce.
+fn signer_with_every_key() -> KeyFilter<impl Fn(&IdentityPublicKey) -> bool + Send + Sync> {
+    KeyFilter(|_| true)
+}
+
+/// Through the public entry point, each way of giving up reaches the network as its own
+/// transition (the delete of the checked document, the create of a tombstone). The mock
+/// answers no nonce, so neither is confirmed, and nothing stored changes.
+#[tokio::test]
+async fn should_send_each_give_up_to_the_network_and_change_nothing_before_it_is_confirmed() {
+    let owner = Identifier::from(OWNER);
+    for method in [
+        DpnsNameGiveUpMethod::Delete,
+        DpnsNameGiveUpMethod::Tombstone,
+    ] {
+        let (wallet, mirror) = wallet_with_name(PLAIN_LABEL, owner).await;
+        wallet
+            .record_dpns_name_states(
+                vec![owned_row(Identifier::from(DOCUMENT), owner, PLAIN_LABEL)],
+                vec![],
+            )
+            .await;
+
+        let error = wallet
+            .give_up_dpns_name(&owner, PLAIN_LABEL, method, &signer_with_every_key())
+            .await
+            .expect_err("the mock answers no nonce");
+        assert!(
+            error
+                .to_string()
+                .contains("GetIdentityContractNonceRequest"),
+            "{method:?}: expected the give-up to stop at its nonce fetch, got {error}"
+        );
+        assert_eq!(
+            dpns_labels(&wallet, &owner).await,
+            vec![PLAIN_LABEL.to_string(), KEPT_LABEL.to_string()],
+            "{method:?}"
+        );
+        assert!(mirror.stored_dpns_removals().is_empty(), "{method:?}");
+        assert_eq!(
+            wallet
+                .local_dpns_name_states(Some(&owner))
+                .await
+                .expect("the rows are read")
+                .len(),
+            1,
+            "{method:?}"
+        );
+    }
 }

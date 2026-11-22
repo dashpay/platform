@@ -23,7 +23,7 @@ use dapi_grpc::platform::v0::ResponseMetadata;
 use dash_context_provider::ContextProvider;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-use dpp::document::DocumentV0;
+use dpp::document::{DocumentV0, DocumentV0Getters};
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::Value;
@@ -70,6 +70,17 @@ pub struct DpnsNameGiveUpOptions {
     /// Whether the name can be tombstoned ([`Sdk::tombstone_dpns_name`]), which removes it
     /// and keeps anybody from registering it again. Every registered name can.
     pub can_tombstone: bool,
+}
+
+/// A registered DPNS name as [`Sdk::registered_dpns_domain`] reads it.
+struct RegisteredDpnsDomain {
+    /// The DPNS contract the name was read under.
+    dpns_contract: Arc<DataContract>,
+    /// The name's `domain` document.
+    domain: Document,
+    /// Whether the name is contested, judged by the contract's own contested index: such a
+    /// name can not be deleted, only tombstoned.
+    is_contested: bool,
 }
 
 /// What the network holds of a DPNS name ([`Sdk::dpns_name_state`]).
@@ -497,13 +508,13 @@ impl Sdk {
         }
     }
 
-    /// The DPNS contract the SDK resolves, the `domain` document of the name
-    /// `normalized_label` under `dash`, and whether the name is contested, judged by the
-    /// contract's own contested index. `None` when the name is not registered.
+    /// The `domain` document of the name `normalized_label` under `dash`, read under the DPNS
+    /// contract the SDK resolves and judged by it ([`Sdk::judged_dpns_domain`]). `None` when
+    /// the name is not registered.
     async fn registered_dpns_domain(
         &self,
         normalized_label: String,
-    ) -> Result<Option<(Arc<DataContract>, Document, bool)>, Error> {
+    ) -> Result<Option<RegisteredDpnsDomain>, Error> {
         let dpns_contract = self.fetch_dpns_contract().await?;
         let Some(domain) = self
             .dpns_name_document(dpns_contract.clone(), DOMAIN, normalized_label)
@@ -511,12 +522,57 @@ impl Sdk {
         else {
             return Ok(None);
         };
+        self.judged_dpns_domain(dpns_contract, domain).map(Some)
+    }
+
+    /// `domain`, a DPNS `domain` document, with whether it is contested under
+    /// `dpns_contract`'s own contested index.
+    fn judged_dpns_domain(
+        &self,
+        dpns_contract: Arc<DataContract>,
+        domain: Document,
+    ) -> Result<RegisteredDpnsDomain, Error> {
         let is_contested = dpns_contract
             .document_type_for_name(DOMAIN)
             .map_err(|_| Error::Generic("DPNS domain document type not found".to_string()))?
             .contested_vote_poll_for_document(&domain, self.version())?
             .is_some();
-        Ok(Some((dpns_contract, domain, is_contested)))
+        Ok(RegisteredDpnsDomain {
+            dpns_contract,
+            domain,
+            is_contested,
+        })
+    }
+
+    /// Deletes `registered`, refused before anything is signed when it is contested.
+    async fn delete_registered_dpns_domain<S: Signer<IdentityPublicKey>>(
+        &self,
+        registered: RegisteredDpnsDomain,
+        identity_public_key: &IdentityPublicKey,
+        signer: &S,
+    ) -> Result<DocumentDeleteResult, Error> {
+        if registered.is_contested {
+            let label = registered
+                .domain
+                .properties()
+                .get("normalizedLabel")
+                .and_then(Value::as_text)
+                .unwrap_or_default()
+                .to_string();
+            return Err(Error::Generic(format!(
+                "the DPNS name {label}.dash is contested: it can not be deleted, only tombstoned"
+            )));
+        }
+        self.document_delete(
+            DocumentDeleteTransitionBuilder::from_document(
+                registered.dpns_contract,
+                DOMAIN.to_string(),
+                &registered.domain,
+            ),
+            identity_public_key,
+            signer,
+        )
+        .await
     }
 
     /// How the identity holding a DPNS name may give it up: by a delete, by a tombstone, or
@@ -543,9 +599,9 @@ impl Sdk {
         Ok(self
             .registered_dpns_domain(normalized_label)
             .await?
-            .map(|(_, domain, is_contested)| DpnsNameGiveUpOptions {
-                domain,
-                can_delete: !is_contested,
+            .map(|registered| DpnsNameGiveUpOptions {
+                domain: registered.domain,
+                can_delete: !registered.is_contested,
                 can_tombstone: true,
             }))
     }
@@ -575,7 +631,7 @@ impl Sdk {
         signer: &S,
     ) -> Result<DocumentDeleteResult, Error> {
         let normalized_label = registered_dpns_label(name)?;
-        let Some((dpns_contract, domain, is_contested)) = self
+        let Some(registered) = self
             .registered_dpns_domain(normalized_label.clone())
             .await?
         else {
@@ -583,22 +639,40 @@ impl Sdk {
                 "the DPNS name {normalized_label}.dash is not registered"
             )));
         };
-        if is_contested {
-            return Err(Error::Generic(format!(
-                "the DPNS name {normalized_label}.dash is contested: it can not be deleted, \
-                 only tombstoned"
-            )));
-        }
-        self.document_delete(
-            DocumentDeleteTransitionBuilder::from_document(
-                dpns_contract,
-                DOMAIN.to_string(),
-                &domain,
-            ),
-            identity_public_key,
-            signer,
-        )
-        .await
+        self.delete_registered_dpns_domain(registered, identity_public_key, signer)
+            .await
+    }
+
+    /// Deletes the DPNS name whose `domain` document is `domain`, as a caller read it (for
+    /// example from [`Sdk::dpns_name_give_up_options`]). The delete is built for that very
+    /// document, never for one read again by the name, so it can not remove a domain the
+    /// caller did not see: if the name was deleted and registered again meanwhile, the
+    /// network refuses the delete of the document that no longer exists.
+    ///
+    /// A contested name can not be deleted, only tombstoned, and is refused before anything
+    /// is signed, as by [`Sdk::delete_dpns_name`].
+    ///
+    /// # Arguments
+    ///
+    /// * `domain` - The name's `domain` document
+    /// * `identity_public_key` - The key of the name's owner that signs the delete
+    /// * `signer` - The signer holding that key
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the name is contested, or the delete is refused (the document no
+    /// longer exists, the signing identity does not hold it, or the network runs a protocol
+    /// version before 15).
+    pub async fn delete_dpns_domain<S: Signer<IdentityPublicKey>>(
+        &self,
+        domain: Document,
+        identity_public_key: &IdentityPublicKey,
+        signer: &S,
+    ) -> Result<DocumentDeleteResult, Error> {
+        let dpns_contract = self.fetch_dpns_contract().await?;
+        let registered = self.judged_dpns_domain(dpns_contract, domain)?;
+        self.delete_registered_dpns_domain(registered, identity_public_key, signer)
+            .await
     }
 
     /// Tombstones a DPNS name its owner no longer wants: the name is deleted and nobody can

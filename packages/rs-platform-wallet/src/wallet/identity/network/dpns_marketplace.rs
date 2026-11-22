@@ -2459,6 +2459,9 @@ mod tests {
         /// The DPNS label list of every identity snapshot handed to
         /// [`Self::store`], in order, keyed by identity id.
         stored_identity_labels: std::sync::Mutex<Vec<(Identifier, Vec<String>)>>,
+        /// When set, every [`Self::store`] fails and records nothing, as a
+        /// backend that rejects the whole changeset does.
+        fail_stores: std::sync::atomic::AtomicBool,
     }
 
     impl MirrorPersister {
@@ -2477,7 +2480,14 @@ mod tests {
                 fail: std::sync::Mutex::new(None),
                 stored_dpns: std::sync::Mutex::new(Vec::new()),
                 stored_identity_labels: std::sync::Mutex::new(Vec::new()),
+                fail_stores: std::sync::atomic::AtomicBool::new(false),
             }
+        }
+
+        /// Make every later store fail.
+        fn fail_stores(&self) {
+            self.fail_stores
+                .store(true, std::sync::atomic::Ordering::SeqCst);
         }
 
         /// Holds `rows`, but every read fails with `kind` until
@@ -2531,6 +2541,12 @@ mod tests {
             _wallet_id: WalletId,
             changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
+            if self.fail_stores.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(PersistenceError::backend_with_kind(
+                    PersistenceErrorKind::Fatal,
+                    "simulated store failure",
+                ));
+            }
             if let Some(cs) = changeset.dpns_name_states {
                 self.stored_dpns.lock().expect("stored log").push(cs);
             }

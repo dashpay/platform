@@ -1571,6 +1571,46 @@ mod tests {
         assert!(!message.contains("is not registered"), "{message}");
     }
 
+    /// A domain document a caller already read is deleted as it is: a contested one is
+    /// refused before anything is read or signed, and the mock SDK holds no expectation
+    #[tokio::test]
+    async fn should_refuse_to_delete_a_given_contested_domain_before_anything_is_read() {
+        let provider = DpnsV2ContextProvider::default();
+        let sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+
+        let error = sdk
+            .delete_dpns_domain(
+                stored_domain("Bob", Identifier::new([1u8; 32])),
+                &signing_key(),
+                &UnusedSigner,
+            )
+            .await
+            .expect_err("a contested name is not deleted");
+        assert!(error.to_string().contains("only tombstoned"), "{error}");
+    }
+
+    /// The delete of a given domain that is not contested is built without reading the
+    /// name again (no domain query is expected): it stops at the nonce of the transition
+    #[tokio::test]
+    async fn should_delete_a_given_domain_without_reading_the_name_again() {
+        let provider = DpnsV2ContextProvider::default();
+        let sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+
+        let error = sdk
+            .delete_dpns_domain(
+                stored_domain("Bob7", Identifier::new([1u8; 32])),
+                &signing_key(),
+                &UnusedSigner,
+            )
+            .await
+            .expect_err("the unanswered nonce fetch stops the delete");
+        let message = error.to_string();
+        assert!(
+            message.contains("GetIdentityContractNonceRequest"),
+            "expected the delete to stop at its nonce fetch, got {message}"
+        );
+    }
+
     /// On a network whose DPNS contract declares no tombstone (before protocol version 15) a
     /// name can not be tombstoned: the tombstone stops with that reason once it has fetched
     /// the contract the network stores, before anything is signed.
