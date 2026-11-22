@@ -208,6 +208,37 @@ class AppStateDevnetSettingsTest {
     }
 
     @Test
+    fun shouldRefuseAnHttpsQuorumUrlThatNamesNoServer() = runTest {
+        val session = newSession(File(temporaryFolder.root, "app.preferences_pb"))
+        try {
+            val appState = session.appState
+            for (noServer in listOf("https://", "https:///masternodes", "https://:8443", "https://bad host")) {
+                appState.setDevnetQuorumUrl(noServer)
+                val refused = assertThrows(IllegalArgumentException::class.java) {
+                    appState.resolvedDevnetQuorumUrl()
+                }
+                assertEquals(noServer, AppState.DEVNET_QUORUM_URL_NOT_HTTPS, refused.message)
+            }
+            // A port and a base path are fine, in any letter case.
+            for (usable in listOf("https://10.0.2.2:8443", "HTTPS://quorums.example.org/base/")) {
+                appState.setDevnetQuorumUrl(usable)
+                assertEquals(usable, appState.resolvedDevnetQuorumUrl())
+            }
+
+            // Saved Devnet with only such a URL starts on the default network.
+            appState.setDevnetQuorumUrl("https://")
+            session.dataStore.edit {
+                it[stringPreferencesKey("currentNetwork")] = Network.DEVNET.networkName
+            }
+            advanceUntilIdle()
+            appState.restorePreferences()
+            assertEquals(Network.DEFAULT, appState.currentNetwork.value)
+        } finally {
+            session.close()
+        }
+    }
+
+    @Test
     fun shouldLeaveASavedNetworkAndKeepTheDevnetSettings() = runTest {
         val session = newSession(File(temporaryFolder.root, "app.preferences_pb"))
         try {
@@ -395,7 +426,7 @@ class AppStateDevnetSettingsTest {
     }
 
     @Test
-    fun shouldStartOnTheLastAppliedDevnetEvenWhenTheFieldsHoldARefusedEdit() = runTest {
+    fun shouldRestoreTheDevnetNetworkWhenTheFieldsHoldARefusedEdit() = runTest {
         val session = newSession(File(temporaryFolder.root, "app.preferences_pb"))
         try {
             session.dataStore.edit {

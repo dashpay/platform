@@ -575,7 +575,7 @@ class AppState(
             }
         }
         val explicit = url.trim().takeIf { it.isNotEmpty() } ?: return derived
-        require(explicit.startsWith("https://", ignoreCase = true)) { DEVNET_QUORUM_URL_NOT_HTTPS }
+        require(isHttpsUrlWithHost(explicit)) { DEVNET_QUORUM_URL_NOT_HTTPS }
         return explicit
     }
 
@@ -623,7 +623,7 @@ class AppState(
     suspend fun spvPeerOverride(
         network: Network = _currentNetwork.value,
         discover: (quorumUrl: String) -> List<String>? = { quorumUrl ->
-            Sdk.discoverActiveMasternodes(quorumUrl, DEVNET_DAPI_PORT)?.map { it.spvPeer }
+            Sdk.discoverActiveMasternodes(quorumUrl)?.map { it.spvPeer }
         },
     ): List<String> {
         if (_useLocalhostCore.value) {
@@ -669,7 +669,8 @@ class AppState(
 
         /** Shown when the devnet quorum URL is not https. */
         const val DEVNET_QUORUM_URL_NOT_HTTPS =
-            "The devnet quorum URL must start with https://; the app allows no cleartext traffic."
+            "The devnet quorum URL must start with https:// and name a server; " +
+                "the app allows no cleartext traffic."
 
         /** Shown when SPV is started on devnet before a devnet SDK was built. */
         const val DEVNET_NOT_APPLIED =
@@ -679,8 +680,18 @@ class AppState(
         const val DEVNET_CHANGED_DURING_LOOKUP =
             "The devnet settings changed while SPV peers were looked up. Press Start again."
 
-        /** DAPI port for nodes that report no `platformHTTPPort` (non-mainnet). */
-        private const val DEVNET_DAPI_PORT = 1443
+        /**
+         * Whether [url] is an https URL that names a server. A port and a
+         * base path are allowed; `https://` alone is not.
+         */
+        fun isHttpsUrlWithHost(url: String): Boolean {
+            val uri = try {
+                java.net.URI(url.trim())
+            } catch (_: java.net.URISyntaxException) {
+                return false
+            }
+            return uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank()
+        }
 
         private val KEY_NETWORK = stringPreferencesKey("currentNetwork")
         private val KEY_DOCKER = booleanPreferencesKey("useDockerSetup")

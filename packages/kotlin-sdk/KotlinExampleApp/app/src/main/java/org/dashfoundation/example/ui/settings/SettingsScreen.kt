@@ -158,7 +158,7 @@ fun SettingsScreen(navController: NavHostController) {
                         singleLine = true,
                     )
                     val devnetQuorumUrlNotHttps = devnetQuorumUrl.isNotBlank() &&
-                        !devnetQuorumUrl.trim().startsWith("https://", ignoreCase = true)
+                        !AppState.isHttpsUrlWithHost(devnetQuorumUrl)
                     androidx.compose.material3.OutlinedTextField(
                         value = devnetQuorumUrl,
                         onValueChange = { appState.setDevnetQuorumUrl(it) },
