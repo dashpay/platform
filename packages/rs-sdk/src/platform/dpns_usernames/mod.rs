@@ -8,6 +8,7 @@ pub use contested_queries::ContestedDpnsUsername;
 pub use dash_platform_queries::dpns_usernames::{
     convert_to_homograph_safe_chars, is_contested_username, is_valid_username,
 };
+pub use give_up::DpnsNameGiveUpOptions;
 pub use queries::DpnsUsername;
 
 use crate::platform::documents::document_query::DocumentQuery;
@@ -1497,6 +1498,55 @@ mod tests {
             .await
             .expect_err("a contested name is not deleted");
         assert!(error.to_string().contains("only tombstoned"), "{error}");
+    }
+
+    /// A name that is not contested may be given up either way, and the options carry its
+    /// domain, whose owner is the only identity that can
+    #[tokio::test]
+    async fn should_offer_a_delete_and_a_tombstone_for_a_name_that_is_not_contested() {
+        let owner = Identifier::new([1u8; 32]);
+        let provider = DpnsV2ContextProvider::default();
+        let mut sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+        expect_domain_of(&mut sdk, "Bob7", owner).await;
+
+        let options = sdk
+            .dpns_name_give_up_options("Bob7.dash")
+            .await
+            .expect("the options are read")
+            .expect("the name is registered");
+        assert!(options.can_delete);
+        assert!(options.can_tombstone);
+        assert_eq!(options.domain.owner_id(), owner);
+    }
+
+    /// The network refuses the delete of a contested name, so only a tombstone is offered
+    #[tokio::test]
+    async fn should_offer_only_a_tombstone_for_a_contested_name() {
+        let provider = DpnsV2ContextProvider::default();
+        let mut sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+        expect_domain_of(&mut sdk, "Bob", Identifier::new([1u8; 32])).await;
+
+        let options = sdk
+            .dpns_name_give_up_options("Bob")
+            .await
+            .expect("the options are read")
+            .expect("the name is registered");
+        assert!(!options.can_delete);
+        assert!(options.can_tombstone);
+    }
+
+    #[tokio::test]
+    async fn should_offer_nothing_for_a_name_that_is_not_registered() {
+        let provider = DpnsV2ContextProvider::default();
+        let mut sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+        expect_no_domain_of_bob(&mut sdk).await;
+
+        assert_eq!(
+            sdk.dpns_name_give_up_options("Bob.dash")
+                .await
+                .expect("the options are read"),
+            None
+        );
     }
 
     /// An uncontested name (`b0b7` holds a digit the contest's pattern does not) passes both

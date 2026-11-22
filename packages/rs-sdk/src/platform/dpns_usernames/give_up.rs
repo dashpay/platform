@@ -44,6 +44,34 @@ const TOMBSTONE: &str = "tombstone";
 /// numbers them, that declares the `tombstone` type.
 const FIRST_DPNS_VERSION_WITH_TOMBSTONES: FeatureVersion = 3;
 
+/// The first protocol version whose DPNS contract (v3) lets a name be given up: before it
+/// the network refuses every delete of a name and stores no tombstone.
+const FIRST_PROTOCOL_VERSION_GIVING_UP_NAMES: u32 = 15;
+
+/// The request a give-up is refused as on a network before
+/// [`FIRST_PROTOCOL_VERSION_GIVING_UP_NAMES`]: both ways are a broadcast document transition.
+const GIVE_UP_METHOD: &str = "broadcast_state_transition";
+
+/// What that refusal says the protocol version is needed for.
+const GIVE_UP_FEATURE: &str = "deleting or tombstoning a DPNS name";
+
+/// How the identity holding a registered DPNS name may give it up
+/// ([`Sdk::dpns_name_give_up_options`]): which of the two ways the network accepts for this
+/// name. A client offers what this says and decides nothing of its own.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DpnsNameGiveUpOptions {
+    /// The name's `domain` document, as the network holds it now: its `$ownerId` is the only
+    /// identity that can give the name up.
+    pub domain: Document,
+    /// Whether the name can be deleted ([`Sdk::delete_dpns_name`]), which frees it for
+    /// anybody to register again. `false` for a contested name, one a masternode vote
+    /// awarded.
+    pub can_delete: bool,
+    /// Whether the name can be tombstoned ([`Sdk::tombstone_dpns_name`]), which removes it
+    /// and keeps anybody from registering it again. Every registered name can.
+    pub can_tombstone: bool,
+}
+
 /// What the network holds of a DPNS name ([`Sdk::dpns_name_state`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum DpnsNameState {
@@ -445,6 +473,83 @@ impl Sdk {
         Ok(self.dpns_name_state(normalized_label).await? == DpnsNameState::Tombstoned)
     }
 
+    /// Fails with [`Error::ProtocolVersionNotActive`] when a verified answer shows the
+    /// network below the protocol version names can be given up from
+    /// ([`Sdk::network_proven_below`]), or when the network's version could not be learned
+    /// (the refusal then carries why, and may pass). A give-up broadcast to such a network
+    /// is refused only once it is sent.
+    async fn require_network_gives_up_names(&self) -> Result<(), Error> {
+        let not_active = |cause| {
+            self.protocol_version_not_active(
+                FIRST_PROTOCOL_VERSION_GIVING_UP_NAMES,
+                GIVE_UP_METHOD,
+                Some(GIVE_UP_FEATURE),
+                cause,
+            )
+        };
+        match self
+            .network_proven_below(FIRST_PROTOCOL_VERSION_GIVING_UP_NAMES)
+            .await
+        {
+            Ok(false) => Ok(()),
+            Ok(true) => Err(not_active(None)),
+            Err(error) => Err(not_active(Some(error))),
+        }
+    }
+
+    /// The DPNS contract the SDK resolves, the `domain` document of the name
+    /// `normalized_label` under `dash`, and whether the name is contested, judged by the
+    /// contract's own contested index. `None` when the name is not registered.
+    async fn registered_dpns_domain(
+        &self,
+        normalized_label: String,
+    ) -> Result<Option<(Arc<DataContract>, Document, bool)>, Error> {
+        let dpns_contract = self.fetch_dpns_contract().await?;
+        let Some(domain) = self
+            .dpns_name_document(dpns_contract.clone(), DOMAIN, normalized_label)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let is_contested = dpns_contract
+            .document_type_for_name(DOMAIN)
+            .map_err(|_| Error::Generic("DPNS domain document type not found".to_string()))?
+            .contested_vote_poll_for_document(&domain, self.version())?
+            .is_some();
+        Ok(Some((dpns_contract, domain, is_contested)))
+    }
+
+    /// How the identity holding a DPNS name may give it up: by a delete, by a tombstone, or
+    /// by either. `None` when the name is not registered. Nothing is broadcast.
+    ///
+    /// A contested name, one a masternode vote awarded, can only be tombstoned; any other
+    /// name can be deleted or tombstoned, as its holder chooses.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The username label (e.g., "alice") or full DPNS name (e.g., "alice.dash")
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ProtocolVersionNotActive`], before the name is read, when a verified
+    /// answer shows the network below protocol version 15, where no name can be given up,
+    /// and an error when the name is empty once normalized.
+    pub async fn dpns_name_give_up_options(
+        &self,
+        name: &str,
+    ) -> Result<Option<DpnsNameGiveUpOptions>, Error> {
+        let normalized_label = registered_dpns_label(name)?;
+        self.require_network_gives_up_names().await?;
+        Ok(self
+            .registered_dpns_domain(normalized_label)
+            .await?
+            .map(|(_, domain, is_contested)| DpnsNameGiveUpOptions {
+                domain,
+                can_delete: !is_contested,
+                can_tombstone: true,
+            }))
+    }
+
     /// Deletes a DPNS name its owner no longer wants. The name is free again: anybody may
     /// register it. The owner is refunded what is left of the name's storage fee.
     ///
@@ -470,20 +575,14 @@ impl Sdk {
         signer: &S,
     ) -> Result<DocumentDeleteResult, Error> {
         let normalized_label = registered_dpns_label(name)?;
-        let dpns_contract = self.fetch_dpns_contract().await?;
-        let Some(domain) = self
-            .dpns_name_document(dpns_contract.clone(), DOMAIN, normalized_label.clone())
+        let Some((dpns_contract, domain, is_contested)) = self
+            .registered_dpns_domain(normalized_label.clone())
             .await?
         else {
             return Err(Error::Generic(format!(
                 "the DPNS name {normalized_label}.dash is not registered"
             )));
         };
-        let is_contested = dpns_contract
-            .document_type_for_name(DOMAIN)
-            .map_err(|_| Error::Generic("DPNS domain document type not found".to_string()))?
-            .contested_vote_poll_for_document(&domain, self.version())?
-            .is_some();
         if is_contested {
             return Err(Error::Generic(format!(
                 "the DPNS name {normalized_label}.dash is contested: it can not be deleted, \
@@ -712,6 +811,44 @@ mod tests {
             .dpns_name_tombstoned_under(dpns_v3(), "a11ce".to_string(), 0)
             .await
             .expect("the query answers"));
+    }
+
+    /// Names can be given up from the first protocol version that stores DPNS v3
+    #[test]
+    fn should_give_names_up_from_the_first_protocol_version_with_dpns_v3() {
+        assert!(protocol_version_declares_tombstones(
+            FIRST_PROTOCOL_VERSION_GIVING_UP_NAMES
+        ));
+        assert!(!protocol_version_declares_tombstones(
+            FIRST_PROTOCOL_VERSION_GIVING_UP_NAMES - 1
+        ));
+    }
+
+    /// Before protocol version 15 no name can be given up: the read is refused before the
+    /// name is looked up (this SDK expects no request)
+    #[tokio::test]
+    async fn should_refuse_give_up_options_on_a_network_proven_below_protocol_version_15() {
+        let sdk = mock_sdk();
+        sdk.mock_verified_protocol_version(FIRST_PROTOCOL_VERSION_GIVING_UP_NAMES - 1)
+            .expect("the mock takes a verified version");
+
+        let error = sdk
+            .dpns_name_give_up_options("quantum7")
+            .await
+            .expect_err("the read is refused");
+        assert!(
+            matches!(
+                error,
+                Error::ProtocolVersionNotActive {
+                    required: FIRST_PROTOCOL_VERSION_GIVING_UP_NAMES,
+                    network: 14,
+                    pinned: false,
+                    cause: None,
+                    ..
+                }
+            ),
+            "expected a protocol version refusal, got {error:?}"
+        );
     }
 
     /// The found document is the one the network holds
