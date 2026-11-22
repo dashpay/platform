@@ -195,10 +195,7 @@ struct SendTransactionView: View {
                                     Text(source.rawValue)
                                         .foregroundColor(.primary)
                                     Spacer()
-                                    Text(formatBalance(
-                                        balance(for: source, coreBalance: coreBalance),
-                                        unit: unit(for: source)
-                                    ))
+                                    Text(sourceBalanceText(source, coreBalance: coreBalance))
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                     if viewModel.selectedSource == source {
@@ -231,7 +228,7 @@ struct SendTransactionView: View {
                             HStack {
                                 Text("Estimated Fee:")
                                 Spacer()
-                                Text("~\(formatBalance(fee, unit: feeUnit(for: flow)))")
+                                Text("~\(feeText(fee, flow: flow))")
                                     .foregroundColor(.secondary)
                             }
                         }
@@ -450,7 +447,7 @@ struct SendTransactionView: View {
     }
 
     private func identityOptionLabel(_ identity: PersistentIdentity) -> String {
-        let balance = formatBalance(Self.clampedBalance(identity), unit: .credits)
+        let balance = formatIdentityBalanceAsDash(identity.balance)
         return "\(identity.displayName): \(balance)"
     }
 
@@ -865,6 +862,21 @@ struct SendTransactionView: View {
             return "\(formatted) DASH"
         }
         return String(format: "%.8f DASH", dash)
+    }
+
+    /// Identity credits are shown exactly (one credit can decide whether an
+    /// identity shield fits); the other sources keep the screen's formatter.
+    private func sourceBalanceText(_ source: FundSource, coreBalance: UInt64) -> String {
+        let amount = balance(for: source, coreBalance: coreBalance)
+        if source == .identity { return formatCreditsAsDash(amount) }
+        return formatBalance(amount, unit: unit(for: source))
+    }
+
+    /// The identity shield's fee floor is shown exactly, since the Send gate
+    /// compares it to the balance credit for credit.
+    private func feeText(_ fee: UInt64, flow: SendFlow) -> String {
+        if flow == .identityToShielded { return formatCreditsAsDash(fee) }
+        return formatBalance(fee, unit: feeUnit(for: flow))
     }
 
     private func unit(for source: FundSource) -> SendBalanceUnit {

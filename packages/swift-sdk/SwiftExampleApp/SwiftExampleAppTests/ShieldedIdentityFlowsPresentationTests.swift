@@ -142,6 +142,20 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         XCTAssertEqual(ShieldedIdentityDebitRecoveryDisplay.amountText(1), oneCreditDash)
     }
 
+    func test_identityBalanceRow_showsAOneCreditChange() {
+        // After a one-credit top-up the balance row must read differently.
+        XCTAssertNotEqual(
+            formatIdentityBalanceAsDash(100_000_000_000),
+            formatIdentityBalanceAsDash(100_000_000_001)
+        )
+        XCTAssertEqual(formatIdentityBalanceAsDash(1), oneCreditDash)
+    }
+
+    func test_identityBalanceRow_clampsANegativeBalanceToZero() {
+        XCTAssertEqual(formatIdentityBalanceAsDash(-5), formatCreditsAsDash(0))
+        XCTAssertEqual(formatIdentityBalanceAsDash(Int64.min), formatCreditsAsDash(0))
+    }
+
     func test_amountsOneCreditApart_readDifferently() {
         // One DASH and one DASH plus one credit.
         XCTAssertNotEqual(formatCreditsAsDash(100_000_000_000), formatCreditsAsDash(100_000_000_001))

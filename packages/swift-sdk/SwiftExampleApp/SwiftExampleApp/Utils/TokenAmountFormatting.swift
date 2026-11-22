@@ -105,3 +105,9 @@ func formatTokenAmount(_ raw: UInt64, decimals: Int) -> String {
 func formatCreditsAsDash(_ credits: UInt64) -> String {
     formatTokenAmount(credits, decimals: 11) + " DASH"
 }
+
+/// Exact DASH text for a `PersistentIdentity.balance` (`Int64` credits),
+/// with an unexpected negative balance shown as zero.
+func formatIdentityBalanceAsDash(_ balance: Int64) -> String {
+    formatCreditsAsDash(balance < 0 ? 0 : UInt64(balance))
+}

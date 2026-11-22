@@ -308,7 +308,7 @@ struct TopUpIdentityView: View {
             HStack {
                 Label("Current Balance", systemImage: "dollarsign.circle")
                 Spacer()
-                Text(identity.formattedBalance)
+                Text(formatIdentityBalanceAsDash(identity.balance))
                     .foregroundColor(.blue)
                     .fontWeight(.medium)
             }
@@ -531,7 +531,8 @@ struct TopUpIdentityView: View {
                 HStack {
                     Text("Identity balance:")
                         .foregroundColor(.secondary)
-                    Text(identity.formattedBalance)
+                    // Exact, so a one-credit change is visible.
+                    Text(formatIdentityBalanceAsDash(identity.balance))
                         .fontWeight(.medium)
                         .monospacedDigit()
                 }
