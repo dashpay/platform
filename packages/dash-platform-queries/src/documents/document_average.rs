@@ -30,21 +30,21 @@ use drive_proof_verifier::{AverageEntry, DocumentAverage, FromProof};
 
 /// Fold per-branch `(count, sum)` into a single aggregate
 /// `(count, sum)`. Uses `checked_add` on BOTH axes so a multi-entry
-/// fold that exceeds `u64::MAX` (count) or `i64::MAX` / underflows
-/// below `i64::MIN` (sum) surfaces as an `UnusableVerifiedResult` rather
+/// fold that exceeds `u64::MAX` (count) or `i128::MAX` / underflows
+/// below `i128::MIN` (sum) surfaces as an `UnusableVerifiedResult` rather
 /// than silently saturating: the entries are verified, so every honest
 /// node's answer overflows alike.
 ///
 /// The prior `saturating_add` was unsafe: a saturated count or sum
 /// could pin the computed average to a wrong value (e.g., a sum
-/// that saturated at `i64::MAX` divided by an accurate count would
+/// that saturated at its maximum divided by an accurate count would
 /// understate the true average). Extracted into a free function so
 /// the overflow paths are unit-testable.
 fn fold_average_entries(
     entries: &[AverageEntry],
 ) -> Result<DocumentAverage, drive_proof_verifier::Error> {
     let mut total_count: u64 = 0;
-    let mut total_sum: i64 = 0;
+    let mut total_sum: i128 = 0;
     for e in entries {
         if let Some(c) = e.count {
             total_count = total_count.checked_add(c).ok_or_else(|| {
@@ -52,7 +52,7 @@ fn fold_average_entries(
                     reason: "DocumentAverage: u64 overflow folding per-branch counts into a \
                             single aggregate. The proof itself verified, but the requested \
                             total count doesn't fit in u64. Use DocumentSplitAverages to \
-                            receive per-branch (u64, i64) and fold with your own arithmetic."
+                            receive per-branch (u64, i128) and fold with your own arithmetic."
                         .to_string(),
                 }
             })?;
@@ -60,11 +60,10 @@ fn fold_average_entries(
         if let Some(s) = e.sum {
             total_sum = total_sum.checked_add(s).ok_or_else(|| {
                 drive_proof_verifier::Error::UnusableVerifiedResult {
-                    reason: "DocumentAverage: i64 over/underflow folding per-branch sums into \
+                    reason: "DocumentAverage: i128 over/underflow folding per-branch sums into \
                             a single aggregate. The proof itself verified, but the requested \
-                            total sum doesn't fit in i64. Use DocumentSplitAverages to \
-                            receive per-branch (u64, i64) and fold with your own arithmetic \
-                            (e.g. i128)."
+                            total sum doesn't fit in i128. Use DocumentSplitAverages to \
+                            receive per-branch (u64, i128) and fold with your own arithmetic."
                         .to_string(),
                 }
             })?;
@@ -128,7 +127,7 @@ mod tests {
 
     use super::*;
 
-    fn entry(in_key: Option<Vec<u8>>, count: Option<u64>, sum: Option<i64>) -> AverageEntry {
+    fn entry(in_key: Option<Vec<u8>>, count: Option<u64>, sum: Option<i128>) -> AverageEntry {
         AverageEntry {
             in_key,
             key: vec![0u8],
@@ -191,37 +190,55 @@ mod tests {
         );
     }
 
-    /// `i64::MAX` sum + positive → must error. Same regression as
+    /// Per-branch sums whose total passes 64 bits fold to the whole
+    /// 128-bit total.
+    #[test]
+    fn fold_average_entries_past_64_bits() {
+        let entries = vec![
+            entry(Some(vec![1]), Some(1), Some(i128::from(i64::MAX))),
+            entry(Some(vec![2]), Some(2), Some(2 * i128::from(i64::MAX))),
+        ];
+        let avg = fold_average_entries(&entries).expect("the fold fits 128 bits");
+        assert_eq!(
+            avg,
+            DocumentAverage {
+                count: 3,
+                sum: 3 * i128::from(i64::MAX)
+            }
+        );
+    }
+
+    /// `i128::MAX` sum + positive → must error. Same regression as
     /// count overflow.
     #[test]
     fn fold_average_entries_positive_sum_overflow_returns_error() {
         let entries = vec![
-            entry(Some(vec![1]), Some(0), Some(i64::MAX)),
+            entry(Some(vec![1]), Some(0), Some(i128::MAX)),
             entry(Some(vec![2]), Some(0), Some(1)),
         ];
         let err = fold_average_entries(&entries)
-            .expect_err("positive i64 sum overflow must surface as UnusableVerifiedResult");
+            .expect_err("positive i128 sum overflow must surface as UnusableVerifiedResult");
         let msg = format!("{err:?}");
         assert!(
-            msg.contains("i64 over/underflow") && msg.contains("DocumentSplitAverages"),
+            msg.contains("i128 over/underflow") && msg.contains("DocumentSplitAverages"),
             "error must name the sum over/underflow + hint at DocumentSplitAverages; got {msg}"
         );
     }
 
-    /// `i64::MIN` sum + negative → must error (the underflow
+    /// `i128::MIN` sum + negative → must error (the underflow
     /// direction). Symmetric to the positive case so a future
     /// switch to `saturating_*` can't silently regress only one
     /// direction.
     #[test]
     fn fold_average_entries_negative_sum_underflow_returns_error() {
         let entries = vec![
-            entry(Some(vec![1]), Some(0), Some(i64::MIN)),
+            entry(Some(vec![1]), Some(0), Some(i128::MIN)),
             entry(Some(vec![2]), Some(0), Some(-1)),
         ];
         let err = fold_average_entries(&entries)
-            .expect_err("negative i64 sum underflow must surface as UnusableVerifiedResult");
+            .expect_err("negative i128 sum underflow must surface as UnusableVerifiedResult");
         let msg = format!("{err:?}");
-        assert!(msg.contains("i64 over/underflow"));
+        assert!(msg.contains("i128 over/underflow"));
     }
 
     /// Empty fold returns `(0, 0)` — same as count's `0` empty
@@ -243,11 +260,11 @@ mod tests {
                 entry(Some(vec![2]), Some(1), Some(0)),
             ],
             [
-                entry(Some(vec![1]), Some(0), Some(i64::MAX)),
+                entry(Some(vec![1]), Some(0), Some(i128::MAX)),
                 entry(Some(vec![2]), Some(0), Some(1)),
             ],
             [
-                entry(Some(vec![1]), Some(0), Some(i64::MIN)),
+                entry(Some(vec![1]), Some(0), Some(i128::MIN)),
                 entry(Some(vec![2]), Some(0), Some(-1)),
             ],
         ] {

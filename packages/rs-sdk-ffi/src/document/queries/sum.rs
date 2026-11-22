@@ -6,7 +6,7 @@
 //! the call routes to a *different* rs-sdk type for each:
 //!
 //! - **Ungrouped** (empty / null `group_by_json`): the aggregate
-//!   [`drive_proof_verifier::DocumentSum`] (a single folded `i64`),
+//!   [`drive_proof_verifier::DocumentSum`] (a single folded `i128`),
 //!   surfaced as a one-entry map with the empty (`""`) key — the
 //!   documented "single total" contract. This holds even when the
 //!   `where` clause carries an `in` / range fork: `DocumentSum` folds
@@ -23,7 +23,13 @@
 //! handling is shared verbatim with the count surface (see
 //! [`super::count`]); the only sum-specific pieces are the
 //! `sum_property` field naming the integer property to aggregate and
-//! the signed (`i64`) result values.
+//! the signed result values.
+//!
+//! Every sum is written as a base-10 JSON string, not a JSON number. From
+//! protocol version 15 a document type can keep its sums in 128-bit
+//! trees, so a sum can pass `i64`; a JSON number that large is rounded by
+//! most JSON readers (Swift's `JSONSerialization`, JavaScript), while a
+//! decimal string reaches every caller whole.
 
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
@@ -32,7 +38,7 @@ use std::os::raw::c_char;
 use dash_sdk::drive::query::SelectProjection;
 use dash_sdk::platform::Fetch;
 use drive_proof_verifier::{DocumentSplitSums, DocumentSum};
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 
 use super::count::{build_base_query, decode_ffi_limit, parse_group_by_json};
 use crate::sdk::SDKWrapper;
@@ -61,6 +67,24 @@ pub(super) fn validate_aggregation_property(prop: &str) -> Result<(), FFIError> 
     Ok(())
 }
 
+/// Serialize an `i128` aggregate as its base-10 string (`"-5"`,
+/// `"18446744073709551614"`) so no JSON reader rounds a value past 2^53.
+pub(super) fn serialize_i128_as_decimal<S: Serializer>(
+    value: &i128,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_str(value)
+}
+
+/// Serialize a map of `i128` aggregates with each value as its base-10
+/// string; see [`serialize_i128_as_decimal`].
+fn serialize_i128_map_as_decimal<S: Serializer>(
+    map: &BTreeMap<String, i128>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_map(map.iter().map(|(key, value)| (key, value.to_string())))
+}
+
 #[derive(Debug, Serialize)]
 struct DocumentSumResult {
     /// Sum results keyed by group.
@@ -68,28 +92,34 @@ struct DocumentSumResult {
     /// - **Ungrouped** (empty / null `group_by_json`): exactly one
     ///   entry under the empty (`""`) key — the aggregate total folded
     ///   across every matched branch. An absent / `None` aggregate
-    ///   yields `{"": 0}` so the "single empty-key total" contract
+    ///   yields `{"": "0"}` so the "single empty-key total" contract
     ///   always holds.
     /// - **Grouped** (non-empty `group_by_json`): one entry per matched
     ///   group, hex-encoded so iOS callers can match them against the
     ///   corresponding platform-value-encoded property bytes.
     ///
-    /// Values are signed (`i64`) to match grovedb's `SumValue = i64`.
-    sums: BTreeMap<String, i64>,
+    /// Values are signed `i128` (a 128-bit sum tree can hold more than
+    /// `i64`) and serialize as base-10 strings.
+    #[serde(serialize_with = "serialize_i128_map_as_decimal")]
+    sums: BTreeMap<String, i128>,
 }
 
 /// `SELECT SUM(<sum_property>)` over a where clause + optional group_by.
 ///
 /// Returns a JSON string of shape
-/// `{"sums": {"<key>": <signed number>, ...}}`. The map's shape depends
-/// on whether `group_by_json` is requested:
+/// `{"sums": {"<key>": "<signed decimal>", ...}}`, for example
+/// `{"sums": {"": "18446744073709551614"}}` or `{"sums": {"61": "-5"}}`.
+/// Each sum is an `i128` written as a base-10 string, not a JSON number,
+/// so a sum past `i64` (possible from protocol version 15) reaches the
+/// caller exactly; callers parse it with an `i128`-capable integer type.
+/// The map's shape depends on whether `group_by_json` is requested:
 ///
 /// - **Ungrouped** (empty/null `group_by_json`): exactly one entry under
 ///   the empty (`""`) key — `sums[""]` is the aggregate total. This
 ///   routes to the aggregate [`drive_proof_verifier::DocumentSum`],
 ///   which folds every verified branch (including any `in` / range fork
-///   in the `where` clause) into one `i64`. An absent / `None`
-///   aggregate is reported as `{"": 0}` so the single empty-key total
+///   in the `where` clause) into one `i128`. An absent / `None`
+///   aggregate is reported as `{"": "0"}` so the single empty-key total
 ///   contract always holds.
 /// - **Grouped** (non-empty `group_by_json`): one entry per matched
 ///   group, keyed by the hex-encoded platform-value-encoded property
@@ -99,7 +129,7 @@ struct DocumentSumResult {
 ///   [`drive_proof_verifier::DocumentSplitSums`] view. Compound
 ///   `(in_key, key)` entries are collapsed into a flat map by summing
 ///   each In-fork's contribution at the same terminator key; the fold
-///   uses checked `i64` arithmetic and surfaces overflow as an error
+///   uses checked `i128` arithmetic and surfaces overflow as an error
 ///   rather than wrapping. Callers needing the unmerged per-branch shape
 ///   should use a richer binding.
 ///
@@ -175,10 +205,10 @@ pub unsafe extern "C" fn dash_sdk_document_sum(
         // group/key* — so it is the wrong type for an ungrouped total
         // (it would surface per-key entries for an `in` / range `where`
         // clause instead of one folded total). The aggregate
-        // `DocumentSum` folds every verified branch into a single `i64`.
-        let sums: BTreeMap<String, i64> = if group_by.is_empty() {
+        // `DocumentSum` folds every verified branch into a single `i128`.
+        let sums: BTreeMap<String, i128> = if group_by.is_empty() {
             // Ungrouped: aggregate total under the empty (`""`) key.
-            // `DocumentSum` is a tuple struct over a single folded `i64`;
+            // `DocumentSum` is a tuple struct over a single folded `i128`;
             // a `None` fetch (queried-but-absent) reports the zero total
             // so the documented single empty-key total always holds.
             let sum_query = base_query
@@ -195,7 +225,7 @@ pub unsafe extern "C" fn dash_sdk_document_sum(
         } else {
             // Grouped: one hex-keyed entry per matched group.
             // `try_into_flat_map` collapses any compound (in_key + key)
-            // entries by summing over `in_key` with checked `i64`
+            // entries by summing over `in_key` with checked `i128`
             // arithmetic; callers needing the unmerged shape should use
             // a richer binding.
             let sum_query = base_query
@@ -264,30 +294,32 @@ mod tests {
         );
     }
 
+    /// Serialize a sum map through the real [`DocumentSumResult`] type.
+    fn sums_json(sums: BTreeMap<String, i128>) -> String {
+        serde_json::to_string(&DocumentSumResult { sums })
+            .expect("DocumentSumResult must serialize")
+    }
+
     /// The `DocumentSumResult` wire shape iOS decodes is exactly
-    /// `{"sums": {"<hex-key>": <signed number>, ...}}`. The empty key
-    /// (aggregate total) and a signed value must round-trip verbatim;
+    /// `{"sums": {"<hex-key>": "<signed decimal>", ...}}`. The empty key
+    /// (aggregate total) and a negative value must round-trip verbatim;
     /// `BTreeMap` ordering keeps the key order deterministic.
     #[test]
     fn document_sum_result_serializes_to_expected_shape() {
-        let sums = BTreeMap::from([("".to_string(), 42i64), ("61".to_string(), -5i64)]);
-        let json = serde_json::to_string(&DocumentSumResult { sums })
-            .expect("DocumentSumResult must serialize");
-        assert_eq!(json, r#"{"sums":{"":42,"61":-5}}"#);
+        let sums = BTreeMap::from([("".to_string(), 42i128), ("61".to_string(), -5i128)]);
+        assert_eq!(sums_json(sums), r#"{"sums":{"":"42","61":"-5"}}"#);
     }
 
     /// The ungrouped (aggregate) branch always emits a single
     /// empty-string-keyed total. This pins the exact wire shape the
-    /// `group_by.is_empty()` path produces — `{"sums":{"":<total>}}` —
+    /// `group_by.is_empty()` path produces (`{"sums":{"":"<total>"}}`)
     /// so a regression that reintroduced per-key entries for an
     /// ungrouped `in` / range query would change the serialized bytes
     /// iOS decodes against.
     #[test]
     fn document_sum_result_ungrouped_is_single_empty_key_total() {
-        let sums = BTreeMap::from([(String::new(), 42i64)]);
-        let json = serde_json::to_string(&DocumentSumResult { sums })
-            .expect("DocumentSumResult must serialize");
-        assert_eq!(json, r#"{"sums":{"":42}}"#);
+        let sums = BTreeMap::from([(String::new(), 42i128)]);
+        assert_eq!(sums_json(sums), r#"{"sums":{"":"42"}}"#);
     }
 
     /// An absent / `None` aggregate (queried-but-empty) is reported as
@@ -295,9 +327,28 @@ mod tests {
     /// documented "single empty-key total" contract always holds.
     #[test]
     fn document_sum_result_ungrouped_absent_is_zero_total() {
-        let sums = BTreeMap::from([(String::new(), 0i64)]);
-        let json = serde_json::to_string(&DocumentSumResult { sums })
-            .expect("DocumentSumResult must serialize");
-        assert_eq!(json, r#"{"sums":{"":0}}"#);
+        let sums = BTreeMap::from([(String::new(), 0i128)]);
+        assert_eq!(sums_json(sums), r#"{"sums":{"":"0"}}"#);
+    }
+
+    /// A sum past `i64` (a 128-bit sum tree, protocol version 15) is
+    /// written whole as a decimal string, not a JSON number a reader
+    /// would round.
+    #[test]
+    fn document_sum_result_carries_a_sum_past_i64_whole() {
+        let wide = 3 * i128::from(i64::MAX);
+        let sums = BTreeMap::from([(String::new(), wide)]);
+        assert_eq!(sums_json(sums), r#"{"sums":{"":"27670116110564327421"}}"#);
+    }
+
+    /// A negative sum past `i64::MIN` keeps its sign and every digit.
+    #[test]
+    fn document_sum_result_carries_a_negative_sum_past_i64_whole() {
+        let wide = 3 * i128::from(i64::MIN);
+        let sums = BTreeMap::from([("61".to_string(), wide)]);
+        assert_eq!(
+            sums_json(sums),
+            r#"{"sums":{"61":"-27670116110564327424"}}"#
+        );
     }
 }

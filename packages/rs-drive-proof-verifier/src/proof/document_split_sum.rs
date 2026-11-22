@@ -22,9 +22,10 @@ pub struct SplitSumEntry {
     pub in_key: Option<Vec<u8>>,
     /// The terminator key value.
     pub key: Vec<u8>,
-    /// The aggregated sum at that key. `Some(n)` for matched keys;
-    /// `None` for keys proven absent.
-    pub sum: Option<i64>,
+    /// The aggregated sum at that key, at the 128 bits a sum is kept
+    /// in ([`super::document_sum::DocumentSum`]). `Some(n)` for matched
+    /// keys; `None` for keys proven absent.
+    pub sum: Option<i128>,
 }
 
 /// The full per-entry sum result, verified from proof.
@@ -37,7 +38,7 @@ impl DocumentSplitSums {
     /// contribution at the same terminator key. Same shape as
     /// `DocumentSplitCounts::into_flat_map` on the count side.
     ///
-    /// Uses [`i64::checked_add`] on each accumulator step and
+    /// Uses [`i128::checked_add`] on each accumulator step and
     /// surfaces overflow as
     /// [`Error::RequestError`](crate::Error::RequestError) rather
     /// than panicking (debug) or wrapping (release). Mirrors the
@@ -46,27 +47,23 @@ impl DocumentSplitSums {
     /// hardening boundary the SDK aggregate path already enforces.
     ///
     /// On overflow, drop back to iterating `DocumentSplitSums.0`
-    /// directly — per-branch entries preserve the verified `i64`
-    /// values, and the caller can fold with its own arithmetic
-    /// (e.g. `i128`).
+    /// directly — per-branch entries preserve the verified values,
+    /// and the caller can fold with its own arithmetic.
     pub fn try_into_flat_map(
         self,
-    ) -> Result<std::collections::BTreeMap<Vec<u8>, i64>, crate::Error> {
-        let mut out: std::collections::BTreeMap<Vec<u8>, i64> = std::collections::BTreeMap::new();
+    ) -> Result<std::collections::BTreeMap<Vec<u8>, i128>, crate::Error> {
+        let mut out: std::collections::BTreeMap<Vec<u8>, i128> = std::collections::BTreeMap::new();
         for entry in self.0 {
             if let Some(sum) = entry.sum {
-                let slot = out.entry(entry.key).or_insert(0i64);
-                *slot =
-                    slot.checked_add(sum).ok_or_else(|| {
-                        crate::Error::RequestError {
-                    error:
-                        "DocumentSplitSums::try_into_flat_map: i64 overflow merging per-In-fork \
-                         sums at the same terminator key. The verified per-branch entries are \
-                         each valid i64, but their fold exceeds the i64 range — iterate \
+                let slot = out.entry(entry.key).or_insert(0i128);
+                *slot = slot
+                    .checked_add(sum)
+                    .ok_or_else(|| crate::Error::RequestError {
+                        error: "DocumentSplitSums::try_into_flat_map: i128 overflow merging \
+                         per-In-fork sums at the same terminator key. Iterate \
                          DocumentSplitSums.0 directly to access per-branch sums and fold with \
-                         your own arithmetic (e.g. i128)."
+                         your own arithmetic."
                             .to_string(),
-                }
                     })?;
             }
         }
@@ -118,17 +115,39 @@ mod tests {
         assert_eq!(flat.get(b"blue".as_slice()), Some(&7));
     }
 
-    /// Crossing `i64::MAX` from two valid per-branch i64s must
-    /// surface as `RequestError`, not panic / wrap. This is the
-    /// exact boundary the SDK's aggregate-side fold already
-    /// hardens for `DocumentSum`.
+    /// Two In-forks whose sums together pass 64 bits fold to the
+    /// whole 128-bit sum.
+    #[test]
+    fn try_into_flat_map_folds_past_64_bits() {
+        let splits = DocumentSplitSums(vec![
+            SplitSumEntry {
+                in_key: Some(b"alice".to_vec()),
+                key: b"shared".to_vec(),
+                sum: Some(i128::from(i64::MAX)),
+            },
+            SplitSumEntry {
+                in_key: Some(b"bob".to_vec()),
+                key: b"shared".to_vec(),
+                sum: Some(i128::from(i64::MAX)),
+            },
+        ]);
+        let flat = splits.try_into_flat_map().expect("the fold fits 128 bits");
+        assert_eq!(
+            flat.get(b"shared".as_slice()),
+            Some(&(2 * i128::from(i64::MAX)))
+        );
+    }
+
+    /// Crossing `i128::MAX` must surface as `RequestError`, not
+    /// panic / wrap. This is the exact boundary the SDK's
+    /// aggregate-side fold already hardens for `DocumentSum`.
     #[test]
     fn try_into_flat_map_overflow_surfaces_request_error() {
         let splits = DocumentSplitSums(vec![
             SplitSumEntry {
                 in_key: Some(b"alice".to_vec()),
                 key: b"shared".to_vec(),
-                sum: Some(i64::MAX),
+                sum: Some(i128::MAX),
             },
             SplitSumEntry {
                 in_key: Some(b"bob".to_vec()),
@@ -138,10 +157,10 @@ mod tests {
         ]);
         let err = splits
             .try_into_flat_map()
-            .expect_err("i64::MAX + 1 must surface as overflow error, not wrap or panic");
+            .expect_err("i128::MAX + 1 must surface as overflow error, not wrap or panic");
         let msg = format!("{err:?}");
         assert!(
-            msg.contains("i64 overflow") && msg.contains("DocumentSplitSums"),
+            msg.contains("i128 overflow") && msg.contains("DocumentSplitSums"),
             "error message must name the overflow and the helper: got {msg}"
         );
     }
@@ -153,7 +172,7 @@ mod tests {
             SplitSumEntry {
                 in_key: Some(b"alice".to_vec()),
                 key: b"shared".to_vec(),
-                sum: Some(i64::MIN),
+                sum: Some(i128::MIN),
             },
             SplitSumEntry {
                 in_key: Some(b"bob".to_vec()),
@@ -163,9 +182,9 @@ mod tests {
         ]);
         let err = splits
             .try_into_flat_map()
-            .expect_err("i64::MIN - 1 must surface as overflow error, not wrap or panic");
+            .expect_err("i128::MIN - 1 must surface as overflow error, not wrap or panic");
         let msg = format!("{err:?}");
-        assert!(msg.contains("i64 overflow"), "got {msg}");
+        assert!(msg.contains("i128 overflow"), "got {msg}");
     }
 
     /// `None`-sum entries are skipped (the verifier emits them for

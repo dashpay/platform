@@ -14,9 +14,10 @@ import SwiftDashSDK
 /// the wrapper for the chosen operation, and renders the total (and per-group
 /// rows when grouped) or the platform error (e.g. "requires a summable index").
 ///
-/// The average FFI returns the raw `(count, sum)` pair un-divided; computing
-/// the displayed average (`sum / count`) is presentation and happens here, not
-/// in the wrapper.
+/// Sums arrive as `Int128` (a 128-bit sum tree, protocol version 15, can hold
+/// more than `Int64`) and are shown whole. The average is computed in Rust,
+/// exactly, as a decimal string with 4 places; the view shows that string and
+/// never divides.
 struct SumAverageDocumentsView: View {
     /// Which aggregation the view runs.
     private enum Operation: String, CaseIterable, Identifiable {
@@ -191,7 +192,7 @@ struct SumAverageDocumentsView: View {
             HStack {
                 Text("Sum")
                 Spacer()
-                Text(result.total.map(String.init) ?? "—")
+                Text(result.total.map { String($0) } ?? "—")
                     .fontWeight(.bold)
                     .foregroundColor(.primary)
                     .accessibilityIdentifier("sumAverageDocuments.total")
@@ -222,7 +223,7 @@ struct SumAverageDocumentsView: View {
             HStack {
                 Text("Average")
                 Spacer()
-                Text(formatAverage(result.total))
+                Text(result.total?.average ?? "—")
                     .fontWeight(.bold)
                     .foregroundColor(.primary)
                     .accessibilityIdentifier("sumAverageDocuments.average")
@@ -253,7 +254,7 @@ struct SumAverageDocumentsView: View {
                             .truncationMode(.middle)
                         Spacer()
                         VStack(alignment: .trailing, spacing: 2) {
-                            Text(formatAverage(row.entry))
+                            Text(row.entry.average ?? "—")
                                 .fontWeight(.semibold)
                             Text("n=\(row.entry.count), Σ=\(row.entry.sum)")
                                 .font(.caption2)
@@ -293,7 +294,7 @@ struct SumAverageDocumentsView: View {
 
     /// Per-group sum rows, sorted by hex key for a stable render. Excludes the
     /// empty-string aggregate entry (shown in the Total section).
-    private func groupedSumRows(_ result: DocumentSumResult) -> [(key: String, value: Int64)] {
+    private func groupedSumRows(_ result: DocumentSumResult) -> [(key: String, value: Int128)] {
         result.sums
             .filter { !$0.key.isEmpty }
             .map { (key: $0.key, value: $0.value) }
@@ -307,14 +308,6 @@ struct SumAverageDocumentsView: View {
             .filter { !$0.key.isEmpty }
             .map { (key: $0.key, entry: $0.value) }
             .sorted { $0.key < $1.key }
-    }
-
-    /// Render an average entry's computed `sum / count`. The FFI returns the
-    /// raw `(count, sum)` pair; the division (presentation) happens here. A
-    /// `nil` entry or a zero `count` (no matched documents) renders as `—`.
-    private func formatAverage(_ entry: DocumentAverageEntry?) -> String {
-        guard let avg = entry?.average else { return "—" }
-        return String(format: "%.4f", avg)
     }
 
     // MARK: - Actions

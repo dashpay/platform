@@ -13,23 +13,23 @@
 //! PR #670 head `e98bab5f`).
 
 /// Single-aggregate-sum proof verification — sum analog of count's
-/// `verify_aggregate_count_proof`. Returns `(root_hash, i64 sum)`
+/// `verify_aggregate_count_proof`. Returns `(root_hash, i128 sum)`
 /// from one `AggregateSumOnRange` merk traversal.
 pub mod verify_aggregate_sum_proof;
 
 /// Carrier-aggregate-sum proof verification — sum-side analog of
 /// count's `verify_carrier_aggregate_count_proof`. Returns one
-/// `(in_key, i64)` per resolved In branch.
+/// `(in_key, i128)` per resolved In branch.
 pub mod verify_carrier_aggregate_sum_proof;
 
 /// Combined PCPS carrier-aggregate proof verification — returns one
-/// `(in_key, u64 count, i64 sum)` triple per resolved In branch.
+/// `(in_key, u64 count, i128 sum)` triple per resolved In branch.
 /// PCPS-only (the terminator's value tree must be a
 /// `ProvableCountProvableSumTree`).
 pub mod verify_carrier_aggregate_count_and_sum_proof;
 
 /// Leaf-PCPS `AggregateCountAndSumOnRange` proof verification —
-/// returns `(root_hash, u64 count, i64 sum)`. PCPS-only (the
+/// returns `(root_hash, u64 count, i128 sum)`. PCPS-only (the
 /// terminator's value tree must be a
 /// `ProvableCountProvableSumTree`). The load-bearing primitive for
 /// average-range queries: the client computes
@@ -39,14 +39,14 @@ pub mod verify_aggregate_count_and_sum_proof;
 
 /// Direct read of the document type's primary-key `SumTree` element
 /// — sum analog of count's `verify_primary_key_count_tree_proof`.
-/// Returns `(root_hash, i64 sum)`. Used by the `documents_summable`
+/// Returns `(root_hash, i128 sum)`. Used by the `documents_summable`
 /// fast path on empty-where SUM queries.
 pub mod verify_primary_key_sum_tree_proof;
 
 /// Direct read of the document type's primary-key count-sum-bearing
 /// element (CountSumTree / ProvableCountSumTree /
 /// ProvableCountProvableSumTree) — returns `(root_hash, u64 count,
-/// i64 sum)`. Used by the `documentsCountable + documentsSummable`
+/// i128 sum)`. Used by the `documentsCountable + documentsSummable`
 /// fast path on empty-where AVG queries.
 pub mod verify_primary_key_count_sum_tree_proof;
 
