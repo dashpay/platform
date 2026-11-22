@@ -36,7 +36,9 @@
 //     account.
 //   * The recipient defaults to the wallet's own bound shielded
 //     default address (the natural demo case). The user can paste a
-//     43-byte raw Orchard address (display hex) to override.
+//     43-byte raw Orchard address (display hex) to override, except
+//     for Max (always the wallet's own address) and for a resumed lock
+//     that recorded its recipient (bound to that recipient).
 //   * Only one number is exposed in the UI ("Amount" in DASH = L1
 //     lock size) — same shape as the address-funding sibling and the
 //     identity-funding flow. The Rust wallet derives the shielded
@@ -68,9 +70,10 @@ struct ShieldedFundFromAssetLockView: View {
     /// lock already exists, those choices were made at original
     /// build time) and routes Submit to
     /// `PlatformWalletManager.shieldedResumeFundFromAssetLock`
-    /// instead of building a fresh lock. The user can still adjust
-    /// the recipient + shield amount since the orphan lock doesn't
-    /// carry that — both are set at ST-submission time.
+    /// instead of building a fresh lock. A lock that recorded its
+    /// recipient (`shieldedRecipientRaw43`) pays that recipient and
+    /// shows it read-only; for an older lock without one the user can
+    /// still pick the recipient, set at ST-submission time.
     var resumeFromLock: PersistentAssetLock? = nil
 
     /// All persisted accounts. Filtered down to the wallet's DIP-17
@@ -114,11 +117,21 @@ struct ShieldedFundFromAssetLockView: View {
     /// Kept separate from `amountDash` so the Core (duffs) and
     /// Platform (credits) unit systems never share a text buffer.
     @State private var platformAmountDash: String = "0.001"
+    /// Core branch "Max": sweep everything at the chosen account index
+    /// through a wallet drain to the wallet's own shielded address. Rust
+    /// picks the inputs and the amount; the view only shows its estimate.
+    @State private var drainMax = false
+    /// The estimate with the wallet and account index it was read for.
+    @State private var drainQuote: WalletDrainQuote? = nil
 
     // MARK: - Submit state
 
     @State private var submitError: SubmitError? = nil
     @State private var activeController: ShieldedFundFromAssetLockController? = nil
+    /// `activeController.phase`, mirrored by `.onReceive` so the terminal
+    /// section and the Cancel button re-render when the attempt ends: the
+    /// controller itself sits in `@State`, which does not observe it.
+    @State private var activePhase: ShieldedFundFromAssetLockController.Phase? = nil
 
     /// Platform-branch submit lifecycle. The Platform path does NOT
     /// go through the asset-lock controller/coordinator — it's a
@@ -149,6 +162,7 @@ struct ShieldedFundFromAssetLockView: View {
                 if let controller = activeController {
                     // Core asset-lock flow in flight (Type 18).
                     ShieldedFundFromAssetLockProgressSection(controller: controller)
+                        .onReceive(controller.$phase) { activePhase = $0 }
                     progressTerminalSection(controller: controller)
                 } else if platformShieldPhase != .idle {
                     // Platform → pool flow in flight / terminal (Type
@@ -173,7 +187,15 @@ struct ShieldedFundFromAssetLockView: View {
                     case .coreBalance:
                         coreFundingSection
                         recipientSection
-                        amountSection
+                        if drainMax {
+                            WalletDrainPreviewSection(
+                                walletId: wallet.walletId,
+                                fundingAccountIndex: drainFundingAccountIndex,
+                                quote: $drainQuote
+                            )
+                        } else {
+                            amountSection
+                        }
                     case .platformBalance:
                         platformAccountSection
                         platformAmountSection
@@ -190,7 +212,7 @@ struct ShieldedFundFromAssetLockView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }
                         .disabled(
-                            activeController?.phase == .inFlight
+                            activePhase == .inFlight
                                 || platformShieldPhase == .inFlight
                         )
                 }
@@ -203,6 +225,9 @@ struct ShieldedFundFromAssetLockView: View {
                 )
             }
             .onAppear(perform: autoSelectDefaults)
+            .onChange(of: platformState.currentNetwork, initial: true) { _, network in
+                if !Self.isNewMaxAllowed(on: network) { drainMax = false }
+            }
         }
     }
 
@@ -251,16 +276,60 @@ struct ShieldedFundFromAssetLockView: View {
                     }
                 }
             }
+            Toggle("Max (everything at this account index)", isOn: $drainMax)
+                .disabled(activeController != nil || !isNewMaxAllowed)
+                .accessibilityIdentifier("shieldFromCore.maxToggle")
+                .onChange(of: drainMax) { _, _ in drainQuote = nil }
         } header: {
             Text("Core Source")
         } footer: {
-            Text(
-                "The selected Core account's UTXOs are locked into an asset lock; "
-                    + "the locked DASH becomes shielded credits on the destination "
-                    + "Orchard address."
-            )
+            if !isNewMaxAllowed {
+                Text(
+                    "The selected Core account's UTXOs are locked into an asset lock; "
+                        + "the locked DASH becomes shielded credits on the destination "
+                        + "Orchard address. " + Self.maxUnavailableOnMainnetText
+                )
+            } else if drainMax {
+                Text(
+                    "Max sweeps account index \(drainFundingAccountIndex): the BIP44 and BIP32 "
+                        + "accounts at that index together with every DashPay receiving account. "
+                        + "Standard funds at other account indices are not swept. "
+                        + "The amount is set by the wallet, not typed here."
+                )
+            } else {
+                Text(
+                    "The selected Core account's UTXOs are locked into an asset lock; "
+                        + "the locked DASH becomes shielded credits on the destination "
+                        + "Orchard address."
+                )
+            }
         }
     }
+
+    /// Account index for a Max drain. The picker lists only accounts with a
+    /// confirmed BIP44 balance, while a drain also pools BIP32 and DashPay
+    /// receiving funds, so an empty picker still drains index 0 (the SDK
+    /// wrapper's default).
+    private var drainFundingAccountIndex: UInt32 {
+        fundingCoreAccountIndex ?? 0
+    }
+
+    /// Whether a NEW Max may start on `network`. Not on mainnet until
+    /// #5580 is fixed: Rust can record a drain as completed on an
+    /// unauthenticated "already consumed" report. Recovery of existing
+    /// Max transfers (`UnfinishedWalletDrainsList`) stays on every network.
+    nonisolated static func isNewMaxAllowed(on network: Network) -> Bool {
+        network != .mainnet
+    }
+
+    private var isNewMaxAllowed: Bool {
+        Self.isNewMaxAllowed(on: platformState.currentNetwork)
+    }
+
+    private static let maxUnavailableOnMainnetText =
+        "Max is not available on mainnet until issue #5580 is fixed: the wallet could record "
+            + "a Max transfer as finished from an unverified \"already consumed\" report. "
+            + "Unfinished Max transfers can still be resumed from the wallet screen."
 
     /// Segmented Core/Platform source toggle (fresh-build flow only).
     /// Switching it re-renders the funding sections below and flips
@@ -441,6 +510,65 @@ struct ShieldedFundFromAssetLockView: View {
 
     @ViewBuilder
     private var recipientSection: some View {
+        if isDrainMax {
+            fixedRecipientSection(
+                ownShieldedAddress,
+                footer: "Max only shields to your own shielded address: it sweeps whatever is "
+                    + "eligible when it runs, which can be more than the estimate."
+            )
+        } else if let bound = lockBoundRecipient {
+            fixedRecipientSection(
+                bound,
+                footer: "This asset lock is bound to this recipient: it was recorded when the "
+                    + "lock was built, and resuming can only pay it."
+            )
+        } else {
+            editableRecipientSection
+        }
+    }
+
+    /// Read-only recipient row for Max and for a lock with a recorded
+    /// recipient: neither may be paid to a typed address.
+    private func fixedRecipientSection(_ recipient: Data?, footer: String) -> some View {
+        Section {
+            HStack {
+                Label("Recipient", systemImage: "lock.shield")
+                Spacer()
+                if let recipient {
+                    Text(hexShort(recipient))
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } else {
+                    Text("Not available")
+                        .foregroundColor(.secondary)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("shieldFromCore.fixedRecipient")
+        } header: {
+            Text("Destination Orchard Address")
+        } footer: {
+            Text(footer)
+        }
+    }
+
+    /// The wallet's own shielded default address, read live.
+    private var ownShieldedAddress: Data? {
+        try? walletManager.shieldedDefaultAddress(walletId: wallet.walletId)
+    }
+
+    /// The recipient a resumed lock recorded when it was built. Rust pays
+    /// it and refuses any other, so the view does not offer a choice.
+    private var lockBoundRecipient: Data? {
+        guard let recorded = resumeFromLock?.shieldedRecipientRaw43, recorded.count == 43 else {
+            return nil
+        }
+        return recorded
+    }
+
+    private var editableRecipientSection: some View {
         Section {
             HStack {
                 Label("Recipient", systemImage: "lock.shield")
@@ -511,14 +639,25 @@ struct ShieldedFundFromAssetLockView: View {
                 submit()
             } label: {
                 HStack {
-                    Text(resumeFromLock == nil ? "Shield" : "Resume Shield")
+                    Text(submitTitle)
                     Spacer()
                 }
                 .foregroundColor(.white)
             }
             .frame(maxWidth: .infinity)
             .listRowBackground(Color.accentColor)
+            .accessibilityIdentifier("shieldFromCore.submitButton")
         }
+    }
+
+    private var submitTitle: String {
+        if resumeFromLock != nil { return "Resume Shield" }
+        return isDrainMax ? "Shield Max" : "Shield"
+    }
+
+    /// Max applies to the fresh-build Core branch only.
+    private var isDrainMax: Bool {
+        resumeFromLock == nil && source == .coreBalance && drainMax
     }
 
     @ViewBuilder
@@ -547,21 +686,33 @@ struct ShieldedFundFromAssetLockView: View {
             } header: {
                 Text("Resuming")
             } footer: {
-                Text(
-                    "The asset lock was already built and reached a usable proof state. "
-                        + "Pick a recipient + shield amount to complete the funding."
-                )
+                // True at every resumable status, Built included: Rust
+                // rebroadcasts or waits for a proof first when it has to.
+                if lockBoundRecipient != nil {
+                    Text(
+                        "The asset lock was already built. Resuming finishes what is left "
+                            + "(broadcast and the finality proof if still needed, then the shield) "
+                            + "and pays its recorded recipient."
+                    )
+                } else {
+                    Text(
+                        "The asset lock was already built. Resuming finishes what is left "
+                            + "(broadcast and the finality proof if still needed, then the shield). "
+                            + "Pick a recipient to complete the funding."
+                    )
+                }
             }
         }
     }
 
-    /// Inline terminal section that follows the controller's phase.
+    /// Inline terminal section that follows the controller's phase (read
+    /// from `activePhase`, which re-renders this view when it changes).
     /// Same idea as the address-funding sibling's `progressTerminalSection`.
     @ViewBuilder
     private func progressTerminalSection(
         controller: ShieldedFundFromAssetLockController
     ) -> some View {
-        switch controller.phase {
+        switch activePhase {
         case .completed:
             Section {
                 VStack(alignment: .leading, spacing: 8) {
@@ -575,10 +726,7 @@ struct ShieldedFundFromAssetLockView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                     Button {
-                        walletManager.shieldedFundFromAssetLockCoordinator.dismiss(
-                            walletId: controller.walletId,
-                            recipientRaw43: controller.recipientRaw43
-                        )
+                        walletManager.shieldedFundFromAssetLockCoordinator.dismiss(controller)
                         dismiss()
                     } label: {
                         Text("Done")
@@ -599,10 +747,7 @@ struct ShieldedFundFromAssetLockView: View {
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
                     Button {
-                        walletManager.shieldedFundFromAssetLockCoordinator.dismiss(
-                            walletId: controller.walletId,
-                            recipientRaw43: controller.recipientRaw43
-                        )
+                        walletManager.shieldedFundFromAssetLockCoordinator.dismiss(controller)
                         dismiss()
                     } label: {
                         Text("Dismiss")
@@ -612,7 +757,7 @@ struct ShieldedFundFromAssetLockView: View {
                     .padding(.top, 4)
                 }
             }
-        default:
+        case .idle, .inFlight, nil:
             EmptyView()
         }
     }
@@ -653,7 +798,21 @@ struct ShieldedFundFromAssetLockView: View {
             return
         }
 
-        guard let recipient = recipientRaw43 else { return }
+        if isDrainMax {
+            submitDrainMax()
+            return
+        }
+
+        // Same rule as Max: a resume is admitted by the manager, so it
+        // must not start once a rebuild has reserved its slot.
+        if let refusal = AppState.fundingRefusal(isRebuildingSdk: platformState.isRebuildingSdk) {
+            submitError = SubmitError(message: refusal)
+            return
+        }
+
+        // A resumed lock with a recorded recipient pays that one; Rust
+        // refuses any other.
+        guard let recipient = lockBoundRecipient ?? recipientRaw43 else { return }
 
         let walletId = wallet.walletId
         let manager = walletManager
@@ -671,6 +830,8 @@ struct ShieldedFundFromAssetLockView: View {
         // re-tap of the SAME lock still rebinds).
         let operationId: String
         let body: () async throws -> Void
+        // Set for a fresh shield only: a resume names its lock in its id.
+        var builtOutPoint: BuiltOutPointRecorder?
         if let lock = resumeFromLock {
             guard let parsed = parseOutPoint(lock.outPointHex) else {
                 submitError = SubmitError(
@@ -695,6 +856,11 @@ struct ShieldedFundFromAssetLockView: View {
                 let duffs = parsedDuffs
             else { return }
             operationId = "shield:\(UUID().uuidString)"
+            // A fresh lock carries no operation id, so its outpoint, which
+            // the SDK reports before persisting the row, is the only thing
+            // that ties the row to this attempt.
+            let recorder = BuiltOutPointRecorder()
+            builtOutPoint = recorder
             body = {
                 try await manager.shieldedFundFromAssetLock(
                     walletId: walletId,
@@ -702,7 +868,8 @@ struct ShieldedFundFromAssetLockView: View {
                     amountDuffs: duffs,
                     recipients: [
                         ShieldedFundFromAssetLockRecipient(recipientRaw43: recipient)
-                    ]
+                    ],
+                    onAssetLockBuilt: { recorder.record($0.outPointHex) }
                 )
             }
         }
@@ -724,8 +891,20 @@ struct ShieldedFundFromAssetLockView: View {
             operationId: operationId,
             body: body
         ) {
-        case .started(let controller):
+        case .started(let controller, let bodyScheduled):
+            // Only when this call's body runs: a re-presented controller
+            // keeps the recorder of the body it ran. The body cannot have
+            // started yet: the controller's task is scheduled on the main
+            // actor, which this code holds until it returns.
+            if bodyScheduled {
+                // A resume builds nothing; its progress must not say it does.
+                controller.isResumingExistingLock = resumeFromLock != nil
+                if let builtOutPoint {
+                    controller.builtOutPoint = builtOutPoint
+                }
+            }
             activeController = controller
+            activePhase = controller.phase
         case .blockedByOtherWalletFunding(let blocker):
             submitError = SubmitError(
                 message: "Another shielded funding is already in progress on this wallet "
@@ -733,6 +912,73 @@ struct ShieldedFundFromAssetLockView: View {
                     + "are serialised wallet-wide by the Rust runtime — try again after that "
                     + "one finishes."
             )
+        }
+    }
+
+    /// Max: the drain coordinator stores the operation id before anything
+    /// is called, then runs it through the shielded-funding coordinator, so
+    /// the progress and terminal sections below are the sibling flow's.
+    ///
+    /// Shield-to-self only until the SDK can cap the swept amount (#5607):
+    /// the drain sweeps whatever is eligible when it runs, which can exceed
+    /// the estimate. The own address is read here, at submit, so neither a
+    /// cached recipient nor the override text can be paid.
+    private func submitDrainMax() {
+        // Second boundary behind the disabled toggle: nothing is stored or
+        // called for a new Max on mainnet.
+        guard isNewMaxAllowed else {
+            submitError = SubmitError(
+                message: "Nothing was sent. " + Self.maxUnavailableOnMainnetText
+            )
+            return
+        }
+        // A rebuild stops SPV and then waits for the manager's fundings, so
+        // a drain started now could wait for a ChainLock that never comes.
+        // The rebuild refuses to start beside a funding; this is the other
+        // side of that rule.
+        if let refusal = AppState.fundingRefusal(isRebuildingSdk: platformState.isRebuildingSdk) {
+            submitError = SubmitError(message: refusal)
+            return
+        }
+        guard let quote = drainQuote,
+              quote.matches(walletId: wallet.walletId, fundingAccountIndex: drainFundingAccountIndex),
+              quote.preview.status != .insufficientFunds
+        else { return }
+        let ownAddress: Data?
+        do {
+            ownAddress = try walletManager.shieldedDefaultAddress(walletId: wallet.walletId)
+        } catch {
+            submitError = SubmitError(
+                message: "Could not read this wallet's shielded address, so nothing was sent: "
+                    + error.localizedDescription
+            )
+            return
+        }
+        guard let recipient = ownAddress, recipient.count == 43 else {
+            submitError = SubmitError(
+                message: "This wallet's shielded address is not available yet, so nothing was sent."
+            )
+            return
+        }
+        switch walletManager.walletDrainCoordinator.start(
+            walletId: wallet.walletId,
+            networkRaw: platformState.currentNetwork.rawValue,
+            fundingAccountIndex: quote.fundingAccountIndex,
+            recipientRaw43: recipient,
+            walletManager: walletManager
+        ) {
+        case .started(let controller):
+            activeController = controller
+            activePhase = controller.phase
+        case .blockedByOtherWalletFunding(let blocker):
+            submitError = SubmitError(
+                message: "Another shielded funding is already in progress on this wallet "
+                    + "(recipient \(hexShort(blocker.recipientRaw43))). Shield-class operations "
+                    + "are serialised wallet-wide by the Rust runtime, so try again after that "
+                    + "one finishes."
+            )
+        case .markerWriteFailed(let message):
+            submitError = SubmitError(message: message)
         }
     }
 
@@ -839,7 +1085,7 @@ struct ShieldedFundFromAssetLockView: View {
 
     private var canSubmit: Bool {
         if resumeFromLock != nil {
-            return recipientRaw43 != nil && activeController == nil
+            return (lockBoundRecipient ?? recipientRaw43) != nil && activeController == nil
         }
         // Platform branch: a chosen account, an idle phase (and no
         // Core controller running), a positive credit amount that
@@ -852,6 +1098,16 @@ struct ShieldedFundFromAssetLockView: View {
                 && activeController == nil
                 && credits > 0
                 && credits <= selectedPlatformAccountCredits
+        }
+        // Max: only a quote read for this wallet and account index gates
+        // submit. The recipient is not checked here: it is always the
+        // wallet's own address, read at submit.
+        if drainMax {
+            guard let quote = drainQuote,
+                  quote.matches(walletId: wallet.walletId, fundingAccountIndex: drainFundingAccountIndex)
+            else { return false }
+            return quote.preview.status != .insufficientFunds
+                && activeController == nil
         }
         let amount = parsedDuffs ?? 0
         return fundingCoreAccountIndex != nil
