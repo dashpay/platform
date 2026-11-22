@@ -126,12 +126,40 @@ impl BigStackRuntime {
     /// [`FFIError::InternalError`], so an FFI function returns it as a
     /// `DashSDKResult` error instead of aborting the host app (`panic = "abort"`
     /// on iOS). A panic inside the future is still re-raised, as by `block_on`.
+    ///
+    /// Unlike `block_on`, the future and its output must be `Send`: the
+    /// compiler checks the hand-off to the worker thread, with no `AssertSend`.
+    /// A caller parses its C arguments into owned values before building the
+    /// future, so no raw pointer is held across an await.
     pub(crate) fn try_block_on<F>(&self, future: F) -> Result<F::Output, FFIError>
     where
-        F: Future,
+        F: Future + Send,
+        F::Output: Send,
     {
-        self.run_on_worker(future, FFI_BLOCKING_STACK_SIZE)
+        self.run_send_on_worker(future, FFI_BLOCKING_STACK_SIZE)
             .map_err(worker_spawn_error)
+    }
+
+    /// Drives the `Send` `future` on a worker thread with a `stack_size` stack;
+    /// the error the OS gave when it would not create that thread.
+    fn run_send_on_worker<F>(&self, future: F, stack_size: usize) -> std::io::Result<F::Output>
+    where
+        F: Future + Send,
+        F::Output: Send,
+    {
+        #[cfg(feature = "tokio-metrics")]
+        let _block_on_guard = metrics::BlockOnGuard::new();
+
+        std::thread::scope(|scope| {
+            let worker = std::thread::Builder::new()
+                .name("dash-sdk-ffi-block-on".to_string())
+                .stack_size(stack_size)
+                .spawn_scoped(scope, move || self.0.block_on(future))?;
+            // Re-raise a panic of the future on the caller's thread, as `block_on` does
+            Ok(worker
+                .join()
+                .unwrap_or_else(|payload| std::panic::resume_unwind(payload)))
+        })
     }
 
     /// Drives `future` on a worker thread with a `stack_size` stack; the error
@@ -318,11 +346,13 @@ mod tests {
     }
 
     /// A worker the OS will not create (a stack no system can map) comes back as an
-    /// error from the fallible path, instead of a panic.
+    /// error from the fallible path, instead of a panic. The size needs a 64-bit
+    /// `usize`.
+    #[cfg(target_pointer_width = "64")]
     #[test]
     fn should_return_an_error_when_the_worker_thread_cannot_start() {
         let runtime = BigStackRuntime::new_isolated().expect("build runtime");
-        let refused = runtime.run_on_worker(async { 1 }, 1 << 60);
+        let refused = runtime.run_send_on_worker(async { 1 }, 1 << 60);
         assert!(refused.is_err(), "a 1 EiB stack should not be created");
     }
 

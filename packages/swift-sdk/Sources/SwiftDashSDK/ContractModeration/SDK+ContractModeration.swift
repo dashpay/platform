@@ -373,6 +373,11 @@ func withContractModerationCStrings<R>(
     }
     let copies: [UnsafeMutablePointer<CChar>?] = strings.map { strdup($0) }
     defer { copies.forEach { free($0) } }
+    // A copy that could not be allocated is a local failure, not an invalid id:
+    // stop here rather than hand Rust a null element it would refuse as one
+    guard copies.allSatisfy({ $0 != nil }) else {
+        throw SDKError.internalError("Failed to allocate C strings for \(field)")
+    }
     let pointers: [UnsafePointer<CChar>?] = copies.map { $0.map { UnsafePointer($0) } }
     return try pointers.withUnsafeBufferPointer { buffer in
         try body(buffer.baseAddress, buffer.count)

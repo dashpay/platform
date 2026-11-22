@@ -22,13 +22,16 @@ struct ContractTeamActionsView: View {
     /// The status the rows shown were listed under, which their signers are
     /// read with.
     @State private var listedStatus: ContractTeamActionStatus = .active
+    /// Advanced by every read started (a status picked, a refresh), so a read
+    /// queued before a newer one is not sent.
+    @State private var readToken = 0
     @StateObject private var loader =
         ModerationPagedLoader<ContractTeamActionEntry, ContractTeamActionsCursor>()
 
     var body: some View {
         List {
             Section {
-                Picker("Status", selection: $status) {
+                Picker("Status", selection: Binding(get: { status }, set: { select($0) })) {
                     Text("Active").tag(ContractTeamActionStatus.active)
                     Text("Closed").tag(ContractTeamActionStatus.closed)
                 }
@@ -87,19 +90,38 @@ struct ContractTeamActionsView: View {
         }
         .navigationTitle("Team Actions")
         .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await reload() }
-        .task(id: status) { await reload() }
+        .refreshable { await reload(status: status, token: begin(status: status)) }
+        .task { await reload(status: status, token: begin(status: status)) }
     }
 
-    private func reload() async {
+    /// A status picked: in this main-actor turn the selection changes, the
+    /// token advances and the loader drops the rows, cursor and error shown
+    /// and any answer still in flight; then the read of that status is queued.
+    private func select(_ newStatus: ContractTeamActionStatus) {
+        guard newStatus != status else { return }
+        status = newStatus
+        let token = begin(status: newStatus)
+        Task { await reload(status: newStatus, token: token) }
+    }
+
+    /// The synchronous part of a read of `status`; returns its token.
+    private func begin(status: ContractTeamActionStatus) -> Int {
+        readToken += 1
+        listedStatus = status
+        loader.begin()
+        return readToken
+    }
+
+    /// Reads the actions of `status`, the status captured when the read
+    /// began, unless a newer selection superseded it before it ran.
+    private func reload(status: ContractTeamActionStatus, token: Int) async {
+        guard token == readToken else { return }
         guard let sdk = appState.sdk else {
             loader.fail("SDK not initialized")
             return
         }
         let contractId = contractId
-        let status = status
         let pageSize = Self.pageSize
-        listedStatus = status
         await loader.reload { cursor in
             // The cursor goes back as the last page returned it
             try await sdk.contractTeamActions(

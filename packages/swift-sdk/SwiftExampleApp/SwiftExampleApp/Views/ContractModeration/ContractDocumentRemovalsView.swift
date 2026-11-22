@@ -13,11 +13,9 @@ struct ContractDocumentRemovalsView: View {
     private static let pageSize: UInt32 = 20
 
     @State private var documentIdsInput = ""
-    /// The ids the shown records were looked up by; `nil` while paging.
-    @State private var lookedUpIds: [String]?
-    /// Bumped by every look up and every edit of the ids, so a look up that
-    /// was superseded before its task ran is not sent.
-    @State private var lookupSubmission = 0
+    /// The filter shown (the ids looked up, `nil` while paging) and the token
+    /// of the read last started for it.
+    @State private var filter = RemovalsLookupFilter()
     @StateObject private var loader = ModerationPagedLoader<ContractDocumentRemovalEntry, String>()
 
     var body: some View {
@@ -120,12 +118,15 @@ struct ContractDocumentRemovalsView: View {
 
     /// The ids typed changed: the lookup shown, and one still running, no
     /// longer answer them, so they are cleared until the next look up.
+    /// Typed ids matter only to a look up by ids: while every record is read
+    /// (`nil` filter), an edit leaves that read alone.
     private func draftChanged() {
-        lookupSubmission += 1
-        guard lookedUpIds != nil else { return }
-        lookedUpIds = nil
+        guard filter.draftChanged() else { return }
         loader.clear()
     }
+
+    /// The ids the shown records were looked up by; `nil` while paging.
+    private var lookedUpIds: [String]? { filter.ids }
 
     /// Starts a read of `ids` (`nil` for every record, a page at a time), all
     /// in this main-actor turn: the filter shown changes, the submission
@@ -139,16 +140,15 @@ struct ContractDocumentRemovalsView: View {
 
     /// The synchronous part of a read of `ids`; returns its token.
     private func begin(ids: [String]?) -> Int {
-        lookedUpIds = ids
-        lookupSubmission += 1
+        let token = filter.begin(ids: ids)
         loader.begin()
-        return lookupSubmission
+        return token
     }
 
     /// Sends the read of `ids` unless a newer read or an edit superseded it
     /// before it ran.
     private func send(ids: [String]?, token: Int) async {
-        guard token == lookupSubmission else { return }
+        guard filter.isCurrent(token) else { return }
         if let ids {
             await read(ids: ids)
         } else {
@@ -165,7 +165,6 @@ struct ContractDocumentRemovalsView: View {
 
     /// Every record, a page at a time.
     private func reload() async {
-        lookedUpIds = nil
         guard let sdk = appState.sdk else {
             loader.fail("SDK not initialized")
             return
@@ -186,7 +185,6 @@ struct ContractDocumentRemovalsView: View {
 
     /// The records of `ids` alone; a read by ids has no page after it.
     private func read(ids: [String]) async {
-        lookedUpIds = ids
         guard let sdk = appState.sdk else {
             loader.fail("SDK not initialized")
             return
@@ -257,5 +255,36 @@ private struct ContractDocumentRemovalRow: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The removal records filter: the ids looked up (`nil` while every record
+/// is read a page at a time) and the token of the read last started, so a
+/// read queued before a newer one, or before an edit of the ids it looks up,
+/// is not sent.
+struct RemovalsLookupFilter: Equatable {
+    private(set) var ids: [String]?
+    private(set) var token = 0
+
+    /// Starts a read of `ids`: shows them and returns the read's token.
+    mutating func begin(ids: [String]?) -> Int {
+        self.ids = ids
+        token += 1
+        return token
+    }
+
+    /// The typed ids changed. A look up by ids no longer answers them: it is
+    /// dropped (`true`, the rows are to be cleared). Reading every record does
+    /// not depend on them and goes on (`false`).
+    mutating func draftChanged() -> Bool {
+        guard ids != nil else { return false }
+        ids = nil
+        token += 1
+        return true
+    }
+
+    /// Whether the read of `token` is still the one to send and show.
+    func isCurrent(_ token: Int) -> Bool {
+        token == self.token
     }
 }
