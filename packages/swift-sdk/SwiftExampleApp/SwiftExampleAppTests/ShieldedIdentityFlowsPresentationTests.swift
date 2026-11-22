@@ -552,13 +552,6 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         XCTAssertEqual(label, "020202020202…")
     }
 
-    func test_readableRecords_footerPromisesResend() {
-        XCTAssertTrue(
-            ShieldedIdentityDebitRecoveryDisplay.footerText(hasUnreadableRecord: false)
-                .contains("A shielded sync resends and resolves them.")
-        )
-    }
-
     // MARK: - Unreadable record labels
 
     func test_unreadableRecord_activeStatuses_makeNoResendPromise() {
@@ -596,11 +589,47 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         XCTAssertFalse(warning.contains("this identity"))
     }
 
-    func test_unreadableRecord_footerQualifiesTheResendPromise() {
-        let footer = ShieldedIdentityDebitRecoveryDisplay.footerText(hasUnreadableRecord: true)
-        XCTAssertTrue(footer.contains("resends and resolves readable ones"))
-        XCTAssertTrue(footer.contains("unreadable record cannot be resent"))
-        XCTAssertFalse(footer.contains("resolves them."))
+    // MARK: - Section footer
+
+    /// The footer is the same for every set of records, so it must not make
+    /// a promise that a stopped or unreadable record would contradict.
+    private func assertFooterMakesNoStatusPromise(file: StaticString = #filePath, line: UInt = #line) {
+        let footer = ShieldedIdentityDebitRecoveryDisplay.footerText
+        XCTAssertFalse(footer.contains("resend"), file: file, line: line)
+        XCTAssertFalse(footer.contains("blocks"), file: file, line: line)
+        XCTAssertFalse(footer.contains("until you stop"), file: file, line: line)
+        XCTAssertTrue(footer.contains("checks each shield for its note"), file: file, line: line)
+        XCTAssertTrue(footer.contains("each row shows"), file: file, line: line)
+    }
+
+    func test_footer_withOneStoppedReadableRecord_promisesNoResend() {
+        assertFooterMakesNoStatusPromise()
+        // The row itself says retry was stopped, not that it is resent.
+        let detail = ShieldedIdentityDebitRecoveryDisplay.statusDetail(.unknown, identityId: identityId)
+        XCTAssertTrue(detail.contains("Automatic retry was stopped"))
+        XCTAssertFalse(detail.contains("resends"))
+    }
+
+    func test_footer_withOneStoppedUnreadableRecord_claimsNoBlock() {
+        assertFooterMakesNoStatusPromise()
+        // A stopped unreadable record no longer blocks; its row does not say it does.
+        let detail = ShieldedIdentityDebitRecoveryDisplay.statusDetail(.unknown, identityId: nil)
+        XCTAssertFalse(detail.contains("blocks"))
+        XCTAssertTrue(detail.contains("unknown"))
+    }
+
+    func test_footer_withOneActiveUnreadableRecord_leavesTheBlockToTheRow() {
+        assertFooterMakesNoStatusPromise()
+        // The active unreadable row carries the block and no-resend specifics.
+        let detail = ShieldedIdentityDebitRecoveryDisplay.statusDetail(.retrying, identityId: nil)
+        XCTAssertTrue(detail.contains("blocks new identity shields in this wallet"))
+        XCTAssertTrue(detail.contains("cannot be resent"))
+    }
+
+    func test_footer_withOneParkedReadableRecord_promisesNoResend() {
+        assertFooterMakesNoStatusPromise()
+        let detail = ShieldedIdentityDebitRecoveryDisplay.statusDetail(.parked, identityId: identityId)
+        XCTAssertFalse(detail.contains("resends"))
     }
 
     // MARK: - Recovery read state

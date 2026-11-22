@@ -91,17 +91,13 @@ enum ShieldedIdentityDebitRecoveryDisplay {
             + "this identity may become an additional debit."
     }
 
-    /// Footer of the section; readable records are resent on sync, an
-    /// unreadable one is not.
-    static func footerText(hasUnreadableRecord: Bool) -> String {
-        let base = "Shields from an identity's balance whose outcome is not known yet."
-        if hasUnreadableRecord {
-            return base + " A shielded sync resends and resolves readable ones. "
-                + "An unreadable record cannot be resent and blocks new identity "
-                + "shields in this wallet until you stop retrying it."
-        }
-        return base + " A shielded sync resends and resolves them."
-    }
+    /// Footer of the section. Status-neutral on purpose: what a sync does
+    /// depends on each record (only a retrying readable one is resent, and
+    /// only an active one blocks new shields), so each row's status text
+    /// carries that.
+    static let footerText = "Shields from an identity's balance whose outcome "
+        + "is not known yet. A shielded sync checks each shield for its note; "
+        + "each row shows what the wallet can still do with it."
 }
 
 // MARK: - Read state
@@ -396,9 +392,7 @@ struct ShieldedIdentityDebitRecoverySection: View {
         } header: {
             Text("In-Progress Identity Shields")
         } footer: {
-            Text(ShieldedIdentityDebitRecoveryDisplay.footerText(
-                hasUnreadableRecord: model.records.contains { $0.identityId == nil }
-            ))
+            Text(ShieldedIdentityDebitRecoveryDisplay.footerText)
         }
         .confirmationDialog(
             "Stop retrying this shield?",
