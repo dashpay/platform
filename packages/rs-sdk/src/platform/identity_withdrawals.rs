@@ -2,10 +2,11 @@
 //!
 //! An identity credit withdrawal stores a `withdrawal` document in the withdrawals system
 //! contract, owned by the identity. Platform moves its `status` as the withdrawal travels to
-//! Core: queued, pooled into an asset unlock transaction that a quorum signs, broadcast to
-//! Core, then complete once Core includes it in a chain-locked block, or expired when Core
-//! never does and Platform signs it again. This module reads those documents, proved, and
-//! returns them as typed rows.
+//! Core: queued; pooled into an asset unlock transaction; broadcasted, which Platform records
+//! when it builds that transaction for a quorum to sign and hands it on to Core, before Core
+//! has accepted anything; then complete once Platform sees the transaction in a chain-locked
+//! Core block, or expired when it does not and Platform builds it again. This module reads
+//! those documents, proved, and returns them as typed rows.
 //!
 //! Withdrawals from Platform addresses and from the shielded pool store the same document,
 //! but owned by the contract owner (the all-zero identifier), with an id derived from the
@@ -26,8 +27,10 @@ use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::Value;
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::system_data_contracts::withdrawals_contract::{self, WithdrawalStatus};
+use dpp::version::ProtocolVersion;
 use drive::query::{OrderClause, WhereClause, WhereOperator};
 use drive_proof_verifier::types::Documents;
+use std::collections::BTreeSet;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -52,7 +55,10 @@ pub struct IdentityWithdrawal {
     /// The index of the asset unlock transaction that carries the withdrawal to Core, set
     /// once Platform pooled it. Core identifies the transaction by it.
     pub transaction_index: Option<u64>,
-    /// The Core height at which a quorum signed that transaction, set once it was signed.
+    /// The Core chain-locked height Platform built that asset unlock transaction at (its
+    /// request height), set when Platform marked the withdrawal broadcasted. It is not proof
+    /// that a quorum signed the transaction or that Core accepted it; a withdrawal that
+    /// expires and is built again gets a new one.
     pub transaction_sign_height: Option<u32>,
     /// When the withdrawal was submitted, block time in milliseconds.
     pub created_at: u64,
@@ -183,19 +189,67 @@ fn identity_withdrawals_page(
     })
 }
 
+/// The first protocol version whose query lowering serves this listing. The listing is an
+/// equality on `$ownerId` ordered by `$updatedAt` descending with a `startAfter` cursor; the
+/// lowering before 14 walks the first page in the index's ascending order and treats an
+/// empty branch at the cursor as a result, so it returns the oldest withdrawals and can stop
+/// early.
+const IDENTITY_WITHDRAWALS_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 14;
+
+/// How many times [`Sdk::fetch_all_identity_withdrawals`] walks a listing of more than one
+/// page before it gives up because every walk spanned more than one block.
+const IDENTITY_WITHDRAWALS_READ_ATTEMPTS: usize = 3;
+
 impl Sdk {
     /// One page of the withdrawals of `identity_id` to Core, most recently updated first,
     /// read with a proof from the withdrawals system contract. [`IdentityWithdrawalsPage::next`]
-    /// gives the next page.
+    /// gives the next page. Withdrawals move between pages as their status changes, so pages
+    /// read at different heights neither list every withdrawal nor each one once; use
+    /// [`Self::fetch_all_identity_withdrawals`] for the whole listing.
     ///
     /// Only withdrawals from the identity's own credit balance are found: withdrawals from
     /// Platform addresses and from the shielded pool are owned by the contract owner (see the
-    /// module documentation).
+    /// module documentation). Needs protocol version 14 or later.
     pub async fn fetch_identity_withdrawals(
         &self,
         identity_id: Identifier,
         page: DocumentsPage,
     ) -> Result<IdentityWithdrawalsPage, Error> {
+        self.fetch_identity_withdrawals_page_with_height(identity_id, page)
+            .await
+            .map(|(page, _)| page)
+    }
+
+    /// Every withdrawal of `identity_id` to Core, each listed once, most recently updated
+    /// first, read with proofs as the listing stood at one block height.
+    ///
+    /// The listing is ordered by `$updatedAt`, which moves whenever Platform advances a
+    /// withdrawal's status, so only pages proved at the same height make up the whole
+    /// listing. When a walk's pages come back at different heights, the walk starts over, at
+    /// most [`IDENTITY_WITHDRAWALS_READ_ATTEMPTS`] times; then the read fails and can be tried
+    /// again. A listing whose first page is not full is one query, so it never needs a second
+    /// walk. Needs protocol version 14 or later.
+    pub async fn fetch_all_identity_withdrawals(
+        &self,
+        identity_id: Identifier,
+    ) -> Result<Vec<IdentityWithdrawal>, Error> {
+        read_all_withdrawals(|page| {
+            self.fetch_identity_withdrawals_page_with_height(identity_id, page)
+        })
+        .await
+    }
+
+    /// One page of the withdrawals of `identity_id` and the block height it was proved at.
+    async fn fetch_identity_withdrawals_page_with_height(
+        &self,
+        identity_id: Identifier,
+        page: DocumentsPage,
+    ) -> Result<(IdentityWithdrawalsPage, u64), Error> {
+        self.require_protocol_version(
+            IDENTITY_WITHDRAWALS_INITIAL_PROTOCOL_VERSION,
+            "listing an identity's withdrawals",
+        )
+        .await?;
         let contract = self
             .fetch_system_data_contract(withdrawals_contract::ID)
             .await?
@@ -205,110 +259,56 @@ impl Sdk {
                     withdrawals_contract::ID.to_string(Encoding::Base58),
                 )
             })?;
-        let documents = Document::fetch_many(
+        let (documents, metadata) = Document::fetch_many_with_metadata(
             self,
             identity_withdrawals_query(contract, identity_id, page)?,
+            None,
         )
         .await?;
-        identity_withdrawals_page(&documents, page, self.network)
-    }
-
-    /// Every withdrawal of `identity_id` to Core, each listed once, most recently updated
-    /// first, read page by page with proofs (see [`Self::fetch_identity_withdrawals`]).
-    ///
-    /// The listing is ordered by `$updatedAt`, which moves whenever Platform advances a
-    /// withdrawal's status, so a withdrawal can move between pages while they are read: to an
-    /// earlier page (it would be read twice) or, from a page not read yet, to the top (it
-    /// would be missed). Rows are merged by id, and the listing is read again from the top
-    /// to find withdrawals that moved during the read. With more than one page, a withdrawal
-    /// whose status changes repeatedly during the read can be absent from the result; read
-    /// again to pick it up. A listing that fits one page is always complete.
-    pub async fn fetch_all_identity_withdrawals(
-        &self,
-        identity_id: Identifier,
-    ) -> Result<Vec<IdentityWithdrawal>, Error> {
-        read_all_withdrawals(|page| self.fetch_identity_withdrawals(identity_id, page)).await
+        Ok((
+            identity_withdrawals_page(&documents, page, self.network)?,
+            metadata.height,
+        ))
     }
 }
 
-/// Read every withdrawal through `fetch_page`, each listed once with its latest state.
+/// Read the whole listing through `fetch_page`, which answers a page with the block height
+/// it was proved at.
 ///
-/// First every page is read in turn and the rows merged by id, which lists a withdrawal that
-/// moved to an earlier page once. A withdrawal that moved during that walk took the newest
-/// `$updatedAt`, so it now sits at the top of the listing. When the walk read more than one
-/// page, the listing is therefore read again from the top, page by page until a page holds
-/// nothing new or changed. A withdrawal can move again during that pass and land above
-/// where the pass has reached, so passes repeat until one finds nothing new or changed on
-/// its first page. Each further pass needs another status change on the chain, so the
-/// passes end.
-///
-/// This narrows the gap but does not close it. Each page is a separate proved query, so a
-/// listing longer than one page is never read at a single block, and a pass stops at the
-/// first unchanged page: when the row a pass continues from moves to the top itself, the
-/// next page starts from the top again and the rows in between are not read. A withdrawal
-/// that keeps moving while others move around it can therefore be absent from the result.
-/// A listing that fits one page is one query and is always complete. A caller that needs
-/// a complete longer listing has to read every page at the same block height.
+/// A walk is accepted only when every page came back at the same height and no withdrawal
+/// appeared twice: at one height the listing does not change, so following the cursor lists
+/// each withdrawal exactly once, in order. A walk that sees a second height or a repeated
+/// withdrawal stops at once and starts over from the first page, at most
+/// [`IDENTITY_WITHDRAWALS_READ_ATTEMPTS`] times; then the read fails.
 async fn read_all_withdrawals<F, Fut>(mut fetch_page: F) -> Result<Vec<IdentityWithdrawal>, Error>
 where
     F: FnMut(DocumentsPage) -> Fut,
-    Fut: Future<Output = Result<IdentityWithdrawalsPage, Error>>,
+    Fut: Future<Output = Result<(IdentityWithdrawalsPage, u64), Error>>,
 {
-    let mut withdrawals = Vec::new();
-    let mut page = Some(DocumentsPage::default());
-    let mut pages_read = 0usize;
-    while let Some(current) = page {
-        let fetched = fetch_page(current).await?;
-        merge_withdrawals(&mut withdrawals, fetched.withdrawals);
-        pages_read += 1;
-        page = fetched.next;
-    }
-    if pages_read > 1 {
-        loop {
-            let mut changed = false;
-            let mut page = Some(DocumentsPage::default());
-            while let Some(current) = page {
-                let fetched = fetch_page(current).await?;
-                if !merge_withdrawals(&mut withdrawals, fetched.withdrawals) {
-                    break;
+    'walk: for _ in 0..IDENTITY_WITHDRAWALS_READ_ATTEMPTS {
+        let mut withdrawals = Vec::new();
+        let mut listed = BTreeSet::new();
+        let mut walk_height = None;
+        let mut page = Some(DocumentsPage::default());
+        while let Some(current) = page {
+            let (fetched, height) = fetch_page(current).await?;
+            if *walk_height.get_or_insert(height) != height {
+                continue 'walk;
+            }
+            for withdrawal in fetched.withdrawals {
+                if !listed.insert(withdrawal.id) {
+                    continue 'walk;
                 }
-                changed = true;
-                page = fetched.next;
+                withdrawals.push(withdrawal);
             }
-            if !changed {
-                break;
-            }
+            page = fetched.next;
         }
+        return Ok(withdrawals);
     }
-    Ok(withdrawals)
-}
-
-/// Merge `rows` into `withdrawals`: a withdrawal already listed keeps whichever state was
-/// updated last, a new one is added, and the list stays most recently updated first (by id
-/// on a tie, so the order is the same on every read). Returns whether `rows` added a
-/// withdrawal or changed one already listed.
-fn merge_withdrawals(
-    withdrawals: &mut Vec<IdentityWithdrawal>,
-    rows: Vec<IdentityWithdrawal>,
-) -> bool {
-    let mut changed = false;
-    for row in rows {
-        match withdrawals.iter_mut().find(|listed| listed.id == row.id) {
-            Some(listed) if row.updated_at >= listed.updated_at => {
-                if *listed != row {
-                    *listed = row;
-                    changed = true;
-                }
-            }
-            Some(_) => {}
-            None => {
-                withdrawals.push(row);
-                changed = true;
-            }
-        }
-    }
-    withdrawals.sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then(a.id.cmp(&b.id)));
-    changed
+    Err(Error::Generic(format!(
+        "the identity's withdrawals span more than one page and could not be read at one \
+         block height in {IDENTITY_WITHDRAWALS_READ_ATTEMPTS} attempts; read them again"
+    )))
 }
 
 #[cfg(test)]
@@ -557,174 +557,188 @@ mod tests {
         row
     }
 
-    #[test]
-    fn should_list_a_withdrawal_read_on_two_pages_once_with_its_latest_state() {
-        let mut withdrawals = Vec::new();
-        merge_withdrawals(
-            &mut withdrawals,
-            vec![row_updated(1, 0, 10), row_updated(2, 0, 9)],
-        );
-        // Withdrawal 2 advanced to pooled while the walk read the next page.
-        merge_withdrawals(
-            &mut withdrawals,
-            vec![row_updated(2, 1, 20), row_updated(3, 0, 5)],
-        );
-
-        let listed: Vec<_> = withdrawals.iter().map(|w| (w.id, w.status)).collect();
-        assert_eq!(
-            listed,
-            vec![
-                (Identifier::from([2; 32]), WithdrawalStatus::POOLED),
-                (Identifier::from([1; 32]), WithdrawalStatus::QUEUED),
-                (Identifier::from([3; 32]), WithdrawalStatus::QUEUED),
-            ]
-        );
+    /// The listing as it stood at one block height: most recently updated first.
+    struct Snapshot {
+        height: u64,
+        withdrawals: Vec<IdentityWithdrawal>,
     }
 
-    #[test]
-    fn should_keep_the_later_state_when_an_older_read_comes_second() {
-        let mut withdrawals = vec![row_updated(1, 2, 30)];
-        merge_withdrawals(&mut withdrawals, vec![row_updated(1, 1, 20)]);
-        assert_eq!(withdrawals.len(), 1);
-        assert_eq!(withdrawals[0].status, WithdrawalStatus::BROADCASTED);
-    }
-
-    #[test]
-    fn should_order_withdrawals_updated_at_the_same_time_by_id() {
-        let mut withdrawals = Vec::new();
-        merge_withdrawals(
-            &mut withdrawals,
-            vec![row_updated(7, 0, 10), row_updated(4, 0, 10)],
-        );
-        let ids: Vec<_> = withdrawals.iter().map(|w| w.id).collect();
-        assert_eq!(
-            ids,
-            vec![Identifier::from([4; 32]), Identifier::from([7; 32])]
-        );
-    }
-
-    /// A scripted listing: each call returns the next page in `pages`, whatever page was
-    /// asked for, and counts itself in `calls`.
-    fn scripted(
-        pages: Vec<Vec<IdentityWithdrawal>>,
-        page_size: u32,
+    /// A page reader over `snapshots` that honours the requested cursor and limit: call `n`
+    /// is answered from the snapshot `schedule[n]` names (the last one once the schedule runs
+    /// out), the way a node at that height resolves `startAfter` against its own listing.
+    fn ledger(
+        snapshots: Vec<Snapshot>,
+        schedule: Vec<usize>,
         calls: Rc<Cell<usize>>,
-    ) -> impl FnMut(DocumentsPage) -> Ready<Result<IdentityWithdrawalsPage, Error>> {
-        move |_page: DocumentsPage| {
-            let index = calls.get();
-            calls.set(index + 1);
-            let withdrawals = pages.get(index).cloned().unwrap_or_default();
-            let next = (withdrawals.len() == page_size as usize).then(|| DocumentsPage {
-                limit: Some(page_size),
+    ) -> impl FnMut(DocumentsPage) -> Ready<Result<(IdentityWithdrawalsPage, u64), Error>> {
+        move |page: DocumentsPage| {
+            let call = calls.get();
+            calls.set(call + 1);
+            let snapshot = &snapshots[*schedule.get(call).or(schedule.last()).expect("a schedule")];
+            let start = match page.start_after {
+                None => 0,
+                Some(cursor) => snapshot
+                    .withdrawals
+                    .iter()
+                    .position(|w| w.id == cursor)
+                    .map_or(snapshot.withdrawals.len(), |at| at + 1),
+            };
+            let size = page.page_size() as usize;
+            let withdrawals: Vec<_> = snapshot
+                .withdrawals
+                .iter()
+                .skip(start)
+                .take(size)
+                .cloned()
+                .collect();
+            let next = (withdrawals.len() == size).then(|| DocumentsPage {
+                limit: page.limit,
                 start_after: withdrawals.last().map(|w| w.id),
             });
-            ready(Ok(IdentityWithdrawalsPage { withdrawals, next }))
+            ready(Ok((
+                IdentityWithdrawalsPage { withdrawals, next },
+                snapshot.height,
+            )))
         }
     }
 
+    /// Withdrawals 1..=count, the higher id the more recently updated, all queued.
+    fn listing(count: u8) -> Vec<IdentityWithdrawal> {
+        (1..=count)
+            .rev()
+            .map(|id| row_updated(id, 0, id as u64))
+            .collect()
+    }
+
     #[tokio::test]
-    async fn should_read_a_single_page_listing_once() {
+    async fn should_read_a_listing_that_fits_one_page_with_one_query() {
         let calls = Rc::new(Cell::new(0));
-        let fetch = scripted(vec![vec![row_updated(1, 0, 10)]], 2, calls.clone());
-        let withdrawals = read_all_withdrawals(fetch).await.expect("reads");
-        assert_eq!(withdrawals.len(), 1);
+        let snapshots = vec![Snapshot {
+            height: 7,
+            withdrawals: listing(3),
+        }];
+        let withdrawals = read_all_withdrawals(ledger(snapshots, vec![0], calls.clone()))
+            .await
+            .expect("reads");
+        assert_eq!(withdrawals, listing(3));
         assert_eq!(calls.get(), 1);
     }
 
     #[tokio::test]
-    async fn should_find_more_than_a_page_of_withdrawals_that_moved_to_the_top_during_the_walk() {
-        // Listing A..F, two per page. After the first page is read, D, E and F advance and
-        // move to the top: the walk's second page then starts after B and holds only C.
-        let (a, b, c) = (
-            row_updated(1, 0, 10),
-            row_updated(2, 0, 9),
-            row_updated(3, 0, 8),
-        );
-        let (d, e, f) = (
-            row_updated(4, 1, 20),
-            row_updated(5, 1, 21),
-            row_updated(6, 1, 22),
-        );
-        let pages = vec![
-            vec![a.clone(), b.clone()],
-            vec![c.clone()],
-            // The re-read from the top: F, E are new, D is new, then B, C are unchanged.
-            vec![f.clone(), e.clone()],
-            vec![d.clone(), a.clone()],
-            vec![b.clone(), c.clone()],
-            // The next pass finds its first page unchanged, so the read is complete.
-            vec![f.clone(), e.clone()],
-            // Never asked for.
-            vec![row_updated(9, 0, 1)],
-        ];
+    async fn should_list_every_withdrawal_once_in_order_when_every_page_is_at_one_height() {
         let calls = Rc::new(Cell::new(0));
-        let fetch = scripted(pages, 2, calls.clone());
-
-        let withdrawals = read_all_withdrawals(fetch).await.expect("reads");
-
-        let ids: Vec<_> = withdrawals.iter().map(|w| w.id).collect();
-        assert_eq!(ids, vec![f.id, e.id, d.id, a.id, b.id, c.id]);
-        assert_eq!(calls.get(), 6);
+        let snapshots = vec![Snapshot {
+            height: 7,
+            withdrawals: listing(250),
+        }];
+        let withdrawals = read_all_withdrawals(ledger(snapshots, vec![0], calls.clone()))
+            .await
+            .expect("reads");
+        assert_eq!(withdrawals, listing(250));
+        // 100 + 100 + 50.
+        assert_eq!(calls.get(), 3);
     }
 
     #[tokio::test]
-    async fn should_list_once_a_withdrawal_that_moved_to_a_page_already_read() {
-        // B advances while the walk is between pages: the second page repeats it with its
-        // new state, and the re-read finds nothing else.
-        let (a, b, c) = (
-            row_updated(1, 0, 10),
-            row_updated(2, 0, 9),
-            row_updated(3, 0, 8),
+    async fn should_walk_again_when_a_pending_withdrawal_moves_to_the_top_between_pages() {
+        // At height 7, 100 final withdrawals sit above the only pending one. At height 8 the
+        // pending one has advanced to the top, so a continuation read there after the first
+        // page's cursor finds nothing below it and the pending withdrawal would be lost.
+        let mut at_7: Vec<_> = (2..=101u8)
+            .rev()
+            .map(|id| row_updated(id, 3, 100 + id as u64))
+            .collect();
+        at_7.push(row_updated(1, 0, 1));
+        let mut at_8 = at_7.clone();
+        let pending = at_8.pop().expect("the pending withdrawal");
+        at_8.insert(
+            0,
+            IdentityWithdrawal {
+                status: WithdrawalStatus::POOLED,
+                updated_at: 500,
+                ..pending
+            },
         );
-        let b_pooled = row_updated(2, 1, 30);
-        let pages = vec![
-            vec![a.clone(), b],
-            vec![c.clone()],
-            vec![b_pooled.clone(), a.clone()],
-            vec![c.clone()],
-            vec![b_pooled.clone(), a.clone()],
+        let snapshots = vec![
+            Snapshot {
+                height: 7,
+                withdrawals: at_7,
+            },
+            Snapshot {
+                height: 8,
+                withdrawals: at_8.clone(),
+            },
         ];
-        let fetch = scripted(pages, 2, Rc::new(Cell::new(0)));
+        let calls = Rc::new(Cell::new(0));
+        // The first page comes from height 7, every later read from height 8.
+        let withdrawals = read_all_withdrawals(ledger(snapshots, vec![0, 1], calls.clone()))
+            .await
+            .expect("reads");
 
-        let withdrawals = read_all_withdrawals(fetch).await.expect("reads");
-
-        assert_eq!(withdrawals.len(), 3);
-        assert_eq!(withdrawals[0], b_pooled);
+        assert_eq!(withdrawals, at_8);
+        assert_eq!(withdrawals[0].status, WithdrawalStatus::POOLED);
+        // Two reads of the first walk, then two of the walk at height 8.
+        assert_eq!(calls.get(), 4);
     }
 
     #[tokio::test]
-    async fn should_find_a_withdrawal_missed_by_the_walk_that_moves_again_during_the_re_read() {
-        // Listing A..F, two per page. During the walk D, E and F move to the top, so the walk
-        // misses them. The first re-read pass reads F, E, then D moves again, above the pass,
-        // which reads A, B next and stops there without D. The second pass finds D.
-        let (a, b, c) = (
-            row_updated(1, 0, 10),
-            row_updated(2, 0, 9),
-            row_updated(3, 0, 8),
-        );
-        let (e, f) = (row_updated(5, 1, 21), row_updated(6, 1, 22));
-        let d_broadcast = row_updated(4, 2, 30);
-        let pages = vec![
-            // The walk.
-            vec![a.clone(), b.clone()],
-            vec![c.clone()],
-            // The first re-read pass: F, E new; then A, B unchanged.
-            vec![f.clone(), e.clone()],
-            vec![a.clone(), b.clone()],
-            // The second pass: D new at the top; then E, A unchanged.
-            vec![d_broadcast.clone(), f.clone()],
-            vec![e.clone(), a.clone()],
-            // The third pass: the top is unchanged, so the read is complete.
-            vec![d_broadcast.clone(), f.clone()],
+    async fn should_fail_rather_than_return_a_partial_listing_when_no_walk_stays_at_one_height() {
+        let snapshots = vec![
+            Snapshot {
+                height: 7,
+                withdrawals: listing(150),
+            },
+            Snapshot {
+                height: 8,
+                withdrawals: listing(150),
+            },
         ];
         let calls = Rc::new(Cell::new(0));
-        let fetch = scripted(pages, 2, calls.clone());
+        // Every walk's pages alternate between heights 7 and 8.
+        let schedule = (0..100).map(|call| call % 2).collect();
+        let error = read_all_withdrawals(ledger(snapshots, schedule, calls.clone()))
+            .await
+            .expect_err("no walk is at one height");
 
-        let withdrawals = read_all_withdrawals(fetch).await.expect("reads");
+        assert!(
+            error
+                .to_string()
+                .contains("could not be read at one block height"),
+            "{error}"
+        );
+        // Each walk stops at its second page.
+        assert_eq!(calls.get(), 2 * IDENTITY_WITHDRAWALS_READ_ATTEMPTS);
+    }
 
-        let ids: Vec<_> = withdrawals.iter().map(|w| w.id).collect();
-        assert_eq!(ids, vec![d_broadcast.id, f.id, e.id, a.id, b.id, c.id]);
-        assert_eq!(withdrawals[0].status, WithdrawalStatus::BROADCASTED);
-        assert_eq!(calls.get(), 7);
+    #[tokio::test]
+    async fn should_walk_again_when_a_page_repeats_a_withdrawal_already_listed() {
+        // A node answering every page with the first one: the second page repeats the first.
+        let first = listing(150)[..100].to_vec();
+        let calls = Rc::new(Cell::new(0));
+        let counter = calls.clone();
+        let fetch = move |_page: DocumentsPage| {
+            counter.set(counter.get() + 1);
+            let next = Some(DocumentsPage {
+                limit: None,
+                start_after: first.last().map(|w| w.id),
+            });
+            ready(Ok((
+                IdentityWithdrawalsPage {
+                    withdrawals: first.clone(),
+                    next,
+                },
+                7,
+            )))
+        };
+        let error = read_all_withdrawals(fetch)
+            .await
+            .expect_err("never consistent");
+        assert!(
+            error
+                .to_string()
+                .contains("could not be read at one block height"),
+            "{error}"
+        );
+        assert_eq!(calls.get(), 2 * IDENTITY_WITHDRAWALS_READ_ATTEMPTS);
     }
 }

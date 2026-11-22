@@ -141,10 +141,11 @@ impl IdentityWallet {
     }
 
     /// Every withdrawal of `identity_id` to Core, each listed once, most recently updated
-    /// first, read with proofs from the withdrawals system contract: each one's amount,
-    /// destination, status, and the asset unlock transaction that carries it once Platform
-    /// pooled it. See [`Sdk::fetch_all_identity_withdrawals`](dash_sdk::Sdk::fetch_all_identity_withdrawals)
-    /// for how withdrawals that change status while the pages are read are kept to one row.
+    /// first, read with proofs as the withdrawals system contract stood at one block height:
+    /// each one's amount, destination, status, and the asset unlock transaction that carries
+    /// it once Platform pooled it. A read whose pages keep coming back at different heights
+    /// fails after a few walks and can be tried again; see
+    /// [`Sdk::fetch_all_identity_withdrawals`](dash_sdk::Sdk::fetch_all_identity_withdrawals).
     ///
     /// Any identity can be asked for, not only the wallet's. Withdrawals from Platform
     /// addresses and from the shielded pool are not found: the withdrawals contract stores
