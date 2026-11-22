@@ -26,6 +26,7 @@ use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::prelude::Identifier;
 
+use super::contact_requests::{GatedSigner, SigningGate};
 use super::update::SignerRef;
 use super::*;
 use crate::error::PlatformWalletError;
@@ -252,6 +253,15 @@ impl IdentityWallet {
     {
         let signing_key = identity.public_keys().get(&preview.signing_key_id);
 
+        // The host signs outside the wallet's lifecycle gate; the signature takes the gate
+        // and checks the wallet is still this generation before it can leave, and the gate
+        // is held through the broadcast and the local apply below (to the end of this call).
+        // A wallet removed or replaced while the host signed gets nothing broadcast.
+        let gated = GatedSigner {
+            signer,
+            wallet: self,
+            gate: std::sync::Mutex::new(SigningGate::Unsigned),
+        };
         let updated_key = identity
             .update_key_limits(
                 &self.sdk,
@@ -259,10 +269,14 @@ impl IdentityWallet {
                 preview.new_total_budget,
                 preview.new_expires_at,
                 signing_key,
-                SignerRef(signer),
+                SignerRef(&gated),
                 settings,
             )
-            .await?;
+            .await
+            .map_err(|error| match gated.removed() {
+                true => PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id)),
+                false => PlatformWalletError::from(error),
+            })?;
 
         // Post-broadcast local apply, fenced to this handle's wallet generation. A refresh
         // may have folded a later state of the key (a further raise, a disable) while this
@@ -341,6 +355,10 @@ mod tests {
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dpp::platform_value::BinaryData;
     use dpp::ProtocolError;
+    use std::sync::Arc;
+    use tokio::sync::Notify;
+
+    use crate::test_support::test_platform_wallet_manager;
 
     const EXPIRES_AT: TimestampMillis = 1_800_000_000_000;
 
@@ -663,5 +681,72 @@ mod tests {
             ),
             "{result:?}"
         );
+    }
+
+    /// Signs once released, after reporting that it was asked: a host signing prompt the
+    /// person leaves open.
+    #[derive(Debug)]
+    struct PausingSigner {
+        reached: Arc<Notify>,
+        release: Arc<Notify>,
+    }
+
+    #[async_trait::async_trait]
+    impl Signer<IdentityPublicKey> for PausingSigner {
+        async fn sign(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
+            self.reached.notify_one();
+            self.release.notified().await;
+            Ok(BinaryData::new(vec![1; 65]))
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            Err(ProtocolError::Generic(
+                "not signing witnesses in this test".to_string(),
+            ))
+        }
+
+        fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+            true
+        }
+    }
+
+    /// `submit_key_limits_update` signs through `GatedSigner`, and the SDK broadcasts only a
+    /// signature it was handed. A wallet removed while the host signs gets the signature
+    /// refused, so nothing is broadcast and the call reports `WalletRemovedBeforeSend`.
+    #[tokio::test]
+    async fn should_refuse_a_signature_that_returns_after_the_wallet_was_removed() {
+        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let host = PausingSigner {
+            reached: Arc::new(Notify::new()),
+            release: Arc::new(Notify::new()),
+        };
+        let gated = GatedSigner {
+            signer: &host,
+            wallet: wallet.identity(),
+            gate: std::sync::Mutex::new(SigningGate::Unsigned),
+        };
+        let key = authentication_key(0, SecurityLevel::MASTER);
+
+        let mut signing = Box::pin(gated.sign(&key, b"key limits update"));
+        tokio::select! {
+            signed = &mut signing => panic!("the host signed without being released: {signed:?}"),
+            _ = host.reached.notified() => {}
+        }
+        // The host's prompt holds no gate, so the removal completes while it is open.
+        manager.remove_wallet(&wallet_id).await.expect("removed");
+        host.release.notify_one();
+
+        let signed = signing.await;
+        assert!(signed.is_err(), "{signed:?}");
+        assert!(gated.removed());
     }
 }
