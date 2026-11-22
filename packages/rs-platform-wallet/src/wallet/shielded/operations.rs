@@ -50,7 +50,10 @@ use std::sync::Arc;
 
 use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
-use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+use dash_sdk::platform::transition::broadcast::{
+    identity_top_up_from_shielded_pool_requirement, shield_from_identity_requirement,
+    BroadcastStateTransition,
+};
 use dash_sdk::platform::transition::identity_create_from_shielded_pool::IdentityCreateFromShieldedPool;
 use dash_sdk::platform::Fetch;
 use dash_sdk::query_types::{IdentityBalance, IdentityNonceFetcher};
@@ -81,10 +84,6 @@ use dpp::shielded::{compute_minimum_shielded_fee, compute_shielded_identity_bala
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::StateTransition;
-use dpp::version::feature_initial_protocol_versions::{
-    IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
-    SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION,
-};
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
 use dpp::ProtocolError;
@@ -944,42 +943,6 @@ fn shield_inputs_read_spent(
     Ok(())
 }
 
-/// Refuse a transition kind that the SDK or the network does not run yet, before
-/// anything is proved, reserved or saved for retry. Nodes below
-/// `initial_protocol_version` reject the kind, and a rejected identity debit or
-/// note spend would otherwise stay saved for a retry that can never execute.
-///
-/// An SDK whose own version is below the activation learns the network's
-/// version first (`refresh_protocol_version`, one proved query): an unpinned
-/// SDK may only be at its seed, while a pinned one keeps its version and is
-/// refused. The SDK starts at protocol version 14 on every network, so a network
-/// still below it is caught by `network_proven_below`, which asks the network
-/// with one proved query only while no verified answer has shown its version
-/// yet. A failed probe refuses too: nothing is sent while the version is unknown.
-async fn ensure_protocol_version_runs(
-    sdk: &dash_sdk::Sdk,
-    initial_protocol_version: u32,
-    operation: &str,
-) -> Result<(), PlatformWalletError> {
-    let mut protocol_version = sdk.version().protocol_version;
-    if protocol_version < initial_protocol_version {
-        protocol_version = sdk.refresh_protocol_version().await?;
-    }
-    if protocol_version < initial_protocol_version {
-        return Err(PlatformWalletError::ShieldedBuildError(format!(
-            "{operation} exists from protocol version {initial_protocol_version}; the SDK \
-             runs protocol version {protocol_version}"
-        )));
-    }
-    if sdk.network_proven_below(initial_protocol_version).await? {
-        return Err(PlatformWalletError::ShieldedBuildError(format!(
-            "{operation} exists from protocol version {initial_protocol_version}; the \
-             network has not activated it yet"
-        )));
-    }
-    Ok(())
-}
-
 // -------------------------------------------------------------------------
 // ShieldFromIdentity: identity balance -> shielded pool (Type 21)
 // -------------------------------------------------------------------------
@@ -1120,12 +1083,6 @@ pub(in crate::wallet) async fn shield_from_identity_to<
     signer: &Sig,
     prover: &P,
 ) -> Result<(Credits, ResponseMetadata), PlatformWalletError> {
-    ensure_protocol_version_runs(
-        sdk,
-        SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION,
-        "shielding from an identity",
-    )
-    .await?;
     let ShieldRecipient {
         address: recipient_addr,
         counterparty: external_counterparty,
@@ -1150,6 +1107,13 @@ pub(in crate::wallet) async fn shield_from_identity_to<
             identity_id: identity_id.to_buffer(),
         });
     }
+
+    // Nodes before the transition's activation reject it, and a rejected debit would
+    // stay saved for a retry that can never execute: establish that the network serves
+    // it before anything is proved or saved. After the pending-debit check, so a caller
+    // offline after a restart still learns about the debit that may execute.
+    sdk.ensure_protocol_requirement(shield_from_identity_requirement())
+        .await?;
 
     // A self-shield funded by an identity is its own activity kind so the
     // history shows which identity paid; a third-party recipient stays `Sent`.
@@ -1603,12 +1567,10 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
     amount: u64,
     prover: &P,
 ) -> Result<(Option<Credits>, ResponseMetadata), PlatformWalletError> {
-    ensure_protocol_version_runs(
-        sdk,
-        IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
-        "topping up an identity from the shielded pool",
-    )
-    .await?;
+    // Nodes before the transition's activation reject it: establish that the network
+    // serves it before any note is reserved or anything is proved or saved.
+    sdk.ensure_protocol_requirement(identity_top_up_from_shielded_pool_requirement())
+        .await?;
     let views = keys.viewing_keys();
     let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
@@ -4919,6 +4881,10 @@ mod redrive_tests {
     use dpp::state_transition::shield_transition::v0::ShieldTransitionV0;
     use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
     use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+    use dpp::version::feature_initial_protocol_versions::{
+        IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+        SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION,
+    };
     use dpp::version::PlatformVersion;
     use futures::{poll, FutureExt};
     use grovedb_commitment_tree::ProvingKey;
@@ -4978,7 +4944,6 @@ mod redrive_tests {
     /// Returns the result and the store, to inspect what was armed or recorded.
     async fn identity_shield_on_mock(
         platform_version: &'static PlatformVersion,
-        network_version: Option<u32>,
         proved_balance: Option<u64>,
         amount: u64,
     ) -> (
@@ -4990,13 +4955,12 @@ mod redrive_tests {
             .with_version(platform_version)
             .build()
             .expect("mock sdk");
-        identity_shield_on_sdk(sdk, network_version, proved_balance, amount).await
+        identity_shield_on_sdk(sdk, proved_balance, amount).await
     }
 
     /// [`identity_shield_on_mock`] on a mock SDK the caller built.
     async fn identity_shield_on_sdk(
         mut sdk: dash_sdk::Sdk,
-        network_version: Option<u32>,
         proved_balance: Option<u64>,
         amount: u64,
     ) -> (
@@ -5007,10 +4971,6 @@ mod redrive_tests {
         use dpp::identity::v0::IdentityV0;
 
         let identity_id = Identifier::from([0x71; 32]);
-        if let Some(version) = network_version {
-            sdk.mock_verified_protocol_version(version)
-                .expect("mock network version");
-        }
         if let Some(balance) = proved_balance {
             sdk.mock()
                 .expect_fetch::<IdentityBalance, Identifier>(identity_id, Some(balance))
@@ -5066,13 +5026,9 @@ mod redrive_tests {
         let amount = 1_000_000;
         let fee = identity_shield_fee();
 
-        let (result, store, id) = identity_shield_on_mock(
-            PlatformVersion::latest(),
-            None,
-            Some(amount + fee - 1),
-            amount,
-        )
-        .await;
+        let (result, store, id) =
+            identity_shield_on_mock(PlatformVersion::latest(), Some(amount + fee - 1), amount)
+                .await;
 
         match result {
             Err(PlatformWalletError::InsufficientIdentityCredits {
@@ -5094,8 +5050,7 @@ mod redrive_tests {
         let fee = identity_shield_fee();
 
         let (result, store, id) =
-            identity_shield_on_mock(PlatformVersion::latest(), None, Some(amount + fee), amount)
-                .await;
+            identity_shield_on_mock(PlatformVersion::latest(), Some(amount + fee), amount).await;
 
         // The unconfigured mock refuses the nonce fetch that follows the check.
         match result {
@@ -5113,13 +5068,20 @@ mod redrive_tests {
             .expect("the version before activation");
 
         // No balance expectation: the refusal comes before any network read.
-        let (result, store, id) = identity_shield_on_mock(below, None, None, 1_000_000).await;
+        let (result, store, id) = identity_shield_on_mock(below, None, 1_000_000).await;
 
         match result {
-            Err(PlatformWalletError::ShieldedBuildError(reason)) => assert!(
-                reason.contains("shielding from an identity exists from protocol version 14"),
-                "{reason}"
-            ),
+            Err(PlatformWalletError::Sdk(dash_sdk::Error::ProtocolVersionNotActive {
+                required,
+                pinned,
+                ..
+            })) => {
+                assert_eq!(required, SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION);
+                assert!(
+                    pinned,
+                    "a pinned SDK below the activation is refused as pinned"
+                );
+            }
             other => panic!("expected the activation refusal, got {other:?}"),
         }
         assert_nothing_armed_or_recorded(&store, id).await;
@@ -5178,8 +5140,7 @@ mod redrive_tests {
         let amount = 1_000_000;
         let fee = identity_shield_fee();
 
-        let (result, store, id) =
-            identity_shield_on_sdk(sdk, None, Some(amount + fee), amount).await;
+        let (result, store, id) = identity_shield_on_sdk(sdk, Some(amount + fee), amount).await;
 
         // Past the activation check and the balance check, the unconfigured mock
         // refuses the nonce fetch.
@@ -5193,24 +5154,72 @@ mod redrive_tests {
     }
 
     #[tokio::test]
-    async fn should_refuse_an_identity_shield_on_a_network_proven_below_its_activation_version() {
-        // The SDK speaks the latest version, the network is shown at the one before.
-        let (result, store, id) = identity_shield_on_mock(
-            PlatformVersion::latest(),
-            Some(SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION - 1),
+    async fn should_report_a_pending_identity_debit_before_the_activation_check() {
+        use dpp::identity::v0::IdentityV0;
+
+        // A pinned SDK below the activation refuses without asking the network, standing
+        // in for a probe that cannot run while offline after a restart.
+        let below = PlatformVersion::get(SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION - 1)
+            .expect("the version before activation");
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_version(below)
+                .build()
+                .expect("mock sdk"),
+        );
+        let identity_id = [0x75; 32];
+        let wallet_id = [0x76; 32];
+        let mut store = InMemoryShieldedStore::new();
+        store
+            .arm_redrive(
+                SubwalletId::new(wallet_id, 0),
+                PendingRedrive {
+                    activity_id: [0x77; 32],
+                    anchor: [1; 32],
+                    nullifiers: vec![],
+                    st_bytes: identity_shield_transition(identity_id, 3)
+                        .serialize_to_bytes()
+                        .expect("identity shield should serialize"),
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                    anchor_height: None,
+                },
+            )
+            .expect("redrive should arm");
+        let store = Arc::new(RwLock::new(store));
+        let keys = OrchardKeySet::from_seed(&[0x44; 32], Network::Testnet, 0)
+            .expect("keys")
+            .viewing_keys();
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from(identity_id),
+            public_keys: Default::default(),
+            balance: u64::MAX / 2,
+            revision: 0,
+        });
+
+        let result = shield_from_identity_to(
+            &sdk,
+            &store,
             None,
+            wallet_id,
+            &keys,
+            0,
+            None,
+            &identity,
             1_000_000,
+            [0u8; 36],
+            &UnreachableIdentitySigner,
+            &UnreachableIdentityProver,
         )
         .await;
 
         match result {
-            Err(PlatformWalletError::ShieldedBuildError(reason)) => assert!(
-                reason.contains("the network has not activated it yet"),
-                "{reason}"
-            ),
-            other => panic!("expected the activation refusal, got {other:?}"),
+            Err(PlatformWalletError::ShieldedIdentityDebitPending { identity_id: found }) => {
+                assert_eq!(found, identity_id)
+            }
+            other => panic!("expected the pending debit, got {other:?}"),
         }
-        assert_nothing_armed_or_recorded(&store, id).await;
     }
 
     #[tokio::test]
@@ -5243,12 +5252,20 @@ mod redrive_tests {
         .await;
 
         match result {
-            Err(PlatformWalletError::ShieldedBuildError(reason)) => assert!(
-                reason.contains(
-                    "topping up an identity from the shielded pool exists from protocol version 14"
-                ),
-                "{reason}"
-            ),
+            Err(PlatformWalletError::Sdk(dash_sdk::Error::ProtocolVersionNotActive {
+                required,
+                pinned,
+                ..
+            })) => {
+                assert_eq!(
+                    required,
+                    IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION
+                );
+                assert!(
+                    pinned,
+                    "a pinned SDK below the activation is refused as pinned"
+                );
+            }
             other => panic!("expected the activation refusal, got {other:?}"),
         }
         assert_nothing_armed_or_recorded(&store, id).await;

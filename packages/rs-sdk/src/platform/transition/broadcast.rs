@@ -21,7 +21,11 @@ use dpp::state_transition::proof_result::{
 use dpp::state_transition::StateTransition;
 use dpp::system_data_contracts::SystemDataContract;
 use dpp::util::hash::hash_single;
-use dpp::version::feature_initial_protocol_versions::PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION;
+use dpp::version::feature_initial_protocol_versions::{
+    IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+    PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+    SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION,
+};
 use dpp::version::PlatformVersion;
 use rs_dapi_client::AddressList;
 use rs_dapi_client::CanRetry;
@@ -53,6 +57,28 @@ pub(crate) fn private_document_create_requirement() -> ProtocolRequirement {
     }
 }
 
+/// What a shield from an identity's balance (type 21) needs: every node serves it from
+/// protocol version 14. Wallets check it before they prove or save the transition
+/// ([`Sdk::ensure_protocol_requirement`]); the broadcast checks it again.
+pub fn shield_from_identity_requirement() -> ProtocolRequirement {
+    ProtocolRequirement {
+        protocol_version: SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION,
+        method: BROADCAST_STATE_TRANSITION_METHOD,
+        feature: Some("shield from identity transitions"),
+    }
+}
+
+/// What a top-up of an identity from the shielded pool (type 22) needs: every node serves
+/// it from protocol version 14. Wallets check it before they reserve notes or prove the
+/// transition ([`Sdk::ensure_protocol_requirement`]); the broadcast checks it again.
+pub fn identity_top_up_from_shielded_pool_requirement() -> ProtocolRequirement {
+    ProtocolRequirement {
+        protocol_version: IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+        method: BROADCAST_STATE_TRANSITION_METHOD,
+        feature: Some("identity top up from shielded pool transitions"),
+    }
+}
+
 /// The protocol version `transition`'s kind needs before every node serves it, for a kind
 /// newer than every node may run: nodes of an older release reject it, which the client would
 /// take for the transition's own rejection.
@@ -60,6 +86,10 @@ fn transition_protocol_requirement(transition: &StateTransition) -> Option<Proto
     match transition {
         StateTransition::PrivateDocumentCreateFromShieldedPool(_) => {
             Some(private_document_create_requirement())
+        }
+        StateTransition::ShieldFromIdentity(_) => Some(shield_from_identity_requirement()),
+        StateTransition::IdentityTopUpFromShieldedPool(_) => {
+            Some(identity_top_up_from_shielded_pool_requirement())
         }
         _ => None,
     }

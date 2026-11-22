@@ -440,6 +440,20 @@ impl Sdk {
         })
     }
 
+    /// Establish that the network serves `requirement` and this SDK speaks it, before a
+    /// caller does work it cannot undo for a request that needs it: a wallet proving,
+    /// reserving notes for or saving a state transition before broadcasting it. Same rules
+    /// as the gate the request itself passes: an unpinned SDK asks the network with one
+    /// proved query when no verified answer has shown its version yet, and raises its own
+    /// version from the answer; a pinned SDK below `requirement` is refused. Refuses with
+    /// [`Error::ProtocolVersionNotActive`].
+    pub async fn ensure_protocol_requirement(
+        &self,
+        requirement: ProtocolRequirement,
+    ) -> Result<(), Error> {
+        self.establish_protocol_requirement(requirement, None).await
+    }
+
     /// Establish, before a request built against the network's protocol version, that the
     /// network serves `requirement` and this SDK speaks it. The gate decides first, under the
     /// caller's `settings` ([`Self::ensure_network_serves`]): its probe asks with a proof
