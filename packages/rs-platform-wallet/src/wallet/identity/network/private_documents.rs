@@ -74,8 +74,10 @@ impl PrivateDocumentKeyPaths {
     /// Adds `identity`, held at the HD index `identity_index` of a wallet on
     /// `network`, with the paths of its keys: every key an entry can be sealed
     /// to ([`scanning_key`]) as a recipient key, and every such `ENCRYPTION`
-    /// key as a sender's, one outgoing viewing key each. Whether it was added:
-    /// an identity with no such key reads no store, and is left out.
+    /// key as a sender's, one outgoing viewing key each. A key whose id names
+    /// no hardened slot (`2^31` or above) has no path and is left out: the
+    /// wallet derives no key there. Whether the identity was added: one with
+    /// no such key reads no store, and is left out.
     pub(super) fn add_identity(
         &mut self,
         network: Network,
@@ -89,12 +91,14 @@ impl PrivateDocumentKeyPaths {
             if !scanning_key(key) {
                 continue;
             }
-            let path = identity_auth_derivation_path_for_type(
+            let Ok(path) = identity_auth_derivation_path_for_type(
                 network,
                 KeyDerivationType::ECDSA,
                 identity_index,
                 *key_id,
-            )?;
+            ) else {
+                continue;
+            };
             if key.purpose() == Purpose::ENCRYPTION {
                 sender_paths.push((identity_id, *key_id, path.clone()));
             }
@@ -345,24 +349,26 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             else {
                 continue;
             };
+            for (key_id, key) in identity.public_keys() {
+                if scanning_key(key) {
+                    registered.insert((identity_id, *key_id), key.data().to_vec());
+                }
+            }
             if paths.add_identity(self.sdk.network, identity_index, identity)? {
                 identities.push(identity_id);
-                for (key_id, key) in identity.public_keys() {
-                    if scanning_key(key) {
-                        registered.insert((identity_id, *key_id), key.data().to_vec());
-                    }
-                }
             }
         }
         Ok((identities, paths, registered))
     }
 
     /// `paths` with only the keys whose path derives, inside `crypto`, the
-    /// public key the identity registered under that key id, and the keys left
-    /// out. A key registered from another path, such as a DashPay Connect
-    /// application key, derives some other key at its identity key slot,
-    /// which would open nothing sealed to it: it is reported, not scanned with.
-    /// An identity left with no key is dropped.
+    /// public key the identity registered under that key id, and every key of
+    /// `registered` left out: one registered from another path, such as a
+    /// DashPay Connect application key, derives some other key at its
+    /// identity key slot, which would open nothing sealed to it, and one whose
+    /// id names no slot has no path at all. They are reported, not scanned
+    /// with. An identity left with no key is dropped. The public keys are
+    /// derived in one call, so a provider resolves its seed once.
     async fn keys_the_wallet_derives<C>(
         crypto: &C,
         paths: PrivateDocumentKeyPaths,
@@ -371,34 +377,55 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     where
         C: ContactCryptoProvider + Sync,
     {
+        let candidate_paths: Vec<DerivationPath> = paths
+            .recipients
+            .iter()
+            .flat_map(|(_, keys)| keys.iter().map(|(_, path)| path.clone()))
+            .collect();
+        let public_keys = crypto.extended_public_keys(&candidate_paths).await?;
+        if public_keys.len() != candidate_paths.len() {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "the crypto provider derived {} public keys for {} paths",
+                public_keys.len(),
+                candidate_paths.len()
+            )));
+        }
+        let mut public_keys = public_keys.into_iter();
         let mut derived = PrivateDocumentKeyPaths::default();
-        let mut unscanned = Vec::new();
         for (identity_id, keys) in paths.recipients {
             let mut kept = Vec::with_capacity(keys.len());
             for (key_id, path) in keys {
-                let derived = crypto
-                    .receiving_xpub(&path)
-                    .await?
-                    .public_key
-                    .to_compressed();
+                let Some(public_key) = public_keys.next() else {
+                    break;
+                };
+                let derived_key = public_key.public_key.to_compressed();
                 let matches = registered
                     .get(&(identity_id, key_id))
                     .and_then(|data| PublicKey::from_slice(data).ok())
-                    .is_some_and(|registered| registered.serialize()[..] == derived[..]);
+                    .is_some_and(|registered| registered.serialize()[..] == derived_key[..]);
                 if matches {
                     kept.push((key_id, path));
-                } else {
-                    unscanned.push((identity_id, key_id));
                 }
             }
             if !kept.is_empty() {
                 derived.recipients.push((identity_id, kept));
             }
         }
+        let scanned = |identity_id: &Identifier, key_id: &KeyID| {
+            derived
+                .recipients
+                .iter()
+                .any(|(id, keys)| id == identity_id && keys.iter().any(|(kept, _)| kept == key_id))
+        };
+        let unscanned: Vec<(Identifier, KeyID)> = registered
+            .keys()
+            .filter(|(identity_id, key_id)| !scanned(identity_id, key_id))
+            .copied()
+            .collect();
         derived.senders = paths
             .senders
             .into_iter()
-            .filter(|(identity_id, key_id, _)| !unscanned.contains(&(*identity_id, *key_id)))
+            .filter(|(identity_id, key_id, _)| scanned(identity_id, key_id))
             .collect();
         Ok((derived, unscanned))
     }
@@ -537,35 +564,23 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         if read.identities.is_empty() {
             return Ok(read);
         }
-        // Whether the provider held the contract with the type before this
-        // read: when it did not, the fetch below gets it from the network, and
-        // a second fetch would only repeat it.
-        let held_before = self.sdk.context_provider().is_some_and(|provider| {
-            provider
-                .get_data_contract(&data_contract_id, self.sdk.version())
-                .ok()
-                .flatten()
-                .is_some_and(|held| {
-                    held.document_type_for_name(document_type_name)
-                        .is_ok_and(|document_type| document_type.is_private())
-                })
-        });
         // The contract the pages are verified against, with the type, which
         // each payload is read against.
         let mut contract = self
             .sdk
             .fetch_private_document_contract(data_contract_id, document_type_name)
             .await?;
-        // Fetched again on every read whatever opens, as the cache alone
-        // decides: a fetch only when a payload is refused would tell the node
-        // that the reader opened an entry.
-        if held_before {
-            if let Some(newer) = self
-                .newer_private_document_contract(&contract, data_contract_id, document_type_name)
-                .await?
-            {
-                contract = newer;
-            }
+        // Fetched again on every read, whatever opens: a fetch only when a
+        // payload is refused would tell the node that the reader opened an
+        // entry. Also when the resolver above has just fetched it, on a cold
+        // cache: skipping it then would rest on a look at the cache that
+        // another operation, or the resolver's own protocol version gate, can
+        // change before the resolver looks.
+        if let Some(newer) = self
+            .newer_private_document_contract(&contract, data_contract_id, document_type_name)
+            .await?
+        {
+            contract = newer;
         }
         let platform_version = self.sdk.version();
 
@@ -1511,6 +1526,72 @@ mod tests {
                 .map(|entry| (entry.position, entry.wallet_key_id))
                 .collect::<Vec<_>>(),
             vec![(0, DECRYPTION_KEY_ID)]
+        );
+    }
+
+    /// A key whose id names no hardened slot (`2^31` or above) has no path: it
+    /// is listed as not scanned, and the read goes on with the identity's
+    /// other keys, derived in one call to the provider.
+    #[tokio::test]
+    async fn should_list_a_key_whose_id_names_no_slot_as_unscanned_and_read_on() {
+        let mut alice = identity(ALICE_PHRASE, ALICE, true);
+        let far_key_id: KeyID = 0x8000_0001;
+        alice.public_keys_mut().insert(
+            far_key_id,
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: far_key_id,
+                purpose: Purpose::DECRYPTION,
+                security_level: SecurityLevel::MEDIUM,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(
+                    PublicKey::from_secret_key(&other_key(0x44))
+                        .serialize()
+                        .to_vec(),
+                ),
+                disabled_at: None,
+            }),
+        );
+        let (_manager, wallet) = wallet(ALICE_PHRASE, &alice).await;
+        serve_page(
+            &wallet,
+            0,
+            vec![to_alice(&payload(json!({ "text": "hello Alice" })), 1)],
+            1,
+        )
+        .await;
+        let crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+
+        let read = wallet
+            .identity()
+            .read_private_document_entries(
+                &crypto,
+                Identifier::from(CONTRACT_ID),
+                TYPE_NAME,
+                None,
+                usize::MAX,
+            )
+            .await
+            .expect("the store reads");
+
+        assert_eq!(
+            read.unscanned_keys,
+            vec![(Identifier::from(ALICE), far_key_id)]
+        );
+        assert_eq!(
+            read.entries
+                .iter()
+                .map(|entry| (entry.position, entry.wallet_key_id))
+                .collect::<Vec<_>>(),
+            vec![(0, DECRYPTION_KEY_ID)]
+        );
+        assert_eq!(
+            crypto
+                .public_key_batches
+                .load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "every key's public key in one call"
         );
     }
 
