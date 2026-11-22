@@ -762,3 +762,52 @@ async fn should_refuse_kept_values_when_every_contract_answer_is_older_than_the_
         "{refused:?}"
     );
 }
+
+#[tokio::test]
+/// Given records proved at a block newer than every answer that the contract is absent, when I
+/// read their kept values, then the read is refused as stale: an old absence does not show the
+/// contract is gone
+async fn should_refuse_kept_values_as_stale_when_every_contract_absence_is_older_than_the_records()
+{
+    use dash_sdk::error::StaleNodeError;
+    use dash_sdk::platform::contract_moderation::{
+        ContractDocumentRemovals, ContractDocumentRemovalsPageQuery,
+    };
+    use dash_sdk::Error;
+
+    let mut sdk = Sdk::new_mock();
+    bootstrap_mock_sdk_to_latest(&mut sdk).await;
+    let contract = mock_contract_keeping(meta_schema(true), &["meta"], 2);
+    let contract_id = contract.id();
+    let query =
+        ContractDocumentRemovalsPageQuery::new(contract_id, "post".to_string(), sdk.version());
+    let page = ContractDocumentRemovals(vec![mock_removal_entry(3, kept_meta_under(&contract))]);
+    sdk.mock()
+        .expect_fetch(query.clone(), Some(page))
+        .await
+        .unwrap();
+    sdk.mock()
+        .expect_fetch(contract_id, None as Option<DataContract>)
+        .await
+        .unwrap();
+    sdk.mock()
+        .set_response_height_of::<ContractDocumentRemovals>(10)
+        .set_response_height_of::<DataContract>(9);
+
+    let refused = query
+        .fetch_with_kept_values(&sdk)
+        .await
+        .expect_err("an absence older than the records does not show the contract gone");
+
+    assert!(
+        matches!(
+            refused,
+            Error::StaleNode(StaleNodeError::Height {
+                expected_height: 10,
+                received_height: 9,
+                tolerance_blocks: 0,
+            })
+        ),
+        "{refused:?}"
+    );
+}

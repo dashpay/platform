@@ -425,14 +425,17 @@ impl ContractDocumentRemovalsPageQuery {
         loop {
             let (contract, metadata) =
                 DataContract::fetch_with_metadata(sdk, self.contract_id, None).await?;
-            let contract = contract.ok_or_else(|| {
-                Error::MissingDependency(
-                    "DataContract".to_string(),
-                    format!("{}", self.contract_id),
-                )
-            })?;
+            // An absence is proved at a height too: a stale one is asked again like a stale
+            // contract, and only a fresh one means the contract is gone
             match contract_answer_freshness(records_height, metadata.height) {
-                Ok(()) => return Ok(contract),
+                Ok(()) => {
+                    return contract.ok_or_else(|| {
+                        Error::MissingDependency(
+                            "DataContract".to_string(),
+                            format!("{}", self.contract_id),
+                        )
+                    })
+                }
                 Err(stale) if attempts_left == 0 => return Err(stale.into()),
                 Err(_) => attempts_left -= 1,
             }
