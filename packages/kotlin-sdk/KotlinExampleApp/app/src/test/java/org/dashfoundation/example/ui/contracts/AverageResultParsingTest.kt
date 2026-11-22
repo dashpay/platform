@@ -55,6 +55,8 @@ class AverageResultParsingTest {
             """{"averages":{"61":{"count":3,"sum":"x","average":"10.0000"}}}""",
             """{"averages":{"61":{"sum":"30","average":"10.0000"}}}""",
             """{"averages":{"61":{"count":3,"sum":"30","average":10}}}""",
+            // Rust always writes `average`; only an explicit null means nothing matched.
+            """{"averages":{"61":{"count":3,"sum":"30"}}}""",
             """{"averages":{"61":5}}""",
         )) {
             try {

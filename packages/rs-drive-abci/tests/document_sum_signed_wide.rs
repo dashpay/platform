@@ -34,6 +34,7 @@ use drive_proof_verifier::{
     SplitAverageEntry, SplitSumEntry,
 };
 use signed_response::{signed, Provider};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 const CONTRACT_A: [u8; 32] = [0x0A; 32];
@@ -281,8 +282,17 @@ fn should_verify_a_signed_average_past_64_bits() {
 #[test]
 fn should_verify_signed_sums_grouped_by_contract_past_64_bits() {
     let node = node_with_both_contracts();
-    let DocumentSplitSums(entries) =
+    let splits: DocumentSplitSums =
         node.verify(node.query(SelectProjection::sum("price"), &[CONTRACT_A, CONTRACT_B]));
+    // The flat map the native and JavaScript bindings show keeps one group per contract.
+    assert_eq!(
+        splits.clone().try_into_flat_map().expect("the flat map"),
+        BTreeMap::from([
+            (CONTRACT_A.to_vec(), total(&PRICES_A)),
+            (CONTRACT_B.to_vec(), total(&PRICES_B)),
+        ])
+    );
+    let DocumentSplitSums(entries) = splits;
     assert_eq!(
         entries,
         vec![
@@ -305,8 +315,16 @@ fn should_verify_signed_sums_grouped_by_contract_past_64_bits() {
 #[test]
 fn should_verify_signed_averages_grouped_by_contract_past_64_bits() {
     let node = node_with_both_contracts();
-    let DocumentSplitAverages(entries) =
+    let splits: DocumentSplitAverages =
         node.verify(node.query(SelectProjection::avg("price"), &[CONTRACT_A, CONTRACT_B]));
+    assert_eq!(
+        splits.clone().try_into_flat_map().expect("the flat map"),
+        BTreeMap::from([
+            (CONTRACT_A.to_vec(), (3, total(&PRICES_A))),
+            (CONTRACT_B.to_vec(), (2, total(&PRICES_B))),
+        ])
+    );
+    let DocumentSplitAverages(entries) = splits;
     assert_eq!(
         entries,
         vec![

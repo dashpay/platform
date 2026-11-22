@@ -272,9 +272,103 @@ mod tests {
     //! there; here we pin the `(count, sum, average)` JSON shape iOS
     //! decodes. Every entry is built with [`AverageEntryJson::new`], the
     //! same constructor the FFI call uses, so the average string is the
-    //! real computed one.
+    //! real computed one. The last tests call [`dash_sdk_document_average`]
+    //! itself against a mock SDK, through the mock helpers of the sum
+    //! tests, so the production result projection runs offline.
 
     use super::*;
+    use crate::document::queries::sum::tests::{
+        call_aggregate, document_history_contract, ffi_query, grouped_where_json,
+        mock_sdk_answering, ungrouped_where_json, GROUP_A, GROUP_B, GROUP_BY_FIELD, GROUP_BY_JSON,
+        PRICE,
+    };
+    use drive_proof_verifier::SplitAverageEntry;
+
+    /// An ungrouped call returns the folded `DocumentAverage` under the
+    /// empty key, with a sum past `i64` whole and its exact average.
+    #[test]
+    fn should_return_an_ungrouped_average_over_a_sum_past_i64() {
+        let contract = document_history_contract();
+        let where_json = ungrouped_where_json();
+        let query = ffi_query(&contract, &where_json, SelectProjection::avg(PRICE), &[]);
+        let sdk = mock_sdk_answering(
+            query,
+            DocumentAverage {
+                count: 3,
+                sum: 3 * i128::from(i64::MAX),
+            },
+        );
+
+        let json = call_aggregate(dash_sdk_document_average, sdk, contract, &where_json, None);
+
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "averages": {
+                    "": {
+                        "count": 3,
+                        "sum": "27670116110564327421",
+                        "average": "9223372036854775807.0000",
+                    }
+                }
+            })
+        );
+    }
+
+    /// A call grouped by the `In` field whose groups verify as carrier
+    /// entries (an `in_key` and an empty `key`) returns one entry per
+    /// group, keyed by the hex of its `in_key`, each with its own average.
+    #[test]
+    fn should_key_grouped_carrier_averages_by_their_in_key() {
+        let contract = document_history_contract();
+        let where_json = grouped_where_json();
+        let query = ffi_query(
+            &contract,
+            &where_json,
+            SelectProjection::avg(PRICE),
+            &[GROUP_BY_FIELD],
+        );
+        let sdk = mock_sdk_answering(
+            query,
+            DocumentSplitAverages(vec![
+                SplitAverageEntry {
+                    in_key: Some(GROUP_A.to_vec()),
+                    key: Vec::new(),
+                    count: Some(3),
+                    sum: Some(3 * i128::from(i64::MAX)),
+                },
+                SplitAverageEntry {
+                    in_key: Some(GROUP_B.to_vec()),
+                    key: Vec::new(),
+                    count: Some(2),
+                    sum: Some(70005),
+                },
+            ]),
+        );
+
+        let json = call_aggregate(
+            dash_sdk_document_average,
+            sdk,
+            contract,
+            &where_json,
+            Some(GROUP_BY_JSON),
+        );
+
+        let mut expected = serde_json::Map::new();
+        expected.insert(
+            hex::encode(GROUP_A),
+            serde_json::json!({
+                "count": 3,
+                "sum": "27670116110564327421",
+                "average": "9223372036854775807.0000",
+            }),
+        );
+        expected.insert(
+            hex::encode(GROUP_B),
+            serde_json::json!({ "count": 2, "sum": "70005", "average": "35002.5000" }),
+        );
+        assert_eq!(json, serde_json::json!({ "averages": expected }));
+    }
 
     /// Serialize averages through the real [`DocumentAverageResult`] type.
     fn averages_json(entries: Vec<(&str, u64, i128)>) -> String {

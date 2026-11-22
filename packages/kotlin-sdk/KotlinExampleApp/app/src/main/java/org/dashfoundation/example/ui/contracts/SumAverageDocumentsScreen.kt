@@ -323,8 +323,11 @@ internal fun averageEntryOf(key: String, obj: JsonObject): AverageEntry {
     val sum = (obj["sum"] as? JsonPrimitive)?.takeIf { it.isString }?.content
         ?.takeIf { it.toBigIntegerOrNull() != null }
         ?: throw IllegalArgumentException("Expected a decimal sum for average entry \"$key\"")
+    // Rust always writes `average`, as `null` when no document matched, so a
+    // missing field is a malformed row, not an empty one.
     val average = when (val value = obj["average"]) {
-        null, JsonNull -> null
+        JsonNull -> null
+        null -> throw IllegalArgumentException("Missing average for average entry \"$key\"")
         is JsonPrimitive -> value.takeIf { it.isString }?.content
             ?: throw IllegalArgumentException("Expected a decimal average for average entry \"$key\"")
         else -> throw IllegalArgumentException("Expected a decimal average for average entry \"$key\"")

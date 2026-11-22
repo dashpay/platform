@@ -32,11 +32,28 @@ pub struct SplitSumEntry {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocumentSplitSums(pub Vec<SplitSumEntry>);
 
+/// The group a verified sum or average entry belongs to in a flat map.
+///
+/// An entry with a terminator `key` is grouped by it, merging the In
+/// forks that reach the same key. An entry with no terminator key but an
+/// `in_key` is a carrier total: one total per `In` value of a query
+/// grouped by the `In` field (`group_by = [in_field]` with a range on
+/// another field), so it is grouped by that `In` value, the same key a
+/// point lookup grouped by the `In` field gives it.
+pub(crate) fn flat_group_key(in_key: Option<Vec<u8>>, key: Vec<u8>) -> Vec<u8> {
+    match in_key {
+        Some(in_key) if key.is_empty() => in_key,
+        _ => key,
+    }
+}
+
 impl DocumentSplitSums {
     /// Convenience: collapse compound `(in_key, key)` entries into a
     /// flat `BTreeMap<key, summed_sum>` by combining each In-fork's
-    /// contribution at the same terminator key. Same shape as
-    /// `DocumentSplitCounts::into_flat_map` on the count side.
+    /// contribution at the same terminator key. A carrier total (no
+    /// terminator key, one entry per `In` value) is keyed by its
+    /// `in_key` instead, so each group stays its own entry
+    /// ([`flat_group_key`]).
     ///
     /// Uses [`i128::checked_add`] on each accumulator step and
     /// surfaces overflow as
@@ -55,7 +72,9 @@ impl DocumentSplitSums {
         let mut out: std::collections::BTreeMap<Vec<u8>, i128> = std::collections::BTreeMap::new();
         for entry in self.0 {
             if let Some(sum) = entry.sum {
-                let slot = out.entry(entry.key).or_insert(0i128);
+                let slot = out
+                    .entry(flat_group_key(entry.in_key, entry.key))
+                    .or_insert(0i128);
                 *slot = slot
                     .checked_add(sum)
                     .ok_or_else(|| crate::Error::RequestError {
@@ -185,6 +204,32 @@ mod tests {
             .expect_err("i128::MIN - 1 must surface as overflow error, not wrap or panic");
         let msg = format!("{err:?}");
         assert!(msg.contains("i128 overflow"), "got {msg}");
+    }
+
+    /// Carrier totals (one per `In` value, no terminator key) stay one
+    /// entry per `In` value, keyed by it, instead of merging under the
+    /// empty key.
+    #[test]
+    fn try_into_flat_map_keys_carrier_totals_by_their_in_value() {
+        let splits = DocumentSplitSums(vec![
+            SplitSumEntry {
+                in_key: Some(b"contract-a".to_vec()),
+                key: Vec::new(),
+                sum: Some(3 * i128::from(i64::MAX)),
+            },
+            SplitSumEntry {
+                in_key: Some(b"contract-b".to_vec()),
+                key: Vec::new(),
+                sum: Some(70_005),
+            },
+        ]);
+        let flat = splits.try_into_flat_map().expect("non-overflowing fold");
+        assert_eq!(flat.len(), 2);
+        assert_eq!(
+            flat.get(b"contract-a".as_slice()),
+            Some(&(3 * i128::from(i64::MAX)))
+        );
+        assert_eq!(flat.get(b"contract-b".as_slice()), Some(&70_005));
     }
 
     /// `None`-sum entries are skipped (the verifier emits them for

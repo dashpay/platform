@@ -266,14 +266,259 @@ pub unsafe extern "C" fn dash_sdk_document_sum(
 }
 
 #[cfg(test)]
-mod tests {
-    //! Unit tests for the sum-side FFI surface that don't need an SDK /
-    //! data contract / runtime: the empty-property rejection (extracted
-    //! into [`validate_aggregation_property`]) and the exact JSON wire
-    //! shape iOS callers decode. Mirrors the `decode_ffi_limit` test
-    //! style at the bottom of [`super::super::count`].
+pub(super) mod tests {
+    //! Unit tests for the sum-side FFI surface: the empty-property
+    //! rejection (extracted into [`validate_aggregation_property`]), the
+    //! exact JSON wire shape iOS callers decode, and calls of
+    //! [`dash_sdk_document_sum`] itself against a mock SDK, which run the
+    //! production result projection (`try_into_flat_map` and the hex key)
+    //! offline. The mock helpers are shared with the average tests.
 
     use super::*;
+    use crate::test_utils::test_utils::destroy_mock_sdk_handle;
+    use crate::types::dash_sdk_string_free;
+    use crate::{dash_sdk_data_contract_destroy, dash_sdk_error_free};
+    use dash_sdk::dapi_grpc::platform::v0::GetDocumentsRequest;
+    use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dash_sdk::dpp::version::PlatformVersion;
+    use dash_sdk::mock::MockResponse;
+    use dash_sdk::platform::documents::document_query::DocumentQuery;
+    use dash_sdk::SdkBuilder;
+    use drive_proof_verifier::SplitSumEntry;
+    use std::ptr;
+
+    /// The document history system contract's `priceUpdate` type keeps
+    /// `price` aggregates per `dataContractId`.
+    pub(in crate::document::queries) const DOCUMENT_TYPE: &str = "priceUpdate";
+    pub(in crate::document::queries) const PRICE: &str = "price";
+    pub(in crate::document::queries) const GROUP_BY_FIELD: &str = "dataContractId";
+    pub(in crate::document::queries) const GROUP_BY_JSON: &str = r#"["dataContractId"]"#;
+    /// Two `dataContractId` values, the `in_key`s of two carrier totals.
+    pub(in crate::document::queries) const GROUP_A: [u8; 32] = [0xaa; 32];
+    pub(in crate::document::queries) const GROUP_B: [u8; 32] = [0xbb; 32];
+
+    pub(in crate::document::queries) fn document_history_contract() -> DataContract {
+        load_system_data_contract(
+            SystemDataContract::DocumentHistory,
+            PlatformVersion::latest(),
+        )
+        .expect("document history contract")
+    }
+
+    /// The `where` clause of an ungrouped call: one `dataContractId` and a
+    /// `$createdAt` range, which the `byContract` index (`dataContractId`,
+    /// `$createdAt`, averageable `price`, range averageable) answers.
+    pub(in crate::document::queries) fn ungrouped_where_json() -> String {
+        serde_json::json!([
+            { "field": GROUP_BY_FIELD, "operator": "==", "value": bs58::encode(GROUP_A).into_string() },
+            { "field": "$createdAt", "operator": ">", "value": 1 },
+        ])
+        .to_string()
+    }
+
+    /// The `where` clause of a call grouped by `dataContractId`: an `in`
+    /// on it and a range on `$createdAt`, so each group verifies as a
+    /// carrier total (an `in_key` and an empty `key`).
+    pub(in crate::document::queries) fn grouped_where_json() -> String {
+        serde_json::json!([
+            {
+                "field": GROUP_BY_FIELD,
+                "operator": "in",
+                "value": [
+                    bs58::encode(GROUP_A).into_string(),
+                    bs58::encode(GROUP_B).into_string(),
+                ],
+            },
+            { "field": "$createdAt", "operator": ">", "value": 1 },
+        ])
+        .to_string()
+    }
+
+    /// The query the FFI builds for `where_json`, a null `order_by`, limit
+    /// `-1`, the given projection and the given `group_by` fields (empty
+    /// for an ungrouped call). The base query comes from the FFI's own
+    /// [`build_base_query`], so the where clause decodes the same way.
+    pub(in crate::document::queries) fn ffi_query(
+        contract: &DataContract,
+        where_json: &str,
+        select: SelectProjection,
+        group_by: &[&str],
+    ) -> DocumentQuery {
+        let document_type = CString::new(DOCUMENT_TYPE).expect("no NUL");
+        let where_json = CString::new(where_json).expect("no NUL");
+        let limit = decode_ffi_limit(-1).expect("-1 is the server default");
+        let query = unsafe {
+            build_base_query(
+                contract,
+                document_type.as_ptr(),
+                where_json.as_ptr(),
+                ptr::null(),
+            )
+        }
+        .expect("the where clause decodes")
+        .with_select(select);
+        let query = if group_by.is_empty() {
+            query
+        } else {
+            query.with_group_by_fields(group_by.iter().copied())
+        };
+        query.with_limit(limit)
+    }
+
+    /// A mock SDK handle, pinned to the latest protocol version so the
+    /// aggregate request encodes, that answers `O::fetch(query)` with
+    /// `answer`.
+    pub(in crate::document::queries) fn mock_sdk_answering<O>(
+        query: DocumentQuery,
+        answer: O,
+    ) -> *mut SDKHandle
+    where
+        O: Fetch<Query = DocumentQuery, Request = GetDocumentsRequest> + MockResponse,
+    {
+        let mut wrapper = SDKWrapper::new_mock();
+        wrapper.sdk = SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .expect("mock SDK");
+
+        // Registering expectations is async, and the FFI entry point spins
+        // up its own runtime and blocks on it, so this runtime must be gone
+        // by the time it runs.
+        let setup_runtime = tokio::runtime::Runtime::new().expect("create setup runtime");
+        setup_runtime.block_on(async {
+            wrapper
+                .sdk
+                .mock()
+                .expect_fetch::<O, _>(query, Some(answer))
+                .await
+                .expect("register the aggregate expectation");
+        });
+        drop(setup_runtime);
+
+        Box::into_raw(Box::new(wrapper)) as *mut SDKHandle
+    }
+
+    /// The JSON a successful call returned, freeing the result string; a
+    /// failed call panics with its error message after freeing the error.
+    pub(in crate::document::queries) unsafe fn json_of(result: DashSDKResult) -> serde_json::Value {
+        if !result.error.is_null() {
+            let message = CStr::from_ptr((*result.error).message)
+                .to_string_lossy()
+                .into_owned();
+            dash_sdk_error_free(result.error);
+            panic!("the call must succeed; it failed with: {message}");
+        }
+        assert!(!result.data.is_null(), "a successful call returns a string");
+        let text = result.data as *mut c_char;
+        let value = serde_json::from_str(&CStr::from_ptr(text).to_string_lossy())
+            .expect("the result is JSON");
+        dash_sdk_string_free(text);
+        value
+    }
+
+    /// Calls an aggregate FFI entry point (`dash_sdk_document_sum` or
+    /// `dash_sdk_document_average`, which share a signature) on a real
+    /// contract handle with `where_json`, a null `order_by`, limit `-1` and
+    /// the given `group_by` JSON, and returns its JSON. Destroys both
+    /// handles.
+    pub(in crate::document::queries) fn call_aggregate(
+        entry_point: unsafe extern "C" fn(
+            *const SDKHandle,
+            *const DataContractHandle,
+            *const c_char,
+            *const c_char,
+            *const c_char,
+            *const c_char,
+            *const c_char,
+            i64,
+        ) -> DashSDKResult,
+        sdk_handle: *mut SDKHandle,
+        contract: DataContract,
+        where_json: &str,
+        group_by_json: Option<&str>,
+    ) -> serde_json::Value {
+        let contract_handle = Box::into_raw(Box::new(contract)) as *mut DataContractHandle;
+        let document_type = CString::new(DOCUMENT_TYPE).expect("no NUL");
+        let property = CString::new(PRICE).expect("no NUL");
+        let where_json = CString::new(where_json).expect("no NUL");
+        let group_by = group_by_json.map(|json| CString::new(json).expect("no NUL"));
+        let json = unsafe {
+            json_of(entry_point(
+                sdk_handle,
+                contract_handle,
+                document_type.as_ptr(),
+                property.as_ptr(),
+                where_json.as_ptr(),
+                ptr::null(),
+                group_by.as_ref().map_or(ptr::null(), |json| json.as_ptr()),
+                -1,
+            ))
+        };
+        unsafe { dash_sdk_data_contract_destroy(contract_handle) };
+        destroy_mock_sdk_handle(sdk_handle);
+        json
+    }
+
+    /// An ungrouped call returns the folded `DocumentSum` under the empty
+    /// key, a total past `i64` whole as a decimal string.
+    #[test]
+    fn should_return_an_ungrouped_sum_past_i64_as_one_decimal_string() {
+        let contract = document_history_contract();
+        let where_json = ungrouped_where_json();
+        let query = ffi_query(&contract, &where_json, SelectProjection::sum(PRICE), &[]);
+        let sdk = mock_sdk_answering(query, DocumentSum(3 * i128::from(i64::MAX)));
+
+        let json = call_aggregate(dash_sdk_document_sum, sdk, contract, &where_json, None);
+
+        assert_eq!(
+            json,
+            serde_json::json!({ "sums": { "": "27670116110564327421" } })
+        );
+    }
+
+    /// A call grouped by the `In` field whose groups verify as carrier
+    /// totals (an `in_key` and an empty `key`) returns one entry per
+    /// group, keyed by the hex of its `in_key`, rather than one merged
+    /// entry under the empty key.
+    #[test]
+    fn should_key_grouped_carrier_sums_by_their_in_key() {
+        let contract = document_history_contract();
+        let where_json = grouped_where_json();
+        let query = ffi_query(
+            &contract,
+            &where_json,
+            SelectProjection::sum(PRICE),
+            &[GROUP_BY_FIELD],
+        );
+        let sdk = mock_sdk_answering(
+            query,
+            DocumentSplitSums(vec![
+                SplitSumEntry {
+                    in_key: Some(GROUP_A.to_vec()),
+                    key: Vec::new(),
+                    sum: Some(3 * i128::from(i64::MAX)),
+                },
+                SplitSumEntry {
+                    in_key: Some(GROUP_B.to_vec()),
+                    key: Vec::new(),
+                    sum: Some(70005),
+                },
+            ]),
+        );
+
+        let json = call_aggregate(
+            dash_sdk_document_sum,
+            sdk,
+            contract,
+            &where_json,
+            Some(GROUP_BY_JSON),
+        );
+
+        let mut expected = serde_json::Map::new();
+        expected.insert(hex::encode(GROUP_A), "27670116110564327421".into());
+        expected.insert(hex::encode(GROUP_B), "70005".into());
+        assert_eq!(json, serde_json::json!({ "sums": expected }));
+    }
 
     /// An empty aggregation property is malformed input and must be
     /// rejected as [`FFIError::InvalidParameter`] (maps to
