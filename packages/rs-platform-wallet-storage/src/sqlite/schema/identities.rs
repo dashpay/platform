@@ -22,9 +22,9 @@ use crate::sqlite::schema::blob::impl_persistable_blob;
 // PUBLIC material only: identity snapshot reaching the `entry_blob` column.
 impl_persistable_blob!(IdentityEntry);
 
-// `entry_blob` carries an encoding stamp (`entry_format`, V021): 0 is the
+// `entry_blob` carries an encoding stamp (`entry_format`, V023): 0 is the
 // pre-payment-address `IdentityEntry` shape, 1 the current one. Every write
-// stamps 1; the stamped reader keeps rows written before V021 decodable.
+// stamps 1; the stamped reader keeps rows written before V023 decodable.
 pub use super::identity_profile_encoding::decode_identity;
 
 /// Write the changeset's inserted / updated identities.

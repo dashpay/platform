@@ -105,7 +105,6 @@ impl PersistenceCapabilities {
     /// declaration only when `on_persist_dashpay_payments_fn` is actually
     /// wired.
     pub const DASHPAY_PAYMENTS: Self = Self(1 << 12);
-
     /// Asset-lock operation UUIDs survive store/load, including consumed tombstones.
     /// Missing or malformed persistence data fails load rather than becoming an
     /// empty result. Required before a wallet drain can treat absence as not sent.
@@ -150,13 +149,24 @@ impl PersistenceCapabilities {
     /// is marked.
     pub const PRIVATE_CONTACT_REQUEST_SCAN_STATE: Self = Self(1 << 15);
 
+    /// Locked outpoints (masternode collateral, and outpoints locked by hand)
+    /// are persisted AND restored: a stored `CoreChangeSet`'s
+    /// `outpoint_locks` are durably applied, a lock kept whether or not its
+    /// coin has a row yet, and a restart hands every stored lock back to the
+    /// wallet. Without this bit a lock lasts for the session, and a
+    /// collateral is locked again only when the wallet sees its registration
+    /// again. On the FFI surface locks travel through the persistence
+    /// extension's size-negotiated persist slot and come back through its
+    /// load and free slots; all three must be wired.
+    pub const OUTPOINT_LOCKS: Self = Self(1 << 16);
+
     /// Index of the highest bit declared above. It lives here, beside the
     /// constants, so adding a bit and bumping this is one edit in one place
     /// — and `every_declared_bit_has_a_stable_name` walks up to it, so a new
     /// bit that never reaches `KNOWN` fails a test instead of gating
     /// behaviour invisibly. The same test asserts nothing above it is named,
     /// which is what catches a bit added without bumping this.
-    const HIGHEST_DECLARED_BIT: u32 = 15;
+    const HIGHEST_DECLARED_BIT: u32 = 16;
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
@@ -180,14 +190,15 @@ impl PersistenceCapabilities {
     pub const PRIVATE_CONTACT_SCAN_STATE_RESTART: Self =
         Self(Self::ATOMIC_CHANGESETS.0 | Self::PRIVATE_CONTACT_REQUEST_SCAN_STATE.0);
 
-    /// Capabilities required to durably reconcile an asset-lock status and
-    /// restore that exact row after process restart.
+    /// Capabilities required to atomically persist reconciliation of an
+    /// already-loaded tracked asset lock.
     pub const ASSET_LOCK_RECONCILIATION: Self =
-        Self(Self::ATOMIC_CHANGESETS.0 | Self::TRACKED_ASSET_LOCKS.0 | Self::WALLET_RESTORE.0);
+        Self(Self::ATOMIC_CHANGESETS.0 | Self::TRACKED_ASSET_LOCKS.0);
 
     /// Durable correlation and funding-key indices required for wallet drain.
     pub const WALLET_DRAIN: Self = Self(
         Self::ASSET_LOCK_RECONCILIATION.0
+            | Self::WALLET_RESTORE.0
             | Self::ASSET_LOCK_FUNDING_INDICES.0
             | Self::ASSET_LOCK_OPERATION_IDS.0,
     );
@@ -278,6 +289,7 @@ impl PersistenceCapabilities {
                 PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE,
                 "private_contact_request_scan_state",
             ),
+            (PersistenceCapabilities::OUTPOINT_LOCKS, "outpoint_locks"),
         ];
 
         KNOWN
@@ -295,7 +307,7 @@ impl PersistenceCapabilities {
 /// failure the test exists to catch. Written as a module-level `const _` so
 /// it is evaluated in every build, test or not.
 const _: () = assert!(
-    PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE.bits()
+    PersistenceCapabilities::OUTPOINT_LOCKS.bits()
         == 1u64 << PersistenceCapabilities::HIGHEST_DECLARED_BIT,
     "HIGHEST_DECLARED_BIT must name the highest declared capability bit"
 );
@@ -335,11 +347,28 @@ mod tests {
             PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE.bits(),
             0x8000
         );
+        assert_eq!(PersistenceCapabilities::OUTPOINT_LOCKS.bits(), 0x10000);
         assert_eq!(PersistenceCapabilities::WALLET_DRAIN.bits(), 0x2285);
         assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_RECONCILIATION.bits(),
-            0x281
+            0x201
         );
+    }
+
+    #[test]
+    fn reconciliation_requires_atomic_tracked_asset_lock_persistence() {
+        let required = PersistenceCapabilities::ATOMIC_CHANGESETS
+            .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS);
+        assert!(required.contains(PersistenceCapabilities::ASSET_LOCK_RECONCILIATION));
+        assert_eq!(required, PersistenceCapabilities::ASSET_LOCK_RECONCILIATION);
+        for incomplete in [
+            PersistenceCapabilities::NONE,
+            PersistenceCapabilities::ATOMIC_CHANGESETS,
+            PersistenceCapabilities::TRACKED_ASSET_LOCKS,
+            PersistenceCapabilities::WALLET_RESTORE,
+        ] {
+            assert!(!incomplete.contains(PersistenceCapabilities::ASSET_LOCK_RECONCILIATION));
+        }
     }
 
     #[test]

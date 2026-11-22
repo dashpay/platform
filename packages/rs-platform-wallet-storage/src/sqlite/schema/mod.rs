@@ -5,7 +5,7 @@
 //! full sub-changeset entry via [`blob::encode`] / [`blob::decode`]. Schema
 //! evolution is gated by the refinery migration version — blobs carry no
 //! inline revision tag. The two exceptions are the identity and DashPay
-//! profile blobs, whose rows carry an encoding stamp column (V021) because
+//! profile blobs, whose rows carry an encoding stamp column (V023) because
 //! the positional `DashPayProfile` record grew payment addresses; see
 //! [`identity_profile_encoding`].
 
@@ -13,6 +13,7 @@ pub mod accounts;
 pub mod asset_locks;
 pub mod blob;
 pub mod contacts;
+pub(crate) mod core_history;
 pub mod core_pool;
 pub mod core_state;
 pub mod dashpay;

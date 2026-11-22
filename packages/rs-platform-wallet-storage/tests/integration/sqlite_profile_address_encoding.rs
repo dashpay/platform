@@ -1,10 +1,10 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! A database written before V021 keeps its identity and DashPay profile rows
+//! A database written before V023 keeps its identity and DashPay profile rows
 //! readable: the migration stamps the rows it finds 0, the stamped decoders
 //! route them to the pre-payment-address record, and a rewrite stamps 1.
 //! The fixture is written at V007 (the last published pre-rehydration
-//! schema), so the whole V008 -> V021 chain runs over the legacy bytes.
+//! schema), so the whole V008 -> V023 chain runs over the legacy bytes.
 
 use std::collections::BTreeMap;
 
@@ -80,12 +80,12 @@ fn stored_profile(conn: &Connection) -> DashPayProfile {
     decode_profile(&payload, format).unwrap()
 }
 
-/// Rows a pre-V021 writer stored are stamped 0 by the migration and decode
+/// Rows a pre-V023 writer stored are stamped 0 by the migration and decode
 /// to the pre-address shape through both readers; a rewrite stamps them 1
 /// and the new fields round-trip; an insert that omits the stamp is read as
 /// the current shape.
 #[test]
-fn pre_v021_rows_stay_readable_and_rewrites_restamp() {
+fn pre_v023_rows_stay_readable_and_rewrites_restamp() {
     let id = Identifier::from([1; 32]);
     let old = entry(id);
 
@@ -121,7 +121,7 @@ fn pre_v021_rows_stay_readable_and_rewrites_restamp() {
 
     migrations::run(&mut conn).unwrap();
 
-    assert_eq!(stamps(&conn), (0, 0), "rows present at V021 are legacy");
+    assert_eq!(stamps(&conn), (0, 0), "rows present at V023 are legacy");
     assert_eq!(stored_profile(&conn), old_profile());
     let restored = identities::fetch(&conn, &WALLET_ID, &id.to_buffer())
         .unwrap()
@@ -233,13 +233,13 @@ fn unknown_stamp_is_rejected_by_the_check_constraint() {
     assert!(err.to_string().contains("CHECK"), "{err}");
 }
 
-/// Literal bytes of a pre-V021 `profile_blob`, written out by hand from the
+/// Literal bytes of a pre-V023 `profile_blob`, written out by hand from the
 /// `bincode::serde` standard encoding of the six-field record (no struct
 /// declaration involved), so a reorder of the frozen legacy record cannot
 /// regenerate the fixture and its decoder in step. Every field holds a
 /// distinct value, so a positional shift misreads at least one of them.
 #[test]
-fn literal_pre_v021_profile_bytes_decode_positionally() {
+fn literal_pre_v023_profile_bytes_decode_positionally() {
     let mut bytes = vec![0x01, 0x02, b'A', b'l']; // display_name: Some("Al")
     bytes.extend([0x01, 0x01, b'b']); // bio: Some("b")
     bytes.push(0x00); // avatar_url: None

@@ -50,7 +50,7 @@ use crate::sqlite::schema::identity_profile_encoding::decode_identity;
 // PUBLIC material only: DashPay overlay types reaching `_blob` columns.
 impl_persistable_blob!(DashPayProfile, PaymentEntry);
 
-// `profile_blob` carries an encoding stamp (`profile_format`, V021): 0 is the
+// `profile_blob` carries an encoding stamp (`profile_format`, V023): 0 is the
 // pre-payment-address `DashPayProfile` shape, 1 the current one. Every write
 // stamps 1; nothing in the crate reads the column back yet (see the module
 // doc), so the stamped decoder is exported for hosts and for the day `load()`
@@ -131,7 +131,7 @@ pub fn apply(
 /// order the two mean: the snapshot is the round's view of the identity, the
 /// overlay is the round's view of the payments that moved.
 ///
-/// The row is decoded through its `entry_format` stamp (a pre-V021 row is
+/// The row is decoded through its `entry_format` stamp (a pre-V023 row is
 /// the legacy shape) and written back in the current shape stamped 1 in the
 /// same statement, so a payment-only rewrite never leaves current bytes
 /// under a legacy stamp or reads legacy bytes as the current record.

@@ -9,6 +9,7 @@ mod dashpay;
 mod identity_ops;
 mod sync;
 
+pub(crate) use contact_requests::{freshness, predates, SentContactRequestOutcome};
 pub use dashpay::{DashPayState, PrivateContact};
 
 // `block_time` + `key_storage` moved to `crate::wallet::identity::types`.

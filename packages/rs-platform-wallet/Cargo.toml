@@ -26,7 +26,7 @@ dashcore = { workspace = true, features = ["base64"] }
 dash-context-provider = { path = "../rs-context-provider", optional = true }
 
 # Standard dependencies
-thiserror = "1.0"
+thiserror = "2.0"
 async-trait = "0.1"
 arc-swap = "1"
 

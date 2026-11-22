@@ -42,7 +42,7 @@ Any `meta_*` row whose parent object does not exist — because it was never cre
 
 A future garbage-collection pass is expected to reap orphan metadata — rows with no live parent object older than approximately one week — but no such GC is implemented yet. Callers should not rely on orphan metadata persisting forever, nor assume it will be cleaned up promptly. `meta_global` is intentionally parentless and always survives.
 
-The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. The diagrams cover 21 of V001's 23 tables; `pending_contact_crypto` and `ignored_senders` appear in the [Tables](#tables) section but are not diagrammed. They show the V001 tables as amended in place by every later migration that changes one of them (the current `core_utxos`, `core_transactions`, `platform_addresses`, and `asset_locks` shapes). Nine tables added by later migrations are not yet diagrammed here: `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V009, plus its V010–V011 `core_address_pool` columns), `invitations` (V003), `shielded_viewing_keys` (V013), `dpns_name_states` (V005), `tracked_masternodes` (V006), and the `identity_scan_states` / `identity_scan_failed_indices` pair (V017) — see the [Migrations](#migrations) log for what each adds in the meantime.
+The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. The diagrams cover 21 of V001's 23 tables; `pending_contact_crypto` and `ignored_senders` appear in the [Tables](#tables) section but are not diagrammed. They show the V001 tables as amended in place by every later migration that changes one of them (the current `core_utxos`, `core_transactions`, `platform_addresses`, and `asset_locks` shapes). Twelve tables added by later migrations are not yet diagrammed here: `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V009, plus its V010–V011 `core_address_pool` columns), `invitations` (V003), `shielded_viewing_keys` (V013), `dpns_name_states` (V005), `tracked_masternodes` (V006), the `identity_scan_states` / `identity_scan_failed_indices` pair (V017), `core_transaction_inputs` / `core_transaction_record_originals` (V021), and `core_locked_outpoints` (V022) — see the [Migrations](#migrations) log for what each adds in the meantime.
 
 ## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
 
@@ -132,7 +132,7 @@ erDiagram
         BLOB wallet_id FK "NULL = orphan identity (no parent wallet yet)"
         INTEGER identity_index "BIP-32 index; NULL for out-of-wallet identities"
         BLOB entry_blob "bincode-encoded IdentityEntry"
-        INTEGER entry_format "V021: 0 = pre-payment-address record, 1 = current"
+        INTEGER entry_format "V023: 0 = pre-payment-address record, 1 = current"
     }
 
     IDENTITY_KEYS {
@@ -154,7 +154,7 @@ erDiagram
     DASHPAY_PROFILES {
         BLOB identity_id PK "one row per identity"
         BLOB profile_blob "bincode-encoded DashPayProfile"
-        INTEGER profile_format "V021: 0 = pre-payment-address record, 1 = current"
+        INTEGER profile_format "V023: 0 = pre-payment-address record, 1 = current"
     }
 
     DASHPAY_PAYMENTS_OVERLAY {
@@ -442,6 +442,36 @@ held spent and is permanently outside the collector's reach.
   the collector's per-round scan touches tombstones rather than the
   wallet's full spent history.
 
+### `core_transaction_inputs`
+
+V021 indexes every raw input of each stored transaction, even when its ownership
+is not yet known. New historical TXOs locate affected records through this index.
+The shared wallet accounting rule updates input/output details, net amount and
+direction; it never changes coins, spend claims or finality. Contact-only scripts
+are excluded from wallet ownership.
+
+V021 also indexes and repairs existing mined and unmined records using retained
+TXOs. Unknown historical ownership is filled when later observations supply it.
+No rows are deleted and no sync checkpoint is rewound. The typed backfill uses
+the live record decoder, with immutable V019 fixtures pinning codec compatibility.
+Type, identifier-width and blob-size gates precede materialization. Strict failure
+rolls back the entire migration; Recovery skips an unreadable record without
+changing its bytes or partially indexing it. Each record's repair has a savepoint.
+
+- PK: `(wallet_id, txid, outpoint)`.
+- FK: `(wallet_id, txid) → core_transactions(wallet_id, txid) ON DELETE CASCADE`.
+- Index: `idx_core_transaction_inputs_outpoint(wallet_id, outpoint)`.
+
+### `core_transaction_record_originals`
+
+Append-only archive of the first pre-repair `core_transactions.record_blob`.
+Migration and runtime repairs copy original bytes with `INSERT OR IGNORE` before
+changing accounting. Later repairs cannot replace this recovery copy.
+
+- PK: `(wallet_id, txid)`.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`. The original survives
+  deletion of its transaction row.
+
 ### `core_instant_locks`
 
 Instant-lock blobs for transactions that are broadcast but not yet
@@ -490,12 +520,12 @@ every identity-scoped child writer, so a changeset carrying both an
 upsert and a removal for one identity commits instead of pulling the FK
 parent out from under its own child inserts.
 
-`entry_format` (V021) stamps the bincode shape of `entry_blob`: 0 is the
+`entry_format` (V023) stamps the bincode shape of `entry_blob`: 0 is the
 record written before `DashPayProfile` gained its payment addresses, 1 the
 current one. The writer always stamps 1; the reader dispatches on the stamp
 (`schema::identity_profile_encoding::decode_identity`), so rows written
-before V021 stay readable until they are rewritten. The DEFAULT is 1 and the
-migration stamps the rows it finds 0, so only pre-V021 rows are ever legacy.
+before V023 stay readable until they are rewritten. The DEFAULT is 1 and the
+migration stamps the rows it finds 0, so only pre-V023 rows are ever legacy.
 
 - PK: `identity_id`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE` (nullable).
@@ -631,7 +661,7 @@ canonical `entry_blob`, which `load()` reads. An identity scalar snapshot with
 no profile preserves the stored profile; only an explicit profile overlay
 establishes absence.
 
-`profile_format` (V021) stamps the bincode shape of `profile_blob` the same
+`profile_format` (V023) stamps the bincode shape of `profile_blob` the same
 way `identities.entry_format` does (0 = pre-payment-address record, 1 =
 current); `schema::identity_profile_encoding::decode_profile` is the stamped
 reader for the day `load()` grows one.
@@ -867,4 +897,6 @@ table-rebuild migration, as V004 does.
 | V018 | `V018__identity_hard_delete.rs` | Retires identity tombstoning. Adds `cascade_children_on_identity_delete` (brooms `identity_keys` / `contacts` / `ignored_senders` / `pending_contact_crypto` by the deleted identity id, covering the rows no live FK reaches) plus its access-path indexes `idx_contacts_owner`, `idx_ignored_senders_owner`, and `idx_pending_contact_crypto_owner`; purges every already-tombstoned identity and its dependents; drops `identities.tombstoned`. |
 | V019 | `V019__asset_lock_operation_id.rs` | Adds the nullable `asset_locks.operation_id BLOB` column (CHECK: NULL or exactly 16 bytes) that correlates a wallet-drain operation with its funding outpoint; the lifecycle blob is untouched. Adds the unique partial index `asset_locks_wallet_operation_id` on `(wallet_id, operation_id) WHERE operation_id IS NOT NULL` and the `asset_locks_operation_id_immutable` BEFORE UPDATE trigger, which aborts any change to a non-NULL `operation_id`. Purely additive; existing rows read back NULL. |
 | V020 | `V020__asset_lock_shielded_recipient.rs` | Adds the nullable `asset_locks.shielded_recipient BLOB` column (CHECK: NULL or exactly 43 bytes, the raw Orchard address) recording the recipient a shielded asset-lock funding was built to pay, so a resume after restart pays that recipient and refuses another; the lifecycle blob is untouched. Adds the `asset_locks_shielded_recipient_immutable` BEFORE UPDATE trigger, which aborts any change to a non-NULL `shielded_recipient`. Purely additive; existing rows read back NULL and keep accepting the resuming caller's recipient. |
-| V021 | `V021__profile_address_encoding.rs` | Adds the encoding stamps `identities.entry_format` and `dashpay_profiles.profile_format` (`INTEGER NOT NULL DEFAULT 1 CHECK IN (0, 1)`) and stamps every row present at migration time 0. `DashPayProfile` gained the core, platform and shielded payment addresses, which widens the positional bincode record embedded in both blobs; the stamp routes each row to the decoder for the shape it carries (`schema::identity_profile_encoding`). |
+| V021 | `V021__core_transaction_accounting.rs` | Adds the raw-input index and original-record archive. Backfills all decodable history and repairs accounting from retained TXOs, preserving coins, claims, checkpoints and unrelated wallet state. |
+| V022 | `V022__core_locked_outpoints.rs` | Adds `core_locked_outpoints`, one row per `(wallet_id, outpoint)` the wallet keeps out of coin selection: the collateral of a registered masternode, or an outpoint locked by hand. A table of its own rather than a `core_utxos` column, because a lock can exist before its coin and outlives the coin's spend. Deleting the row unlocks the outpoint. Purely additive; an upgraded database starts with no locks. |
+| V023 | `V023__profile_address_encoding.rs` | Adds the encoding stamps `identities.entry_format` and `dashpay_profiles.profile_format` (`INTEGER NOT NULL DEFAULT 1 CHECK IN (0, 1)`) and stamps every row present at migration time 0. `DashPayProfile` gained the core, platform and shielded payment addresses, which widens the positional bincode record embedded in both blobs; the stamp routes each row to the decoder for the shape it carries (`schema::identity_profile_encoding`). |

@@ -1,4 +1,4 @@
-//! Frozen pre-V021 profile records, and the stamped decoders that route each
+//! Frozen pre-V023 profile records, and the stamped decoders that route each
 //! `identities.entry_blob` / `dashpay_profiles.profile_blob` row to the shape
 //! it carries. Do not edit the legacy field order.
 //!
@@ -6,7 +6,7 @@
 //! Under `bincode::serde` a struct is a fixed-arity positional record, so a
 //! record written before the widening is never "short": the trailing fields
 //! are simply absent, and decoding it against the current shape reads the
-//! next field's bytes as an address. The row stamp (V021) is what says which
+//! next field's bytes as an address. The row stamp (V023) is what says which
 //! shape to decode; `serde(default)` on the new fields serves map formats
 //! such as JSON only.
 use super::blob;
@@ -141,27 +141,27 @@ impl From<IdentityEntry> for LegacyIdentityEntry {
 }
 
 // Test-only: production never writes the legacy shapes, but migration
-// fixtures have to produce the bytes a pre-V021 writer produced. PUBLIC
+// fixtures have to produce the bytes a pre-V023 writer produced. PUBLIC
 // material only, like the current shapes they mirror.
 #[cfg(any(test, feature = "__test-helpers"))]
 super::blob::impl_persistable_blob!(LegacyProfile, LegacyIdentityEntry);
 
-/// The bytes a pre-V021 writer stored for `profile`: the record without the
-/// payment-address fields. For fixtures of databases written before V021.
+/// The bytes a pre-V023 writer stored for `profile`: the record without the
+/// payment-address fields. For fixtures of databases written before V023.
 #[cfg(any(test, feature = "__test-helpers"))]
 pub fn encode_legacy_profile(profile: &DashPayProfile) -> Result<Vec<u8>, WalletStorageError> {
     blob::encode(&LegacyProfile::from(profile.clone()))
 }
 
-/// The bytes a pre-V021 writer stored for `entry`: its own and its contacts'
+/// The bytes a pre-V023 writer stored for `entry`: its own and its contacts'
 /// profiles in the pre-payment-address shape. For fixtures of databases
-/// written before V021.
+/// written before V023.
 #[cfg(any(test, feature = "__test-helpers"))]
 pub fn encode_legacy_identity(entry: &IdentityEntry) -> Result<Vec<u8>, WalletStorageError> {
     blob::encode(&LegacyIdentityEntry::from(entry.clone()))
 }
 
-/// Decode a `dashpay_profiles.profile_blob` using its V021 `profile_format`
+/// Decode a `dashpay_profiles.profile_blob` using its V023 `profile_format`
 /// stamp: zero is the pre-address shape, one includes payment addresses. Never
 /// fall back to the legacy shape after a current-format decoding error.
 pub fn decode_profile(payload: &[u8], format: i64) -> Result<DashPayProfile, WalletStorageError> {
