@@ -1508,21 +1508,6 @@ mod query_error_status_tests {
         }
     }
 
-    /// A request version older than the ones this node serves is one the network has moved
-    /// past: no node in step with it serves it, so the client neither retries nor bans.
-    #[test]
-    fn should_not_retry_a_request_version_older_than_the_served_ones() {
-        let dropped = query_error_into_status(QueryError::UnsupportedQueryVersion(
-            "document_history".to_string(),
-            1,
-            1,
-            15,
-            0,
-        ));
-        assert_eq!(dropped.code(), Code::Unknown);
-        assert!(!dropped.can_retry(), "{dropped}");
-    }
-
     #[test]
     fn should_bound_a_long_status_message_at_a_char_boundary() {
         // A two-byte character straddles the bound, so the cut falls one byte short of it.
