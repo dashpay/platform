@@ -384,8 +384,9 @@ public final class KeychainManager: Sendable {
     /// it in between.
     ///
     /// Limits: the check and the delete are two Keychain calls, so a writer
-    /// outside the main actor (another process sharing an access group) can
-    /// change the slot between them. With `accessGroup == nil` on a host
+    /// outside the main actor (another process sharing an access group, or
+    /// a `nonisolated` sweep such as `deleteAllKeychainItems(forIdentityId:)`
+    /// running on another thread) can change the slot between them. With `accessGroup == nil` on a host
     /// entitled to several access groups, the read names one item but the
     /// delete removes every match; construct the manager with an explicit
     /// access group on such a host. If the process ends between the delete

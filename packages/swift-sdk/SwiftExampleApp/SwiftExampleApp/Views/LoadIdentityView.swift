@@ -1,3 +1,4 @@
+import CryptoKit
 import SwiftUI
 import SwiftData
 import SwiftDashSDK
@@ -50,6 +51,10 @@ struct LoadIdentityView: View {
         /// What the load reported about keys that could not be stored,
         /// repeated in the report after the replacement.
         let unstoredNote: String?
+        /// SHA-256 of every masternode key the user entered in the load,
+        /// by role. Success requires each slot to still hold its key, so a
+        /// key changed elsewhere while the dialog was open is reported.
+        let enteredKeyDigests: [SpecialKeyType: Data]
     }
 
     /// Held only until the replacement dialog is answered, then cleared.
@@ -719,10 +724,21 @@ struct LoadIdentityView: View {
                         isLoading = false
                         loadStartTime = nil
                         if !conflictingReplacements.isEmpty {
+                            var enteredKeyDigests: [SpecialKeyType: Data] = [:]
+                            for (keyType, key) in [
+                                (SpecialKeyType.voting, capturedVotingKey),
+                                (.owner, capturedOwnerKey),
+                                (.payout, capturedPayoutKey),
+                            ] {
+                                if let key {
+                                    enteredKeyDigests[keyType] = Data(SHA256.hash(data: key))
+                                }
+                            }
                             pendingKeyReplacements = PendingKeyReplacements(
                                 identityId: validIdData,
                                 keys: conflictingReplacements,
-                                unstoredNote: unstoredNote
+                                unstoredNote: unstoredNote,
+                                enteredKeyDigests: enteredKeyDigests
                             )
                         }
                     }
@@ -770,7 +786,7 @@ struct LoadIdentityView: View {
         pendingKeyReplacements = nil
         let keychain = KeychainManager.shared
         guard let row = PersistentIdentity.fetch(in: modelContext, identityId: pending.identityId) else {
-            errorMessage = "The identity is no longer on this device, so no key was replaced. Load it again."
+            errorMessage = "The identity could not be found or read on this device, so no key was replaced. Load it again."
             return
         }
 
@@ -880,7 +896,30 @@ struct LoadIdentityView: View {
         // `pending.keys` holds every conflicting key of the load, so this is
         // a plain success only when the identity saved and every key the
         // user entered is now stored. Any other outcome keeps the report.
-        if saved && replaced.count == pending.keys.count && pending.unstoredNote == nil {
+        // Every key the user entered must still be the one in its slot,
+        // including roles stored by the load itself, so a key changed in
+        // another window while the dialog was open is not reported as done.
+        var notInPlace: [String] = []
+        for (keyType, digest) in pending.enteredKeyDigests.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
+            let inPlace: Bool
+            if case .success(let stored?) = keychain.readSpecialKey(identityId: pending.identityId, keyType: keyType) {
+                inPlace = Data(SHA256.hash(data: stored)) == digest
+            } else {
+                inPlace = false
+            }
+            let handled = changed.contains(keyType.rawValue) || kept.contains(keyType.rawValue)
+                || removed.contains(keyType.rawValue) || unknown.contains(keyType.rawValue)
+                || notChosen.contains(keyType.rawValue)
+            if !inPlace && !handled {
+                notInPlace.append(keyType.rawValue)
+            }
+        }
+        if !notInPlace.isEmpty {
+            let names = ListFormatter.localizedString(byJoining: notInPlace)
+            let noun = notInPlace.count == 1 ? "key is" : "keys are"
+            parts.append("The \(names) \(noun) no longer the one you entered; it was changed on this device since the load. Load the identity again.")
+        }
+        if saved && replaced.count == pending.keys.count && pending.unstoredNote == nil && notInPlace.isEmpty {
             errorMessage = nil
             showSuccess = true
         } else {
