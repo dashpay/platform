@@ -7,6 +7,7 @@ import UIKit
 struct AccountDetailView: View {
     @EnvironmentObject var appUIState: AppUIState
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @Environment(\.scenePhase) private var scenePhase
     let wallet: PersistentWallet
     let account: PersistentAccount
 
@@ -27,11 +28,15 @@ struct AccountDetailView: View {
     @State private var derivedKeysError: String?
     /// Per-index revealed private-key hex, populated only after the device
     /// owner authenticates a reveal for that row, and cleared when the
-    /// screen closes.
+    /// screen closes or the app goes to the background.
     @State private var revealedPrivateKeys: [UInt32: String] = [:]
     /// Which row is mid-reveal (authentication + derive), to disable
     /// buttons and show progress.
     @State private var revealingIndex: UInt32?
+    /// Token of the reveal in flight. `clearRevealedKeys()` resets it, so
+    /// a prompt or derive that finishes after the screen closed or the
+    /// app went to the background publishes nothing.
+    @State private var revealRequest: UUID?
     /// Copy-key of the derived-keys row just copied, for a transient
     /// "Copied" confirmation.
     @State private var derivedCopiedKey: String?
@@ -152,12 +157,22 @@ struct AccountDetailView: View {
             TransactionDetailView(transaction: transaction)
         }
         .onAppear { appUIState.showWalletsSyncDetails = false }
-        .onDisappear {
-            // Drop revealed provider private keys from view state when the
-            // screen closes.
-            revealedPrivateKeys = [:]
-            derivedCopiedKey = nil
+        .onDisappear { clearRevealedKeys() }
+        .onChange(of: scenePhase) { _, phase in
+            // Only `.background` clears: the authentication prompt itself
+            // makes the scene `.inactive`, and must not cancel its own
+            // reveal.
+            if phase == .background { clearRevealedKeys() }
         }
+    }
+
+    /// Drop revealed provider private keys, reset the busy flag, and
+    /// invalidate any reveal still in flight.
+    private func clearRevealedKeys() {
+        revealedPrivateKeys = [:]
+        derivedCopiedKey = nil
+        revealingIndex = nil
+        revealRequest = nil
     }
 
     // MARK: - Cards
@@ -681,8 +696,11 @@ struct AccountDetailView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             } else {
+                // BLS operator keys are non-hardened children of this key,
+                // so it plus one operator private key yields the others;
+                // Ed25519 platform-node keys are hardened.
                 Text(account.accountType == 10
-                     ? "Derives BLS operator keys for masternode operation. No on-chain addresses or balance."
+                     ? "Derives BLS operator keys for masternode operation. No on-chain addresses or balance.\nNever give this key to anyone who holds one of its operator private keys: together they derive this account's other operator keys."
                      : "Derives Ed25519 platform node keys. No on-chain addresses or balance.")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -863,7 +881,12 @@ struct AccountDetailView: View {
                 )
             }
 
-            if let priv = revealedPrivateKeys[key.index] {
+            if revealedPrivateKeys[key.index] != nil, scenePhase != .active {
+                Text("Private key hidden while the app is not active")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .accessibilityIdentifier("\(key.index)-priv-hidden")
+            } else if let priv = revealedPrivateKeys[key.index] {
                 derivedValueRowBothEncodings(
                     label: "Private Key",
                     hex: priv,
@@ -903,11 +926,22 @@ struct AccountDetailView: View {
                 }
                 .disabled(revealingIndex != nil)
 
-                Text("The private key grants full control of this key. Only reveal it somewhere private.")
+                Text(revealWarning)
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
         }
+    }
+
+    /// Caption under a derived-key row's "View Private Key" button. BLS
+    /// operator keys are non-hardened children of the account extended
+    /// public key, so for them it also warns against handing that key out
+    /// with an individual operator key. Ed25519 platform-node keys are
+    /// hardened and get the plain warning.
+    private var revealWarning: String {
+        let base = "The private key grants full control of this key. Only reveal it somewhere private."
+        guard account.accountType == 10 else { return base }
+        return base + " Operator keys are non-hardened children of the extended public key shown above, so anyone holding one operator private key together with that extended public key can derive this account's other operator keys. Never give the extended public key to someone who receives an individual operator key."
     }
 
     /// Render `hex` in BOTH encodings: a "… (Hex)" row and, when the hex
@@ -1049,21 +1083,29 @@ struct AccountDetailView: View {
     /// Authenticate the device owner, then reveal one derived-key row's
     /// private key. A cancelled prompt shows nothing; an unavailable or
     /// failed one shows its message. `revealingIndex` stays set from the
-    /// tap until the derive finishes.
+    /// tap until the derive finishes. A result that arrives after
+    /// `clearRevealedKeys()` is dropped.
     private func authorizeAndRevealPrivateKey(index: UInt32) {
         guard revealingIndex == nil else { return }
+        let request = UUID()
+        revealRequest = request
         revealingIndex = index
         derivedKeysError = nil
         Task { @MainActor in
-            switch await DeviceOwnerAuthentication.authorize(
+            let outcome = await DeviceOwnerAuthentication.authorize(
                 reason: "Reveal the private key of provider key #\(index)."
-            ) {
+            )
+            guard revealRequest == request else { return }
+            switch outcome {
             case .authorized:
-                revealPrivateKey(index: index)
+                revealPrivateKey(index: index, request: request)
             case .cancelled:
                 revealingIndex = nil
-            case .failed(let message):
-                derivedKeysError = message
+            case .unavailable(let detail):
+                derivedKeysError = "Authentication is unavailable on this device: \(detail)"
+                revealingIndex = nil
+            case .failed(let detail):
+                derivedKeysError = "Authorization failed: \(detail)"
                 revealingIndex = nil
             }
         }
@@ -1071,8 +1113,9 @@ struct AccountDetailView: View {
 
     /// Reveal the private key for one derived-key row. Re-derives at that
     /// index with `includePrivate: true`; Rust returns the raw scalar
-    /// hex (BLS / Ed25519 keys have no WIF).
-    private func revealPrivateKey(index: UInt32) {
+    /// hex (BLS / Ed25519 keys have no WIF). The key is published only
+    /// while `request` is still the current reveal.
+    private func revealPrivateKey(index: UInt32, request: UUID) {
         guard let managed = walletManager.wallet(for: wallet.walletId) else {
             derivedKeysError = "The owning wallet is not loaded."
             revealingIndex = nil
@@ -1095,11 +1138,13 @@ struct AccountDetailView: View {
                 )
                 let hex = key.privateKeyHex
                 await MainActor.run {
+                    guard revealRequest == request else { return }
                     if let hex { revealedPrivateKeys[index] = hex }
                     revealingIndex = nil
                 }
             } catch {
                 await MainActor.run {
+                    guard revealRequest == request else { return }
                     derivedKeysError = error.localizedDescription
                     revealingIndex = nil
                 }
@@ -1109,11 +1154,15 @@ struct AccountDetailView: View {
 
     private func copyDerived(_ value: String, copyKey: String, sensitive: Bool) {
         if sensitive {
-            // Private key material: expire it from the system-wide
+            // Private key material: keep it local-only (no Universal
+            // Clipboard sync to other devices) and expire it from the
             // pasteboard after 60 s, as `CoreAddressDetailView` does.
             UIPasteboard.general.setItems(
                 [["public.utf8-plain-text": value]],
-                options: [.expirationDate: Date().addingTimeInterval(60)]
+                options: [
+                    .localOnly: true,
+                    .expirationDate: Date().addingTimeInterval(60),
+                ]
             )
         } else {
             UIPasteboard.general.string = value
