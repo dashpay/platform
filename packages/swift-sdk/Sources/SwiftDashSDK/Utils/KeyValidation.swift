@@ -54,6 +54,31 @@ public enum KeyValidation {
         return resultStr == "true"
     }
 
+    /// The 32 secret bytes of a private key typed as 64 hex characters or in
+    /// WIF (`dash_sdk_private_key_bytes_from_text`). Rust reads the text and
+    /// decides which form it is; `nil` when it is neither, or not a secp256k1
+    /// secret key.
+    public static func privateKeyBytes(fromText text: String) -> Data? {
+        var secret = [UInt8](repeating: 0, count: 32)
+        defer {
+            secret.withUnsafeMutableBufferPointer { ptr in
+                if let base = ptr.baseAddress {
+                    memset_s(UnsafeMutableRawPointer(base), ptr.count, 0, ptr.count)
+                }
+            }
+        }
+        let result = text.withCString { textPtr in
+            secret.withUnsafeMutableBufferPointer { out in
+                dash_sdk_private_key_bytes_from_text(textPtr, out.baseAddress)
+            }
+        }
+        if let error = result.error {
+            dash_sdk_error_free(error)
+            return nil
+        }
+        return Data(secret)
+    }
+
     /// Match a private key to its corresponding public key in a list of public keys
     /// Returns the matching public key or nil if no match found
     public static func matchPrivateKeyToPublicKeys(
