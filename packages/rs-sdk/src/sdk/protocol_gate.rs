@@ -257,6 +257,13 @@ impl Sdk {
         self
     }
 
+    /// Whether this SDK is pinned to a version below `required`
+    /// ([`SdkBuilder::with_version`](crate::SdkBuilder::with_version)): then no answer can let
+    /// it build what `required` introduced, whatever the network runs.
+    pub(crate) fn is_pinned_below(&self, required: u32) -> bool {
+        pinned_below(required, &self.gate_state())
+    }
+
     /// The refusal [`Self::ensure_network_serves`] gives a request that needs `required`,
     /// for a caller that finds what `required` introduced missing from the network's data
     /// while this SDK runs below it: the network does not serve it yet. `cause` is why the

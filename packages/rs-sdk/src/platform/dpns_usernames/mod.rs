@@ -8,6 +8,7 @@ pub use contested_queries::ContestedDpnsUsername;
 pub use dash_platform_queries::dpns_usernames::{
     convert_to_homograph_safe_chars, is_contested_username, is_valid_username,
 };
+pub use give_up::DpnsNameGiveUpOptions;
 pub use queries::DpnsUsername;
 
 use crate::platform::documents::document_query::DocumentQuery;
@@ -55,7 +56,7 @@ fn extract_dpns_label(name: &str) -> &str {
 /// Accepts either a bare label (e.g. `"alice"`) or a full DPNS name
 /// (e.g. `"alice.dash"`, `"Alice.DASH"`) and returns the normalized label
 /// (e.g. `"a11ce"`). A normalized label is returned unchanged.
-fn normalize_dpns_label(input: &str) -> String {
+pub fn normalize_dpns_label(input: &str) -> String {
     convert_to_homograph_safe_chars(extract_dpns_label(input))
 }
 
@@ -315,14 +316,23 @@ impl Sdk {
             .ok_or_else(|| Error::Generic("DPNS contract not found".to_string()))
     }
 
-    /// The DPNS contract the network stores now, fetched and proved, for a registration.
-    /// The preorder commits to the hash that contract declares, so neither a contract the
+    /// The DPNS contract the network stores now, fetched and proved: the one a registration
+    /// or a tombstone is built against, and the one to select a key for either by. The
+    /// preorder commits to the hash that contract declares, so neither a contract the
     /// context provider holds for the SDK's protocol version nor one cached before an upgrade
     /// changed it will do: either can be older than the network's, and its hash one the
     /// domain cannot reveal. The SDK first learns the network's protocol version (a proven
     /// refresh), then takes a response proved at the version it parsed it under
     /// ([`dpns_contract_proved_at_parsed_version`]).
-    async fn fetch_current_dpns_contract(&self) -> Result<DataContract, Error> {
+    ///
+    /// The guarantee is the contract proved at the version the SDK parses with. An SDK
+    /// pinned to a version ([`SdkBuilder::with_version`](crate::SdkBuilder::with_version))
+    /// does not learn a newer one, so it takes a response proved at its pinned version even
+    /// when a verified answer shows the network newer: a caller that must have the newest
+    /// contract on a pinned SDK compares with
+    /// [`Sdk::protocol_version_info`]`().verified_version` itself, or refuses a pinned SDK
+    /// below the version it needs, as [`Sdk::dpns_name_give_up_options`] does.
+    pub async fn fetch_current_dpns_contract(&self) -> Result<DataContract, Error> {
         let dpns_contract_id = self.get_dpns_contract_id()?;
         self.refresh_protocol_version().await?;
         dpns_contract_proved_at_parsed_version(
@@ -1499,6 +1509,59 @@ mod tests {
         assert!(error.to_string().contains("only tombstoned"), "{error}");
     }
 
+    /// A name that is not contested may be given up either way, and the options carry its
+    /// domain, whose owner is the only identity that can
+    #[tokio::test]
+    async fn should_offer_a_delete_and_a_tombstone_for_a_name_that_is_not_contested() {
+        let owner = Identifier::new([1u8; 32]);
+        let provider = DpnsV2ContextProvider::default();
+        let mut sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+        expect_domain_of(&mut sdk, "Bob7", owner).await;
+        // The network is proven at the version names can be given up from, the boundary the
+        // refusal below it pairs with
+        sdk.mock_verified_protocol_version(15)
+            .expect("the mock takes a verified version");
+
+        let options = sdk
+            .dpns_name_give_up_options("Bob7.dash")
+            .await
+            .expect("the options are read")
+            .expect("the name is registered");
+        assert!(options.can_delete);
+        assert!(options.can_tombstone);
+        assert_eq!(options.domain.owner_id(), owner);
+    }
+
+    /// The network refuses the delete of a contested name, so only a tombstone is offered
+    #[tokio::test]
+    async fn should_offer_only_a_tombstone_for_a_contested_name() {
+        let provider = DpnsV2ContextProvider::default();
+        let mut sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+        expect_domain_of(&mut sdk, "Bob", Identifier::new([1u8; 32])).await;
+
+        let options = sdk
+            .dpns_name_give_up_options("Bob")
+            .await
+            .expect("the options are read")
+            .expect("the name is registered");
+        assert!(!options.can_delete);
+        assert!(options.can_tombstone);
+    }
+
+    #[tokio::test]
+    async fn should_offer_nothing_for_a_name_that_is_not_registered() {
+        let provider = DpnsV2ContextProvider::default();
+        let mut sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+        expect_no_domain_of_bob(&mut sdk).await;
+
+        assert_eq!(
+            sdk.dpns_name_give_up_options("Bob.dash")
+                .await
+                .expect("the options are read"),
+            None
+        );
+    }
+
     /// An uncontested name (`b0b7` holds a digit the contest's pattern does not) passes both
     /// checks, and the delete starts: it stops at the first request the mock leaves
     /// unanswered, the nonce of the transition it is about to sign.
@@ -1519,6 +1582,82 @@ mod tests {
         );
         assert!(!message.contains("only tombstoned"), "{message}");
         assert!(!message.contains("is not registered"), "{message}");
+    }
+
+    /// A domain document a caller already read is deleted as it is: a contested one is
+    /// refused before anything is read or signed, and the mock SDK holds no expectation
+    #[tokio::test]
+    async fn should_refuse_to_delete_a_given_contested_domain_before_anything_is_read() {
+        let provider = DpnsV2ContextProvider::default();
+        let sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+
+        let error = sdk
+            .delete_dpns_domain(
+                stored_domain("Bob", Identifier::new([1u8; 32])),
+                &signing_key(),
+                &UnusedSigner,
+            )
+            .await
+            .expect_err("a contested name is not deleted");
+        assert!(error.to_string().contains("only tombstoned"), "{error}");
+    }
+
+    /// The delete of a given domain that is not contested is built without reading the
+    /// name again (no domain query is expected): it stops at the nonce of the transition
+    #[tokio::test]
+    async fn should_delete_a_given_domain_without_reading_the_name_again() {
+        let provider = DpnsV2ContextProvider::default();
+        let sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+
+        let error = sdk
+            .delete_dpns_domain(
+                stored_domain("Bob7", Identifier::new([1u8; 32])),
+                &signing_key(),
+                &UnusedSigner,
+            )
+            .await
+            .expect_err("the unanswered nonce fetch stops the delete");
+        let message = error.to_string();
+        assert!(
+            message.contains("GetIdentityContractNonceRequest"),
+            "expected the delete to stop at its nonce fetch, got {message}"
+        );
+    }
+
+    /// An SDK pinned below protocol version 15 can not build a give-up whatever the network
+    /// runs: both the read and the delete of a given domain are refused as pinned, before
+    /// anything is read (this SDK expects no request)
+    #[tokio::test]
+    async fn should_refuse_give_up_on_an_sdk_pinned_below_protocol_version_15() {
+        let provider = DpnsV2ContextProvider::default();
+        let sdk = sdk_with_a_dpns_v2_provider(&provider, |builder| {
+            builder.with_version(PlatformVersion::get(14).expect("protocol version 14"))
+        });
+        let pinned = |error: &Error| {
+            matches!(
+                error,
+                Error::ProtocolVersionNotActive {
+                    required: 15,
+                    pinned: true,
+                    ..
+                }
+            )
+        };
+
+        let read = sdk
+            .dpns_name_give_up_options("Bob7")
+            .await
+            .expect_err("the read is refused");
+        assert!(pinned(&read), "{read:?}");
+        let deleted = sdk
+            .delete_dpns_domain(
+                stored_domain("Bob7", Identifier::new([1u8; 32])),
+                &signing_key(),
+                &UnusedSigner,
+            )
+            .await
+            .expect_err("the delete is refused");
+        assert!(pinned(&deleted), "{deleted:?}");
     }
 
     /// On a network whose DPNS contract declares no tombstone (before protocol version 15) a

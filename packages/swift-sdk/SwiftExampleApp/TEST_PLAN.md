@@ -62,7 +62,9 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | **Funded Core wallet** | all `Layer=Core` and `Layer=Cross` | A wallet with confirmed, mature, spendable UTXOs. Asset-lock funding needs InstantSend/ChainLock, so masternode sync must complete. |
 | **A registered identity with credit balance** | almost all `Layer=Platform` | Created via `ID-01`. Many transitions also need a specific **key purpose/security level** present on the identity. |
 | **A loaded data contract** (with a token + a document type) | `Domain=Token`, `Domain=Document`, `Tag=group` | Token actions are gated by the contract's on-chain permission rules — a "coming soon" placeholder means *disallowed by rule*, not unimplemented. |
-| **A contested-name scenario** | `DPNS-05`, `VOTE-01..06` | Register a premium/contested name to create a live vote poll. |
+| **A contested-name scenario** | `DPNS-05`, `DPNS-11`, `VOTE-01..06` | Register a premium/contested name to create a live vote poll. `DPNS-11` needs one the vote has already awarded to the identity. |
+| **Network at protocol version 15** | `DPNS-09`..`DPNS-12` | Deleting or tombstoning a DPNS name is served from protocol version 15. Use a network already at it (a local or devnet network until testnet activates it). |
+| **Network still at protocol version 14** | `DPNS-13` | Any network proven at protocol version 14, where the give-up feature must be refused as not available yet. |
 | **Masternode / evonode voting key** | `VOTE-01`, `VOTE-08`, `VOTE-09` | Every masternode vote is cast as a masternode or evonode identity loaded on the device with its voting private key (Identities, Load Identity, type Masternode or Evonode). Use an operator-provided registered test masternode or evonode and its matching voting key: the bundled "Fill Random Masternode" / "Fill Random HPMN" presets are placeholder sample data (a made-up pro_tx_hash, and keys that do not all pass the WIF checksum), so they only demonstrate filling the form and cannot validate the import or a broadcast. The keys may be typed as 64 hex characters or in WIF (`dash_sdk_private_key_bytes_from_text`); a key that is neither stops the load with an error instead of being dropped. A key is stored only into an empty slot: re-loading with the same key is fine, while a different key for an occupied slot is refused and the stored one kept, and the load then asks whether to replace it (`loadIdentity.replaceKey.voting`, `.owner`, `.payout`, `.all` when several conflict, `.cancel` to keep the stored key). Confirming deletes only that slot and stores the typed key, leaving the identity and its other keys as they are; if the Keychain refuses the delete, for example while the device is locked, the stored key is kept and the report says which key could not be replaced. If the delete succeeds but the new key cannot be stored, the report says the stored key was removed and to load the identity again with it. A confirmation applies only to the key it was shown for: if that key was replaced or removed meanwhile (for example in another window), nothing is changed, an emptied slot stays empty, and the report says the stored key is no longer the one you confirmed replacing. The Success screen appears only when the identity saved and every key you entered is stored; a key that was kept, changed, removed or could not be checked leaves the report on the form. Re-loading keeps each unchanged public key's local signing reference. The key is kept in the Keychain and signs through `KeychainSigner`; the vote sheets pick the identity and never take a typed key in a Release build. Debug builds also offer typed test credentials (wire-order pro_tx_hash and voting private key) behind a "Use typed test credentials (debug only)" toggle. Without such an identity the broadcast cannot be exercised; treat the row as environment-limited. |
 | **Shielded pool: configured + bound + prover warmed + synced** | `Domain=Shielded` | `SH-01` sync + `SH-09` prover warm-up are preconditions for any shielded spend. The pool also needs a non-trivial anonymity set (`SH-10` on devnet/testnet) for realistic spends. |
 | **A second identity / contact** | credit transfer, token transfer, document transfer, DashPay | Needed as the counterparty/recipient. |
@@ -185,6 +187,11 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | DPNS-06 | Select main / primary name | Platform | Common | ✅ |  | `SelectMainNameView` (sheet from `IdentityDetailView`). |
 | DPNS-07 | Search names by prefix | Platform | Common | ✅ | read-only | `PlatformQueriesView` (dpnsSearch) / `DPNSTestView`. |
 | DPNS-08 | Contested DPNS race between two on-device identities | Platform | Uncommon | ✅ | multiwallet, contested | A and B (different wallets) both register the same premium/contested name (`DPNS-05`) → produces a contest observable end-to-end on-device via `VOTE-02`/`VOTE-03`. |
+| DPNS-09 | Delete a name that is not contested | Platform | Thorough | ✅ |  | Needs a **network at protocol version 15**. `IdentityDetailView` DPNS section → swipe an owned name row → **Give Up Name…** (`identity.dpnsName.<normalized>.giveUp`) → `GiveUpNameView` (`platform_wallet_dpns_name_give_up_choices`) offers both **Delete Name** (`giveUpName.delete`) and **Tombstone Name** (`giveUpName.tombstone`). Tap Delete Name → confirmation dialog → **Delete Name** (`giveUpName.confirmDelete`) → `platform_wallet_dpns_give_up_name` (method 0). **Pass:** the sheet dismisses, the row leaves the list through persistence (no `PersistentDPNSName` row with `isOwned == true` for the label), the name no longer resolves, and the name is shown available again (`DPNS-02`). *(Implemented; not yet run on a device or simulator.)* |
+| DPNS-10 | Tombstone a name | Platform | Uncommon | ✅ |  | Same entry as `DPNS-09`, on a throwaway name. Tap **Tombstone Name** (`giveUpName.tombstone`) → alert stating it is permanent → **Tombstone Permanently** (`giveUpName.confirmTombstone`) → `platform_wallet_dpns_give_up_name` (method 1). **Pass:** the sheet dismisses, the row leaves the list through persistence, and registering the same label again (`DPNS-01`, any identity) is refused. Irreversible: use a name nobody needs. *(Implemented; not yet run on a device or simulator.)* |
+| DPNS-11 | Give up a contested name (only a tombstone is offered) | Platform | Uncommon | ✅ | contested | Needs a contested (premium) name the masternode vote already **awarded** to the identity, on a network at protocol version 15. Open **Give Up Name…** on it. **Pass:** only **Tombstone Name** is shown, with the notice that the network accepts only a tombstone for this name (`giveUpName.tombstoneOnlyNotice`); no Delete Name button. The offer comes from the FFI flags (`can_delete == false`), not from an app-side contested check. Tombstoning it then behaves as `DPNS-10`. *(Implemented; not yet run on a device or simulator.)* |
+| DPNS-12 | Give up the identity's main name | Platform | Thorough | ✅ |  | Select a name as main (`DPNS-06`), then give it up (`DPNS-09`). **Pass:** before confirming, the sheet says it is the main name (`giveUpName.mainNameNotice`); after success `PersistentIdentity.mainDpnsName` is nil and the header shows the next fallback (alias, another owned name, or the short id). On a failed give-up (e.g. cancel the key unlock) the pick is unchanged. *(Implemented; not yet run on a device or simulator.)* |
+| DPNS-13 | Give-up on a network still at protocol version 14 | Platform | Thorough | ✅ |  | On a network proven at protocol version 14, open **Give Up Name…** on any owned name. **Pass:** the sheet shows "Not available on this network yet" (`giveUpName.notAvailable`) with the SDK's message (error code 70, `protocolVersionNotActive`), explains names can be deleted or tombstoned from protocol version 15, and offers no Delete or Tombstone button. Nothing is signed. *(Implemented; not yet run on a device or simulator.)* |
 
 ### 4.5 Voting / Contested Resources — `Domain=Voting`
 
@@ -340,8 +347,8 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 |---|---|---|
 | Essential | 22 | yes |
 | Common | 43 | yes |
-| Thorough | 43 | yes |
-| Uncommon | 37 | yes |
+| Thorough | 46 | yes |
+| Uncommon | 39 | yes |
 | Manual | 2 (`CORE-08`, `DP-10`) | no — physical device |
 
 **By layer (automatable only):**
@@ -349,7 +356,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Layer | Count (approx.) |
 |---|---|
 | Core | 18 |
-| Platform | 91 |
+| Platform | 96 |
 | Cross | 19 |
 | Shielded | 16 |
 
@@ -366,7 +373,7 @@ Each row's **primary home** is its §4 section, but a few rows are cross-cutting
 - **Core / Wallet** — `CORE-01..23`
 - **Identity** — `ID-01..17`, `SH-11`, `SH-22`
 - **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06..09`, `ID-06`, `ID-08`, `ID-11`
-- **DPNS** — `DPNS-01..08`
+- **DPNS** — `DPNS-01..13`
 - **Voting** — `VOTE-01..09`, `DPNS-05`
 - **Contract** — `DC-01..04`
 - **Document** — `DOC-01..17`
@@ -379,7 +386,7 @@ Each row's **primary home** is its §4 section, but a few rows are cross-cutting
 
 - **multiwallet** — `CORE-14..23`, `ID-14`, `ID-15`, `TOK-17`, `DPNS-08`, `DP-11`, `DP-14`, `DP-19`, `DOC-15`, `SH-14`, `SH-15`, `SH-16`, `SYS-07`, `SYS-08`
 - **group** — `TOK-15`, `TOK-16`, `TOK-18`, `TOK-19`, `TOK-20`
-- **contested** — `DPNS-05`, `DPNS-08`, `VOTE-01..07`
+- **contested** — `DPNS-05`, `DPNS-08`, `DPNS-11`, `VOTE-01..07`
 - **withdrawal** — `ID-10`, `ADDR-04`, `SH-08`, `SH-16`
 - **aggregation** — `DOC-08`, `DOC-10..14`
 - **read-only** — the pure query / view rows (see the Tags column; also Appendix A)
