@@ -85,6 +85,9 @@ enum ShieldedTopUpSubmitCheck: Equatable {
         guard let spendable = pushedSpendable else {
             return .refuse("The shielded balance is not known right now, so nothing was sent.")
         }
+        guard minimumFee != nil else {
+            return .refuse("The fee is not available yet, so nothing was sent.")
+        }
         guard request.isAffordable(minimumFee: minimumFee, spendable: spendable) else {
             return .refuse("The amount plus the minimum fee must fit the spendable "
                 + "shielded balance. Nothing was sent.")
@@ -277,6 +280,10 @@ struct TopUpIdentityView: View {
             // so a sheet opened meanwhile recovers without being dismissed.
             .onChange(of: ObjectIdentifier(walletManager)) { _, _ in
                 resolveShieldedTopUpFee()
+            }
+            // The same manager finishing its configuration can now price it.
+            .onChange(of: walletManager.isConfigured) { _, configured in
+                if configured { resolveShieldedTopUpFee() }
             }
             // Drop a shielded selection the wallet can no longer fund, and
             // recheck when a submission that kept it ends.

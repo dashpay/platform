@@ -119,7 +119,10 @@ func formatIdentityBalanceAsDash(_ balance: Int64) -> String {
 /// Whether `text` has a nonzero digit beyond `decimals` fraction digits,
 /// which `parseTokenAmount` would round down. Trailing zeros do not count
 /// ("0.000000000010" fits 11 decimals); "," is read as "." as the parser does.
+/// Text the parser rejects (a stray letter, two separators) is not a
+/// precision problem, so it returns false for it.
 func hasDigitsBeyondPrecision(_ text: String, decimals: Int) -> Bool {
+    guard parseTokenAmount(text, decimals: decimals) != nil else { return false }
     let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
         .replacingOccurrences(of: ",", with: ".")
     guard let dot = normalized.firstIndex(of: ".") else { return false }

@@ -325,6 +325,94 @@ final class SendViewModelIdentityShieldTests: XCTestCase {
         XCTAssertNil(vm.unconfirmedMessage)
     }
 
+    // MARK: - Admitting a tapped send
+
+    private func admit(_ vm: SendViewModel, amount: String, flow: SendFlow? = .identityToShielded) -> SendFlow? {
+        vm.admitSend(
+            tappedFlow: flow,
+            tappedRecipient: orchardAddress,
+            tappedAmountText: amount,
+            accountZeroShieldedBalance: nil
+        )
+    }
+
+    func test_admitSend_unchangedAmount_admitsTheTappedFlow() {
+        let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
+        XCTAssertEqual(admit(vm, amount: "0.001"), .identityToShielded)
+        XCTAssertNil(vm.error)
+    }
+
+    func test_admitSend_amountChangedAfterTheTap_isRefused() {
+        let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
+        // The tap captured "0.001"; the field now reads "0.002".
+        vm.amountString = "0.002"
+        XCTAssertNil(admit(vm, amount: "0.001"))
+        XCTAssertEqual(vm.error, SendViewModel.amountChangedMessage)
+    }
+
+    func test_admitSend_amountChange_appliesToOtherFlowsToo() {
+        let vm = makeViewModel(recipient: orchardAddress)
+        vm.amountString = "0.001"
+        offerAndPick(.platform, on: vm, balances: balances(platformAddresses: 1))
+        vm.amountString = "0.5"
+        XCTAssertNil(admit(vm, amount: "0.001", flow: .platformToShielded))
+        XCTAssertEqual(vm.error, SendViewModel.amountChangedMessage)
+    }
+
+    func test_admitSend_routeChanged_isRefusedWithTheRouteMessage() {
+        let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
+        XCTAssertNil(admit(vm, amount: "0.001", flow: .platformToShielded))
+        XCTAssertEqual(vm.error, SendViewModel.routeChangedMessage)
+    }
+
+    func test_admitSend_whileASendRuns_admitsNothingAndChangesNoState() {
+        let vm = makeIdentityShieldViewModel(amount: "0.001", balance: 1_000_000_000)
+        vm.isSending = true
+        vm.error = "earlier"
+        vm.successMessage = "earlier success"
+        // Even a tap whose amount no longer matches leaves everything alone.
+        XCTAssertNil(admit(vm, amount: "9"))
+        XCTAssertTrue(vm.isSending)
+        XCTAssertEqual(vm.error, "earlier")
+        XCTAssertEqual(vm.successMessage, "earlier success")
+    }
+
+    func test_amountChangedMessage_asksToReviewAndTapAgain() {
+        XCTAssertEqual(
+            SendViewModel.amountChangedMessage,
+            "The amount changed after Send was tapped. Review it and tap Send again."
+        )
+    }
+
+    // MARK: - Self-shield recipient
+
+    private let ownAddress = "tdash1zownaddressexample"
+
+    func test_selfShieldRecipient_sameAddress_isAccepted() {
+        XCTAssertNil(SendViewModel.selfShieldRecipientProblem(entered: ownAddress, ownAddress: ownAddress))
+        XCTAssertNil(SendViewModel.selfShieldRecipientProblem(entered: "  \(ownAddress)\n", ownAddress: ownAddress))
+    }
+
+    func test_selfShieldRecipient_caseDiffers_isAccepted() {
+        XCTAssertNil(SendViewModel.selfShieldRecipientProblem(
+            entered: ownAddress.uppercased(), ownAddress: ownAddress))
+        XCTAssertNil(SendViewModel.selfShieldRecipientProblem(
+            entered: ownAddress, ownAddress: ownAddress.uppercased()))
+    }
+
+    func test_selfShieldRecipient_differentAddress_isRefused() {
+        XCTAssertEqual(
+            SendViewModel.selfShieldRecipientProblem(entered: "tdash1zsomeoneelse", ownAddress: ownAddress),
+            SendViewModel.selfShieldRecipientMessage
+        )
+    }
+
+    func test_selfShieldRecipient_emptyOrUnknownOwnAddress_isRefused() {
+        XCTAssertNotNil(SendViewModel.selfShieldRecipientProblem(entered: "", ownAddress: ownAddress))
+        XCTAssertNotNil(SendViewModel.selfShieldRecipientProblem(entered: "   ", ownAddress: ownAddress))
+        XCTAssertNotNil(SendViewModel.selfShieldRecipientProblem(entered: ownAddress, ownAddress: nil))
+    }
+
     // MARK: - Identity captured at the Send tap
 
     func test_unchangedIdentity_sendsFromTheTappedIdentity() {

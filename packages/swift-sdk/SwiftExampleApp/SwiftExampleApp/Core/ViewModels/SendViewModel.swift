@@ -594,6 +594,34 @@ class SendViewModel: ObservableObject {
     static let identityChangedMessage =
         "The source identity changed after Send was tapped. Review it and tap Send again."
 
+    static let amountChangedMessage =
+        "The amount changed after Send was tapped. Review it and tap Send again."
+
+    /// The flow a tap may dispatch, or `nil` after setting the reason.
+    /// A send already running admits nothing and changes no state (a second
+    /// tap before the disabled state renders must not reset the first). The
+    /// route, recipient and amount must still be the ones tapped, so every
+    /// flow sends the tapped amount.
+    func admitSend(
+        tappedFlow: SendFlow?,
+        tappedRecipient: String,
+        tappedAmountText: String,
+        accountZeroShieldedBalance: UInt64?
+    ) -> SendFlow? {
+        guard !isSending else { return nil }
+        guard let flow = flowToSend(tappedFlow: tappedFlow, tappedRecipient: tappedRecipient),
+              Self.mayDispatch(flow, accountZeroShieldedBalance: accountZeroShieldedBalance)
+        else {
+            error = Self.routeChangedMessage
+            return nil
+        }
+        guard amountString == tappedAmountText else {
+            error = Self.amountChangedMessage
+            return nil
+        }
+        return flow
+    }
+
     /// The identity an identity shield debits: the one selected when Send
     /// was tapped, and only while it is still the selected one, so a pick
     /// made after the tap never changes which identity pays.
@@ -708,17 +736,16 @@ class SendViewModel: ObservableObject {
         modelContext: ModelContext,
         tappedFlow: SendFlow?,
         tappedRecipient: String,
-        tappedIdentityId: Data?
+        tappedIdentityId: Data?,
+        tappedAmountText: String
     ) async {
-        guard let flow = flowToSend(tappedFlow: tappedFlow, tappedRecipient: tappedRecipient),
-              Self.mayDispatch(
-                  flow,
-                  accountZeroShieldedBalance: walletManager.spendableShieldedCredits(
-                      walletId: wallet.walletId, account: 0))
-        else {
-            error = Self.routeChangedMessage
-            return
-        }
+        guard let flow = admitSend(
+            tappedFlow: tappedFlow,
+            tappedRecipient: tappedRecipient,
+            tappedAmountText: tappedAmountText,
+            accountZeroShieldedBalance: walletManager.spendableShieldedCredits(
+                walletId: wallet.walletId, account: 0)
+        ) else { return }
 
         isSending = true
         error = nil
@@ -1192,18 +1219,29 @@ class SendViewModel: ObservableObject {
         walletManager: PlatformWalletManager,
         walletId: Data
     ) -> String? {
-        let enteredRecipient = recipientAddress
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let ownShieldedAddress = walletManager.shieldedDisplayAddress(
-            walletId: walletId,
-            network: network
+        Self.selfShieldRecipientProblem(
+            entered: recipientAddress,
+            ownAddress: walletManager.shieldedDisplayAddress(
+                walletId: walletId,
+                network: network
+            )
         )
+    }
+
+    nonisolated static let selfShieldRecipientMessage =
+        "Shield always sends to your own shielded address; enter your own "
+        + "shielded address as the recipient"
+
+    /// Why `entered` is not this wallet's own shielded address, or `nil`.
+    /// Bech32m decodes case-insensitively, so case does not matter; an empty
+    /// recipient and an unknown own address are refused.
+    nonisolated static func selfShieldRecipientProblem(entered: String, ownAddress: String?) -> String? {
+        let enteredRecipient = entered.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !enteredRecipient.isEmpty,
-              enteredRecipient != ownShieldedAddress
-        else { return nil }
-        return "Shield always sends to your own shielded "
-            + "address; enter your own shielded address as "
-            + "the recipient"
+              let ownAddress,
+              enteredRecipient.lowercased() == ownAddress.lowercased()
+        else { return selfShieldRecipientMessage }
+        return nil
     }
 
     // MARK: - Identity shield messages

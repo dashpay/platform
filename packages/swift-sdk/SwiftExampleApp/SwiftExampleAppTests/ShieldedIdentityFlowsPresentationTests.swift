@@ -139,6 +139,13 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         XCTAssertTrue(hasDigitsBeyondPrecision("0,000000000019", decimals: 11))
     }
 
+    func test_precision_textTheParserRejects_isNotAPrecisionProblem() {
+        XCTAssertFalse(hasDigitsBeyondPrecision("1.00000000000x", decimals: 11))
+        XCTAssertFalse(hasDigitsBeyondPrecision("0.0000000000019.1", decimals: 11))
+        XCTAssertFalse(hasDigitsBeyondPrecision("abc", decimals: 11))
+        XCTAssertNil(ShieldedTopUpRequest.amountProblem("1.00000000000x"))
+    }
+
     func test_topUpAmountProblem_explainsOnlyTooPreciseAmounts() {
         XCTAssertNil(ShieldedTopUpRequest.amountProblem("1.00000000001"))
         XCTAssertNil(ShieldedTopUpRequest.amountProblem("0.000000000010"))
@@ -406,10 +413,12 @@ final class ShieldedIdentityFlowsPresentationTests: XCTestCase {
         ) else { return XCTFail("expected a refusal") }
     }
 
-    func test_submitCheck_unresolvedFee_makesNoPayment() {
-        guard case .refuse = ShieldedTopUpSubmitCheck.decide(
+    func test_submitCheck_unresolvedFee_saysTheFeeIsNotAvailable() {
+        guard case .refuse(let message) = ShieldedTopUpSubmitCheck.decide(
             request: request, minimumFee: nil, pushedSpendable: 2_000
         ) else { return XCTFail("expected a refusal") }
+        XCTAssertEqual(message, "The fee is not available yet, so nothing was sent.")
+        XCTAssertFalse(message.contains("must fit"))
     }
 
     // MARK: - Top-up refusals

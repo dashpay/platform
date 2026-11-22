@@ -226,9 +226,13 @@ struct SendTransactionView: View {
 
                         if let fee = viewModel.estimatedFee {
                             HStack {
-                                Text("Estimated Fee:")
+                                // The identity shield's value is the exact
+                                // consensus floor, not an estimate.
+                                Text(flow == .identityToShielded ? "Minimum fee:" : "Estimated Fee:")
                                 Spacer()
-                                Text("~\(feeText(fee, flow: flow))")
+                                Text(flow == .identityToShielded
+                                     ? feeText(fee, flow: flow)
+                                     : "~\(feeText(fee, flow: flow))")
                                     .foregroundColor(.secondary)
                             }
                         }
@@ -271,6 +275,7 @@ struct SendTransactionView: View {
                         let tappedFlow = viewModel.detectedFlow
                         let tappedRecipient = viewModel.recipientAddress
                         let tappedIdentityId = viewModel.selectedIdentityId
+                        let tappedAmountText = viewModel.amountString
                         Task {
                             guard let sdk = platformState.sdk else { return }
                             // Look up the managed wallet by the
@@ -333,7 +338,8 @@ struct SendTransactionView: View {
                                 modelContext: modelContext,
                                 tappedFlow: tappedFlow,
                                 tappedRecipient: tappedRecipient,
-                                tappedIdentityId: tappedIdentityId
+                                tappedIdentityId: tappedIdentityId,
+                                tappedAmountText: tappedAmountText
                             )
                             // The wallet saves an identity debit before it
                             // broadcasts; open Shielded Activity lists for
