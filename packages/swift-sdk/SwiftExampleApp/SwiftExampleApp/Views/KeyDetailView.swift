@@ -13,18 +13,37 @@ struct KeyDetailView: View {
     @State private var showDisableConfirm = false
     @State private var isDisabling = false
     @State private var disableError: String?
-    /// What Platform says is left of this key's budget. `.some(nil)` means
-    /// the node answered that the key carries no budget.
-    @State private var remainingBudget: UInt64?? = nil
+    /// What Platform says is left of this key's budget, with the total
+    /// budget the screen showed when it asked. `.some(nil)` means the node
+    /// answered that the key carries no budget. A reading taken for another
+    /// total is not shown. The answer may lag a block behind the total, so
+    /// no figure is derived from the two (a "spent" row would mix them).
+    @State private var remainingReading: (forTotal: UInt64, remaining: UInt64?)?
     @State private var remainingBudgetError: String?
     @State private var isLoadingRemainingBudget = false
+    /// Rust's answer to "can this key's limits be raised at all": `nil`
+    /// while asking, then `.allowed` or `.refused` with Rust's reason.
+    @State private var updateLimitsGate: UpdateLimitsGate?
+    @State private var showUpdateLimits = false
+    /// The wallet's copy of the identity was refreshed from Platform once
+    /// on this screen, so a key added or raised on another client is known
+    /// to the Rust preview too.
+    @State private var walletRefreshed = false
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var walletManager: PlatformWalletManager
 
+    /// The key as the identity's rows hold it now, so a limits update or a
+    /// refresh shows on this screen without leaving it. Falls back to the
+    /// value the screen was opened with. Only what can change is read
+    /// through it: the limits and the disabled state.
+    private var currentKey: IdentityPublicKey {
+        identity.identityPublicKeys.first { $0.id == publicKey.id } ?? publicKey
+    }
+
     var hasPrivateKey: Bool {
-        let result = KeychainManager.shared.hasPrivateKey(identityId: identity.identityId, keyIndex: Int32(publicKey.id))
+        let result = KeychainManager.shared.hasPrivateKey(identityId: identity.identityId, keyIndex: Int32(bitPattern: publicKey.id))
         print("🔑 KeyDetailView: hasPrivateKey for key \(publicKey.id) = \(result)")
         return result
     }
@@ -34,7 +53,7 @@ struct KeyDetailView: View {
     /// last enabled auth/transfer key" relative to everything else.
     private var disableEvaluation: KeyDisableGate.Evaluation {
         KeyDisableGate.evaluate(
-            target: publicKey,
+            target: currentKey,
             allKeys: identity.identityPublicKeys
         )
     }
@@ -78,7 +97,7 @@ struct KeyDetailView: View {
                     .textSelection(.enabled)
             }
 
-            if publicKey.hasLimits || publicKey.contractBounds != nil {
+            if currentKey.hasLimits || currentKey.contractBounds != nil {
                 limitsSection
             }
 
@@ -140,6 +159,12 @@ struct KeyDetailView: View {
         }
         .navigationTitle("Key #\(publicKey.id)")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showUpdateLimits) {
+            // The new limits reach this screen through the key row the
+            // wallet persists; the limits task below is keyed on them, so it
+            // reads what is left of the budget again on its own.
+            UpdateKeyLimitsView(identity: identity, publicKey: currentKey)
+        }
         .alert("Success", isPresented: $showSuccessAlert) {
             Button("OK") {
                 dismiss()
@@ -183,7 +208,7 @@ struct KeyDetailView: View {
     /// Drive and is fetched when the section appears.
     private var limitsSection: some View {
         Section {
-            if let bounds = publicKey.contractBounds {
+            if let bounds = currentKey.contractBounds {
                 HStack {
                     Text("Bound to")
                     Spacer()
@@ -193,7 +218,7 @@ struct KeyDetailView: View {
                 }
             }
 
-            if let totalBudget = publicKey.totalBudget {
+            if let totalBudget = currentKey.totalBudget {
                 HStack {
                     Text("Total budget")
                     Spacer()
@@ -205,7 +230,7 @@ struct KeyDetailView: View {
                     Spacer()
                     if isLoadingRemainingBudget {
                         ProgressView().controlSize(.small)
-                    } else if let remaining = remainingBudget, let remaining {
+                    } else if let remaining = remainingBudget(for: totalBudget) {
                         Text(KeyLimitsFormatting.dash(remaining))
                             .fontWeight(.medium)
                             .foregroundColor(remaining == 0 ? .red : .primary)
@@ -217,14 +242,6 @@ struct KeyDetailView: View {
                             .foregroundColor(.secondary)
                     }
                 }
-                if let remaining = remainingBudget, let remaining, remaining <= totalBudget {
-                    HStack {
-                        Text("Spent")
-                        Spacer()
-                        Text(KeyLimitsFormatting.dash(totalBudget - remaining))
-                            .fontWeight(.medium)
-                    }
-                }
                 if let error = remainingBudgetError {
                     Text(error)
                         .font(.caption)
@@ -232,7 +249,7 @@ struct KeyDetailView: View {
                 }
             }
 
-            if let expiresAt = publicKey.expiresAt {
+            if let expiresAt = currentKey.expiresAt {
                 let expired = KeyLimitsFormatting.isExpired(expiresAt: expiresAt, now: Date())
                 HStack {
                     Text("Expires")
@@ -246,21 +263,126 @@ struct KeyDetailView: View {
                     }
                 }
             }
+
+            if currentKey.hasLimits {
+                updateLimitsRow
+            }
         } header: {
             Text("Limits")
         } footer: {
-            if publicKey.hasLimits {
-                Text("Platform refuses anything this key signs once its budget is spent or its expiry has passed. The limits cannot be lowered; the budget can be raised and the expiry extended by the identity's master key.")
+            if currentKey.hasLimits {
+                Text("Platform refuses anything this key signs once its budget is spent or its expiry has passed. The limits cannot be lowered. The budget can be raised and the expiry extended by the identity's master key, or by a critical authentication key that has no limits and no contract bounds.")
             }
         }
-        .task(id: publicKey.id) {
+        // Keyed on the limits too, so a raised key re-reads what is left
+        // and asks Rust again.
+        .task(id: LimitsTaskKey(key: currentKey)) {
             await loadRemainingBudget()
+            await loadUpdateLimitsGate()
         }
+    }
+
+    private enum UpdateLimitsGate {
+        case allowed
+        case refused(String)
+    }
+
+    private struct LimitsTaskKey: Hashable {
+        let id: UInt32
+        let totalBudget: UInt64?
+        let expiresAt: UInt64?
+        let disabledAt: UInt64?
+
+        init(key: IdentityPublicKey) {
+            id = key.id
+            totalBudget = key.totalBudget
+            expiresAt = key.expiresAt
+            disabledAt = key.disabledAt
+        }
+    }
+
+    /// "Update Limits", enabled only when Rust's no-change preview answers;
+    /// otherwise disabled with Rust's reason, as the forbidden Disable Key.
+    @ViewBuilder
+    private var updateLimitsRow: some View {
+        switch updateLimitsGate {
+        case .none:
+            HStack {
+                Label("Update Limits", systemImage: "arrow.up.circle")
+                Spacer()
+                ProgressView().controlSize(.small)
+            }
+            .foregroundColor(.secondary)
+        case .allowed:
+            Button {
+                showUpdateLimits = true
+            } label: {
+                Label("Update Limits", systemImage: "arrow.up.circle")
+            }
+            .accessibilityIdentifier("keyLimits.update.open")
+        case .refused(let reason):
+            Button {
+                // No-op: button is disabled.
+            } label: {
+                Label("Update Limits", systemImage: "arrow.up.circle")
+            }
+            .disabled(true)
+            .accessibilityIdentifier("keyLimits.update.open")
+            Text(reason)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .accessibilityIdentifier("keyLimits.update.unavailableReason")
+        }
+    }
+
+    /// Ask Rust, with no change, whether this key's limits can be raised.
+    /// The first time on this screen the wallet's copy of the identity is
+    /// refreshed from Platform first (best effort), so a key added or raised
+    /// on another client is not refused as unknown.
+    @MainActor
+    private func loadUpdateLimitsGate() async {
+        guard currentKey.hasLimits else { return }
+        guard let walletId = identity.wallet?.walletId,
+              let wallet = walletManager.wallet(for: walletId) else {
+            updateLimitsGate = .refused("Wallet not loaded; this identity's keys cannot sign here.")
+            return
+        }
+        if !walletRefreshed {
+            walletRefreshed = true
+            do {
+                try await wallet.refreshIdentity(identityId: identity.identityId)
+            } catch {
+                print("🔑 KeyDetailView: wallet identity refresh failed: \(error.localizedDescription)")
+            }
+        }
+        do {
+            let signer = KeychainSigner(modelContainer: modelContext.container)
+            _ = try await wallet.previewIdentityKeyLimitsUpdate(
+                identityId: identity.identityId,
+                keyId: publicKey.id,
+                signer: signer
+            )
+            _ = signer  // keepalive: see KeychainSigner lifetime contract.
+            updateLimitsGate = .allowed
+        } catch {
+            updateLimitsGate = .refused(error.localizedDescription)
+        }
+    }
+
+    /// The remaining budget, only when it was read for `total`.
+    private func remainingBudget(for total: UInt64) -> UInt64? {
+        guard let reading = remainingReading, reading.forTotal == total else { return nil }
+        return reading.remaining
     }
 
     @MainActor
     private func loadRemainingBudget() async {
-        guard publicKey.totalBudget != nil, let sdk = appState.sdk else { return }
+        guard let total = currentKey.totalBudget, let sdk = appState.sdk else {
+            remainingReading = nil
+            return
+        }
+        remainingReading = nil
+        remainingBudgetError = nil
         isLoadingRemainingBudget = true
         defer { isLoadingRemainingBudget = false }
         do {
@@ -268,9 +390,12 @@ struct KeyDetailView: View {
                 identityId: identity.identityIdBase58,
                 keyIds: [publicKey.id]
             )
-            remainingBudget = budgets[publicKey.id]
-            remainingBudgetError = nil
+            // A newer total arrived while this was in flight: its own load
+            // reads again, so this answer is dropped.
+            guard currentKey.totalBudget == total else { return }
+            remainingReading = (forTotal: total, remaining: budgets[publicKey.id] ?? nil)
         } catch {
+            guard currentKey.totalBudget == total else { return }
             remainingBudgetError = error.localizedDescription
         }
     }
@@ -370,7 +495,7 @@ struct KeyDetailView: View {
                 let stored = KeychainManager.shared.storePrivateKey(
                     privateKeyData,
                     identityId: identity.identityId,
-                    keyIndex: Int32(publicKey.id)
+                    keyIndex: Int32(bitPattern: publicKey.id)
                 )
                 print("🔑 Storage result: \(stored != nil ? "Success" : "Failed")")
 
@@ -433,6 +558,7 @@ struct KeyDetailView: View {
             // without a manual pull-to-refresh.
             try? await IdentityKeyRefresher.refreshBalanceAndKeys(
                 identity: identity,
+                wallet: identity.wallet.flatMap { walletManager.wallet(for: $0.walletId) },
                 sdk: sdk,
                 modelContext: modelContext
             )
@@ -447,14 +573,14 @@ struct KeyDetailView: View {
 
     private func forgetPrivateKey() {
         // Remove from keychain
-        let removed = KeychainManager.shared.deletePrivateKey(identityId: identity.identityId, keyIndex: Int32(publicKey.id))
+        let removed = KeychainManager.shared.deletePrivateKey(identityId: identity.identityId, keyIndex: Int32(bitPattern: publicKey.id))
 
         if removed {
             // Clear the keychain reference on the matching
             // PersistentPublicKey so the UI no longer thinks this
             // key has a stored private key.
             if let persistedKey = identity.publicKeys.first(
-                where: { $0.keyId == Int32(publicKey.id) }
+                where: { $0.keyId == Int32(bitPattern: publicKey.id) }
             ) {
                 persistedKey.privateKeyKeychainIdentifier = nil
                 try? modelContext.save()

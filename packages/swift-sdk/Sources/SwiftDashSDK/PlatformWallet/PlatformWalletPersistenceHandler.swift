@@ -149,7 +149,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// Background context for writing from callback threads.
     ///
     /// `ModelContext` is not thread-safe — touching it from the
-    /// Tokio worker threads that drive the Rust persistence
+    /// Rust-owned native threads that drive the persistence
     /// callbacks corrupts SwiftData's internal state and crashes
     /// inside `fetch`/`save`. The context is therefore confined to
     /// `serialQueue`: every public entry point wraps its body in
@@ -368,8 +368,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// recursive entry. The internal helpers in this file all
     /// assume they are already on the queue and call
     /// `backgroundContext` directly.
-    /// Every caller arrives from a Rust-owned tokio worker thread, and such a
-    /// thread has no autorelease pool: nothing on it ever drains, because the
+    /// Every caller arrives from a Rust-owned native thread (a tokio worker,
+    /// or the `pw-ffi-bigstack` thread some FFI calls run their work on), and
+    /// such a thread has no autorelease pool: nothing on it ever drains, because the
     /// drain is normally done by the run loop or by GCD's own worker wrapper,
     /// and `serialQueue.sync` can execute the block right on the calling
     /// thread rather than hopping to a GCD worker.
@@ -4214,8 +4215,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         walletId: Data,
         upserts: [IdentityKeyEntrySnapshot],
         removed: [(identityId: Data, keyId: UInt32)]
-    ) {
-        onQueue {
+    ) throws {
+        try onQueue {
         for entry in upserts {
             // PersistentPublicKey is keyed on (identity, keyId) via
             // its parent relationship; fetch by keyId + identityId
@@ -4263,8 +4264,32 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
 
             let row: PersistentPublicKey
-            if let existing = try? backgroundContext.fetch(descriptor).first {
+            // Update the row linked to its identity, found through the parent
+            // whatever identity string it carries: an older refresh or Load
+            // Identity could leave an unlinked row with the same key id behind
+            // (or tag the linked one with the hex id), and updating the
+            // unlinked one would leave the row the screens and cold restore
+            // read stale. Only without a linked row fall back to the string
+            // lookup. A failed lookup is not "no row": inserting then could
+            // add a second row for the key, and skipping the upsert would let
+            // the round commit without it. Throw instead, so the callback
+            // fails the round and the changeset is rolled back.
+            let identityIdData = entry.identityId
+            let parentDescriptor = FetchDescriptor<PersistentIdentity>(
+                predicate: #Predicate { $0.identityId == identityIdData }
+            )
+            let parent = try modelFetcher.fetch(parentDescriptor, in: backgroundContext).first
+            if let linked = parent?.publicKeys.first(where: { $0.keyId == targetKeyId }) {
+                row = linked
+            } else if let existing = try modelFetcher.fetch(descriptor, in: backgroundContext).first {
                 row = existing
+                // An unlinked row for a key its identity has no row for (a
+                // reload unlinked it): attach it, so the key screens and cold
+                // restore, which read the identity's keys, see it.
+                if let parent, existing.identity == nil {
+                    existing.identity = parent
+                    parent.addPublicKey(existing)
+                }
             } else {
                 let purposeEnum = KeyPurpose(rawValue: entry.purpose) ?? .authentication
                 let levelEnum = SecurityLevel(rawValue: entry.securityLevel) ?? .high
@@ -4287,11 +4312,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // row. (We don't insert a missing parent here —
                 // Rust-side ordering guarantees identities apply
                 // before keys within the same changeset.)
-                let identityIdData = entry.identityId
-                let parentDescriptor = FetchDescriptor<PersistentIdentity>(
-                    predicate: #Predicate { $0.identityId == identityIdData }
-                )
-                if let parent = try? backgroundContext.fetch(parentDescriptor).first {
+                if let parent {
                     row.identity = parent
                     parent.addPublicKey(row)
                 }
@@ -10667,8 +10688,14 @@ private func persistIdentityKeysCallback(
         }
     }
 
-    handler.persistIdentityKeys(walletId: walletId, upserts: upserts, removed: removed)
-    return 0
+    // A key row that cannot be looked up fails the round rather than
+    // acknowledging it without the row (see `persistIdentityKeys`).
+    do {
+        try handler.persistIdentityKeys(walletId: walletId, upserts: upserts, removed: removed)
+        return 0
+    } catch {
+        return -1
+    }
 }
 
 /// C shim for `on_persist_token_balances_fn`. Same snapshot + cast

@@ -7720,7 +7720,7 @@ mod stamp_race_tests {
 }
 
 /// Where a contact request send's signing stands, for [`GatedSigner`].
-enum SigningGate {
+pub(super) enum SigningGate {
     /// The host has not signed yet: no gate is held.
     Unsigned,
     /// Signed, and the wallet generation's lifecycle gate is held from then
@@ -7732,16 +7732,16 @@ enum SigningGate {
     Removed,
 }
 
-/// The host's signer for a contact request send, taking the wallet
-/// generation's lifecycle gate once a signature returns and before it can
-/// leave: the SDK broadcasts right after signing, so the broadcast and the
-/// send's bookkeeping run under the gate, while the host's signing prompt
-/// does not. A signature made after the wallet was removed, or re-created
-/// under its id, is refused, so nothing is published.
-struct GatedSigner<'a, S: ?Sized, B: TransactionBroadcaster + ?Sized> {
-    signer: &'a S,
-    wallet: &'a IdentityWallet<B>,
-    gate: std::sync::Mutex<SigningGate>,
+/// The host's signer for a contact request send (and a key limits update),
+/// taking the wallet generation's lifecycle gate once a signature returns and
+/// before it can leave: the SDK broadcasts right after signing, so the
+/// broadcast and the send's bookkeeping run under the gate, while the host's
+/// signing prompt does not. A signature made after the wallet was removed, or
+/// re-created under its id, is refused, so nothing is published.
+pub(super) struct GatedSigner<'a, S: ?Sized, B: TransactionBroadcaster + ?Sized> {
+    pub(super) signer: &'a S,
+    pub(super) wallet: &'a IdentityWallet<B>,
+    pub(super) gate: std::sync::Mutex<SigningGate>,
 }
 
 impl<S: ?Sized, B: TransactionBroadcaster + ?Sized> GatedSigner<'_, S, B> {
@@ -7753,7 +7753,7 @@ impl<S: ?Sized, B: TransactionBroadcaster + ?Sized> GatedSigner<'_, S, B> {
 
     /// Whether a signature was refused because the wallet was removed or
     /// replaced while the host signed.
-    fn removed(&self) -> bool {
+    pub(super) fn removed(&self) -> bool {
         matches!(*self.gate(), SigningGate::Removed)
     }
 

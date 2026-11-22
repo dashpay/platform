@@ -2,6 +2,7 @@ package org.dashfoundation.dashsdk.wallet
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.dashfoundation.dashsdk.Network
@@ -14,6 +15,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -257,6 +259,50 @@ class WalletManagerRoundTripTest {
             // The other stores are unaffected by the profile tombstone.
             assertEquals(1, state.getInt("dashpayPayments"))
             assertEquals(1, state.getInt("ignoredSenders"))
+        }
+    }
+
+    /**
+     * Create, bind, reload and bind again with a shielded store configured,
+     * through JNI and the Room persistence callbacks. With a store
+     * configured, each of these calls restores the wallet's private
+     * payments, and the native library runs that work on its own
+     * big-stack thread: polled on the `Dispatchers.IO` thread that made the
+     * call, a wallet create overflowed its stack in a dev-profile library
+     * (dashpay/platform#6020 item 5). The persistence callbacks of these
+     * calls arrive on that native thread, attached to the JVM for the call.
+     *
+     * Offline: nothing here contacts the network.
+     */
+    @Test
+    fun walletCreateBindAndReloadRoundTripWithShieldedStore() = runBlocking {
+        assumeTrue("the native library has no shielded support", Sdk.hasShielded())
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val storeDir = File(context.cacheDir, "shielded-round-trip-${System.nanoTime()}")
+        assertTrue(storeDir.mkdirs())
+        val storePath = File(storeDir, "shielded.sqlite").absolutePath
+        try {
+            val walletId: ByteArray
+            PlatformWalletManager(sdk, Network.TESTNET, db, walletStorage).use { manager ->
+                manager.configureShielded(storePath)
+                walletId = manager.createWallet(
+                    mnemonic = testMnemonic,
+                    name = "shielded-round-trip",
+                    createDefaultAccounts = true,
+                ).walletId
+                assertNotNull("wallet row persisted", db.walletDao().getByWalletId(walletId))
+                manager.bindShielded(walletId, listOf(0))
+            }
+
+            PlatformWalletManager(sdk, Network.TESTNET, db, walletStorage).use { reloaded ->
+                reloaded.configureShielded(storePath)
+                val restored = reloaded.loadPersistedWallets()
+                assertTrue("at least one wallet restored", restored.isNotEmpty())
+                assertNotNull(reloaded.wallet(forWalletId = walletId))
+                reloaded.bindShielded(walletId, listOf(0))
+            }
+        } finally {
+            storeDir.deleteRecursively()
         }
     }
 }
