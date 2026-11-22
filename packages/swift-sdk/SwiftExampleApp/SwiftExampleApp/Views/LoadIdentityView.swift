@@ -638,7 +638,7 @@ struct LoadIdentityView: View {
                         if unstoredKeys.contains("voting") {
                             text += row.votingPrivateKeyIdentifier == nil
                                 ? " The identity cannot vote until it is loaded again."
-                                : " The voting key stored before was left in the Keychain."
+                                : " Any voting key stored before was not replaced, and may not be usable."
                         }
                         errorMessage = text
                         isLoading = false
