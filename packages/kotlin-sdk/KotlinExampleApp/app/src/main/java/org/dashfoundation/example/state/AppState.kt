@@ -287,8 +287,7 @@ class AppState(
                 // Runs even when the caller is cancelled: once the new SDK
                 // is published, the old one is closed and the network saved.
                 withContext(NonCancellable) {
-                    if (saveNetwork) saveNetworkChoice(network)
-                    if (devnet != null) saveAppliedDevnet(devnet)
+                    savePublished(network.takeIf { saveNetwork }, devnet)
                     // Suspending close: awaits queries already in flight
                     // against the old instance (they run under
                     // Sdk.queryGate), so the native handle is never freed
@@ -345,31 +344,32 @@ class AppState(
     }
 
     /**
-     * Save [devnet] as the settings the next launch builds its devnet SDK
-     * from. A failed save is logged: this session already runs on them.
+     * Save what a published SDK changed for the next launch: [network] as
+     * the network to start on, and [devnet] as the settings a devnet SDK is
+     * built from. Both go in one write, so a restart never finds the new
+     * network next to an older devnet. A failed save only shows in
+     * [errorMessage]: this session already runs on them.
      */
-    private suspend fun saveAppliedDevnet(devnet: AppliedDevnet) {
-        savedAppliedDevnet = devnet
+    internal suspend fun savePublished(network: Network?, devnet: AppliedDevnet?) {
+        val newDevnet = devnet?.takeIf { it != savedAppliedDevnet }
+        if (network == null && newDevnet == null) return
         try {
-            dataStore.edit {
-                it[KEY_APPLIED_DEVNET_NAME] = devnet.name.orEmpty()
-                it[KEY_APPLIED_DEVNET_QUORUM_URL] = devnet.quorumUrl
+            dataStore.edit { prefs ->
+                network?.let { prefs[KEY_NETWORK] = it.networkName }
+                newDevnet?.let {
+                    prefs[KEY_APPLIED_DEVNET_NAME] = it.name.orEmpty()
+                    prefs[KEY_APPLIED_DEVNET_QUORUM_URL] = it.quorumUrl
+                }
             }
+            // Only once written, so a failed save is tried again by the
+            // next Apply of the same settings.
+            if (newDevnet != null) savedAppliedDevnet = newDevnet
         } catch (e: Exception) {
-            android.util.Log.w("AppState", "could not save the applied devnet settings: ${e.message}")
-        }
-    }
-
-    /**
-     * Save [network] as the network to start on. A failed save only shows
-     * in [errorMessage]: the switch itself already happened.
-     */
-    private suspend fun saveNetworkChoice(network: Network) {
-        try {
-            dataStore.edit { it[KEY_NETWORK] = network.networkName }
-        } catch (e: Exception) {
-            _errorMessage.value =
+            _errorMessage.value = if (network != null) {
                 "Switched to ${network.displayName}, but could not save it: ${e.message}"
+            } else {
+                "Applied the devnet settings, but could not save them for the next launch: ${e.message}"
+            }
         }
     }
 

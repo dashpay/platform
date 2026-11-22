@@ -38,6 +38,10 @@ pub use verified_provider::{
 
 use dpp::dashcore::Network;
 
+/// Longest devnet name [`get_quorum_base_url`] accepts: the name is one DNS
+/// label of the quorum hostname, and a label holds at most 63 bytes.
+pub const MAX_DEVNET_NAME_LENGTH: usize = 63;
+
 /// Get the base URL for quorum endpoints based on the network
 pub fn get_quorum_base_url(
     network: Network,
@@ -68,6 +72,12 @@ pub fn get_quorum_base_url(
                     return Err(TrustedContextProviderError::InvalidDevnetName(
                         "Devnet name cannot start or end with a hyphen".to_string(),
                     ));
+                }
+                // The name is one DNS label of the quorum hostname.
+                if name.len() > MAX_DEVNET_NAME_LENGTH {
+                    return Err(TrustedContextProviderError::InvalidDevnetName(format!(
+                        "Devnet name cannot be longer than {MAX_DEVNET_NAME_LENGTH} characters"
+                    )));
                 }
                 // Reserved names that would alias the production / non-devnet quorum
                 // hostnames (e.g. "mainnet" => https://quorums.mainnet.networks.dash.org).
@@ -120,5 +130,19 @@ mod quorum_base_url_tests {
                 .as_deref(),
             Some("https://quorums.palmatum-2.networks.dash.org")
         );
+    }
+
+    #[test]
+    fn should_refuse_a_devnet_name_longer_than_a_dns_label() {
+        let longest = "a".repeat(MAX_DEVNET_NAME_LENGTH);
+        assert_eq!(
+            get_quorum_base_url(Network::Devnet, Some(&longest)).ok(),
+            Some(format!("https://quorums.{longest}.networks.dash.org"))
+        );
+        let too_long = "a".repeat(MAX_DEVNET_NAME_LENGTH + 1);
+        assert!(matches!(
+            get_quorum_base_url(Network::Devnet, Some(&too_long)),
+            Err(TrustedContextProviderError::InvalidDevnetName(_))
+        ));
     }
 }

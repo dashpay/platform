@@ -1,6 +1,7 @@
 //! FFI bindings for PlatformWalletManager's SPV runtime.
 
 use std::ffi::{CStr, CString};
+use std::net::SocketAddr;
 use std::os::raw::c_char;
 
 use dashcore::sml::llmq_type::LlmqDevnetParams;
@@ -549,20 +550,17 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
     // registration.
     config.enable_masternodes = true;
     config.restrict_to_configured_peers = restrict_to_configured_peers;
-    for p in &peer_list {
-        if let Ok(addr) = p.parse() {
-            config.peers.push(addr);
-        }
-    }
-    // Peers must be `IP:port`; others (such as hostnames) are skipped. With
-    // none left, a client restricted to them would never find a peer, so
-    // refuse the start instead of running one that cannot sync.
-    if restrict_to_configured_peers && config.peers.is_empty() {
+    config.peers = usable_peers(&peer_list);
+    // Peers were given, none can be dialed, and the client may use no
+    // others: it would never find a peer, so refuse the start instead of
+    // running one that cannot sync. An empty list stays allowed: that is
+    // how a host asks for an offline start.
+    if restrict_to_configured_peers && !peer_list.is_empty() && config.peers.is_empty() {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
             format!(
                 "no usable SPV peer: restrict_to_configured_peers needs at least one IP:port \
-                 address, got {peer_list:?}"
+                 address with a non-zero port, got {peer_list:?}"
             ),
         );
     }
@@ -580,6 +578,16 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
     start_spv_outside_registry(handle, move |spv, still_owned| {
         block_on_worker(async move { spv.start_and_spawn(config, still_owned).await })
     })
+}
+
+/// The entries of `peer_list` an SPV client can dial: `IP:port` with a
+/// non-zero port. Hostnames and port 0 are skipped.
+fn usable_peers(peer_list: &[String]) -> Vec<SocketAddr> {
+    peer_list
+        .iter()
+        .filter_map(|peer| peer.parse::<SocketAddr>().ok())
+        .filter(|addr| addr.port() != 0)
+        .collect()
 }
 
 /// Run `run_start` on `handle`'s SPV runtime with the handle registry
@@ -642,20 +650,24 @@ mod spv_start_peer_tests {
     use crate::handle::NULL_HANDLE;
     use std::ffi::CString;
 
-    #[test]
-    fn should_refuse_a_restricted_start_with_no_usable_peer() {
+    /// A restricted start with `peers` on no manager: the peer check runs
+    /// before the handle is looked up, so a list that passes it fails with
+    /// `NotFound`.
+    fn restricted_start(peers: &[&str]) -> (PlatformWalletFFIResultCode, String) {
         let data_dir = CString::new("/nonexistent").expect("no NUL");
-        let hostname = CString::new("seed.example.org:19999").expect("no NUL");
-        let peers = [hostname.as_ptr()];
-        // Checked before the handle is looked up, so no manager is needed.
+        let owned: Vec<CString> = peers
+            .iter()
+            .map(|peer| CString::new(*peer).expect("no NUL"))
+            .collect();
+        let pointers: Vec<*const c_char> = owned.iter().map(|peer| peer.as_ptr()).collect();
         let mut result = unsafe {
             platform_wallet_manager_spv_start(
                 NULL_HANDLE,
                 data_dir.as_ptr(),
                 FFINetwork::Testnet,
                 std::ptr::null(),
-                peers.as_ptr(),
-                peers.len(),
+                pointers.as_ptr(),
+                pointers.len(),
                 true,
                 0,
                 std::ptr::null(),
@@ -663,15 +675,65 @@ mod spv_start_peer_tests {
                 0,
             )
         };
-        assert_eq!(
-            result.code,
-            PlatformWalletFFIResultCode::ErrorInvalidParameter
-        );
-        let message = unsafe { CStr::from_ptr(result.message) }
-            .to_string_lossy()
-            .into_owned();
-        assert!(message.contains("seed.example.org:19999"), "{message}");
+        let code = result.code;
+        let message = if result.message.is_null() {
+            String::new()
+        } else {
+            unsafe { CStr::from_ptr(result.message) }
+                .to_string_lossy()
+                .into_owned()
+        };
         unsafe { platform_wallet_ffi_result_free(&mut result) };
+        (code, message)
+    }
+
+    #[test]
+    fn should_refuse_a_restricted_start_with_no_usable_peer() {
+        for peers in [
+            &["seed.example.org:19999"][..],
+            &["192.0.2.1:0", "[2001:db8::1]:0"][..],
+        ] {
+            let (code, message) = restricted_start(peers);
+            assert_eq!(
+                code,
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "{peers:?}"
+            );
+            assert!(message.contains(peers[0]), "{message}");
+        }
+    }
+
+    #[test]
+    fn should_let_a_restricted_start_through_with_a_usable_peer_or_no_peers() {
+        // No peers at all is an offline start, not a mistake.
+        for peers in [&[][..], &["192.0.2.1:0", "192.0.2.2:19999"][..]] {
+            let (code, message) = restricted_start(peers);
+            assert_eq!(
+                code,
+                PlatformWalletFFIResultCode::NotFound,
+                "{peers:?}: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_keep_only_peers_with_an_ip_and_a_non_zero_port() {
+        let peers = [
+            "192.0.2.1:19999",
+            "192.0.2.1:0",
+            "seed.example.org:19999",
+            "[2001:db8::1]:19999",
+        ]
+        .map(String::from);
+        assert_eq!(
+            usable_peers(&peers),
+            vec![
+                "192.0.2.1:19999".parse::<SocketAddr>().expect("an address"),
+                "[2001:db8::1]:19999"
+                    .parse::<SocketAddr>()
+                    .expect("an address"),
+            ]
+        );
     }
 }
 

@@ -267,6 +267,67 @@ class AppStateDevnetSettingsTest {
     }
 
     @Test
+    fun shouldSaveTheNetworkAndItsDevnetSettingsInOneWrite() = runTest {
+        val job = SupervisorJob()
+        val scope = CoroutineScope(job + StandardTestDispatcher(testScheduler))
+        val writes = mutableListOf<Preferences>()
+        val recording = object : DataStore<Preferences> {
+            override val data = flowOf(emptyPreferences())
+            override suspend fun updateData(
+                transform: suspend (t: Preferences) -> Preferences,
+            ): Preferences = transform(writes.lastOrNull() ?: emptyPreferences()).also { writes += it }
+        }
+        val appState = AppState(recording, scope, ::fakeDevnetQuorumBaseUrl)
+        try {
+            val palmatum = AppState.AppliedDevnet("palmatum", PALMATUM_URL)
+            appState.savePublished(Network.DEVNET, palmatum)
+            assertEquals(1, writes.size)
+            val saved = writes.single()
+            assertEquals(Network.DEVNET.networkName, saved[stringPreferencesKey("currentNetwork")])
+            assertEquals("palmatum", saved[stringPreferencesKey("appliedDevnetName")])
+            assertEquals(PALMATUM_URL, saved[stringPreferencesKey("appliedDevnetQuorumURL")])
+            // The same settings applied again have nothing new to save.
+            appState.savePublished(null, palmatum)
+            assertEquals(1, writes.size)
+        } finally {
+            job.cancelAndJoin()
+        }
+    }
+
+    @Test
+    fun shouldReportAppliedDevnetSettingsThatCouldNotBeSavedAndTryAgain() = runTest {
+        val job = SupervisorJob()
+        val scope = CoroutineScope(job + StandardTestDispatcher(testScheduler))
+        var attempts = 0
+        val failing = object : DataStore<Preferences> {
+            override val data = flowOf(emptyPreferences())
+            override suspend fun updateData(
+                transform: suspend (t: Preferences) -> Preferences,
+            ): Preferences {
+                attempts += 1
+                throw IOException("disk full")
+            }
+        }
+        val appState = AppState(failing, scope, ::fakeDevnetQuorumBaseUrl)
+        try {
+            val palmatum = AppState.AppliedDevnet("palmatum", PALMATUM_URL)
+            appState.savePublished(null, palmatum)
+            assertEquals(
+                "Applied the devnet settings, but could not save them for the next launch: disk full",
+                appState.errorMessage.value,
+            )
+            appState.savePublished(Network.DEVNET, palmatum)
+            assertEquals(2, attempts)
+            assertEquals(
+                "Switched to Devnet, but could not save it: disk full",
+                appState.errorMessage.value,
+            )
+        } finally {
+            job.cancelAndJoin()
+        }
+    }
+
+    @Test
     fun shouldLeaveASavedNetworkForThisSessionWhenSavingFails() = runTest {
         val job = SupervisorJob()
         val scope = CoroutineScope(job + StandardTestDispatcher(testScheduler))
