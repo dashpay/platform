@@ -27,6 +27,7 @@ mod fetch_unproved;
 pub mod group_actions;
 pub mod identities_contract_keys_query;
 pub mod identity_keys_remaining_budgets;
+pub mod identity_withdrawals;
 pub mod moderation_charters;
 pub mod private_document_entries;
 #[cfg(test)]
