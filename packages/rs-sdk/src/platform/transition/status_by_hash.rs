@@ -38,8 +38,8 @@ pub enum TransitionStatusByHash {
         /// The transition, with the result of its execution.
         transaction: Box<BlockTransaction>,
     },
-    /// The node says the transition is in the block at `height`, and the block the network
-    /// served for that height did not come back, so nothing proves it. Unproved; asking again
+    /// The node says the transition is in the block at `height`, and no block came back for that
+    /// height (the node asked answered that it holds none), so nothing proves it. Unproved; asking again
     /// later, or another node, may prove it.
     CommittedNotProved {
         /// The height of the block the node says holds it.
@@ -101,7 +101,7 @@ impl Sdk {
             .await?;
         let block = match view.status {
             NodeTransitionStatus::Committed { height, .. } => {
-                let Blocks(blocks) = self
+                let answer = self
                     .fetch_blocks_with_settings(
                         BlocksQuery {
                             start_height: height,
@@ -109,8 +109,14 @@ impl Sdk {
                         },
                         settings.unwrap_or_default(),
                     )
-                    .await?;
-                blocks.into_iter().find(|block| block.height == height)
+                    .await;
+                match answer {
+                    Ok(Blocks(blocks)) => blocks.into_iter().find(|block| block.height == height),
+                    // The node serving blocks has not reached that height, or does not hold it:
+                    // the status node's report stands, unproved.
+                    Err(error) if error.is_not_found() => None,
+                    Err(error) => return Err(error),
+                }
             }
             NodeTransitionStatus::Pending | NodeTransitionStatus::Unknown => None,
         };
@@ -272,15 +278,210 @@ mod tests {
             assert_eq!(status_from(view, None, &HASH), expected);
         }
     }
+}
+
+/// The public method against a mock node: the status answer, then the block read.
+#[cfg(all(test, feature = "mocks"))]
+mod mock_tests {
+    use super::*;
+    use crate::platform::Query;
+    use crate::SdkBuilder;
+    use dapi_grpc::platform::v0::get_blocks_response::{self, GetBlocksResponseV0};
+    use dapi_grpc::platform::v0::get_recent_state_transition_status_request::{
+        GetRecentStateTransitionStatusRequestV0, Version as RequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_recent_state_transition_status_response::get_recent_state_transition_status_response_v0::{
+        Committed, Status,
+    };
+    use dapi_grpc::platform::v0::get_recent_state_transition_status_response::{
+        GetRecentStateTransitionStatusResponseV0, Version as ResponseVersion,
+    };
+    use dapi_grpc::platform::v0::{
+        GetBlocksRequest, GetBlocksResponse, GetRecentStateTransitionStatusRequest,
+        GetRecentStateTransitionStatusResponse, ResponseMetadata,
+        StateTransitionBroadcastError as StateTransitionBroadcastErrorProto,
+    };
+    use dapi_grpc::tonic::{Code, Status as GrpcStatus};
+    use dpp::serialization::PlatformSerializable;
+    use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+    use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+    use dpp::state_transition::StateTransition;
+    use dpp::version::PlatformVersion;
+    use drive_proof_verifier::block_proof::fixtures::{block_answer, TestQuorum};
+    use rs_dapi_client::transport::TransportError;
+    use rs_dapi_client::{Address, DapiClientError, ExecutionError, ExecutionResponse};
+
+    const HEIGHT: u64 = 7;
+
+    fn transition() -> StateTransition {
+        StateTransition::IdentityCreditTransfer(IdentityCreditTransferTransition::V0(
+            IdentityCreditTransferTransitionV0 {
+                amount: 11,
+                ..Default::default()
+            },
+        ))
+    }
+
+    fn node() -> Address {
+        "http://127.0.0.1:9000".parse().expect("mock node address")
+    }
+
+    fn no_retries() -> Option<RequestSettings> {
+        Some(RequestSettings {
+            retries: Some(0),
+            ..Default::default()
+        })
+    }
+
+    /// The node reports the transition committed at [`HEIGHT`], failed with code 40100.
+    fn committed_with_error() -> GetRecentStateTransitionStatusResponse {
+        GetRecentStateTransitionStatusResponse {
+            version: Some(ResponseVersion::V0(
+                GetRecentStateTransitionStatusResponseV0 {
+                    status: Some(Status::Committed(Committed {
+                        height: HEIGHT,
+                        error: Some(StateTransitionBroadcastErrorProto {
+                            code: 40100,
+                            message: "the node's claim".to_string(),
+                            data: vec![],
+                        }),
+                    })),
+                    metadata: Some(ResponseMetadata {
+                        height: HEIGHT + 2,
+                        ..ResponseMetadata::default()
+                    }),
+                },
+            )),
+        }
+    }
+
+    /// A mock SDK whose node answers the status of `hash` with `status` and the block at
+    /// [`HEIGHT`] with `blocks`.
+    async fn sdk_answering(
+        hash: [u8; 32],
+        status: GetRecentStateTransitionStatusResponse,
+        blocks: Result<GetBlocksResponse, GrpcStatus>,
+    ) -> Sdk {
+        let sdk = SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .expect("build a mock SDK");
+        sdk.set_context_provider(TestQuorum::new())
+            .expect("the test provider states no requirements");
+        let status_request = GetRecentStateTransitionStatusRequest {
+            version: Some(RequestVersion::V0(
+                GetRecentStateTransitionStatusRequestV0 {
+                    state_transition_hash: hash.to_vec(),
+                },
+            )),
+        };
+        let blocks_request: GetBlocksRequest = BlocksQuery {
+            start_height: HEIGHT,
+            count: 1,
+        }
+        .query(&sdk.query_settings())
+        .expect("encode the blocks request");
+        let blocks = match blocks {
+            Ok(response) => Ok(ExecutionResponse {
+                inner: response,
+                address: node(),
+                retries: 0,
+            }),
+            Err(status) => Err(ExecutionError {
+                possibly_accepted: false,
+                inner: DapiClientError::Transport(TransportError::Grpc(status)),
+                address: Some(node()),
+                retries: 0,
+            }),
+        };
+        let mut dapi = sdk.mock_dapi().lock().await;
+        dapi.expect(
+            &status_request,
+            &Ok(ExecutionResponse {
+                inner: status,
+                address: node(),
+                retries: 0,
+            }),
+        )
+        .expect("register the status answer");
+        dapi.expect(&blocks_request, &blocks)
+            .expect("register the blocks answer");
+        drop(dapi);
+        sdk
+    }
+
+    #[tokio::test]
+    async fn should_keep_the_nodes_committed_report_when_no_node_holds_the_block() {
+        let hash = transition().transaction_id().expect("hash");
+        let sdk = sdk_answering(
+            hash,
+            committed_with_error(),
+            Err(GrpcStatus::new(Code::NotFound, "no block at height 7")),
+        )
+        .await;
+
+        let status = sdk
+            .state_transition_status_by_hash(hash, no_retries())
+            .await
+            .expect("a missing block is not an error");
+
+        let TransitionStatusByHash::CommittedNotProved {
+            height,
+            error: Some(error),
+            node_height,
+        } = status
+        else {
+            panic!("expected an unproved committed report, got {status:?}");
+        };
+        assert_eq!(height, HEIGHT);
+        assert_eq!(error.code, 40100);
+        assert_eq!(node_height, Some(HEIGHT + 2));
+    }
+
+    #[tokio::test]
+    async fn should_show_the_proved_blocks_result_not_the_nodes_claim() {
+        let transition = transition();
+        let hash = transition.transaction_id().expect("hash");
+        let bytes = transition
+            .serialize_to_bytes()
+            .expect("a transfer serializes");
+        let block = block_answer(HEIGHT, &[(bytes, 0, vec![], 5)]);
+        let blocks = GetBlocksResponse {
+            version: Some(get_blocks_response::Version::V0(GetBlocksResponseV0 {
+                blocks: vec![block],
+            })),
+        };
+        let sdk = sdk_answering(hash, committed_with_error(), Ok(blocks)).await;
+
+        let status = sdk
+            .state_transition_status_by_hash(hash, no_retries())
+            .await
+            .expect("a proved block");
+
+        let TransitionStatusByHash::InBlock {
+            block_height,
+            transaction,
+            ..
+        } = status
+        else {
+            panic!("expected a proved transition, got {status:?}");
+        };
+        assert_eq!(block_height, HEIGHT);
+        assert_eq!(transaction.hash, hash);
+        assert_eq!(
+            transaction.code, 0,
+            "the block's result, not the node's 40100"
+        );
+    }
 
     #[tokio::test]
     async fn should_refuse_an_sdk_that_does_not_verify_proofs() {
-        let sdk = crate::SdkBuilder::new_mock()
+        let sdk = SdkBuilder::new_mock()
             .with_proofs(false)
             .build()
             .expect("build a mock SDK");
         let error = sdk
-            .state_transition_status_by_hash(HASH, None)
+            .state_transition_status_by_hash([7; 32], None)
             .await
             .expect_err("proofs are off");
         assert!(matches!(error, Error::Config(_)), "got {error:?}");
