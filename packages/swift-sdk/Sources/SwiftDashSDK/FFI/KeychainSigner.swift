@@ -1028,16 +1028,29 @@ extension KeychainSigner {
         isolation: isolated (any Actor)? = #isolation,
         perform body: (_ votingAddress: Data) async throws -> T
     ) async throws -> T {
-        // A status-preserving read: `retrieveSpecialKey` returns `nil` for a
-        // locked Keychain too, which would read as a key never stored.
-        // Read on a worker: `SecItemCopyMatching` is synchronous, and the
-        // caller is often the main actor.
-        let keychain = self.keychain
-        let read = await Task.detached {
-            keychain.readSpecialKey(identityId: identityId, keyType: .voting)
+        // Read the key and build the registry entry on a worker:
+        // `SecItemCopyMatching` is synchronous and the caller is often the
+        // main actor. Only the voting address and the entry come back, so
+        // no copy of the read buffer stays in this frame through the vote.
+        // The read keeps its status: `retrieveSpecialKey` returns `nil` for
+        // a locked Keychain too, which would read as a key never stored.
+        let prepared = await Task.detached { [self] () -> Result<(Data, [AdditionalSigningKeyEntry]), Swift.Error> in
+            Result { try self.prepareStoredVotingKey(identityId: identityId) }
         }.value
+        let (votingAddress, entries) = try prepared.get()
+        return try await withAdditionalSigningKeys(entries, isolation: isolation) {
+            try await body(votingAddress)
+        }
+    }
+
+    /// Reads the stored voting key for `identityId` and returns its voting
+    /// address and a registry entry holding its own copy of the key. The
+    /// read buffer is reset before returning.
+    private func prepareStoredVotingKey(
+        identityId: Data
+    ) throws -> (Data, [AdditionalSigningKeyEntry]) {
         var privateKey: Data
-        switch read {
+        switch keychain.readSpecialKey(identityId: identityId, keyType: .voting) {
         case .success(let stored?):
             privateKey = stored
         case .success(nil):
@@ -1047,21 +1060,13 @@ extension KeychainSigner {
         case .failure(let error):
             throw Error.invalidVotingKey(message: error.localizedDescription)
         }
-        // Only the registry entry's copy lives through the vote; the read
-        // buffer is reset before the body runs.
-        let votingAddress: Data
-        let entries: [AdditionalSigningKeyEntry]
-        do {
-            defer { privateKey.resetBytes(in: 0..<privateKey.count) }
-            votingAddress = try Self.masternodeVotingAddress(privateKey: privateKey)
-            // The entry copies the key; the scope zeroes that copy on exit.
-            entries = makeAdditionalSigningKeyEntries([
-                (publicKey: votingAddress, privateKey: privateKey),
-            ])
-        }
-        return try await withAdditionalSigningKeys(entries, isolation: isolation) {
-            try await body(votingAddress)
-        }
+        defer { privateKey.resetBytes(in: 0..<privateKey.count) }
+        let votingAddress = try Self.masternodeVotingAddress(privateKey: privateKey)
+        // The entry copies the key; the signing scope zeroes that copy on exit.
+        let entries = makeAdditionalSigningKeyEntries([
+            (publicKey: votingAddress, privateKey: privateKey),
+        ])
+        return (votingAddress, entries)
     }
 
     /// The voting address Rust forms from a 32-byte voting private key

@@ -62,4 +62,33 @@ final class KeychainManagerStoreSpecialKeyIfAbsentTests: XCTestCase {
             correct
         )
     }
+
+    /// Another writer fills the slot after it was read as empty: the add
+    /// reports a duplicate and the slot is compared, never overwritten.
+    func testAWriterFillingTheSlotAfterTheEmptyReadIsComparedNotOverwritten() throws {
+        let keychain = KeychainManager(serviceName: "org.dashfoundation.tests.\(UUID().uuidString)")
+        let identityId = Data(repeating: 0x33, count: 32)
+        addTeardownBlock { @MainActor in
+            _ = keychain.deleteSpecialKey(identityId: identityId, keyType: .voting)
+        }
+
+        let theirs = Data(repeating: 0x05, count: 32)
+        let ours = Data(repeating: 0x06, count: 32)
+        let outcome = keychain.storeSpecialKeyIfAbsent(ours, identityId: identityId, keyType: .voting) {
+            _ = keychain.storeSpecialKey(theirs, identityId: identityId, keyType: .voting)
+        }
+        XCTAssertEqual(outcome, .conflicting)
+        XCTAssertEqual(
+            try keychain.readSpecialKey(identityId: identityId, keyType: .voting).get(),
+            theirs
+        )
+
+        // The same bytes from the competing writer count as already stored.
+        XCTAssertTrue(keychain.deleteSpecialKey(identityId: identityId, keyType: .voting))
+        guard case .alreadyStored = keychain.storeSpecialKeyIfAbsent(ours, identityId: identityId, keyType: .voting, afterEmptyRead: {
+            _ = keychain.storeSpecialKey(ours, identityId: identityId, keyType: .voting)
+        }) else {
+            return XCTFail("matching bytes from the competing writer are already stored")
+        }
+    }
 }

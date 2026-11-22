@@ -519,10 +519,21 @@ struct IdentitiesContentView: View {
         // later load can store the key again. `deleteSpecialKey` treats an
         // absent item as success, so `false` means the Keychain refused:
         // then nothing else is removed and the operator can retry.
-        let uncleared = [SpecialKeyType.voting, .owner, .payout].filter { keyType in
-            !keychain.deleteSpecialKey(identityId: identity.identityId, keyType: keyType)
+        var uncleared: [SpecialKeyType] = []
+        for keyType in [SpecialKeyType.voting, .owner, .payout] {
+            if keychain.deleteSpecialKey(identityId: identity.identityId, keyType: keyType) {
+                // Deleted: a row kept below must not point at it.
+                switch keyType {
+                case .voting: identity.votingPrivateKeyIdentifier = nil
+                case .owner: identity.ownerPrivateKeyIdentifier = nil
+                case .payout: identity.payoutPrivateKeyIdentifier = nil
+                }
+            } else {
+                uncleared.append(keyType)
+            }
         }
         guard uncleared.isEmpty else {
+            try? modelContext.save()
             let names = ListFormatter.localizedString(byJoining: uncleared.map(\.rawValue))
             platformState.showError(
                 message: "The identity was not removed: the Keychain refused to delete its \(names) key. Unlock the device and try again."

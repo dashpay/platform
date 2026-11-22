@@ -314,9 +314,22 @@ public final class KeychainManager: Sendable {
         identityId: Data,
         keyType: SpecialKeyType
     ) -> SpecialKeyStoreOutcome {
+        storeSpecialKeyIfAbsent(keyData, identityId: identityId, keyType: keyType, afterEmptyRead: {})
+    }
+
+    /// `storeSpecialKeyIfAbsent(_:identityId:keyType:)` with a hook that
+    /// runs after the slot was read as empty and before the add, so a test
+    /// can fill the slot in between.
+    func storeSpecialKeyIfAbsent(
+        _ keyData: Data,
+        identityId: Data,
+        keyType: SpecialKeyType,
+        afterEmptyRead: () -> Void
+    ) -> SpecialKeyStoreOutcome {
         let identifier = generateSpecialKeyIdentifier(identityId: identityId, keyType: keyType)
         switch readKeyData(identifier: identifier) {
         case .success(nil):
+            afterEmptyRead()
             // Add only, with no delete first: if another writer filled the
             // slot since the read, the add reports a duplicate and the slot
             // is compared again instead of being overwritten.
