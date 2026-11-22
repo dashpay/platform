@@ -9,10 +9,13 @@ import SwiftData
 /// The refresh used to rebuild every key row from the fetch with no contract
 /// bounds and carry over only the Keychain identifier, so a wallet-derived
 /// key lost the wallet id and derivation path it signs with, and a bounded
-/// key came back unbounded. These tests pin that an unchanged key now keeps
-/// its row and its local metadata, that changed or dropped keys leave no row
-/// behind for the platform-wallet persister to match, and that the bounds
-/// the fetch carries land in the right columns.
+/// key came back unbounded. These tests pin that an unchanged key keeps its
+/// row and its local metadata, that a response predating a key leaves that
+/// key's row alone (Platform never removes a key), that a row whose key id
+/// now holds different bytes leaves no row behind for the platform-wallet
+/// persister's fallback query to find, that the bounds the fetch carries
+/// land in the right columns, and that a key list the parser cannot read
+/// completely is refused instead of being applied in part.
 @MainActor
 final class FetchedIdentityPublicKeysTests: XCTestCase {
 
@@ -87,25 +90,35 @@ final class FetchedIdentityPublicKeysTests: XCTestCase {
         _ keys: [[String: Any]],
         keyedById: Bool = false
     ) throws -> [String: Any] {
-        let publicKeys: Any
         if keyedById {
             var byId: [String: Any] = [:]
             for key in keys {
                 byId[String(describing: key["id"] ?? "")] = key
             }
-            publicKeys = byId
-        } else {
-            publicKeys = keys
+            return try identityJSON(publicKeys: byId)
         }
-        let object: [String: Any] = [
+        return try identityJSON(publicKeys: keys)
+    }
+
+    /// An `identityGet` response with `publicKeys` exactly as given, or
+    /// without the field when `publicKeys` is `nil`.
+    private func identityJSON(publicKeys: Any?) throws -> [String: Any] {
+        var object: [String: Any] = [
             "$formatVersion": "0",
             "id": identityId.toBase58String(),
             "balance": 1_000,
             "revision": 1,
-            "publicKeys": publicKeys,
         ]
+        if let publicKeys {
+            object["publicKeys"] = publicKeys
+        }
         let data = try JSONSerialization.data(withJSONObject: object)
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    /// Parse a response the test expects to be readable.
+    private func parse(_ response: [String: Any]) throws -> [PersistentPublicKey] {
+        try XCTUnwrap(PersistentPublicKey.fromFetchedIdentity(response, identityId: identityId))
     }
 
     // MARK: - Store helpers
@@ -123,9 +136,14 @@ final class FetchedIdentityPublicKeysTests: XCTestCase {
         try context.fetch(FetchDescriptor<PersistentPublicKey>())
     }
 
-    /// The key row the platform-wallet persister would find: it fetches by
-    /// key id and the identity's base58 string and takes the first result.
-    private func persisterRows(_ context: ModelContext, keyId: Int32) throws -> [PersistentPublicKey] {
+    /// The rows the platform-wallet persister's fallback query returns: when
+    /// the identity has no linked row with the key id, it fetches by key id
+    /// and the identity's base58 string, takes the first result and links
+    /// it to the identity.
+    private func rowsMatchingPersisterFallbackQuery(
+        _ context: ModelContext,
+        keyId: Int32
+    ) throws -> [PersistentPublicKey] {
         let identityIdText = identityId.toBase58String()
         return try context.fetch(FetchDescriptor<PersistentPublicKey>(
             predicate: #Predicate {
@@ -139,6 +157,17 @@ final class FetchedIdentityPublicKeysTests: XCTestCase {
         row.walletId = walletId
         row.identityDerivationPath = derivationPath
         row.lastAccessed = Date(timeIntervalSince1970: 1_700_000_000)
+    }
+
+    private func assertLocalMetadata(
+        _ row: PersistentPublicKey,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(row.privateKeyKeychainIdentifier, keychainIdentifier, file: file, line: line)
+        XCTAssertEqual(row.walletId, walletId, file: file, line: line)
+        XCTAssertEqual(row.identityDerivationPath, derivationPath, file: file, line: line)
+        XCTAssertEqual(row.lastAccessed, Date(timeIntervalSince1970: 1_700_000_000), file: file, line: line)
     }
 
     // MARK: - Import then refresh
@@ -156,8 +185,7 @@ final class FetchedIdentityPublicKeysTests: XCTestCase {
             keyObject(id: 2, data: publicKeyData(0xA2), bounds: groupBounds),
         ])
 
-        identity.mergeFetchedPublicKeys(
-            PersistentPublicKey.fromFetchedIdentity(response, identityId: identityId))
+        identity.mergeFetchedPublicKeys(try parse(response))
         try context.save()
 
         let imported = identity.publicKeys.sorted { $0.keyId < $1.keyId }
@@ -169,8 +197,7 @@ final class FetchedIdentityPublicKeysTests: XCTestCase {
         let importedIds = imported.map(\.persistentModelID)
         let createdAt = imported.map(\.createdAt)
 
-        identity.mergeFetchedPublicKeys(
-            PersistentPublicKey.fromFetchedIdentity(response, identityId: identityId))
+        identity.mergeFetchedPublicKeys(try parse(response))
         try context.save()
 
         let refreshed = identity.publicKeys.sorted { $0.keyId < $1.keyId }
@@ -180,18 +207,13 @@ final class FetchedIdentityPublicKeysTests: XCTestCase {
         XCTAssertEqual(try allKeyRows(context).count, 3, "a refresh must not add rows")
 
         let documentTypeKey = refreshed[1]
-        XCTAssertEqual(documentTypeKey.privateKeyKeychainIdentifier, keychainIdentifier)
-        XCTAssertEqual(documentTypeKey.walletId, walletId)
-        XCTAssertEqual(documentTypeKey.identityDerivationPath, derivationPath)
-        XCTAssertEqual(documentTypeKey.lastAccessed, Date(timeIntervalSince1970: 1_700_000_000))
+        assertLocalMetadata(documentTypeKey)
         XCTAssertEqual(documentTypeKey.contractBoundsKind, 2)
         XCTAssertEqual(documentTypeKey.contractBounds, [contractId])
         XCTAssertEqual(documentTypeKey.contractBoundsDocumentTypeName, "contactRequest")
 
         let groupKey = refreshed[2]
-        XCTAssertEqual(groupKey.privateKeyKeychainIdentifier, keychainIdentifier)
-        XCTAssertEqual(groupKey.walletId, walletId)
-        XCTAssertEqual(groupKey.identityDerivationPath, derivationPath)
+        assertLocalMetadata(groupKey)
         XCTAssertEqual(groupKey.contractBoundsKind, 3)
         XCTAssertEqual(groupKey.contractBounds, [groupId])
         XCTAssertNil(groupKey.contractBoundsDocumentTypeName)
@@ -199,28 +221,74 @@ final class FetchedIdentityPublicKeysTests: XCTestCase {
         XCTAssertEqual(refreshed[0].contractBoundsKind, 0)
         XCTAssertNil(refreshed[0].contractBoundsData)
         for keyId in Int32(0)...2 {
-            XCTAssertEqual(try persisterRows(context, keyId: keyId).count, 1,
-                           "the persister must find exactly one row for key \(keyId)")
+            XCTAssertEqual(try rowsMatchingPersisterFallbackQuery(context, keyId: keyId).count, 1,
+                           "exactly one row must exist for key \(keyId)")
         }
     }
 
-    /// A key whose bytes changed under the same id is a different key: its
-    /// old row leaves the store, and the new row carries none of the old
-    /// key's local metadata.
+    /// The SDK accepts a proof one block behind, so a refresh can return a
+    /// snapshot from before a key was added. Platform never removes a key,
+    /// so the row the response lacks is kept, still linked, with its
+    /// Keychain identifier, wallet id, derivation path and bounds. The next
+    /// response that has the key matches that row in place.
+    func testAnOlderResponseKeepsARecentlyAddedKeyAndItsMetadata() throws {
+        let (_, context, identity) = try makeStore()
+        let currentResponse = try identityJSON([
+            keyObject(id: 0, data: publicKeyData(0xA0), bounds: .null),
+            keyObject(id: 1, data: publicKeyData(0xA1), bounds: documentTypeBounds),
+        ])
+        identity.mergeFetchedPublicKeys(try parse(currentResponse))
+        try context.save()
+        let keyZero = try XCTUnwrap(identity.publicKeys.first { $0.keyId == 0 })
+        let recentKey = try XCTUnwrap(identity.publicKeys.first { $0.keyId == 1 })
+        setLocalMetadata(recentKey)
+        try context.save()
+        let recentKeyId = recentKey.persistentModelID
+
+        // A snapshot from before key 1 was added.
+        identity.mergeFetchedPublicKeys(try parse(try identityJSON([
+            keyObject(id: 0, data: publicKeyData(0xA0), bounds: .null),
+        ])))
+        try context.save()
+
+        XCTAssertEqual(Set(identity.publicKeys.map(\.persistentModelID)),
+                       [keyZero.persistentModelID, recentKeyId],
+                       "a key the response lacks must stay linked")
+        XCTAssertEqual(try allKeyRows(context).count, 2)
+        XCTAssertTrue(recentKey.identity === identity)
+        assertLocalMetadata(recentKey)
+        XCTAssertEqual(recentKey.publicKeyData, publicKeyData(0xA1))
+        XCTAssertEqual(recentKey.contractBoundsKind, 2)
+        XCTAssertEqual(recentKey.contractBounds, [contractId])
+        XCTAssertEqual(recentKey.contractBoundsDocumentTypeName, "contactRequest")
+
+        // A current response again: key 1 matches the kept row in place.
+        identity.mergeFetchedPublicKeys(try parse(currentResponse))
+        try context.save()
+
+        XCTAssertEqual(try allKeyRows(context).count, 2, "the kept row must be matched, not duplicated")
+        let matched = try XCTUnwrap(identity.publicKeys.first { $0.keyId == 1 })
+        XCTAssertEqual(matched.persistentModelID, recentKeyId)
+        assertLocalMetadata(matched)
+        XCTAssertEqual(try rowsMatchingPersisterFallbackQuery(context, keyId: 1).map(\.persistentModelID),
+                       [recentKeyId])
+    }
+
+    /// A row whose key id now holds different bytes is not a key this
+    /// identity has: its old row leaves the store, and the new row carries
+    /// none of the old row's local metadata.
     func testRefreshReplacesAKeyWhoseBytesChanged() throws {
         let (_, context, identity) = try makeStore()
-        identity.mergeFetchedPublicKeys(PersistentPublicKey.fromFetchedIdentity(
-            try identityJSON([keyObject(id: 1, data: publicKeyData(0xA1), bounds: documentTypeBounds)]),
-            identityId: identityId))
+        identity.mergeFetchedPublicKeys(try parse(
+            try identityJSON([keyObject(id: 1, data: publicKeyData(0xA1), bounds: documentTypeBounds)])))
         try context.save()
         let oldRow = try XCTUnwrap(identity.publicKeys.first)
         setLocalMetadata(oldRow)
         try context.save()
         let oldRowId = oldRow.persistentModelID
 
-        identity.mergeFetchedPublicKeys(PersistentPublicKey.fromFetchedIdentity(
-            try identityJSON([keyObject(id: 1, data: publicKeyData(0xB1), bounds: .null)]),
-            identityId: identityId))
+        identity.mergeFetchedPublicKeys(try parse(
+            try identityJSON([keyObject(id: 1, data: publicKeyData(0xB1), bounds: .null)])))
         try context.save()
 
         let rows = try allKeyRows(context)
@@ -236,38 +304,14 @@ final class FetchedIdentityPublicKeysTests: XCTestCase {
         XCTAssertNil(newRow.identityDerivationPath)
         XCTAssertNil(newRow.lastAccessed)
         XCTAssertEqual(newRow.contractBoundsKind, 0)
-        XCTAssertEqual(try persisterRows(context, keyId: 1).map(\.persistentModelID),
+        XCTAssertNil(newRow.contractBoundsData)
+        XCTAssertNil(newRow.contractBoundsDocumentTypeName)
+        XCTAssertEqual(try rowsMatchingPersisterFallbackQuery(context, keyId: 1).map(\.persistentModelID),
                        [newRow.persistentModelID])
     }
 
-    /// A key Platform no longer returns is taken off the identity and
-    /// deleted from the store, so no orphan with its key id is left for the
-    /// persister to update.
-    func testRefreshDeletesAKeyNoLongerFetched() throws {
-        let (_, context, identity) = try makeStore()
-        identity.mergeFetchedPublicKeys(PersistentPublicKey.fromFetchedIdentity(
-            try identityJSON([
-                keyObject(id: 0, data: publicKeyData(0xA0), bounds: .null),
-                keyObject(id: 1, data: publicKeyData(0xA1), bounds: .null),
-            ]),
-            identityId: identityId))
-        try context.save()
-        let kept = try XCTUnwrap(identity.publicKeys.first { $0.keyId == 0 })
-        setLocalMetadata(try XCTUnwrap(identity.publicKeys.first { $0.keyId == 1 }))
-        try context.save()
-
-        identity.mergeFetchedPublicKeys(PersistentPublicKey.fromFetchedIdentity(
-            try identityJSON([keyObject(id: 0, data: publicKeyData(0xA0), bounds: .null)]),
-            identityId: identityId))
-        try context.save()
-
-        XCTAssertEqual(identity.publicKeys.map(\.persistentModelID), [kept.persistentModelID])
-        XCTAssertEqual(try allKeyRows(context).map(\.keyId), [0])
-        XCTAssertTrue(try persisterRows(context, keyId: 1).isEmpty)
-    }
-
     /// A row written by the old load path carries the identity id as HEX,
-    /// which the persister's base58 lookup cannot see. The merge matches it
+    /// which the persister's fallback query cannot see. The merge matches it
     /// by key id, type and bytes anyway, keeps its metadata and rewrites the
     /// id to base58.
     func testMergeRewritesALegacyHexIdentityIdToBase58() throws {
@@ -286,49 +330,61 @@ final class FetchedIdentityPublicKeysTests: XCTestCase {
         identity.addPublicKey(legacy)
         setLocalMetadata(legacy)
         try context.save()
-        XCTAssertTrue(try persisterRows(context, keyId: 1).isEmpty)
+        XCTAssertTrue(try rowsMatchingPersisterFallbackQuery(context, keyId: 1).isEmpty)
 
-        identity.mergeFetchedPublicKeys(PersistentPublicKey.fromFetchedIdentity(
-            try identityJSON([keyObject(id: 1, data: publicKeyData(0xA1), bounds: documentTypeBounds)]),
-            identityId: identityId))
+        identity.mergeFetchedPublicKeys(try parse(
+            try identityJSON([keyObject(id: 1, data: publicKeyData(0xA1), bounds: documentTypeBounds)])))
         try context.save()
 
         XCTAssertEqual(try allKeyRows(context).map(\.persistentModelID), [legacy.persistentModelID])
         XCTAssertEqual(legacy.identityId, identityId.toBase58String())
-        XCTAssertEqual(legacy.privateKeyKeychainIdentifier, keychainIdentifier)
-        XCTAssertEqual(legacy.walletId, walletId)
-        XCTAssertEqual(legacy.identityDerivationPath, derivationPath)
-        XCTAssertEqual(try persisterRows(context, keyId: 1).map(\.persistentModelID),
+        assertLocalMetadata(legacy)
+        XCTAssertEqual(try rowsMatchingPersisterFallbackQuery(context, keyId: 1).map(\.persistentModelID),
                        [legacy.persistentModelID])
+    }
+
+    /// The bounds are always known now, so a match always takes the fetched
+    /// ones, including `null` clearing a stored bound.
+    func testMergeCopiesTheFetchedBoundsOnAMatch() throws {
+        let (_, context, identity) = try makeStore()
+        identity.mergeFetchedPublicKeys(try parse(
+            try identityJSON([keyObject(id: 1, data: publicKeyData(0xA1), bounds: groupBounds)])))
+        try context.save()
+        let row = try XCTUnwrap(identity.publicKeys.first)
+        XCTAssertEqual(row.contractBoundsKind, 3)
+        XCTAssertEqual(row.contractBounds, [groupId])
+
+        identity.mergeFetchedPublicKeys(try parse(
+            try identityJSON([keyObject(id: 1, data: publicKeyData(0xA1), bounds: documentTypeBounds)])))
+        try context.save()
+        XCTAssertEqual(identity.publicKeys.map(\.persistentModelID), [row.persistentModelID])
+        XCTAssertEqual(row.contractBoundsKind, 2)
+        XCTAssertEqual(row.contractBounds, [contractId])
+        XCTAssertEqual(row.contractBoundsDocumentTypeName, "contactRequest")
+
+        identity.mergeFetchedPublicKeys(try parse(
+            try identityJSON([keyObject(id: 1, data: publicKeyData(0xA1), bounds: .null)])))
+        try context.save()
+        XCTAssertEqual(identity.publicKeys.map(\.persistentModelID), [row.persistentModelID])
+        XCTAssertEqual(row.contractBoundsKind, 0)
+        XCTAssertNil(row.contractBoundsData)
+        XCTAssertNil(row.contractBoundsDocumentTypeName)
     }
 
     // MARK: - Parser
 
     /// Each bounds shape lands in the three columns the platform-wallet
-    /// persister writes for the same variant; `null` is unbounded (kind 0)
-    /// and a missing or unreadable field is unknown (kind `nil`).
+    /// persister writes for the same variant; `null` is unbounded (kind 0).
     func testParserDecodesEveryContractBoundsShape() throws {
-        let response = try identityJSON([
+        let rows = try parse(try identityJSON([
             keyObject(id: 0, data: publicKeyData(0xA0), bounds: .null),
             keyObject(id: 1, data: publicKeyData(0xA1), bounds: .object([
                 "$type": "singleContract", "id": contractId.toBase58String(),
             ])),
             keyObject(id: 2, data: publicKeyData(0xA2), bounds: documentTypeBounds),
             keyObject(id: 3, data: publicKeyData(0xA3), bounds: groupBounds),
-            keyObject(id: 4, data: publicKeyData(0xA4), bounds: .absent),
-            keyObject(id: 5, data: publicKeyData(0xA5), bounds: .object([
-                "$type": "somethingNew", "id": contractId.toBase58String(),
-            ])),
-            keyObject(id: 6, data: publicKeyData(0xA6), bounds: .object([
-                "$type": "singleContract", "id": "not base58 0OIl",
-            ])),
-            keyObject(id: 7, data: publicKeyData(0xA7), bounds: .object([
-                "$type": "documentType", "id": contractId.toBase58String(),
-            ])),
-        ])
-
-        let rows = PersistentPublicKey.fromFetchedIdentity(response, identityId: identityId)
-        XCTAssertEqual(rows.map(\.keyId), [0, 1, 2, 3, 4, 5, 6, 7])
+        ]))
+        XCTAssertEqual(rows.map(\.keyId), [0, 1, 2, 3])
         let columns = rows.map { ($0.contractBoundsKind, $0.contractBounds, $0.contractBoundsDocumentTypeName) }
 
         XCTAssertEqual(columns[0].0, 0)
@@ -346,14 +402,6 @@ final class FetchedIdentityPublicKeysTests: XCTestCase {
         XCTAssertEqual(columns[3].0, 3)
         XCTAssertEqual(columns[3].1, [groupId])
         XCTAssertNil(columns[3].2)
-
-        // Absent, an unknown `$type`, an id that is not base58 and a
-        // document type bound with no name are all unknown.
-        for index in 4...7 {
-            XCTAssertNil(rows[index].contractBoundsKind, "key \(index)")
-            XCTAssertNil(rows[index].contractBoundsData, "key \(index)")
-            XCTAssertNil(rows[index].contractBoundsDocumentTypeName, "key \(index)")
-        }
     }
 
     /// The other key fields, the object-keyed-by-id `publicKeys` shape, the
@@ -369,15 +417,16 @@ final class FetchedIdentityPublicKeysTests: XCTestCase {
                 "totalBudget": "9007199254740992",
                 "expiresAt": 1_800_000_000_000,
             ]),
-            keyObject(id: 0, data: publicKeyData(0xA0), bounds: .null),
-            // Skipped: `data` is not base64.
-            keyObject(id: 9, data: Data(), bounds: .null, extra: ["data": "%%%"]),
+            // `disabledAt` absent instead of `null`: also "not disabled".
+            keyObject(id: 0, data: publicKeyData(0xA0), bounds: .null).filter { $0.key != "disabledAt" },
         ]
 
         for keyedById in [false, true] {
-            let rows = PersistentPublicKey.fromFetchedIdentity(
-                try identityJSON(keys, keyedById: keyedById), identityId: identityId)
+            let rows = try parse(try identityJSON(keys, keyedById: keyedById))
             XCTAssertEqual(rows.map(\.keyId), [0, 3], "keyedById: \(keyedById)")
+            XCTAssertNil(rows[0].disabledAt)
+            XCTAssertNil(rows[0].totalBudget)
+            XCTAssertNil(rows[0].expiresAt)
             let key = rows[1]
             XCTAssertEqual(key.purposeEnum, .transfer)
             XCTAssertEqual(key.securityLevelEnum, .critical)
@@ -394,41 +443,113 @@ final class FetchedIdentityPublicKeysTests: XCTestCase {
             }
         }
         XCTAssertTrue(try allKeyRows(context).isEmpty)
-        XCTAssertTrue(PersistentPublicKey.fromFetchedIdentity([:], identityId: identityId).isEmpty)
     }
 
-    /// A fetch that does not say what a key's bounds are (kind `nil`)
-    /// leaves the stored bounds alone; one that says `null` clears them.
-    func testMergeKeepsStoredBoundsOnlyWhenTheFetchedBoundsAreUnknown() throws {
+    /// An empty key list, in either shape, is a complete list.
+    func testParserReturnsAnEmptyListForAnIdentityWithNoKeys() throws {
+        let emptyArray: [Any] = []
+        let emptyKeyedObject: [String: Any] = [:]
+        XCTAssertEqual(try parse(try identityJSON(publicKeys: emptyArray)).count, 0)
+        XCTAssertEqual(try parse(try identityJSON(publicKeys: emptyKeyedObject)).count, 0)
+    }
+
+    /// A key list the parser cannot read completely gives `nil`, never the
+    /// entries it could read: the callers must not apply it.
+    func testParserRefusesAKeyListItCannotReadCompletely() throws {
+        let good = keyObject(id: 0, data: publicKeyData(0xA0), bounds: .null)
+        func withKey(_ key: [String: Any]) -> [[String: Any]] {
+            [good, key]
+        }
+        func badKey(_ extra: [String: Any], bounds: Bounds = .null) -> [String: Any] {
+            keyObject(id: 1, data: publicKeyData(0xA1), bounds: bounds, extra: extra)
+        }
+        func keyMissing(_ field: String) -> [String: Any] {
+            badKey([:]).filter { $0.key != field }
+        }
+
+        let cases: [(String, Any?)] = [
+            ("missing publicKeys", nil),
+            ("publicKeys in an unsupported shape", "not a key list"),
+            ("an entry that is not an object", [good, 7] as [Any]),
+            ("an entry missing data", withKey(keyMissing("data"))),
+            ("an entry missing id", withKey(keyMissing("id"))),
+            ("an entry missing purpose", withKey(keyMissing("purpose"))),
+            ("an entry missing securityLevel", withKey(keyMissing("securityLevel"))),
+            ("an entry missing type", withKey(keyMissing("type"))),
+            ("an entry missing readOnly", withKey(keyMissing("readOnly"))),
+            ("an id outside UInt32", withKey(badKey(["id": 4_294_967_296]))),
+            ("a negative id", withKey(badKey(["id": -1]))),
+            ("an id written as a string", withKey(badKey(["id": "1"]))),
+            ("data that is not base64", withKey(badKey(["data": "%%%"]))),
+            ("an unknown purpose", withKey(badKey(["purpose": 99]))),
+            ("an unknown security level", withKey(badKey(["securityLevel": 99]))),
+            ("an unknown key type", withKey(badKey(["type": 99]))),
+            ("a purpose written as a boolean", withKey(badKey(["purpose": true]))),
+            ("readOnly written as a number", withKey(badKey(["readOnly": 1]))),
+            ("an absent contractBounds", withKey(badKey([:], bounds: .absent))),
+            ("a contractBounds with an unknown $type", withKey(badKey([:], bounds: .object([
+                "$type": "somethingNew", "id": contractId.toBase58String(),
+            ])))),
+            ("a contractBounds id that is not base58", withKey(badKey([:], bounds: .object([
+                "$type": "singleContract", "id": "not base58 0OIl",
+            ])))),
+            ("a documentType bound with no name", withKey(badKey([:], bounds: .object([
+                "$type": "documentType", "id": contractId.toBase58String(),
+            ])))),
+            ("an empty contractBounds object", withKey(badKey([:], bounds: .object([:])))),
+            ("a contractBounds that is not an object", withKey(badKey(["contractBounds": "singleContract"]))),
+            ("an unreadable disabledAt", withKey(badKey(["disabledAt": "soon"]))),
+            ("a negative totalBudget", withKey(badKey(["totalBudget": -5]))),
+            ("a boolean expiresAt", withKey(badKey(["expiresAt": true]))),
+            ("two entries with the same id", [good, good]),
+            ("a keyed entry whose id is not its key", ["5": badKey([:])] as [String: Any]),
+        ]
+
+        for (name, publicKeys) in cases {
+            let response = try identityJSON(publicKeys: publicKeys)
+            XCTAssertNil(PersistentPublicKey.fromFetchedIdentity(response, identityId: identityId), name)
+        }
+        XCTAssertNil(PersistentPublicKey.fromFetchedIdentity([:], identityId: identityId))
+    }
+
+    /// The callers' pattern: an unreadable response is refused before any
+    /// write, so a stored signing row stays exactly as it was.
+    func testAnUnreadableResponseLeavesAStoreWithASigningRowUnchanged() throws {
         let (_, context, identity) = try makeStore()
-        identity.mergeFetchedPublicKeys(PersistentPublicKey.fromFetchedIdentity(
-            try identityJSON([keyObject(id: 1, data: publicKeyData(0xA1), bounds: groupBounds)]),
-            identityId: identityId))
+        identity.mergeFetchedPublicKeys(try parse(
+            try identityJSON([keyObject(id: 1, data: publicKeyData(0xA1), bounds: documentTypeBounds)])))
         try context.save()
         let row = try XCTUnwrap(identity.publicKeys.first)
-
-        identity.mergeFetchedPublicKeys(PersistentPublicKey.fromFetchedIdentity(
-            try identityJSON([keyObject(id: 1, data: publicKeyData(0xA1), bounds: .absent)]),
-            identityId: identityId))
+        setLocalMetadata(row)
         try context.save()
-        XCTAssertEqual(identity.publicKeys.map(\.persistentModelID), [row.persistentModelID])
-        XCTAssertEqual(row.contractBoundsKind, 3)
-        XCTAssertEqual(row.contractBounds, [groupId])
+        let rowId = row.persistentModelID
+        let lastUpdated = identity.lastUpdated
 
-        identity.mergeFetchedPublicKeys(PersistentPublicKey.fromFetchedIdentity(
-            try identityJSON([keyObject(id: 1, data: publicKeyData(0xA1), bounds: documentTypeBounds)]),
-            identityId: identityId))
+        // One readable key with different bytes under id 1 and one entry
+        // that cannot be read: applying the readable part would replace the
+        // signing row.
+        let response = try identityJSON([
+            keyObject(id: 1, data: publicKeyData(0xB1), bounds: .null),
+            keyObject(id: 2, data: publicKeyData(0xA2), bounds: .null, extra: ["purpose": 99]),
+        ])
+        func applyLikeTheCallers(_ response: [String: Any]) -> Bool {
+            guard let keys = PersistentPublicKey.fromFetchedIdentity(response, identityId: identityId) else {
+                return false
+            }
+            identity.mergeFetchedPublicKeys(keys)
+            return true
+        }
+
+        XCTAssertFalse(applyLikeTheCallers(response))
         try context.save()
+
+        XCTAssertEqual(try allKeyRows(context).map(\.persistentModelID), [rowId])
+        XCTAssertEqual(identity.publicKeys.map(\.persistentModelID), [rowId])
+        XCTAssertEqual(identity.lastUpdated, lastUpdated)
+        assertLocalMetadata(row)
+        XCTAssertEqual(row.publicKeyData, publicKeyData(0xA1))
         XCTAssertEqual(row.contractBoundsKind, 2)
         XCTAssertEqual(row.contractBounds, [contractId])
         XCTAssertEqual(row.contractBoundsDocumentTypeName, "contactRequest")
-
-        identity.mergeFetchedPublicKeys(PersistentPublicKey.fromFetchedIdentity(
-            try identityJSON([keyObject(id: 1, data: publicKeyData(0xA1), bounds: .null)]),
-            identityId: identityId))
-        try context.save()
-        XCTAssertEqual(row.contractBoundsKind, 0)
-        XCTAssertNil(row.contractBoundsData)
-        XCTAssertNil(row.contractBoundsDocumentTypeName)
     }
 }

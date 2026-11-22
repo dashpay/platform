@@ -459,6 +459,20 @@ struct LoadIdentityView: View {
                 let capturedPayoutKey = payoutKeyData
 
                 await MainActor.run {
+                    // Read the keys the network returned before writing
+                    // anything. A key list that cannot be read completely
+                    // is not applied: no identity row, no key rows and no
+                    // Keychain writes.
+                    guard let fetchedKeys = PersistentPublicKey.fromFetchedIdentity(
+                        identityData,
+                        identityId: validIdData
+                    ) else {
+                        errorMessage = "This identity's keys could not be read from the response, so nothing was saved. Load it again."
+                        isLoading = false
+                        loadStartTime = nil
+                        return
+                    }
+
                     // Upsert the PersistentIdentity row.
                     let existing = PersistentIdentity.fetch(
                         in: modelContext,
@@ -500,14 +514,10 @@ struct LoadIdentityView: View {
                         )
                     }
 
-                    // Marshal the keys the network returned, keep their DPP
-                    // projection for matching the entered private keys, then
-                    // bring the rows in line with them, keeping each unchanged
-                    // key's local signing references and stored bounds.
-                    let fetchedKeys = PersistentPublicKey.fromFetchedIdentity(
-                        identityData,
-                        identityId: validIdData
-                    )
+                    // Keep the fetched keys' DPP projection for matching the
+                    // entered private keys, then bring the rows in line with
+                    // them, keeping each unchanged key's local signing
+                    // references.
                     let capturedPublicKeys = fetchedKeys.compactMap { $0.toIdentityPublicKey() }
                     row.mergeFetchedPublicKeys(fetchedKeys)
 
@@ -519,7 +529,7 @@ struct LoadIdentityView: View {
                             publicKeys: capturedPublicKeys,
                             network: network
                         ), let persistentKey = row.publicKeys.first(
-                            where: { $0.keyId == Int32(matched.id) }
+                            where: { $0.keyId == Int32(bitPattern: matched.id) }
                         ), let keychainId = KeychainManager.shared.storePrivateKey(
                             privateKey,
                             identityId: validIdData,

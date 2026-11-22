@@ -34,10 +34,14 @@ enum IdentityKeyRefresher {
     /// `PersistentIdentity.mergeFetchedPublicKeys(_:)`: a key whose id,
     /// type and bytes are unchanged keeps its row, and with it the
     /// `privateKeyKeychainIdentifier`, `walletId` and
-    /// `identityDerivationPath` that let it sign, and its stored contract
-    /// bounds when the fetch does not carry them. A new or changed key gets
-    /// a new row; a key no longer on Platform has its row deleted (its
-    /// Keychain item is left alone).
+    /// `identityDerivationPath` that let it sign. A new key gets a new row.
+    /// A stored key the response lacks keeps its row, since Platform never
+    /// removes a key and such a response predates it. Keychain items are
+    /// left alone.
+    ///
+    /// The keys are read before anything is written: when the response's
+    /// key list cannot be read completely, this throws and changes nothing,
+    /// the balance included.
     ///
     /// Mutates SwiftData on the `modelContext`'s actor; call from the
     /// main actor (the SwiftData container the views use is main-actor
@@ -72,6 +76,16 @@ enum IdentityKeyRefresher {
             throw SDKError.invalidState("A wallet took over this identity during the refresh; refresh it again from the wallet.")
         }
 
+        // Public keys: read the whole fetched set before writing anything.
+        // A key read only in part would be written over its stored row, so
+        // a list that cannot be read completely is not applied at all.
+        guard let fetchedKeys = PersistentPublicKey.fromFetchedIdentity(
+            fetchedIdentity,
+            identityId: identity.identityId
+        ) else {
+            throw SDKError.serializationError("This identity's keys could not be read from the response, so nothing was changed. Refresh again.")
+        }
+
         // Balance: accept either the numeric or string-encoded form
         // the FFI may hand back depending on magnitude.
         if let balanceValue = fetchedIdentity["balance"] {
@@ -93,14 +107,8 @@ enum IdentityKeyRefresher {
             }
         }
 
-        // Public keys: marshal the fetched set and merge it into the
-        // existing rows, so an unchanged key keeps its Keychain identifier,
-        // wallet id, derivation path and (when the fetch does not say)
-        // contract bounds.
-        let fetchedKeys = PersistentPublicKey.fromFetchedIdentity(
-            fetchedIdentity,
-            identityId: identity.identityId
-        )
+        // Merge the fetched keys into the existing rows, so an unchanged key
+        // keeps its Keychain identifier, wallet id and derivation path.
         identity.mergeFetchedPublicKeys(fetchedKeys)
         try? modelContext.save()
     }
