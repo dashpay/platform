@@ -28,6 +28,14 @@
     "core_wallet_tx_builder_change_to_first_input": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
     "core_wallet_tx_builder_finalize": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
     "core_wallet_tx_builder_preserve_output_order": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
+    "dash_sdk_contract_get_fee_pots": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_action_counts": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_document_removals": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_document_removals_by_ids": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_entries": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_status": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_team_action_signers": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_team_actions": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
     "dash_sdk_create_adaptive": "packages/rs-sdk-ffi/src/sdk.rs",
     "dash_sdk_get_context_provider_source": "packages/rs-sdk-ffi/src/sdk.rs",
     "dash_sdk_set_context_provider_mode": "packages/rs-sdk-ffi/src/sdk.rs",
@@ -2262,6 +2270,69 @@
           "kind": "manual",
           "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "SYS-09",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "contracts.moderation_reads",
+      "title": "Contract moderation and fee pot reads (protocol version 14)",
+      "area": "example_app",
+      "shared_apis": [
+        "dash_sdk_contract_get_fee_pots",
+        "dash_sdk_contract_moderation_get_action_counts",
+        "dash_sdk_contract_moderation_get_document_removals",
+        "dash_sdk_contract_moderation_get_document_removals_by_ids",
+        "dash_sdk_contract_moderation_get_entries",
+        "dash_sdk_contract_moderation_get_status",
+        "dash_sdk_contract_moderation_get_team_action_signers",
+        "dash_sdk_contract_moderation_get_team_actions"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "supported",
+          "restart": "not_applicable",
+          "reason": null
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI bridge, Kotlin wrapper or KotlinExampleApp screen yet for the contract moderation and fee pot reads. Port from packages/swift-sdk/Sources/SwiftDashSDK/ContractModeration and the SwiftExampleApp Views/ContractModeration screens, reusing their contractModeration.* accessibility identifiers as testTags; the list and team action status arguments are the bytes 0 banlist, 1 suspensions, 2 warnings and 0 active, 1 closed."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+          "id": "should_refuse_a_null_handle_or_a_missing_or_malformed_id_before_any_request",
+          "command": "cargo test -p rs-sdk-ffi --lib contract_moderation",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk-ffi/src/contract_moderation/json.rs",
+          "id": "should_write_removals_with_their_kept_fields_and_cursor",
+          "command": "cargo test -p rs-sdk-ffi --lib contract_moderation",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ContractModerationDecodingTests.swift",
+          "id": "testShouldDecodeRemovalsWithKeptFieldsRestorationAndCursor",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ContractModerationDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DC-06",
           "covers_restart": false
         }
       ]
