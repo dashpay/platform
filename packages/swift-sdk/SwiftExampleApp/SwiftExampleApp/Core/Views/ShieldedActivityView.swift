@@ -27,6 +27,7 @@ enum ShieldedActivityKindDisplay {
         case 6: return "Identity Created"
         case 8: return "Shielded from Identity"
         case 9: return "Identity Top-Up from Pool"
+        case 10: return "Token Purchase"
         // 7 (ShieldedSpend) and any tag this build doesn't know yet.
         default: return "Shielded Spend"
         }
@@ -45,6 +46,7 @@ enum ShieldedActivityKindDisplay {
         // IdentityCreate / IdentityTopUp: both send pool value out to a
         // Platform identity's balance.
         case 6, 9: return "person.crop.circle.badge.plus"
+        case 10: return "cart.fill"                   // TokenPurchase
         default: return "questionmark.circle.fill"     // ShieldedSpend
         }
     }
@@ -388,6 +390,19 @@ struct ShieldedActivityDetailView: View {
                         } label: {
                             Label("Copy Identity ID", systemImage: "doc.on.doc")
                         }
+                    }
+                } else if entry.kindTag == 10, entry.counterparty.count == 32 {
+                    // TokenPurchase: the counterparty is the bought token's id.
+                    // The tokens went to the wallet's shielded token pool,
+                    // which the app does not show yet.
+                    Section("Purchased Token") {
+                        let tokenIdHex = entry.counterparty.map { String(format: "%02x", $0) }.joined()
+                        Text(tokenIdHex)
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
+                        Text("Minted to this wallet's shielded token pool, which the app does not show yet.")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
                     }
                 } else if !entry.counterparty.isEmpty {
                     Section("Counterparty") {

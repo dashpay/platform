@@ -18,6 +18,14 @@ import SwiftDashSDK
 /// purchasable at the configured price (below the minimum, a free tier, or an
 /// overflowing total). Direct Purchase is not group-gated, so there's no
 /// group-action banner.
+///
+/// Funding: **Identity credits** debits the identity (`wallet.tokenPurchase`).
+/// **Shielded pool** pays the same agreed total plus the pool-paid fee out of
+/// the identity's wallet's shielded notes (account 0) through
+/// `walletManager.shieldedTokenPurchaseFromPool` (type 28): Rust selects the
+/// notes, proves, broadcasts and mints the tokens as a note to the wallet's
+/// own address in the token's shielded pool. The wallet does not sync token
+/// pool notes yet, so those tokens are not shown anywhere in the app.
 struct TokenPurchaseActionView: View {
     let token: PersistentToken
     let identity: PersistentIdentity
@@ -49,6 +57,19 @@ struct TokenPurchaseActionView: View {
 
     @State private var priceState: PriceState = .loading
 
+    /// Where the purchase is paid from.
+    private enum FundingSource: String, CaseIterable, Identifiable {
+        case identityCredits = "Identity credits"
+        case shieldedPool = "Shielded pool"
+
+        var id: String { rawValue }
+    }
+
+    @State private var fundingSource: FundingSource = .identityCredits
+    /// Message shown after a shielded purchase returns; dismissing it closes
+    /// the form.
+    @State private var shieldedOutcome: AlertMessage?
+
     private struct AlertMessage: Identifiable {
         let id = UUID()
         let message: String
@@ -60,9 +81,25 @@ struct TokenPurchaseActionView: View {
                 LabeledContent("Token", value: token.displayName)
             }
 
+            Section("Pay with") {
+                Picker("Pay with", selection: $fundingSource) {
+                    ForEach(FundingSource.allCases) { source in
+                        Text(source.rawValue).tag(source)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("tokenPurchase.fundingSource")
+            }
+
             Section {
-                Text("Direct purchase debits credits from this identity in exchange for the requested tokens. The buyer pays the configured price set by the token's pricing controller.")
-                    .font(.subheadline)
+                switch fundingSource {
+                case .identityCredits:
+                    Text("Direct purchase debits credits from this identity in exchange for the requested tokens. The buyer pays the configured price set by the token's pricing controller.")
+                        .font(.subheadline)
+                case .shieldedPool:
+                    Text("The price and a pool fee are paid from this wallet's shielded balance; no identity is involved. The tokens are minted to this wallet's own address in the token's shielded pool.")
+                        .font(.subheadline)
+                }
             }
 
             Section("Amount") {
@@ -79,6 +116,10 @@ struct TokenPurchaseActionView: View {
                 priceStatus
             }
 
+            if fundingSource == .shieldedPool {
+                shieldedPoolSection
+            }
+
             Section {
                 Button {
                     submit()
@@ -86,7 +127,9 @@ struct TokenPurchaseActionView: View {
                     HStack {
                         if isSubmitting {
                             ProgressView().controlSize(.small)
-                            Text("Submitting…")
+                            Text(fundingSource == .shieldedPool
+                                ? "Proving and broadcasting…"
+                                : "Submitting…")
                         } else {
                             Text("Buy")
                         }
@@ -95,8 +138,19 @@ struct TokenPurchaseActionView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!canSubmit || isSubmitting)
+                .accessibilityIdentifier("tokenPurchase.buyButton")
+                if isSubmitting && fundingSource == .shieldedPool {
+                    Text(PlatformWalletManager.isShieldedProverReady
+                        ? "Building the shielded proofs can take up to a minute."
+                        : "Preparing the prover, then building the shielded proofs. This can take a minute or more.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
         }
+        // Switching the funding source mid-proof would only relabel a
+        // purchase already under way.
+        .disabled(isSubmitting)
         .navigationTitle("Direct Purchase")
         .navigationBarTitleDisplayMode(.inline)
         // Keyed on SDK connectivity so a form opened before the SDK finishes
@@ -109,6 +163,46 @@ struct TokenPurchaseActionView: View {
                 message: Text(msg.message),
                 dismissButton: .default(Text("OK"))
             )
+        }
+        .alert(item: $shieldedOutcome) { msg in
+            Alert(
+                title: Text("Shielded purchase"),
+                message: Text(msg.message),
+                dismissButton: .default(Text("OK")) { dismiss() }
+            )
+        }
+    }
+
+    // MARK: - Shielded pool section
+
+    /// What the shielded funding draws on: the wallet's account 0 shielded
+    /// balance as Rust pushes it, the consensus fee estimate for a single
+    /// note spend, and where the tokens go.
+    @ViewBuilder
+    private var shieldedPoolSection: some View {
+        Section("Shielded pool") {
+            LabeledContent("Shielded balance") {
+                if let balance = shieldedBalance {
+                    Text("\(balance) credits")
+                } else {
+                    Text("Not known yet")
+                        .foregroundColor(.secondary)
+                }
+            }
+            .accessibilityIdentifier("tokenPurchase.shieldedBalance")
+            if let fee = shieldedFeeEstimate {
+                LabeledContent("Pool fee (estimate)", value: "\(fee) credits")
+                if let total = priceWithFee(fee) {
+                    LabeledContent("Price + fee", value: "\(total) credits")
+                }
+                Text("The estimate is for a purchase paid from one or two notes; more notes raise the fee.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Text("The purchased tokens go to this wallet's shielded token pool. The app does not show shielded token balances yet, so they will not appear here or in the token list.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .accessibilityIdentifier("tokenPurchase.shieldedTokensNote")
         }
     }
 
@@ -199,7 +293,38 @@ struct TokenPurchaseActionView: View {
     private var canSubmit: Bool {
         guard let amount = parsedAmount, amount > 0 else { return false }
         guard expectedTotalCost != nil else { return false }
-        return managedWallet != nil
+        switch fundingSource {
+        case .identityCredits:
+            return managedWallet != nil
+        case .shieldedPool:
+            // A shielded spend needs a known, non-zero balance, as the send
+            // screen's shielded flows do; whether it covers price plus fee
+            // is Rust's call (an insufficient-balance error).
+            guard identity.wallet?.walletId != nil else { return false }
+            guard let balance = shieldedBalance else { return false }
+            return balance > 0
+        }
+    }
+
+    /// Account 0's spendable shielded credits of the identity's wallet, or
+    /// `nil` while not known. The shielded purchase spends from account 0.
+    private var shieldedBalance: UInt64? {
+        guard let walletId = identity.wallet?.walletId else { return nil }
+        return walletManager.spendableShieldedCredits(walletId: walletId, account: 0)
+    }
+
+    /// The consensus fee a purchase paid from one or two notes adds on top
+    /// of the price, computed in Rust at the network's protocol version.
+    private var shieldedFeeEstimate: UInt64? {
+        try? walletManager.estimateShieldedFee(kind: .tokenPurchaseFromPool)
+    }
+
+    /// The agreed total plus `fee`, for display, or `nil` without a total or
+    /// on overflow.
+    private func priceWithFee(_ fee: UInt64) -> UInt64? {
+        guard let cost = expectedTotalCost else { return nil }
+        let (total, overflow) = cost.addingReportingOverflow(fee)
+        return overflow ? nil : total
     }
 
     // MARK: - Price fetch
@@ -246,6 +371,10 @@ struct TokenPurchaseActionView: View {
     // MARK: - Submit
 
     private func submit() {
+        if fundingSource == .shieldedPool {
+            submitShielded()
+            return
+        }
         guard let wallet = managedWallet else {
             submitError = .init(message: "The wallet that owns this identity isn't loaded.")
             return
@@ -288,6 +417,71 @@ struct TokenPurchaseActionView: View {
                     guard self.submitGeneration == gen else { return }
                     self.isSubmitting = false
                     self.dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    guard self.submitGeneration == gen else { return }
+                    self.submitError = .init(message: error.localizedDescription)
+                    self.isSubmitting = false
+                }
+            }
+        }
+    }
+
+    /// Buy from the identity's wallet's shielded notes (account 0) at the
+    /// same agreed total the identity path submits. Rust selects the notes,
+    /// proves, broadcasts and records the activity.
+    private func submitShielded() {
+        guard let walletId = identity.wallet?.walletId else {
+            submitError = .init(message: "This identity is not linked to a loaded wallet.")
+            return
+        }
+        guard let amount = parsedAmount, amount > 0 else {
+            submitError = .init(message: "Amount must be greater than zero.")
+            return
+        }
+        guard let totalCost = expectedTotalCost else {
+            submitError = .init(message: "This amount can't be purchased at the configured price.")
+            return
+        }
+        guard let position = UInt16(exactly: token.position) else {
+            submitError = .init(message: "Invalid token position.")
+            return
+        }
+
+        isSubmitting = true
+        submitGeneration &+= 1
+        let gen = submitGeneration
+        let contractId = token.contractId
+        let manager = walletManager
+
+        Task {
+            do {
+                // Per-operation spend authority: the resolver fires for
+                // this spend only.
+                try await manager.shieldedTokenPurchaseFromPool(
+                    walletId: walletId,
+                    resolver: MnemonicResolver(),
+                    account: 0,
+                    contractId: contractId,
+                    tokenPosition: position,
+                    tokenCount: amount,
+                    totalAgreedPrice: totalCost
+                )
+                await MainActor.run {
+                    guard self.submitGeneration == gen else { return }
+                    self.isSubmitting = false
+                    self.shieldedOutcome = .init(message: "Purchase complete. The tokens were minted to this wallet's shielded token pool. The app does not track shielded token notes yet, so they are not shown anywhere.")
+                }
+            } catch let unconfirmed as PlatformWalletError
+                where SendViewModel.mayHaveGoneThrough(unconfirmed) {
+                // The spend may already be on chain and Rust keeps its notes
+                // reserved: report it without inviting a retry, which would
+                // sign a second purchase.
+                await MainActor.run {
+                    guard self.submitGeneration == gen else { return }
+                    self.isSubmitting = false
+                    self.shieldedOutcome = .init(message: "The purchase may have gone through; the next shielded sync confirms it. Do not retry.")
                 }
             } catch {
                 await MainActor.run {

@@ -47,7 +47,8 @@ public final class PersistentShieldedActivity {
     /// Kind discriminant (`ShieldedActivityKind::tag`): 0 Shield,
     /// 1 ShieldFromAssetLock, 2 Received, 3 Sent, 4 Unshield,
     /// 5 Withdrawal, 6 IdentityCreate, 7 ShieldedSpend,
-    /// 8 ShieldFromIdentity, 9 IdentityTopUp (from the pool).
+    /// 8 ShieldFromIdentity, 9 IdentityTopUp (from the pool),
+    /// 10 TokenPurchase (from the pool; `counterparty` is the token id).
     public var kindTag: Int
     /// Direction: 0 In, 1 Out, 2 Self.
     public var direction: Int
