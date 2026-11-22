@@ -67,7 +67,8 @@ extension PersistentPublicKey {
         keyId: Int,
         identityId: String
     ) -> PersistentPublicKey? {
-        guard let rowKeyId = Int32(exactly: keyId),
+        // The row stores the protocol `UInt32` key id as its bit pattern.
+        guard let protocolKeyId = UInt32(exactly: keyId),
               let purpose = keyObject["purpose"] as? Int,
               let securityLevel = keyObject["securityLevel"] as? Int,
               let keyType = keyObject["type"] as? Int,
@@ -77,7 +78,7 @@ extension PersistentPublicKey {
         }
         let bounds = FetchedContractBounds(keyObject: keyObject)
         return PersistentPublicKey(
-            keyId: rowKeyId,
+            keyId: Int32(bitPattern: protocolKeyId),
             purpose: UInt8(exactly: purpose).flatMap(KeyPurpose.init(rawValue:)) ?? .authentication,
             securityLevel: UInt8(exactly: securityLevel).flatMap(SecurityLevel.init(rawValue:)) ?? .high,
             keyType: UInt8(exactly: keyType).flatMap(KeyType.init(rawValue:)) ?? .ecdsaSecp256k1,

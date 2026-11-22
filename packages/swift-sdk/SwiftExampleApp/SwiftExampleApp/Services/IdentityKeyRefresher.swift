@@ -21,9 +21,19 @@ enum IdentityKeyRefresher {
     /// Re-fetch `identity`'s balance + public keys from Platform and
     /// persist them.
     ///
-    /// The keys go through `PersistentIdentity.mergeFetchedPublicKeys(_:)`:
-    /// a key whose id, type and bytes are unchanged keeps its row, and with
-    /// it the `privateKeyKeychainIdentifier`, `walletId` and
+    /// When `wallet` holds the identity, the refresh is the wallet's own
+    /// proved one (`refreshIdentity`): Rust folds the fetch into its copy
+    /// and upserts the changed key rows through the persister, keeping
+    /// each row's wallet id, derivation path and Keychain reference, and
+    /// never letting a lagging node roll back a raise or a disable. Swift
+    /// does not write those rows itself then, so the wallet stays their
+    /// only writer.
+    ///
+    /// Without a wallet (an identity only looked up, not held), the
+    /// identity is fetched and its keys go through
+    /// `PersistentIdentity.mergeFetchedPublicKeys(_:)`: a key whose id,
+    /// type and bytes are unchanged keeps its row, and with it the
+    /// `privateKeyKeychainIdentifier`, `walletId` and
     /// `identityDerivationPath` that let it sign, and its stored contract
     /// bounds when the fetch does not carry them. A new or changed key gets
     /// a new row; a key no longer on Platform has its row deleted (its
@@ -35,12 +45,32 @@ enum IdentityKeyRefresher {
     @MainActor
     static func refreshBalanceAndKeys(
         identity: PersistentIdentity,
+        wallet: ManagedPlatformWallet?,
         sdk: SDK,
         modelContext: ModelContext
     ) async throws {
+        if let wallet {
+            try await wallet.refreshIdentity(identityId: identity.identityId)
+            return
+        }
+        // Held by a wallet that is not loaded right now: its rows carry the
+        // wallet id and derivation path the signer needs, which a rebuild
+        // from a plain fetch would drop. Leave them to the wallet.
+        if identity.wallet != nil {
+            throw SDKError.invalidState("The wallet holding this identity is not loaded; open the wallet and refresh again.")
+        }
+
         let fetchedIdentity = try await sdk.identityGet(
             identityId: identity.identityIdBase58
         )
+        // Wallet discovery may have claimed the identity, and written its
+        // rows with their signing metadata, while the fetch was out. This
+        // check narrows that window but does not close it: the wallet's
+        // persister commits from its own context off the main actor, so a
+        // claim can still land before the save below. Tracked in #6074.
+        if identity.wallet != nil {
+            throw SDKError.invalidState("A wallet took over this identity during the refresh; refresh it again from the wallet.")
+        }
 
         // Balance: accept either the numeric or string-encoded form
         // the FFI may hand back depending on magnitude.

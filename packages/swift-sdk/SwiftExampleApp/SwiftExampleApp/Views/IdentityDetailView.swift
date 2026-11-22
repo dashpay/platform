@@ -553,6 +553,7 @@ struct IdentityDetailView: View {
                 // badge appears without a manual refresh).
                 try await IdentityKeyRefresher.refreshBalanceAndKeys(
                     identity: identity,
+                    wallet: identity.wallet.flatMap { walletManager.wallet(for: $0.walletId) },
                     sdk: sdk,
                     modelContext: modelContext
                 )
