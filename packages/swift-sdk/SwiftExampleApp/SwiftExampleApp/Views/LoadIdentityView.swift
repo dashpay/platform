@@ -38,6 +38,9 @@ struct LoadIdentityView: View {
     private struct PendingKeyReplacement {
         let keyType: SpecialKeyType
         let keyData: Data
+        /// Digest of the stored key the user is asked about; the
+        /// replacement refuses if the slot holds anything else by then.
+        let storedKeyDigest: Data
     }
 
     /// The conflicting keys of the last load, offered for replacement.
@@ -642,11 +645,19 @@ struct LoadIdentityView: View {
                             return identifier
                         case .conflicting:
                             conflictingKeys.append(name)
-                            conflictingReplacements.append(
-                                PendingKeyReplacement(keyType: keyType, keyData: key)
-                            )
+                            // Offered for replacement only when the stored
+                            // key can be named, so a confirmation always
+                            // refers to the key that caused the conflict.
+                            if let digest = KeychainManager.shared.specialKeyDigest(
+                                identityId: validIdData,
+                                keyType: keyType
+                            ) {
+                                conflictingReplacements.append(
+                                    PendingKeyReplacement(keyType: keyType, keyData: key, storedKeyDigest: digest)
+                                )
+                            }
                             return nil
-                        case .failed:
+                        case .failed, .changedSinceConfirmation:
                             unstoredKeys.append(name)
                             return nil
                         }
@@ -771,10 +782,17 @@ struct LoadIdentityView: View {
         var replaced: [String] = []
         var kept: [String] = []
         var removed: [String] = []
+        var unknown: [String] = []
+        var changed: [String] = []
         for key in keys {
             let name = key.keyType.rawValue
             let identifier: String?
-            switch keychain.replaceSpecialKey(key.keyData, identityId: pending.identityId, keyType: key.keyType) {
+            switch keychain.replaceSpecialKey(
+                key.keyData,
+                identityId: pending.identityId,
+                keyType: key.keyType,
+                replacing: key.storedKeyDigest
+            ) {
             case .stored(let stored), .alreadyStored(let stored):
                 identifier = stored
                 replaced.append(name)
@@ -782,18 +800,26 @@ struct LoadIdentityView: View {
                 // Another writer filled the emptied slot; its key is kept.
                 identifier = nil
                 kept.append(name)
+            case .changedSinceConfirmation:
+                // The slot holds a different key than the one the user
+                // agreed to replace (another window replaced it); untouched.
+                identifier = nil
+                changed.append(name)
             case .failed:
                 // A refused delete keeps the old key; a failed add after
                 // the delete leaves the slot empty.
-                if case .success(nil) = keychain.readSpecialKey(identityId: pending.identityId, keyType: key.keyType) {
+                switch keychain.readSpecialKey(identityId: pending.identityId, keyType: key.keyType) {
+                case .success(nil):
                     removed.append(name)
                     switch key.keyType {
                     case .voting: row.votingPrivateKeyIdentifier = nil
                     case .owner: row.ownerPrivateKeyIdentifier = nil
                     case .payout: row.payoutPrivateKeyIdentifier = nil
                     }
-                } else {
+                case .success:
                     kept.append(name)
+                case .failure:
+                    unknown.append(name)
                 }
                 identifier = nil
             }
@@ -823,6 +849,16 @@ struct LoadIdentityView: View {
             let names = ListFormatter.localizedString(byJoining: kept)
             let noun = kept.count == 1 ? "key" : "keys"
             parts.append("The \(names) \(noun) could not be replaced; the stored one was kept.")
+        }
+        if !changed.isEmpty {
+            let names = ListFormatter.localizedString(byJoining: changed)
+            let noun = changed.count == 1 ? "key has" : "keys have"
+            parts.append("The stored \(names) \(noun) changed since you confirmed, so nothing was replaced. Load the identity again to compare.")
+        }
+        if !unknown.isEmpty {
+            let names = ListFormatter.localizedString(byJoining: unknown)
+            let noun = unknown.count == 1 ? "key" : "keys"
+            parts.append("The \(names) \(noun) could not be replaced, and the Keychain could not be read to check it; the stored one may still be there.")
         }
         if !removed.isEmpty {
             let names = ListFormatter.localizedString(byJoining: removed)
@@ -888,9 +924,10 @@ struct LoadIdentityView: View {
             current.disabledAt = fresh.disabledAt
             current.totalBudget = fresh.totalBudget
             current.expiresAt = fresh.expiresAt
-            current.contractBoundsData = fresh.contractBoundsData
-            current.contractBoundsDocumentTypeName = fresh.contractBoundsDocumentTypeName
-            current.contractBoundsKind = fresh.contractBoundsKind
+            // Contract bounds are left as stored: this form's parsers do not
+            // read them from the fetch (`contractBounds: nil`), so copying
+            // would turn a contract-, document-type- or group-bound key into
+            // an unbounded one.
             current.identityId = fresh.identityId
         }
         identity.publicKeys.removeAll { !matched.contains(ObjectIdentifier($0)) }

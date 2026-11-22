@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Security
 import os.log
@@ -299,6 +300,19 @@ public final class KeychainManager: Sendable {
         case conflicting
         /// The slot could not be read or written.
         case failed
+        /// `replaceSpecialKey(_:identityId:keyType:replacing:)` only: the
+        /// slot no longer holds the key the user confirmed replacing, so
+        /// nothing was changed.
+        case changedSinceConfirmation
+    }
+
+    /// The SHA-256 digest of the key stored in a special-key slot, or `nil`
+    /// when the slot is empty or cannot be read. Lets a caller name the key
+    /// a user agreed to replace without keeping the key itself.
+    public nonisolated func specialKeyDigest(identityId: Data, keyType: SpecialKeyType) -> Data? {
+        let identifier = generateSpecialKeyIdentifier(identityId: identityId, keyType: keyType)
+        guard case .success(let stored?) = readKeyData(identifier: identifier) else { return nil }
+        return Data(SHA256.hash(data: stored))
     }
 
     /// Store a special key only into an empty slot. An existing key is never
@@ -363,8 +377,13 @@ public final class KeychainManager: Sendable {
     /// confirmed replacing a conflicting key, which is why the slot is
     /// deleted before the add: the user chose to give up the old key.
     ///
-    /// Returns `.failed` with the old key untouched when the Keychain
-    /// refuses the delete. Once the delete succeeded the result is that of
+    /// The replacement is bound to the key the user saw: when the slot no
+    /// longer holds the key whose digest is `expectedDigest` (another
+    /// window replaced it since), nothing is changed and the result is
+    /// `.changedSinceConfirmation`. A slot emptied since then simply takes
+    /// the new key. Returns `.failed` with the old key untouched when the
+    /// slot cannot be read or the Keychain refuses the delete. Once the
+    /// delete succeeded the result is that of
     /// `storeSpecialKeyIfAbsent(_:identityId:keyType:)`, so `.failed` there
     /// leaves the slot empty and `.conflicting` means another writer filled
     /// it in between.
@@ -372,11 +391,25 @@ public final class KeychainManager: Sendable {
     ///   - keyData: The key data
     ///   - identityId: The identity ID (32 bytes)
     ///   - keyType: The type of special key
+    ///   - expectedDigest: `specialKeyDigest(identityId:keyType:)` of the
+    ///     stored key when the user was asked
     public func replaceSpecialKey(
         _ keyData: Data,
         identityId: Data,
-        keyType: SpecialKeyType
+        keyType: SpecialKeyType,
+        replacing expectedDigest: Data
     ) -> SpecialKeyStoreOutcome {
+        let identifier = generateSpecialKeyIdentifier(identityId: identityId, keyType: keyType)
+        switch readKeyData(identifier: identifier) {
+        case .success(let stored?):
+            guard Data(SHA256.hash(data: stored)) == expectedDigest else {
+                return .changedSinceConfirmation
+            }
+        case .success(nil):
+            return storeSpecialKeyIfAbsent(keyData, identityId: identityId, keyType: keyType)
+        case .failure:
+            return .failed
+        }
         guard deleteSpecialKey(identityId: identityId, keyType: keyType) else {
             return .failed
         }

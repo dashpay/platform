@@ -81,12 +81,48 @@ final class KeychainManagerStoreSpecialKeyIfAbsentTests: XCTestCase {
             .conflicting
         )
 
-        guard case .stored = keychain.replaceSpecialKey(replacement, identityId: identityId, keyType: .voting) else {
+        let digest = try XCTUnwrap(keychain.specialKeyDigest(identityId: identityId, keyType: .voting))
+        guard case .stored = keychain.replaceSpecialKey(
+            replacement, identityId: identityId, keyType: .voting, replacing: digest
+        ) else {
             return XCTFail("a confirmed replacement stores the new key")
         }
         XCTAssertEqual(
             try keychain.readSpecialKey(identityId: identityId, keyType: .voting).get(),
             replacement
+        )
+    }
+
+    /// Two confirmations shown for the same stored key: the second one,
+    /// answered after the first replaced the key, changes nothing.
+    func testAStaleConfirmationLeavesTheFirstReplacementIntact() throws {
+        let keychain = KeychainManager(serviceName: "org.dashfoundation.tests.\(UUID().uuidString)")
+        let identityId = Data(repeating: 0x35, count: 32)
+        addTeardownBlock { @MainActor in
+            _ = keychain.deleteSpecialKey(identityId: identityId, keyType: .voting)
+        }
+
+        let original = Data(repeating: 0x09, count: 32)
+        let first = Data(repeating: 0x0A, count: 32)
+        let second = Data(repeating: 0x0B, count: 32)
+        guard case .stored = keychain.storeSpecialKeyIfAbsent(original, identityId: identityId, keyType: .voting) else {
+            return XCTFail("an empty slot stores the key")
+        }
+        // Both dialogs were shown for the original key.
+        let shown = try XCTUnwrap(keychain.specialKeyDigest(identityId: identityId, keyType: .voting))
+
+        guard case .stored = keychain.replaceSpecialKey(
+            first, identityId: identityId, keyType: .voting, replacing: shown
+        ) else {
+            return XCTFail("the first confirmation replaces the original key")
+        }
+        XCTAssertEqual(
+            keychain.replaceSpecialKey(second, identityId: identityId, keyType: .voting, replacing: shown),
+            .changedSinceConfirmation
+        )
+        XCTAssertEqual(
+            try keychain.readSpecialKey(identityId: identityId, keyType: .voting).get(),
+            first
         )
     }
 
