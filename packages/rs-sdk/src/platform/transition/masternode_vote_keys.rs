@@ -262,6 +262,26 @@ impl VotingKeyCheck {
     }
 }
 
+/// A check a host recorded, with the voting address of the key it was made of.
+///
+/// A host's key store and its records are written separately, so a record can outlive the key
+/// it describes (a replacement whose key was written but whose record was not). The address
+/// ties the record to its key: the rules here use a record only for a key with that address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecordedVotingKey {
+    /// What the check found.
+    pub check: RecordedVotingKeyCheck,
+    /// The voting address of the key that was checked.
+    pub voting_address: [u8; 20],
+}
+
+impl RecordedVotingKey {
+    /// The recorded check, if it was made of the key with `voting_address`.
+    fn check_of(&self, voting_address: &[u8; 20]) -> Option<RecordedVotingKeyCheck> {
+        (self.voting_address == *voting_address).then_some(self.check)
+    }
+}
+
 /// What the host's voting key slot for the masternode holds, compared with the key that was
 /// checked. The host reads its own store to say this; the rules in
 /// [`voting_key_check_outcome`] decide what follows from it.
@@ -269,8 +289,9 @@ impl VotingKeyCheck {
 pub enum VotingKeySlot {
     /// No voting key is stored for the masternode.
     Empty,
-    /// Exactly the checked key is stored, with what was recorded for it, if anything.
-    SameKey(Option<RecordedVotingKeyCheck>),
+    /// Exactly the checked key is stored, with the record the host holds for the masternode,
+    /// if any. The record counts only if it was made of this key (its voting address).
+    SameKey(Option<RecordedVotingKey>),
     /// A different key is stored. The checked key replaces it only if the user confirms.
     DifferentKey,
 }
@@ -280,9 +301,10 @@ pub enum VotingKeySlot {
 pub struct VotingKeyCheckOutcome {
     /// Whether the host stores the checked key: every check but a proven refusal.
     pub store_key: bool,
-    /// What the host records for the checked key once it is in the slot, or for the stored key
-    /// when it is the same one. `None` keeps what is already recorded: a check that could not
-    /// run never erases what Platform proved about the same key before.
+    /// What the host records, with the checked key's voting address, for the checked key once
+    /// it is in the slot, or for the stored key when it is the same one. `None` leaves what is
+    /// recorded unchanged: a check that could not run never erases what Platform proved about
+    /// the same key before.
     pub record: Option<RecordedVotingKeyCheck>,
 }
 
@@ -294,11 +316,21 @@ pub struct VotingKeyCheckOutcome {
 ///   nothing stored.
 /// - Valid: the key is stored and recorded as valid.
 /// - Undetermined: the key is stored and recorded as undetermined, unless the slot already
-///   holds the same key with a valid or invalid record, which is kept.
+///   holds the same key with a valid or invalid record of that key, which is kept.
+///
+/// A record made of another key (another voting address) is not a record of the checked key,
+/// so it is never kept for it.
 pub fn voting_key_check_outcome(
     check: RecordedVotingKeyCheck,
+    voting_address: &[u8; 20],
     slot: VotingKeySlot,
 ) -> VotingKeyCheckOutcome {
+    let slot = match slot {
+        VotingKeySlot::SameKey(recorded) => VotingKeySlot::SameKey(
+            recorded.filter(|recorded| recorded.check_of(voting_address).is_some()),
+        ),
+        other => other,
+    };
     match check {
         RecordedVotingKeyCheck::Invalid => VotingKeyCheckOutcome {
             store_key: false,
@@ -314,9 +346,10 @@ pub fn voting_key_check_outcome(
         RecordedVotingKeyCheck::Undetermined => VotingKeyCheckOutcome {
             store_key: true,
             record: match slot {
-                VotingKeySlot::SameKey(Some(
-                    RecordedVotingKeyCheck::Valid | RecordedVotingKeyCheck::Invalid,
-                )) => None,
+                VotingKeySlot::SameKey(Some(RecordedVotingKey {
+                    check: RecordedVotingKeyCheck::Valid | RecordedVotingKeyCheck::Invalid,
+                    ..
+                })) => None,
                 VotingKeySlot::SameKey(_) | VotingKeySlot::Empty | VotingKeySlot::DifferentKey => {
                     Some(RecordedVotingKeyCheck::Undetermined)
                 }
@@ -336,8 +369,20 @@ pub struct RecordedVotingKeyUse {
     pub check_before_use: bool,
 }
 
-/// How a host may use a stored voting key whose last recorded check is `recorded`.
-pub fn recorded_voting_key_use(recorded: Option<RecordedVotingKeyCheck>) -> RecordedVotingKeyUse {
+/// How a host may use a stored voting key, from the record it holds for the masternode.
+///
+/// `stored_voting_address` is the voting address of the key in the slot, when the host has
+/// read it. A record made of another key does not describe it, so the key is then treated as
+/// never checked. Without the address (a host listing many keys without reading each), the
+/// record is taken as it is, and the check before use re-reads it.
+pub fn recorded_voting_key_use(
+    recorded: Option<RecordedVotingKey>,
+    stored_voting_address: Option<&[u8; 20]>,
+) -> RecordedVotingKeyUse {
+    let recorded = recorded.and_then(|recorded| match stored_voting_address {
+        Some(address) => recorded.check_of(address),
+        None => Some(recorded.check),
+    });
     match recorded {
         Some(RecordedVotingKeyCheck::Valid) => RecordedVotingKeyUse {
             can_vote: true,
@@ -719,16 +764,38 @@ mod tests {
         VotingKeyCheckOutcome { store_key, record }
     }
 
-    /// Every slot a host can report, including the same key under each record.
-    fn every_slot() -> [VotingKeySlot; 6] {
-        [
+    /// A record of the key with `address`.
+    fn record(check: RecordedVotingKeyCheck, address: [u8; 20]) -> Option<RecordedVotingKey> {
+        Some(RecordedVotingKey {
+            check,
+            voting_address: address,
+        })
+    }
+
+    /// Every slot a host can report for the key with `VOTING_ADDRESS`: the same key under each
+    /// record of it, and under a record left by another key (`OTHER_ADDRESS`).
+    fn every_slot() -> Vec<VotingKeySlot> {
+        let mut slots = vec![
             VotingKeySlot::Empty,
             VotingKeySlot::DifferentKey,
             VotingKeySlot::SameKey(None),
-            VotingKeySlot::SameKey(Some(RecordedValid)),
-            VotingKeySlot::SameKey(Some(RecordedInvalid)),
-            VotingKeySlot::SameKey(Some(RecordedUndetermined)),
-        ]
+        ];
+        for check in [RecordedValid, RecordedInvalid, RecordedUndetermined] {
+            slots.push(VotingKeySlot::SameKey(record(check, VOTING_ADDRESS)));
+            slots.push(VotingKeySlot::SameKey(record(check, OTHER_ADDRESS)));
+        }
+        slots
+    }
+
+    /// Whether `slot` holds the checked key with a valid or invalid record made of it.
+    fn holds_a_proven_record_of_the_checked_key(slot: VotingKeySlot) -> bool {
+        matches!(
+            slot,
+            VotingKeySlot::SameKey(Some(RecordedVotingKey {
+                check: RecordedValid | RecordedInvalid,
+                voting_address,
+            })) if voting_address == VOTING_ADDRESS
+        )
     }
 
     #[test]
@@ -763,7 +830,7 @@ mod tests {
                 _ => outcome(false, None),
             };
             assert_eq!(
-                voting_key_check_outcome(RecordedInvalid, slot),
+                voting_key_check_outcome(RecordedInvalid, &VOTING_ADDRESS, slot),
                 expected,
                 "{slot:?}"
             );
@@ -774,7 +841,7 @@ mod tests {
     fn should_store_and_record_a_valid_key_in_every_slot() {
         for slot in every_slot() {
             assert_eq!(
-                voting_key_check_outcome(RecordedValid, slot),
+                voting_key_check_outcome(RecordedValid, &VOTING_ADDRESS, slot),
                 outcome(true, Some(RecordedValid)),
                 "{slot:?}"
             );
@@ -782,18 +849,18 @@ mod tests {
     }
 
     /// A check that could not run stores the key, and does not erase a proven record of the
-    /// same key.
+    /// same key. A record left by another key is not kept for it: a replacement whose key was
+    /// written but whose record was not must not inherit the old key's refusal.
     #[test]
-    fn should_store_an_undetermined_key_and_keep_a_proven_record_of_the_same_key() {
+    fn should_store_an_undetermined_key_and_keep_only_a_proven_record_of_that_key() {
         for slot in every_slot() {
-            let expected = match slot {
-                VotingKeySlot::SameKey(Some(RecordedValid | RecordedInvalid)) => {
-                    outcome(true, None)
-                }
-                _ => outcome(true, Some(RecordedUndetermined)),
+            let expected = if holds_a_proven_record_of_the_checked_key(slot) {
+                outcome(true, None)
+            } else {
+                outcome(true, Some(RecordedUndetermined))
             };
             assert_eq!(
-                voting_key_check_outcome(RecordedUndetermined, slot),
+                voting_key_check_outcome(RecordedUndetermined, &VOTING_ADDRESS, slot),
                 expected,
                 "{slot:?}"
             );
@@ -802,17 +869,44 @@ mod tests {
 
     #[test]
     fn should_offer_every_key_but_a_refused_one_and_check_only_unproven_ones() {
-        let use_of = |recorded| {
+        let use_of = |recorded, stored: Option<&[u8; 20]>| {
             let RecordedVotingKeyUse {
                 can_vote,
                 check_before_use,
-            } = recorded_voting_key_use(recorded);
+            } = recorded_voting_key_use(recorded, stored);
             (can_vote, check_before_use)
         };
-        assert_eq!(use_of(None), (true, true));
-        assert_eq!(use_of(Some(RecordedUndetermined)), (true, true));
-        assert_eq!(use_of(Some(RecordedValid)), (true, false));
-        assert_eq!(use_of(Some(RecordedInvalid)), (false, false));
+        for stored in [None, Some(&VOTING_ADDRESS)] {
+            assert_eq!(use_of(None, stored), (true, true));
+            assert_eq!(
+                use_of(record(RecordedUndetermined, VOTING_ADDRESS), stored),
+                (true, true)
+            );
+            assert_eq!(
+                use_of(record(RecordedValid, VOTING_ADDRESS), stored),
+                (true, false)
+            );
+            assert_eq!(
+                use_of(record(RecordedInvalid, VOTING_ADDRESS), stored),
+                (false, false)
+            );
+        }
+    }
+
+    /// A record left by another key says nothing about the stored key once its address is
+    /// known: the key is offered and checked before use.
+    #[test]
+    fn should_treat_a_record_of_another_key_as_never_checked() {
+        for check in [RecordedValid, RecordedInvalid, RecordedUndetermined] {
+            assert_eq!(
+                recorded_voting_key_use(record(check, OTHER_ADDRESS), Some(&VOTING_ADDRESS)),
+                RecordedVotingKeyUse {
+                    can_vote: true,
+                    check_before_use: true,
+                },
+                "{check:?}"
+            );
+        }
     }
 
     #[cfg(feature = "mocks")]

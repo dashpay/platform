@@ -102,9 +102,7 @@ extension SDK {
         proTxHash: Data,
         votingPrivateKey: Data
     ) async throws -> MasternodeVotingKeyCheck {
-        let votingAddress = try MasternodeVotingAddress.of(privateKey: votingPrivateKey)
-            .mapError { SDKError.invalidParameter($0.message) }
-            .get()
+        let votingAddress = try SDK.masternodeVotingAddress(privateKey: votingPrivateKey)
         return try await checkMasternodeVotingKey(proTxHash: proTxHash, votingAddress: votingAddress)
     }
 }
@@ -115,36 +113,58 @@ extension SDK {
 // `dash_sdk_masternode_recorded_voting_key_use` in `rs-sdk-ffi`, which call
 // rs-sdk's `voting_key_check_outcome` and `recorded_voting_key_use`. Rust
 // holds the rules (store or refuse a key, what to record for it, whether a
-// stored key may vote or is checked first); the host only reports what it
-// stores and persists what comes back.
+// stored key may vote or is checked first, and which record belongs to which
+// key); the host only reports what it stores and persists what comes back.
+//
+// Voting addresses here are the 20-byte hash160 of the voting public key, as
+// ``SDK/masternodeVotingAddress(privateKey:)`` and the Keychain signer return
+// them. Passing any other length is a programming error and traps.
+
+/// A check the host recorded, with the voting address of the key it was made
+/// of. The address ties the record to its key: Rust uses a record only for a
+/// key with that address.
+public struct MasternodeRecordedVotingKey: Equatable, Sendable {
+    /// What the check found.
+    public let check: MasternodeVotingKeyCheck
+    /// The 20-byte voting address of the key that was checked.
+    public let votingAddress: Data
+
+    /// A recorded check with its key's address; `nil` when `votingAddress`
+    /// is not 20 bytes, so it is no address and the record is no record.
+    public init?(check: MasternodeVotingKeyCheck, votingAddress: Data) {
+        guard votingAddress.count == 20 else { return nil }
+        self.check = check
+        self.votingAddress = votingAddress
+    }
+}
 
 /// What the host's voting key slot for a masternode holds, compared with the
 /// key that was checked. The host reads its Keychain and its identity row to
 /// say this; Rust decides what follows from it
-/// (``MasternodeVotingKeyCheck/outcome(slot:)``).
+/// (``MasternodeVotingKeyCheck/outcome(votingAddress:slot:)``).
 public enum MasternodeVotingKeySlot: Equatable, Sendable {
     /// No voting key is stored for the masternode.
     case empty
-    /// Exactly the checked key is stored, with the check recorded for it,
-    /// `nil` when none was.
-    case sameKey(recorded: MasternodeVotingKeyCheck?)
+    /// Exactly the checked key is stored, with the record the host holds for
+    /// the masternode, `nil` when none is.
+    case sameKey(recorded: MasternodeRecordedVotingKey?)
     /// A different key is stored.
     case differentKey
 }
 
 /// What the host does with a voting key once checked, as Rust decides it
-/// (``MasternodeVotingKeyCheck/outcome(slot:)``).
+/// (``MasternodeVotingKeyCheck/outcome(votingAddress:slot:)``).
 public struct MasternodeVotingKeyCheckOutcome: Equatable, Sendable {
     /// Whether the host stores the checked key.
     public let storeKey: Bool
-    /// What the host records for the checked key once it is in the slot, or
-    /// for the stored key when it is the same one. `nil` keeps what is
-    /// already recorded.
+    /// What the host records, with the checked key's voting address, for the
+    /// checked key once it is in the slot, or for the stored key when it is
+    /// the same one. `nil` leaves the record unchanged.
     public let record: MasternodeVotingKeyCheck?
 }
 
 /// How the host may use a stored voting key, as Rust decides it from the
-/// check recorded for the key.
+/// record the host holds for the masternode.
 public struct MasternodeRecordedVotingKeyUse: Equatable, Sendable {
     /// Whether the key is offered for voting.
     public let canVote: Bool
@@ -153,14 +173,19 @@ public struct MasternodeRecordedVotingKeyUse: Equatable, Sendable {
     /// uses it.
     public let checkBeforeUse: Bool
 
-    /// How a stored voting key whose last recorded check is `recorded` may be
-    /// used (`dash_sdk_masternode_recorded_voting_key_use`).
+    /// How the stored voting key may be used
+    /// (`dash_sdk_masternode_recorded_voting_key_use`).
     ///
-    /// - Parameter recorded: The check recorded for the key, `nil` when it
-    ///   was never checked.
-    public init(recorded: MasternodeVotingKeyCheck?) {
+    /// - Parameters:
+    ///   - recorded: The record the host holds for the masternode, `nil`
+    ///     when it holds none.
+    ///   - storedVotingAddress: The 20-byte voting address of the stored key,
+    ///     when the host has read it; `nil` otherwise.
+    public init(recorded: MasternodeRecordedVotingKey?, storedVotingAddress: Data?) {
         let keyUse = dash_sdk_masternode_recorded_voting_key_use(
-            MasternodeVotingKeyCheckFFI.recorded(recorded)
+            MasternodeVotingKeyCheckFFI.recorded(recorded),
+            storedVotingAddress != nil,
+            MasternodeVotingKeyCheckFFI.address(storedVotingAddress)
         )
         self.canVote = keyUse.can_vote
         self.checkBeforeUse = keyUse.check_before_use
@@ -172,38 +197,42 @@ extension MasternodeVotingKeyCheck {
     /// its voting key slot holds
     /// (`dash_sdk_masternode_voting_key_check_outcome`).
     ///
-    /// - Parameter slot: What the host's voting key slot for the masternode
-    ///   holds, compared with the checked key.
-    /// - Returns: Whether to store the key, and what to record for it. A
-    ///   record of this check's own kind is this check, with its message.
-    public func outcome(slot: MasternodeVotingKeySlot) -> MasternodeVotingKeyCheckOutcome {
+    /// - Parameters:
+    ///   - votingAddress: The 20-byte voting address of the checked key.
+    ///   - slot: What the host's voting key slot for the masternode holds,
+    ///     compared with the checked key.
+    /// - Returns: Whether to store the key, and what to record for it with
+    ///   `votingAddress`. A record of this check's own kind is this check,
+    ///   with its message.
+    public func outcome(
+        votingAddress: Data,
+        slot: MasternodeVotingKeySlot
+    ) -> MasternodeVotingKeyCheckOutcome {
         let ffiSlot: DashSDKVotingKeySlot
-        var recordedForSameKey = DashSDKRecordedVotingKeyCheck_None
+        var recordedForSameKey: MasternodeRecordedVotingKey?
         switch slot {
         case .empty:
             ffiSlot = DashSDKVotingKeySlot_Empty
         case .sameKey(let recorded):
             ffiSlot = DashSDKVotingKeySlot_SameKey
-            recordedForSameKey = MasternodeVotingKeyCheckFFI.recorded(recorded)
+            recordedForSameKey = recorded
         case .differentKey:
             ffiSlot = DashSDKVotingKeySlot_DifferentKey
         }
         let outcome = dash_sdk_masternode_voting_key_check_outcome(
             MasternodeVotingKeyCheckFFI.verdict(of: self),
+            MasternodeVotingKeyCheckFFI.address(votingAddress),
             ffiSlot,
-            recordedForSameKey
+            MasternodeVotingKeyCheckFFI.recorded(recordedForSameKey)
         )
-        let record: MasternodeVotingKeyCheck?
-        if outcome.keeps_record {
-            record = nil
-        } else {
-            record = MasternodeVotingKeyCheckFFI.check(recorded: outcome.record, preferring: self)
-        }
-        return MasternodeVotingKeyCheckOutcome(storeKey: outcome.store_key, record: record)
+        return MasternodeVotingKeyCheckOutcome(
+            storeKey: outcome.store_key,
+            record: MasternodeVotingKeyCheckFFI.check(recorded: outcome.record, preferring: self)
+        )
     }
 }
 
-/// Marshalling between ``MasternodeVotingKeyCheck`` and the FFI's enums.
+/// Marshalling between the Swift voting key types and the FFI's.
 enum MasternodeVotingKeyCheckFFI {
     static func verdict(of check: MasternodeVotingKeyCheck) -> DashSDKVotingKeyVerdict {
         switch check {
@@ -213,22 +242,34 @@ enum MasternodeVotingKeyCheckFFI {
         }
     }
 
-    static func recorded(_ check: MasternodeVotingKeyCheck?) -> DashSDKRecordedVotingKeyCheck {
-        switch check {
-        case nil: return DashSDKRecordedVotingKeyCheck_None
-        case .valid: return DashSDKRecordedVotingKeyCheck_Valid
-        case .invalid: return DashSDKRecordedVotingKeyCheck_Invalid
-        case .undetermined: return DashSDKRecordedVotingKeyCheck_Undetermined
-        }
+    /// The FFI address for 20 address bytes; all zero for `nil`, which the
+    /// FFI does not read.
+    static func address(_ bytes: Data?) -> DashSDKVotingAddress {
+        var address = DashSDKVotingAddress()
+        guard let bytes else { return address }
+        precondition(bytes.count == 20, "a voting address has 20 bytes, not \(bytes.count)")
+        withUnsafeMutableBytes(of: &address.bytes) { $0.copyBytes(from: bytes) }
+        return address
     }
 
-    /// The check for a record kind Rust returned: `check` itself when it is
-    /// of that kind, so its message is kept, otherwise the kind with no
-    /// message.
+    static func recorded(_ recorded: MasternodeRecordedVotingKey?) -> DashSDKRecordedVotingKey {
+        let check: DashSDKRecordedVotingKeyCheck
+        switch recorded?.check {
+        case nil: check = DashSDKRecordedVotingKeyCheck_None
+        case .valid: check = DashSDKRecordedVotingKeyCheck_Valid
+        case .invalid: check = DashSDKRecordedVotingKeyCheck_Invalid
+        case .undetermined: check = DashSDKRecordedVotingKeyCheck_Undetermined
+        }
+        return DashSDKRecordedVotingKey(check: check, voting_address: address(recorded?.votingAddress))
+    }
+
+    /// The check for a record Rust returned: `nil` for `None` (leave the
+    /// record unchanged), `check` itself when it is of the returned kind, so
+    /// its message is kept, otherwise the kind with no message.
     static func check(
         recorded: DashSDKRecordedVotingKeyCheck,
         preferring check: MasternodeVotingKeyCheck
-    ) -> MasternodeVotingKeyCheck {
+    ) -> MasternodeVotingKeyCheck? {
         let kind: MasternodeVotingKeyCheck
         switch recorded {
         case DashSDKRecordedVotingKeyCheck_Valid:
@@ -238,13 +279,23 @@ enum MasternodeVotingKeyCheckFFI {
         case DashSDKRecordedVotingKeyCheck_Undetermined:
             kind = .undetermined(message: "")
         default:
-            // `None` with `keeps_record` false, or a value this build does
-            // not know: the Swift SDK and the linked FFI disagree.
-            preconditionFailure(
-                "dash_sdk_masternode_voting_key_check_outcome returned record \(recorded.rawValue) without keeping the record"
-            )
+            // `None`. The C enum holds no other value today.
+            return nil
         }
         return verdict(of: kind) == verdict(of: check) ? check : kind
+    }
+}
+
+extension SDK {
+    /// The 20-byte voting address of a 32-byte masternode voting private key,
+    /// formed in Rust (`dash_sdk_masternode_voting_address_from_private_key`).
+    ///
+    /// - Throws: ``SDKError/invalidParameter(_:)`` when the key is not a
+    ///   secp256k1 secret key or has the wrong length.
+    public nonisolated static func masternodeVotingAddress(privateKey: Data) throws -> Data {
+        try MasternodeVotingAddress.of(privateKey: privateKey)
+            .mapError { SDKError.invalidParameter($0.message) }
+            .get()
     }
 }
 

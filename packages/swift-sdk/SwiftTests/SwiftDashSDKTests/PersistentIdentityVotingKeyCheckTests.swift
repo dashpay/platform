@@ -51,4 +51,60 @@ final class PersistentIdentityVotingKeyCheckTests: XCTestCase {
         identity.votingKeyCheckRaw = "a value from a later build"
         XCTAssertNil(identity.votingKeyCheck)
     }
+
+    /// A check recorded with its key's address reads back with it from a
+    /// fresh context; a check set without an address, or cleared, has none.
+    func testShouldRoundTripTheCheckedVotingAddressThroughTheStore() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = container.mainContext
+        let identity = PersistentIdentity(
+            identityId: Data(repeating: 0x33, count: 32),
+            identityType: .masternode,
+            network: .testnet
+        )
+        context.insert(identity)
+        let address = Data(repeating: 0x07, count: 20)
+        let refusal = MasternodeVotingKeyCheck.invalid(message: "No voting identity exists.")
+        identity.setVotingKeyCheck(refusal, votingAddress: address)
+        try context.save()
+
+        let fresh = ModelContext(container)
+        let fetched = try XCTUnwrap(fresh.fetch(FetchDescriptor<PersistentIdentity>()).first)
+        XCTAssertFalse(fetched === identity)
+        XCTAssertEqual(fetched.votingKeyCheckAddress, address)
+        XCTAssertEqual(
+            fetched.recordedVotingKey,
+            MasternodeRecordedVotingKey(check: refusal, votingAddress: address)
+        )
+
+        identity.votingKeyCheck = .valid
+        XCTAssertNil(identity.votingKeyCheckAddress, "a check set without its address drops the old one")
+        XCTAssertNil(identity.recordedVotingKey, "a check without its address is nothing recorded")
+
+        identity.setVotingKeyCheck(.valid, votingAddress: address)
+        identity.votingKeyCheck = nil
+        XCTAssertNil(identity.votingKeyCheckRaw)
+        XCTAssertNil(identity.votingKeyCheckMessage)
+        XCTAssertNil(identity.votingKeyCheckAddress)
+    }
+
+    /// A refusal recorded for another key does not refuse the stored key once
+    /// its address is read: Rust treats it as never checked.
+    func testShouldTreatARecordOfAnotherKeyAsNeverChecked() {
+        let identity = PersistentIdentity(
+            identityId: Data(repeating: 0x34, count: 32),
+            identityType: .masternode,
+            network: .testnet
+        )
+        identity.setVotingKeyCheck(
+            .invalid(message: "No voting identity exists."),
+            votingAddress: Data(repeating: 0x09, count: 20)
+        )
+        let use = MasternodeRecordedVotingKeyUse(
+            recorded: identity.recordedVotingKey,
+            storedVotingAddress: Data(repeating: 0x07, count: 20)
+        )
+        XCTAssertTrue(use.canVote)
+        XCTAssertTrue(use.checkBeforeUse)
+    }
 }
