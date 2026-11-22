@@ -204,9 +204,53 @@ pub unsafe extern "C" fn platform_wallet_update_data_contract_with_signer(
 ///   `description` and `config_json` must each be null or a NUL-terminated
 ///   UTF-8 string (an empty string counts as null).
 /// - `out_preview_json` must be a valid, writable pointer.
+///
+/// Blocks the calling thread until the fetch finishes, so it must not be
+/// called from inside an async runtime. A panic inside is reported as
+/// `ErrorWalletOperation` where panics unwind; nothing is signed or
+/// broadcast either way.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_preview_data_contract_update(
+    wallet_handle: Handle,
+    owner_identity_id: *const u8,
+    contract_id: *const u8,
+    documents_schema_json: *const c_char,
+    tokens_schema_json: *const c_char,
+    groups_schema_json: *const c_char,
+    keywords_json: *const c_char,
+    description: *const c_char,
+    config_json: *const c_char,
+    out_preview_json: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    catch_panic_to_code(
+        "platform_wallet_preview_data_contract_update",
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        "Nothing was signed or broadcast; review the update again.",
+        || unsafe {
+            preview_data_contract_update(
+                wallet_handle,
+                owner_identity_id,
+                contract_id,
+                documents_schema_json,
+                tokens_schema_json,
+                groups_schema_json,
+                keywords_json,
+                description,
+                config_json,
+                out_preview_json,
+            )
+        },
+    )
+}
+
+/// The body of `platform_wallet_preview_data_contract_update`, run inside its
+/// panic guard.
+///
+/// # Safety
+/// As `platform_wallet_preview_data_contract_update`.
+#[allow(clippy::too_many_arguments)]
+unsafe fn preview_data_contract_update(
     wallet_handle: Handle,
     owner_identity_id: *const u8,
     contract_id: *const u8,

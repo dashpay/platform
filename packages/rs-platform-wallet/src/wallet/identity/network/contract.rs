@@ -575,13 +575,12 @@ impl IdentityWallet {
         // 2. Fetch the live contract. We seed the update payload from
         //    it (so omitted sections are preserved) and read its
         //    current version to bump.
+        // A failed fetch (a timeout, a proof that does not verify) keeps the
+        // SDK's typed error; only a contract that is not there is reported
+        // as invalid input.
         let existing = DataContract::fetch(&self.sdk, *contract_id)
             .await
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to fetch contract {contract_id} for update: {e}"
-                ))
-            })?
+            .map_err(PlatformWalletError::Sdk)?
             .ok_or_else(|| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Data contract {contract_id} not found on Platform; cannot update"
@@ -1499,6 +1498,59 @@ mod tests {
 
         assert!(
             err.to_string().contains("cannot update with this identity"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// Through the public update: the stale review is refused before the
+    /// draft is built and before any nonce is read. The mock answers only the
+    /// contract fetch, so a nonce request or a broadcast would fail the call
+    /// with another error.
+    #[tokio::test]
+    async fn should_refuse_a_stale_reviewed_version_through_the_public_update() {
+        use super::super::signing_key::tests::available;
+        // Owned by the identity the test wallet holds, whose keys 1 and 2
+        // are CRITICAL ECDSA authentication keys.
+        let contract = {
+            use dpp::data_contract::factory::DataContractFactory;
+            use dpp::platform_value::platform_value;
+            DataContractFactory::new(PlatformVersion::latest().protocol_version)
+                .unwrap()
+                .create_with_value_config(
+                    Identifier::default(),
+                    1,
+                    platform_value!({
+                        "note": { "type": "object",
+                        "properties": {"message": {"type": "string", "maxLength": 63, "position": 0}},
+                        "additionalProperties": false }
+                    }),
+                    None,
+                    None,
+                )
+                .unwrap()
+                .data_contract_owned()
+        };
+        let wallet = wallet_answering_only_the_fetch_of(&contract).await;
+
+        let err = wallet
+            .identity()
+            .update_data_contract_with_signer(
+                &Identifier::default(),
+                &contract.id(),
+                r#"{"broken": {"type": "not-a-type"}}"#,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(contract.version() + 7),
+                &available(&[1, 2]),
+            )
+            .await
+            .expect_err("a stale reviewed version must be refused");
+
+        assert!(
+            err.to_string().contains("not the reviewed version"),
             "unexpected error: {err}"
         );
     }
