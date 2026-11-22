@@ -18,7 +18,8 @@ use crate::platform::contract_groups::{
 };
 use crate::platform::contract_moderation::{
     ContractDocumentRemovals, ContractModerationActionCounts, ContractModerationEntries,
-    ContractModerationListStatuses, ContractTeamActionSigners, ContractTeamActions,
+    ContractModerationListStatuses, ContractModerationStatusQuery, ContractTeamActionSigners,
+    ContractTeamActions,
 };
 use crate::platform::data_contracts_by_range::DataContractsByRange;
 use crate::platform::data_contracts_latest_versions::{
@@ -663,6 +664,144 @@ async fn should_refuse_when_the_network_proves_protocol_13() {
     assert_eq!(probes(&sdk).await, 1);
     assert_eq!(sent(&sdk, &fee_pots()).await, 0);
     assert!(!sdk.address_list().is_banned(&node()));
+}
+
+/// A status read over every list the contract keeps, on a network proven at 13, is refused
+/// as the status fetch would refuse it, before the contract is asked for: not taken for a
+/// contract that is not moderated.
+#[tokio::test]
+async fn should_refuse_a_status_over_every_list_below_protocol_14_without_a_contract_request() {
+    let sdk = mock_sdk(V13, false, 0);
+    sdk.mock_verified_protocol_version(V13).unwrap();
+    let contract_id = Identifier::new([7; 32]);
+    let result =
+        ContractModerationStatusQuery::resolve(&sdk, contract_id, Identifier::new([8; 32]), None)
+            .await;
+    match result {
+        Err(Error::ProtocolVersionNotActive {
+            method, required, ..
+        }) => {
+            assert_eq!((method, required), ("get_contract_moderation_status", V14));
+        }
+        other => panic!("expected the status read refused below 14, got {other:?}"),
+    }
+    let contract_request: GetDataContractRequest =
+        contract_id.query(&sdk.query_settings()).unwrap();
+    assert_eq!(sent(&sdk, &contract_request).await, 0);
+    assert_eq!(probes(&sdk).await, 0);
+}
+
+/// The positive counterpart: an unpinned SDK that starts below 14, with nothing verified,
+/// reads the status over every list the contract keeps through the public call alone. The
+/// call asks the network for its version (the probe answers 14), then fetches the contract,
+/// then sends the status request over the lists the contract keeps.
+///
+/// The fixtures are protocol 14 answers, encoded without advancing the SDK under test. The
+/// mock keeps no request log, only counts, so the order is shown by a twin SDK whose probe
+/// gets no answer: it sends the probe and is refused without any contract request, so the
+/// contract request waits on the probe's outcome and comes after it.
+#[tokio::test]
+async fn should_resolve_and_send_a_status_over_every_list_once_the_probe_shows_protocol_14() {
+    use crate::platform::contract_moderation::ContractModerationList;
+    use dapi_grpc::platform::v0::get_contract_moderation_status_request;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::config::moderation::ContractModerationListStatus;
+    use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+    use dpp::data_contract::DataContractFactory;
+    use dpp::platform_value::platform_value;
+
+    // The contract request waits on the probe: unanswered, the probe goes out and the read
+    // is refused before the contract is asked for
+    let unanswered = mock_sdk(V13, false, 0);
+    let refused = unanswered
+        .fetch_contract_moderation_status(Identifier::new([7; 32]), Identifier::new([8; 32]), None)
+        .await;
+    assert!(
+        matches!(refused, Err(Error::ProtocolVersionNotActive { .. })),
+        "{refused:?}"
+    );
+    assert_eq!(probes(&unanswered).await, 1);
+    let unanswered_contract: GetDataContractRequest = Identifier::new([7; 32])
+        .query(&unanswered.query_settings())
+        .unwrap();
+    assert_eq!(sent(&unanswered, &unanswered_contract).await, 0);
+
+    let mut sdk = mock_sdk(V13, false, 0);
+    answer_probe(&sdk, "pv14").await;
+    let mut contract = DataContractFactory::new(V14)
+        .unwrap()
+        .create_with_value_config(
+            Identifier::new([7; 32]),
+            1,
+            platform_value!({
+                "note": {
+                    "type": "object",
+                    "properties": { "text": { "type": "string", "maxLength": 10, "position": 0 } },
+                    "additionalProperties": false,
+                },
+            }),
+            None,
+            None,
+        )
+        .unwrap()
+        .data_contract_owned();
+    let config = contract
+        .config()
+        .clone()
+        .with_moderation(Some(ContractModerationConfig {
+            banlist: true,
+            suspensions: false,
+            moderators: ContractModerators::ContractOwner,
+            warnings: true,
+        }));
+    contract.set_config(config);
+    let contract_id = contract.id();
+    let identity_id = Identifier::new([8; 32]);
+    let resolved = ContractModerationStatusQuery {
+        contract_id,
+        identity_id,
+        lists: vec![
+            ContractModerationList::Banlist,
+            ContractModerationList::Warnings,
+        ],
+    };
+    let statuses = ContractModerationListStatuses(vec![
+        ContractModerationListStatus::Banlist { ban: None },
+        ContractModerationListStatus::Warnings { warnings: vec![] },
+    ]);
+    // The fixtures are protocol 14 answers; the SDK under test stays at 13 until the probe
+    sdk.mock()
+        .encode_expectations_at(Some(PlatformVersion::get(V14).unwrap()));
+    sdk.mock()
+        .expect_fetch(contract_id, Some(contract))
+        .await
+        .unwrap();
+    sdk.mock()
+        .expect_fetch(resolved.clone(), Some(statuses.clone()))
+        .await
+        .unwrap();
+    sdk.mock().encode_expectations_at(None);
+    assert_eq!(verified(&sdk), 0);
+    assert_eq!(sdk.protocol_version_number(), V13);
+
+    let fetched = sdk
+        .fetch_contract_moderation_status(contract_id, identity_id, None)
+        .await
+        .expect("the network serves the status read once the probe shows 14");
+
+    assert_eq!(fetched, Some(statuses));
+    assert_eq!(probes(&sdk).await, 1);
+    assert_eq!(verified(&sdk), V14);
+    let contract_request: GetDataContractRequest =
+        contract_id.query(&sdk.query_settings()).unwrap();
+    assert_eq!(sent(&sdk, &contract_request).await, 1);
+    let status_request: GetContractModerationStatusRequest =
+        resolved.query(&sdk.query_settings()).unwrap();
+    assert!(matches!(
+        status_request.version,
+        Some(get_contract_moderation_status_request::Version::V0(_))
+    ));
+    assert_eq!(sent(&sdk, &status_request).await, 1);
 }
 
 /// A proved contract request and an answer to it that this build cannot read: its proof is

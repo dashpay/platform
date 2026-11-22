@@ -29,6 +29,14 @@
     "core_wallet_tx_builder_finalize": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
     "core_wallet_tx_builder_preserve_output_order": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
     "dash_sdk_contested_resource_cast_vote_with_signer": "packages/rs-sdk-ffi/src/contested_resource/transitions/cast_vote.rs",
+    "dash_sdk_contract_get_fee_pots": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_action_counts": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_document_removals": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_document_removals_by_ids": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_entries": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_status": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_team_action_signers": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_team_actions": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
     "dash_sdk_create_adaptive": "packages/rs-sdk-ffi/src/sdk.rs",
     "dash_sdk_decision_proposal_cast_vote_with_signer": "packages/rs-sdk-ffi/src/decision_proposal/transitions.rs",
     "dash_sdk_get_context_provider_source": "packages/rs-sdk-ffi/src/sdk.rs",
@@ -2272,6 +2280,69 @@
       ]
     },
     {
+      "id": "contracts.moderation_reads",
+      "title": "Contract moderation and fee pot reads (protocol version 14)",
+      "area": "example_app",
+      "shared_apis": [
+        "dash_sdk_contract_get_fee_pots",
+        "dash_sdk_contract_moderation_get_action_counts",
+        "dash_sdk_contract_moderation_get_document_removals",
+        "dash_sdk_contract_moderation_get_document_removals_by_ids",
+        "dash_sdk_contract_moderation_get_entries",
+        "dash_sdk_contract_moderation_get_status",
+        "dash_sdk_contract_moderation_get_team_action_signers",
+        "dash_sdk_contract_moderation_get_team_actions"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "supported",
+          "restart": "not_applicable",
+          "reason": null
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI bridge, Kotlin wrapper or KotlinExampleApp screen yet for the contract moderation and fee pot reads. Port from packages/swift-sdk/Sources/SwiftDashSDK/ContractModeration and the SwiftExampleApp Views/ContractModeration screens, reusing their contractModeration.* accessibility identifiers as testTags; the list and team action status arguments are the bytes 0 banlist, 1 suspensions, 2 warnings and 0 active, 1 closed."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+          "id": "should_refuse_a_null_handle_or_a_missing_or_malformed_id_before_any_request",
+          "command": "cargo test -p rs-sdk-ffi --lib contract_moderation",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk-ffi/src/contract_moderation/json.rs",
+          "id": "should_write_removals_with_their_kept_fields_and_cursor",
+          "command": "cargo test -p rs-sdk-ffi --lib contract_moderation",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ContractModerationDecodingTests.swift",
+          "id": "testShouldDecodeRemovalsWithKeptFieldsRestorationAndCursor",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ContractModerationDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DC-06",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
       "id": "voting.masternode_vote_stored_key",
       "title": "Cast masternode votes signed with a stored voting key, with raw keys only in debug builds",
       "area": "example_app",
@@ -2292,7 +2363,7 @@
           "sdk": "partial",
           "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "VoteCasting.castVote, DecisionProposals.castVote and MultipleChoiceProposals.castVote have signer overloads, and MasternodeVotingKeyStore stores a voting key in WalletStorage under the hex of its voting address, the entry the wallet manager's KeystoreSigner reads; its unit tests cover the identifier and the absent-key paths, while the JNI marshalling is exercised only by instrumented tests. The example app's three vote dialogs pick a loaded masternode or evonode identity with a stored voting key on the current network (MasternodeVoterSection.kt), check the key is readable, and sign through PlatformWalletManager.signerHandle; typed credentials are composed and cast only when BuildConfig.DEBUG, the generic raw-key Masternode Vote transition is listed only in debug builds, and a typed pro_tx_hash without a key reads any masternode's answer in every build (TEST_PLAN VOTE-01, VOTE-12, VOTE-19). The picker, wire-order and publishing logic are unit-tested; no gate records a vote cast with a stored key against a network holding a registered masternode. The vote is one call and the key is read from WalletStorage at vote time, so there is nothing to resume."
+          "reason": "VoteCasting.castVote, DecisionProposals.castVote and MultipleChoiceProposals.castVote have signer overloads, and MasternodeVotingKeyStore stores a voting key in WalletStorage under the hex of its voting address, the entry the wallet manager's KeystoreSigner reads; its unit tests cover the identifier and the absent-key paths, while the JNI marshalling is exercised only by instrumented tests. The example app's three vote dialogs pick a loaded masternode or evonode identity with a stored voting key on the current network (MasternodeVoterSection.kt), check the key is readable, and sign through PlatformWalletManager.withSignerHandle; typed credentials are composed and cast only when BuildConfig.DEBUG, the generic raw-key Masternode Vote transition is listed only in debug builds, and a typed pro_tx_hash without a key reads any masternode's answer in every build (TEST_PLAN VOTE-01, VOTE-12, VOTE-19). The picker, wire-order and publishing logic are unit-tested; no gate records a vote cast with a stored key against a network holding a registered masternode. The vote is one call and the key is read from WalletStorage at vote time, so there is nothing to resume."
         }
       },
       "verification": [
