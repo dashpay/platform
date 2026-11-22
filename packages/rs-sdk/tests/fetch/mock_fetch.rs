@@ -700,7 +700,7 @@ fn should_drop_a_kept_member_read_under_an_older_contract() {
         kept_fields: kept_meta_under(&newer),
         ..Default::default()
     };
-    let note = |contract: &DataContract| {
+    let member = |contract: &DataContract, name: &str| {
         removal
             .kept_values(
                 contract
@@ -709,11 +709,14 @@ fn should_drop_a_kept_member_read_under_an_older_contract() {
             )
             .expect("reads")
             .get("meta")
-            .and_then(|meta| meta.get_optional_value("note").ok().flatten().cloned())
+            .and_then(|meta| meta.get_optional_value(name).ok().flatten().cloned())
     };
 
-    assert_eq!(note(&newer), Some(Value::Text("n".into())));
-    assert_eq!(note(&older), None);
+    assert_eq!(member(&newer, "note"), Some(Value::Text("n".into())));
+    assert_eq!(member(&older, "note"), None);
+    // The older layout still reads `meta` as an object holding the member it declares, so
+    // only the member it does not declare is lost
+    assert_eq!(member(&older, "tags"), Some(Value::Text("privacy".into())));
 }
 
 #[tokio::test]
