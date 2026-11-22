@@ -5,7 +5,6 @@
 //! in milliseconds and credits as JSON integers, the document hash as 64 hex characters. Every
 //! cursor is the one rs-sdk's `after` gives; none is worked out here.
 
-use crate::FFIError;
 use dash_sdk::dpp::data_contract::config::moderation::ContractModerationReason;
 use dash_sdk::dpp::platform_value::string_encoding::{encode, Encoding};
 use dash_sdk::dpp::platform_value::{Identifier, Value};
@@ -18,7 +17,9 @@ use dash_sdk::platform::contract_moderation::{
     ContractTeamActionEvent, ContractTeamActionSigners, ContractTeamActions,
     ContractTeamActionsPageQuery, ContractWarning,
 };
-use serde_json::{json, Map, Number, Value as JsonValue};
+use serde::ser::{Error as _, SerializeMap};
+use serde::{Serialize, Serializer};
+use serde_json::{json, Map, Value as JsonValue};
 use std::collections::BTreeMap;
 
 fn base58(id: Identifier) -> String {
@@ -137,23 +138,9 @@ pub(super) fn entries_json(
     JsonValue::Object(object)
 }
 
-/// The values a removal record keeps, by property path, each in the tagged form
-/// [`kept_value_json`] writes.
-fn kept_fields_json(kept_values: BTreeMap<String, Value>) -> Result<JsonValue, FFIError> {
-    kept_values
-        .into_iter()
-        .map(|(path, value)| {
-            let value = kept_value_json(value)
-                .map_err(|e| FFIError::InternalError(format!("kept field {path}: {e}")))?;
-            Ok((path, value))
-        })
-        .collect::<Result<Map<_, _>, FFIError>>()
-        .map(JsonValue::Object)
-}
-
-/// A kept platform value in the tagged form `{"type": ..., "value": ...}`, its kind carried by
-/// the tag rather than inferred from the JSON number, so a reader keeps a signed and an
-/// unsigned integer apart and an integral or negative-zero float a float:
+/// A kept platform value written in the tagged form `{"type": ..., "value": ...}`, its kind
+/// carried by the tag rather than inferred from the JSON number, so a reader keeps a signed and
+/// an unsigned integer apart and an integral or negative-zero float a float:
 /// * `null` (no `value`), `bool`, `string`;
 /// * `int` for a signed integer (`i8` to `i64`, and an `i128` within `i64`), `uint` for an
 ///   unsigned one (`u8` to `u64`, and a `u128` within `u64`), each a JSON integer; `int128` and
@@ -161,130 +148,180 @@ fn kept_fields_json(kept_values: BTreeMap<String, Value>) -> Result<JsonValue, F
 /// * `double` for a float, a JSON number written with its fraction and sign (`1.0`, `-0.0`);
 /// * `identifier` (base58) and `bytes` (base64, for every byte-string variant);
 /// * `array` of tagged values, and `object` of tagged values by member name.
-fn kept_value_json(value: Value) -> Result<JsonValue, String> {
-    Ok(match value {
-        Value::Null => {
-            let mut object = Map::new();
-            object.insert("type".to_string(), JsonValue::String("null".to_string()));
-            JsonValue::Object(object)
+///
+/// It serializes straight into the output, borrowing the value: a page can keep about a
+/// million values, and building an intermediate `serde_json::Value` tree for them first would
+/// take many times the memory of the string it becomes.
+pub(super) struct KeptValue<'a>(pub(super) &'a Value);
+
+impl Serialize for KeptValue<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.0 {
+            Value::Null => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("type", "null")?;
+                map.end()
+            }
+            Value::Bool(value) => tagged(serializer, "bool", value),
+            Value::Text(value) => tagged(serializer, "string", value),
+            Value::I8(value) => tagged(serializer, "int", value),
+            Value::I16(value) => tagged(serializer, "int", value),
+            Value::I32(value) => tagged(serializer, "int", value),
+            Value::I64(value) => tagged(serializer, "int", value),
+            Value::I128(value) => match i64::try_from(*value) {
+                Ok(value) => tagged(serializer, "int", &value),
+                Err(_) => tagged(serializer, "int128", &value.to_string()),
+            },
+            Value::U8(value) => tagged(serializer, "uint", value),
+            Value::U16(value) => tagged(serializer, "uint", value),
+            Value::U32(value) => tagged(serializer, "uint", value),
+            Value::U64(value) => tagged(serializer, "uint", value),
+            Value::U128(value) => match u64::try_from(*value) {
+                Ok(value) => tagged(serializer, "uint", &value),
+                Err(_) => tagged(serializer, "uint128", &value.to_string()),
+            },
+            Value::Float(value) if value.is_finite() => tagged(serializer, "double", value),
+            Value::Float(value) => Err(S::Error::custom(format!("{value} is not a finite float"))),
+            Value::Identifier(bytes) => {
+                tagged(serializer, "identifier", &encode(bytes, Encoding::Base58))
+            }
+            Value::Bytes(bytes) => tagged(serializer, "bytes", &encode(bytes, Encoding::Base64)),
+            Value::Bytes20(bytes) => tagged(serializer, "bytes", &encode(bytes, Encoding::Base64)),
+            Value::Bytes32(bytes) => tagged(serializer, "bytes", &encode(bytes, Encoding::Base64)),
+            Value::Bytes36(bytes) => tagged(serializer, "bytes", &encode(bytes, Encoding::Base64)),
+            Value::Array(items) => tagged(serializer, "array", &KeptItems(items)),
+            Value::Map(members) => tagged(serializer, "object", &KeptMembers(members)),
+            // No document property is stored as an enum value, so no record keeps one
+            Value::EnumU8(_) | Value::EnumString(_) => {
+                Err(S::Error::custom("an enum value is not a kept field"))
+            }
+            // A variant added to platform values later is refused until it gets a tag here
+            other => Err(S::Error::custom(format!("{other:?} has no kept field tag"))),
         }
-        Value::Bool(value) => tagged("bool", json!(value)),
-        Value::Text(value) => tagged("string", json!(value)),
-        Value::I8(value) => tagged("int", json!(value)),
-        Value::I16(value) => tagged("int", json!(value)),
-        Value::I32(value) => tagged("int", json!(value)),
-        Value::I64(value) => tagged("int", json!(value)),
-        Value::I128(value) => match i64::try_from(value) {
-            Ok(value) => tagged("int", json!(value)),
-            Err(_) => tagged("int128", json!(value.to_string())),
-        },
-        Value::U8(value) => tagged("uint", json!(value)),
-        Value::U16(value) => tagged("uint", json!(value)),
-        Value::U32(value) => tagged("uint", json!(value)),
-        Value::U64(value) => tagged("uint", json!(value)),
-        Value::U128(value) => match u64::try_from(value) {
-            Ok(value) => tagged("uint", json!(value)),
-            Err(_) => tagged("uint128", json!(value.to_string())),
-        },
-        Value::Float(value) => tagged(
-            "double",
-            JsonValue::Number(
-                Number::from_f64(value).ok_or_else(|| format!("{value} is not a finite float"))?,
-            ),
-        ),
-        Value::Identifier(bytes) => tagged("identifier", json!(encode(&bytes, Encoding::Base58))),
-        Value::Bytes(bytes) => tagged("bytes", json!(encode(&bytes, Encoding::Base64))),
-        Value::Bytes20(bytes) => tagged("bytes", json!(encode(&bytes, Encoding::Base64))),
-        Value::Bytes32(bytes) => tagged("bytes", json!(encode(&bytes, Encoding::Base64))),
-        Value::Bytes36(bytes) => tagged("bytes", json!(encode(&bytes, Encoding::Base64))),
-        Value::Array(items) => tagged(
-            "array",
-            items
-                .into_iter()
-                .map(kept_value_json)
-                .collect::<Result<Vec<_>, _>>()
-                .map(JsonValue::Array)?,
-        ),
-        Value::Map(members) => tagged(
-            "object",
-            members
-                .into_iter()
-                .map(|(key, value)| match key {
-                    Value::Text(key) => Ok((key, kept_value_json(value)?)),
-                    key => Err(format!("an object member is named by {key:?}, not by text")),
-                })
-                .collect::<Result<Map<_, _>, _>>()
-                .map(JsonValue::Object)?,
-        ),
-        // No document property is stored as an enum value, so no record keeps one
-        Value::EnumU8(_) | Value::EnumString(_) => {
-            return Err("an enum value is not a kept field".to_string())
-        }
-        // A variant added to platform values later is refused until it gets a tag here
-        other => return Err(format!("{other:?} has no kept field tag")),
-    })
+    }
 }
 
-/// `{"type": tag, "value": value}`, the payload moved in rather than serialized again.
-fn tagged(tag: &str, value: JsonValue) -> JsonValue {
-    let mut object = Map::new();
-    object.insert("type".to_string(), JsonValue::String(tag.to_string()));
-    object.insert("value".to_string(), value);
-    JsonValue::Object(object)
+/// `{"type": tag, "value": value}`, the value serialized in place.
+fn tagged<S: Serializer, T: Serialize + ?Sized>(
+    serializer: S,
+    tag: &str,
+    value: &T,
+) -> Result<S::Ok, S::Error> {
+    let mut map = serializer.serialize_map(Some(2))?;
+    map.serialize_entry("type", tag)?;
+    map.serialize_entry("value", value)?;
+    map.end()
 }
 
-fn removal_entry_json(
-    entry: &ContractDocumentRemovalEntry,
-    kept_values: BTreeMap<String, Value>,
-) -> Result<JsonValue, FFIError> {
+/// The items of a kept array, each tagged.
+struct KeptItems<'a>(&'a [Value]);
+
+impl Serialize for KeptItems<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().map(KeptValue))
+    }
+}
+
+/// The members of a kept object, each tagged, in their order; a member named by anything but
+/// text is refused.
+struct KeptMembers<'a>(&'a [(Value, Value)]);
+
+impl Serialize for KeptMembers<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(self.0.len()))?;
+        for (key, value) in self.0 {
+            let Value::Text(key) = key else {
+                return Err(S::Error::custom(format!(
+                    "an object member is named by {key:?}, not by text"
+                )));
+            };
+            map.serialize_entry(key, &KeptValue(value))?;
+        }
+        map.end()
+    }
+}
+
+/// Removal records with their kept values, serialized straight into the output: `removals`,
+/// then `nextStartAfter` when rs-sdk gives a next page (never for a read by ids).
+pub(super) struct RemovalsPageJson(ContractDocumentRemovalsWithKeptValues);
+
+/// The removals page of `removals`, ready to serialize.
+pub(super) fn removals_json(removals: ContractDocumentRemovalsWithKeptValues) -> RemovalsPageJson {
+    RemovalsPageJson(removals)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RemovalsPageView<'a> {
+    removals: Vec<RemovalEntryView<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_start_after: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RemovalEntryView<'a> {
+    document_id: String,
+    document_owner_id: String,
+    moderator_id: String,
+    reason: JsonValue,
+    removed_at: u64,
+    document_hash: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    restored_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    restored_at: Option<u64>,
+    kept_fields: BTreeMap<&'a str, KeptValue<'a>>,
+}
+
+impl Serialize for RemovalsPageJson {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let next_start_after = self
+            .0
+            .next
+            .as_ref()
+            .and_then(|next| match &next.query.selection {
+                ContractDocumentRemovalsSelection::Page { start_after, .. } => *start_after,
+                ContractDocumentRemovalsSelection::DocumentIds(_) => None,
+            });
+        RemovalsPageView {
+            removals: self
+                .0
+                .removals
+                .iter()
+                .map(|(entry, kept_values)| removal_entry_view(entry, kept_values))
+                .collect(),
+            next_start_after: next_start_after.map(base58),
+        }
+        .serialize(serializer)
+    }
+}
+
+fn removal_entry_view<'a>(
+    entry: &'a ContractDocumentRemovalEntry,
+    kept_values: &'a BTreeMap<String, Value>,
+) -> RemovalEntryView<'a> {
     let removal = &entry.removal;
-    let mut object = Map::new();
-    object.insert("documentId".to_string(), json!(base58(entry.document_id)));
-    object.insert(
-        "documentOwnerId".to_string(),
-        json!(base58(removal.document_owner_id)),
-    );
-    object.insert(
-        "moderatorId".to_string(),
-        json!(base58(removal.moderator_id)),
-    );
-    object.insert("reason".to_string(), reason_json(&removal.reason));
-    object.insert("removedAt".to_string(), json!(removal.removed_at));
-    object.insert(
-        "documentHash".to_string(),
-        json!(hex::encode(removal.document_hash)),
-    );
-    if let Some(restoration) = &removal.restoration {
-        object.insert(
-            "restoredBy".to_string(),
-            json!(base58(restoration.moderator_id)),
-        );
-        object.insert("restoredAt".to_string(), json!(restoration.restored_at));
+    RemovalEntryView {
+        document_id: base58(entry.document_id),
+        document_owner_id: base58(removal.document_owner_id),
+        moderator_id: base58(removal.moderator_id),
+        reason: reason_json(&removal.reason),
+        removed_at: removal.removed_at,
+        document_hash: hex::encode(removal.document_hash),
+        restored_by: removal
+            .restoration
+            .as_ref()
+            .map(|restoration| base58(restoration.moderator_id)),
+        restored_at: removal
+            .restoration
+            .as_ref()
+            .map(|restoration| restoration.restored_at),
+        kept_fields: kept_values
+            .iter()
+            .map(|(path, value)| (path.as_str(), KeptValue(value)))
+            .collect(),
     }
-    object.insert("keptFields".to_string(), kept_fields_json(kept_values)?);
-    Ok(JsonValue::Object(object))
-}
-
-/// Removal records with their kept values, with `nextStartAfter` when rs-sdk gives a next page
-/// (never for a read by ids).
-pub(super) fn removals_json(
-    removals: ContractDocumentRemovalsWithKeptValues,
-) -> Result<JsonValue, FFIError> {
-    let next_start_after = removals.next.and_then(|next| match next.query.selection {
-        ContractDocumentRemovalsSelection::Page { start_after, .. } => start_after,
-        ContractDocumentRemovalsSelection::DocumentIds(_) => None,
-    });
-    let entries = removals
-        .removals
-        .into_iter()
-        .map(|(entry, kept_values)| removal_entry_json(&entry, kept_values))
-        .collect::<Result<Vec<_>, _>>()?;
-    let mut object = Map::new();
-    object.insert("removals".to_string(), JsonValue::Array(entries));
-    if let Some(start_after) = next_start_after {
-        object.insert("nextStartAfter".to_string(), json!(base58(start_after)));
-    }
-    Ok(JsonValue::Object(object))
 }
 
 fn team_action_json(entry: &ContractTeamActionEntry) -> JsonValue {
@@ -608,7 +645,7 @@ mod tests {
             next: Some(next),
         };
         assert_eq!(
-            removals_json(removals).expect("writes"),
+            serde_json::to_value(removals_json(removals)).expect("writes"),
             json!({
                 "removals": [
                     {
@@ -653,7 +690,7 @@ mod tests {
             removals: vec![(removal_entry(3, false), BTreeMap::new())],
             next: None,
         };
-        let json = removals_json(removals).expect("writes");
+        let json = serde_json::to_value(removals_json(removals)).expect("writes");
         assert_eq!(json["removals"].as_array().map(Vec::len), Some(1));
         assert!(json.get("nextStartAfter").is_none());
     }
@@ -809,7 +846,10 @@ mod tests {
             ("uint128".to_string(), Value::U128(u128::MAX)),
             ("whole".to_string(), Value::Float(1.0)),
         ]);
-        let written = kept_fields_json(kept).expect("writes");
+        let written: BTreeMap<&str, KeptValue> = kept
+            .iter()
+            .map(|(path, value)| (path.as_str(), KeptValue(value)))
+            .collect();
 
         // The fixture byte for byte: the keys sort, and the floats keep their fraction and sign
         assert_eq!(
@@ -821,23 +861,57 @@ mod tests {
     #[test]
     fn should_write_an_in_range_128_bit_value_by_its_signedness() {
         assert_eq!(
-            kept_value_json(Value::I128(-5)).expect("writes"),
+            serde_json::to_value(KeptValue(&Value::I128(-5))).expect("writes"),
             json!({"type": "int", "value": -5})
         );
         assert_eq!(
-            kept_value_json(Value::U128(5)).expect("writes"),
+            serde_json::to_value(KeptValue(&Value::U128(5))).expect("writes"),
             json!({"type": "uint", "value": 5})
         );
         // The same magnitude, signed and unsigned, stays apart
         assert_eq!(
-            kept_value_json(Value::I64(5)).expect("writes"),
+            serde_json::to_value(KeptValue(&Value::I64(5))).expect("writes"),
             json!({"type": "int", "value": 5})
         );
         assert_eq!(
-            kept_value_json(Value::U64(5)).expect("writes"),
+            serde_json::to_value(KeptValue(&Value::U64(5))).expect("writes"),
             json!({"type": "uint", "value": 5})
         );
-        assert!(kept_value_json(Value::Float(f64::NAN)).is_err());
-        assert!(kept_value_json(Value::EnumU8(vec![1])).is_err());
+        assert!(serde_json::to_string(&KeptValue(&Value::Float(f64::NAN))).is_err());
+        assert!(serde_json::to_string(&KeptValue(&Value::EnumU8(vec![1]))).is_err());
+    }
+
+    #[test]
+    fn should_refuse_a_kept_object_member_not_named_by_text() {
+        let value = Value::Map(vec![(Value::U8(1), Value::Null)]);
+        assert!(serde_json::to_string(&KeptValue(&value)).is_err());
+    }
+
+    /// A record keeping a 1,024-element boolean array writes exactly this string.
+    #[test]
+    fn should_write_a_record_keeping_a_large_array_exactly() {
+        let removals = ContractDocumentRemovalsWithKeptValues {
+            removals: vec![(
+                removal_entry(3, false),
+                BTreeMap::from([(
+                    "flags".to_string(),
+                    Value::Array(vec![Value::Bool(true); 1024]),
+                )]),
+            )],
+            next: None,
+        };
+        let flags = vec![r#"{"type":"bool","value":true}"#; 1024].join(",");
+        let expected = format!(
+            r#"{{"removals":[{{"documentId":"{}","documentOwnerId":"{}","moderatorId":"{}","reason":{{"code":null,"text":"off topic"}},"removedAt":1700000000000,"documentHash":"{}","keptFields":{{"flags":{{"type":"array","value":[{flags}]}}}}}}]}}"#,
+            b58(3),
+            b58(20),
+            b58(21),
+            "ab".repeat(32),
+        );
+
+        assert_eq!(
+            serde_json::to_string(&removals_json(removals)).expect("writes"),
+            expected
+        );
     }
 }

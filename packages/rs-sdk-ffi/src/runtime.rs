@@ -20,6 +20,7 @@
 //! delegating every other [`Runtime`] method (`spawn`, `handle`, `enter`, …) to
 //! the inner runtime via [`Deref`].
 
+use crate::FFIError;
 use std::future::Future;
 use std::ops::Deref;
 #[cfg(feature = "tokio-metrics")]
@@ -116,6 +117,29 @@ impl BigStackRuntime {
     where
         F: Future,
     {
+        self.run_on_worker(future, FFI_BLOCKING_STACK_SIZE)
+            .expect("failed to spawn FFI block-on thread")
+    }
+
+    /// [`Self::block_on`], refusing rather than panicking when the OS will not
+    /// create the large-stack worker thread: the failure comes back as an
+    /// [`FFIError::InternalError`], so an FFI function returns it as a
+    /// `DashSDKResult` error instead of aborting the host app (`panic = "abort"`
+    /// on iOS). A panic inside the future is still re-raised, as by `block_on`.
+    pub(crate) fn try_block_on<F>(&self, future: F) -> Result<F::Output, FFIError>
+    where
+        F: Future,
+    {
+        self.run_on_worker(future, FFI_BLOCKING_STACK_SIZE)
+            .map_err(worker_spawn_error)
+    }
+
+    /// Drives `future` on a worker thread with a `stack_size` stack; the error
+    /// the OS gave when it would not create that thread.
+    fn run_on_worker<F>(&self, future: F, stack_size: usize) -> std::io::Result<F::Output>
+    where
+        F: Future,
+    {
         #[cfg(feature = "tokio-metrics")]
         let _block_on_guard = metrics::BlockOnGuard::new();
 
@@ -155,18 +179,22 @@ impl BigStackRuntime {
         std::thread::scope(|scope| {
             let output = std::thread::Builder::new()
                 .name("dash-sdk-ffi-block-on".to_string())
-                .stack_size(FFI_BLOCKING_STACK_SIZE)
+                .stack_size(stack_size)
                 .spawn_scoped(scope, move || {
                     AssertSend(self.0.block_on(future.into_inner()))
-                })
-                .expect("failed to spawn FFI block-on thread")
+                })?
                 .join()
                 // Preserve `block_on`'s panic behaviour: re-raise on the caller's
                 // thread (a no-op under `panic = "abort"`, which aborts first).
                 .unwrap_or_else(|payload| std::panic::resume_unwind(payload));
-            output.into_inner()
+            Ok(output.into_inner())
         })
     }
+}
+
+/// The FFI error of a worker thread the OS would not create.
+fn worker_spawn_error(error: std::io::Error) -> FFIError {
+    FFIError::InternalError(format!("failed to start the FFI worker thread: {error}"))
 }
 
 impl Deref for BigStackRuntime {
@@ -287,5 +315,35 @@ mod tests {
             21 * 2
         });
         assert_eq!(value, 42);
+    }
+
+    /// A worker the OS will not create (a stack no system can map) comes back as an
+    /// error from the fallible path, instead of a panic.
+    #[test]
+    fn should_return_an_error_when_the_worker_thread_cannot_start() {
+        let runtime = BigStackRuntime::new_isolated().expect("build runtime");
+        let refused = runtime.run_on_worker(async { 1 }, 1 << 60);
+        assert!(refused.is_err(), "a 1 EiB stack should not be created");
+    }
+
+    #[test]
+    fn should_map_a_worker_spawn_failure_to_an_internal_error() {
+        let error = worker_spawn_error(std::io::Error::other("no threads left"));
+        assert!(
+            matches!(&error, FFIError::InternalError(message) if message.contains("no threads left")),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn try_block_on_returns_the_future_output() {
+        let runtime = BigStackRuntime::new_isolated().expect("build runtime");
+        let value = runtime
+            .try_block_on(async {
+                tokio::task::yield_now().await;
+                deep_recurse(1000)
+            })
+            .expect("the worker starts");
+        assert_eq!(value, 1000);
     }
 }

@@ -1,5 +1,7 @@
 //! Contract moderation and fee pot reads. Each reads its C arguments, calls one rs-sdk entry
 //! point and returns JSON written by [`super::json`], or no data when rs-sdk returns none.
+//! Each drives its read with `BigStackRuntime::try_block_on`, so a worker thread the OS will
+//! not create comes back as an error rather than aborting the host app.
 //!
 //! Arguments are refused before any request only when they cannot be represented in the rs-sdk
 //! query: a null handle, a null or non-base58 id, a byte that names no list or status, a limit
@@ -11,7 +13,7 @@
 
 use super::json::{
     action_counts_json, entries_json, fee_pots_json, removals_json, status_json,
-    team_action_signers_json, team_actions_json,
+    team_action_signers_json, team_actions_json, RemovalsPageJson,
 };
 use super::{moderation_list, team_action_status};
 use crate::decision_proposal::{
@@ -170,13 +172,14 @@ unsafe fn get_status_inner(
     let contract_id = required_identifier(contract_id, "contract_id")?;
     let identity_id = required_identifier(identity_id, "identity_id")?;
     let lists = moderation_lists(lists, lists_count)?;
-    let statuses = wrapper
-        .runtime
-        .block_on(
-            wrapper
-                .sdk
-                .fetch_contract_moderation_status(contract_id, identity_id, lists),
-        )?;
+    let statuses =
+        wrapper
+            .runtime
+            .try_block_on(wrapper.sdk.fetch_contract_moderation_status(
+                contract_id,
+                identity_id,
+                lists,
+            ))??;
     Ok(statuses.as_ref().map(status_json))
 }
 
@@ -248,10 +251,12 @@ unsafe fn get_entries_inner(
     if let Some(limit) = limit {
         query = query.with_limit(limit);
     }
-    let page = wrapper.runtime.block_on(ContractModerationEntries::fetch(
-        &wrapper.sdk,
-        query.clone(),
-    ))?;
+    let page = wrapper
+        .runtime
+        .try_block_on(ContractModerationEntries::fetch(
+            &wrapper.sdk,
+            query.clone(),
+        ))??;
     Ok(page.map(|page| entries_json(&page, &query)))
 }
 
@@ -331,7 +336,7 @@ unsafe fn get_document_removals_inner(
     document_type_name: *const c_char,
     start_after: *const c_char,
     limit: *const u32,
-) -> Result<Option<JsonValue>, FFIError> {
+) -> Result<Option<RemovalsPageJson>, FFIError> {
     let wrapper = sdk_wrapper(sdk_handle)?;
     let contract_id = required_identifier(contract_id, "contract_id")?;
     let document_type_name = required_str(document_type_name, "document_type_name")?;
@@ -354,8 +359,8 @@ unsafe fn get_document_removals_inner(
     }
     let removals = wrapper
         .runtime
-        .block_on(query.fetch_with_kept_values(&wrapper.sdk))?;
-    removals.map(removals_json).transpose()
+        .try_block_on(query.fetch_with_kept_values(&wrapper.sdk))??;
+    Ok(removals.map(removals_json))
 }
 
 /// The records of the documents named, within one document type, that the contract's
@@ -404,7 +409,7 @@ unsafe fn get_document_removals_by_ids_inner(
     document_type_name: *const c_char,
     document_ids: *const *const c_char,
     document_ids_count: usize,
-) -> Result<Option<JsonValue>, FFIError> {
+) -> Result<Option<RemovalsPageJson>, FFIError> {
     let wrapper = sdk_wrapper(sdk_handle)?;
     let contract_id = required_identifier(contract_id, "contract_id")?;
     let document_type_name = required_str(document_type_name, "document_type_name")?;
@@ -416,8 +421,8 @@ unsafe fn get_document_removals_by_ids_inner(
     );
     let removals = wrapper
         .runtime
-        .block_on(query.fetch_with_kept_values(&wrapper.sdk))?;
-    removals.map(removals_json).transpose()
+        .try_block_on(query.fetch_with_kept_values(&wrapper.sdk))??;
+    Ok(removals.map(removals_json))
 }
 
 /// One page of the actions an elected contract's seated moderation team votes on, active (still
@@ -515,7 +520,7 @@ unsafe fn get_team_actions_inner(
     }
     let page = wrapper
         .runtime
-        .block_on(ContractTeamActions::fetch(&wrapper.sdk, query.clone()))?;
+        .try_block_on(ContractTeamActions::fetch(&wrapper.sdk, query.clone()))??;
     Ok(page.map(|page| team_actions_json(&page, &query)))
 }
 
@@ -574,7 +579,7 @@ unsafe fn get_team_action_signers_inner(
     };
     let signers = wrapper
         .runtime
-        .block_on(ContractTeamActionSigners::fetch(&wrapper.sdk, query))?;
+        .try_block_on(ContractTeamActionSigners::fetch(&wrapper.sdk, query))??;
     Ok(signers.as_ref().map(team_action_signers_json))
 }
 
@@ -613,10 +618,10 @@ unsafe fn get_action_counts_inner(
     let contract_id = required_identifier(contract_id, "contract_id")?;
     let counts = wrapper
         .runtime
-        .block_on(ContractModerationActionCounts::fetch(
+        .try_block_on(ContractModerationActionCounts::fetch(
             &wrapper.sdk,
             contract_id,
-        ))?;
+        ))??;
     Ok(counts.as_ref().map(action_counts_json))
 }
 
@@ -666,7 +671,7 @@ unsafe fn get_fee_pots_inner(
     let contract_id = required_identifier(contract_id, "contract_id")?;
     let pots = wrapper
         .runtime
-        .block_on(ContractFeePots::fetch(&wrapper.sdk, contract_id))?;
+        .try_block_on(ContractFeePots::fetch(&wrapper.sdk, contract_id))??;
     Ok(pots.as_ref().map(fee_pots_json))
 }
 

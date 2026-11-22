@@ -122,8 +122,9 @@ fn string_result(string: Result<Option<String>, FFIError>) -> DashSDKResult {
     }
 }
 
-/// A result holding `json` written as a string, or no data for `None`.
-pub(crate) fn json_result(json: Result<Option<serde_json::Value>, FFIError>) -> DashSDKResult {
+/// A result holding `json` serialized straight to a string (no intermediate JSON tree), or no
+/// data for `None`. A value that refuses to serialize is a `SerializationError`.
+pub(crate) fn json_result<T: serde::Serialize>(json: Result<Option<T>, FFIError>) -> DashSDKResult {
     string_result(json.and_then(|json| {
         json.map(|json| serde_json::to_string(&json))
             .transpose()
@@ -181,12 +182,13 @@ mod tests {
             dash_sdk_string_free(result.data as *mut c_char);
         }
 
-        let absent = json_result(Ok(None));
+        let absent = json_result::<serde_json::Value>(Ok(None));
         assert!(absent.error.is_null());
         assert!(absent.data.is_null());
         assert_eq!(absent.data_type, DashSDKResultDataType::NoData);
 
-        let failed = json_result(Err(FFIError::InvalidParameter("bad".to_string())));
+        let failed =
+            json_result::<serde_json::Value>(Err(FFIError::InvalidParameter("bad".to_string())));
         assert!(failed.data.is_null());
         unsafe {
             assert_eq!((*failed.error).code, DashSDKErrorCode::InvalidParameter);
