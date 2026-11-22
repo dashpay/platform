@@ -16,7 +16,10 @@ final class DataContractUpdatePreviewDecodingTests: XCTestCase {
             "documentTypes":{"added":["comment"],"changed":["note"]},\
             "tokens":{"added":["2","10"],"changed":[]},\
             "groups":{"added":[],"changed":["0"]},\
-            "keywordsChanged":true,"descriptionChanged":false,"configChanged":true}
+            "keywordsChanged":true,"descriptionChanged":false,"configChanged":true,\
+            "configChangedFields":["moderation","readonly"],\
+            "moderatorsAdded":["4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF"],\
+            "moderatorsRemoved":["GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"]}
             """
 
         let preview = try DataContractUpdatePreview.decode(fromJSON: json)
@@ -32,7 +35,10 @@ final class DataContractUpdatePreviewDecodingTests: XCTestCase {
                 groups: .init(added: [], changed: ["0"]),
                 keywordsChanged: true,
                 descriptionChanged: false,
-                configChanged: true
+                configChanged: true,
+                configChangedFields: ["moderation", "readonly"],
+                moderatorsAdded: ["4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF"],
+                moderatorsRemoved: ["GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"]
             )
         )
     }
@@ -45,7 +51,8 @@ final class DataContractUpdatePreviewDecodingTests: XCTestCase {
             "documentTypes":{"added":[],"changed":[]},\
             "tokens":{"added":[],"changed":[]},\
             "groups":{"added":[],"changed":[]},\
-            "keywordsChanged":false,"descriptionChanged":false,"configChanged":false}
+            "keywordsChanged":false,"descriptionChanged":false,"configChanged":false,\
+            "configChangedFields":[],"moderatorsAdded":[],"moderatorsRemoved":[]}
             """
 
         let preview = try DataContractUpdatePreview.decode(fromJSON: json)
@@ -64,7 +71,8 @@ final class DataContractUpdatePreviewDecodingTests: XCTestCase {
             {"currentVersion":1,"newVersion":2,"hasChanges":true,\
             "documentTypes":{"added":[],"changed":[]},\
             "tokens":{"added":[],"changed":[]},\
-            "keywordsChanged":false,"descriptionChanged":false,"configChanged":false}
+            "keywordsChanged":false,"descriptionChanged":false,"configChanged":false,\
+            "configChangedFields":[],"moderatorsAdded":[],"moderatorsRemoved":[]}
             """,
             // A version is not a number.
             """
@@ -72,7 +80,17 @@ final class DataContractUpdatePreviewDecodingTests: XCTestCase {
             "documentTypes":{"added":[],"changed":[]},\
             "tokens":{"added":[],"changed":[]},\
             "groups":{"added":[],"changed":[]},\
-            "keywordsChanged":false,"descriptionChanged":false,"configChanged":false}
+            "keywordsChanged":false,"descriptionChanged":false,"configChanged":false,\
+            "configChangedFields":[],"moderatorsAdded":[],"moderatorsRemoved":[]}
+            """,
+            // A moderator list is missing: it is not read as empty.
+            """
+            {"currentVersion":1,"newVersion":2,"hasChanges":true,\
+            "documentTypes":{"added":[],"changed":[]},\
+            "tokens":{"added":[],"changed":[]},\
+            "groups":{"added":[],"changed":[]},\
+            "keywordsChanged":false,"descriptionChanged":false,"configChanged":true,\
+            "configChangedFields":["moderation"],"moderatorsRemoved":[]}
             """,
         ]
 
@@ -133,6 +151,39 @@ final class DataContractUpdatePreviewDecodingTests: XCTestCase {
                 keywords: "[\"alpha\"]",
                 description: "A description",
                 config: "{}"
+            )
+        )
+    }
+
+    /// `Identifier` is `Data` of any length and `withFFIBytes` traps on a
+    /// length other than 32, so the update and its preview refuse a wrong
+    /// length, naming the argument, before any FFI call.
+    func testShouldRefuseAnUpdateIdentifierThatIsNot32Bytes() {
+        let valid = Data(repeating: 1, count: 32)
+        let cases: [(name: String, owner: Data, contract: Data)] = [
+            ("ownerIdentityId", Data(repeating: 1, count: 31), valid),
+            ("contractId", valid, Data(repeating: 2, count: 33)),
+            ("ownerIdentityId", Data(), valid),
+        ]
+        for testCase in cases {
+            XCTAssertThrowsError(
+                try ManagedPlatformWallet.requireDataContractUpdateIdentifiers(
+                    ownerIdentityId: testCase.owner,
+                    contractId: testCase.contract
+                ),
+                "\(testCase.name): owner \(testCase.owner.count) bytes, contract \(testCase.contract.count) bytes"
+            ) { error in
+                guard case PlatformWalletError.invalidParameter(let message) = error else {
+                    return XCTFail("expected invalidParameter, got \(error)")
+                }
+                XCTAssertTrue(message.contains(testCase.name), message)
+            }
+        }
+
+        XCTAssertNoThrow(
+            try ManagedPlatformWallet.requireDataContractUpdateIdentifiers(
+                ownerIdentityId: valid,
+                contractId: Data(repeating: 2, count: 32)
             )
         )
     }

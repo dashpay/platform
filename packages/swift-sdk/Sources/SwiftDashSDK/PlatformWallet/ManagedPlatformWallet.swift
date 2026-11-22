@@ -4616,6 +4616,10 @@ extension ManagedPlatformWallet {
         expectedCurrentVersion: UInt32? = nil,
         signer: KeychainSigner
     ) async throws -> Identifier {
+        try Self.requireDataContractUpdateIdentifiers(
+            ownerIdentityId: ownerIdentityId,
+            contractId: contractId
+        )
         try Self.requireNoNULInDataContractUpdateArguments(
             documentSchemasJSON: documentSchemasJSON,
             tokenSchemasJSON: tokenSchemasJSON,
@@ -4718,6 +4722,10 @@ extension ManagedPlatformWallet {
         description: String? = nil,
         contractConfigJSON: String? = nil
     ) async throws -> DataContractUpdatePreview {
+        try Self.requireDataContractUpdateIdentifiers(
+            ownerIdentityId: ownerIdentityId,
+            contractId: contractId
+        )
         try Self.requireNoNULInDataContractUpdateArguments(
             documentSchemasJSON: documentSchemasJSON,
             tokenSchemasJSON: tokenSchemasJSON,
@@ -4784,6 +4792,28 @@ extension ManagedPlatformWallet {
             }
             return try DataContractUpdatePreview.decode(fromJSON: String(cString: jsonPtr))
         }.value
+    }
+
+    /// Refuse an identifier argument of `updateDataContract` or
+    /// `previewDataContractUpdate` that is not 32 bytes. `Identifier` is
+    /// `Data` of any length, and `withFFIBytes` traps on any other length,
+    /// so the wrong length is a thrown `PlatformWalletError.invalidParameter`
+    /// naming the argument rather than a crash. Checks only that the ids can
+    /// cross the boundary, as `refreshIdentityBalance` does.
+    static func requireDataContractUpdateIdentifiers(
+        ownerIdentityId: Identifier,
+        contractId: Identifier
+    ) throws {
+        guard ownerIdentityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "ownerIdentityId must be 32 bytes, got \(ownerIdentityId.count)"
+            )
+        }
+        guard contractId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "contractId must be 32 bytes, got \(contractId.count)"
+            )
+        }
     }
 
     /// Refuse a string argument of `updateDataContract` or

@@ -42,6 +42,15 @@ public struct DataContractUpdatePreview: Decodable, Sendable, Equatable {
     public let descriptionChanged: Bool
     /// Whether the contract configuration would differ.
     public let configChanged: Bool
+    /// The configuration members that would differ (for example
+    /// `moderation`), sorted. Computed by Rust.
+    public let configChangedFields: [String]
+    /// Identities (base58, sorted) the configuration would newly name as
+    /// moderators. Computed by Rust.
+    public let moderatorsAdded: [String]
+    /// Identities (base58, sorted) the configuration names as moderators
+    /// today and would stop naming. Computed by Rust.
+    public let moderatorsRemoved: [String]
 
     /// Decode the JSON `platform_wallet_preview_data_contract_update` writes.
     ///

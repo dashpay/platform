@@ -93,7 +93,7 @@ enum UpdateContractImport {
             case .unsupportedValue(let section, let expected):
                 return "`\(section)` must be \(expected)."
             case .tooLarge:
-                return "The input is larger than this screen's import limit of\(UpdateContractImport.maxInputBytes / (1024 * 1024)) MiB."
+                return "The input is larger than this screen's import limit of \(UpdateContractImport.maxInputBytes / (1024 * 1024)) MiB."
             }
         }
     }

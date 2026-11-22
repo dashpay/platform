@@ -32,8 +32,14 @@ struct UpdateContractView: View {
     @State private var configJSON = ""
 
     /// The review on screen and the wallet arguments it was made with. The
-    /// update is sent with exactly these arguments.
+    /// update is sent with exactly these arguments. Set only through
+    /// `setReview(_:)`, which also clears `configChangeAcknowledged`.
     @State private var review: Review?
+    /// Whether the owner confirmed they checked the configuration change of
+    /// the review on screen. Asked for only when that review reports one, and
+    /// cleared whenever the review is replaced or removed, so it never
+    /// carries over to another review.
+    @State private var configChangeAcknowledged = false
     @State private var isReviewing = false
     @State private var isSubmitting = false
     @State private var showingFileImporter = false
@@ -77,7 +83,7 @@ struct UpdateContractView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(isBusy)
         .onChange(of: inputs) { _, _ in
-            review = nil
+            setReview(nil)
         }
         .fileImporter(
             isPresented: $showingFileImporter,
@@ -274,6 +280,14 @@ struct UpdateContractView: View {
             if fieldsDropSharedDefinitions {
                 sharedDefinitionsWarning(identifier: "updateContract.submitSharedDefinitionsWarning")
             }
+            if review?.preview.configChanged == true {
+                Toggle(
+                    "I have checked the configuration change, including any moderator added or removed",
+                    isOn: $configChangeAcknowledged
+                )
+                .disabled(isBusy)
+                .accessibilityIdentifier("updateContract.acknowledgeConfigChange")
+            }
             Button {
                 Task { await submitUpdate() }
             } label: {
@@ -305,6 +319,8 @@ struct UpdateContractView: View {
                 Text("The update would change nothing, so it is not offered.")
             } else if review == nil {
                 Text("Review the changes first.")
+            } else if review?.preview.configChanged == true && !configChangeAcknowledged {
+                Text("The update changes the contract configuration. Check the changes listed above, then confirm.")
             }
         }
     }
@@ -379,11 +395,23 @@ struct UpdateContractView: View {
     /// The paid-no-op guard: the update is offered only for a review of the
     /// inputs on screen that reports a change. `hasChanges` comes from Rust.
     /// Never after an update whose outcome is unknown, nor while a sent
-    /// update's refresh is pending.
+    /// update's refresh is pending. A review that reports a configuration
+    /// change (`configChanged`, from Rust) also needs the owner's
+    /// acknowledgment of it.
     private var canSubmit: Bool {
         guard !isBusy, !unconfirmedUpdateSent, pendingRefreshFloor == nil,
               ownerWallet != nil, let review else { return false }
-        return review.inputs == inputs && review.preview.hasChanges
+        return review.inputs == inputs
+            && review.preview.hasChanges
+            && (!review.preview.configChanged || configChangeAcknowledged)
+    }
+
+    /// Replace or remove the review on screen. Every assignment of `review`
+    /// goes through here so the configuration acknowledgment, given for one
+    /// review, is cleared with it.
+    private func setReview(_ newReview: Review?) {
+        review = newReview
+        configChangeAcknowledged = false
     }
 
     // MARK: - Sources
@@ -495,7 +523,7 @@ struct UpdateContractView: View {
             )
             // An edit made while the review ran is not what was reviewed.
             if inputs == reviewedInputs {
-                review = Review(inputs: reviewedInputs, arguments: arguments, preview: preview)
+                setReview(Review(inputs: reviewedInputs, arguments: arguments, preview: preview))
             }
         } catch {
             errorMessage = Self.describe(error)
@@ -539,7 +567,7 @@ struct UpdateContractView: View {
             if let refreshFailure {
                 // Stay on the screen and offer a refresh-only retry. The
                 // review is stale after the update.
-                self.review = nil
+                setReview(nil)
                 pendingRefreshFloor = newVersion
                 self.refreshFailure = refreshFailure
                 message += "\n\nThe contract was updated, but the local copy could not be refreshed: \(refreshFailure)\n\nUse Refresh Stored Contract to try again."
@@ -563,7 +591,7 @@ struct UpdateContractView: View {
             // proved the contract was at least at its current version, so
             // the refresh refuses an older copy; the update's new version is
             // not known to be on chain, so it is not the floor.
-            self.review = nil
+            setReview(nil)
             unconfirmedUpdateSent = true
             let currentVersion = Int(review.preview.currentVersion)
             let refreshFailure = await refreshStoredContract(minimumVersion: currentVersion)
@@ -584,7 +612,7 @@ struct UpdateContractView: View {
             // have changed, or this update may have reached Platform), so
             // the review is cleared and Update Contract stays off until the
             // changes are reviewed again.
-            self.review = nil
+            setReview(nil)
             errorMessage = Self.describe(error)
         }
     }
@@ -680,6 +708,9 @@ private struct UpdateContractPreviewSection: View {
                 flagRow("Keywords", changed: preview.keywordsChanged)
                 flagRow("Description", changed: preview.descriptionChanged)
                 flagRow("Configuration", changed: preview.configChanged)
+                if preview.configChanged {
+                    configRows
+                }
             } else {
                 Text("No changes")
                     .foregroundColor(.secondary)
@@ -707,5 +738,49 @@ private struct UpdateContractPreviewSection: View {
 
     private func flagRow(_ title: String, changed: Bool) -> some View {
         LabeledContent(title, value: changed ? "Changes" : "Unchanged")
+    }
+
+    /// The configuration change as Rust lists it: the members that differ,
+    /// and the identities the configuration newly names, or stops naming,
+    /// as moderators.
+    @ViewBuilder
+    private var configRows: some View {
+        LabeledContent(
+            "Configuration fields changed",
+            value: preview.configChangedFields.joined(separator: ", ")
+        )
+        .accessibilityIdentifier("updateContract.configFieldsChanged")
+        if !preview.moderatorsAdded.isEmpty {
+            identityListRow(
+                "Moderators added",
+                ids: preview.moderatorsAdded,
+                identifier: "updateContract.moderatorsAdded"
+            )
+        }
+        if !preview.moderatorsRemoved.isEmpty {
+            identityListRow(
+                "Moderators removed",
+                ids: preview.moderatorsRemoved,
+                identifier: "updateContract.moderatorsRemoved"
+            )
+        }
+    }
+
+    /// A title over one base58 identity per line. Each id is the full id,
+    /// truncated in the middle only when it does not fit, and selectable.
+    private func identityListRow(_ title: String, ids: [String], identifier: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+            ForEach(Array(ids.enumerated()), id: \.offset) { _, identity in
+                Text(identity)
+                    .font(.system(.footnote, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(identifier)
     }
 }

@@ -329,7 +329,7 @@ final class UpdateContractImportTests: XCTestCase {
             try UpdateContractImport.checkSize(byteCount: UpdateContractImport.maxInputBytes + 1)
         ) { error in
             XCTAssertEqual(error as? UpdateContractImport.ImportError, .tooLarge)
-            XCTAssertTrue(error.localizedDescription.contains("4 MiB"), error.localizedDescription)
+            XCTAssertTrue(error.localizedDescription.contains("limit of 4 MiB."), error.localizedDescription)
         }
     }
 }
