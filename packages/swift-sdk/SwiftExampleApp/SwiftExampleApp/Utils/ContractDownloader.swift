@@ -139,73 +139,10 @@ public enum ContractDownloader {
             throw ContractDownloadError.invalidContractId
         }
 
-        guard let handle = sdk.handle else {
-            throw ContractDownloadError.fetchFailed("SDK not initialized")
-        }
-
-        // Fetch JSON + binary in one round trip. The
-        // `dash_sdk_data_contract_fetch_with_serialization` FFI returns
-        // the result struct by value with heap-allocated inner pointers
-        // (`json_string` via `CString::into_raw`, `serialized_data` via
-        // `Box::into_raw(boxed_slice)`, `contract_handle` via `Box::into_raw`,
-        // `error` via `Box::into_raw`). We copy any data we need into
-        // Swift-owned `Data` / `String` values, then call
-        // `dash_sdk_data_contract_fetch_result_free` exactly once on the
-        // way out to reclaim every owned pointer.
-        var result = trimmedId.withCString { idCStr in
-            dash_sdk_data_contract_fetch_with_serialization(handle, idCStr, true, true)
-        }
-        defer {
-            withUnsafeMutablePointer(to: &result) { ptr in
-                dash_sdk_data_contract_fetch_result_free(ptr)
-            }
-        }
-
-        if let error = result.error {
-            let message = error.pointee.message != nil
-                ? String(cString: error.pointee.message!)
-                : "Unknown error"
-            // The FFI doesn't expose a structured "not found" code, so
-            // we have to substring-match on the message. This is the
-            // same pattern the modal sheet was using before this
-            // refactor, just centralized.
-            if message.contains("Data contract not found")
-                || message.contains("not found") {
-                throw ContractDownloadError.notFound(message)
-            }
-            throw ContractDownloadError.fetchFailed(
-                "Failed to fetch data contract: \(message)"
-            )
-        }
-
-        // Pull JSON and binary out of the result. The deferred free
-        // above takes ownership of the underlying buffers — we must
-        // not poke at `result` after the function returns, so copy
-        // everything we need into Swift-owned values before falling
-        // through.
-        guard let jsonPtr = result.json_string else {
-            throw ContractDownloadError.fetchFailed(
-                "No JSON data returned from contract fetch"
-            )
-        }
-        let jsonString = String(cString: jsonPtr)
-
-        var binaryData: Data? = nil
-        if result.serialized_data != nil && result.serialized_data_len > 0 {
-            binaryData = Data(
-                bytes: result.serialized_data,
-                count: Int(result.serialized_data_len)
-            )
-        }
-
-        // Parse the contract JSON into a dictionary the parser
-        // understands.
-        guard let jsonData = jsonString.data(using: .utf8),
-              let contractData = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
-            throw ContractDownloadError.fetchFailed(
-                "Failed to parse contract JSON"
-            )
-        }
+        let fetched = try fetchContract(contractId: trimmedId, sdk: sdk)
+        let jsonData = fetched.jsonData
+        let contractData = fetched.contractData
+        let binaryData = fetched.binaryData
 
         // Register the binary serialization with the trusted-context
         // provider so future state transitions don't refetch.
@@ -226,17 +163,10 @@ public enum ContractDownloader {
         // Resolve the contract id bytes. Prefer the id reported in the
         // JSON (it's the canonical form), fall back to the input
         // string if for some reason the JSON omits it.
-        let contractIdData: Data
-        if let idString = contractData["id"] as? String,
-           let idData = Data.identifier(fromBase58: idString) ?? Data(hexString: idString) {
-            contractIdData = idData
-        } else if let idData = Data.identifier(fromBase58: trimmedId) {
-            contractIdData = idData
-        } else {
-            throw ContractDownloadError.fetchFailed(
-                "Could not extract contract ID from response"
-            )
-        }
+        let contractIdData = try resolveContractId(
+            contractData: contractData,
+            requestedId: trimmedId
+        )
 
         // Duplicate check. Prefer the caller-supplied list when
         // available (the modal sheet has a `@Query` already); fall
@@ -367,68 +297,15 @@ public enum ContractDownloader {
             throw ContractDownloadError.invalidContractId
         }
 
-        guard let handle = sdk.handle else {
-            throw ContractDownloadError.fetchFailed("SDK not initialized")
-        }
+        let fetched = try fetchContract(contractId: trimmedId, sdk: sdk)
+        let jsonData = fetched.jsonData
+        let contractData = fetched.contractData
+        let binaryData = fetched.binaryData
 
-        // Same lifecycle as `downloadAndPersistContract` — see that
-        // function's comments for why we copy json/binary into Swift
-        // values first and free everything via one deferred call.
-        var result = trimmedId.withCString { idCStr in
-            dash_sdk_data_contract_fetch_with_serialization(handle, idCStr, true, true)
-        }
-        defer {
-            withUnsafeMutablePointer(to: &result) { ptr in
-                dash_sdk_data_contract_fetch_result_free(ptr)
-            }
-        }
-
-        if let error = result.error {
-            let message = error.pointee.message != nil
-                ? String(cString: error.pointee.message!)
-                : "Unknown error"
-            if message.contains("Data contract not found")
-                || message.contains("not found") {
-                throw ContractDownloadError.notFound(message)
-            }
-            throw ContractDownloadError.fetchFailed(
-                "Failed to fetch data contract: \(message)"
-            )
-        }
-
-        guard let jsonPtr = result.json_string else {
-            throw ContractDownloadError.fetchFailed(
-                "No JSON data returned from contract fetch"
-            )
-        }
-        let jsonString = String(cString: jsonPtr)
-
-        var binaryData: Data? = nil
-        if result.serialized_data != nil && result.serialized_data_len > 0 {
-            binaryData = Data(
-                bytes: result.serialized_data,
-                count: Int(result.serialized_data_len)
-            )
-        }
-
-        guard let jsonData = jsonString.data(using: .utf8),
-              let contractData = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
-            throw ContractDownloadError.fetchFailed(
-                "Failed to parse contract JSON"
-            )
-        }
-
-        let contractIdData: Data
-        if let idString = contractData["id"] as? String,
-           let idData = Data.identifier(fromBase58: idString) ?? Data(hexString: idString) {
-            contractIdData = idData
-        } else if let idData = Data.identifier(fromBase58: trimmedId) {
-            contractIdData = idData
-        } else {
-            throw ContractDownloadError.fetchFailed(
-                "Could not extract contract ID from response"
-            )
-        }
+        let contractIdData = try resolveContractId(
+            contractData: contractData,
+            requestedId: trimmedId
+        )
         let contractIdBase58 = contractIdData.toBase58String()
 
         // Stand up an ephemeral SwiftData store. Anything we insert
@@ -497,6 +374,291 @@ public enum ContractDownloader {
             contractIdBase58: contractIdBase58,
             contract: persistent,
             container: container
+        )
+    }
+
+    /// Re-fetch an already stored contract and bring its row up to date,
+    /// for after the contract was updated on Platform.
+    /// `downloadAndPersistContract` cannot do this: it returns a stored
+    /// row untouched.
+    ///
+    /// Replaces the row's `serializedContract` and `binarySerialization`
+    /// with what Platform returns, registers the new binary with the SDK's
+    /// trusted context (so later transitions validate against the updated
+    /// contract), and runs `DataContractParser.parseDataContract` again,
+    /// which refreshes the version, groups, tokens and document types in
+    /// place. The row keeps its identity, so the contract's documents,
+    /// token balances and token history stay attached. The description,
+    /// keywords and `hasTokens` are refreshed from the fetched contract too.
+    ///
+    /// The fetch can return a valid proof of an older contract than the one
+    /// stored or just updated (a node one block behind), so the fetched
+    /// `version` must be at least the stored row's version and at least
+    /// `minimumVersion`; otherwise nothing is registered or written.
+    ///
+    /// The rows are written in a context of their own on
+    /// `modelContext.container`, saved once at the end. A failure drops that
+    /// context, so nothing pending in `modelContext` (the caller's, usually
+    /// the app's main context) is saved or discarded by this call.
+    ///
+    /// - Parameter minimumVersion: The version the caller knows Platform
+    ///   holds, such as the new version of an update just confirmed. `nil`
+    ///   applies only the stored version as the floor.
+    /// - Throws: `ContractDownloadError.notFound` / `.fetchFailed` when the
+    ///   fetch fails, the response is for another contract or for an older
+    ///   version, or the trusted context refuses the binary; any error the
+    ///   parser or the save throws. On a throw the stored rows are left as
+    ///   they were.
+    public static func refreshPersistedContract(
+        _ contract: PersistentDataContract,
+        sdk: SDK,
+        modelContext: ModelContext,
+        minimumVersion: Int? = nil
+    ) async throws {
+        let requestedId = contract.idBase58
+        let fetched = try fetchContract(contractId: requestedId, sdk: sdk)
+        try apply(
+            fetched: fetched,
+            toContractWithId: contract.id,
+            minimumVersion: minimumVersion,
+            container: modelContext.container
+        ) { binaryData in
+            // Unlike the first download, a failure here is reported: the
+            // trusted context would otherwise keep validating against the
+            // contract as it was before the update.
+            do {
+                try sdk.addContractToContext(
+                    contractId: requestedId,
+                    binaryData: binaryData
+                )
+            } catch {
+                throw ContractDownloadError.fetchFailed(
+                    "Failed to add the updated contract to the trusted context: \(error.localizedDescription)"
+                )
+            }
+        }
+    }
+
+    /// The part of `refreshPersistedContract` after the fetch: check the
+    /// fetched contract against the stored row, then write it, in a context
+    /// of its own on `container`.
+    ///
+    /// `registerBinary` is called with the fetched binary serialization
+    /// after the checks pass and before any row is written; a throw from it
+    /// stops the refresh. Internal so tests can run it without the network.
+    static func apply(
+        fetched: FetchedContract,
+        toContractWithId contractId: Data,
+        minimumVersion: Int?,
+        container: ModelContainer,
+        registerBinary: (Data) throws -> Void
+    ) throws {
+        let requestedId = contractId.toBase58String()
+        let fetchedId = try resolveContractId(
+            contractData: fetched.contractData,
+            requestedId: requestedId
+        )
+        guard fetchedId == contractId else {
+            throw ContractDownloadError.fetchFailed(
+                "The fetch returned contract \(fetchedId.toBase58String()), not \(requestedId)"
+            )
+        }
+
+        // Dropped unsaved on any throw below.
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        let row = try context.fetch(
+            FetchDescriptor<PersistentDataContract>(predicate: #Predicate { $0.id == contractId })
+        ).first
+        guard let row else {
+            throw ContractDownloadError.fetchFailed(
+                "Contract \(requestedId) is not stored locally, so there is nothing to refresh"
+            )
+        }
+
+        let floor = max(row.version ?? 0, minimumVersion ?? 0)
+        guard let fetchedVersion = contractVersion(of: fetched.contractData) else {
+            throw ContractDownloadError.fetchFailed(
+                "The fetched contract \(requestedId) carries no version, so the local copy was not changed"
+            )
+        }
+        guard fetchedVersion >= floor else {
+            throw ContractDownloadError.fetchFailed(
+                "Platform returned version \(fetchedVersion) of contract \(requestedId), older than version \(floor); the local copy was not changed. Refresh again later."
+            )
+        }
+
+        if let binaryData = fetched.binaryData {
+            try registerBinary(binaryData)
+        }
+
+        row.serializedContract = fetched.jsonData
+        row.binarySerialization = fetched.binaryData
+        row.lastUpdated = Date()
+        row.lastSyncedAt = Date()
+        try DataContractParser.parseDataContract(
+            contractData: fetched.contractData,
+            contractId: contractId,
+            modelContext: context
+        )
+        refreshMetadataProjections(of: row, from: fetched.contractData, in: context)
+        ContractIdentityLinker.linkContractToOwner(
+            contract: row,
+            modelContext: context
+        )
+        try context.save()
+    }
+
+    /// The contract JSON's `version`, or nil when it has no integer one.
+    private static func contractVersion(of contractData: [String: Any]) -> Int? {
+        guard let value = contractData["version"] as? NSNumber,
+              CFGetTypeID(value as CFTypeRef) != CFBooleanGetTypeID()
+        else {
+            return nil
+        }
+        return Int(exactly: value)
+    }
+
+    /// Bring the row's stored copies of the contract's description, keywords
+    /// and token presence in line with `contractData`. The parser does not
+    /// write these; `downloadAndPersistContract` leaves them as the row was
+    /// created.
+    ///
+    /// A keyword the contract still has keeps its row (the id is the
+    /// contract id and the keyword, unique); the others are deleted and the
+    /// new ones inserted.
+    private static func refreshMetadataProjections(
+        of row: PersistentDataContract,
+        from contractData: [String: Any],
+        in context: ModelContext
+    ) {
+        row.contractDescription = contractData["description"] as? String
+        row.hasTokens = !((contractData["tokens"] as? [String: Any]) ?? [:]).isEmpty
+
+        // Keywords are matched by their UTF-8 bytes, as Platform compares
+        // them. Swift `String` equality treats canonically equivalent
+        // spellings (`caf\u{E9}` and `cafe\u{301}`) as equal, which would keep
+        // a replaced keyword's row or drop one of two distinct keywords.
+        var fetchedBytes = Set<Data>()
+        var fetchedKeywords: [String] = []
+        for keyword in contractData["keywords"] as? [String] ?? []
+        where fetchedBytes.insert(Data(keyword.utf8)).inserted {
+            fetchedKeywords.append(keyword)
+        }
+        let storedRows = row.keywordRelations
+        let kept = storedRows.filter { fetchedBytes.contains(Data($0.keyword.utf8)) }
+        let keptBytes = Set(kept.map { Data($0.keyword.utf8) })
+        let added = fetchedKeywords
+            .filter { !keptBytes.contains(Data($0.utf8)) }
+            .map { PersistentKeyword(keyword: $0, contractId: row.idBase58) }
+        for stale in storedRows where !fetchedBytes.contains(Data(stale.keyword.utf8)) {
+            context.delete(stale)
+        }
+        for keyword in added {
+            context.insert(keyword)
+        }
+        row.keywordRelations = kept + added
+    }
+
+    // MARK: - Shared fetch
+
+    /// What `fetchContract` copies out of the FFI result. Internal so tests
+    /// can hand `apply` a fetched contract.
+    struct FetchedContract {
+        /// The contract JSON as returned.
+        let jsonData: Data
+        /// `jsonData` parsed into a dictionary.
+        let contractData: [String: Any]
+        /// The binary serialization, when the response carries one.
+        let binaryData: Data?
+    }
+
+    /// Fetch the contract `contractId` (base58), JSON and binary in one
+    /// round trip.
+    ///
+    /// The `dash_sdk_data_contract_fetch_with_serialization` FFI returns
+    /// the result struct by value with heap-allocated inner pointers
+    /// (`json_string` via `CString::into_raw`, `serialized_data` via
+    /// `Box::into_raw(boxed_slice)`, `contract_handle` via `Box::into_raw`,
+    /// `error` via `Box::into_raw`). Everything needed is copied into
+    /// Swift-owned `Data` / `String` values, then
+    /// `dash_sdk_data_contract_fetch_result_free` is called exactly once on
+    /// the way out to reclaim every owned pointer.
+    private static func fetchContract(contractId: String, sdk: SDK) throws -> FetchedContract {
+        guard let handle = sdk.handle else {
+            throw ContractDownloadError.fetchFailed("SDK not initialized")
+        }
+
+        var result = contractId.withCString { idCStr in
+            dash_sdk_data_contract_fetch_with_serialization(handle, idCStr, true, true)
+        }
+        defer {
+            withUnsafeMutablePointer(to: &result) { ptr in
+                dash_sdk_data_contract_fetch_result_free(ptr)
+            }
+        }
+
+        if let error = result.error {
+            let message = error.pointee.message != nil
+                ? String(cString: error.pointee.message!)
+                : "Unknown error"
+            // The FFI doesn't expose a structured "not found" code, so
+            // we have to substring-match on the message.
+            if message.contains("Data contract not found")
+                || message.contains("not found") {
+                throw ContractDownloadError.notFound(message)
+            }
+            throw ContractDownloadError.fetchFailed(
+                "Failed to fetch data contract: \(message)"
+            )
+        }
+
+        // The deferred free above takes ownership of the underlying
+        // buffers, so copy everything out before returning.
+        guard let jsonPtr = result.json_string else {
+            throw ContractDownloadError.fetchFailed(
+                "No JSON data returned from contract fetch"
+            )
+        }
+        let jsonString = String(cString: jsonPtr)
+
+        var binaryData: Data? = nil
+        if result.serialized_data != nil && result.serialized_data_len > 0 {
+            binaryData = Data(
+                bytes: result.serialized_data,
+                count: Int(result.serialized_data_len)
+            )
+        }
+
+        guard let jsonData = jsonString.data(using: .utf8),
+              let contractData = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+            throw ContractDownloadError.fetchFailed(
+                "Failed to parse contract JSON"
+            )
+        }
+
+        return FetchedContract(
+            jsonData: jsonData,
+            contractData: contractData,
+            binaryData: binaryData
+        )
+    }
+
+    /// The contract id bytes: the id the JSON reports (the canonical form),
+    /// or `requestedId` when the JSON omits it.
+    private static func resolveContractId(
+        contractData: [String: Any],
+        requestedId: String
+    ) throws -> Data {
+        if let idString = contractData["id"] as? String,
+           let idData = Data.identifier(fromBase58: idString) ?? Data(hexString: idString) {
+            return idData
+        }
+        if let idData = Data.identifier(fromBase58: requestedId) {
+            return idData
+        }
+        throw ContractDownloadError.fetchFailed(
+            "Could not extract contract ID from response"
         )
     }
 }

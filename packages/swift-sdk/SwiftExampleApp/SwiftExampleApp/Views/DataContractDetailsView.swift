@@ -21,6 +21,7 @@ struct DataContractDetailsView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var showingShareSheet = false
     @State private var showCopiedAlert = false
+    @State private var showingUpdateContract = false
 
     var displayName: String {
         // Check if this is a token-only contract
@@ -88,6 +89,12 @@ struct DataContractDetailsView: View {
                     scope: route.scope,
                     documentTypeNames: route.documentTypeNames
                 )
+            }
+            // A boolean route on the stack itself, not a link inside a
+            // section, so a re-render of this list cannot pop it (see the
+            // comment above).
+            .navigationDestination(isPresented: $showingUpdateContract) {
+                UpdateContractView(contract: contract)
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -336,6 +343,18 @@ struct DataContractDetailsView: View {
                     }
                 }
                 .disabled(isSaving)
+            }
+
+            // Only the owner can sign an update, so the action is offered
+            // when a local identity owns the contract, and never for a
+            // preview-only contract (`onSave != nil`). Whether Platform
+            // accepts the update is decided when it is broadcast.
+            if onSave == nil, contract.ownerIdentity != nil {
+                Button(action: { showingUpdateContract = true }) {
+                    Label("Update Contract", systemImage: "square.and.pencil")
+                        .foregroundColor(.blue)
+                }
+                .accessibilityIdentifier("contractDetails.updateContract")
             }
 
             Button(action: { showingShareSheet = true }) {
