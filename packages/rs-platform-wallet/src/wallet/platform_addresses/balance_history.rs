@@ -23,10 +23,9 @@ use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::{BlockAwareCreditOperation, CreditOperation};
 use dpp::fee::Credits;
 use dpp::prelude::BlockHeight;
-use key_wallet::PlatformP2PKHAddress;
 
 use super::saturating_sum_credits;
-use super::wallet::{merge_platform_payment_candidate_addresses, PlatformAddressWallet};
+use super::wallet::{platform_payment_account_candidate_addresses, PlatformAddressWallet};
 use crate::error::PlatformWalletError;
 
 /// How one block changed an address's balance.
@@ -152,13 +151,13 @@ impl PlatformAddressWallet {
 
     /// Every address of every platform payment account on the wallet: each
     /// account's transient derived pool united with its hydrated
-    /// `address_balances` keys, the same per-account union
-    /// [`Self::candidate_address_set`] builds for one account. No address is
+    /// `address_balances` keys, the same per-account set
+    /// [`Self::candidate_address_set`] returns for one account. No address is
     /// derived here.
     ///
     /// The wallet-manager read lock is released before returning, so the
     /// network round-trips that follow never block a sync.
-    pub(crate) async fn all_accounts_address_set(
+    async fn all_accounts_address_set(
         &self,
     ) -> Result<BTreeSet<PlatformAddress>, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
@@ -173,19 +172,7 @@ impl PlatformAddressWallet {
             .core_wallet
             .all_platform_payment_managed_accounts()
             .into_iter()
-            .flat_map(|account| {
-                merge_platform_payment_candidate_addresses(
-                    account
-                        .addresses
-                        .addresses
-                        .values()
-                        .filter_map(|addr_info| {
-                            PlatformP2PKHAddress::from_address(&addr_info.address).ok()
-                        }),
-                    account.address_balances.keys().copied(),
-                )
-            })
-            .map(|p2pkh| PlatformAddress::P2pkh(p2pkh.to_bytes()))
+            .flat_map(platform_payment_account_candidate_addresses)
             .collect())
     }
 }
@@ -198,7 +185,7 @@ impl PlatformAddressWallet {
 /// when a page would not move the cursor forward (a server that ignores the
 /// start height, or a height at `u64::MAX`); such a page holds nothing past
 /// what was already read and is dropped.
-pub(crate) async fn fetch_pages_from_genesis<T, F, Fut>(
+async fn fetch_pages_from_genesis<T, F, Fut>(
     mut fetch_page: F,
     last_height_of: impl Fn(&T) -> BlockHeight,
 ) -> Result<Vec<T>, PlatformWalletError>
@@ -225,7 +212,7 @@ where
 
 /// Keep the recent changes that touch `wallet_addresses`, newest block
 /// first, then by address.
-pub(crate) fn wallet_recent_balance_changes(
+fn wallet_recent_balance_changes(
     blocks: Vec<BlockAddressBalanceChanges>,
     wallet_addresses: &BTreeSet<PlatformAddress>,
 ) -> Vec<AddressBalanceChangeEntry> {
@@ -257,7 +244,7 @@ pub(crate) fn wallet_recent_balance_changes(
 
 /// Keep the compacted changes that touch `wallet_addresses`, newest range
 /// first (by range end, then range start), then by address.
-pub(crate) fn wallet_compacted_balance_changes(
+fn wallet_compacted_balance_changes(
     ranges: Vec<CompactedBlockAddressBalanceChanges>,
     wallet_addresses: &BTreeSet<PlatformAddress>,
 ) -> Vec<CompactedAddressBalanceChangeEntry> {
@@ -308,11 +295,21 @@ pub(crate) fn wallet_compacted_balance_changes(
 mod tests {
     use std::cell::RefCell;
     use std::collections::{BTreeMap, BTreeSet};
+    use std::sync::Arc;
 
     use dash_sdk::query_types::{BlockAddressBalanceChanges, CompactedBlockAddressBalanceChanges};
     use dpp::address_funds::PlatformAddress;
     use dpp::balances::credits::{BlockAwareCreditOperation, CreditOperation};
     use dpp::prelude::BlockHeight;
+    use key_wallet::bip32::{ChildNumber, DerivationPath};
+    use key_wallet::managed_account::address_pool::{
+        AddressInfo as PoolAddressInfo, AddressPool, AddressPoolType,
+    };
+    use key_wallet::managed_account::managed_platform_account::ManagedPlatformAccount;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::{Network, PlatformP2PKHAddress};
+    use key_wallet_manager::WalletManager;
+    use tokio::sync::RwLock;
 
     use super::{
         fetch_pages_from_genesis, wallet_compacted_balance_changes, wallet_recent_balance_changes,
@@ -320,9 +317,66 @@ mod tests {
         CompactedAddressBalanceChangeEntry,
     };
     use crate::error::PlatformWalletError;
+    use crate::test_support::platform_address_wallet_in;
+    use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+    use crate::wallet::PlatformAddressWallet;
 
     fn address(byte: u8) -> PlatformAddress {
         PlatformAddress::P2pkh([byte; 20])
+    }
+
+    /// The DIP-17 base path of platform payment account `account`.
+    fn platform_account_path(account: u32) -> DerivationPath {
+        DerivationPath::from(vec![
+            ChildNumber::from_hardened_idx(9).expect("purpose"),
+            ChildNumber::from_hardened_idx(1).expect("coin type"),
+            ChildNumber::from_hardened_idx(17).expect("feature"),
+            ChildNumber::from_hardened_idx(0).expect("subfeature"),
+            ChildNumber::from_hardened_idx(account).expect("account"),
+        ])
+    }
+
+    /// An empty testnet address pool for platform payment account `account`.
+    fn empty_pool(account: u32) -> AddressPool {
+        AddressPool::new_without_generation(
+            platform_account_path(account),
+            AddressPoolType::Absent,
+            20,
+            Network::Testnet,
+        )
+    }
+
+    /// A derived-pool entry at `index` of `account` for the P2PKH hash
+    /// `[byte; 20]`, built from its script (no private key needed).
+    fn pool_entry(account: u32, byte: u8, index: u32) -> PoolAddressInfo {
+        let address = PlatformP2PKHAddress::new([byte; 20]).to_address(Network::Testnet);
+        PoolAddressInfo::new_from_script_pubkey_p2pkh(
+            address.script_pubkey(),
+            index,
+            platform_account_path(account),
+            Network::Testnet,
+        )
+        .expect("known testnet P2PKH script")
+    }
+
+    /// A testnet wallet manager holding one wallet with no accounts, and that
+    /// wallet's id.
+    fn wallet_manager_with_empty_wallet() -> (WalletManager<PlatformWalletInfo>, WalletId) {
+        let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
+        let wallet_id = wm
+            .create_wallet_with_random_mnemonic(WalletAccountCreationOptions::None)
+            .expect("create wallet");
+        (wm, wallet_id)
+    }
+
+    /// A `PlatformAddressWallet` over `wm`'s wallet `wallet_id` on a mock SDK
+    /// with no expectations, so any network fetch fails.
+    fn address_wallet_without_network(
+        wm: WalletManager<PlatformWalletInfo>,
+        wallet_id: WalletId,
+    ) -> PlatformAddressWallet {
+        let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+        platform_address_wallet_in(sdk, Arc::new(RwLock::new(wm)), wallet_id)
     }
 
     fn recent_block(
@@ -515,5 +569,74 @@ mod tests {
         .await;
 
         assert!(matches!(result, Err(PlatformWalletError::AddressSync(_))));
+    }
+
+    #[tokio::test]
+    async fn should_collect_derived_and_hydrated_addresses_of_every_platform_payment_account() {
+        let derived_only_byte = 0x41u8;
+        let hydrated_only_byte = 0x42u8;
+        let (mut wm, wallet_id) = wallet_manager_with_empty_wallet();
+        {
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+
+            // Account 0: an address only in the derived pool, no balance.
+            let mut pool = empty_pool(0);
+            pool.addresses
+                .insert(0, pool_entry(0, derived_only_byte, 0));
+            info.core_wallet
+                .accounts
+                .insert_platform_account(ManagedPlatformAccount::new(0, 0, pool, false));
+
+            // Account 1: an empty pool and one address only in the hydrated
+            // balance map, as `initialize_from_persisted` leaves it.
+            let mut hydrated_account = ManagedPlatformAccount::new(1, 0, empty_pool(1), false);
+            hydrated_account.set_address_credit_balance(
+                PlatformP2PKHAddress::new([hydrated_only_byte; 20]),
+                1_000,
+                None,
+            );
+            info.core_wallet
+                .accounts
+                .insert_platform_account(hydrated_account);
+        }
+        let wallet = address_wallet_without_network(wm, wallet_id);
+
+        let addresses = wallet
+            .all_accounts_address_set()
+            .await
+            .expect("the wallet is in the manager");
+
+        assert_eq!(
+            addresses,
+            BTreeSet::from([address(derived_only_byte), address(hydrated_only_byte)])
+        );
+    }
+
+    #[tokio::test]
+    async fn should_return_empty_history_without_fetching_when_the_wallet_has_no_platform_payment_accounts(
+    ) {
+        let (wm, wallet_id) = wallet_manager_with_empty_wallet();
+        assert_eq!(
+            wm.get_wallet_info(&wallet_id)
+                .expect("wallet info")
+                .core_wallet
+                .platform_payment_account_count(),
+            0,
+            "test setup: the wallet must have no platform payment account"
+        );
+        // The mock SDK has no expectations: any fetch would return an error.
+        let wallet = address_wallet_without_network(wm, wallet_id);
+
+        let recent = wallet
+            .recent_balance_changes()
+            .await
+            .expect("no fetch is made for a wallet without addresses");
+        let compacted = wallet
+            .compacted_balance_changes()
+            .await
+            .expect("no fetch is made for a wallet without addresses");
+
+        assert!(recent.is_empty());
+        assert!(compacted.is_empty());
     }
 }

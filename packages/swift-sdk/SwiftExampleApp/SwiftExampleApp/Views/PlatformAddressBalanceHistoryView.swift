@@ -164,7 +164,7 @@ struct PlatformAddressBalanceHistoryView: View {
                 }
             }
             addressText(entry.bech32m(network: network), hash: entry.hash)
-            if case .additions(_, let additions) = entry.change, additions.count > 1 {
+            if case .additions(_, let additions) = entry.change, !additions.isEmpty {
                 ForEach(Array(additions.enumerated()), id: \.offset) { _, addition in
                     HStack {
                         Text("Block \(addition.blockHeight)")
@@ -254,17 +254,22 @@ struct PlatformAddressBalanceHistoryView: View {
 
     // MARK: - Formatting
 
-    /// Credits (1e11 per DASH) as DASH, the same format as the wallet's
-    /// Platform Balance row.
-    private func formatCredits(_ credits: UInt64) -> String {
-        let dash = Double(credits) / 100_000_000_000.0
+    /// One formatter for every amount on the screen, configured once.
+    private static let dashFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = 8
         formatter.numberStyle = .decimal
         formatter.groupingSeparator = ","
         formatter.decimalSeparator = "."
-        if let formatted = formatter.string(from: NSNumber(value: dash)) {
+        return formatter
+    }()
+
+    /// Credits (1e11 per DASH) as DASH, the same format as the wallet's
+    /// Platform Balance row.
+    private func formatCredits(_ credits: UInt64) -> String {
+        let dash = Double(credits) / 100_000_000_000.0
+        if let formatted = Self.dashFormatter.string(from: NSNumber(value: dash)) {
             return "\(formatted) DASH"
         }
         return String(format: "%.8f DASH", dash)

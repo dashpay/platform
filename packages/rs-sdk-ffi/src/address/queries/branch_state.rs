@@ -7,11 +7,39 @@ use dash_sdk::dapi_grpc::platform::v0::{
 };
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::drive::drive::Drive;
+use dash_sdk::platform::address_sync::address_branch_query_depth;
 use std::panic::{self, AssertUnwindSafe};
 
 use crate::sdk::SDKWrapper;
 use crate::types::{DashSDKBranchState, DashSDKLeafBoundary, DashSDKTrunkStateElement, SDKHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
+
+/// Returned by [`dash_sdk_address_branch_query_depth`] for a null handle; no
+/// valid branch query depth is 0.
+const NO_BRANCH_QUERY_DEPTH: u8 = 0;
+
+/// The depth to pass to [`dash_sdk_address_fetch_branch_state`] for a leaf
+/// boundary of about `estimated_count` elements (0 when the count is
+/// unknown), under the SDK's platform version.
+///
+/// This is the depth the address sync picks for such a leaf; see
+/// `dash_sdk::platform::address_sync::address_branch_query_depth`. Returns
+/// 0 for a null handle.
+///
+/// # Safety
+/// `sdk_handle` must be null or a valid SDK handle for the duration of this
+/// call.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_address_branch_query_depth(
+    sdk_handle: *const SDKHandle,
+    estimated_count: u64,
+) -> u8 {
+    if sdk_handle.is_null() {
+        return NO_BRANCH_QUERY_DEPTH;
+    }
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
+    address_branch_query_depth(estimated_count, wrapper.sdk.version())
+}
 
 /// Fetch the branch state of a subtree in the address tree.
 ///
@@ -256,5 +284,37 @@ fn extract_balance_nonce_from_element(
             Some((*balance as u64, 0))
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use dash_sdk::platform::address_sync::address_branch_query_depth;
+
+    use super::dash_sdk_address_branch_query_depth;
+    use crate::sdk::SDKWrapper;
+    use crate::test_utils::test_utils::{create_mock_sdk_handle, destroy_mock_sdk_handle};
+
+    #[test]
+    fn should_return_zero_branch_query_depth_for_a_null_handle() {
+        let depth = unsafe { dash_sdk_address_branch_query_depth(std::ptr::null(), 100) };
+
+        assert_eq!(depth, 0);
+    }
+
+    #[test]
+    fn should_return_the_sdk_branch_query_depth_for_the_handle_version() {
+        let handle = create_mock_sdk_handle();
+        let platform_version = unsafe { &*(handle as *const SDKWrapper) }.sdk.version();
+
+        for estimated_count in [0, 1, 33, 54, 1_000_000] {
+            let depth = unsafe { dash_sdk_address_branch_query_depth(handle, estimated_count) };
+            assert_eq!(
+                depth,
+                address_branch_query_depth(estimated_count, platform_version)
+            );
+        }
+
+        destroy_mock_sdk_handle(handle);
     }
 }

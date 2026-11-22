@@ -9,7 +9,7 @@ pub mod trunk_state;
 
 // Re-export main functions for convenient access
 pub use balance_changes::dash_sdk_address_fetch_recent_balance_changes;
-pub use branch_state::dash_sdk_address_fetch_branch_state;
+pub use branch_state::{dash_sdk_address_branch_query_depth, dash_sdk_address_fetch_branch_state};
 pub use compacted_balance_changes::dash_sdk_address_fetch_compacted_balance_changes;
 pub use info::dash_sdk_address_fetch_info;
 pub use infos::dash_sdk_addresses_fetch_infos;

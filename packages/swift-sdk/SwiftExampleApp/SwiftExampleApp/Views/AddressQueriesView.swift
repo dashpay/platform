@@ -651,7 +651,10 @@ struct GetTrunkStateView: View {
                           destination: GetBranchStateView(
                             keyHex: boundary.keyHex,
                             expectedHashHex: boundary.hashHex,
-                            checkpointHeight: "\(state.checkpointHeight)"
+                            checkpointHeight: "\(state.checkpointHeight)",
+                            depth: try? appState.sdk?.addresses.branchQueryDepth(
+                              estimatedCount: boundary.estimatedCount
+                            )
                           )
                         ) {
                           Label("Query this branch", systemImage: "arrow.branch")
@@ -720,13 +723,22 @@ struct GetBranchStateView: View {
   @State private var errorMessage: String?
   @State private var showResult = false
 
-  /// Empty fields by default; the trunk state view's "Query this branch"
-  /// passes one leaf boundary's key and hash plus the trunk's checkpoint
-  /// height so nothing has to be copied by hand.
-  init(keyHex: String = "", expectedHashHex: String = "", checkpointHeight: String = "") {
+  /// Empty fields (depth 6) by default; the trunk state view's "Query this
+  /// branch" passes one leaf boundary's key and hash, the trunk's checkpoint
+  /// height, and the depth Rust recommends for the boundary's estimated
+  /// count, so nothing has to be copied by hand. Every field stays editable.
+  init(
+    keyHex: String = "",
+    expectedHashHex: String = "",
+    checkpointHeight: String = "",
+    depth: UInt8? = nil
+  ) {
     _keyHex = State(initialValue: keyHex)
     _expectedHashHex = State(initialValue: expectedHashHex)
     _checkpointHeight = State(initialValue: checkpointHeight)
+    if let depth {
+      _depth = State(initialValue: "\(depth)")
+    }
   }
 
   var body: some View {

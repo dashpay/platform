@@ -356,6 +356,21 @@ public class Addresses: @unchecked Sendable {
 
     // MARK: - Branch State Query
 
+    /// The depth to pass to `getBranchState` for a leaf boundary of about
+    /// `estimatedCount` elements (0 when unknown): the depth the address sync
+    /// picks for such a leaf under the SDK's platform version. Rust decides it
+    /// (`dash_sdk_address_branch_query_depth`).
+    ///
+    /// - Parameter estimatedCount: The leaf boundary's estimated element count
+    /// - Returns: The branch query depth
+    /// - Throws: SDKError if the SDK is not initialized
+    public func branchQueryDepth(estimatedCount: UInt64) throws -> UInt8 {
+        guard let sdk = sdk, let handle = sdk.handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        return dash_sdk_address_branch_query_depth(handle, estimatedCount)
+    }
+
     /// Fetch the branch state of a subtree in the address tree.
     ///
     /// This is used after a trunk state query to explore subtrees indicated by leaf boundaries.
