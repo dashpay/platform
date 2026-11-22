@@ -170,8 +170,10 @@ final class IdentityKeyLimitsPersistenceTests: XCTestCase {
         XCTAssertEqual(try context.fetch(FetchDescriptor<PersistentPublicKey>()).count, 1)
     }
 
-    /// A key lookup that fails rejects the round: nothing it staged, including
-    /// a sibling key written before the failure, is committed.
+    /// A key lookup that fails rejects the round: the registered C callback
+    /// reports the failure, so Rust ends the round unsuccessfully, and nothing
+    /// it staged, including a sibling key written before the failure, is
+    /// committed.
     func testKeyLookupFailureRejectsTheWholeRound() throws {
         final class FailingSecondKeyLookup: ModelFetching, @unchecked Sendable {
             enum Failure: Error { case read }
@@ -191,14 +193,37 @@ final class IdentityKeyLimitsPersistenceTests: XCTestCase {
         let container = try DashModelContainer.createInMemory()
         let handler = PlatformWalletPersistenceHandler(
             modelContainer: container, network: .testnet, modelFetcher: FailingSecondKeyLookup())
+        let callbacks = handler.makeCallbacks()
+        defer { Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(callbacks.context!).release() }
+        let persistKeys = try XCTUnwrap(callbacks.on_persist_identity_keys_fn)
 
-        handler.beginChangeset(walletId: walletId)
-        XCTAssertThrowsError(try handler.persistIdentityKeys(
-            walletId: walletId,
-            upserts: [snapshot(keyId: 3, totalBudget: 100_000, expiresAt: nil),
-                      snapshot(keyId: 4, totalBudget: 200_000, expiresAt: nil)],
-            removed: []))
-        XCTAssertFalse(handler.endChangeset(walletId: walletId, success: false))
+        var publicKeyBytes = [UInt8](publicKeyData)
+        let rc: Int32 = publicKeyBytes.withUnsafeMutableBufferPointer { publicKeyBuffer in
+            func entry(keyId: UInt32, totalBudget: UInt64) -> IdentityKeyEntryFFI {
+                var row = IdentityKeyEntryFFI()
+                withUnsafeMutableBytes(of: &row.identity_id) { $0.copyBytes(from: identityId) }
+                row.key_id = keyId
+                row.purpose = KeyPurpose.authentication.rawValue
+                row.security_level = SecurityLevel.high.rawValue
+                row.key_type = KeyType.ecdsaSecp256k1.rawValue
+                row.public_key_data_ptr = publicKeyBuffer.baseAddress
+                row.public_key_data_len = UInt(publicKeyBuffer.count)
+                row.total_budget_is_some = true
+                row.total_budget = totalBudget
+                return row
+            }
+            let rows = [entry(keyId: 3, totalBudget: 100_000), entry(keyId: 4, totalBudget: 200_000)]
+            handler.beginChangeset(walletId: walletId)
+            return walletId.withUnsafeBytes { walletIdBytes in
+                rows.withUnsafeBufferPointer { rowsBuffer in
+                    persistKeys(callbacks.context, walletIdBytes.bindMemory(to: UInt8.self).baseAddress,
+                                rowsBuffer.baseAddress, UInt(rowsBuffer.count), nil, 0)
+                }
+            }
+        }
+        XCTAssertNotEqual(rc, 0, "the callback reports the failed lookup")
+        // Rust ends the round by the callback's result.
+        XCTAssertFalse(handler.endChangeset(walletId: walletId, success: rc == 0))
 
         XCTAssertTrue(try ModelContext(container).fetch(FetchDescriptor<PersistentPublicKey>()).isEmpty)
     }

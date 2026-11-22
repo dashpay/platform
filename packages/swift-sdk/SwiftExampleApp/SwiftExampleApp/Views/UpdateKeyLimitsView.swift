@@ -77,6 +77,11 @@ struct UpdateKeyLimitsView: View {
     /// further submission is offered from this sheet, since a second one
     /// against the same reviewed limits could only be refused, for a fee.
     @State private var outcomeUnknown = false
+    /// The wallet handle whose copy of the identity the opening refresh made
+    /// current. Every later preview and the submission use this handle, and
+    /// stop if the wallet manager now holds a different one for the id (the
+    /// wallet was reloaded and its copy did not go through that refresh).
+    @State private var refreshedWallet: ManagedPlatformWallet?
 
     var body: some View {
         NavigationStack {
@@ -299,6 +304,9 @@ struct UpdateKeyLimitsView: View {
         guard let wallet = walletManager.wallet(for: walletId) else {
             return .refused("Wallet not loaded in the wallet manager.")
         }
+        if let refreshedWallet, refreshedWallet !== wallet {
+            return .refused("The wallet was reloaded after this sheet read the key from Platform. Close the sheet and open it again.")
+        }
         return .answered(wallet)
     }
 
@@ -334,6 +342,7 @@ struct UpdateKeyLimitsView: View {
         case .answered(let wallet):
             do {
                 try await wallet.refreshIdentity(identityId: identity.identityId)
+                refreshedWallet = wallet
             } catch {
                 gate = .refused("Could not read this identity from Platform: \(error.localizedDescription). Close the sheet and try again when the network is reachable.")
                 return
@@ -423,9 +432,9 @@ struct UpdateKeyLimitsView: View {
                 submitError = "\(message)\nThe update may have landed. Close this sheet and check the key before trying again."
                 return
             }
-            // Still locked as submitting. Only Platform's own refusal shows
-            // this transition did not apply; any other failure may have come
-            // after the broadcast (a raise proved but not stored, a wallet
+            // Still locked as submitting. Only a refusal (a consensus error,
+            // the broadcast node's word) says this transition was not
+            // applied; any other failure may have come after the broadcast (a raise proved but not stored, a wallet
             // removed after the proof). Then ask the wallet for the key's
             // limits: only an answer showing exactly the reviewed ones lets
             // the same inputs be offered again without signing the increment
@@ -467,13 +476,15 @@ struct UpdateKeyLimitsView: View {
 }
 
 /// After a failed key limits update, whether the sheet may offer the same
-/// change again. A UI guard against signing a raise twice, not a protocol
-/// rule. Only Platform's refusal (a consensus error) shows the transition
-/// did not apply; any other failure may have come after the broadcast. Even
-/// then, only a wallet answer showing exactly the limits the person reviewed
-/// lets the same change be offered again: moved limits (another client's
-/// raise) and no answer at all (the wallet refused the check) leave the
-/// outcome unknown.
+/// change again. A UI guard, not a protocol rule. A consensus error is the
+/// broadcast node's own word, not proved, but it is the only failure that
+/// says the transition was refused; any other failure may have come after
+/// the broadcast. Even then, only a wallet answer showing exactly the limits
+/// the person reviewed lets the same change be offered again: moved limits
+/// (another client's raise) and no answer at all (the wallet refused the
+/// check) leave the outcome unknown. A repeat signs the same absolute limits,
+/// so if the first did land after all, the repeat is refused as not a raise
+/// (40221) and never added twice.
 enum KeyLimitsRetryGate {
     struct Limits: Equatable {
         var totalBudget: UInt64?
