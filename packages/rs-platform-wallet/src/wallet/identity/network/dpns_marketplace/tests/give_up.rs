@@ -1039,7 +1039,8 @@ async fn should_keep_the_label_when_the_stored_rows_can_not_be_read() {
     );
 }
 
-/// The identity also owns the same label under another parent (a subdomain registration).
+/// The identity also owns the same label under another top-level domain (one only the
+/// DPNS contract owner could create; the cleanup must not assume `dash` is the only one).
 /// Giving up the `dash` registration leaves that registration's row, its sale price and the
 /// shared label alone.
 #[tokio::test]
