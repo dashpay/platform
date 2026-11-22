@@ -1074,14 +1074,13 @@ struct BalanceCardView: View {
         )
     }
 
-    /// Per-wallet shielded balance: sum of this wallet's unspent
-    /// `PersistentShieldedNote` values. Reads SwiftData (Rust pushes
-    /// note rows via the shielded persister) rather than the single-mirror
-    /// `shieldedService.shieldedBalance`, so the card is correct for a
-    /// non-`firstWallet` wallet whose engine binding is live but whose UI
-    /// mirror is pointed elsewhere.
-    private var shieldedBalance: UInt64 {
-        shieldedNotes.reduce(0) { $0 + $1.value }
+    /// This wallet's shielded balance as Rust pushes it (ordinary
+    /// accounts; identity accounts left out), or `nil` while it is not a
+    /// known balance. Read per wallet from `walletManager.shieldedBalances`
+    /// rather than the single-mirror `shieldedService.shieldedBalance`, so
+    /// the card is correct for a non-`firstWallet` wallet.
+    private var shieldedBalance: UInt64? {
+        walletManager.ordinaryShieldedBalance(walletId: wallet.walletId)
     }
 
     /// Core-chain balance summed from one Rust in-memory account snapshot.
@@ -1165,13 +1164,18 @@ struct BalanceCardView: View {
 
     var body: some View {
         let core = coreBalance
+        // A wallet holding any unspent shielded note row is not empty even
+        // when its shielded balance is 0 (for example all its notes sit in
+        // identity accounts), and a wallet whose shielded balance is not
+        // known is never called empty, so the shielded row and its actions
+        // stay shown.
         let allZero = WalletBalanceCardState.isEmpty(
             confirmedCore: core.confirmed,
             unconfirmedCore: core.unconfirmed,
             immatureCore: core.immature,
             platform: platformBalance,
             shielded: shieldedBalance
-        )
+        ) && shieldedNotes.isEmpty
 
         VStack(spacing: 12) {
             if allZero {
@@ -1263,8 +1267,10 @@ enum WalletBalanceCardState {
         unconfirmedCore: UInt64,
         immatureCore: UInt64,
         platform: UInt64,
-        shielded: UInt64
+        shielded: UInt64?
     ) -> Bool {
+        // A shielded balance that is not known (`nil`) is not a known zero,
+        // so it keeps the wallet from reading as empty.
         confirmedCore == 0
             && unconfirmedCore == 0
             && immatureCore == 0
@@ -1302,7 +1308,8 @@ private struct WalletBalanceRow: View {
     }
 
     let label: String
-    var amount: UInt64
+    /// `nil` means the balance is not known yet.
+    var amount: UInt64?
     var incoming: UInt64 = 0
     var immature: UInt64 = 0
     var color: Color
@@ -1330,11 +1337,15 @@ private struct WalletBalanceRow: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
-                if amount > 0 {
+                if let amount, amount > 0 {
                     Text(formatBalance(amount))
                         .font(.subheadline)
                         .fontWeight(.medium)
                         .foregroundColor(color)
+                } else if amount == nil {
+                    Text("Not known yet")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
                 } else {
                     Text("—")
                         .font(.subheadline)
