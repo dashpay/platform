@@ -13,6 +13,7 @@ pub use crate::request_settings::AppliedRequestSettings;
 use crate::{CanRetry, RequestSettings, Uri};
 use dapi_grpc::mock::Mockable;
 pub use futures::future::BoxFuture;
+pub use grpc::{older_query_version_refusal, OlderQueryVersionRefusal};
 use std::any;
 use std::fmt::Debug;
 use std::time::Duration;
