@@ -410,7 +410,10 @@ internal val QUERY_REGISTRY: List<QueryDefinition> = listOf(
             QueryInput("contractId", "Contract ID", required = true),
             QueryInput("documentType", "Document Type", required = true, placeholder = "domain"),
             QueryInput("indexName", "Index Name", required = true, placeholder = "parentNameAndLabel"),
-            QueryInput("indexValues", "Index Values (JSON)", required = true),
+            QueryInput(
+                "indexValues", "Index Values (JSON)", required = true,
+                placeholder = "[\"dash\", \"a11ce\"]; 0x label: [\"dash\", \"\\\\0xf0rd\"]",
+            ),
             QueryInput("resultType", "Result Type (0/1/2)", required = false, placeholder = "2"),
             QueryInput("count", "Count", required = false, placeholder = "5"),
         ),
@@ -440,7 +443,10 @@ internal val QUERY_REGISTRY: List<QueryDefinition> = listOf(
             QueryInput("contractId", "Contract ID", required = true),
             QueryInput("documentType", "Document Type", required = true, placeholder = "domain"),
             QueryInput("indexName", "Index Name", required = true, placeholder = "parentNameAndLabel"),
-            QueryInput("indexValues", "Index Values (JSON)", required = true),
+            QueryInput(
+                "indexValues", "Index Values (JSON)", required = true,
+                placeholder = "[\"dash\", \"a11ce\"]; 0x label: [\"dash\", \"\\\\0xf0rd\"]",
+            ),
             QueryInput("contestantId", "Contestant ID", required = true),
             QueryInput("count", "Count", required = false, placeholder = "5"),
         ),

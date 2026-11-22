@@ -199,6 +199,8 @@ class Voting internal constructor(private val sdk: Sdk) {
      * `0x`-prefixed value is hex bytes; else the value is text. Encode text
      * with [ContestedIndexValue.text] (a DPNS label normalized to `0xf0rd`
      * must be sent as `\0xf0rd`) and bytes with [ContestedIndexValue.bytes].
+     * In the JSON array the backslash is itself escaped:
+     * `["dash", "\\0xf0rd"]`.
      *
      * Each returned resource carries `id` and `index_values`, already encoded
      * this way (see [ContestedIndexValue] for when they can be passed back
@@ -243,6 +245,8 @@ class Voting internal constructor(private val sdk: Sdk) {
      * `0x`-prefixed value is hex bytes; else the value is text. Encode text
      * with [ContestedIndexValue.text] (a DPNS label normalized to `0xf0rd`
      * must be sent as `\0xf0rd`) and bytes with [ContestedIndexValue.bytes].
+     * In the JSON array the backslash is itself escaped:
+     * `["dash", "\\0xf0rd"]`.
      */
     suspend fun contestedResourceVoteState(
         contractId: String,
@@ -276,6 +280,8 @@ class Voting internal constructor(private val sdk: Sdk) {
      * `0x`-prefixed value is hex bytes; else the value is text. Encode text
      * with [ContestedIndexValue.text] (a DPNS label normalized to `0xf0rd`
      * must be sent as `\0xf0rd`) and bytes with [ContestedIndexValue.bytes].
+     * In the JSON array the backslash is itself escaped:
+     * `["dash", "\\0xf0rd"]`.
      */
     suspend fun contestedResourceVotersForIdentity(
         contractId: String,
