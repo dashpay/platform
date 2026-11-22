@@ -100,8 +100,8 @@ impl<T: VersionedGrpcResponse> ProofResponseMetadata for T {
 /// Whether a verifier error is a failure to read what a proof holds: its envelope, its
 /// GroveDB proof, the state it proves, or an object decoded from it. A build older than the
 /// network's protocol version fails this way on forms that version introduced. An answer
-/// without a proof, or one whose signature is refused, does not: that is its node's fault
-/// whatever the network runs.
+/// without a proof, one whose signature is refused, or one whose response around the proof
+/// does not decode, does not: that is its node's fault whatever the network runs.
 ///
 /// A GroveDB proof that does not verify counts whatever the reason GroveDB gives, a hash
 /// that does not match included. Each protocol version selects its GroveDB version, which
@@ -114,8 +114,7 @@ fn may_be_an_unreadable_format(error: &drive_proof_verifier::Error) -> bool {
         drive_proof_verifier::Error::DriveError { .. }
             | drive_proof_verifier::Error::GroveDBError { .. }
             | drive_proof_verifier::Error::ProtocolError { .. }
-            | drive_proof_verifier::Error::ResponseDecodeError { .. }
-    )
+    ) || error.is_undecodable_grovedb_proof_envelope()
 }
 
 /// Select proof rules without weakening the SDK's stored version.

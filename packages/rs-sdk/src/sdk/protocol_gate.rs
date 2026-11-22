@@ -444,46 +444,60 @@ impl Sdk {
 
     /// Ask the network for its protocol version before a node is banned for an answer this
     /// build could not read that names a version newer than the build knows
-    /// ([`Self::classify_refused_answer`]): one probe, which bans no node, since an answer to
-    /// it this build cannot read says as little about its node.
+    /// ([`Self::classify_refused_answer`]).
+    ///
+    /// The question is the gate's probe query, the genesis epoch, without the epoch hold that
+    /// may follow it there: a hold can outlast its epoch, and a ban is not to rest on it. It
+    /// is kept short, since it runs inside the caller's request: one attempt, which bans no
+    /// node, as an answer to it this build cannot read says as little about its node.
     ///
     /// Nothing is asked when nothing can be learned: by an SDK without nodes or a context
     /// provider, or once a verified answer has shown a newer version. Nor is it asked about
     /// an answer to a probe itself, which would wait for the probe it belongs to.
     ///
-    /// The last probe's epoch hold ([`ProbeHold`]) does not stand in for the question: it can
-    /// outlast its epoch, and a ban is not to rest on it. So each such answer costs a probe
-    /// while the network runs a version this build knows, and its node is then banned.
-    ///
-    /// While another call probes, this one waits for that answer, so that no node is banned
-    /// before it is known, and asks only if that probe failed.
+    /// While another call probes, this one waits for that probe and decides from what it
+    /// showed, also when it failed: a call asks or waits once, never both, so calls made
+    /// together cost one question.
     pub(super) async fn probe_for_newer_network(&self) {
         let required = PlatformVersion::latest().protocol_version.saturating_add(1);
-        let nothing_to_learn = || {
-            let state = self.gate_state();
-            !state.enforced
-                || !state.has_context_provider
-                || state.settings.verified_protocol_version >= required
+        let state = self.gate_state();
+        if self.inside_version_probe
+            || !state.enforced
+            || !state.has_context_provider
+            || state.settings.verified_protocol_version >= required
+        {
+            return;
+        }
+        let Ok(_probing) = self.probe_hold.probing.try_lock() else {
+            drop(self.probe_hold.probing.lock().await);
+            return;
         };
-        if self.inside_version_probe || nothing_to_learn() {
+        let sdk = &self.probing();
+        let Ok(request) = current_epoch_probe_query().query(&QuerySettings {
+            prove: true,
+            ..sdk.query_settings()
+        }) else {
             return;
-        }
-        let answered = self.probe_hold.answered();
-        let _probing = self.probe_hold.probing.lock().await;
-        // A probe answered while this call waited, whatever it showed.
-        if self.probe_hold.answered() != answered || nothing_to_learn() {
-            return;
-        }
+        };
         let settings = RequestSettings {
             ban_failed_address: Some(false),
+            retries: Some(0),
             ..Default::default()
         };
-        if self
-            .probe_network_protocol_version(required, Some(settings))
+        if ExtendedEpochInfo::fetch_with_metadata(sdk, request, Some(settings))
             .await
             .is_ok()
         {
             self.probe_hold.answered.fetch_add(1, Ordering::AcqRel);
+        }
+    }
+
+    /// A clone that knows it probes: an answer to one of its requests that cannot be read is
+    /// classified as it is ([`Self::probe_for_newer_network`]).
+    fn probing(&self) -> Sdk {
+        Sdk {
+            inside_version_probe: true,
+            ..self.clone()
         }
     }
 
@@ -498,12 +512,7 @@ impl Sdk {
         required: u32,
         settings: Option<RequestSettings>,
     ) -> Result<(), Error> {
-        // The probe's requests run on a clone that knows it probes: an answer to one of
-        // them that cannot be read is classified as it is ([`Self::probe_for_newer_network`]).
-        let sdk = &Sdk {
-            inside_version_probe: true,
-            ..self.clone()
-        };
+        let sdk = &self.probing();
         let request = current_epoch_probe_query().query(&QuerySettings {
             prove: true,
             ..sdk.query_settings()

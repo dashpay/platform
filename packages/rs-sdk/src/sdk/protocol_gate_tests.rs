@@ -762,6 +762,35 @@ async fn should_wait_for_the_network_version_being_asked_before_banning_a_node()
     assert!(!sdk.address_list().is_banned(&node()));
 }
 
+/// A probe that fails serves the calls that waited for it as it serves the call that asked:
+/// each decides without it, and none asks again, so calls made together cost one question
+/// of one attempt, whatever the SDK's own retry settings.
+#[tokio::test]
+async fn should_ask_once_when_the_question_fails_for_calls_made_together() {
+    let sdk = mock_sdk(PlatformVersion::latest().protocol_version, false, 0);
+    answer(
+        &sdk,
+        &probe_request(),
+        Err(Status::unavailable("node unreachable")),
+    )
+    .await;
+    let (request, response) = unreadable_contract_answer(NEWER);
+    answer(&sdk, &request, Ok(response)).await;
+    let fetch = || DataContract::fetch_with_settings(&sdk, Identifier::new([7; 32]), once());
+    let held = sdk.mock_dapi().lock().await;
+    let answer_all = async move {
+        tokio::task::yield_now().await;
+        drop(held);
+    };
+    let (first, second, third, ()) = tokio::join!(fetch(), fetch(), fetch(), answer_all);
+    for (call, result) in [first, second, third].into_iter().enumerate() {
+        let error = result.expect_err("the answer cannot be read");
+        assert!(matches!(error, Error::Proof(_)), "call {call}: {error:?}");
+    }
+    assert_eq!(probes(&sdk).await, 1);
+    assert_eq!(verified(&sdk), 0);
+}
+
 /// An answer to the probe itself that the build cannot read is classified as it is: the
 /// probe does not wait for itself, the request it served ends, and its node is banned.
 #[tokio::test]
@@ -807,6 +836,12 @@ async fn should_ban_a_node_for_an_unreadable_answer_when_the_network_proves_a_kn
     assert_eq!(probes(&sdk).await, 1);
     assert_eq!(verified(&sdk), V14);
     assert!(sdk.address_list().is_banned(&node()));
+    // The question is not followed by the epoch query that holds the gate's probes.
+    assert_eq!(sdk.probe_hold.get(), None);
+    assert_eq!(
+        sdk.mock_dapi().lock().await.request_count(&probe_request()),
+        1
+    );
 }
 
 /// The hold of an earlier probe can outlast the epoch it proved, so it does not stand in for

@@ -816,7 +816,6 @@ async fn should_ban_nodes_whose_proof_is_missing_or_rejected_on_a_network_newer_
     for unreadable in [
         ProofError::DriveError { error: text() },
         ProofError::ProtocolError { error: text() },
-        ProofError::ResponseDecodeError { error: text() },
         ProofError::GroveDBError {
             proof_bytes: vec![],
             path_query: None,
@@ -833,6 +832,8 @@ async fn should_ban_nodes_whose_proof_is_missing_or_rejected_on_a_network_newer_
         ProofError::EmptyVersion,
         ProofError::InvalidSignature { error: text() },
         ProofError::InvalidSignatureFormat { error: text() },
+        // The response around the proof, such as a quorum hash of the wrong length.
+        ProofError::ResponseDecodeError { error: text() },
     ] {
         assert!(!may_be_an_unreadable_format(&node_fault), "{node_fault:?}");
     }
