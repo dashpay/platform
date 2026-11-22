@@ -44,10 +44,20 @@ class AppState: ObservableObject {
 
     /// Whether an SDK rebuild is running, started from any window. Options
     /// disables its rebuild controls on it; `rebuildSdk` refuses a second
-    /// rebuild by itself. A Max transfer and its wallet-screen Resume refuse
-    /// to start on it: the rebuild has stopped, or is about to stop, the SPV
-    /// client a funding needs.
+    /// rebuild by itself. Every asset-lock funding start refuses on it
+    /// (`coreFundingRefusal`): the rebuild has stopped, or is about to
+    /// stop, the SPV client a funding needs.
     @Published private(set) var isRebuildingSdk = false
+
+    /// Why an asset-lock funding (a shield, a Max or its Resume, a Platform
+    /// address top-up, or a Core-funded identity registration, fresh or
+    /// resumed) may not start now, or `nil` when it may. A rebuild reserves
+    /// `isRebuildingSdk` before it checks for running fundings and then
+    /// stops SPV, so a funding started after that reservation would wait
+    /// for a ChainLock that never comes and hold up the rebuild's shutdown.
+    nonisolated static func coreFundingRefusal(isRebuildingSdk: Bool) -> String? {
+        isRebuildingSdk ? WalletDrainCoordinator.rebuildInProgressMessage : nil
+    }
 
     @Published var useDockerSetup: Bool {
         didSet {
@@ -235,9 +245,9 @@ class AppState: ObservableObject {
     /// and `stopSpv` (the wallet manager's), `prepare` and `rollBack` (the
     /// settings the flow changes), `activateManager` (the wallet manager
     /// store's) and `beforePublish` (the flow's own state). The sequence
-    /// checks `fundingInFlight` before its first suspension, and a Max
-    /// transfer or its wallet-screen Resume checks `isRebuildingSdk` before
-    /// it starts, so neither starts beside the other.
+    /// checks `fundingInFlight` before its first suspension, and every
+    /// asset-lock funding checks `isRebuildingSdk` before it starts
+    /// (`coreFundingRefusal`), so neither starts beside the other.
     func rebuildSdk(
         from network: Network,
         to target: Network,

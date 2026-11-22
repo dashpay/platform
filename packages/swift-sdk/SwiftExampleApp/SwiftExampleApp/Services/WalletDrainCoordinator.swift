@@ -75,10 +75,13 @@ final class WalletDrainCoordinator: ObservableObject {
         case checking
         /// The last status read failed.
         case readFailed(String)
-        /// Rust reported `completed` or `notSent`; the marker could not be
-        /// removed (`nil` only if no removal was tried, which reconcile
-        /// never leaves behind).
+        /// Rust reported `completed`; the marker could not be removed
+        /// (`nil` only if no removal was tried, which reconcile never
+        /// leaves behind).
         case finishedNotCleared(String?)
+        /// Rust reported `notSent`; the marker could not be removed. Kept
+        /// apart from `finishedNotCleared` so nothing reads as finished.
+        case notSentNotCleared(String)
         /// Rust reported `notSent` while an attempt was starting, so the
         /// marker was kept: that attempt may have sent after the read.
         case notSentWhileAttemptStarted
@@ -99,6 +102,8 @@ final class WalletDrainCoordinator: ObservableObject {
                 return "Finished; the saved record could not be cleared: \(error)"
             case .finishedNotCleared(nil):
                 return "Finished; the saved record is not cleared yet."
+            case .notSentNotCleared(let error):
+                return "Not sent; the saved record could not be cleared: \(error)"
             case .notSentWhileAttemptStarted:
                 return "Nothing was sent when last read, but an attempt was starting: check again."
             }
@@ -152,6 +157,14 @@ final class WalletDrainCoordinator: ObservableObject {
     private var attemptCounts: [UUID: Int] = [:]
     /// Attempts whose body may still be running per operation.
     private var runningCounts: [UUID: Int] = [:]
+    /// Status reads started per operation. Launch, wallet-detail and
+    /// post-attempt reconciles can all wait on a read for the same id, and
+    /// they can finish in any order.
+    private var readsStarted: [UUID: Int] = [:]
+    /// The start number of the newest read applied per operation. A read
+    /// that started before it is dropped, so an older `pending` cannot
+    /// replace a newer terminal report and offer Resume again.
+    private var newestAppliedRead: [UUID: Int] = [:]
 
     init(store: WalletDrainOperationStore = .shared) {
         self.store = store
@@ -160,10 +173,11 @@ final class WalletDrainCoordinator: ObservableObject {
 
     nonisolated static let controllerOperationIdPrefix = "drain:"
 
-    /// Shown when a Core-funded shield (a Max, its Resume, a resumed lock or
-    /// a fresh shield) is tapped while an SDK rebuild runs. The rebuild
-    /// stops SPV, which a funding needs for its ChainLock, so the views
-    /// refuse to start one until it ends.
+    /// Shown when an asset-lock funding (a shield, a Max or its Resume, a
+    /// Platform address top-up or a Core-funded identity registration) is
+    /// tapped while an SDK rebuild runs (`AppState.coreFundingRefusal`).
+    /// The rebuild stops SPV, which a funding needs for its ChainLock, so
+    /// the views refuse to start one until it ends.
     nonisolated static let rebuildInProgressMessage =
         "Nothing was sent: the app is applying a network or settings change. "
             + "Try again once it finishes."
@@ -237,7 +251,7 @@ final class WalletDrainCoordinator: ObservableObject {
             return .finishedNotCleared(entry.removalError)
         case .notSent?:
             if let removalError = entry.removalError {
-                return .finishedNotCleared(removalError)
+                return .notSentNotCleared(removalError)
             }
             return .notSentWhileAttemptStarted
         case nil:
@@ -283,7 +297,9 @@ final class WalletDrainCoordinator: ObservableObject {
     }
 
     /// Reads every stored marker of `networkRaw` whose wallet is in
-    /// `walletIds`, and forgets or lists it by `markerDecision`.
+    /// `walletIds`, and forgets or lists it by `markerDecision`. When reads
+    /// of one operation overlap, the one that started last wins: an older
+    /// result that finishes after it is dropped.
     func reconcile(
         walletManager: PlatformWalletManager,
         networkRaw: UInt32,
@@ -317,6 +333,8 @@ final class WalletDrainCoordinator: ObservableObject {
             let id = record.operationId
             let attemptsBefore = attemptCounts[id, default: 0]
             let runningBefore = runningCounts[id, default: 0] > 0
+            let readNumber = readsStarted[id, default: 0] + 1
+            readsStarted[id] = readNumber
             let read: StatusRead
             var reportedState: WalletDrainOutcome.State?
             var outpoint: WalletDrainOutpoint?
@@ -330,6 +348,12 @@ final class WalletDrainCoordinator: ObservableObject {
                 read = .failed
                 readError = error.localizedDescription
             }
+            // A read that started later has already been applied: this one
+            // is older news, for the entry and for the marker alike. The
+            // post-attempt read starts after its attempt, so it is never
+            // older than a read that attempt could have changed.
+            guard readNumber > newestAppliedRead[id, default: 0] else { continue }
+            newestAppliedRead[id] = readNumber
             let overlapped = runningBefore
                 || runningCounts[id, default: 0] > 0
                 || attemptCounts[id, default: 0] != attemptsBefore

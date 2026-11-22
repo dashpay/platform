@@ -1232,6 +1232,12 @@ struct CreateIdentityView: View {
         managedWallet: ManagedPlatformWallet,
         network: Network
     ) {
+        // Same rule as the fresh Core-funded start: the rebuild counts this
+        // registration before it stops SPV, which a resume may still need.
+        if let refusal = AppState.coreFundingRefusal(isRebuildingSdk: platformState.isRebuildingSdk) {
+            submitError = .init(message: refusal)
+            return
+        }
         guard let parts = Self.parseOutPointHex(lock.outPointHex) else {
             submitError = .init(
                 message: "Tracked asset lock has a malformed outpoint and can't be resumed: \(lock.outPointHex)"
@@ -1438,6 +1444,13 @@ struct CreateIdentityView: View {
         managedWallet: ManagedPlatformWallet,
         network: Network
     ) {
+        // A rebuild counts this registration before it stops SPV, so it
+        // must not start once the rebuild has reserved its slot: it would
+        // wait for a ChainLock that never comes.
+        if let refusal = AppState.coreFundingRefusal(isRebuildingSdk: platformState.isRebuildingSdk) {
+            submitError = .init(message: refusal)
+            return
+        }
         guard let amountDuffs = parsedAmountDuffs, amountDuffs > 0 else {
             submitError = .init(message: "Enter a positive amount.")
             return

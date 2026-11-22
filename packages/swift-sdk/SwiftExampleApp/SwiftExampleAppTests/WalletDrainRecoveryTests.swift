@@ -292,16 +292,36 @@ final class WalletDrainRecoveryTests: XCTestCase {
         XCTAssertFalse(failed.text.contains("Unfinished"))
     }
 
-    func testShouldSayAFinishedTransferWhoseRecordCouldNotBeClearedIsFinished() {
-        for state: WalletDrainOutcome.State in [.completed, .notSent] {
-            let finished = status(entry(reportedState: state, outpoint: outpoint, removalError: "disk full"))
-            XCTAssertEqual(finished, .finishedNotCleared("disk full"), "state \(state)")
-            XCTAssertEqual(
-                finished.text,
-                "Finished; the saved record could not be cleared: disk full",
-                "state \(state)"
-            )
-        }
+    func testShouldSayACompletedTransferWhoseRecordCouldNotBeClearedIsFinished() {
+        let candidate = entry(reportedState: .completed, outpoint: outpoint, removalError: "disk full")
+        let finished = status(candidate)
+        XCTAssertEqual(finished, .finishedNotCleared("disk full"))
+        XCTAssertEqual(finished.text, "Finished; the saved record could not be cleared: disk full")
+        XCTAssertEqual(
+            WalletDrainCoordinator.rowAction(
+                controllerPhase: nil,
+                reportedState: candidate.reportedState,
+                outpoint: candidate.outpoint
+            ),
+            .checkAgain
+        )
+    }
+
+    /// Nothing was sent, so the row must not read as finished.
+    func testShouldSayANotSentTransferWhoseRecordCouldNotBeClearedWasNotSent() {
+        let candidate = entry(reportedState: .notSent, outpoint: outpoint, removalError: "disk full")
+        let notSent = status(candidate)
+        XCTAssertEqual(notSent, .notSentNotCleared("disk full"))
+        XCTAssertEqual(notSent.text, "Not sent; the saved record could not be cleared: disk full")
+        XCTAssertFalse(notSent.text.contains("Finished"))
+        XCTAssertEqual(
+            WalletDrainCoordinator.rowAction(
+                controllerPhase: nil,
+                reportedState: candidate.reportedState,
+                outpoint: candidate.outpoint
+            ),
+            .checkAgain
+        )
     }
 
     func testShouldNotCallANotSentReportKeptForAStartingAttemptUnfinished() {
@@ -452,6 +472,98 @@ final class WalletDrainRecoveryTests: XCTestCase {
         }
         XCTAssertEqual(coordinator.unfinished, [])
         XCTAssertEqual(try store.records(), [])
+    }
+
+    private struct NeverHeld: Error {}
+
+    /// A status read held open until the test opens it.
+    @MainActor
+    private final class ReadGate {
+        private var continuation: CheckedContinuation<Void, Never>?
+        private var isOpen = false
+
+        func hold() async {
+            guard !isOpen else { return }
+            await withCheckedContinuation { continuation = $0 }
+        }
+
+        /// Suspend until a read is held, failing instead of hanging.
+        func waitUntilHeld() async throws {
+            let deadline = ContinuousClock.now + .seconds(10)
+            while continuation == nil {
+                guard ContinuousClock.now < deadline else { throw NeverHeld() }
+                await Task.yield()
+            }
+        }
+
+        /// Also covers a read that has not reached `hold()` yet.
+        func open() {
+            isOpen = true
+            continuation?.resume()
+            continuation = nil
+        }
+    }
+
+    /// Launch, wallet-detail and post-attempt reconciles can each wait on a
+    /// read of the same operation. Read A starts first and reports
+    /// `pending` with an outpoint; read B starts later and reports
+    /// `completed`, whose record cannot be removed. B finishes first, then
+    /// A: A's older report is dropped, so the row keeps B's report and
+    /// offers no Resume.
+    @MainActor
+    func testShouldKeepTheNewerReportWhenAnOlderStatusReadFinishesLast() async throws {
+        let store = WalletDrainOperationStore(directory: directory)
+        let stored = record()
+        try store.insert(stored)
+        let coordinator = WalletDrainCoordinator(store: store)
+        let lock = outpoint
+        let networkRaw = stored.networkRaw
+        let walletId = stored.walletId
+        let gate = ReadGate()
+        // A failing assertion must not leave read A suspended forever.
+        defer { gate.open() }
+
+        let olderRead = Task {
+            await coordinator.reconcile(networkRaw: networkRaw, walletIds: [walletId]) { _ in
+                await gate.hold()
+                return WalletDrainOutcome(state: .pending, outpoint: lock)
+            }
+        }
+        try await gate.waitUntilHeld()
+
+        // As in the terminal-report test: the file still reads but cannot
+        // be rewritten, so B's removal fails and its report is kept.
+        try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: store.fileURL.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        await coordinator.reconcile(networkRaw: networkRaw, walletIds: [walletId]) { _ in
+            WalletDrainOutcome(state: .completed, outpoint: lock)
+        }
+        let newer = try XCTUnwrap(coordinator.unfinished.first { $0.id == stored.operationId })
+        XCTAssertEqual(newer.reportedState, .completed)
+        let removalError = try XCTUnwrap(newer.removalError)
+
+        gate.open()
+        await olderRead.value
+
+        let entry = try XCTUnwrap(coordinator.unfinished.first { $0.id == stored.operationId })
+        XCTAssertEqual(entry, newer)
+        XCTAssertEqual(entry.reportedState, .completed)
+        XCTAssertEqual(
+            WalletDrainCoordinator.rowStatus(controllerPhase: nil, entry: entry),
+            .finishedNotCleared(removalError)
+        )
+        for phase in idlePhases {
+            let action = WalletDrainCoordinator.rowAction(
+                controllerPhase: phase,
+                reportedState: entry.reportedState,
+                outpoint: entry.outpoint
+            )
+            if case .resume = action {
+                XCTFail("an older pending read must not bring back Resume (phase \(String(describing: phase)))")
+            }
+            XCTAssertEqual(action, .checkAgain, "phase \(String(describing: phase))")
+        }
+        XCTAssertEqual(try store.records(), [stored])
     }
 
     // MARK: - Unreadable marker file
@@ -799,7 +911,7 @@ final class WalletDrainRecoveryTests: XCTestCase {
     func testShouldFailOnTheStepTheLockReached() {
         XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 0), [.failed, .pending, .pending, .pending, .pending])
         XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 1, seconds: 10), [.done, .done, .failed, .pending, .pending])
-        XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 2), [.done, .done, .done, .skipped, .failed])
+        XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 2), [.done, .done, .done, .notAsserted, .failed])
         XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 3), [.done, .done, .done, .done, .failed])
     }
 
@@ -830,7 +942,7 @@ final class WalletDrainRecoveryTests: XCTestCase {
         XCTAssertEqual(steps(.inFlight, lockStatusRaw: nil), [.active, .pending, .pending, .pending, .pending])
         XCTAssertEqual(steps(.inFlight, lockStatusRaw: 0), [.active, .pending, .pending, .pending, .pending])
         XCTAssertEqual(steps(.inFlight, lockStatusRaw: 1, seconds: 10), [.done, .done, .active, .pending, .pending])
-        XCTAssertEqual(steps(.inFlight, lockStatusRaw: 2), [.done, .done, .done, .skipped, .active])
+        XCTAssertEqual(steps(.inFlight, lockStatusRaw: 2), [.done, .done, .done, .notAsserted, .active])
         XCTAssertEqual(steps(.inFlight, lockStatusRaw: 3), [.done, .done, .done, .done, .active])
     }
 
@@ -850,7 +962,7 @@ final class WalletDrainRecoveryTests: XCTestCase {
 
     /// A resumed lock's `updatedAt` is as old as its last status change, so
     /// age says nothing about the finality lane: an old Broadcast row waits
-    /// on step 3, never step 4, and no lane is skipped.
+    /// on step 3, never step 4, and no lane is claimed.
     func testShouldWaitOnStepThreeForAnOldBroadcastLockWhileInFlight() {
         for seconds: TimeInterval in [300, 400, 86_400] {
             XCTAssertEqual(
@@ -871,8 +983,32 @@ final class WalletDrainRecoveryTests: XCTestCase {
         }
     }
 
+    /// Step 3 names the proof the row records; at InstantSend step 4 is
+    /// neither a check nor skipped, at ChainLock it is done.
+    func testShouldTitleTheFinalityStepByTheRecordedProof() {
+        XCTAssertEqual(
+            Progress.stepTitle(3, isResumingExistingLock: false, lockStatusRaw: 2),
+            "InstantSend proof recorded"
+        )
+        XCTAssertEqual(
+            Progress.stepTitle(3, isResumingExistingLock: false, lockStatusRaw: 3),
+            "ChainLock proof recorded"
+        )
+        for status: Int? in [nil, 0, 1, 5, 6] {
+            XCTAssertEqual(
+                Progress.stepTitle(3, isResumingExistingLock: false, lockStatusRaw: status),
+                "Waiting for InstantSend or ChainLock proof",
+                "status \(String(describing: status))"
+            )
+        }
+        XCTAssertEqual(steps(.inFlight, lockStatusRaw: 3)[3], .done)
+        for phase: ShieldedFundFromAssetLockController.Phase in [.inFlight, .failed("x"), .completed] {
+            XCTAssertEqual(steps(phase, lockStatusRaw: 2)[3], .notAsserted, "phase \(phase)")
+        }
+    }
+
     func testShouldMarkTheRecordedLaneWhenCompleted() {
-        XCTAssertEqual(steps(.completed, lockStatusRaw: 2), [.done, .done, .done, .skipped, .done])
+        XCTAssertEqual(steps(.completed, lockStatusRaw: 2), [.done, .done, .done, .notAsserted, .done])
         XCTAssertEqual(steps(.completed, lockStatusRaw: 3), [.done, .done, .done, .done, .done])
     }
 
@@ -932,7 +1068,7 @@ final class WalletDrainRecoveryTests: XCTestCase {
 
     /// A completed controller with no row, or whose row still reads Built
     /// (0) or Broadcast (1), does not show which lane ran, so neither is
-    /// skipped and neither is claimed.
+    /// claimed.
     func testShouldNotSkipALaneForACompletedAttemptWhoseRowLags() {
         let passed: [Progress.StepState] = [.done, .done, .finalityKindUnknown, .finalityKindUnknown, .done]
         XCTAssertEqual(steps(.completed, lockStatusRaw: nil), passed)
@@ -954,8 +1090,9 @@ final class WalletDrainRecoveryTests: XCTestCase {
     }
 
     /// A resume builds nothing: its Built row is already past step 1, and
-    /// the stored transaction is being sent again (step 2).
-    func testShouldPointAResumeWithABuiltLockAtSendingItAgain() {
+    /// step 2 resumes that lock. Rust may find it already final and send
+    /// nothing, so neither the title nor the footer says it is sent again.
+    func testShouldPointAResumeWithABuiltLockAtResumingIt() {
         XCTAssertEqual(
             Progress.currentStep(
                 phase: .inFlight,
@@ -973,15 +1110,18 @@ final class WalletDrainRecoveryTests: XCTestCase {
             steps(.failed("x"), lockStatusRaw: 0, isResume: true),
             [.done, .failed, .pending, .pending, .pending]
         )
-        XCTAssertEqual(Progress.stepTitle(1, isResumingExistingLock: true), "Asset lock built")
+        XCTAssertEqual(Progress.stepTitle(1, isResumingExistingLock: true, lockStatusRaw: 0), "Asset lock built")
+        XCTAssertEqual(
+            Progress.stepTitle(2, isResumingExistingLock: true, lockStatusRaw: 0),
+            "Resuming the existing asset lock"
+        )
         let footer = Progress.footerText(
             step: 2,
             isFailed: false,
             finalityKindUnknown: false,
             isResumingExistingLock: true
         )
-        XCTAssertTrue(footer.contains("existing asset-lock transaction again"))
-        XCTAssertTrue(footer.contains("No new asset lock is built"))
+        XCTAssertEqual(footer, "The asset lock already exists; no new one is built.")
         for step in 1...6 {
             let text = Progress.footerText(
                 step: step,
@@ -990,6 +1130,7 @@ final class WalletDrainRecoveryTests: XCTestCase {
                 isResumingExistingLock: true
             )
             XCTAssertFalse(text.contains("from wallet funds"), "step \(step)")
+            XCTAssertFalse(text.contains("again"), "step \(step)")
         }
     }
 
@@ -1007,7 +1148,11 @@ final class WalletDrainRecoveryTests: XCTestCase {
             steps(.inFlight, lockStatusRaw: 0, isResume: false),
             [.active, .pending, .pending, .pending, .pending]
         )
-        XCTAssertEqual(Progress.stepTitle(1, isResumingExistingLock: false), "Building asset-lock transaction")
+        XCTAssertEqual(
+            Progress.stepTitle(1, isResumingExistingLock: false, lockStatusRaw: 0),
+            "Building asset-lock transaction"
+        )
+        XCTAssertEqual(Progress.stepTitle(2, isResumingExistingLock: false, lockStatusRaw: 0), "Broadcasting")
         XCTAssertEqual(
             Progress.footerText(step: 1, isFailed: false, finalityKindUnknown: false, isResumingExistingLock: false),
             "Building a Core asset-lock transaction from wallet funds."
@@ -1070,13 +1215,15 @@ final class WalletDrainRecoveryTests: XCTestCase {
 
     // MARK: - SDK rebuild
 
-    /// Every Core-funded submit (Max, resumed lock, fresh shield) goes
-    /// through this rule before it starts anything.
+    /// Every asset-lock funding submit (Max and its Resume, resumed lock,
+    /// fresh shield, Platform address top-up, Core-funded identity
+    /// registration fresh or resumed) goes through this rule before it
+    /// starts anything.
     func testShouldRefuseACoreFundingOnlyWhileAnSdkRebuildRuns() {
         XCTAssertEqual(
-            ShieldedFundFromAssetLockView.coreFundingRefusal(isRebuildingSdk: true),
+            AppState.coreFundingRefusal(isRebuildingSdk: true),
             WalletDrainCoordinator.rebuildInProgressMessage
         )
-        XCTAssertNil(ShieldedFundFromAssetLockView.coreFundingRefusal(isRebuildingSdk: false))
+        XCTAssertNil(AppState.coreFundingRefusal(isRebuildingSdk: false))
     }
 }

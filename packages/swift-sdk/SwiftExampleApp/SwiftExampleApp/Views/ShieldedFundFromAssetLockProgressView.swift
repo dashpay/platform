@@ -32,13 +32,17 @@ extension PersistentAssetLock: ShieldedProgressLockRow {}
 ///                                      < `broadcastingWindow` since
 ///                                      the row's `updatedAt`; on a
 ///                                      resume also `statusRaw == 0`,
-///                                      whose stored transaction is
-///                                      sent again
+///                                      titled "Resuming the existing
+///                                      asset lock" (Rust decides
+///                                      whether anything is sent)
 ///   3. Waiting for InstantSend or    → activeLock `statusRaw == 1`
-///      ChainLock proof                 otherwise, whatever its age
+///      ChainLock proof                 otherwise, whatever its age;
+///                                      once passed, titled by the
+///                                      proof the row records (2 or 3)
 ///   4. ChainLock proof               → never the current step; done
 ///                                      when `statusRaw == 3`
-///                                      (CL-locked), skipped at 2
+///                                      (CL-locked), `.notAsserted` at
+///                                      2 (InstantSend recorded)
 ///   5. Shielding (Halo 2 + submit)   → activeLock `statusRaw ∈ {2, 3, 5}`
 ///                                      AND controller still `.inFlight`
 ///                                      (5, RecoveredFromChain: the lock
@@ -62,11 +66,13 @@ extension PersistentAssetLock: ShieldedProgressLockRow {}
 /// The footer explicitly calls that out so users don't think the
 /// app is hung.
 ///
-/// Step 4 is `.skipped` only when the lock shows InstantSend proved it
-/// (`stepState`); step 3 waits for either proof, so a recorded proof
-/// completes it. When it does not (statuses 5 and 6,
-/// whose proof is gone, or no row), both show `.finalityKindUnknown`
-/// once passed, never two green checks that would claim both proofs.
+/// Steps 3 and 4 state only what the row records (`stepState`): step 3
+/// waits for either proof, so a recorded proof completes it and names
+/// it. At InstantSend (2) step 4 is `.notAsserted`: no ChainLock proof is
+/// recorded, and none is claimed skipped, since Rust asks for one only if
+/// it needs it. When the row records no proof (statuses 5 and 6, whose
+/// proof is gone, or no row), both show `.finalityKindUnknown` once
+/// passed, never two green checks that would claim both proofs.
 struct ShieldedFundFromAssetLockProgressSection: View {
     @ObservedObject var controller: ShieldedFundFromAssetLockController
 
@@ -125,7 +131,11 @@ struct ShieldedFundFromAssetLockProgressSection: View {
                 ForEach(1...5, id: \.self) { idx in
                     stepRow(
                         index: idx,
-                        title: Self.stepTitle(idx, isResumingExistingLock: isResume),
+                        title: Self.stepTitle(
+                            idx,
+                            isResumingExistingLock: isResume,
+                            lockStatusRaw: lockStatusRaw
+                        ),
                         state: states[idx - 1]
                     )
                     // Under the step that failed, which is step 1 when the
@@ -238,7 +248,8 @@ struct ShieldedFundFromAssetLockProgressSection: View {
     /// sits on step 1 and no later step is claimed.
     ///
     /// A resume builds nothing: a `Built` (0) row is past step 1, and the
-    /// step is re-sending that stored transaction (2).
+    /// step is resuming that existing lock (2). Whether Rust sends it again
+    /// or finds it already final is not known here, so nothing claims it.
     nonisolated static func currentStep(
         phase: ShieldedFundFromAssetLockController.Phase,
         lockStatusRaw: Int?,
@@ -257,7 +268,7 @@ struct ShieldedFundFromAssetLockProgressSection: View {
             switch lockStatusRaw {
             case 0:
                 // Built. A fresh attempt is still building it; a resume is
-                // sending the stored transaction again.
+                // past building and resumes the existing lock.
                 return isResumingExistingLock ? 2 : 1
             case 1:
                 // A failure stays where the lock was, so the clock must not
@@ -291,11 +302,27 @@ struct ShieldedFundFromAssetLockProgressSection: View {
         return nil
     }
 
-    nonisolated static func stepTitle(_ idx: Int, isResumingExistingLock: Bool) -> String {
+    /// Step titles state recorded facts. A resume of a `Built` (0) row is
+    /// "Resuming" it, not sending it: Rust may find it already final. Step 3
+    /// names the proof the row records (2 InstantSend, 3 ChainLock).
+    nonisolated static func stepTitle(
+        _ idx: Int,
+        isResumingExistingLock: Bool,
+        lockStatusRaw: Int?
+    ) -> String {
         switch idx {
         case 1: return isResumingExistingLock ? "Asset lock built" : "Building asset-lock transaction"
-        case 2: return "Broadcasting"
-        case 3: return "Waiting for InstantSend or ChainLock proof"
+        case 2:
+            if isResumingExistingLock && lockStatusRaw == 0 {
+                return "Resuming the existing asset lock"
+            }
+            return "Broadcasting"
+        case 3:
+            switch lockStatusRaw {
+            case 2?: return "InstantSend proof recorded"
+            case 3?: return "ChainLock proof recorded"
+            default: return "Waiting for InstantSend or ChainLock proof"
+            }
         case 4: return "ChainLock proof"
         case 5: return "Building Orchard proof and shielding"
         default: return ""
@@ -303,16 +330,19 @@ struct ShieldedFundFromAssetLockProgressSection: View {
     }
 
     enum StepState {
-        case done, active, pending, skipped, failed
+        case done, active, pending, failed
         /// A passed finality step (3 or 4) whose lane is not recorded:
         /// finality was reached, but by which proof is unknown.
         case finalityKindUnknown
+        /// Step 4 once InstantSend is recorded: no ChainLock proof is
+        /// recorded, and none is claimed used or skipped.
+        case notAsserted
     }
 
     /// The state of step `idx` given `currentStep`. Step 3 waits for either
     /// proof, so status 2 (InstantSend) or 3 (ChainLock) completes it;
-    /// status 2 also skips step 4 (ChainLock), status 3 completes it. With
-    /// any other status both passed steps are
+    /// status 3 also completes step 4 (ChainLock), status 2 leaves it
+    /// `.notAsserted`. With any other status both passed steps are
     /// `.finalityKindUnknown`: `complete_wallet_drain` clears the proof, so
     /// at RecoveredFromChain (5), DrainCompleted (6), with no row, or with
     /// a row that lags a completed attempt, the lane that ran is unknown.
@@ -327,10 +357,11 @@ struct ShieldedFundFromAssetLockProgressSection: View {
         }
         if idx < currentStep {
             // Step 3 waits for either proof, so any recorded proof completes
-            // it; only step 4 (ChainLock) is skipped when InstantSend won.
+            // it; step 4 (ChainLock) is neither done nor skipped when only
+            // InstantSend is recorded.
             switch (idx, lockStatusRaw) {
             case (4, 2?):
-                return .skipped
+                return .notAsserted
             case (3, 2?), (3, 3?), (4, 3?):
                 return .done
             case (3, _), (4, _):
@@ -380,13 +411,15 @@ struct ShieldedFundFromAssetLockProgressSection: View {
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
-        case .skipped:
-            Image(systemName: "checkmark.circle")
+        case .notAsserted:
+            // A dash, not a check: nothing about this proof is recorded.
+            Image(systemName: "minus.circle")
                 .foregroundColor(.secondary)
                 .font(.title3)
+                .accessibilityLabel("ChainLock proof only if needed")
         case .finalityKindUnknown:
-            // Filled but grey: passed, unlike the hollow `.skipped`, yet
-            // not the green check that would claim this proof was used.
+            // Filled but grey: passed, yet not the green check that would
+            // claim this proof was used.
             Image(systemName: "checkmark.circle.fill")
                 .foregroundColor(.secondary)
                 .font(.title3)
@@ -403,7 +436,7 @@ struct ShieldedFundFromAssetLockProgressSection: View {
         case .done: return .primary
         case .active: return .primary
         case .pending: return .secondary
-        case .skipped: return .secondary
+        case .notAsserted: return .secondary
         case .finalityKindUnknown: return .primary
         case .failed: return .red
         }
@@ -425,7 +458,7 @@ struct ShieldedFundFromAssetLockProgressSection: View {
                 stepText = "Resuming an existing asset lock. No new one is built."
             case 1: stepText = "Building a Core asset-lock transaction from wallet funds."
             case 2 where isResumingExistingLock:
-                stepText = "Sending the existing asset-lock transaction again. No new asset lock is built."
+                stepText = "The asset lock already exists; no new one is built."
             case 2: stepText = "Sending the asset-lock transaction to peers."
             case 3:
                 stepText = "Waiting for the asset-lock transaction to become final, by an "

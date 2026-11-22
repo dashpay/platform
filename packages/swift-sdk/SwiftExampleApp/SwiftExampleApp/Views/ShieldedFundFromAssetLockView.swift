@@ -326,15 +326,6 @@ struct ShieldedFundFromAssetLockView: View {
         Self.isNewMaxAllowed(on: platformState.currentNetwork)
     }
 
-    /// Why a Core-funded shield (Max, resume of a lock, or a fresh shield)
-    /// may not start now, or `nil` when it may. A rebuild reserves
-    /// `isRebuildingSdk` before it checks for running fundings and then
-    /// stops SPV, so a funding started after that reservation would wait
-    /// for a ChainLock that never comes and hold up the rebuild's shutdown.
-    nonisolated static func coreFundingRefusal(isRebuildingSdk: Bool) -> String? {
-        isRebuildingSdk ? WalletDrainCoordinator.rebuildInProgressMessage : nil
-    }
-
     private static let maxUnavailableOnMainnetText =
         "Max is not available on mainnet until issue #5580 is fixed: the wallet could record "
             + "a Max transfer as finished from an unverified \"already consumed\" report. "
@@ -814,7 +805,7 @@ struct ShieldedFundFromAssetLockView: View {
 
         // Same rule as Max: a resume is admitted by the manager, so it
         // must not start once a rebuild has reserved its slot.
-        if let refusal = Self.coreFundingRefusal(isRebuildingSdk: platformState.isRebuildingSdk) {
+        if let refusal = AppState.coreFundingRefusal(isRebuildingSdk: platformState.isRebuildingSdk) {
             submitError = SubmitError(message: refusal)
             return
         }
@@ -945,7 +936,7 @@ struct ShieldedFundFromAssetLockView: View {
         // a drain started now could wait for a ChainLock that never comes.
         // The rebuild refuses to start beside a funding; this is the other
         // side of that rule.
-        if let refusal = Self.coreFundingRefusal(isRebuildingSdk: platformState.isRebuildingSdk) {
+        if let refusal = AppState.coreFundingRefusal(isRebuildingSdk: platformState.isRebuildingSdk) {
             submitError = SubmitError(message: refusal)
             return
         }

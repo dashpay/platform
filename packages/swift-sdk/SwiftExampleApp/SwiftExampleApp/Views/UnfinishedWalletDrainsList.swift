@@ -285,7 +285,7 @@ private struct DrainRowContent: View {
 
     private var statusColor: Color {
         switch status {
-        case .readFailed, .finishedNotCleared:
+        case .readFailed, .finishedNotCleared, .notSentNotCleared:
             return .red
         case .unfinished, .unfinishedLockUnknown:
             return .orange
