@@ -4056,7 +4056,7 @@ extension ManagedPlatformWallet {
     /// signed, because Platform would refuse them and charge for it.
     ///
     /// A caller that showed a preview first signs with
-    /// `updateIdentityKeyLimits(identityId:keyId:asReviewed:signer:)`
+    /// `updateIdentityKeyLimits(asReviewed:signer:)`
     /// instead, which signs exactly what that preview showed or nothing.
     ///
     /// No identity revision is claimed or bumped. The cached key and its
@@ -4103,38 +4103,31 @@ extension ManagedPlatformWallet {
         }.value
     }
 
-    /// Raise the limits of one of an identity's keys to exactly what
-    /// `reviewed` shows: the preview `previewIdentityKeyLimitsUpdate`
-    /// returned for the change and the caller showed. Rust signs that new
-    /// total, that expiry and that signing key, or nothing: when the
-    /// wallet's identity moved since the preview, so the same change would
-    /// now sign other limits or another key, it throws before anything is
-    /// signed. Preview again and show the new values.
+    /// Raise the limits of the key `reviewed` names, of the identity it
+    /// names, to exactly what it shows: the preview
+    /// `previewIdentityKeyLimitsUpdate` returned and the caller showed.
+    /// The preview carries its target, so it cannot raise another key.
+    /// Rust signs that new total, that expiry and that signing key, or
+    /// nothing: when the wallet's identity moved since the preview, so the
+    /// same change would now sign other limits or another key, it throws
+    /// before anything is signed. Preview again and show the new values.
     public func updateIdentityKeyLimits(
-        identityId: Identifier,
-        keyId: UInt32,
         asReviewed reviewed: IdentityKeyLimitsUpdatePreview,
         signer: KeychainSigner
     ) async throws {
-        guard identityId.count == 32 else {
+        guard reviewed.identityId.count == 32 else {
             throw PlatformWalletError.invalidParameter("identityId must be 32 bytes")
         }
-        let idBytes = [UInt8](identityId)
         let reviewedFFI = IdentityKeyLimitsUpdatePreviewFFI(reviewed)
         try await Task.detached(priority: .userInitiated) { [self] in
             // Pinned as in `updateIdentityKeyLimits(identityId:keyId:addBudget:expiresAt:signer:)`.
             try withExtendedLifetime((self, signer)) {
                 var preview = reviewedFFI
-                let result = idBytes.withUnsafeBufferPointer {
-                    idBp -> PlatformWalletFFIResult in
-                    platform_wallet_update_identity_key_limits_as_reviewed_with_signer(
-                        handle,
-                        idBp.baseAddress!,
-                        keyId,
-                        &preview,
-                        signer.handle
-                    )
-                }
+                let result = platform_wallet_update_identity_key_limits_as_reviewed_with_signer(
+                    handle,
+                    &preview,
+                    signer.handle
+                )
                 try result.check()
             }
         }.value
@@ -4165,6 +4158,10 @@ extension ManagedPlatformWallet {
     /// `previewIdentityKeyLimitsUpdate` reports it. All values come from
     /// Rust; credits and block time milliseconds, as on the key.
     public struct IdentityKeyLimitsUpdatePreview: Equatable, Sendable {
+        /// The identity whose key the update raises.
+        public let identityId: Identifier
+        /// The key the update raises.
+        public let keyId: UInt32
         /// The key that would sign the update.
         public let signingKeyId: UInt32
         /// The total budget the key carries now, `nil` when it has none.
@@ -4178,12 +4175,16 @@ extension ManagedPlatformWallet {
         public let newExpiresAt: UInt64?
 
         public init(
+            identityId: Identifier,
+            keyId: UInt32,
             signingKeyId: UInt32,
             currentTotalBudget: UInt64?,
             currentExpiresAt: UInt64?,
             newTotalBudget: UInt64?,
             newExpiresAt: UInt64?
         ) {
+            self.identityId = identityId
+            self.keyId = keyId
             self.signingKeyId = signingKeyId
             self.currentTotalBudget = currentTotalBudget
             self.currentExpiresAt = currentExpiresAt
@@ -4192,7 +4193,11 @@ extension ManagedPlatformWallet {
         }
 
         init(ffi: IdentityKeyLimitsUpdatePreviewFFI) {
+            var idTuple = ffi.identity_id
+            let identityId = withUnsafeBytes(of: &idTuple) { Data($0) }
             self.init(
+                identityId: identityId,
+                keyId: ffi.key_id,
                 signingKeyId: ffi.signing_key_id,
                 currentTotalBudget: ffi.has_current_total_budget ? ffi.current_total_budget : nil,
                 currentExpiresAt: ffi.has_current_expires_at ? ffi.current_expires_at : nil,
@@ -5946,8 +5951,19 @@ extension ManagedPlatformWallet {
 extension IdentityKeyLimitsUpdatePreviewFFI {
     /// The C form of a preview, handed back to the update so Rust can check
     /// it still signs what was shown.
+    /// `preview.identityId` must be 32 bytes; the caller checks it.
     init(_ preview: ManagedPlatformWallet.IdentityKeyLimitsUpdatePreview) {
+        var identityId: (
+            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+        ) = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        withUnsafeMutableBytes(of: &identityId) { $0.copyBytes(from: preview.identityId.prefix(32)) }
         self.init(
+            identity_id: identityId,
+            key_id: preview.keyId,
             signing_key_id: preview.signingKeyId,
             has_current_total_budget: preview.currentTotalBudget != nil,
             current_total_budget: preview.currentTotalBudget ?? 0,

@@ -35,6 +35,10 @@ use crate::error::PlatformWalletError;
 /// [`IdentityWallet::preview_identity_key_limits_update`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IdentityKeyLimitsUpdatePreview {
+    /// The identity whose key the update raises.
+    pub identity_id: Identifier,
+    /// The key the update raises.
+    pub key_id: KeyID,
     /// The key that would sign the update: the identity's MASTER key, else a CRITICAL
     /// authentication key without limits and without contract bounds, that the signer holds.
     pub signing_key_id: KeyID,
@@ -81,6 +85,8 @@ where
         .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
 
     Ok(IdentityKeyLimitsUpdatePreview {
+        identity_id: identity.id(),
+        key_id,
         signing_key_id,
         current_total_budget: key.total_budget(),
         current_expires_at: key.expires_at(),
@@ -199,16 +205,15 @@ impl IdentityWallet {
             .await
     }
 
-    /// Raise the limits of the key `key_id` of `identity_id` to exactly what `reviewed` shows:
-    /// the preview [`Self::preview_identity_key_limits_update`] returned and the user saw. The
-    /// update signs that new total, that expiry and that signing key, or nothing: when the held
+    /// Raise the limits of the key `reviewed` names, of the identity it names, to exactly what
+    /// it shows: the preview [`Self::preview_identity_key_limits_update`] returned and the user
+    /// saw. The preview carries its target, so it cannot be applied to another key. The update
+    /// signs that new total, that expiry and that signing key, or nothing: when the held
     /// identity moved since the review (a refresh, another update), so that the same change
     /// would now sign other limits or another key, it is refused before a nonce is taken.
     /// Preview again and show the new values.
     pub async fn update_identity_key_limits_as_reviewed_with_external_signer<S>(
         &self,
-        identity_id: &Identifier,
-        key_id: KeyID,
         reviewed: &IdentityKeyLimitsUpdatePreview,
         signer: &S,
         settings: Option<PutSettings>,
@@ -216,6 +221,8 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
+        let identity_id = &reviewed.identity_id;
+        let key_id = reviewed.key_id;
         let identity = self.held_identity(identity_id).await?;
         let (add_budget, expires_at) = reviewed_change(key_id, reviewed)?;
         let preview = preview_to_submit(
@@ -306,7 +313,8 @@ fn reviewed_change(
 /// The key to hold after a key limits update proved `proved`, given the key the cache holds
 /// now. Limits only go up and a disable is permanent, so a later state the cache took in
 /// while the update waited for its proof (a further raise, a disable) is kept: the higher
-/// of each limit, and the cache's disable when it has one.
+/// of each limit, and the later of the two disables (a key disabled again carries the newer
+/// stamp).
 fn merge_proved_key(
     held: Option<&IdentityPublicKey>,
     proved: IdentityPublicKey,
@@ -316,11 +324,10 @@ fn merge_proved_key(
     };
     let total_budget = held.total_budget().max(proved.total_budget());
     let expires_at = held.expires_at().max(proved.expires_at());
+    let disabled_at = held.disabled_at().max(proved.disabled_at());
     let mut merged = proved.with_limits(total_budget, expires_at);
-    if let Some(disabled_at) = held.disabled_at() {
-        if merged.disabled_at().is_none() {
-            merged.set_disabled_at(disabled_at);
-        }
+    if let Some(disabled_at) = disabled_at {
+        merged.set_disabled_at(disabled_at);
     }
     merged
 }
@@ -411,6 +418,8 @@ mod tests {
         assert_eq!(
             preview,
             IdentityKeyLimitsUpdatePreview {
+                identity_id: Identifier::from([1; 32]),
+                key_id: 2,
                 signing_key_id: 0,
                 current_total_budget: Some(1_000),
                 current_expires_at: None,
@@ -438,6 +447,8 @@ mod tests {
         assert_eq!(
             preview,
             IdentityKeyLimitsUpdatePreview {
+                identity_id: Identifier::from([1; 32]),
+                key_id: 4,
                 signing_key_id: 0,
                 current_total_budget: Some(1_000),
                 current_expires_at: Some(EXPIRES_AT),
@@ -548,6 +559,20 @@ mod tests {
             "{result:?}"
         );
 
+        // Key 5 has exactly the limits key 2 had: its preview differs only in its target,
+        // which is part of the comparison, so key 2's preview cannot raise key 5.
+        let mut twin = identity();
+        twin.public_keys_mut().insert(
+            5,
+            authentication_key(5, SecurityLevel::HIGH).with_limits(Some(1_000), None),
+        );
+        let result =
+            preview_to_submit(&twin, 5, Some(500), None, Some(&reviewed), &master_signer());
+        assert!(
+            matches!(&result, Err(PlatformWalletError::InvalidIdentityData(_))),
+            "{result:?}"
+        );
+
         // Same limits, another signing key: refused too.
         let mut critical = identity();
         critical
@@ -614,6 +639,16 @@ mod tests {
         assert_eq!(merged.disabled_at(), None);
 
         assert_eq!(merge_proved_key(None, proved.clone()), proved);
+
+        // Both disabled: the later stamp is kept, whichever side carries it.
+        let mut proved_disabled = proved.clone();
+        proved_disabled.set_disabled_at(3);
+        let merged = merge_proved_key(Some(&held), proved_disabled.clone());
+        assert_eq!(merged.disabled_at(), Some(7));
+        let mut held_earlier = held.clone();
+        held_earlier.set_disabled_at(1);
+        let merged = merge_proved_key(Some(&held_earlier), proved_disabled);
+        assert_eq!(merged.disabled_at(), Some(3));
     }
 
     #[test]

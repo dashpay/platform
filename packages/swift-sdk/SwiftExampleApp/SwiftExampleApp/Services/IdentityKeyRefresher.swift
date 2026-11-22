@@ -120,7 +120,15 @@ enum IdentityKeyRefresher {
             },
             uniquingKeysWith: { first, _ in first }
         )
+        // Delete the old rows, not only unlink them: an unlinked row with the
+        // same (identityId, keyId) stays in the store, and the wallet's key
+        // upserts, which look a row up by those two fields, could land on it
+        // instead of the row the screens show.
+        let oldRows = identity.publicKeys
         identity.publicKeys.removeAll()
+        for row in oldRows {
+            modelContext.delete(row)
+        }
         let identityHex = identity.identityIdBase58
         for publicKey in parsedPublicKeys {
             guard let persistentKey = PersistentPublicKey.from(publicKey, identityId: identityHex) else {

@@ -697,7 +697,7 @@ carries now (`currentTotalBudget` / `currentExpiresAt`) and the ones the update
 would set (`newTotalBudget` / `newExpiresAt`). With neither argument it answers
 whether the key can be raised at all; a refusal is thrown with Rust's reason as
 its `localizedDescription`. `updateIdentityKeyLimits` runs the same preview.
-`updateIdentityKeyLimits(identityId:keyId:asReviewed:signer:)` signs exactly
+`updateIdentityKeyLimits(asReviewed:signer:)` signs exactly
 what a preview showed, or throws before signing when the wallet's identity moved
 since. `refreshIdentity(identityId:)` folds a proved fetch of the identity into
 the wallet first, so a key added on another client is known.

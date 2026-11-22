@@ -13,6 +13,7 @@
 //! and without contract bounds, signs the `IdentityKeyLimitsUpdate` transition
 //! via the supplied `signer_handle` (typically the iOS-side `KeychainSigner`).
 
+use dpp::prelude::Identifier;
 use platform_wallet::IdentityKeyLimitsUpdatePreview;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
@@ -30,6 +31,10 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct IdentityKeyLimitsUpdatePreviewFFI {
+    /// The identity whose key the update raises.
+    pub identity_id: [u8; 32],
+    /// The key the update raises.
+    pub key_id: u32,
     /// The key that would sign the update.
     pub signing_key_id: u32,
     /// The key carries a total budget now.
@@ -53,6 +58,8 @@ pub struct IdentityKeyLimitsUpdatePreviewFFI {
 impl From<IdentityKeyLimitsUpdatePreviewFFI> for IdentityKeyLimitsUpdatePreview {
     fn from(preview: IdentityKeyLimitsUpdatePreviewFFI) -> Self {
         Self {
+            identity_id: Identifier::from(preview.identity_id),
+            key_id: preview.key_id,
             signing_key_id: preview.signing_key_id,
             current_total_budget: preview
                 .has_current_total_budget
@@ -71,6 +78,8 @@ impl From<IdentityKeyLimitsUpdatePreviewFFI> for IdentityKeyLimitsUpdatePreview 
 impl From<IdentityKeyLimitsUpdatePreview> for IdentityKeyLimitsUpdatePreviewFFI {
     fn from(preview: IdentityKeyLimitsUpdatePreview) -> Self {
         Self {
+            identity_id: preview.identity_id.to_buffer(),
+            key_id: preview.key_id,
             signing_key_id: preview.signing_key_id,
             has_current_total_budget: preview.current_total_budget.is_some(),
             current_total_budget: preview.current_total_budget.unwrap_or_default(),
@@ -196,10 +205,11 @@ pub unsafe extern "C" fn platform_wallet_update_identity_key_limits_with_signer(
     PlatformWalletFFIResult::ok()
 }
 
-/// Raise the limits of the key `key_id` of the identity to exactly what
-/// `reviewed_preview` shows: the preview
+/// Raise the limits of the key `reviewed_preview` names, of the identity it
+/// names, to exactly what it shows: the preview
 /// [`platform_wallet_preview_identity_key_limits_update`] returned for the
-/// change and the caller showed. The update signs that new total, that
+/// change and the caller showed. The preview carries its target, so it
+/// cannot be applied to another key. The update signs that new total, that
 /// expiry and that signing key, or nothing: when the wallet's identity
 /// moved since the preview, so the same change would now sign other limits
 /// or another key, it is refused before a nonce is taken or anything is
@@ -210,15 +220,12 @@ pub unsafe extern "C" fn platform_wallet_update_identity_key_limits_with_signer(
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_update_identity_key_limits_as_reviewed_with_signer(
     wallet_handle: Handle,
-    identity_id: *const u8,
-    key_id: u32,
     reviewed_preview: *const IdentityKeyLimitsUpdatePreviewFFI,
     signer_handle: *mut SignerHandle,
 ) -> PlatformWalletFFIResult {
     check_ptr!(reviewed_preview);
     check_ptr!(signer_handle);
 
-    let id = unwrap_result_or_return!(read_identifier(identity_id));
     let reviewed: IdentityKeyLimitsUpdatePreview = (*reviewed_preview).into();
 
     let signer_addr = signer_handle as usize;
@@ -230,9 +237,7 @@ pub unsafe extern "C" fn platform_wallet_update_identity_key_limits_as_reviewed_
     let result = block_on_worker(async move {
         let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
         identity_wallet
-            .update_identity_key_limits_as_reviewed_with_external_signer(
-                &id, key_id, &reviewed, signer, None,
-            )
+            .update_identity_key_limits_as_reviewed_with_external_signer(&reviewed, signer, None)
             .await
     });
     unwrap_result_or_return!(result);
@@ -311,13 +316,10 @@ mod tests {
 
     #[test]
     fn should_refuse_a_reviewed_update_without_a_preview_or_a_signer() {
-        let identity_id = [1u8; 32];
         let preview = IdentityKeyLimitsUpdatePreviewFFI::default();
         let result = unsafe {
             platform_wallet_update_identity_key_limits_as_reviewed_with_signer(
                 Handle::MAX,
-                identity_id.as_ptr(),
-                2,
                 std::ptr::null(),
                 unreachable_signer(),
             )
@@ -326,8 +328,6 @@ mod tests {
         let result = unsafe {
             platform_wallet_update_identity_key_limits_as_reviewed_with_signer(
                 Handle::MAX,
-                identity_id.as_ptr(),
-                2,
                 &preview,
                 std::ptr::null_mut(),
             )
@@ -338,6 +338,8 @@ mod tests {
     #[test]
     fn should_read_back_the_preview_it_wrote() {
         let preview = IdentityKeyLimitsUpdatePreview {
+            identity_id: Identifier::from([9; 32]),
+            key_id: 4,
             signing_key_id: 1,
             current_total_budget: None,
             current_expires_at: Some(10),
@@ -351,6 +353,8 @@ mod tests {
     #[test]
     fn should_carry_each_optional_limit_as_a_flag_and_a_value() {
         let ffi: IdentityKeyLimitsUpdatePreviewFFI = IdentityKeyLimitsUpdatePreview {
+            identity_id: Identifier::from([9; 32]),
+            key_id: 2,
             signing_key_id: 0,
             current_total_budget: Some(1_000),
             current_expires_at: None,
@@ -361,6 +365,8 @@ mod tests {
         assert_eq!(
             ffi,
             IdentityKeyLimitsUpdatePreviewFFI {
+                identity_id: [9; 32],
+                key_id: 2,
                 signing_key_id: 0,
                 has_current_total_budget: true,
                 current_total_budget: 1_000,

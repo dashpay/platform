@@ -99,9 +99,12 @@ struct UpdateKeyLimitsView: View {
                     } header: {
                         Text("Key #\(publicKey.id) limits cannot be raised")
                     }
-                case .ready(let current):
-                    currentSection(current)
-                    changeSection(current)
+                case .ready(let opening):
+                    // Current limits and signer from the same preview as the
+                    // new ones when there is one for what the form shows, so
+                    // "now", "added" and "after" always agree.
+                    currentSection(matchingInputPreview ?? opening)
+                    changeSection(opening)
                     previewSection
                     submitSection
                 }
@@ -273,6 +276,14 @@ struct UpdateKeyLimitsView: View {
         )
     }
 
+    /// The concrete preview for exactly what the form shows, if any.
+    private var matchingInputPreview: ManagedPlatformWallet.IdentityKeyLimitsUpdatePreview? {
+        guard case .ready(let preview, let previewed) = inputPreview, previewed == inputs else {
+            return nil
+        }
+        return preview
+    }
+
     private var canSubmit: Bool {
         guard !outcomeUnknown, case .ready(_, let previewed) = inputPreview else { return false }
         let current = inputs
@@ -398,12 +409,7 @@ struct UpdateKeyLimitsView: View {
 
         do {
             let signer = KeychainSigner(modelContainer: modelContext.container)
-            try await wallet.updateIdentityKeyLimits(
-                identityId: identity.identityId,
-                keyId: publicKey.id,
-                asReviewed: reviewed,
-                signer: signer
-            )
+            try await wallet.updateIdentityKeyLimits(asReviewed: reviewed, signer: signer)
             _ = signer  // keepalive: see KeychainSigner lifetime contract.
         } catch {
             isSubmitting = false

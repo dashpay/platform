@@ -22,7 +22,7 @@ struct KeysListView: View {
   @State private var disableError: String?
   /// What Platform says is left of each budgeted key, fetched once for the
   /// whole list. Absent while loading or when the query failed.
-  @State private var remainingBudgets: [UInt32: UInt64?] = [:]
+  @State private var remainingBudgets: [UInt32: (forTotal: UInt64, remaining: UInt64?)] = [:]
   /// The key the user swiped to raise the limits of. Leading edge, away
   /// from Disable; the same sheet `KeyDetailView` opens, reachable here
   /// for keys whose row taps into `PrivateKeyView`.
@@ -52,7 +52,7 @@ struct KeysListView: View {
               KeyRowView(
                 publicKey: publicKey,
                 privateKeyAvailable: true,
-                remainingBudget: remainingBudgets[publicKey.id] ?? nil
+                remainingBudget: remainingBudget(for: publicKey)
               )
             }
             .foregroundColor(.primary)
@@ -68,7 +68,7 @@ struct KeysListView: View {
               KeyRowView(
                 publicKey: publicKey,
                 privateKeyAvailable: false,
-                remainingBudget: remainingBudgets[publicKey.id] ?? nil
+                remainingBudget: remainingBudget(for: publicKey)
               )
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -117,7 +117,9 @@ struct KeysListView: View {
       }
     }
     .navigationTitle("Identity Keys")
-    .task(id: publicKeys.compactMap { $0.totalBudget != nil ? $0.id : nil }) {
+    // Keyed on each budgeted key's total too: a raise makes the old
+    // readings wrong, so they are read again.
+    .task(id: publicKeys.compactMap { key in key.totalBudget.map { "\(key.id):\($0)" } }) {
       await loadRemainingBudgets()
     }
     .navigationBarTitleDisplayMode(.inline)
@@ -279,8 +281,13 @@ struct KeysListView: View {
   /// One remaining-budgets query for every key that carries a budget.
   @MainActor
   private func loadRemainingBudgets() async {
-    let budgetedKeyIds = publicKeys.compactMap { $0.totalBudget != nil ? $0.id : nil }
-    guard !budgetedKeyIds.isEmpty, let sdk = appState.sdk else {
+    // The total each budgeted key shows now; each reading is stored with
+    // it and shown only while the row still shows that total.
+    let totals = Dictionary(
+      publicKeys.compactMap { key in key.totalBudget.map { (key.id, $0) } },
+      uniquingKeysWith: { first, _ in first }
+    )
+    guard !totals.isEmpty, let sdk = appState.sdk else {
       remainingBudgets = [:]
       return
     }
@@ -288,13 +295,30 @@ struct KeysListView: View {
     // the totals on the rows, and a failed read must not leave it in place.
     remainingBudgets = [:]
     do {
-      remainingBudgets = try await sdk.fetchKeysRemainingBudgets(
+      let budgets = try await sdk.fetchKeysRemainingBudgets(
         identityId: identity.identityIdBase58,
-        keyIds: budgetedKeyIds
+        keyIds: Array(totals.keys)
       )
+      var readings: [UInt32: (forTotal: UInt64, remaining: UInt64?)] = [:]
+      for (keyId, total) in totals {
+        if let remaining = budgets[keyId] {
+          readings[keyId] = (forTotal: total, remaining: remaining)
+        }
+      }
+      remainingBudgets = readings
     } catch {
       print("🔑 KeysListView: remaining budgets unavailable: \(error.localizedDescription)")
     }
+  }
+
+  /// What is left of `publicKey`'s budget, only when it was read for the
+  /// total the row shows. Platform's answer may lag a block behind that
+  /// total, so the row shows it as reported and derives nothing from it.
+  private func remainingBudget(for publicKey: IdentityPublicKey) -> UInt64? {
+    guard let total = publicKey.totalBudget,
+          let reading = remainingBudgets[publicKey.id],
+          reading.forTotal == total else { return nil }
+    return reading.remaining
   }
 
   private func hasPrivateKey(for publicKey: IdentityPublicKey) -> Bool {
