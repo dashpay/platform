@@ -1713,6 +1713,53 @@ mod tests {
         );
     }
 
+    /// Only the identities the read's wallet owns are read for: an identity
+    /// the same identity manager holds for another wallet id, at the same
+    /// registration index, contributes no key, scanned or unscanned.
+    #[tokio::test]
+    async fn should_read_only_for_the_identities_of_the_wallet_read() {
+        let alice = identity(ALICE_PHRASE, ALICE, true);
+        let (_manager, wallet) = wallet(ALICE_PHRASE, &alice).await;
+        // Bob's identity, in the same identity manager under another wallet
+        // id, at index 0 too: its keys derive from his seed, which Alice's
+        // provider does not hold.
+        let bob = identity(BOB_PHRASE, DAVE, true);
+        {
+            let iw = wallet.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet.wallet_id())
+                .expect("wallet info");
+            info.identity_manager
+                .add_identity(bob.clone(), 0, [0xBB; 32], &iw.persister)
+                .expect("Bob's identity under another wallet id");
+        }
+        serve_page(
+            &wallet,
+            0,
+            vec![to_alice(&payload(json!({ "text": "hello Alice" })), 1)],
+            1,
+        )
+        .await;
+        let crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+
+        let read = wallet
+            .identity()
+            .read_private_document_entries(
+                &crypto,
+                Identifier::from(CONTRACT_ID),
+                TYPE_NAME,
+                None,
+                usize::MAX,
+            )
+            .await
+            .expect("the store reads");
+
+        assert_eq!(read.identities, vec![Identifier::from(ALICE)]);
+        assert_eq!(read.unscanned_keys, vec![], "Bob's keys are not collected");
+        assert_eq!(read.entries.len(), 1);
+    }
+
     /// A cursor of another store is refused: its position and size describe
     /// that store, not this one.
     #[tokio::test]

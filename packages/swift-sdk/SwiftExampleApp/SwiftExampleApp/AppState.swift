@@ -373,11 +373,36 @@ class AppState: ObservableObject {
 
     // MARK: - Contract Loading
 
+    /// Whether the contracts saved for `network` may be preloaded into a new
+    /// SDK's trusted provider. Mainnet and testnet are each one fixed chain,
+    /// so a row saved for them belongs to the chain the SDK talks to. A
+    /// devnet or regtest chain is whatever the user configured (the devnet
+    /// quorum URL, a local setup), and saved rows record only the network
+    /// value, not which configuration they came from: two devnets share
+    /// `.devnet`, so a contract saved on the old one would pass for the new
+    /// one and, under a shared id such as DashPay's, shadow its revision.
+    /// Those SDKs skip the preload and fetch and prove each contract from
+    /// the network when they need it.
+    nonisolated static func preloadsSavedContracts(for network: Network) -> Bool {
+        switch network {
+        case .mainnet, .testnet:
+            return true
+        case .devnet, .regtest:
+            return false
+        }
+    }
+
     /// Load the contracts stored for `network`, the network `sdk` is built
     /// for, into its trusted provider. The provider caches by contract id
     /// alone, so a contract stored for another network under the same id
-    /// would shadow this network's copy; only `network`'s rows are loaded.
+    /// would shadow this network's copy; only `network`'s rows are loaded,
+    /// and only for a network whose chain is fixed
+    /// (`preloadsSavedContracts(for:)`).
     private func loadKnownContractsIntoSDK(sdk: SDK, network: Network, modelContext: ModelContext) {
+        guard Self.preloadsSavedContracts(for: network) else {
+            NSLog("📦 Skipping the saved \(network.displayName) contracts: its chain is configurable, so the SDK fetches contracts from the network")
+            return
+        }
         do {
             let descriptor = FetchDescriptor<PersistentDataContract>(
                 predicate: PersistentDataContract.predicate(network: network)
