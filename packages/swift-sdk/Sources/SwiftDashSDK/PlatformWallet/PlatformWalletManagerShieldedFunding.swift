@@ -319,11 +319,13 @@ extension PlatformWalletManager {
             recipients: recipients
         )
 
-        let handle = self.handle
         let recipientRaw43 = recipients[0].recipientRaw43
         let coreSigner = MnemonicResolver()
 
-        try await Task.detached(priority: .userInitiated) {
+        // Admitted because this call also recovers a wallet drain by its
+        // exact outpoint: `deleteWallet` must refuse and `shutdown()` must
+        // wait until it returns, as for the drain call itself.
+        try await withAdmittedNativeOperation("shieldedResumeFundFromAssetLock") { handle -> Void in
             var txidTuple:
                 (
                     UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -374,7 +376,7 @@ extension PlatformWalletManager {
                     }
                 }
             }
-        }.value
+        }
     }
 
     /// Seed the shielded pool's anonymity set up to `targetTotalNotes`
