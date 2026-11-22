@@ -12,8 +12,7 @@ use dpp::ProtocolError;
 
 use dpp::identity::signer::Signer;
 
-use dash_sdk::platform::documents::page::DocumentsPage;
-use dash_sdk::platform::identity_withdrawals::IdentityWithdrawalsPage;
+use dash_sdk::platform::identity_withdrawals::IdentityWithdrawal;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::withdraw_from_identity::{
     WithdrawFromIdentity, WithdrawFromIdentityWithMetadata,
@@ -141,10 +140,11 @@ impl IdentityWallet {
         Ok(())
     }
 
-    /// One page of the withdrawals of `identity_id` to Core, most recently updated first,
-    /// read with a proof from the withdrawals system contract: each one's amount,
+    /// Every withdrawal of `identity_id` to Core, each listed once, most recently updated
+    /// first, read with proofs from the withdrawals system contract: each one's amount,
     /// destination, status, and the asset unlock transaction that carries it once Platform
-    /// pooled it. [`IdentityWithdrawalsPage::next`] gives the next page.
+    /// pooled it. See [`Sdk::fetch_all_identity_withdrawals`](dash_sdk::Sdk::fetch_all_identity_withdrawals)
+    /// for how withdrawals that change status while the pages are read are kept to one row.
     ///
     /// Any identity can be asked for, not only the wallet's. Withdrawals from Platform
     /// addresses and from the shielded pool are not found: the withdrawals contract stores
@@ -152,11 +152,10 @@ impl IdentityWallet {
     pub async fn identity_withdrawals(
         &self,
         identity_id: &Identifier,
-        page: DocumentsPage,
-    ) -> Result<IdentityWithdrawalsPage, PlatformWalletError> {
+    ) -> Result<Vec<IdentityWithdrawal>, PlatformWalletError> {
         Ok(self
             .sdk
-            .fetch_identity_withdrawals(*identity_id, page)
+            .fetch_all_identity_withdrawals(*identity_id)
             .await?)
     }
 

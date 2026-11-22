@@ -87,20 +87,6 @@ public struct IdentityWithdrawal: Sendable, Equatable, Identifiable {
     }
 }
 
-/// One page of an identity's withdrawals, most recently updated first.
-public struct IdentityWithdrawalsPage: Sendable, Equatable {
-    /// The withdrawals on this page.
-    public let withdrawals: [IdentityWithdrawal]
-    /// The cursor for the next page (pass it as `startAfter`), or `nil` when
-    /// this was the last page.
-    public let nextStartAfter: Data?
-
-    public init(withdrawals: [IdentityWithdrawal], nextStartAfter: Data?) {
-        self.withdrawals = withdrawals
-        self.nextStartAfter = nextStartAfter
-    }
-}
-
 // MARK: - FFI decoding
 
 extension IdentityWithdrawal {
@@ -148,46 +134,35 @@ extension IdentityWithdrawal {
     }
 }
 
-extension IdentityWithdrawalsPage {
-    /// Decode what `platform_wallet_identity_withdrawals` wrote into its out
-    /// slots: `count` rows at `rows`, and the next page's 32-byte cursor when
-    /// `hasNext`. Does not free anything.
-    static func decode(
+extension IdentityWithdrawal {
+    /// Decode the `count` rows `platform_wallet_identity_withdrawals` wrote
+    /// at `rows`, in the order Rust gave them. One row this build cannot
+    /// decode fails the whole list. Does not free anything.
+    static func decodeRows(
         rows: UnsafePointer<IdentityWithdrawalFFI>?,
-        count: Int,
-        hasNext: Bool,
-        nextStartAfter: [UInt8]
-    ) throws -> IdentityWithdrawalsPage {
+        count: Int
+    ) throws -> [IdentityWithdrawal] {
+        guard let rows, count > 0 else { return [] }
         var withdrawals: [IdentityWithdrawal] = []
-        if let rows, count > 0 {
-            withdrawals.reserveCapacity(count)
-            for index in 0..<count {
-                withdrawals.append(try IdentityWithdrawal(ffi: rows[index]))
-            }
+        withdrawals.reserveCapacity(count)
+        for index in 0..<count {
+            withdrawals.append(try IdentityWithdrawal(ffi: rows[index]))
         }
-        return IdentityWithdrawalsPage(
-            withdrawals: withdrawals,
-            nextStartAfter: hasNext ? Data(nextStartAfter) : nil
-        )
+        return withdrawals
     }
 }
 
 // MARK: - ManagedPlatformWallet
 
 extension ManagedPlatformWallet {
-    /// One page of the withdrawals of `identityId` to Core, most recently
-    /// updated first, read with a proof from the withdrawals system contract.
-    /// Any identity can be asked for, not only the wallet's. Withdrawals from
-    /// Platform addresses and from the shielded pool are not found: the
-    /// contract stores them under its own owner.
-    ///
-    /// `limit == 0` uses the platform cap (100). Pass the previous page's
-    /// `nextStartAfter` as `startAfter` to read the next page.
-    public func identityWithdrawals(
-        identityId: Data,
-        limit: UInt32 = 0,
-        startAfter: Data? = nil
-    ) async throws -> IdentityWithdrawalsPage {
+    /// Every withdrawal of `identityId` to Core, each listed once, most
+    /// recently updated first, read with proofs from the withdrawals system
+    /// contract. Rust reads every page and keeps one row per withdrawal, so a
+    /// withdrawal that changes status during the read is neither repeated nor
+    /// skipped. Any identity can be asked for, not only the wallet's.
+    /// Withdrawals from Platform addresses and from the shielded pool are not
+    /// found: the contract stores them under its own owner.
+    public func identityWithdrawals(identityId: Data) async throws -> [IdentityWithdrawal] {
         let handle = self.handle
         guard identityId.count == 32 else {
             throw PlatformWalletError.invalidParameter(
@@ -195,47 +170,24 @@ extension ManagedPlatformWallet {
             )
         }
         let idBytes = Array(identityId)
-        let cursorBytes = try Self.validatedOptionalIdentifier(
-            startAfter,
-            parameter: "startAfter"
-        )
-        return try await Task.detached(priority: .userInitiated) { () -> IdentityWithdrawalsPage in
+        return try await Task.detached(priority: .userInitiated) { () -> [IdentityWithdrawal] in
             var outRows: UnsafeMutablePointer<IdentityWithdrawalFFI>? = nil
             var outCount: UInt = 0
-            var hasNext = false
-            var next = [UInt8](repeating: 0, count: 32)
             let result = idBytes.withUnsafeBufferPointer { idBp -> PlatformWalletFFIResult in
-                next.withUnsafeMutableBufferPointer { nextBp -> PlatformWalletFFIResult in
-                    let idPtr = idBp.baseAddress!
-                    let nextPtr = nextBp.baseAddress!
-                    guard let cursorBytes else {
-                        return platform_wallet_identity_withdrawals(
-                            handle, idPtr, limit, nil, &outRows, &outCount, &hasNext, nextPtr
-                        )
-                    }
-                    return cursorBytes.withUnsafeBufferPointer { cursorBp in
-                        platform_wallet_identity_withdrawals(
-                            handle,
-                            idPtr,
-                            limit,
-                            cursorBp.baseAddress,
-                            &outRows,
-                            &outCount,
-                            &hasNext,
-                            nextPtr
-                        )
-                    }
-                }
+                platform_wallet_identity_withdrawals(
+                    handle,
+                    idBp.baseAddress!,
+                    &outRows,
+                    &outCount
+                )
             }
             // The free function accepts null and 0, and Rust writes both
             // before any fallible work, so this is safe on every path.
             defer { platform_wallet_identity_withdrawals_free(outRows, outCount) }
             try result.check()
-            return try IdentityWithdrawalsPage.decode(
+            return try IdentityWithdrawal.decodeRows(
                 rows: UnsafePointer(outRows),
-                count: Int(outCount),
-                hasNext: hasNext,
-                nextStartAfter: next
+                count: Int(outCount)
             )
         }.value
     }

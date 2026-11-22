@@ -4,7 +4,8 @@
 //! [`platform_wallet_identity_withdrawals`] calls
 //! `platform_wallet::IdentityWallet::identity_withdrawals`, which reads the
 //! identity's `withdrawal` documents from the withdrawals system contract with
-//! a proof, most recently updated first. Rust decides everything a client
+//! proofs and returns the whole list, each withdrawal once, most recently
+//! updated first. Rust decides everything a client
 //! shows: the status, its label, and whether the withdrawal is final. This
 //! module only flattens the typed rows into C structs.
 
@@ -12,7 +13,6 @@ use std::ffi::CString;
 use std::os::raw::c_char;
 use std::ptr;
 
-use dash_sdk::platform::documents::page::DocumentsPage;
 use dash_sdk::platform::identity_withdrawals::IdentityWithdrawal;
 
 use crate::check_ptr;
@@ -141,78 +141,47 @@ impl IdentityWithdrawalFFI {
     }
 }
 
-/// One page of the withdrawals of `identity_id` to Core, most recently
-/// updated first, read with a proof from the withdrawals system contract.
-/// Any identity can be asked for, not only the wallet's. Withdrawals from
-/// Platform addresses and from the shielded pool are not found: the
-/// withdrawals contract stores them under its own owner.
-///
-/// `limit` is the page size; `0` uses the platform cap (100).
-/// `start_after` is null for the first page, or the 32 bytes
-/// `out_next_start_after` returned for the previous one.
+/// Every withdrawal of `identity_id` to Core, each listed once, most
+/// recently updated first, read with proofs from the withdrawals system
+/// contract. Rust reads every page and keeps one row per withdrawal, so a
+/// withdrawal that changes status during the read is neither repeated nor
+/// skipped. Any identity can be asked for, not only the wallet's.
+/// Withdrawals from Platform addresses and from the shielded pool are not
+/// found: the withdrawals contract stores them under its own owner.
 ///
 /// On success `*out_rows` / `*out_count` hold the rows (null and 0 when
-/// there are none; release with
-/// [`platform_wallet_identity_withdrawals_free`]), and `*out_has_next` says
-/// whether a next page exists, in which case its cursor is written to the 32
-/// bytes at `out_next_start_after` (zeroed otherwise). Every out slot is
-/// written before any fallible work, so an error leaves nothing to free.
+/// there are none); release them with
+/// [`platform_wallet_identity_withdrawals_free`]. Both out slots are written
+/// before any fallible work, so an error leaves nothing to free.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_identity_withdrawals(
     wallet_handle: Handle,
     identity_id: *const u8,
-    limit: u32,
-    start_after: *const u8,
     out_rows: *mut *mut IdentityWithdrawalFFI,
     out_count: *mut usize,
-    out_has_next: *mut bool,
-    out_next_start_after: *mut u8,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_rows);
     check_ptr!(out_count);
-    check_ptr!(out_has_next);
-    check_ptr!(out_next_start_after);
     unsafe {
         *out_rows = ptr::null_mut();
         *out_count = 0;
-        *out_has_next = false;
-        ptr::write_bytes(out_next_start_after, 0u8, 32);
     }
 
     let id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });
-    let start_after = if start_after.is_null() {
-        None
-    } else {
-        Some(unwrap_result_or_return!(unsafe {
-            read_identifier(start_after)
-        }))
-    };
-    let page = DocumentsPage {
-        limit: (limit != 0).then_some(limit),
-        start_after,
-    };
 
     // Clone the identity wallet under the registry guard and run the network
     // read outside it, so the read does not hold the registry while it waits.
     let identity_wallet = unwrap_option_or_return!(
         PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone())
     );
-    let result =
-        block_on_worker(async move { identity_wallet.identity_withdrawals(&id, page).await });
-    let page = unwrap_result_or_return!(result);
+    let result = block_on_worker(async move { identity_wallet.identity_withdrawals(&id).await });
+    let withdrawals = unwrap_result_or_return!(result);
 
-    let rows: Vec<IdentityWithdrawalFFI> = page
-        .withdrawals
+    let rows: Vec<IdentityWithdrawalFFI> = withdrawals
         .iter()
         .map(IdentityWithdrawalFFI::from_withdrawal)
         .collect();
-    unsafe {
-        publish_array(rows, out_rows, out_count);
-        if let Some(next) = page.next.and_then(|next| next.start_after) {
-            write_identifier(out_next_start_after, &next);
-            *out_has_next = true;
-        }
-    }
+    unsafe { publish_array(rows, out_rows, out_count) };
     PlatformWalletFFIResult::ok()
 }
 
@@ -372,19 +341,13 @@ mod tests {
         let identity_id = [1u8; 32];
         let mut rows: *mut IdentityWithdrawalFFI = ptr::null_mut();
         let mut count = 7usize;
-        let mut has_next = true;
-        let mut next = [9u8; 32];
 
         let result = unsafe {
             platform_wallet_identity_withdrawals(
                 Handle::MAX,
                 identity_id.as_ptr(),
-                0,
-                ptr::null(),
                 ptr::null_mut(),
                 &mut count,
-                &mut has_next,
-                next.as_mut_ptr(),
             )
         };
         assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
@@ -393,19 +356,23 @@ mod tests {
             platform_wallet_identity_withdrawals(
                 Handle::MAX,
                 identity_id.as_ptr(),
-                0,
-                ptr::null(),
+                &mut rows,
+                ptr::null_mut(),
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+
+        let result = unsafe {
+            platform_wallet_identity_withdrawals(
+                Handle::MAX,
+                identity_id.as_ptr(),
                 &mut rows,
                 &mut count,
-                &mut has_next,
-                next.as_mut_ptr(),
             )
         };
         assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
         // The out slots were reset before the lookup failed.
         assert!(rows.is_null());
         assert_eq!(count, 0);
-        assert!(!has_next);
-        assert_eq!(next, [0u8; 32]);
     }
 }

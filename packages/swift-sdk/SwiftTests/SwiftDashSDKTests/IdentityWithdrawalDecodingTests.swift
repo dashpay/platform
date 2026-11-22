@@ -136,44 +136,38 @@ final class IdentityWithdrawalDecodingTests: XCTestCase {
         }
     }
 
-    func testShouldDecodeAPageAndItsNextCursorOnlyWhenThereIsANextPage() throws {
-        let cursor = [UInt8](repeating: 0x33, count: 32)
-        let withNext = try withRow(status: 1, statusLabel: "Pooled") { row -> IdentityWithdrawalsPage in
-            var rows = [row, row]
-            return try rows.withUnsafeMutableBufferPointer { bp in
-                try IdentityWithdrawalsPage.decode(
-                    rows: UnsafePointer(bp.baseAddress),
-                    count: bp.count,
-                    hasNext: true,
-                    nextStartAfter: cursor
-                )
+    func testShouldDecodeEveryRowInTheOrderRustGaveThem() throws {
+        let decoded = try withRow(status: 1, statusLabel: "Pooled") { pooled in
+            try withRow(status: 3, statusLabel: "Complete", isFinal: true) { complete in
+                var rows = [pooled, complete]
+                return try rows.withUnsafeMutableBufferPointer { bp in
+                    try IdentityWithdrawal.decodeRows(
+                        rows: UnsafePointer(bp.baseAddress),
+                        count: bp.count
+                    )
+                }
             }
         }
-        XCTAssertEqual(withNext.withdrawals.count, 2)
-        XCTAssertEqual(withNext.withdrawals.first?.status, .pooled)
-        XCTAssertEqual(withNext.nextStartAfter, Data(cursor))
-
-        let last = try IdentityWithdrawalsPage.decode(
-            rows: nil,
-            count: 0,
-            hasNext: false,
-            nextStartAfter: cursor
-        )
-        XCTAssertEqual(last, IdentityWithdrawalsPage(withdrawals: [], nextStartAfter: nil))
+        XCTAssertEqual(decoded.map(\.status), [.pooled, .complete])
+        XCTAssertEqual(decoded.map(\.isFinal), [false, true])
     }
 
-    func testShouldFailThePageWhenOneRowHasAnUnknownStatus() throws {
-        try withRow(status: 9) { row in
-            var rows = [row]
-            try rows.withUnsafeMutableBufferPointer { bp in
-                XCTAssertThrowsError(
-                    try IdentityWithdrawalsPage.decode(
-                        rows: UnsafePointer(bp.baseAddress),
-                        count: bp.count,
-                        hasNext: false,
-                        nextStartAfter: [UInt8](repeating: 0, count: 32)
+    func testShouldDecodeNoRowsAsAnEmptyList() throws {
+        XCTAssertEqual(try IdentityWithdrawal.decodeRows(rows: nil, count: 0), [])
+    }
+
+    func testShouldFailTheWholeListWhenOneRowHasAnUnknownStatus() throws {
+        try withRow(status: 0, statusLabel: "Queued") { queued in
+            try withRow(status: 9) { unknown in
+                var rows = [queued, unknown]
+                try rows.withUnsafeMutableBufferPointer { bp in
+                    XCTAssertThrowsError(
+                        try IdentityWithdrawal.decodeRows(
+                            rows: UnsafePointer(bp.baseAddress),
+                            count: bp.count
+                        )
                     )
-                )
+                }
             }
         }
     }

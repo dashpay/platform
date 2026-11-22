@@ -3,10 +3,10 @@
 //
 // Where an identity's credit withdrawals to Core stand. Each row comes from
 // `ManagedPlatformWallet.identityWithdrawals`, which reads the identity's
-// `withdrawal` documents from the withdrawals system contract with a proof,
-// most recently updated first. Rust decides the status, its label and whether
-// the withdrawal is final; this view only presents them, pages through them,
-// and refreshes.
+// `withdrawal` documents from the withdrawals system contract with proofs and
+// returns the whole list, each withdrawal once, most recently updated first.
+// Rust decides the status, its label and whether the withdrawal is final; this
+// view only presents them and refreshes.
 //
 // The Platform side of a withdrawal ends at "Complete": Core included the
 // asset unlock transaction in a chain-locked block. Platform state stores the
@@ -23,21 +23,14 @@ struct IdentityWithdrawalsView: View {
 
     @EnvironmentObject private var walletManager: PlatformWalletManager
 
-    /// Rows per page.
-    private static let pageSize: UInt32 = 20
     /// How often the list refreshes itself while a withdrawal is not final.
     private static let autoRefreshInterval: Duration = .seconds(15)
     /// Credits per DASH (1e11), the divisor the app uses for credit amounts.
     private static let creditsPerDash: UInt64 = 100_000_000_000
 
     @State private var withdrawals: [IdentityWithdrawal] = []
-    @State private var nextStartAfter: Data?
-    /// Pages loaded beyond the first. Auto-refresh reloads only the first
-    /// page, so it pauses once the user loaded more and would lose them.
-    @State private var extraPagesLoaded = 0
     @State private var hasLoaded = false
     @State private var isLoading = false
-    @State private var isLoadingMore = false
     @State private var errorMessage: String?
     @State private var lastRefreshed: Date?
     /// Bumped on every reload so a late answer from an older read cannot
@@ -55,7 +48,7 @@ struct IdentityWithdrawalsView: View {
     }
 
     private var autoRefreshActive: Bool {
-        hasOpenWithdrawals && extraPagesLoaded == 0 && errorMessage == nil
+        hasOpenWithdrawals && errorMessage == nil
     }
 
     var body: some View {
@@ -95,7 +88,7 @@ struct IdentityWithdrawalsView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.autoRefreshInterval)
                 guard !Task.isCancelled else { break }
-                if autoRefreshActive && !isLoading && !isLoadingMore {
+                if autoRefreshActive && !isLoading {
                     await reload()
                 }
             }
@@ -187,28 +180,13 @@ struct IdentityWithdrawalsView: View {
                         amountText: Self.formatDash(raw: withdrawal.amountCredits)
                     )
                 }
-                if nextStartAfter != nil {
-                    Button {
-                        Task { await loadMore() }
-                    } label: {
-                        HStack {
-                            if isLoadingMore {
-                                ProgressView().controlSize(.small)
-                            }
-                            Text(isLoadingMore ? "Loading…" : "Load more")
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .disabled(isLoadingMore || isLoading)
-                    .accessibilityIdentifier("identityWithdrawals.loadMore")
-                }
             }
         }
     }
 
     // MARK: - Loading
 
-    /// Read the first page again, replacing what is listed.
+    /// Read the whole list again, replacing what is listed.
     @MainActor
     private func reload() async {
         guard let wallet else { return }
@@ -221,14 +199,9 @@ struct IdentityWithdrawalsView: View {
             }
         }
         do {
-            let page = try await wallet.identityWithdrawals(
-                identityId: identity.identityId,
-                limit: Self.pageSize
-            )
+            let rows = try await wallet.identityWithdrawals(identityId: identity.identityId)
             guard generation == loadGeneration else { return }
-            withdrawals = page.withdrawals
-            nextStartAfter = page.nextStartAfter
-            extraPagesLoaded = 0
+            withdrawals = rows
             errorMessage = nil
             lastRefreshed = Date()
         } catch {
@@ -236,32 +209,6 @@ struct IdentityWithdrawalsView: View {
             errorMessage = error.localizedDescription
         }
         hasLoaded = true
-    }
-
-    /// Append the next page.
-    @MainActor
-    private func loadMore() async {
-        guard let wallet, let cursor = nextStartAfter, !isLoadingMore else { return }
-        let generation = loadGeneration
-        isLoadingMore = true
-        defer { isLoadingMore = false }
-        do {
-            let page = try await wallet.identityWithdrawals(
-                identityId: identity.identityId,
-                limit: Self.pageSize,
-                startAfter: cursor
-            )
-            // A reload started meanwhile replaced the list; this page belongs
-            // to the old one.
-            guard generation == loadGeneration else { return }
-            withdrawals.append(contentsOf: page.withdrawals)
-            nextStartAfter = page.nextStartAfter
-            extraPagesLoaded += 1
-            errorMessage = nil
-        } catch {
-            guard generation == loadGeneration else { return }
-            errorMessage = error.localizedDescription
-        }
     }
 
     // MARK: - Helpers

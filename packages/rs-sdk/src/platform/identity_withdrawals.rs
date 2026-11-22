@@ -211,6 +211,53 @@ impl Sdk {
         .await?;
         identity_withdrawals_page(&documents, page, self.network)
     }
+
+    /// Every withdrawal of `identity_id` to Core, each listed once, most recently updated
+    /// first, read page by page with proofs (see [`Self::fetch_identity_withdrawals`]).
+    ///
+    /// The listing is ordered by `$updatedAt`, which moves whenever Platform advances a
+    /// withdrawal's status, so a withdrawal can move between pages while they are read: to an
+    /// earlier page (it would be read twice) or, from a page not read yet, to the first page
+    /// (it would be missed). Rows are merged by id, keeping the latest state, and when more
+    /// than one page was read the first page is read again, which catches every withdrawal
+    /// that moved during the walk unless more than a page of them did.
+    pub async fn fetch_all_identity_withdrawals(
+        &self,
+        identity_id: Identifier,
+    ) -> Result<Vec<IdentityWithdrawal>, Error> {
+        let mut withdrawals = Vec::new();
+        let mut page = Some(DocumentsPage::default());
+        let mut pages_read = 0usize;
+        while let Some(current) = page {
+            let fetched = self
+                .fetch_identity_withdrawals(identity_id, current)
+                .await?;
+            merge_withdrawals(&mut withdrawals, fetched.withdrawals);
+            pages_read += 1;
+            page = fetched.next;
+        }
+        if pages_read > 1 {
+            let first = self
+                .fetch_identity_withdrawals(identity_id, DocumentsPage::default())
+                .await?;
+            merge_withdrawals(&mut withdrawals, first.withdrawals);
+        }
+        Ok(withdrawals)
+    }
+}
+
+/// Merge `rows` into `withdrawals`: a withdrawal already listed keeps whichever state was
+/// updated last, a new one is added, and the list stays most recently updated first (by id
+/// on a tie, so the order is the same on every read).
+fn merge_withdrawals(withdrawals: &mut Vec<IdentityWithdrawal>, rows: Vec<IdentityWithdrawal>) {
+    for row in rows {
+        match withdrawals.iter_mut().find(|listed| listed.id == row.id) {
+            Some(listed) if row.updated_at >= listed.updated_at => *listed = row,
+            Some(_) => {}
+            None => withdrawals.push(row),
+        }
+    }
+    withdrawals.sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then(a.id.cmp(&b.id)));
 }
 
 #[cfg(test)]
@@ -435,5 +482,70 @@ mod tests {
             identity_withdrawals_page(&short, page, Network::Testnet).expect("decodes");
         assert_eq!(short_page.withdrawals.len(), 1);
         assert_eq!(short_page.next, None);
+    }
+
+    fn row_updated(id: u8, status: u8, updated_at: u64) -> IdentityWithdrawal {
+        let mut row = IdentityWithdrawal::try_from_document(
+            &withdrawal_document(
+                id,
+                platform_value!({
+                    "amount": 150_000u64,
+                    "coreFeePerByte": 1u32,
+                    "pooling": 0u8,
+                    "outputScript": Value::Bytes(p2pkh_script().to_bytes()),
+                    "status": status,
+                }),
+            ),
+            Network::Testnet,
+        )
+        .expect("a valid withdrawal document");
+        row.updated_at = updated_at;
+        row
+    }
+
+    #[test]
+    fn should_list_a_withdrawal_read_on_two_pages_once_with_its_latest_state() {
+        let mut withdrawals = Vec::new();
+        merge_withdrawals(
+            &mut withdrawals,
+            vec![row_updated(1, 0, 10), row_updated(2, 0, 9)],
+        );
+        // Withdrawal 2 advanced to pooled while the walk read the next page.
+        merge_withdrawals(
+            &mut withdrawals,
+            vec![row_updated(2, 1, 20), row_updated(3, 0, 5)],
+        );
+
+        let listed: Vec<_> = withdrawals.iter().map(|w| (w.id, w.status)).collect();
+        assert_eq!(
+            listed,
+            vec![
+                (Identifier::from([2; 32]), WithdrawalStatus::POOLED),
+                (Identifier::from([1; 32]), WithdrawalStatus::QUEUED),
+                (Identifier::from([3; 32]), WithdrawalStatus::QUEUED),
+            ]
+        );
+    }
+
+    #[test]
+    fn should_keep_the_later_state_when_an_older_read_comes_second() {
+        let mut withdrawals = vec![row_updated(1, 2, 30)];
+        merge_withdrawals(&mut withdrawals, vec![row_updated(1, 1, 20)]);
+        assert_eq!(withdrawals.len(), 1);
+        assert_eq!(withdrawals[0].status, WithdrawalStatus::BROADCASTED);
+    }
+
+    #[test]
+    fn should_order_withdrawals_updated_at_the_same_time_by_id() {
+        let mut withdrawals = Vec::new();
+        merge_withdrawals(
+            &mut withdrawals,
+            vec![row_updated(7, 0, 10), row_updated(4, 0, 10)],
+        );
+        let ids: Vec<_> = withdrawals.iter().map(|w| w.id).collect();
+        assert_eq!(
+            ids,
+            vec![Identifier::from([4; 32]), Identifier::from([7; 32])]
+        );
     }
 }
