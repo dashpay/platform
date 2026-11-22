@@ -9,6 +9,10 @@ struct QueryDetailView: View {
     @State private var result: String = ""
     @State private var error: String = ""
     @State private var showResult = false
+    /// Bumped when an input of a route that ties its result to its inputs is
+    /// edited (``resultFollowsInputs``), so a running read's completion, which
+    /// answers the inputs it was submitted with, is dropped.
+    @State private var submission = 0
 
     var body: some View {
         ScrollView {
@@ -132,8 +136,26 @@ struct QueryDetailView: View {
     private func binding(for key: String) -> Binding<String> {
         Binding(
             get: { queryInputs[key] ?? "" },
-            set: { queryInputs[key] = $0 }
+            set: { newValue in
+                guard queryInputs[key] ?? "" != newValue else { return }
+                queryInputs[key] = newValue
+                if resultFollowsInputs {
+                    // The result shown, and the read running, answer the old inputs
+                    submission += 1
+                    result = ""
+                    error = ""
+                    showResult = false
+                    isLoading = false
+                }
+            }
         )
+    }
+
+    /// Whether the result shown names the inputs it answers and is cleared
+    /// when they change: the moderation status read, whose answer names
+    /// neither the contract nor the identity.
+    private var resultFollowsInputs: Bool {
+        query.name == "getContractModerationStatus"
     }
 
     private func hasRequiredInputs() -> Bool {
@@ -162,6 +184,7 @@ struct QueryDetailView: View {
         error = ""
         result = ""
         showResult = false
+        let current = submission
 
         Task {
             do {
@@ -171,6 +194,7 @@ struct QueryDetailView: View {
                 print("🔵 QueryDetailView: Query result type: \(type(of: queryResult))")
 
                 await MainActor.run {
+                    guard current == submission else { return }
                     result = formatResult(queryResult)
                     showResult = true
                     isLoading = false
@@ -179,6 +203,7 @@ struct QueryDetailView: View {
             } catch let sdkError as SDKError {
                 print("❌ QueryDetailView: SDK error occurred: \(sdkError)")
                 await MainActor.run {
+                    guard current == submission else { return }
                     // Handle SDK errors with more detail
                     switch sdkError {
                     case .invalidParameter(let message):
@@ -214,6 +239,7 @@ struct QueryDetailView: View {
             } catch {
                 print("❌ QueryDetailView: General error occurred: \(error)")
                 await MainActor.run {
+                    guard current == submission else { return }
                     // For non-SDK errors, try to get more information
                     let nsError = error as NSError
                     var errorMessage = ""
@@ -348,11 +374,21 @@ struct QueryDetailView: View {
 
         // Contract Moderation Queries (protocol version 14)
         case "getContractModerationStatus":
+            let contractId = queryInputs["contractId"] ?? ""
+            let identityId = queryInputs["identityId"] ?? ""
             let lists = try moderationInput("lists").map { try parseModerationLists($0) }
-            return try moderationJSON(await sdk.contractModerationStatus(
-                contractId: queryInputs["contractId"] ?? "",
-                identityId: queryInputs["identityId"] ?? "",
+            let status = try await sdk.contractModerationStatus(
+                contractId: contractId,
+                identityId: identityId,
                 lists: lists
+            )
+            // The answer names neither the contract nor the identity: show the
+            // inputs it answers with it, an empty answer included
+            return try moderationJSON(ModerationStatusCatalogResult(
+                contractId: contractId,
+                identityId: identityId,
+                lists: lists,
+                status: status
             ))
 
         case "getContractModerationEntries":
@@ -971,9 +1007,10 @@ struct QueryDetailView: View {
         return status
     }
 
-    /// A moderation result as JSON (re-encoded from the decoded value), shown
-    /// as `JSONEncoder` writes it so a kept value keeps its sign; "No data"
-    /// when the FFI returned none.
+    /// A moderation result as JSON re-encoded from the decoded value, shown as
+    /// `JSONEncoder` writes it: the models' `Codable` form, so a removal
+    /// record's kept values appear tagged (`{"type": "double", "value": 1}`).
+    /// "No data" when the FFI returned none.
     private func moderationJSON<T: Encodable>(_ value: T?) throws -> Any {
         guard let value else { return "No data" }
         let encoder = JSONEncoder()
@@ -1390,6 +1427,28 @@ struct QueryDetailView: View {
         default:
             return []
         }
+    }
+}
+
+/// The catalog's moderation status result: the inputs the read answered and
+/// its answer, `null` when the FFI returned none, and `lists` `null` when no
+/// list was named (every list the contract keeps).
+private struct ModerationStatusCatalogResult: Encodable {
+    let contractId: String
+    let identityId: String
+    let lists: [ContractModerationList]?
+    let status: ContractModerationStatus?
+
+    private enum CodingKeys: String, CodingKey {
+        case contractId, identityId, lists, status
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(contractId, forKey: .contractId)
+        try container.encode(identityId, forKey: .identityId)
+        try container.encode(lists, forKey: .lists)
+        try container.encode(status, forKey: .status)
     }
 }
 

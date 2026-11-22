@@ -199,11 +199,12 @@ final class ContractModerationDecodingTests: XCTestCase {
         XCTAssertEqual(page.nextStartAfter, id4)
     }
 
+    /// The FFI writes bare values, read with `JSONSerialization`.
     func testShouldDecodeKeptValuesBeyondTheSignedRange() throws {
-        let values = try decode(
-            [Swift.String: ContractKeptFieldValue].self,
-            #"{"big":18446744073709551615,"flag":true,"none":null,"ratio":0.5}"#
-        )
+        let object = try JSONSerialization.jsonObject(
+            with: Data(#"{"big":18446744073709551615,"flag":true,"none":null,"ratio":0.5}"#.utf8))
+        let values = try XCTUnwrap(object as? [Swift.String: Any])
+            .mapValues(ContractKeptFieldValue.init(jsonObject:))
         XCTAssertEqual(values["big"], .uint(UInt64.max))
         XCTAssertEqual(values["flag"], .bool(true))
         XCTAssertEqual(values["none"], .null)
@@ -235,11 +236,68 @@ final class ContractModerationDecodingTests: XCTestCase {
         XCTAssertEqual(kept["nested"], .object(["ratio": .double(1.5), "list": .array([.double(1000), .int(2)])]))
     }
 
-    /// The catalog re-encodes a page with `JSONEncoder`, which keeps the sign
-    /// of a negative zero.
-    func testShouldEncodeANegativeZeroWithItsSign() throws {
-        let data = try JSONEncoder().encode(ContractKeptFieldValue.double(-0.0))
-        XCTAssertEqual(String(decoding: data, as: UTF8.self), "-0")
+    /// `Codable` writes the tagged form, which `JSONEncoder` and
+    /// `JSONDecoder` round-trip without losing a number's kind or sign.
+    func testShouldRoundTripAPageThroughTheTaggedCodableForm() throws {
+        let removal = ContractDocumentRemovalEntry(
+            documentId: id3,
+            documentOwnerId: id20,
+            moderatorId: id21,
+            reason: reason("x"),
+            removedAtMs: 1,
+            documentHash: String(repeating: "ab", count: 32),
+            restoredBy: nil,
+            restoredAtMs: nil,
+            keptFields: [
+                "whole": .double(1.0),
+                "negativeZero": .double(-0.0),
+                "int": .int(1),
+                "big": .uint(UInt64.max),
+                "none": .null,
+                "flag": .bool(true),
+                "text": .string("dash"),
+                "nested": .object([
+                    "list": .array([.double(2.0), .int(-3), .object(["deep": .uint(7)])]),
+                ]),
+            ]
+        )
+        let page = ContractDocumentRemovalsPage(removals: [removal], nextStartAfter: id3)
+
+        let data = try JSONEncoder().encode(page)
+        let decoded = try JSONDecoder().decode(ContractDocumentRemovalsPage.self, from: data)
+        let kept = try XCTUnwrap(decoded.removals.first).keptFields
+
+        XCTAssertEqual(decoded, page)
+        XCTAssertEqual(kept["whole"], .double(1.0))
+        guard case .double(let negativeZero) = kept["negativeZero"] else {
+            return XCTFail("expected a double, got \(String(describing: kept["negativeZero"]))")
+        }
+        XCTAssertEqual(negativeZero.sign, .minus)
+        XCTAssertEqual(kept["int"], .int(1))
+        XCTAssertEqual(kept["big"], .uint(UInt64.max))
+        XCTAssertEqual(kept["nested"], removal.keptFields["nested"])
+        XCTAssertEqual(
+            String(decoding: try JSONEncoder().encode(ContractKeptFieldValue.double(1.0)), as: UTF8.self)
+                .contains(#""type":"double""#),
+            true
+        )
+    }
+
+    /// A kept object whose members are named like the tags round-trips.
+    func testShouldRoundTripAnObjectWithMembersNamedTypeAndValue() throws {
+        let value = ContractKeptFieldValue.object([
+            "type": .string("double"),
+            "value": .object(["type": .int(1), "value": .null]),
+        ])
+        let data = try JSONEncoder().encode(value)
+        XCTAssertEqual(try JSONDecoder().decode(ContractKeptFieldValue.self, from: data), value)
+    }
+
+    func testShouldRefuseAnUnknownKeptValueTag() {
+        XCTAssertThrowsError(
+            try JSONDecoder().decode(
+                ContractKeptFieldValue.self, from: Data(#"{"type":"float","value":1}"#.utf8))
+        )
     }
 
     // MARK: - Team actions

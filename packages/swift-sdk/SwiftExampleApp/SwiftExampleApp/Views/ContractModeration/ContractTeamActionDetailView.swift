@@ -10,7 +10,8 @@ struct ContractTeamActionDetailView: View {
     /// with.
     let status: ContractTeamActionStatus
 
-    @State private var signers: ModerationLoad<ContractTeamActionSigners?> = .idle
+    @StateObject private var loader = ModerationSingleLoader<ContractTeamActionSigners?>()
+    private var signers: ModerationLoad<ContractTeamActionSigners?> { loader.load }
 
     var body: some View {
         List {
@@ -109,18 +110,18 @@ struct ContractTeamActionDetailView: View {
 
     private func loadSigners() async {
         guard let sdk = appState.sdk else {
-            signers = .failed("SDK not initialized")
+            loader.fail("SDK not initialized")
             return
         }
-        signers = .loading
-        do {
-            signers = .loaded(try await sdk.contractTeamActionSigners(
+        let contractId = contractId
+        let status = status
+        let actionId = action.actionId
+        await loader.reload {
+            try await sdk.contractTeamActionSigners(
                 contractId: contractId,
                 status: status,
-                actionId: action.actionId
-            ))
-        } catch {
-            signers = .failed(moderationErrorText(error))
+                actionId: actionId
+            )
         }
     }
 }

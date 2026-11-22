@@ -78,3 +78,37 @@ final class ModerationPagedLoader<Item: Sendable, Cursor: Sendable>: ObservableO
         loadedOnce = true
     }
 }
+
+/// The answer of a single moderation read (the fee pots, the action counts,
+/// a team action's signers) that a reload, a pull-to-refresh and the first
+/// appearance all start. As with ``ModerationPagedLoader``, every
+/// ``reload(_:)`` starts a new generation and only the current one writes, so
+/// an older read finishing late cannot replace a newer answer with stale
+/// values or an error.
+@MainActor
+final class ModerationSingleLoader<Value: Sendable>: ObservableObject {
+    @Published private(set) var load: ModerationLoad<Value> = .idle
+
+    private var generation = 0
+
+    /// Read again with `fetch`, dropping whatever an older read brings back.
+    func reload(_ fetch: @Sendable () async throws -> Value) async {
+        generation += 1
+        let current = generation
+        load = .loading
+        do {
+            let value = try await fetch()
+            guard current == generation else { return }
+            load = .loaded(value)
+        } catch {
+            guard current == generation else { return }
+            load = .failed(moderationErrorText(error))
+        }
+    }
+
+    /// Show `message`, ending whatever is in flight.
+    func fail(_ message: String) {
+        generation += 1
+        load = .failed(message)
+    }
+}

@@ -7,7 +7,8 @@ struct ContractFeePotsSection: View {
     @EnvironmentObject var appState: AppState
     let contractId: String
 
-    @State private var load: ModerationLoad<ContractFeePots?> = .idle
+    @StateObject private var loader = ModerationSingleLoader<ContractFeePots?>()
+    private var load: ModerationLoad<ContractFeePots?> { loader.load }
 
     var body: some View {
         Section {
@@ -58,15 +59,11 @@ struct ContractFeePotsSection: View {
 
     private func reload() async {
         guard let sdk = appState.sdk else {
-            load = .failed("SDK not initialized")
+            loader.fail("SDK not initialized")
             return
         }
-        load = .loading
-        do {
-            load = .loaded(try await sdk.contractFeePots(contractId: contractId))
-        } catch {
-            load = .failed(moderationErrorText(error))
-        }
+        let contractId = contractId
+        await loader.reload { try await sdk.contractFeePots(contractId: contractId) }
     }
 }
 

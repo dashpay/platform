@@ -170,14 +170,18 @@ public struct ContractModerationEntriesPage: Codable, Sendable, Equatable {
 
 // MARK: - Document removals
 
-/// A value a removal record keeps of its document, as the JSON writes a
+/// A value a removal record keeps of its document, as the FFI's JSON writes a
 /// platform value: identifiers as base58 strings, other bytes as base64
 /// strings.
 ///
-/// The SDK reads these with ``init(jsonObject:)`` from `JSONSerialization`,
-/// which keeps a number's kind (`1.0` and `-0.0` stay doubles, sign
-/// included). `JSONDecoder`, which ``init(from:)`` goes through, reads `1.0`
-/// and `-0.0` as integers, so it is only a fallback for generic decoding.
+/// It has two JSON forms:
+/// - The FFI writes bare values. The SDK reads them only with
+///   ``init(jsonObject:)`` over `JSONSerialization` output, which keeps a
+///   number's kind (`1.0` and `-0.0` stay doubles, sign included);
+///   `JSONDecoder` would read them as integers.
+/// - `Codable` uses a tagged form, `{"type": "double", "value": 1.0}`, with
+///   the types `null`, `bool`, `int`, `uint`, `double`, `string`, `array` and
+///   `object`, so `JSONEncoder` and `JSONDecoder` round-trip it without loss.
 public indirect enum ContractKeptFieldValue: Codable, Sendable, Equatable, Hashable {
     case null
     case bool(Bool)
@@ -188,28 +192,30 @@ public indirect enum ContractKeptFieldValue: Codable, Sendable, Equatable, Hasha
     case array([ContractKeptFieldValue])
     case object([String: ContractKeptFieldValue])
 
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case value
+    }
+
+    /// Reads the tagged form ``encode(to:)`` writes.
     public init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if container.decodeNil() {
-            self = .null
-        } else if let value = try? container.decode(Bool.self) {
-            self = .bool(value)
-        } else if let value = try? container.decode(Int64.self) {
-            self = .int(value)
-        } else if let value = try? container.decode(UInt64.self) {
-            self = .uint(value)
-        } else if let value = try? container.decode(Double.self) {
-            self = .double(value)
-        } else if let value = try? container.decode(String.self) {
-            self = .string(value)
-        } else if let value = try? container.decode([ContractKeptFieldValue].self) {
-            self = .array(value)
-        } else if let value = try? container.decode([Swift.String: ContractKeptFieldValue].self) {
-            self = .object(value)
-        } else {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(Swift.String.self, forKey: .type)
+        switch type {
+        case "null": self = .null
+        case "bool": self = .bool(try container.decode(Bool.self, forKey: .value))
+        case "int": self = .int(try container.decode(Int64.self, forKey: .value))
+        case "uint": self = .uint(try container.decode(UInt64.self, forKey: .value))
+        case "double": self = .double(try container.decode(Double.self, forKey: .value))
+        case "string": self = .string(try container.decode(Swift.String.self, forKey: .value))
+        case "array": self = .array(try container.decode([ContractKeptFieldValue].self, forKey: .value))
+        case "object":
+            self = .object(try container.decode([Swift.String: ContractKeptFieldValue].self, forKey: .value))
+        default:
             throw DecodingError.dataCorruptedError(
+                forKey: .type,
                 in: container,
-                debugDescription: "Unsupported kept field value"
+                debugDescription: "Unknown kept field value type \(type)"
             )
         }
     }
@@ -244,17 +250,34 @@ public indirect enum ContractKeptFieldValue: Codable, Sendable, Equatable, Hasha
         }
     }
 
+    /// Writes the tagged form: `{"type": ..., "value": ...}`, no `value` for
+    /// `null`.
     public func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
+        var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .null: try container.encodeNil()
-        case .bool(let value): try container.encode(value)
-        case .int(let value): try container.encode(value)
-        case .uint(let value): try container.encode(value)
-        case .double(let value): try container.encode(value)
-        case .string(let value): try container.encode(value)
-        case .array(let value): try container.encode(value)
-        case .object(let value): try container.encode(value)
+        case .null:
+            try container.encode("null", forKey: .type)
+        case .bool(let value):
+            try container.encode("bool", forKey: .type)
+            try container.encode(value, forKey: .value)
+        case .int(let value):
+            try container.encode("int", forKey: .type)
+            try container.encode(value, forKey: .value)
+        case .uint(let value):
+            try container.encode("uint", forKey: .type)
+            try container.encode(value, forKey: .value)
+        case .double(let value):
+            try container.encode("double", forKey: .type)
+            try container.encode(value, forKey: .value)
+        case .string(let value):
+            try container.encode("string", forKey: .type)
+            try container.encode(value, forKey: .value)
+        case .array(let value):
+            try container.encode("array", forKey: .type)
+            try container.encode(value, forKey: .value)
+        case .object(let value):
+            try container.encode("object", forKey: .type)
+            try container.encode(value, forKey: .value)
         }
     }
 }

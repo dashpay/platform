@@ -296,12 +296,13 @@ enum ContractModerationJSON {
         try DecisionProposalJSON.decode(type, from: json)
     }
 
-    /// A page of removal records, each record's `keptFields` read with
+    /// A page of removal records as the FFI writes it. The records are read
+    /// without their `keptFields` (``RemovalsPageWire``), whose bare values
+    /// `JSONDecoder` would turn into integers; those are read with
     /// `JSONSerialization` (``ContractKeptFieldValue/init(jsonObject:)``),
-    /// which keeps the kind of a number `JSONDecoder` would turn into an
-    /// integer.
+    /// which keeps each number's kind.
     static func decodeRemovalsPage(from json: String) throws -> ContractDocumentRemovalsPage {
-        let page = try decode(ContractDocumentRemovalsPage.self, from: json)
+        let page = try decode(RemovalsPageWire.self, from: json)
         let object: Any
         do {
             object = try JSONSerialization.jsonObject(with: Data(json.utf8))
@@ -329,6 +330,35 @@ enum ContractModerationJSON {
             )
         }
         return ContractDocumentRemovalsPage(removals: removals, nextStartAfter: page.nextStartAfter)
+    }
+
+    /// A removals page as the FFI writes it, its records without `keptFields`.
+    private struct RemovalsPageWire: Decodable {
+        let removals: [RemovalWire]
+        let nextStartAfter: String?
+    }
+
+    /// A removal record as the FFI writes it, without `keptFields`.
+    private struct RemovalWire: Decodable {
+        let documentId: String
+        let documentOwnerId: String
+        let moderatorId: String
+        let reason: ContractModerationReason
+        let removedAtMs: UInt64
+        let documentHash: String
+        let restoredBy: String?
+        let restoredAtMs: UInt64?
+
+        private enum CodingKeys: String, CodingKey {
+            case documentId
+            case documentOwnerId
+            case moderatorId
+            case reason
+            case removedAtMs = "removedAt"
+            case documentHash
+            case restoredBy
+            case restoredAtMs = "restoredAt"
+        }
     }
 }
 
