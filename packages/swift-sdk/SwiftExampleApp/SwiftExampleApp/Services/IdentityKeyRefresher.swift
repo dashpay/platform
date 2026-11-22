@@ -48,6 +48,12 @@ enum IdentityKeyRefresher {
             try await wallet.refreshIdentity(identityId: identity.identityId)
             return
         }
+        // Held by a wallet that is not loaded right now: its rows carry the
+        // wallet id and derivation path the signer needs, which a rebuild
+        // from a plain fetch would drop. Leave them to the wallet.
+        if identity.wallet != nil {
+            throw SDKError.invalidState("The wallet holding this identity is not loaded; open the wallet and refresh again.")
+        }
 
         let fetchedIdentity = try await sdk.identityGet(
             identityId: identity.identityIdBase58

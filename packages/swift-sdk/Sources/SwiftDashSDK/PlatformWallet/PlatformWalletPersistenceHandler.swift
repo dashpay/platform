@@ -4266,7 +4266,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // Prefer the row linked to its identity: an older refresh could
             // leave an unlinked row with the same (identityId, keyId) behind,
             // and updating that one would leave the row the screens read stale.
-            let matches = (try? backgroundContext.fetch(descriptor)) ?? []
+            // A failed lookup is not "no row": inserting then could add a
+            // second row for the key. Skip this upsert; the next one for the
+            // key writes it.
+            let matches: [PersistentPublicKey]
+            do {
+                matches = try backgroundContext.fetch(descriptor)
+            } catch {
+                print("⚠️ persistIdentityKeys: lookup of key \(entry.keyId) failed, row not written: \(error)")
+                continue
+            }
             if let existing = matches.first(where: { $0.identity != nil }) ?? matches.first {
                 row = existing
             } else {
