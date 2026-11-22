@@ -39,6 +39,10 @@ extension PersistentAssetLock: ShieldedProgressLockRow {}
 ///   5. Shielding (Halo 2 + submit)   → activeLock `statusRaw ∈ {2, 3}`
 ///                                      AND controller still `.inFlight`
 ///
+/// A failed attempt is marked on the step its lock reached by the same
+/// mapping; with no matching lock nothing was built, so step 1 fails and
+/// steps 2 to 5 stay pending (`currentStep`).
+///
 /// Step 5 is meaningfully longer than its address-funding sibling
 /// because Type 18 builds a ~30s Halo 2 proof inside the FFI call.
 /// The footer explicitly calls that out so users don't think the
@@ -60,12 +64,12 @@ struct ShieldedFundFromAssetLockProgressSection: View {
     /// between the visually-brief "Broadcasting" step (2) and the
     /// "Waiting for InstantSend proof" step (3). Same value as the
     /// address-funding progress section.
-    private static let broadcastingWindow: TimeInterval = 2.0
+    nonisolated private static let broadcastingWindow: TimeInterval = 2.0
 
     /// Cutoff (seconds since `Broadcast`) where the Rust side falls
     /// back from InstantSend to ChainLock. Mirrors
     /// `AssetLockManager`'s 300 s IS wait.
-    private static let instantLockTimeout: TimeInterval = 300.0
+    nonisolated private static let instantLockTimeout: TimeInterval = 300.0
 
     init(controller: ShieldedFundFromAssetLockController) {
         self.controller = controller
@@ -87,8 +91,13 @@ struct ShieldedFundFromAssetLockProgressSection: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1.0)) { timeline in
-            let now = timeline.date
-            let step = currentStep(now: now)
+            let lock = activeLock
+            let lockStatusRaw = lock?.statusRaw
+            let step = Self.currentStep(
+                phase: controller.phase,
+                lockStatusRaw: lockStatusRaw,
+                secondsSinceLockUpdate: lock.map { timeline.date.timeIntervalSince($0.updatedAt) } ?? 0
+            )
             let isFailed = isFailed
             let errorMessage = failureMessage
 
@@ -97,9 +106,16 @@ struct ShieldedFundFromAssetLockProgressSection: View {
                     stepRow(
                         index: idx,
                         title: stepTitle(idx),
-                        state: stepState(idx, currentStep: step, isFailed: isFailed)
+                        state: Self.stepState(
+                            idx,
+                            currentStep: step,
+                            isFailed: isFailed,
+                            lockStatusRaw: lockStatusRaw
+                        )
                     )
-                    if idx == 5, let message = errorMessage {
+                    // Under the step that failed, which is step 1 when the
+                    // attempt was refused before any lock was stored.
+                    if idx == step, let message = errorMessage {
                         Text(message)
                             .font(.caption)
                             .foregroundColor(.red)
@@ -155,70 +171,47 @@ struct ShieldedFundFromAssetLockProgressSection: View {
 
     // MARK: - Step computation
 
-    private func currentStep(now: Date) -> Int {
-        switch controller.phase {
+    /// The step the progress points at, 1...5, or 6 once every step is
+    /// done. Pure over plain values so it is testable: `lockStatusRaw` is
+    /// the status of this operation's lock (`matchingLock`), `nil` when
+    /// none is stored, and `secondsSinceLockUpdate` is the time since that
+    /// lock's `updatedAt`.
+    ///
+    /// A failed attempt with no lock was refused before anything was
+    /// built (for example a second Max that Rust refuses), so its failure
+    /// sits on step 1 and no later step is claimed.
+    nonisolated static func currentStep(
+        phase: ShieldedFundFromAssetLockController.Phase,
+        lockStatusRaw: Int?,
+        secondsSinceLockUpdate: TimeInterval
+    ) -> Int {
+        switch phase {
         case .idle:
             return 1
         case .completed:
-            // No visible "shielded" step — the parent
-            // `ShieldedFundFromAssetLockProgressView` carries that
-            // state. Return 6 so every step row (1...5) is marked
-            // `.done`.
+            // No visible "shielded" step: the parent view carries that
+            // state. 6 marks every step row (1...5) as done.
             return 6
-        case .failed:
-            if let lock = activeLock {
-                switch lock.statusRaw {
-                case 0: return 1
-                case 1: return broadcastSubStep(for: lock, now: now)
-                case 2, 3: return 5
-                default: return 1
-                }
-            }
-            return 5
-        case .inFlight:
-            guard let lock = activeLock else { return 1 }
-            switch lock.statusRaw {
-            case 0:
-                return 1
+        case .inFlight, .failed:
+            guard let lockStatusRaw else { return 1 }
+            switch lockStatusRaw {
             case 1:
-                return broadcastSubStep(for: lock, now: now)
-            case 2:
-                // InstantSend-locked. Never went through step 4
-                // (CL fallback); it stays as `.skipped`.
-                return 5
-            case 3:
-                // ChainLock-locked. Step 3 (IS) is skipped (no IS
-                // proof was observed — either IS timed out and CL
-                // fallback ran, or `metadata.last_applied_chain_lock`
-                // built a CL proof directly).
+                return broadcastSubStep(secondsSinceLockUpdate: secondsSinceLockUpdate)
+            case 2, 3:
+                // InstantSend-locked (2) or ChainLock-locked (3): the
+                // finality lane that did not run shows as skipped.
                 return 5
             default:
+                // Built (0) and any other status.
                 return 1
             }
         }
     }
 
-    private func broadcastSubStep(for lock: PersistentAssetLock, now: Date) -> Int {
-        let elapsed = now.timeIntervalSince(lock.updatedAt)
-        if elapsed < Self.broadcastingWindow { return 2 }
-        if elapsed < Self.instantLockTimeout { return 3 }
+    nonisolated private static func broadcastSubStep(secondsSinceLockUpdate elapsed: TimeInterval) -> Int {
+        if elapsed < broadcastingWindow { return 2 }
+        if elapsed < instantLockTimeout { return 3 }
         return 4
-    }
-
-    /// True when step 4 should appear "skipped" — the lock came back
-    /// InstantSend-locked (statusRaw == 2) so the CL fallback was
-    /// never needed.
-    private var step4WasSkipped: Bool {
-        guard let lock = activeLock else { return false }
-        return lock.statusRaw == 2
-    }
-
-    /// True when step 3 should appear "skipped" — symmetric to
-    /// `step4WasSkipped`. Same semantics as the address-funding
-    /// progress section.
-    private var step3WasSkipped: Bool {
-        guard let lock = activeLock else { return false }
-        return lock.statusRaw != 2
     }
 
     private var isFailed: Bool {
@@ -244,16 +237,24 @@ struct ShieldedFundFromAssetLockProgressSection: View {
 
     enum StepState { case done, active, pending, skipped, failed }
 
-    private func stepState(_ idx: Int, currentStep: Int, isFailed: Bool) -> StepState {
+    /// The state of step `idx` given `currentStep`. Exactly one of steps
+    /// 3 and 4 is skipped once a lock passed them: an InstantSend-locked
+    /// lock (2) never needed the ChainLock fallback (4), any other never
+    /// observed an InstantSend proof (3). Same lanes as the
+    /// address-funding progress section.
+    nonisolated static func stepState(
+        _ idx: Int,
+        currentStep: Int,
+        isFailed: Bool,
+        lockStatusRaw: Int?
+    ) -> StepState {
         if isFailed && idx == currentStep {
             return .failed
         }
         if idx < currentStep {
-            if idx == 3 && step3WasSkipped {
-                return .skipped
-            }
-            if idx == 4 && step4WasSkipped {
-                return .skipped
+            if let lockStatusRaw {
+                if idx == 3 && lockStatusRaw != 2 { return .skipped }
+                if idx == 4 && lockStatusRaw == 2 { return .skipped }
             }
             return .done
         }

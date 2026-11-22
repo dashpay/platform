@@ -128,6 +128,10 @@ struct ShieldedFundFromAssetLockView: View {
 
     @State private var submitError: SubmitError? = nil
     @State private var activeController: ShieldedFundFromAssetLockController? = nil
+    /// `activeController.phase`, mirrored by `.onReceive` so the terminal
+    /// section and the Cancel button re-render when the attempt ends: the
+    /// controller itself sits in `@State`, which does not observe it.
+    @State private var activePhase: ShieldedFundFromAssetLockController.Phase? = nil
 
     /// Platform-branch submit lifecycle. The Platform path does NOT
     /// go through the asset-lock controller/coordinator — it's a
@@ -158,6 +162,7 @@ struct ShieldedFundFromAssetLockView: View {
                 if let controller = activeController {
                     // Core asset-lock flow in flight (Type 18).
                     ShieldedFundFromAssetLockProgressSection(controller: controller)
+                        .onReceive(controller.$phase) { activePhase = $0 }
                     progressTerminalSection(controller: controller)
                 } else if platformShieldPhase != .idle {
                     // Platform → pool flow in flight / terminal (Type
@@ -207,7 +212,7 @@ struct ShieldedFundFromAssetLockView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }
                         .disabled(
-                            activeController?.phase == .inFlight
+                            activePhase == .inFlight
                                 || platformShieldPhase == .inFlight
                         )
                 }
@@ -220,6 +225,9 @@ struct ShieldedFundFromAssetLockView: View {
                 )
             }
             .onAppear(perform: autoSelectDefaults)
+            .onChange(of: platformState.currentNetwork, initial: true) { _, network in
+                if !Self.isNewMaxAllowed(on: network) { drainMax = false }
+            }
         }
     }
 
@@ -269,13 +277,19 @@ struct ShieldedFundFromAssetLockView: View {
                 }
             }
             Toggle("Max (everything at this account index)", isOn: $drainMax)
-                .disabled(activeController != nil)
+                .disabled(activeController != nil || !isNewMaxAllowed)
                 .accessibilityIdentifier("shieldFromCore.maxToggle")
                 .onChange(of: drainMax) { _, _ in drainQuote = nil }
         } header: {
             Text("Core Source")
         } footer: {
-            if drainMax {
+            if !isNewMaxAllowed {
+                Text(
+                    "The selected Core account's UTXOs are locked into an asset lock; "
+                        + "the locked DASH becomes shielded credits on the destination "
+                        + "Orchard address. " + Self.maxUnavailableOnMainnetText
+                )
+            } else if drainMax {
                 Text(
                     "Max sweeps account index \(drainFundingAccountIndex): the BIP44 and BIP32 "
                         + "accounts at that index together with every DashPay receiving account. "
@@ -299,6 +313,23 @@ struct ShieldedFundFromAssetLockView: View {
     private var drainFundingAccountIndex: UInt32 {
         fundingCoreAccountIndex ?? 0
     }
+
+    /// Whether a NEW Max may start on `network`. Not on mainnet until
+    /// #5580 is fixed: Rust can record a drain as completed on an
+    /// unauthenticated "already consumed" report. Recovery of existing
+    /// Max transfers (`UnfinishedWalletDrainsList`) stays on every network.
+    nonisolated static func isNewMaxAllowed(on network: Network) -> Bool {
+        network != .mainnet
+    }
+
+    private var isNewMaxAllowed: Bool {
+        Self.isNewMaxAllowed(on: platformState.currentNetwork)
+    }
+
+    private static let maxUnavailableOnMainnetText =
+        "Max is not available on mainnet until issue #5580 is fixed: the wallet could record "
+            + "a Max transfer as finished from an unverified \"already consumed\" report. "
+            + "Unfinished Max transfers can still be resumed from the wallet screen."
 
     /// Segmented Core/Platform source toggle (fresh-build flow only).
     /// Switching it re-renders the funding sections below and flips
@@ -655,14 +686,18 @@ struct ShieldedFundFromAssetLockView: View {
             } header: {
                 Text("Resuming")
             } footer: {
+                // True at every resumable status, Built included: Rust
+                // rebroadcasts or waits for a proof first when it has to.
                 if lockBoundRecipient != nil {
                     Text(
-                        "The asset lock was already built and reached a usable proof state. "
-                            + "Resume to shield it to its recorded recipient."
+                        "The asset lock was already built. Resuming finishes what is left "
+                            + "(broadcast and the finality proof if still needed, then the shield) "
+                            + "and pays its recorded recipient."
                     )
                 } else {
                     Text(
-                        "The asset lock was already built and reached a usable proof state. "
+                        "The asset lock was already built. Resuming finishes what is left "
+                            + "(broadcast and the finality proof if still needed, then the shield). "
                             + "Pick a recipient to complete the funding."
                     )
                 }
@@ -670,13 +705,14 @@ struct ShieldedFundFromAssetLockView: View {
         }
     }
 
-    /// Inline terminal section that follows the controller's phase.
+    /// Inline terminal section that follows the controller's phase (read
+    /// from `activePhase`, which re-renders this view when it changes).
     /// Same idea as the address-funding sibling's `progressTerminalSection`.
     @ViewBuilder
     private func progressTerminalSection(
         controller: ShieldedFundFromAssetLockController
     ) -> some View {
-        switch controller.phase {
+        switch activePhase {
         case .completed:
             Section {
                 VStack(alignment: .leading, spacing: 8) {
@@ -727,7 +763,7 @@ struct ShieldedFundFromAssetLockView: View {
                     .padding(.top, 4)
                 }
             }
-        default:
+        case .idle, .inFlight, nil:
             EmptyView()
         }
     }
@@ -848,6 +884,7 @@ struct ShieldedFundFromAssetLockView: View {
         ) {
         case .started(let controller):
             activeController = controller
+            activePhase = controller.phase
         case .blockedByOtherWalletFunding(let blocker):
             submitError = SubmitError(
                 message: "Another shielded funding is already in progress on this wallet "
@@ -867,6 +904,14 @@ struct ShieldedFundFromAssetLockView: View {
     /// the estimate. The own address is read here, at submit, so neither a
     /// cached recipient nor the override text can be paid.
     private func submitDrainMax() {
+        // Second boundary behind the disabled toggle: nothing is stored or
+        // called for a new Max on mainnet.
+        guard isNewMaxAllowed else {
+            submitError = SubmitError(
+                message: "Nothing was sent. " + Self.maxUnavailableOnMainnetText
+            )
+            return
+        }
         guard let quote = drainQuote,
               quote.matches(walletId: wallet.walletId, fundingAccountIndex: drainFundingAccountIndex),
               quote.preview.status != .insufficientFunds
@@ -896,6 +941,7 @@ struct ShieldedFundFromAssetLockView: View {
         ) {
         case .started(let controller):
             activeController = controller
+            activePhase = controller.phase
         case .blockedByOtherWalletFunding(let blocker):
             submitError = SubmitError(
                 message: "Another shielded funding is already in progress on this wallet "

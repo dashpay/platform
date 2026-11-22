@@ -5,7 +5,8 @@ import SwiftDashSDK
 /// Tests the Swift side of Core-to-shielded Max transfers: the durable
 /// operation-id marker, the rule that decides when a marker is forgotten,
 /// the row action (resume only by a known outpoint), the progress lock
-/// match, and the filter that keeps one asset lock off two resume paths.
+/// match and steps, the filter that keeps one asset lock off two resume
+/// paths, and the rule that keeps a new Max off mainnet.
 final class WalletDrainRecoveryTests: XCTestCase {
 
     private var directory: URL!
@@ -325,5 +326,109 @@ final class WalletDrainRecoveryTests: XCTestCase {
                 markedOperationIds: [UUID()]
             )
         )
+    }
+
+    private func offered(
+        fundingType: Int = 5,
+        status: Int,
+        operationId: Data?,
+        marked: Set<UUID> = []
+    ) -> Bool {
+        PendingPlatformFundFromAssetLocksList.isOfferedForResume(
+            fundingTypeRaw: fundingType,
+            statusRaw: status,
+            operationId: operationId,
+            markedOperationIds: marked
+        )
+    }
+
+    func testShouldOfferAMarkerlessBuiltDrainCheckpoint() {
+        XCTAssertTrue(offered(status: 0, operationId: bytes(UUID()), marked: [UUID()]))
+    }
+
+    func testShouldHideABuiltDrainCheckpointThatHasAMarker() {
+        let id = UUID()
+        XCTAssertFalse(offered(status: 0, operationId: bytes(id), marked: [id]))
+    }
+
+    func testShouldHideAnOrdinaryBuiltShieldedLock() {
+        XCTAssertFalse(offered(status: 0, operationId: nil))
+        XCTAssertFalse(offered(status: 0, operationId: Data(repeating: 0x01, count: 15)))
+    }
+
+    func testShouldHideABuiltAddressTopUpEvenWithAnOperationId() {
+        XCTAssertFalse(offered(fundingType: 4, status: 0, operationId: bytes(UUID())))
+    }
+
+    func testShouldKeepTheStatusRuleForLocksPastBuilt() {
+        XCTAssertTrue(offered(status: 2, operationId: nil))
+        XCTAssertTrue(offered(fundingType: 4, status: 1, operationId: nil))
+        XCTAssertTrue(offered(status: 5, operationId: bytes(UUID())))
+        XCTAssertFalse(offered(status: 4, operationId: nil))
+        XCTAssertFalse(offered(fundingType: 2, status: 2, operationId: nil))
+        let id = UUID()
+        XCTAssertFalse(offered(status: 2, operationId: bytes(id), marked: [id]))
+    }
+
+    // MARK: - Progress steps
+
+    private typealias Progress = ShieldedFundFromAssetLockProgressSection
+
+    private func steps(
+        _ phase: ShieldedFundFromAssetLockController.Phase,
+        lockStatusRaw: Int?,
+        seconds: TimeInterval = 0
+    ) -> [Progress.StepState] {
+        let step = Progress.currentStep(
+            phase: phase,
+            lockStatusRaw: lockStatusRaw,
+            secondsSinceLockUpdate: seconds
+        )
+        let isFailed: Bool
+        if case .failed = phase { isFailed = true } else { isFailed = false }
+        return (1...5).map {
+            Progress.stepState($0, currentStep: step, isFailed: isFailed, lockStatusRaw: lockStatusRaw)
+        }
+    }
+
+    func testShouldFailOnStepOneWhenAFailedAttemptHasNoLock() {
+        XCTAssertEqual(
+            Progress.currentStep(phase: .failed("refused"), lockStatusRaw: nil, secondsSinceLockUpdate: 0),
+            1
+        )
+        XCTAssertEqual(
+            steps(.failed("refused"), lockStatusRaw: nil),
+            [.failed, .pending, .pending, .pending, .pending]
+        )
+    }
+
+    func testShouldFailOnTheStepTheLockReached() {
+        XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 0), [.failed, .pending, .pending, .pending, .pending])
+        XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 1, seconds: 10), [.done, .done, .failed, .pending, .pending])
+        XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 2), [.done, .done, .done, .skipped, .failed])
+        XCTAssertEqual(steps(.failed("x"), lockStatusRaw: 3), [.done, .done, .skipped, .done, .failed])
+    }
+
+    func testShouldFollowTheLockWhileInFlight() {
+        XCTAssertEqual(steps(.inFlight, lockStatusRaw: nil), [.active, .pending, .pending, .pending, .pending])
+        XCTAssertEqual(steps(.inFlight, lockStatusRaw: 0), [.active, .pending, .pending, .pending, .pending])
+        XCTAssertEqual(steps(.inFlight, lockStatusRaw: 1, seconds: 1), [.done, .active, .pending, .pending, .pending])
+        XCTAssertEqual(steps(.inFlight, lockStatusRaw: 1, seconds: 10), [.done, .done, .active, .pending, .pending])
+        XCTAssertEqual(steps(.inFlight, lockStatusRaw: 1, seconds: 400), [.done, .done, .skipped, .active, .pending])
+        XCTAssertEqual(steps(.inFlight, lockStatusRaw: 2), [.done, .done, .done, .skipped, .active])
+        XCTAssertEqual(steps(.inFlight, lockStatusRaw: 3), [.done, .done, .skipped, .done, .active])
+    }
+
+    func testShouldMarkEveryStepDoneWhenCompleted() {
+        XCTAssertEqual(steps(.completed, lockStatusRaw: nil), [.done, .done, .done, .done, .done])
+        XCTAssertEqual(steps(.completed, lockStatusRaw: 2), [.done, .done, .done, .skipped, .done])
+        XCTAssertEqual(steps(.completed, lockStatusRaw: 3), [.done, .done, .skipped, .done, .done])
+    }
+
+    // MARK: - Mainnet
+
+    func testShouldRefuseANewMaxOnMainnetOnly() {
+        XCTAssertFalse(ShieldedFundFromAssetLockView.isNewMaxAllowed(on: .mainnet))
+        XCTAssertTrue(ShieldedFundFromAssetLockView.isNewMaxAllowed(on: .testnet))
     }
 }
