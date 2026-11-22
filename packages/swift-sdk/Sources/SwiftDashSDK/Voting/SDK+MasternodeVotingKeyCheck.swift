@@ -13,7 +13,10 @@ import DashSDKFFI
 /// proves it (``SDK/checkMasternodeVotingKey(proTxHash:votingAddress:)``).
 public enum MasternodeVotingKeyCheck: Equatable, Sendable {
     /// The masternode's voter identity holds an enabled voting key for this
-    /// address: the key can vote. Store it as checked.
+    /// address, so the key can vote, apart from one history Platform's state
+    /// cannot rule out (rs-sdk's `VotingKeyCheck`: a masternode that moved its
+    /// voting address away and back before protocol version 15). Store it as
+    /// checked.
     case valid
     /// Platform proves the key cannot vote for the masternode: the
     /// pro_tx_hash is not a masternode, the key is not its voting key, or

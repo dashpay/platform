@@ -459,6 +459,18 @@ struct LoadIdentityView: View {
                     if case .invalid(let reason) = check {
                         let text = "The voting key does not belong to masternode \(validIdData.toHexString()), so the identity was not saved: \(reason)"
                         await MainActor.run {
+                            // Nothing entered is stored. If this device
+                            // already holds exactly this key for the
+                            // identity, the refusal is about that stored key
+                            // too, so it is recorded on the row and the
+                            // picker stops offering it.
+                            Self.recordRefusalOfStoredVotingKey(
+                                check,
+                                enteredKey: votingKeyData,
+                                identityId: validIdData,
+                                network: network,
+                                in: modelContext
+                            )
                             errorMessage = text
                             isLoading = false
                             loadStartTime = nil
@@ -697,13 +709,22 @@ struct LoadIdentityView: View {
                         }
                     }
                     var enteredVotingKeyStored = false
+                    var keptEarlierVotingKeyCheck = false
                     if let identifier = storeSlot(capturedVotingKey, .voting, named: "voting") {
                         enteredVotingKeyStored = true
                         row.votingPrivateKeyIdentifier = identifier
                         // The slot holds the entered key, so the check made
                         // of that key is the row's. A key kept in its place
-                        // keeps its own check.
-                        row.votingKeyCheck = capturedVotingKeyCheck
+                        // keeps its own check. A check that could not run
+                        // does not erase what Platform proved earlier about
+                        // the same key (it was already stored, unchanged).
+                        let sameKeyAsBefore = !storedKeys.contains("voting")
+                        if case .undetermined = capturedVotingKeyCheck, sameKeyAsBefore,
+                           Self.isDecisive(row.votingKeyCheck) {
+                            keptEarlierVotingKeyCheck = true
+                        } else {
+                            row.votingKeyCheck = capturedVotingKeyCheck
+                        }
                     }
                     if let identifier = storeSlot(capturedOwnerKey, .owner, named: "owner") {
                         row.ownerPrivateKeyIdentifier = identifier
@@ -735,7 +756,8 @@ struct LoadIdentityView: View {
                     // be asked about it: said in place of the plain success.
                     let uncheckedNote = Self.uncheckedVotingKeyNote(
                         capturedVotingKeyCheck,
-                        stored: enteredVotingKeyStored
+                        stored: enteredVotingKeyStored,
+                        keptEarlierCheck: keptEarlierVotingKeyCheck
                     )
                     if unstoredKeys.isEmpty && conflictingKeys.isEmpty && uncheckedNote == nil {
                         showSuccess = true
@@ -960,6 +982,9 @@ struct LoadIdentityView: View {
         // including roles stored by the load itself, so a key changed in
         // another window while the dialog was open is not reported as done.
         var notInPlace: [String] = []
+        // Whether the entered voting key is in its slot now, stored by the
+        // load itself or by this replacement.
+        var enteredVotingKeyInPlace = false
         for (keyType, digest) in pending.enteredKeyDigests.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
             let inPlace: Bool
             if case .success(let stored?) = keychain.readSpecialKey(identityId: pending.identityId, keyType: keyType) {
@@ -967,6 +992,7 @@ struct LoadIdentityView: View {
             } else {
                 inPlace = false
             }
+            if keyType == .voting { enteredVotingKeyInPlace = inPlace }
             let handled = changed.contains(keyType.rawValue) || kept.contains(keyType.rawValue)
                 || removed.contains(keyType.rawValue) || unknown.contains(keyType.rawValue)
                 || notChosen.contains(keyType.rawValue)
@@ -981,7 +1007,9 @@ struct LoadIdentityView: View {
         }
         let uncheckedNote = Self.uncheckedVotingKeyNote(
             pending.votingKeyCheck,
-            stored: replaced.contains(SpecialKeyType.voting.rawValue)
+            stored: enteredVotingKeyInPlace,
+            keptEarlierCheck: !replaced.contains(SpecialKeyType.voting.rawValue)
+                && Self.isDecisive(row.votingKeyCheck)
         )
         if let uncheckedNote {
             parts.append(uncheckedNote)
@@ -1000,9 +1028,50 @@ struct LoadIdentityView: View {
     /// What the load reports when the voting key it stored could not be
     /// checked against Platform; `nil` when it was checked, or when the
     /// entered key did not end up in the voting slot.
-    private static func uncheckedVotingKeyNote(_ check: MasternodeVotingKeyCheck?, stored: Bool) -> String? {
+    private static func uncheckedVotingKeyNote(
+        _ check: MasternodeVotingKeyCheck?,
+        stored: Bool,
+        keptEarlierCheck: Bool
+    ) -> String? {
         guard stored, case .undetermined(let reason) = check else { return nil }
+        if keptEarlierCheck {
+            return reason + " The result of its earlier check is kept."
+        }
         return reason + " It is checked again when you pick this identity to vote."
+    }
+
+    /// Whether `check` is something Platform proved (valid or invalid), as
+    /// opposed to never checked or not checkable.
+    private static func isDecisive(_ check: MasternodeVotingKeyCheck?) -> Bool {
+        switch check {
+        case .valid, .invalid: return true
+        case .undetermined, nil: return false
+        }
+    }
+
+    /// Records a refused voting key on the identity's row when this device
+    /// already stores exactly that key for it on `network`. A refusal of a
+    /// different key leaves the stored key's verdict alone.
+    @MainActor
+    private static func recordRefusalOfStoredVotingKey(
+        _ check: MasternodeVotingKeyCheck,
+        enteredKey: Data?,
+        identityId: Data,
+        network: Network,
+        in modelContext: ModelContext
+    ) {
+        guard let enteredKey,
+              let row = PersistentIdentity.fetch(in: modelContext, identityId: identityId),
+              row.network == network, row.votingPrivateKeyIdentifier != nil,
+              case .success(let stored?) = KeychainManager.shared.readSpecialKey(
+                  identityId: identityId,
+                  keyType: .voting
+              ),
+              Data(SHA256.hash(data: stored)) == Data(SHA256.hash(data: enteredKey)) else {
+            return
+        }
+        row.votingKeyCheck = check
+        try? modelContext.save()
     }
 
     /// Bring `identity`'s public-key rows in line with the keys fetched from

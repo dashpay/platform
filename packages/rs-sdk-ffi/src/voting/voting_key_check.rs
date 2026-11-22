@@ -24,8 +24,9 @@ use std::ffi::CString;
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DashSDKVotingKeyVerdict {
-    /// The key can vote for the masternode: Platform holds an enabled voting key for this
-    /// address on the masternode's voter identity. The host stores the key as checked.
+    /// Platform holds an enabled voting key for this address on the masternode's voter
+    /// identity, so the key can vote for it, apart from the one history rs-sdk's
+    /// `VotingKeyCheck` describes. The host stores the key as checked.
     Valid = 0,
     /// Platform proves the key cannot vote for the masternode. The host refuses the key.
     Invalid = 1,
@@ -139,7 +140,9 @@ fn verdict_and_message(check: VotingKeyCheck) -> (DashSDKVotingKeyVerdict, Optio
 
 /// Why a check could not tell, phrased for the host.
 fn undetermined_message(error: &Error) -> String {
-    let reason = error.to_string();
+    // A diagnostic can carry an interior NUL (a CBOR dump); escaped, the reason still fits in
+    // a C string, so the verdict stays Undetermined instead of becoming an error.
+    let reason = error.to_string().replace('\0', "\\0");
     format!(
         "The voting key could not be checked against Platform: {}.",
         reason.trim().trim_end_matches('.')
@@ -274,6 +277,15 @@ mod tests {
         assert_eq!(verdict, DashSDKVotingKeyVerdict::Undetermined);
         let message = message.expect("a reason");
         assert!(message.contains("connection reset"), "{message}");
+
+        // An interior NUL in a diagnostic still yields Undetermined with a C string.
+        let (verdict, message) = verdict_and_message(VotingKeyCheck::Undetermined(Box::new(
+            Error::Generic("cbor \0 dump".to_string()),
+        )));
+        assert_eq!(verdict, DashSDKVotingKeyVerdict::Undetermined);
+        let message = message.expect("a reason");
+        assert!(CString::new(message.clone()).is_ok(), "{message}");
+        assert!(message.contains("cbor \\0 dump"), "{message}");
         assert!(!message.contains(".."), "message ends twice: {message}");
         assert!(
             !message.contains("  "),

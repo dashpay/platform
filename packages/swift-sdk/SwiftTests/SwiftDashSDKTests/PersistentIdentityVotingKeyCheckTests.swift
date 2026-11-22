@@ -27,9 +27,13 @@ final class PersistentIdentityVotingKeyCheckTests: XCTestCase {
         ] {
             identity.votingKeyCheck = check
             try context.save()
+            // A fresh context reads the columns back from the store rather
+            // than returning the object this context already holds.
+            let fresh = ModelContext(container)
             let fetched = try XCTUnwrap(
-                context.fetch(FetchDescriptor<PersistentIdentity>()).first
+                fresh.fetch(FetchDescriptor<PersistentIdentity>()).first
             )
+            XCTAssertFalse(fetched === identity)
             XCTAssertEqual(fetched.votingKeyCheck, check)
         }
         XCTAssertNil(identity.votingKeyCheckMessage, "a valid check keeps no message")

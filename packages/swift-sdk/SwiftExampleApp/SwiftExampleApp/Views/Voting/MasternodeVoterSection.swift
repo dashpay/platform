@@ -225,6 +225,11 @@ struct MasternodeVoterSection: View {
             .sorted { $0.displayName < $1.displayName }
     }
 
+    /// The stored verdict of the picked identity's voting key.
+    private var selectedVotingKeyCheckRaw: String? {
+        votingIdentities.first { $0.identityId == selectedIdentityId }?.votingKeyCheckRaw
+    }
+
     var body: some View {
         Section {
             storedKeyRows
@@ -247,6 +252,10 @@ struct MasternodeVoterSection: View {
         // the id list compares equal; re-check the selection.
         .onChange(of: appState.currentNetwork) { _, _ in selectDefaultIfNeeded() }
         .onChange(of: selectedIdentityId) { _, _ in publish() }
+        // The picked row's verdict can change while the sheet is open (this
+        // section's own check, or another window loading the identity again):
+        // publish again so the sheet's voter follows it.
+        .onChange(of: selectedVotingKeyCheckRaw) { _, _ in publish() }
         // Once per pick: a key never checked, or not checked last time, is
         // checked when its identity is picked.
         .task(id: selectedIdentityId) { await checkSelectedVotingKeyIfNeeded() }
@@ -400,23 +409,37 @@ struct MasternodeVoterSection: View {
             if checkingIdentityId == identityId { checkingIdentityId = nil }
         }
         let check: MasternodeVotingKeyCheck
+        let signer = KeychainSigner(modelContainer: modelContext.container, network: network)
+        let checkedAddress: Data
         do {
-            let signer = KeychainSigner(modelContainer: modelContext.container, network: network)
-            let votingAddress = try await signer.storedMasternodeVotingAddress(identityId: identityId)
+            checkedAddress = try await signer.storedMasternodeVotingAddress(identityId: identityId)
             check = try await sdk.checkMasternodeVotingKey(
                 proTxHash: MasternodeVoter.wireOrderProTxHash(identityId: identityId),
-                votingAddress: votingAddress
+                votingAddress: checkedAddress
             )
         } catch {
             // Nothing was learned about the key; the row is left as it was.
+            guard !Task.isCancelled else { return }
             checkFailure = (identityId, "The voting key could not be checked: \(error.localizedDescription)")
             return
         }
+        // A superseded check (the pick changed, then maybe changed back, so a
+        // newer check of the same identity runs) is not recorded: the query
+        // resumes after cancellation and could finish out of order.
+        guard !Task.isCancelled else { return }
         // An answer from another network, or for a row that is gone or no
         // longer holds a voting key, is not recorded.
         guard appState.sdk === sdk, appState.currentNetwork == network,
               let row = PersistentIdentity.fetch(in: modelContext, identityId: identityId),
               row.network == network, row.votingPrivateKeyIdentifier != nil else {
+            return
+        }
+        // The verdict belongs to the key that was checked. The Keychain
+        // identifier names the identity and role, not the key, so the stored
+        // key is read again: if another window replaced it during the check,
+        // this answer is about a key that is gone and is dropped.
+        guard let storedAddress = try? await signer.storedMasternodeVotingAddress(identityId: identityId),
+              storedAddress == checkedAddress, !Task.isCancelled else {
             return
         }
         row.votingKeyCheck = check

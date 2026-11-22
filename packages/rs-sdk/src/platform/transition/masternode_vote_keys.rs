@@ -157,17 +157,27 @@ pub fn is_voting_key_failure(error: &Error) -> bool {
     }
 }
 
-/// Whether a voting key can vote for a masternode, as Platform's state proves it.
+/// What Platform's state proves about a masternode voting key.
 ///
 /// Platform creates the voter identity `voter_identity_id(pro_tx_hash, voting_address)` only
 /// for a masternode in its masternode list with that registered voting address, gives it the
 /// voting key, and disables that key when the masternode is removed or its voting address
-/// changes. So one proof-verified fetch of that identity answers the question without the
-/// masternode list: no Core or SPV sync is needed.
+/// changes. So one proof-verified fetch of that identity, with no Core or SPV sync, proves
+/// whether Platform holds an enabled voter key for the pair.
+///
+/// That is all it proves: the fetch does not read the masternode list, which a vote is checked
+/// against. One history makes the two differ. Before protocol version 15
+/// (`update_voter_identity_v0`), a masternode that moved its voting address from A to B and
+/// back to A was left with A's key disabled and B's key enabled. B then reads as
+/// [`VotingKeyCheck::Valid`], but a vote with it is refused with
+/// `MasternodeIncorrectVotingAddressError`, since the list names A; A reads as
+/// [`VotingKeyCheck::Invalid`] and cannot vote either. Telling B apart needs the registered
+/// voting address from Core.
 #[derive(Debug)]
 pub enum VotingKeyCheck {
-    /// The voter identity exists and holds an enabled voting key for this address: the key
-    /// can vote for this masternode. A host stores it as checked.
+    /// The voter identity exists and holds an enabled voting key for this address. Apart from
+    /// the history described on [`VotingKeyCheck`], the key can vote for this masternode. A
+    /// host stores it as checked.
     Valid {
         /// The voter identity that holds the key.
         voter_identity: Identifier,
@@ -185,8 +195,10 @@ pub enum VotingKeyCheck {
 /// The verdict for the voter identity `fetched` from Platform at
 /// `voter_identity_id(pro_tx_hash, voting_address)`: `None` when Platform proved it absent.
 ///
-/// Kept apart from the fetch so the rule can be tested without a network.
-pub fn voting_key_check_from_voter_identity(
+/// Kept apart from the fetch so the rule can be tested without a network. Private because it
+/// trusts that `fetched` is the identity at that id, which only the proved fetch in
+/// [`check_masternode_voting_key`] guarantees.
+fn voting_key_check_from_voter_identity(
     pro_tx_hash: ProTxHash,
     voting_address: &[u8; 20],
     fetched: Option<&Identity>,
@@ -206,8 +218,9 @@ pub fn voting_key_check_from_voter_identity(
     }
 }
 
-/// Checks whether the voting key with `voting_address` can vote for the masternode
-/// `pro_tx_hash`, by one proof-verified fetch of its voter identity (see [`VotingKeyCheck`]).
+/// Checks whether Platform holds an enabled voter key with `voting_address` for the masternode
+/// `pro_tx_hash`, by one proof-verified fetch of its voter identity. See [`VotingKeyCheck`] for
+/// what that does and does not prove.
 ///
 /// A masternode registered, or a voting key changed, in the last few blocks reads as
 /// [`VotingKeyCheck::Invalid`] until Platform processes the masternode list update.
@@ -555,6 +568,29 @@ mod tests {
             voting_key_check_from_voter_identity(pro_tx_hash(), &VOTING_ADDRESS, Some(&identity)),
             Err(VotingKeyProblem::NoUsableVotingKey {
                 voter_identity: voter_identity_id(pro_tx_hash(), &VOTING_ADDRESS),
+            })
+        );
+    }
+
+    /// The history `update_voter_identity_v0` leaves after a masternode moves its voting
+    /// address from A to B and back to A: A's key disabled, B's enabled. The proof can only
+    /// say so: B reads as valid although the masternode list names A (see [`VotingKeyCheck`]),
+    /// and A reads as invalid. If this changes, update the documented limit.
+    #[test]
+    fn should_report_what_a_pre_v15_return_to_a_voting_address_leaves_behind() {
+        let address_a = VOTING_ADDRESS;
+        let address_b = OTHER_ADDRESS;
+        let identity_a = voter_identity(pro_tx_hash(), address_a, Some(1_700_000_000));
+        let identity_b = voter_identity(pro_tx_hash(), address_b, None);
+
+        assert_eq!(
+            voting_key_check_from_voter_identity(pro_tx_hash(), &address_b, Some(&identity_b)),
+            Ok(voter_identity_id(pro_tx_hash(), &address_b))
+        );
+        assert_eq!(
+            voting_key_check_from_voter_identity(pro_tx_hash(), &address_a, Some(&identity_a)),
+            Err(VotingKeyProblem::NoUsableVotingKey {
+                voter_identity: voter_identity_id(pro_tx_hash(), &address_a),
             })
         );
     }
