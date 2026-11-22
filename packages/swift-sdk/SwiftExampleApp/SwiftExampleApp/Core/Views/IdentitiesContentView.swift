@@ -514,6 +514,22 @@ struct IdentitiesContentView: View {
     private func removeIdentityLocally(_ identity: PersistentIdentity) {
         let keychain = KeychainManager.shared
 
+        // Clear the special-key slots by identity id first, so a key stored
+        // without a row reference (a load whose save failed) goes too and a
+        // later load can store the key again. `deleteSpecialKey` treats an
+        // absent item as success, so `false` means the Keychain refused:
+        // then nothing else is removed and the operator can retry.
+        let uncleared = [SpecialKeyType.voting, .owner, .payout].filter { keyType in
+            !keychain.deleteSpecialKey(identityId: identity.identityId, keyType: keyType)
+        }
+        guard uncleared.isEmpty else {
+            let names = ListFormatter.localizedString(byJoining: uncleared.map(\.rawValue))
+            platformState.showError(
+                message: "The identity was not removed: the Keychain refused to delete its \(names) key. Unlock the device and try again."
+            )
+            return
+        }
+
         for publicKey in identity.publicKeys {
             if let identifier = publicKey.privateKeyKeychainIdentifier {
                 _ = keychain.deleteKeyData(identifier: identifier)
@@ -529,13 +545,6 @@ struct IdentitiesContentView: View {
         if let payoutIdentifier = identity.payoutPrivateKeyIdentifier {
             _ = keychain.deleteKeyData(identifier: payoutIdentifier)
         }
-        // Also clear the special-key slots by identity id, so a key stored
-        // without a row reference (a load whose save failed) goes too and a
-        // later load can store the key again.
-        for keyType in [SpecialKeyType.voting, .owner, .payout] {
-            _ = keychain.deleteSpecialKey(identityId: identity.identityId, keyType: keyType)
-        }
-
         modelContext.delete(identity)
         do {
             try modelContext.save()

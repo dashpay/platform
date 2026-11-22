@@ -1047,13 +1047,18 @@ extension KeychainSigner {
         case .failure(let error):
             throw Error.invalidVotingKey(message: error.localizedDescription)
         }
-        defer { privateKey.resetBytes(in: 0..<privateKey.count) }
-
-        let votingAddress = try Self.masternodeVotingAddress(privateKey: privateKey)
-        // The entry copies the key; the scope zeroes that copy on exit.
-        let entries = makeAdditionalSigningKeyEntries([
-            (publicKey: votingAddress, privateKey: privateKey),
-        ])
+        // Only the registry entry's copy lives through the vote; the read
+        // buffer is reset before the body runs.
+        let votingAddress: Data
+        let entries: [AdditionalSigningKeyEntry]
+        do {
+            defer { privateKey.resetBytes(in: 0..<privateKey.count) }
+            votingAddress = try Self.masternodeVotingAddress(privateKey: privateKey)
+            // The entry copies the key; the scope zeroes that copy on exit.
+            entries = makeAdditionalSigningKeyEntries([
+                (publicKey: votingAddress, privateKey: privateKey),
+            ])
+        }
         return try await withAdditionalSigningKeys(entries, isolation: isolation) {
             try await body(votingAddress)
         }
