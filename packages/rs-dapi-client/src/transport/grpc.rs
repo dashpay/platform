@@ -140,9 +140,10 @@ pub struct OlderQueryVersionRefusal<'a> {
 }
 
 /// Read `status` as a node refusing a query version older than the ones it serves (Drive's
-/// `QueryError::UnsupportedQueryVersion`): an UNKNOWN or INTERNAL status saying "unsupported
-/// version for query: {name}, currently supporting versions {min} to {max} on platform
-/// protocol {n}, given {given}", with `given` below `min`.
+/// `QueryError::UnsupportedQueryVersion`): an UNKNOWN status whose whole message is
+/// "unsupported version for query: {name}, currently supporting versions {min} to {max} on
+/// platform protocol {n}, given {given}", with `min` to `max` in order and `given` below
+/// `min`. A message that only resembles it is not read as one.
 ///
 /// The network has moved past that request version, so every node in step with it refuses
 /// the request the same way: the node is not at fault, and the caller must choose a newer
@@ -152,18 +153,21 @@ pub struct OlderQueryVersionRefusal<'a> {
 pub fn older_query_version_refusal(
     status: &dapi_grpc::tonic::Status,
 ) -> Option<OlderQueryVersionRefusal<'_>> {
-    use dapi_grpc::tonic::Code::{Internal, Unknown};
-    if !matches!(status.code(), Unknown | Internal) {
+    if status.code() != dapi_grpc::tonic::Code::Unknown {
         return None;
     }
-    let (_, rest) = status
+    let rest = status
         .message()
-        .split_once("unsupported version for query: ")?;
+        .strip_prefix("unsupported version for query: ")?;
     let (query, rest) = rest.split_once(", currently supporting versions ")?;
     let (min, rest) = rest.split_once(" to ")?;
-    let (_, given) = rest.rsplit_once(", given ")?;
-    let (min, given) = (min.parse::<u32>().ok()?, given.trim().parse::<u32>().ok()?);
-    (given < min).then_some(OlderQueryVersionRefusal { query, given })
+    let (max, rest) = rest.split_once(" on platform protocol ")?;
+    let (protocol, given) = rest.split_once(", given ")?;
+    let number = |text: &str| text.parse::<u32>().ok();
+    let (min, max, given) = (number(min)?, number(max)?, number(given)?);
+    number(protocol)?;
+    (!query.is_empty() && min <= max && given < min)
+        .then_some(OlderQueryVersionRefusal { query, given })
 }
 
 impl CanRetry for dapi_grpc::tonic::Status {

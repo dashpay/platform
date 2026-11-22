@@ -3187,6 +3187,15 @@ mod document_history {
                 .expect_err("V1 refuses the request too");
             assert!(matches!(&error, Error::InvalidRequest(_)), "{error:?}");
             assert_eq!(sent(&sdk, &malformed).await, 0);
+
+            // The same on a network already proven at the version that serves V1.
+            let latest = PlatformVersion::latest().protocol_version;
+            let at_latest = mock_sdk(latest, false, latest);
+            let error = DocumentHistory::fetch(&at_latest, malformed.clone())
+                .await
+                .expect_err("V1 refuses the request too");
+            assert!(matches!(&error, Error::InvalidRequest(_)), "{error:?}");
+            assert_eq!(sent(&at_latest, &malformed).await, 0);
         }
         assert_eq!(probes(&sdk).await, 0);
     }

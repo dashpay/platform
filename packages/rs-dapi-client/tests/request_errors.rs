@@ -8,7 +8,7 @@ use common::ScriptedRequest;
 use dapi_grpc::platform::v0::get_data_contracts_request::{self, GetDataContractsRequestV0};
 use dapi_grpc::platform::v0::GetDataContractsRequest;
 use dapi_grpc::tonic::{Code, Status};
-use rs_dapi_client::transport::{TransportError, TransportRequest};
+use rs_dapi_client::transport::{older_query_version_refusal, TransportError, TransportRequest};
 use rs_dapi_client::{
     Address, AddressList, CanRetry, DapiClient, DapiClientError, DapiRequestExecutor,
     RequestSettings,
@@ -121,8 +121,36 @@ fn should_retry_elsewhere_when_a_node_refuses_a_newer_query_version() {
          0 on platform protocol 14, given 1",
     )
     .can_retry());
-    // Not a version refusal the node wrote: the versions cannot be read.
-    assert!(Status::unknown("unsupported version for query: document_history").can_retry());
+}
+
+/// Only the whole message Drive writes is read as that refusal: one that resembles it says
+/// nothing about the network, and the request moves to the next node.
+#[test]
+fn should_retry_elsewhere_for_a_message_that_only_resembles_the_refusal() {
+    let refusal = "unsupported version for query: document_history, currently supporting \
+                   versions 1 to 1 on platform protocol 15, given 0";
+    assert!(older_query_version_refusal(&Status::unknown(refusal)).is_some());
+    for status in [
+        Status::unknown("unsupported version for query: document_history"),
+        Status::unknown(format!("storage: {refusal}")),
+        Status::internal(refusal),
+        Status::unknown(
+            "unsupported version for query: document_history, currently supporting versions 1 \
+             to 1, given 0",
+        ),
+        Status::unknown(
+            "unsupported version for query: document_history, currently supporting versions 2 \
+             to 1 on platform protocol 15, given 0",
+        ),
+        Status::unknown(
+            "unsupported version for query: , currently supporting versions 1 to 1 on platform \
+             protocol 15, given 0",
+        ),
+        Status::unknown(format!("{refusal} or so")),
+    ] {
+        assert!(older_query_version_refusal(&status).is_none(), "{status}");
+        assert!(status.can_retry(), "{status}");
+    }
 }
 
 /// Only a refusal of the request is final: a fault inside the node still bans it and moves

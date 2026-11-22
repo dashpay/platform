@@ -71,7 +71,7 @@ pub async fn fetch_document_history_with_lifecycle(
 /// network proven at 15 serves it, and an SDK that cannot learn the network's version, or
 /// is pinned below 15 on a network at 15, refuses it as before. Both versions are encoded
 /// from `query` after the version check, as every fetch is. A request refused as written
-/// is refused before the network is asked for its version.
+/// is refused before the network is asked for its version, whatever that version is.
 ///
 /// When a node refuses V0 as a query version it no longer serves, the network may have
 /// reached 15 since it was proven below it. The network is asked once more, past the probe
@@ -89,9 +89,14 @@ where
 {
     let settings = sdk.query_settings();
     let request = query.query(&settings)?;
-    let Some(requirement) = ProtocolRequirement::of_request(&request)
-        .filter(|requirement| settings.network_protocol_basis() < requirement.protocol_version)
-    else {
+    let requirement = ProtocolRequirement::of_request(&request)
+        .filter(|requirement| settings.network_protocol_basis() < requirement.protocol_version);
+    // A request refused as written is refused the same way whatever the network's version,
+    // before the network is asked for it: not with what that answer, or its failure, would
+    // say, and not by a node.
+    check_before_sending::<GetDocumentHistoryRequest, T>(&request, settings.protocol_version)?;
+    request_below_protocol_15(request)?;
+    let Some(requirement) = requirement else {
         return fetch_proved::<T, _>(sdk, query, request_settings).await;
     };
     let not_active = |feature: Option<&'static str>, cause: Option<Error>| {
@@ -102,10 +107,6 @@ where
             cause,
         )
     };
-    // A request refused as written is refused before the network is asked for its version,
-    // not with what that answer, or its failure, would say.
-    check_before_sending::<GetDocumentHistoryRequest, T>(&request, settings.protocol_version)?;
-    request_below_protocol_15(request)?;
     let proven_below = sdk
         .network_proven_below_with_settings(requirement.protocol_version, request_settings)
         .await
