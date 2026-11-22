@@ -191,9 +191,11 @@ impl From<SdkError> for WasmSdkError {
             ExecutionNotProved(msg) => {
                 Self::new(WasmSdkErrorKind::ExecutionNotProved, msg, None, false)
             }
+            // The SDK's own text: it says that a node may have received the transition
+            // and that the cause is only the last error.
             StateTransitionResultUnconfirmed(source) => Self::new(
                 WasmSdkErrorKind::Generic,
-                format!("state transition result is unconfirmed; reconcile before re-submitting: {source}"),
+                StateTransitionResultUnconfirmed(source).to_string(),
                 None,
                 false,
             ),
@@ -466,6 +468,12 @@ mod tests {
             let error = WasmSdkError::from(source);
             assert!(!error.is_retriable());
             assert!(error.message().contains("unconfirmed"));
+            assert!(error
+                .message()
+                .contains("a node accepted it or may have received it"));
+            assert!(error
+                .message()
+                .contains("last error: Invalid Proved Response error"));
             assert!(error
                 .message()
                 .contains("document result proof was invalid"));

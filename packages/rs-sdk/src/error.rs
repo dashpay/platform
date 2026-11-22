@@ -61,7 +61,12 @@ pub enum Error {
     ExecutionNotProved(String),
     /// A state transition may have been submitted but its outcome is unresolved.
     /// The cause is diagnostic, not permission to create a replacement operation.
-    #[error("state transition outcome is unconfirmed; reconcile the original operation before submitting a replacement: {0}")]
+    ///
+    /// The cause is the last error the submission or its result check ended on. It does
+    /// not have to be why the outcome is unknown: after an attempt that may have reached a
+    /// node, later attempts can all fail before connecting, and the last of them is the
+    /// cause.
+    #[error("state transition outcome is unconfirmed: a node accepted it or may have received it; reconcile the original operation before submitting a replacement; last error: {0}")]
     StateTransitionResultUnconfirmed(#[source] Box<Error>),
     /// DAPI client error, for example, connection error
     #[error("Dapi client error: {0}")]
