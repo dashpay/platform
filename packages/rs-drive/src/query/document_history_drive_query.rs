@@ -14,10 +14,12 @@ use dpp::data_contract::document_type::{
     DecodedValueBudget, DocumentPropertyType, DocumentTypeRef,
 };
 use dpp::document::lifecycle::DocumentLifecycleRecord;
+#[cfg(any(feature = "server", test))]
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
 use grovedb::{Element, PathQuery, Query, SizedQuery};
@@ -151,30 +153,8 @@ impl SerializedDocumentHistoryDriveQueryExecutionResult {
         document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
-        let entries = self
-            .entries
-            .into_iter()
-            .map(|entry| {
-                let document = Document::from_bytes_bounded(
-                    &entry.document_bytes,
-                    document_type,
-                    platform_version,
-                )?;
-                if document.id().as_slice() != document_id
-                    || document.revision().unwrap_or(1) != entry.revision
-                {
-                    return Err(corrupt("history revision does not match its key"));
-                }
-                Ok(DocumentHistoryEntry {
-                    time_ms: entry.time_ms,
-                    revision: entry.revision,
-                    document,
-                })
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
-        Ok(DocumentHistoryDriveQueryExecutionResult {
-            entries,
-            lifecycle: self.lifecycle,
+        self.into_documents_with_decoder(document_id, |bytes| {
+            Document::from_bytes_bounded(bytes, document_type, platform_version)
         })
     }
 
@@ -187,7 +167,9 @@ impl SerializedDocumentHistoryDriveQueryExecutionResult {
         budget: &mut DecodedValueBudget,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
-        self.into_documents_inner(document_id, document_type, Some(budget), platform_version)
+        self.into_documents_with_decoder(document_id, |bytes| {
+            Document::from_bytes_with_budget(bytes, document_type, budget, platform_version)
+        })
     }
 
     #[cfg(any(feature = "server", test))]
@@ -197,33 +179,21 @@ impl SerializedDocumentHistoryDriveQueryExecutionResult {
         document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
-        self.into_documents_inner(document_id, document_type, None, platform_version)
+        self.into_documents_with_decoder(document_id, |bytes| {
+            Document::from_bytes(bytes, document_type, platform_version)
+        })
     }
 
-    fn into_documents_inner(
+    fn into_documents_with_decoder(
         self,
         document_id: &[u8; 32],
-        document_type: DocumentTypeRef,
-        mut budget: Option<&mut DecodedValueBudget>,
-        platform_version: &PlatformVersion,
+        mut decode: impl FnMut(&[u8]) -> Result<Document, ProtocolError>,
     ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
         let entries = self
             .entries
             .into_iter()
             .map(|entry| {
-                let document = match budget.as_deref_mut() {
-                    Some(budget) => Document::from_bytes_with_budget(
-                        &entry.document_bytes,
-                        document_type,
-                        budget,
-                        platform_version,
-                    )?,
-                    None => Document::from_bytes(
-                        &entry.document_bytes,
-                        document_type,
-                        platform_version,
-                    )?,
-                };
+                let document = decode(&entry.document_bytes)?;
                 if document.id().as_slice() != document_id
                     || document.revision().unwrap_or(1) != entry.revision
                 {

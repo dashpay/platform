@@ -17,9 +17,7 @@ use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::v1::DataContractConfigGettersV1;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
-use crate::data_contract::document_type::accessors::{
-    DocumentTypeV0Getters, DocumentTypeV2Getters,
-};
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::{property_names, DocumentTypeRef};
 use crate::data_contract::DataContract;
 use crate::document::property_names::{CREATOR_ID, ID, OWNER_ID};
@@ -259,74 +257,118 @@ impl DocumentProperty {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BudgetMode {
+    /// Explicit shared cap charged for every decoded property node and array element.
+    Fixed { remaining: usize },
+    /// Encoded-size-proportional cap on decoded array elements (non-array property nodes
+    /// are already bounded 1:1 by the schema tree, so absent optional subtrees cannot
+    /// lend extra allowance to zero-width typed arrays).
+    Proportional { array_elements_remaining: usize },
+}
+
 /// Remaining budget of decoded [`Value`]s across one or more serialized
 /// property reads (a document, a private document payload, a removal record's
 /// kept fields, or a whole page of them).
 ///
-/// Each decoded property value — scalar, object map, array, or array element —
-/// consumes one unit before it is decoded. Exhausting the budget stops decoding
-/// with [`DataContractError::DecodedValueBudgetExceeded`] so a crafted payload
-/// or a protocol-version-14 schema with zero-width typed-array elements cannot
-/// expand a small byte slice into unbounded memory.
-///
-/// Callers without a specific cap should size the budget proportionally to the
-/// encoded input via [`Self::for_encoded_payload`] or
-/// [`Self::for_encoded_kept_fields`] rather than using a fixed ceiling, so
-/// legitimate pages carrying large non-zero-width typed arrays always fit while
-/// zero-width expansion remains bounded linearly in the encoded bytes.
+/// With [`Self::new`], each decoded property value — scalar, object map, array,
+/// or array element — consumes one unit from a single shared cap before it is
+/// decoded. With [`Self::for_encoded_bytes`] (and [`Self::for_encoded_payload`]
+/// / [`Self::for_encoded_kept_fields`]), array elements draw from a dedicated
+/// encoded-length allowance while non-array property nodes stay bounded 1:1 by
+/// the schema tree, so absent optional subtrees cannot expand zero-width array
+/// allowances and legitimate pages carrying large non-zero-width typed arrays
+/// always fit. Exhausting the budget stops decoding with
+/// [`DataContractError::DecodedValueBudgetExceeded`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DecodedValueBudget {
-    remaining: usize,
+    mode: BudgetMode,
 }
 
 impl DecodedValueBudget {
-    /// Creates a budget admitting at most `limit` decoded values.
+    /// Creates a fixed shared budget admitting at most `limit` decoded values.
     pub const fn new(limit: usize) -> Self {
-        Self { remaining: limit }
+        Self {
+            mode: BudgetMode::Fixed { remaining: limit },
+        }
     }
 
-    /// Creates a budget sized to an encoded payload of `encoded_len` bytes
-    /// under `document_type`: the number of declared property nodes plus
-    /// `encoded_len`.
+    /// Creates a proportional budget admitting at most `encoded_len` decoded
+    /// array elements, with non-array property nodes bounded by the schema tree.
     ///
     /// Every non-zero-width typed-array element consumes at least one encoded
-    /// byte and every non-array property node produces at most one value, so
-    /// any valid payload without zero-width typed-array elements stays within
-    /// this budget while keeping decoded values proportional to encoded size.
-    pub fn for_encoded_payload(encoded_len: usize, document_type: DocumentTypeRef) -> Self {
-        Self::new(count_property_nodes(document_type.properties()).saturating_add(encoded_len))
+    /// byte, so any valid payload without zero-width typed-array elements stays
+    /// within this budget while zero-width array expansion is strictly capped by
+    /// `encoded_len` in O(1) without walking the schema.
+    pub const fn for_encoded_bytes(encoded_len: usize) -> Self {
+        Self {
+            mode: BudgetMode::Proportional {
+                array_elements_remaining: encoded_len,
+            },
+        }
     }
 
-    /// Creates a budget sized to an encoded `kept_fields` slice of `encoded_len`
-    /// bytes on a removal record of `document_type`: the number of kept
-    /// property nodes (system properties plus kept document properties and
-    /// their nested members) plus `encoded_len`.
-    ///
-    /// Every non-zero-width typed-array element consumes at least one encoded
-    /// byte and every kept non-array property node produces at most one value,
-    /// so any valid removal record without zero-width typed-array elements
-    /// stays within this budget while keeping decoded values proportional to
-    /// encoded size.
-    pub fn for_encoded_kept_fields(encoded_len: usize, document_type: DocumentTypeRef) -> Self {
-        Self::new(count_kept_field_nodes(document_type).saturating_add(encoded_len))
+    /// Creates a proportional budget sized to an encoded payload of `encoded_len`
+    /// bytes under `document_type` (see [`Self::for_encoded_bytes`]).
+    pub fn for_encoded_payload(encoded_len: usize, _document_type: DocumentTypeRef) -> Self {
+        Self::for_encoded_bytes(encoded_len)
     }
 
-    /// How many decoded values remain in the budget.
+    /// Creates a proportional budget sized to an encoded `kept_fields` slice of
+    /// `encoded_len` bytes on a removal record of `document_type`
+    /// (see [`Self::for_encoded_bytes`]).
+    pub fn for_encoded_kept_fields(encoded_len: usize, _document_type: DocumentTypeRef) -> Self {
+        Self::for_encoded_bytes(encoded_len)
+    }
+
+    /// How many decoded values (for fixed budgets) or array elements (for
+    /// proportional budgets) remain.
     pub const fn remaining(&self) -> usize {
-        self.remaining
+        match self.mode {
+            BudgetMode::Fixed { remaining } => remaining,
+            BudgetMode::Proportional {
+                array_elements_remaining,
+            } => array_elements_remaining,
+        }
+    }
+
+    /// How many array elements remain in the budget.
+    pub(crate) const fn remaining_array_elements(&self) -> usize {
+        self.remaining()
     }
 
     /// Consumes `count` units from the budget, failing with
     /// [`DataContractError::DecodedValueBudgetExceeded`] when fewer remain.
     pub fn consume(&mut self, count: usize) -> Result<(), DataContractError> {
-        if count > self.remaining {
+        let remaining = match &mut self.mode {
+            BudgetMode::Fixed { remaining } => remaining,
+            BudgetMode::Proportional {
+                array_elements_remaining,
+            } => array_elements_remaining,
+        };
+        if count > *remaining {
             return Err(DataContractError::DecodedValueBudgetExceeded(format!(
-                "needed {count} more value(s), {} remaining",
-                self.remaining
+                "needed {count} more value(s), {remaining} remaining",
             )));
         }
-        self.remaining -= count;
+        *remaining -= count;
         Ok(())
+    }
+
+    /// Charges a non-array property node (scalar, object map, or array header).
+    /// Consumes `count` under [`Self::new`]; no-op under [`Self::for_encoded_bytes`]
+    /// because non-array property nodes are already bounded 1:1 by the schema tree.
+    pub(crate) fn consume_property(&mut self, count: usize) -> Result<(), DataContractError> {
+        match &mut self.mode {
+            BudgetMode::Fixed { .. } => self.consume(count),
+            BudgetMode::Proportional { .. } => Ok(()),
+        }
+    }
+
+    /// Charges `count` decoded array elements against either fixed or proportional
+    /// budgets.
+    pub(crate) fn consume_array_element(&mut self, count: usize) -> Result<(), DataContractError> {
+        self.consume(count)
     }
 
     /// Charges every value node inside an already-decoded [`Value`] (arrays,
@@ -365,41 +407,6 @@ fn count_value_nodes(root: &Value) -> usize {
             Value::Array(items) => stack.extend(items.iter()),
             Value::Map(entries) => stack.extend(entries.iter().map(|(_, value)| value)),
             _ => {}
-        }
-    }
-    count
-}
-
-/// Counts every property node declared by `properties`, recursively through
-/// nested objects.
-fn count_property_nodes(properties: &IndexMap<String, DocumentProperty>) -> usize {
-    let mut count = 0usize;
-    for property in properties.values() {
-        count = count.saturating_add(count_property_type_nodes(&property.property_type));
-    }
-    count
-}
-
-fn count_property_type_nodes(property_type: &DocumentPropertyType) -> usize {
-    match property_type {
-        DocumentPropertyType::Object(members) => {
-            1usize.saturating_add(count_property_nodes(members))
-        }
-        _ => 1,
-    }
-}
-
-/// Counts every property node reachable from `document_type`'s kept-fields list:
-/// one node for each kept system property, plus every declared property node
-/// inside each kept document property (recursively through nested objects).
-fn count_kept_field_nodes(document_type: DocumentTypeRef) -> usize {
-    let mut count = 0usize;
-    for path in document_type.moderator_deletion_kept_fields() {
-        match property_at_path(document_type.properties(), path) {
-            Some(property) => {
-                count = count.saturating_add(count_property_type_nodes(&property.property_type));
-            }
-            None => count = count.saturating_add(1),
         }
     }
     count
@@ -2827,7 +2834,17 @@ impl DocumentPropertyType {
         &self,
         buf: &mut BufReader<&[u8]>,
         required: bool,
+        budget: Option<&mut DecodedValueBudget>,
+    ) -> Result<(Option<Value>, bool), DataContractError> {
+        self.read_optionally_from_inner(buf, required, budget, false)
+    }
+
+    pub(super) fn read_optionally_from_inner(
+        &self,
+        buf: &mut BufReader<&[u8]>,
+        required: bool,
         mut budget: Option<&mut DecodedValueBudget>,
+        is_array_element: bool,
     ) -> Result<(Option<Value>, bool), DataContractError> {
         if !required {
             let marker = buf.read_u8().ok();
@@ -2838,7 +2855,11 @@ impl DocumentPropertyType {
             }
         }
         if let Some(budget) = budget.as_deref_mut() {
-            budget.consume(1)?;
+            if is_array_element {
+                budget.consume_array_element(1)?;
+            } else {
+                budget.consume_property(1)?;
+            }
         }
         match self {
             DocumentPropertyType::U128 => {
@@ -3060,7 +3081,7 @@ impl DocumentPropertyType {
                 let mut items = Vec::new();
                 for _ in 0..count {
                     if let Some(budget) = budget.as_deref_mut() {
-                        budget.consume(1)?;
+                        budget.consume_array_element(1)?;
                     }
                     items.push(item_type.read_from(buf)?);
                 }

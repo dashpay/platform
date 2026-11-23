@@ -29,9 +29,10 @@ use crate::util::storage_flags::StorageFlags;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
-use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
-use dpp::platform_value::{Identifier, Value};
+use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
+use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
@@ -2513,22 +2514,17 @@ fn should_reject_a_proof_withholding_a_removal_record_of_a_moderated_document_jo
     }
 }
 
-/// Overlapping composite joins that clone the same proved documents into multiple sub-results
-/// must charge each additional retained copy against the shared client page budget.
+/// Composite proof verification enforces per-document encoded-size-proportional decode budgets
+/// (rejecting zero-width expansion bombs immediately while allowing legitimate large pages) and
+/// bounds retained clones produced when multiple overlapping joins reference the same documents.
 #[test]
-fn should_charge_shared_page_budget_for_overlapping_composite_join_clones() {
-    use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
-    use dpp::document::DocumentV0;
-    use dpp::platform_value::platform_value;
-
+fn should_enforce_proportional_decode_and_clone_budgets_on_composite_joins() {
     let pv14 = PlatformVersion::get(14).expect("PV14 exists");
     let pv = platform_version();
     let drive = setup_drive_with_initial_state_structure(None);
 
-    // Each `payload` document decodes 60 × 1025 = 61,500 values.
-    // 3 distinct `payload` documents total 184,500 values (under the 262,144 page cap),
-    // while two overlapping joins referencing those same 3 payloads clone them into
-    // 6 returned documents (369,000 values > 262,144).
+    // Each PV14 zero-width `payload` document decodes 60 × 1024 = 61,440 array elements from a
+    // few hundred encoded bytes, exceeding its encoded-size-proportional decode budget.
     let field_count = 60usize;
     let mut payload_props = Vec::with_capacity(field_count);
     let mut payload_doc_props = BTreeMap::new();
@@ -2833,9 +2829,45 @@ fn should_charge_shared_page_budget_for_overlapping_composite_join_clones() {
                                 "documentType": "payload"
                             },
                             "position": 3u32
+                        },
+                        "third": {
+                            "type": "array",
+                            "byteArray": true,
+                            "minItems": 32,
+                            "maxItems": 32,
+                            "contentMediaType": "application/x.dash.dpp.identifier",
+                            "refersTo": {
+                                "type": "permanentDocument",
+                                "documentType": "payload"
+                            },
+                            "position": 4u32
+                        },
+                        "fourth": {
+                            "type": "array",
+                            "byteArray": true,
+                            "minItems": 32,
+                            "maxItems": 32,
+                            "contentMediaType": "application/x.dash.dpp.identifier",
+                            "refersTo": {
+                                "type": "permanentDocument",
+                                "documentType": "payload"
+                            },
+                            "position": 5u32
+                        },
+                        "fifth": {
+                            "type": "array",
+                            "byteArray": true,
+                            "minItems": 32,
+                            "maxItems": 32,
+                            "contentMediaType": "application/x.dash.dpp.identifier",
+                            "refersTo": {
+                                "type": "permanentDocument",
+                                "documentType": "payload"
+                            },
+                            "position": 6u32
                         }
                     },
-                    "required": ["bucket", "seq", "left", "right"],
+                    "required": ["bucket", "seq", "left", "right", "third", "fourth", "fifth"],
                     "additionalProperties": false,
                 }
             }
@@ -2860,7 +2892,10 @@ fn should_charge_shared_page_budget_for_overlapping_composite_join_clones() {
         ("c".to_string(), Value::Array(vec![Value::U8(3); 1024])),
     ]);
     // 50 payloads × 2 overlapping joins = 100 retained payload documents × 3,075 values = 307,500
-    // retained decoded values (> old 262,144 fixed cap).
+    // retained decoded values (> old 262,144 fixed cap), with 153,750 extra cloned values
+    // (<= MAX_COMPOSITE_CLONED_DECODED_VALUES = 524,288).
+    // 50 payloads × 5 overlapping joins produces 4 × 153,750 = 615,000 extra cloned values
+    // (> 524,288), which must be refused before cloning with the reconstructed root hash.
     for i in 1u8..=50 {
         let payload_id = Identifier::new([0xa0u8.wrapping_add(i); 32]);
         let payload = Document::V0(DocumentV0 {
@@ -2883,6 +2918,18 @@ fn should_charge_shared_page_budget_for_overlapping_composite_join_clones() {
                 ),
                 (
                     "right".to_string(),
+                    Value::Identifier(payload_id.to_buffer()),
+                ),
+                (
+                    "third".to_string(),
+                    Value::Identifier(payload_id.to_buffer()),
+                ),
+                (
+                    "fourth".to_string(),
+                    Value::Identifier(payload_id.to_buffer()),
+                ),
+                (
+                    "fifth".to_string(),
                     Value::Identifier(payload_id.to_buffer()),
                 ),
             ]),
@@ -2909,7 +2956,7 @@ fn should_charge_shared_page_budget_for_overlapping_composite_join_clones() {
             field: "$id".to_string(),
         }),
     };
-    let honest_overlapping_query = DriveDocumentQuery {
+    let make_honest_query = |sub_queries| DriveDocumentQuery {
         contract: &honest_contract,
         document_type: honest_card_type,
         internal_clauses: InternalClauses {
@@ -2938,8 +2985,11 @@ fn should_charge_shared_page_budget_for_overlapping_composite_join_clones() {
         start_at_included: false,
         block_time_ms: None,
         resolved_time_ranges: Vec::new(),
-        sub_queries: vec![make_honest_join("left"), make_honest_join("right")],
+        sub_queries,
     };
+
+    let honest_overlapping_query =
+        make_honest_query(vec![make_honest_join("left"), make_honest_join("right")]);
     let (honest_proof, _) = drive
         .query_composite_documents_with_proof(&honest_overlapping_query, pv)
         .expect("honest overlapping-join proof generates");
@@ -2949,4 +2999,31 @@ fn should_charge_shared_page_budget_for_overlapping_composite_join_clones() {
     assert_eq!(verified_honest.page_documents.len(), 50);
     assert_eq!(verified_honest.sub_results[0].documents().len(), 50);
     assert_eq!(verified_honest.sub_results[1].documents().len(), 50);
+
+    let honest_root = drive
+        .grove
+        .root_hash(None, &pv.drive.grove_version)
+        .value
+        .expect("honest root hash");
+    let excessive_overlap_query = make_honest_query(vec![
+        make_honest_join("left"),
+        make_honest_join("right"),
+        make_honest_join("third"),
+        make_honest_join("fourth"),
+        make_honest_join("fifth"),
+    ]);
+    let (excessive_proof, _) = drive
+        .query_composite_documents_with_proof(&excessive_overlap_query, pv)
+        .expect("5-way overlapping-join proof generates");
+    let excessive_error = excessive_overlap_query
+        .verify_composite_documents_proof(&excessive_proof, pv)
+        .expect_err("5-way overlapping joins must exceed retained-clone budget");
+    assert!(
+        matches!(
+            excessive_error,
+            Error::Proof(ProofError::DecodedValueBudgetExceeded { root_hash, .. })
+                if root_hash == honest_root
+        ),
+        "expected ProofError::DecodedValueBudgetExceeded with matching root, got: {excessive_error:?}"
+    );
 }

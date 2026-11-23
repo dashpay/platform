@@ -173,11 +173,17 @@ impl DocumentPlatformConversionMethodsV0 for Document {
 #[cfg(test)]
 mod tests {
     use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use crate::data_contract::document_type::random_document::CreateRandomDocument;
+    use crate::data_contract::errors::DataContractError;
     use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-    use crate::document::Document;
+    use crate::document::{Document, DocumentV0};
+    use crate::prelude::DataContract;
     use crate::tests::json_document::json_document_to_contract;
+    use crate::ProtocolError;
+    use platform_value::{platform_value, Identifier, Value};
     use platform_version::version::PlatformVersion;
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_serialization() {
@@ -464,6 +470,118 @@ mod tests {
         let error =
             Document::from_bytes_with_budget(&format_0_bytes, document_type, &mut tight, latest)
                 .expect_err("tight budget must fail rather than returning an altered document");
+        assert!(
+            matches!(
+                error,
+                ProtocolError::DataContractError(DataContractError::DecodedValueBudgetExceeded(_))
+            ),
+            "expected DecodedValueBudgetExceeded, got: {error}"
+        );
+    }
+
+    #[test]
+    fn should_not_let_absent_optional_subtree_expand_zero_width_array_allowance() {
+        let pv14 = PlatformVersion::get(14).expect("PV14 exists");
+        let latest = PlatformVersion::latest();
+
+        // Build a PV14 schema with two large optional nested objects (60 optional fields each,
+        // 122 absent schema nodes total) plus one zero-width typed array. A sparse document
+        // omitting both optional objects must NOT be able to spend those 122 absent schema nodes
+        // on zero-width array elements.
+        let mut optional_members = Vec::with_capacity(60);
+        for i in 0..60u32 {
+            optional_members.push((
+                Value::Text(format!("opt{i:03}")),
+                platform_value!({
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 255,
+                    "position": i,
+                }),
+            ));
+        }
+        let contract = DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Identifier::new([21; 32]),
+                "version": 1u32,
+                "ownerId": Identifier::new([22; 32]),
+                "config": {
+                    "$formatVersion": "1",
+                    "canBeDeleted": false,
+                    "readonly": false,
+                    "keepsHistory": false,
+                    "documentsKeepHistoryContractDefault": false,
+                    "documentsMutableContractDefault": true,
+                    "documentsCanBeDeletedContractDefault": true,
+                    "requiresIdentityEncryptionBoundedKey": Value::Null,
+                    "requiresIdentityDecryptionBoundedKey": Value::Null,
+                    "sizedIntegerTypes": true,
+                },
+                "documentSchemas": {
+                    "sparse": {
+                        "type": "object",
+                        "properties": {
+                            "unusedSubtreeA": {
+                                "type": "object",
+                                "properties": Value::Map(optional_members.clone()),
+                                "additionalProperties": false,
+                                "position": 0u32,
+                            },
+                            "unusedSubtreeB": {
+                                "type": "object",
+                                "properties": Value::Map(optional_members),
+                                "additionalProperties": false,
+                                "position": 1u32,
+                            },
+                            "empties": {
+                                "type": "array",
+                                "maxItems": 1024,
+                                "items": {
+                                    "type": "array",
+                                    "byteArray": true,
+                                    "minItems": 0,
+                                    "maxItems": 0,
+                                },
+                                "position": 2u32,
+                            },
+                        },
+                        "additionalProperties": false,
+                    }
+                }
+            }),
+            true,
+            pv14,
+        )
+        .expect("PV14 sparse contract validates");
+        let document_type = contract
+            .document_type_for_name("sparse")
+            .expect("sparse type");
+
+        // Omit `unusedSubtree` and claim 100 zero-width elements (~70 bytes total).
+        // Under the old `P + L` single-pool budget, `122 + 70 = 192 >= 100` would have admitted
+        // this record solely because of the 120 absent optional fields. With array elements
+        // strictly bounded by `encoded_len` (~70), 100 zero-width elements must be refused.
+        let sparse_doc = Document::V0(DocumentV0 {
+            id: Identifier::new([23; 32]),
+            owner_id: Identifier::new([24; 32]),
+            revision: Some(1),
+            properties: BTreeMap::from([(
+                "empties".to_string(),
+                Value::Array(vec![Value::Bytes(vec![]); 100]),
+            )]),
+            ..Default::default()
+        });
+        let bytes = sparse_doc
+            .serialize(document_type, &contract, latest)
+            .expect("sparse doc serializes");
+        assert!(
+            bytes.len() < 100,
+            "sparse document must encode in fewer than 100 bytes, got {}",
+            bytes.len()
+        );
+        let error = Document::from_bytes_bounded(&bytes, document_type, latest)
+            .expect_err("absent optional subtree must not expand zero-width array allowance");
         assert!(
             matches!(
                 error,

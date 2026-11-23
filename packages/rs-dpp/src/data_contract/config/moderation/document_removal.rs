@@ -170,7 +170,7 @@ fn decode_kept_fields_internal(
                         KEPT_VALUE_PRESENT => {
                             if let Some(budget) = budget.as_deref_mut() {
                                 budget
-                                    .consume(1)
+                                    .consume_property(1)
                                     .map_err(ProtocolError::DataContractError)?;
                             }
                             Some(read_system_property(&mut buf, property).map_err(|_| {

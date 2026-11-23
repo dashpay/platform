@@ -127,9 +127,8 @@ impl ContestRequests {
         }
     }
 
-    /// Decode each contender's document once while charging an explicit shared
-    /// decoded-value `budget` across the contest.
-    pub fn decode_with_budget<'a>(
+    #[cfg(test)]
+    fn decode_with_budget<'a>(
         contenders: impl IntoIterator<Item = &'a ContenderWithSerializedDocument>,
         document_type: Option<DocumentTypeRef>,
         budget: &mut DecodedValueBudget,
