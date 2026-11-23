@@ -143,6 +143,10 @@ async function main() {
 
   // 2. For each old testId, read its runs and re-create them under the new id.
   let migrated = 0; let skipped = 0; let failed = 0; let runsSeen = 0;
+  // The pairing state of each target testId, kept across source ids: the remap
+  // can fold two source ids into one target id, and the second must not claim
+  // the copies made for the first.
+  const pairing = new Map();
   for (const oldId of oldTestIds) {
     const newId = remapTestId(oldId);
     const oldRuns = await queryAll(
@@ -153,17 +157,22 @@ async function main() {
     if (!oldRuns.length) continue;
 
     // Idempotency: pair each source run with one target run of the same
-    // content, whichever admin recorded it. `onTarget` counts the target's runs
-    // per content, `unpaired` those no source run has claimed yet. A source run
-    // with nothing left to claim is missing and is copied, so two source runs
-    // with the same content need two target runs.
-    const existing = await queryAll(
-      sdk, newContractId, 'testRun',
-      [['app', '==', app], ['testId', '==', newId]],
-      [['$createdAt', 'asc']],
-    );
-    const onTarget = countByKey(existing);
-    const unpaired = new Map(onTarget);
+    // content. `onTarget` counts the target's runs per content, `unpaired` those
+    // no source run has claimed yet. A source run with nothing left to claim is
+    // missing and is copied, so two source runs with the same content need two
+    // target runs. A run recorded on the target itself counts as a copy when
+    // its content equals a source run's, which is why the copy comes before
+    // anyone records there (see "Moving to a new contract" in the README).
+    if (!pairing.has(newId)) {
+      const existing = await queryAll(
+        sdk, newContractId, 'testRun',
+        [['app', '==', app], ['testId', '==', newId]],
+        [['$createdAt', 'asc']],
+      );
+      const onTarget = countByKey(existing);
+      pairing.set(newId, { onTarget, unpaired: new Map(onTarget) });
+    }
+    const { onTarget, unpaired } = pairing.get(newId);
 
     for (const run of oldRuns) {
       runsSeen += 1;

@@ -325,22 +325,24 @@ node src/register.mjs --force
 node src/seed.mjs
 node src/seed.mjs --app KotlinExampleApp
 
-# 3. List everyone else who records runs
-node src/admin.mjs add <identityId> --label "..."
-
-# 4. Stop recording runs on the previous contract and let the last ones land.
+# 3. Stop recording runs on the previous contract and let the last ones land.
 #    A run recorded there after its test was copied stays behind.
 
-# 5. Copy the previous contract's runs, once per app (they get a new $createdAt).
-#    The dry run needs no key.
+# 4. Copy the previous contract's runs, once per app (they get a new $createdAt).
+#    Do this before anyone records a run on the new contract: the copy tells a
+#    copied run by its content, so a new run that repeats an old one exactly
+#    would be taken for its copy. The dry run needs no key.
 node src/migrate-runs.mjs --dry-run
 node src/migrate-runs.mjs
 node src/migrate-runs.mjs --app KotlinExampleApp
 
-# 6. Run the copy again. It skips what is already there, so it should report
+# 5. Run the copy again. It skips what is already there, so it should report
 #    "0 migrated"; if it copies more, a writer was still recording.
 node src/migrate-runs.mjs
 node src/migrate-runs.mjs --app KotlinExampleApp
+
+# 6. Only now list everyone else who records runs, and start recording
+node src/admin.mjs add <identityId> --label "..."
 
 # 7. Check every index, then commit contract-id.<network>.json
 node src/query.mjs
