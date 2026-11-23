@@ -8878,7 +8878,6 @@ dependencies = [
  "dapi-grpc",
  "dash-core-proof",
  "dash-sdk",
- "dpp",
  "dpp-json-convertible-derive",
  "drive",
  "drive-proof-verifier",
