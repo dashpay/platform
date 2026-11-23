@@ -153,7 +153,7 @@ public struct ShieldedTokenPoolBalance: Sendable, Hashable {
         accountIndex: UInt32,
         balance: UInt64,
         unspentNoteCount: UInt32,
-        reservedBalance: UInt64,
+        reservedBalance: UInt64 = 0,
         scannedNoteCount: UInt64?,
         poolNoteCount: UInt64?,
         scannedHeight: UInt64?,

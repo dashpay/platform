@@ -2668,6 +2668,17 @@ where
             ))
             .into());
         }
+        // The fee bundle's anchor too: the credit pool prunes on a schedule,
+        // and proving may outlast it.
+        let (credit_anchors_now, _) = fetch_recorded_anchor_set(sdk).await?;
+        if !credit_anchors_now.contains(&fee_anchor.to_bytes()) {
+            return Err(PlatformWalletError::ShieldedNoRecordedAnchor(
+                "the credit pool no longer records the anchor this transfer's fee was built \
+                 on; sync and retry"
+                    .to_string(),
+            )
+            .into());
+        }
         let network_now = token_pool_paid_signing_version(
             sdk.version(),
             sdk.protocol_version_info().verified_version,

@@ -1730,6 +1730,8 @@ impl ShieldedStore for FileBackedShieldedStore {
             .retain(|(id, _), _| id.wallet_id != wallet_id);
         self.unloaded_private_contact_payments
             .remove(&Some(wallet_id));
+        // The wallet's recovery rows, damaged ones included, are deleted above.
+        self.unloaded_note_spends.remove(&Some(wallet_id));
         Ok(())
     }
 
@@ -1792,6 +1794,8 @@ impl ShieldedStore for FileBackedShieldedStore {
         self.subwallets.clear();
         self.private_contact_payments.clear();
         self.unloaded_private_contact_payments.clear();
+        // Every recovery row, damaged ones included, is deleted above.
+        self.unloaded_note_spends.clear();
         Ok(())
     }
 
