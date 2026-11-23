@@ -516,111 +516,10 @@ struct LoadIdentityView: View {
                     }
                 }
 
-                // Extract public keys if available
-                var parsedPublicKeys: [IdentityPublicKey] = []
-
-                // Try different possible key names for public keys in the JSON
-                // The publicKeys might be a dictionary with key IDs as keys
-                if let publicKeysDict = identityData["publicKeys"] as? [String: Any] {
-                    print("🔵 Public keys are in dictionary format")
-                    parsedPublicKeys = publicKeysDict.compactMap { (keyIdStr, keyData) -> IdentityPublicKey? in
-                        guard let keyData = keyData as? [String: Any],
-                              let id = Int(keyIdStr) ?? keyData["id"] as? Int,
-                              let purpose = keyData["purpose"] as? Int,
-                              let securityLevel = keyData["securityLevel"] as? Int,
-                              let keyType = keyData["type"] as? Int,
-                              let dataStr = keyData["data"] as? String else {
-                            print("❌ Failed to parse key with ID: \(keyIdStr), data: \(keyData)")
-                            return nil
-                        }
-
-                        // Data is in Base64 format, not hex
-                        guard let data = Data(base64Encoded: dataStr) else {
-                            print("❌ Failed to decode Base64 data for key \(id)")
-                            return nil
-                        }
-
-                        let readOnly = keyData["readOnly"] as? Bool ?? false
-                        // `disabledAt`, `totalBudget` and `expiresAt` are all protocol
-                        // `u64`s, which DPP writes as a JSON number up to 2^53 - 1 and
-                        // as a decimal string above it. `UInt64(jsonValue:)` reads both
-                        // shapes; a plain `as? UInt64` would drop the large ones.
-                        let disabledAt = UInt64(jsonValue: keyData["disabledAt"])
-                        // Usage limits (protocol version 14). Present only on a
-                        // version 1 key: `totalBudget` is credits for the key's
-                        // whole lifetime, `expiresAt` is block time in
-                        // milliseconds. Dropping them here would persist a
-                        // limited key as unlimited.
-                        let totalBudget = UInt64(jsonValue: keyData["totalBudget"])
-                        let expiresAt = UInt64(jsonValue: keyData["expiresAt"])
-
-                        return IdentityPublicKey(
-                            id: UInt32(id),
-                            purpose: KeyPurpose(rawValue: UInt8(purpose)) ?? .authentication,
-                            securityLevel: SecurityLevel(rawValue: UInt8(securityLevel)) ?? .high,
-                            contractBounds: nil,
-                            keyType: KeyType(rawValue: UInt8(keyType)) ?? .ecdsaSecp256k1,
-                            readOnly: readOnly,
-                            data: data,
-                            disabledAt: disabledAt,
-                            totalBudget: totalBudget,
-                            expiresAt: expiresAt
-                        )
-                    }
-                } else if let publicKeysArray = identityData["publicKeys"] as? [[String: Any]] {
-                    print("🔵 Public keys are in array format")
-                    parsedPublicKeys = publicKeysArray.compactMap { keyData -> IdentityPublicKey? in
-                        guard let id = keyData["id"] as? Int,
-                              let purpose = keyData["purpose"] as? Int,
-                              let securityLevel = keyData["securityLevel"] as? Int,
-                              let keyType = keyData["type"] as? Int,
-                              let dataStr = keyData["data"] as? String else {
-                            print("❌ Failed to parse key data: \(keyData)")
-                            return nil
-                        }
-
-                        // Data is in Base64 format, not hex
-                        guard let data = Data(base64Encoded: dataStr) else {
-                            print("❌ Failed to decode Base64 data for key \(id)")
-                            return nil
-                        }
-
-                        let readOnly = keyData["readOnly"] as? Bool ?? false
-                        // `disabledAt`, `totalBudget` and `expiresAt` are all protocol
-                        // `u64`s, which DPP writes as a JSON number up to 2^53 - 1 and
-                        // as a decimal string above it. `UInt64(jsonValue:)` reads both
-                        // shapes; a plain `as? UInt64` would drop the large ones.
-                        let disabledAt = UInt64(jsonValue: keyData["disabledAt"])
-                        // Usage limits (protocol version 14). Present only on a
-                        // version 1 key: `totalBudget` is credits for the key's
-                        // whole lifetime, `expiresAt` is block time in
-                        // milliseconds. Dropping them here would persist a
-                        // limited key as unlimited.
-                        let totalBudget = UInt64(jsonValue: keyData["totalBudget"])
-                        let expiresAt = UInt64(jsonValue: keyData["expiresAt"])
-
-                        return IdentityPublicKey(
-                            id: UInt32(id),
-                            purpose: KeyPurpose(rawValue: UInt8(purpose)) ?? .authentication,
-                            securityLevel: SecurityLevel(rawValue: UInt8(securityLevel)) ?? .high,
-                            contractBounds: nil,
-                            keyType: KeyType(rawValue: UInt8(keyType)) ?? .ecdsaSecp256k1,
-                            readOnly: readOnly,
-                            data: data,
-                            disabledAt: disabledAt,
-                            totalBudget: totalBudget,
-                            expiresAt: expiresAt
-                        )
-                    }
-                } else {
-                    print("❌ Public keys not found in identity data")
-                }
-
                 // Persist the fetched identity directly via SwiftData.
                 // Private keys are stored in the keychain and linked
                 // to the matching `PersistentPublicKey`s below.
                 let trimmedAlias = aliasInput.isEmpty ? nil : aliasInput
-                let capturedPublicKeys = parsedPublicKeys
                 let capturedPrivateKeys = privateKeyData
                 let capturedVotingKey = votingKeyData
                 let capturedOwnerKey = ownerKeyData
@@ -629,14 +528,50 @@ struct LoadIdentityView: View {
                 let capturedVotingKeyAddress = votingKeyAddress
 
                 await MainActor.run {
-                    // Upsert the PersistentIdentity row.
-                    let existing = PersistentIdentity.fetch(
-                        in: modelContext,
+                    // Read the keys the network returned before writing
+                    // anything. A key list that cannot be read completely
+                    // is not applied: no identity row, no key rows and no
+                    // Keychain writes.
+                    guard let fetchedKeys = PersistentPublicKey.fromFetchedIdentity(
+                        identityData,
                         identityId: validIdData
-                    )
+                    ) else {
+                        errorMessage = "This identity's keys could not be read from the response, so nothing was saved. Load it again."
+                        isLoading = false
+                        loadStartTime = nil
+                        return
+                    }
+
+                    // Upsert the PersistentIdentity row. A failed read is
+                    // not "no row": inserting then could add a second row
+                    // for the identity, and whether a wallet owns it would be
+                    // unknown, so stop before writing anything.
+                    let existing: PersistentIdentity?
+                    do {
+                        let target = validIdData
+                        existing = try modelContext.fetch(
+                            FetchDescriptor<PersistentIdentity>(
+                                predicate: #Predicate { $0.identityId == target }
+                            )
+                        ).first
+                    } catch {
+                        errorMessage = "The stored identity could not be read, so nothing was saved: \(error.localizedDescription)"
+                        isLoading = false
+                        loadStartTime = nil
+                        return
+                    }
+                    // A wallet that holds this identity is the only writer
+                    // of its key rows and balance (the persister, through
+                    // the wallet's proved refresh, which never lets an older
+                    // answer undo a newer one). A plain fetch here could be
+                    // a block behind, so it leaves both alone and only
+                    // records what the user entered.
+                    let walletHeld = existing?.wallet != nil
                     let row: PersistentIdentity
                     if let existing = existing {
-                        existing.balance = Int64(bitPattern: fetchedBalance)
+                        if !walletHeld {
+                            existing.balance = Int64(bitPattern: fetchedBalance)
+                        }
                         existing.alias = trimmedAlias
                         // The user just added/reloaded this identity
                         // by hand — mark the provenance. (This flow
@@ -670,27 +605,44 @@ struct LoadIdentityView: View {
                         )
                     }
 
-                    // Bring the rows in line with the keys the network
-                    // returned, keeping each unchanged key's local signing
-                    // references.
-                    Self.mergeFetchedPublicKeys(capturedPublicKeys, into: row)
+                    // Keep the fetched keys' DPP projection for matching the
+                    // entered private keys, then (for an identity no wallet
+                    // holds) bring the rows in line with them, keeping each
+                    // unchanged key's local signing references.
+                    let capturedPublicKeys = fetchedKeys.compactMap { $0.toIdentityPublicKey() }
+                    if !walletHeld {
+                        row.mergeFetchedPublicKeys(fetchedKeys)
+                    }
 
                     // Match each user-provided private key to its
                     // public key and stash it in the keychain.
+                    // A key that matches a fetched key but has no stored row
+                    // with the same id, type and bytes (a wallet-held identity
+                    // whose wallet has not refreshed since the key was added),
+                    // or that the Keychain refused, is reported rather than
+                    // dropped silently.
+                    var unlinkedKeyIds: [UInt32] = []
                     for privateKey in capturedPrivateKeys {
-                        if let matched = KeyValidation.matchPrivateKeyToPublicKeys(
+                        guard let matched = KeyValidation.matchPrivateKeyToPublicKeys(
                             privateKeyData: privateKey,
                             publicKeys: capturedPublicKeys,
                             network: network
-                        ), let persistentKey = row.publicKeys.first(
-                            where: { $0.keyId == Int32(matched.id) }
-                        ), let keychainId = KeychainManager.shared.storePrivateKey(
+                        ) else {
+                            continue
+                        }
+                        guard let persistentKey = row.publicKeys.first(where: {
+                            $0.keyId == Int32(bitPattern: matched.id)
+                                && $0.keyTypeEnum == matched.keyType
+                                && $0.publicKeyData == matched.data
+                        }), let keychainId = KeychainManager.shared.storePrivateKey(
                             privateKey,
                             identityId: validIdData,
                             keyIndex: persistentKey.keyId
-                        ) {
-                            persistentKey.privateKeyKeychainIdentifier = keychainId
+                        ) else {
+                            unlinkedKeyIds.append(matched.id)
+                            continue
                         }
+                        persistentKey.privateKeyKeychainIdentifier = keychainId
                     }
 
                     // Masternode-/evonode-specific keys go to the
@@ -791,9 +743,9 @@ struct LoadIdentityView: View {
                         outcome: storedVotingKeyOutcome
                     )
                     let uncheckedNote = enteredVotingKeyStored ? uncheckedNoteIfStored : nil
-                    if unstoredKeys.isEmpty && conflictingKeys.isEmpty && uncheckedNote == nil {
+                    if unstoredKeys.isEmpty && conflictingKeys.isEmpty && unlinkedKeyIds.isEmpty && uncheckedNote == nil {
                         showSuccess = true
-                    } else if unstoredKeys.isEmpty && conflictingKeys.isEmpty, let uncheckedNote {
+                    } else if unstoredKeys.isEmpty && conflictingKeys.isEmpty && unlinkedKeyIds.isEmpty, let uncheckedNote {
                         errorMessage = "The identity was loaded and its voting key was stored. " + uncheckedNote
                         isLoading = false
                         loadStartTime = nil
@@ -812,12 +764,27 @@ struct LoadIdentityView: View {
                             }
                             unstoredNote = note
                         }
+                        if !unlinkedKeyIds.isEmpty {
+                            let ids = ListFormatter.localizedString(byJoining: unlinkedKeyIds.sorted().map(String.init))
+                            let noun = unlinkedKeyIds.count == 1 ? "key" : "keys"
+                            parts.append("the private \(noun) entered for key ID \(ids) could not be saved on this device")
+                            let retry = walletHeld
+                                ? "Refresh the identity from the wallet that holds it, then load it again."
+                                : "Load the identity again."
+                            let note = "The private \(noun) entered for key ID \(ids) could not be saved on this device. \(retry)"
+                            unstoredNote = unstoredNote.map { $0 + " " + note } ?? note
+                        }
                         if !conflictingKeys.isEmpty {
                             let names = ListFormatter.localizedString(byJoining: conflictingKeys)
                             let noun = conflictingKeys.count == 1 ? "private key is" : "private keys are"
                             parts.append("a different \(names) \(noun) already stored for this identity and was kept")
                         }
                         var text = "The identity was loaded, but " + parts.joined(separator: ", and ") + "."
+                        if !unlinkedKeyIds.isEmpty {
+                            text += walletHeld
+                                ? " Refresh the identity from the wallet that holds it, then load it again."
+                                : " Load the identity again."
+                        }
                         if !conflictingKeys.isEmpty {
                             text += " You can replace the stored key with the one you entered when asked, or load the identity again later to be asked again."
                         }
@@ -1121,52 +1088,6 @@ struct LoadIdentityView: View {
         }
         let recorded = identityRow(identityId, on: network, in: modelContext)?.recordedVotingKey
         return (.sameKey(recorded: recorded), false)
-    }
-
-    /// Bring `identity`'s public-key rows in line with the keys fetched from
-    /// Platform. A row whose key id, key type and bytes are unchanged is
-    /// updated in place, so its local signing references (Keychain
-    /// identifier, wallet id, derivation path) survive a reload; any other
-    /// fetched key gets a new row. Rows for keys no longer fetched, or whose
-    /// bytes changed, are taken off the identity as before, and their
-    /// Keychain items are left alone.
-    @MainActor
-    private static func mergeFetchedPublicKeys(_ fetched: [IdentityPublicKey], into identity: PersistentIdentity) {
-        let identityHex = identity.identityId.toHexString()
-        var matched = Set<ObjectIdentifier>()
-        var additions: [PersistentPublicKey] = []
-        for publicKey in fetched {
-            // Built the same way as a new row, so the in-place update
-            // writes exactly the columns a new row would have.
-            guard let fresh = PersistentPublicKey.from(publicKey, identityId: identityHex) else {
-                continue
-            }
-            guard let current = identity.publicKeys.first(where: {
-                !matched.contains(ObjectIdentifier($0))
-                    && $0.keyId == fresh.keyId
-                    && $0.keyType == fresh.keyType
-                    && $0.publicKeyData == fresh.publicKeyData
-            }) else {
-                additions.append(fresh)
-                continue
-            }
-            matched.insert(ObjectIdentifier(current))
-            current.purpose = fresh.purpose
-            current.securityLevel = fresh.securityLevel
-            current.readOnly = fresh.readOnly
-            current.disabledAt = fresh.disabledAt
-            current.totalBudget = fresh.totalBudget
-            current.expiresAt = fresh.expiresAt
-            // Contract bounds are left as stored: this form's parsers do not
-            // read them from the fetch (`contractBounds: nil`), so copying
-            // would turn a contract-, document-type- or group-bound key into
-            // an unbounded one.
-            current.identityId = fresh.identityId
-        }
-        identity.publicKeys.removeAll { !matched.contains(ObjectIdentifier($0)) }
-        for addition in additions {
-            identity.addPublicKey(addition)
-        }
     }
 
     private func fillRandomHPMN() {
