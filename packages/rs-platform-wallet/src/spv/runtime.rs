@@ -9,6 +9,7 @@ use std::time::Duration;
 use tokio::sync::{Notify, RwLock};
 use tokio::task::{JoinError, JoinHandle};
 
+use dashcore::blockdata::transaction::special_transaction::coinbase::CoinbasePayload;
 use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus;
 use dashcore::sml::llmq_type::LLMQType;
 use dashcore::sml::masternode_list::MasternodeList;
@@ -863,6 +864,53 @@ impl SpvRuntime {
                 .map(|qualified| qualified.masternode_list_entry.clone())
                 .collect(),
         )
+    }
+
+    /// [`Self::masternode_list_summaries`], but only while the list follows
+    /// the chain ([`Self::is_ready`]). The plain read also returns a list
+    /// restored from disk while sync is still catching up, and a transaction
+    /// that restates an entry's fields must not copy them from such a list.
+    pub(crate) async fn current_masternode_list_summaries(
+        &self,
+    ) -> Option<Vec<MasternodeListSummary>> {
+        self.while_following_the_chain(self.masternode_list_summaries())
+            .await
+    }
+
+    /// [`Self::masternode_list_entries`], but only while the list follows
+    /// the chain, as [`Self::current_masternode_list_summaries`].
+    pub(crate) async fn current_masternode_list_entries(&self) -> Option<Vec<MasternodeListEntry>> {
+        self.while_following_the_chain(self.masternode_list_entries())
+            .await
+    }
+
+    /// `read`, but only from the client [`Self::is_ready`] vouched for.
+    /// Readiness and `read` take the client separately, so a host that stops
+    /// and restarts SPV between them would hand `read` a new client that is
+    /// still catching up. [`Self::run_session`] changes on every start; a
+    /// value read across a restart is dropped.
+    async fn while_following_the_chain<T>(
+        &self,
+        read: impl Future<Output = Option<T>>,
+    ) -> Option<T> {
+        let session = self.run_session();
+        if !self.is_ready().await {
+            return None;
+        }
+        let value = read.await?;
+        (self.run_session() == session).then_some(value)
+    }
+
+    /// The coinbase payload of the newest block a masternode list diff
+    /// proved it in, as the SPV client keeps it. `None` when the client
+    /// isn't running, masternode sync is off, or no diff has been validated
+    /// yet. It is not checked against the tip: after a restart it is the
+    /// one stored before, until sync proves a newer one — as stale as the
+    /// masternode list read next to it. Read the same way as
+    /// [`Self::masternode_list_summaries`].
+    pub(crate) async fn latest_coinbase(&self) -> Option<CoinbasePayload> {
+        let client_guard = self.client.read().await;
+        client_guard.as_ref()?.latest_coinbase().await
     }
 
     /// Blocking twin of [`Self::masternode_list_summaries`] for FFI threads
@@ -2342,6 +2390,24 @@ mod tests {
             matches!(result, Err(BroadcastError::Rejected { .. })),
             "unstarted client must classify never-sent on the acceptance path, got {result:?}"
         );
+    }
+
+    /// A runtime that does not follow the chain hands out nothing through
+    /// the gated read, whatever the read itself would return. An unstarted
+    /// client is the simplest such runtime.
+    #[tokio::test]
+    async fn should_drop_a_gated_read_while_the_runtime_does_not_follow_the_chain() {
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
+            Network::Testnet,
+        )));
+        let runtime = SpvRuntime::new(wallet_manager, Arc::new(PlatformEventManager::new(vec![])));
+
+        let read = runtime
+            .while_following_the_chain(async { Some("a list restored from disk") })
+            .await;
+
+        assert_eq!(read, None);
+        assert_eq!(runtime.current_masternode_list_summaries().await, None);
     }
 
     /// dash-spv raises `NotConnected` from its zero-peer check before the

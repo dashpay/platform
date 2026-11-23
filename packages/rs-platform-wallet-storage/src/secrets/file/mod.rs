@@ -61,6 +61,7 @@ use super::guarded::verify_host_page_size;
 
 use super::secret::{SecretBytes, SecretString, MAX_PASSPHRASE_LEN};
 use super::validate::{validated_label, WalletId};
+use crate::parent_permissions::warn_on_insecure_ancestors;
 
 /// Service-prefix for vault entries: the full `service` string is
 /// `SERVICE_PREFIX + hex(wallet_id)`, one namespace per wallet.
@@ -367,16 +368,7 @@ impl EncryptedFileStore {
         // create do not fail on a not-yet-existing dir.
         let parent = normalized_parent(&path);
         create_parent_dir(parent)?;
-        // Refuse unsafe permissions or ownership anywhere above the vault:
-        // an attacker who can replace an ancestor can replace the 0600 file.
-        crate::parent_permissions::check_parent_perms(parent).map_err(|error| match error {
-            crate::parent_permissions::ParentPermissionsError::Io(source) => {
-                SecretStoreError::io_at(parent, source)
-            }
-            crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
-                SecretStoreError::InsecureParentDir { ancestor, reason }
-            }
-        })?;
+        warn_on_insecure_ancestors("vault", parent);
 
         // Lock first — every subsequent step assumes exclusive ownership.
         let lock = VaultLock::acquire(&lock_path_for(&path))?;
@@ -1422,8 +1414,8 @@ mod tests {
     }
 
     fn vault_path(dir: &Path) -> PathBuf {
-        // Tighten the umask-0002 tempdir (0o775) to 0o700 so it passes the
-        // parent-dir perm check (dedicated perm tests use a subdir).
+        // Tighten the umask-0002 tempdir (0o775) to 0o700 so the open logs
+        // no insecure-ancestor warning (dedicated perm tests use a subdir).
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -2478,8 +2470,8 @@ mod tests {
         let _g = CWD_GUARD.lock().unwrap_or_else(|p| p.into_inner());
 
         let dir = tempfile::tempdir().unwrap();
-        // Tighten the cwd-parent so the parent-dir perm check passes (a
-        // umask-0002 tempdir is group-writable at 0o775).
+        // Tighten the cwd-parent so the open logs no insecure-ancestor
+        // warning (a umask-0002 tempdir is group-writable at 0o775).
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -2528,39 +2520,43 @@ mod tests {
         );
     }
 
-    /// A group/other-WRITABLE parent is refused at open (it would let a
-    /// peer rename/replace the vault despite its 0600); a read-only 0o750
-    /// parent is fine.
+    /// A group/other-writable parent never fails the open; it is reported
+    /// with one actionable warning.
     #[cfg(unix)]
     #[test]
-    fn writable_parent_dir_is_refused() {
+    #[tracing_test::traced_test]
+    fn should_open_vault_under_writable_parent_dir_and_warn() {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
         let sub = dir.path().join("vaultdir");
         fs::create_dir(&sub).unwrap();
-        // Group-writable (0o770) trips the write-bit check. Build the path
-        // directly — `vault_path` would tighten the dir back to 0o700.
-        fs::set_permissions(&sub, fs::Permissions::from_mode(0o770)).unwrap();
+        // A user-private-group umask 0002 default.
+        fs::set_permissions(&sub, fs::Permissions::from_mode(0o775)).unwrap();
         let path = sub.join("vault.pwsvault");
-        let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
-            .expect_err("writable parent dir must be refused");
-        assert!(
-            matches!(
-                err,
-                SecretStoreError::InsecureParentDir {
-                    reason: crate::parent_permissions::InsecureAncestor::WritableWithoutSticky {
-                        mode
-                    },
-                    ..
-                } if mode & 0o022 != 0
-            ),
-            "got {err:?}"
-        );
-        // Dropping the write bits (still group-readable at 0o750) lets the
-        // open succeed: read-only group access is not a rename threat.
-        fs::set_permissions(&sub, fs::Permissions::from_mode(0o750)).unwrap();
-        let _s = store_at(&path);
+
+        let s = store_at(&path);
+        entry(&s, wid(1), "seed").set_secret(b"value").unwrap();
+
+        assert!(logs_contain("insecure ancestor directory permissions"));
+        assert!(logs_contain(&format!("chmod go-w {}", sub.display())));
+    }
+
+    /// Directories the vault creates are owner-only, whatever the umask.
+    #[cfg(unix)]
+    #[test]
+    fn should_create_missing_vault_dirs_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let outer = dir.path().join("outer");
+        let inner = outer.join("inner");
+
+        let _s = store_at(&inner.join("vault.pwsvault"));
+
+        for created in [&outer, &inner] {
+            let mode = fs::metadata(created).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o700, "{} must be owner-only", created.display());
+        }
     }
 
     /// An oversized secret is rejected at the write boundary with

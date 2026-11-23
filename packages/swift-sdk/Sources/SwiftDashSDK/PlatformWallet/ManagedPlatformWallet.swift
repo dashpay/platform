@@ -821,15 +821,23 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
 
     // MARK: - Identity top-up (address-funded)
 
-    /// Top up an existing identity's credit balance from one or more
-    /// Platform addresses, using an external `KeychainSigner` for the
+    /// Top up an identity's credit balance from one or more Platform
+    /// addresses, whoever owns the identity (one of this wallet's or
+    /// someone else's), using an external `KeychainSigner` for the
     /// per-address funding signatures.
+    ///
+    /// Bridges `platform_wallet_top_up_identity_from_addresses_with_signer`:
+    /// Rust fetches the identity from Platform, never adds it to the
+    /// wallet's identities, and updates the balance of an identity the
+    /// wallet manages, so the caller does not decide whether the identity
+    /// is its own.
     ///
     /// Top-up state-transitions are signed entirely with the input
     /// addresses' private keys (no IdentityCreate to sign), so unlike
     /// `registerIdentityFromAddresses` only one signer is required —
     /// the same `KeychainSigner` you use for registration's
-    /// `addressSigner` role.
+    /// `addressSigner` role. An identity Platform does not know throws
+    /// `PlatformWalletError.identityNotFound` before anything is signed.
     ///
     /// - Parameters:
     ///   - identityId: 32-byte identity id of the existing identity
@@ -840,19 +848,117 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     ///     for each input platform address. Borrowed for the
     ///     duration of the call.
     ///
+    /// - Returns: the identity's new credit balance.
+    public func topUpIdentityFromAddresses(
+        identityId: Data,
+        inputs: [IdentityAddressInput],
+        addressSigner: KeychainSigner
+    ) async throws -> UInt64 {
+        try await topUpFromAddresses(
+            identityId: identityId,
+            inputs: inputs,
+            addressSigner: addressSigner,
+            call: addressTopUpExports.any
+        )
+    }
+
+    /// Top up an identity this wallet manages from one or more Platform
+    /// addresses.
+    ///
+    /// **Deprecated:** use `topUpIdentityFromAddresses`, which tops up any
+    /// identity and updates a managed one's balance the same way. This
+    /// method differs only in throwing `PlatformWalletError.identityNotFound`
+    /// for an identity the wallet does not manage, before Platform is asked,
+    /// and `PlatformWalletError.identityBalanceUnavailable` (retryable) when
+    /// Platform does not show the wallet's identity yet. Arguments and
+    /// signer handling match `topUpIdentityFromAddresses`.
+    ///
     /// - Returns: the new credit balance reported by Platform.
+    @available(*, deprecated, message: "Use topUpIdentityFromAddresses")
     public func topUpFromAddresses(
         identityId: Data,
         inputs: [IdentityAddressInput],
         addressSigner: KeychainSigner
     ) async throws -> UInt64 {
+        try await topUpFromAddresses(
+            identityId: identityId,
+            inputs: inputs,
+            addressSigner: addressSigner,
+            call: addressTopUpExports.managed
+        )
+    }
+
+    /// Top up an identity this wallet does **not** manage (someone
+    /// else's) from one or more Platform addresses.
+    ///
+    /// **Deprecated:** now the same operation as
+    /// `topUpIdentityFromAddresses`, which tops up any identity; use that
+    /// instead.
+    ///
+    /// Bridges `platform_wallet_top_up_external_identity_from_addresses_with_signer`:
+    /// Rust fetches the identity from Platform and never adds it to the
+    /// wallet's identities, so nothing about it is persisted here either.
+    /// Arguments, signer handling and error mapping match
+    /// `topUpFromAddresses`; an identity Platform does not know throws
+    /// `PlatformWalletError.identityNotFound` before anything is signed.
+    ///
+    /// - Returns: the identity's new credit balance reported by Platform.
+    @available(*, deprecated, message: "Use topUpIdentityFromAddresses")
+    public func topUpExternalIdentityFromAddresses(
+        identityId: Data,
+        inputs: [IdentityAddressInput],
+        addressSigner: KeychainSigner
+    ) async throws -> UInt64 {
+        try await topUpFromAddresses(
+            identityId: identityId,
+            inputs: inputs,
+            addressSigner: addressSigner,
+            call: addressTopUpExports.external
+        )
+    }
+
+    /// The address-funded top-up exports each public wrapper hands its
+    /// arguments to. A stored property so tests can swap in fakes and see
+    /// which export a wrapper dispatches to.
+    struct AddressTopUpExports {
+        var any: AddressTopUpCall = platform_wallet_top_up_identity_from_addresses_with_signer
+        var managed: AddressTopUpCall = platform_wallet_top_up_from_addresses_with_signer
+        var external: AddressTopUpCall =
+            platform_wallet_top_up_external_identity_from_addresses_with_signer
+    }
+
+    var addressTopUpExports = AddressTopUpExports()
+
+    /// Signature shared by the address-funded top-up exports.
+    typealias AddressTopUpCall = @Sendable (
+        Handle,
+        UnsafePointer<IdentityIdBytes>?,
+        UnsafePointer<IdentityFundingInputFFI>?,
+        UInt,
+        OpaquePointer?,
+        UnsafeMutablePointer<UInt64>?
+    ) -> PlatformWalletFFIResult
+
+    typealias IdentityIdBytes = (
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+    )
+
+    /// Guards and marshalling shared by the address-funded top-ups;
+    /// `call` is the export to hand the marshalled arguments to.
+    /// `internal` so tests can observe the marshalling.
+    func topUpFromAddresses(
+        identityId: Data,
+        inputs: [IdentityAddressInput],
+        addressSigner: KeychainSigner,
+        call: @escaping AddressTopUpCall
+    ) async throws -> UInt64 {
         guard identityId.count == 32 else {
             throw PlatformWalletError.invalidParameter(
                 "identityId must be 32 bytes, got \(identityId.count)"
             )
-        }
-        guard !inputs.isEmpty else {
-            throw PlatformWalletError.invalidParameter("inputs is empty")
         }
         // Reject malformed address hashes up front. Earlier
         // revisions used `.prefix(20)` on the FFI build below,
@@ -872,17 +978,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         let addressSignerHandle = addressSigner.handle
 
         return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
-            // Keepalive — see `registerIdentityFromAddresses` for
-            // rationale. The trampoline ctx pointer dangles unless
-            // the Swift owner stays alive across this detached work.
-            _ = addressSigner
-
-            var idTuple: (
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
-            ) = (
+            var idTuple: IdentityIdBytes = (
                 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0,
@@ -911,16 +1007,27 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
 
             var newBalance: UInt64 = 0
 
-            let result = ffiInputs.withUnsafeBufferPointer { inputsBuf in
-                withUnsafePointer(to: &idTuple) { idPtr in
-                    platform_wallet_top_up_from_addresses_with_signer(
-                        handle,
-                        idPtr,
-                        inputsBuf.baseAddress,
-                        UInt(inputsBuf.count),
-                        addressSignerHandle,
-                        &newBalance
-                    )
+            // `KeychainSigner` registers itself with the Rust signer as a
+            // `passUnretained` ctx and destroys the handle in `deinit`, and
+            // Swift lifetimes end at last use, not at scope end — a bare
+            // `_ = addressSigner` is no fence. `withExtendedLifetime` pins
+            // it across the whole synchronous FFI call (lookup, signing,
+            // broadcast and wait) and its buffer pinning. The wallet is
+            // pinned with it: its `deinit` destroys `handle`.
+            let result = withExtendedLifetime((self, addressSigner)) {
+                ffiInputs.withUnsafeBufferPointer { inputsBuf in
+                    withUnsafePointer(to: &idTuple) { idPtr in
+                        // An empty list goes over as `(NULL, 0)`; Rust
+                        // refuses it as an invalid parameter.
+                        call(
+                            handle,
+                            idPtr,
+                            inputsBuf.isEmpty ? nil : inputsBuf.baseAddress,
+                            UInt(inputsBuf.count),
+                            addressSignerHandle,
+                            &newBalance
+                        )
+                    }
                 }
             }
 

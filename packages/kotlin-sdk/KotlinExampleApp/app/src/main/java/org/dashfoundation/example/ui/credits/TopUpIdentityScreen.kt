@@ -34,6 +34,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.credits.FundingInput
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
@@ -49,8 +50,8 @@ import org.dashfoundation.example.util.hexToBytes
  * ([org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.addressesWithBalances]),
  * greedily packs them up to the requested amount (largest-balance-first,
  * matching Swift's `buildInputs`), then credits the identity through
- * `platform_wallet_top_up_from_addresses_with_signer`
- * ([org.dashfoundation.dashsdk.credits.IdentityCredits.topUpFromAddresses]).
+ * `platform_wallet_top_up_identity_from_addresses_with_signer`
+ * ([org.dashfoundation.dashsdk.credits.IdentityCredits.topUpIdentityFromAddresses]).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,6 +70,9 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
     var error by remember { mutableStateOf<String?>(null) }
     var isSubmitting by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf(false) }
+    // The top-up may have been broadcast and its outcome is not confirmed
+    // (code 20): shown as pending, and the same top-up cannot be sent again.
+    var pending by remember { mutableStateOf(false) }
 
     val amount = amountText.toLongOrNull()
     val canSubmit = wallet != null && manager != null && amount != null && amount > 0 &&
@@ -116,10 +120,24 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
                 )
             }
 
+            if (pending) {
+                Text(
+                    "Top-up pending: it may still complete. Don't send it again; " +
+                        "a later sync refreshes the balance but can't confirm this top-up.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("topup.pending"),
+                )
+            }
+
             SubmitButton(
-                text = if (done) "Topped Up" else "Top Up Balance",
+                text = when {
+                    done -> "Topped Up"
+                    pending -> "Top-Up Pending"
+                    else -> "Top Up Balance"
+                },
                 isLoading = isSubmitting,
-                enabled = canSubmit && !done,
+                enabled = canSubmit && !done && !pending,
                 modifier = Modifier.fillMaxWidth().testTag("topUpIdentity.submit"),
             ) {
                 val mgr = manager ?: return@SubmitButton
@@ -139,13 +157,17 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
                                 "$amt credits."
                             return@launch
                         }
-                        mgr.identityCredits.topUpFromAddresses(
+                        mgr.identityCredits.topUpIdentityFromAddresses(
                             walletHandle = w.handle,
                             identityId = idBytes,
                             inputs = inputs,
                             signerHandle = mgr.signerHandle,
                         )
                         done = true
+                    } catch (e: DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed) {
+                        // Not a failure: the top-up may still execute, so no
+                        // retry is offered.
+                        pending = true
                     } catch (e: Exception) {
                         error = e.message ?: "Top up failed"
                     } finally {
