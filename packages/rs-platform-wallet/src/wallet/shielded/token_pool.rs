@@ -893,6 +893,10 @@ type HeldReservation = (Vec<u8>, u32, Vec<u8>, Vec<u8>);
 /// ran first. Returns each account and marker released: the marker is the
 /// spend's activity id once its record was saved, so the caller can settle
 /// its activity row.
+///
+/// The spends in flight are read once, up front: a reservation or a rekey
+/// takes the same connection, so none lands during the sweep, and a spend
+/// that settles meanwhile only makes its notes releasable a pass later.
 pub(crate) fn release_orphaned_reservations(
     conn: &Connection,
     scanned: &BTreeSet<Identifier>,
@@ -911,7 +915,7 @@ pub(crate) fn release_orphaned_reservations(
         .map_err(storage("read reservations"))?
         .collect::<rusqlite::Result<_>>()
         .map_err(storage("read reservations"))?;
-    let in_flight = in_flight();
+    let in_flight: BTreeSet<[u8; 32]> = in_flight().clone();
     let mut released = BTreeSet::new();
     for (wallet_id, account_index, token_id, marker) in held {
         let id = SubwalletId::new(bytes32(wallet_id, "wallet id")?, account_index);

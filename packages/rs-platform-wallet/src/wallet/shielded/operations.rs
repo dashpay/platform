@@ -10229,6 +10229,9 @@ mod token_shielded_transfer_tests {
         assert_nothing_held(&store, 1).await;
     }
 
+    /// The operation a token shielded transfer reports and logs under.
+    const TOKEN_SHIELDED_TRANSFER_OPERATION: &str = "token shielded transfer";
+
     /// A placeholder type 26 transition for a settlement test: only its
     /// bytes are saved.
     fn placeholder_transfer() -> StateTransition {
@@ -10444,6 +10447,7 @@ mod token_shielded_transfer_tests {
             settled_state(&store).await,
             (ShieldedActivityStatus::Failed, false, None, 0)
         );
+    }
 
     /// An unshield refuses and releases as the transfer does: a shortfall of
     /// token notes holds nothing, and a failure before its broadcast releases

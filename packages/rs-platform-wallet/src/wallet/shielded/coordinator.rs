@@ -4044,8 +4044,8 @@ mod tests {
     /// notes released only where the network binds the bundles; at protocol
     /// version 14 it stays pending with its notes held, its outcome unknown.
     #[tokio::test]
-    async fn should_settle_a_token_pool_spend_from_its_token_notes_only_where_the_bundles_are_bound()
-    {
+    async fn should_settle_a_token_pool_spend_from_its_token_notes_only_where_the_bundles_are_bound(
+    ) {
         use super::super::token_pool::{insert_note_for_test, insert_watch, TokenPoolNote};
 
         let kinds = [
