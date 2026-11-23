@@ -283,6 +283,12 @@ fn refusal_message(refusal: MasternodeVotingLoadRefusal) -> String {
             Identifier::new(pro_tx_hash.to_byte_array()),
             voting_key_problem_message(problem)
         ),
+        MasternodeVotingLoadRefusal::NotAnOwnerIdentity { identity } => format!(
+            "Identity {} is not a masternode's owner identity, so it was not loaded as a \
+             masternode. Enter the masternode's ProTxHash as Core displays it, or load the \
+             identity as a user identity.",
+            identity
+        ),
         MasternodeVotingLoadRefusal::VoterIdentityGivenAsProTxHash { identity } => format!(
             "Identity {} is a masternode's voter identity, not a masternode. Enter the \
              masternode's ProTxHash as Core displays it.",
@@ -299,8 +305,11 @@ mod tests {
     use crate::voting::voting_key_check::DashSDKRecordedVotingKeyCheck;
     use crate::{dash_sdk_error_free, DashSDKErrorCode};
     use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+    use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dash_sdk::dpp::identity::v0::IdentityV0;
     use dash_sdk::dpp::identity::Identity;
+    use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+    use dash_sdk::dpp::platform_value::BinaryData;
     use dash_sdk::platform::transition::masternode_vote_keys::{
         voter_identity_id, voter_identity_voting_key, VotingKeyCheck, VotingKeyProblem,
     };
@@ -654,7 +663,19 @@ mod tests {
     #[test]
     fn should_load_the_owner_identity_without_looking_up_a_voter_through_the_export() {
         let owner_id = Identifier::new(pro_tx_hash().to_byte_array());
-        let handle = mock_sdk_proving(Some(identity(owner_id)), None);
+        let mut owner = identity(owner_id);
+        // What Platform gives an owner identity: its owner key.
+        owner.add_public_keys([IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::OWNER,
+            security_level: SecurityLevel::CRITICAL,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            read_only: true,
+            data: BinaryData::new(vec![9u8; 20]),
+            disabled_at: None,
+        })]);
+        let handle = mock_sdk_proving(Some(owner), None);
         let (load, json, message) = unsafe { load_through_the_export(handle, false) };
         destroy_mock_sdk_handle(handle);
         assert_eq!(load.kind, DashSDKMasternodeVotingLoadKind::OwnerIdentity);
@@ -701,6 +722,25 @@ mod tests {
         let message = message.to_str().expect("utf-8");
         assert!(
             message.contains("voter identity, not a masternode"),
+            "{message}"
+        );
+        assert!(!message.contains("  "), "whitespace run: {message}");
+    }
+
+    #[test]
+    fn should_tell_the_user_an_identity_is_not_an_owner_identity() {
+        let id = Identifier::new(pro_tx_hash().to_byte_array());
+        let decision = LoadDecision::of(MasternodeVotingLoad::Refused(
+            MasternodeVotingLoadRefusal::NotAnOwnerIdentity { identity: id },
+        ))
+        .expect("marshalled");
+        assert_eq!(decision.kind, DashSDKMasternodeVotingLoadKind::Refused);
+        assert_eq!(decision.identity_id, [0u8; 32]);
+        assert_eq!(decision.voting_key_verdict, None);
+        let message = decision.message.expect("a reason");
+        let message = message.to_str().expect("utf-8");
+        assert!(
+            message.contains("not a masternode's owner identity"),
             "{message}"
         );
         assert!(!message.contains("  "), "whitespace run: {message}");

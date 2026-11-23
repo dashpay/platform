@@ -193,6 +193,10 @@ struct MasternodeVoterSection: View {
 
     /// The identity whose stored voting key is being checked right now.
     @State private var checkingIdentityId: Data?
+    /// The pick, with what its row recorded, that the last check ran for.
+    /// A stored key Rust says to check before use is published only once the
+    /// check for the current pick and record has run.
+    @State private var checkedTrigger: VotingKeyCheckTrigger?
     /// Why the last check of the picked identity's key did not happen or was
     /// not saved, by identity.
     @State private var checkFailure: (identityId: Data, failure: VotingKeyCheckFailure)?
@@ -270,9 +274,12 @@ struct MasternodeVoterSection: View {
         .onChange(of: selectedVotingKeyCheckAddress) { _, _ in publish() }
         // A row resolved by Rust's load rule records its pro_tx_hash.
         .onChange(of: votingIdentities.first { $0.identityId == selectedIdentityId }?.masternodeProTxHash) { _, _ in publish() }
-        // Once per pick: the key is checked when Rust says to check it
-        // before use.
-        .task(id: selectedIdentityId) { await checkSelectedVotingKeyIfNeeded() }
+        // Once per pick and per record of it: the key is checked when Rust
+        // says to check it before use, also when its record changes while
+        // the sheet is open (a load of another key for the masternode marks
+        // it to be checked again).
+        .task(id: currentTrigger) { await checkSelectedVotingKeyIfNeeded() }
+        .onChange(of: checkedTrigger) { _, _ in publish() }
         .onChange(of: useTypedProTxHash) { _, isOn in
             #if DEBUG
             if isOn { useTypedCredentials = false }
@@ -393,6 +400,18 @@ struct MasternodeVoterSection: View {
     }
     #endif
 
+    /// The pick and what its row records, which decide whether its key is
+    /// checked again.
+    private var currentTrigger: VotingKeyCheckTrigger {
+        let selected = votingIdentities.first { $0.identityId == selectedIdentityId }
+        return VotingKeyCheckTrigger(
+            identityId: selectedIdentityId,
+            checkRaw: selected?.votingKeyCheckRaw,
+            checkAddress: selected?.votingKeyCheckAddress,
+            proTxHash: selected?.masternodeProTxHash
+        )
+    }
+
     private func selectDefaultIfNeeded() {
         let candidates = votingIdentities
         if selectedIdentityId == nil || !candidates.contains(where: { $0.identityId == selectedIdentityId }) {
@@ -415,6 +434,12 @@ struct MasternodeVoterSection: View {
     /// masternode's owner identity; its pro_tx_hash and role are then
     /// recorded with the key's verdict.
     private func checkSelectedVotingKeyIfNeeded() async {
+        let trigger = currentTrigger
+        // Whatever the check found, or if it did not need to run, the pick
+        // and record it ran for are checked; a superseded run marks nothing.
+        defer {
+            if !Task.isCancelled { checkedTrigger = trigger }
+        }
         guard let identityId = selectedIdentityId,
               let identity = votingIdentities.first(where: { $0.identityId == identityId }),
               let sdk = appState.sdk else {
@@ -574,15 +599,30 @@ struct MasternodeVoterSection: View {
             return
         }
         // An identity whose voting key may not vote, or whose masternode is
-        // not known yet, is not published.
+        // not known yet, is not published; nor is one whose key Rust says to
+        // check before use until that check has run for its current record.
         guard let selected = votingIdentities.first(where: { $0.identityId == selectedIdentityId }),
               !Self.isRefused(selected),
               let proTxHash = selected.masternodeProTxHash else {
             voter = nil
             return
         }
+        let keyUse = MasternodeRecordedVotingKeyUse(recorded: selected.recordedVotingKey, storedVotingAddress: nil)
+        if keyUse.checkBeforeUse && checkedTrigger != currentTrigger {
+            voter = nil
+            return
+        }
         voter = .storedKey(identityId: selected.identityId, proTxHash: proTxHash)
     }
+}
+
+/// A pick and what its row records for its voting key: a check runs again
+/// when any of them changes.
+private struct VotingKeyCheckTrigger: Equatable {
+    let identityId: Data?
+    let checkRaw: String?
+    let checkAddress: Data?
+    let proTxHash: Data?
 }
 
 /// How the check of the picked identity's stored voting key went, under the
