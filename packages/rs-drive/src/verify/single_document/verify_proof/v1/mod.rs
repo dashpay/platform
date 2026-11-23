@@ -3,9 +3,7 @@ use crate::error::Error;
 use crate::query::SingleDocumentDriveQuery;
 use crate::verify::{with_proved_root_on_budget_exceeded, RootHash};
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
-use dpp::data_contract::document_type::{
-    DecodedValueBudget, DocumentTypeRef, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
-};
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::version::PlatformVersion;
 
@@ -24,14 +22,9 @@ impl SingleDocumentDriveQuery {
             self.verify_lifecycle_temporal_proof(is_subset, proof, platform_version)?;
         let document = retained
             .map(|retained| {
-                let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
-                let document = Document::from_bytes_with_budget(
-                    &retained.bytes,
-                    document_type,
-                    &mut budget,
-                    platform_version,
-                )
-                .map_err(|error| with_proved_root_on_budget_exceeded(root, error.into()))?;
+                let document =
+                    Document::from_bytes_bounded(&retained.bytes, document_type, platform_version)
+                        .map_err(|error| with_proved_root_on_budget_exceeded(root, error.into()))?;
                 if document.id().as_slice() != self.document_id
                     || document_type.requires_revision()
                         && document.revision() != Some(retained.revision)

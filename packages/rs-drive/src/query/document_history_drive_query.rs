@@ -14,10 +14,12 @@ use dpp::data_contract::document_type::{
     DecodedValueBudget, DocumentPropertyType, DocumentTypeRef,
 };
 use dpp::document::lifecycle::DocumentLifecycleRecord;
+#[cfg(any(feature = "server", test))]
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
 use grovedb::{Element, PathQuery, Query, SizedQuery};
@@ -142,16 +144,32 @@ pub struct SerializedDocumentHistoryDriveQueryExecutionResult {
 }
 
 impl SerializedDocumentHistoryDriveQueryExecutionResult {
-    /// Materializes each header-validated revision entry into a [`Document`], enforcing
-    /// `budget` across the entire page.
+    /// Materializes each header-validated revision entry into a [`Document`],
+    /// enforcing a decoded-value budget proportional to each revision's encoded
+    /// byte length ([`Document::from_bytes_bounded`]).
     pub fn into_documents(
+        self,
+        document_id: &[u8; 32],
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
+        self.into_documents_with_decoder(document_id, |bytes| {
+            Document::from_bytes_bounded(bytes, document_type, platform_version)
+        })
+    }
+
+    /// Materializes each header-validated revision entry into a [`Document`], enforcing
+    /// an explicit caller-supplied `budget` across the entire page.
+    pub fn into_documents_with_budget(
         self,
         document_id: &[u8; 32],
         document_type: DocumentTypeRef,
         budget: &mut DecodedValueBudget,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
-        self.into_documents_inner(document_id, document_type, Some(budget), platform_version)
+        self.into_documents_with_decoder(document_id, |bytes| {
+            Document::from_bytes_with_budget(bytes, document_type, budget, platform_version)
+        })
     }
 
     #[cfg(any(feature = "server", test))]
@@ -161,33 +179,21 @@ impl SerializedDocumentHistoryDriveQueryExecutionResult {
         document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
-        self.into_documents_inner(document_id, document_type, None, platform_version)
+        self.into_documents_with_decoder(document_id, |bytes| {
+            Document::from_bytes(bytes, document_type, platform_version)
+        })
     }
 
-    fn into_documents_inner(
+    fn into_documents_with_decoder(
         self,
         document_id: &[u8; 32],
-        document_type: DocumentTypeRef,
-        mut budget: Option<&mut DecodedValueBudget>,
-        platform_version: &PlatformVersion,
+        mut decode: impl FnMut(&[u8]) -> Result<Document, ProtocolError>,
     ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
         let entries = self
             .entries
             .into_iter()
             .map(|entry| {
-                let document = match budget.as_deref_mut() {
-                    Some(budget) => Document::from_bytes_with_budget(
-                        &entry.document_bytes,
-                        document_type,
-                        budget,
-                        platform_version,
-                    )?,
-                    None => Document::from_bytes(
-                        &entry.document_bytes,
-                        document_type,
-                        platform_version,
-                    )?,
-                };
+                let document = decode(&entry.document_bytes)?;
                 if document.id().as_slice() != document_id
                     || document.revision().unwrap_or(1) != entry.revision
                 {
@@ -367,9 +373,12 @@ impl DocumentHistoryDriveQuery {
     ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
         let serialized = self.decode_result_serialized(rows, document_type, version)?;
         match budget {
-            Some(budget) => {
-                serialized.into_documents(&self.document_id, document_type, budget, version)
-            }
+            Some(budget) => serialized.into_documents_with_budget(
+                &self.document_id,
+                document_type,
+                budget,
+                version,
+            ),
             None => serialized.into_documents_unbounded(&self.document_id, document_type, version),
         }
     }

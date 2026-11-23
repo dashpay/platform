@@ -153,6 +153,30 @@ impl ContenderWithSerializedDocument {
         }
     }
 
+    pub fn try_into_contender_bounded(
+        self,
+        document_type_ref: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<Contender, ProtocolError> {
+        match self {
+            ContenderWithSerializedDocument::V0(v0) => Ok(v0
+                .try_into_contender_bounded(document_type_ref, platform_version)?
+                .into()),
+        }
+    }
+
+    pub fn try_to_contender_bounded(
+        &self,
+        document_type_ref: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<Contender, ProtocolError> {
+        match self {
+            ContenderWithSerializedDocument::V0(v0) => Ok(v0
+                .try_to_contender_bounded(document_type_ref, platform_version)?
+                .into()),
+        }
+    }
+
     pub fn try_into_contender_with_budget(
         self,
         document_type_ref: DocumentTypeRef,
