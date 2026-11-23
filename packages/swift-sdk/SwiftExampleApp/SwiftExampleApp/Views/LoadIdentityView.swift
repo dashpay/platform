@@ -55,6 +55,14 @@ struct LoadIdentityView: View {
         /// by role. Success requires each slot to still hold its key, so a
         /// key changed elsewhere while the dialog was open is reported.
         let enteredKeyDigests: [SpecialKeyType: Data]
+        /// What Rust's outcome for the entered voting key says to record,
+        /// with that key's address, written on the identity only when that
+        /// key replaces the stored one; `nil` keeps what is recorded.
+        let votingKeyRecord: MasternodeRecordedVotingKey?
+        /// What the report says when the entered voting key could not be
+        /// checked, shown only when that key is in the voting slot after the
+        /// replacement.
+        let uncheckedVotingKeyNote: String?
     }
 
     /// Held only until the replacement dialog is answered, then cleared.
@@ -435,6 +443,65 @@ struct LoadIdentityView: View {
                     return
                 }
 
+                // A masternode voting key is checked against Platform before
+                // anything is stored. Rust decides from the check and what
+                // this device stores for the voting key whether the key is
+                // stored and what is recorded for it
+                // (`MasternodeVotingKeyCheck.outcome(votingAddress:slot:)`).
+                // Every record is written with the address of the key it was
+                // made of.
+                var votingKeyCheck: MasternodeVotingKeyCheck?
+                var votingKeyAddress: MasternodeVotingKeyAddress?
+                if let votingKeyData {
+                    let votingAddress = try SDK.masternodeVotingAddress(privateKey: votingKeyData)
+                    let check = try await sdk.checkMasternodeVotingKey(
+                        proTxHash: MasternodeVoter.wireOrderProTxHash(identityId: validIdData),
+                        votingAddress: votingAddress.data
+                    )
+                    guard appState.sdk === sdk else {
+                        await MainActor.run {
+                            errorMessage = "The network changed during the load, so the identity was not saved. Load it again."
+                            isLoading = false
+                            loadStartTime = nil
+                        }
+                        return
+                    }
+                    let refusal = "The voting key does not belong to masternode \(validIdData.toHexString()), so the identity was not saved: \(Self.reason(of: check))"
+                    let outcome = await MainActor.run { () -> MasternodeVotingKeyCheckOutcome in
+                        let read = Self.votingKeySlot(
+                            holding: votingKeyData,
+                            identityId: validIdData,
+                            network: network,
+                            in: modelContext
+                        )
+                        let outcome = check.outcome(votingAddress: votingAddress, slot: read.slot)
+                        if !outcome.storeKey {
+                            // Nothing entered is stored. What Rust says to
+                            // record is for the key already stored.
+                            var text = refusal
+                            if let record = outcome.record,
+                               let row = Self.identityRow(validIdData, on: network, in: modelContext) {
+                                row.recordedVotingKey = record
+                                do {
+                                    try modelContext.save()
+                                } catch {
+                                    text += " The verdict on the stored voting key could not be saved: \(error.localizedDescription). Load the identity again to retry."
+                                }
+                            }
+                            if read.storedKeyUnreadable {
+                                text += " The stored voting key could not be read, so what is recorded for it was not updated. Unlock the device and load the identity again."
+                            }
+                            errorMessage = text
+                            isLoading = false
+                            loadStartTime = nil
+                        }
+                        return outcome
+                    }
+                    guard outcome.storeKey else { return }
+                    votingKeyCheck = check
+                    votingKeyAddress = votingAddress
+                }
+
                 // Debug: Print the entire identity data to see its structure
                 print("🔵 Fetched identity data: \(identityData)")
 
@@ -449,125 +516,62 @@ struct LoadIdentityView: View {
                     }
                 }
 
-                // Extract public keys if available
-                var parsedPublicKeys: [IdentityPublicKey] = []
-
-                // Try different possible key names for public keys in the JSON
-                // The publicKeys might be a dictionary with key IDs as keys
-                if let publicKeysDict = identityData["publicKeys"] as? [String: Any] {
-                    print("🔵 Public keys are in dictionary format")
-                    parsedPublicKeys = publicKeysDict.compactMap { (keyIdStr, keyData) -> IdentityPublicKey? in
-                        guard let keyData = keyData as? [String: Any],
-                              let id = Int(keyIdStr) ?? keyData["id"] as? Int,
-                              let purpose = keyData["purpose"] as? Int,
-                              let securityLevel = keyData["securityLevel"] as? Int,
-                              let keyType = keyData["type"] as? Int,
-                              let dataStr = keyData["data"] as? String else {
-                            print("❌ Failed to parse key with ID: \(keyIdStr), data: \(keyData)")
-                            return nil
-                        }
-
-                        // Data is in Base64 format, not hex
-                        guard let data = Data(base64Encoded: dataStr) else {
-                            print("❌ Failed to decode Base64 data for key \(id)")
-                            return nil
-                        }
-
-                        let readOnly = keyData["readOnly"] as? Bool ?? false
-                        // `disabledAt`, `totalBudget` and `expiresAt` are all protocol
-                        // `u64`s, which DPP writes as a JSON number up to 2^53 - 1 and
-                        // as a decimal string above it. `UInt64(jsonValue:)` reads both
-                        // shapes; a plain `as? UInt64` would drop the large ones.
-                        let disabledAt = UInt64(jsonValue: keyData["disabledAt"])
-                        // Usage limits (protocol version 14). Present only on a
-                        // version 1 key: `totalBudget` is credits for the key's
-                        // whole lifetime, `expiresAt` is block time in
-                        // milliseconds. Dropping them here would persist a
-                        // limited key as unlimited.
-                        let totalBudget = UInt64(jsonValue: keyData["totalBudget"])
-                        let expiresAt = UInt64(jsonValue: keyData["expiresAt"])
-
-                        return IdentityPublicKey(
-                            id: UInt32(id),
-                            purpose: KeyPurpose(rawValue: UInt8(purpose)) ?? .authentication,
-                            securityLevel: SecurityLevel(rawValue: UInt8(securityLevel)) ?? .high,
-                            contractBounds: nil,
-                            keyType: KeyType(rawValue: UInt8(keyType)) ?? .ecdsaSecp256k1,
-                            readOnly: readOnly,
-                            data: data,
-                            disabledAt: disabledAt,
-                            totalBudget: totalBudget,
-                            expiresAt: expiresAt
-                        )
-                    }
-                } else if let publicKeysArray = identityData["publicKeys"] as? [[String: Any]] {
-                    print("🔵 Public keys are in array format")
-                    parsedPublicKeys = publicKeysArray.compactMap { keyData -> IdentityPublicKey? in
-                        guard let id = keyData["id"] as? Int,
-                              let purpose = keyData["purpose"] as? Int,
-                              let securityLevel = keyData["securityLevel"] as? Int,
-                              let keyType = keyData["type"] as? Int,
-                              let dataStr = keyData["data"] as? String else {
-                            print("❌ Failed to parse key data: \(keyData)")
-                            return nil
-                        }
-
-                        // Data is in Base64 format, not hex
-                        guard let data = Data(base64Encoded: dataStr) else {
-                            print("❌ Failed to decode Base64 data for key \(id)")
-                            return nil
-                        }
-
-                        let readOnly = keyData["readOnly"] as? Bool ?? false
-                        // `disabledAt`, `totalBudget` and `expiresAt` are all protocol
-                        // `u64`s, which DPP writes as a JSON number up to 2^53 - 1 and
-                        // as a decimal string above it. `UInt64(jsonValue:)` reads both
-                        // shapes; a plain `as? UInt64` would drop the large ones.
-                        let disabledAt = UInt64(jsonValue: keyData["disabledAt"])
-                        // Usage limits (protocol version 14). Present only on a
-                        // version 1 key: `totalBudget` is credits for the key's
-                        // whole lifetime, `expiresAt` is block time in
-                        // milliseconds. Dropping them here would persist a
-                        // limited key as unlimited.
-                        let totalBudget = UInt64(jsonValue: keyData["totalBudget"])
-                        let expiresAt = UInt64(jsonValue: keyData["expiresAt"])
-
-                        return IdentityPublicKey(
-                            id: UInt32(id),
-                            purpose: KeyPurpose(rawValue: UInt8(purpose)) ?? .authentication,
-                            securityLevel: SecurityLevel(rawValue: UInt8(securityLevel)) ?? .high,
-                            contractBounds: nil,
-                            keyType: KeyType(rawValue: UInt8(keyType)) ?? .ecdsaSecp256k1,
-                            readOnly: readOnly,
-                            data: data,
-                            disabledAt: disabledAt,
-                            totalBudget: totalBudget,
-                            expiresAt: expiresAt
-                        )
-                    }
-                } else {
-                    print("❌ Public keys not found in identity data")
-                }
-
                 // Persist the fetched identity directly via SwiftData.
                 // Private keys are stored in the keychain and linked
                 // to the matching `PersistentPublicKey`s below.
                 let trimmedAlias = aliasInput.isEmpty ? nil : aliasInput
-                let capturedPublicKeys = parsedPublicKeys
                 let capturedPrivateKeys = privateKeyData
                 let capturedVotingKey = votingKeyData
                 let capturedOwnerKey = ownerKeyData
                 let capturedPayoutKey = payoutKeyData
+                let capturedVotingKeyCheck = votingKeyCheck
+                let capturedVotingKeyAddress = votingKeyAddress
 
                 await MainActor.run {
-                    // Upsert the PersistentIdentity row.
-                    let existing = PersistentIdentity.fetch(
-                        in: modelContext,
+                    // Read the keys the network returned before writing
+                    // anything. A key list that cannot be read completely
+                    // is not applied: no identity row, no key rows and no
+                    // Keychain writes.
+                    guard let fetchedKeys = PersistentPublicKey.fromFetchedIdentity(
+                        identityData,
                         identityId: validIdData
-                    )
+                    ) else {
+                        errorMessage = "This identity's keys could not be read from the response, so nothing was saved. Load it again."
+                        isLoading = false
+                        loadStartTime = nil
+                        return
+                    }
+
+                    // Upsert the PersistentIdentity row. A failed read is
+                    // not "no row": inserting then could add a second row
+                    // for the identity, and whether a wallet owns it would be
+                    // unknown, so stop before writing anything.
+                    let existing: PersistentIdentity?
+                    do {
+                        let target = validIdData
+                        existing = try modelContext.fetch(
+                            FetchDescriptor<PersistentIdentity>(
+                                predicate: #Predicate { $0.identityId == target }
+                            )
+                        ).first
+                    } catch {
+                        errorMessage = "The stored identity could not be read, so nothing was saved: \(error.localizedDescription)"
+                        isLoading = false
+                        loadStartTime = nil
+                        return
+                    }
+                    // A wallet that holds this identity is the only writer
+                    // of its key rows and balance (the persister, through
+                    // the wallet's proved refresh, which never lets an older
+                    // answer undo a newer one). A plain fetch here could be
+                    // a block behind, so it leaves both alone and only
+                    // records what the user entered.
+                    let walletHeld = existing?.wallet != nil
                     let row: PersistentIdentity
                     if let existing = existing {
-                        existing.balance = Int64(bitPattern: fetchedBalance)
+                        if !walletHeld {
+                            existing.balance = Int64(bitPattern: fetchedBalance)
+                        }
                         existing.alias = trimmedAlias
                         // The user just added/reloaded this identity
                         // by hand — mark the provenance. (This flow
@@ -601,27 +605,44 @@ struct LoadIdentityView: View {
                         )
                     }
 
-                    // Bring the rows in line with the keys the network
-                    // returned, keeping each unchanged key's local signing
-                    // references.
-                    Self.mergeFetchedPublicKeys(capturedPublicKeys, into: row)
+                    // Keep the fetched keys' DPP projection for matching the
+                    // entered private keys, then (for an identity no wallet
+                    // holds) bring the rows in line with them, keeping each
+                    // unchanged key's local signing references.
+                    let capturedPublicKeys = fetchedKeys.compactMap { $0.toIdentityPublicKey() }
+                    if !walletHeld {
+                        row.mergeFetchedPublicKeys(fetchedKeys)
+                    }
 
                     // Match each user-provided private key to its
                     // public key and stash it in the keychain.
+                    // A key that matches a fetched key but has no stored row
+                    // with the same id, type and bytes (a wallet-held identity
+                    // whose wallet has not refreshed since the key was added),
+                    // or that the Keychain refused, is reported rather than
+                    // dropped silently.
+                    var unlinkedKeyIds: [UInt32] = []
                     for privateKey in capturedPrivateKeys {
-                        if let matched = KeyValidation.matchPrivateKeyToPublicKeys(
+                        guard let matched = KeyValidation.matchPrivateKeyToPublicKeys(
                             privateKeyData: privateKey,
                             publicKeys: capturedPublicKeys,
                             network: network
-                        ), let persistentKey = row.publicKeys.first(
-                            where: { $0.keyId == Int32(matched.id) }
-                        ), let keychainId = KeychainManager.shared.storePrivateKey(
+                        ) else {
+                            continue
+                        }
+                        guard let persistentKey = row.publicKeys.first(where: {
+                            $0.keyId == Int32(bitPattern: matched.id)
+                                && $0.keyTypeEnum == matched.keyType
+                                && $0.publicKeyData == matched.data
+                        }), let keychainId = KeychainManager.shared.storePrivateKey(
                             privateKey,
                             identityId: validIdData,
                             keyIndex: persistentKey.keyId
-                        ) {
-                            persistentKey.privateKeyKeychainIdentifier = keychainId
+                        ) else {
+                            unlinkedKeyIds.append(matched.id)
+                            continue
                         }
+                        persistentKey.privateKeyKeychainIdentifier = keychainId
                     }
 
                     // Masternode-/evonode-specific keys go to the
@@ -662,8 +683,32 @@ struct LoadIdentityView: View {
                             return nil
                         }
                     }
+                    var enteredVotingKeyStored = false
+                    // Rust's outcome for the entered key, from what the
+                    // store found in the slot (the read before the check
+                    // only decided whether to store): an empty slot it
+                    // filled, the same key already there, or a different
+                    // key it kept.
+                    var storedVotingKeyOutcome: MasternodeVotingKeyCheckOutcome?
                     if let identifier = storeSlot(capturedVotingKey, .voting, named: "voting") {
+                        enteredVotingKeyStored = true
                         row.votingPrivateKeyIdentifier = identifier
+                        if let check = capturedVotingKeyCheck, let address = capturedVotingKeyAddress {
+                            storedVotingKeyOutcome = check.outcome(
+                                votingAddress: address,
+                                slot: storedKeys.contains("voting")
+                                    ? .empty
+                                    : .sameKey(recorded: row.recordedVotingKey)
+                            )
+                            // The slot holds the entered key: record what
+                            // Rust says for it, or keep what is recorded.
+                            if let record = storedVotingKeyOutcome?.record {
+                                row.recordedVotingKey = record
+                            }
+                        }
+                    } else if conflictingKeys.contains("voting"),
+                              let check = capturedVotingKeyCheck, let address = capturedVotingKeyAddress {
+                        storedVotingKeyOutcome = check.outcome(votingAddress: address, slot: .differentKey)
                     }
                     if let identifier = storeSlot(capturedOwnerKey, .owner, named: "owner") {
                         row.ownerPrivateKeyIdentifier = identifier
@@ -691,8 +736,19 @@ struct LoadIdentityView: View {
                         return
                     }
 
-                    if unstoredKeys.isEmpty && conflictingKeys.isEmpty {
+                    // The entered voting key was stored but Platform could not
+                    // be asked about it: said in place of the plain success.
+                    let uncheckedNoteIfStored = Self.uncheckedVotingKeyNote(
+                        capturedVotingKeyCheck,
+                        outcome: storedVotingKeyOutcome
+                    )
+                    let uncheckedNote = enteredVotingKeyStored ? uncheckedNoteIfStored : nil
+                    if unstoredKeys.isEmpty && conflictingKeys.isEmpty && unlinkedKeyIds.isEmpty && uncheckedNote == nil {
                         showSuccess = true
+                    } else if unstoredKeys.isEmpty && conflictingKeys.isEmpty && unlinkedKeyIds.isEmpty, let uncheckedNote {
+                        errorMessage = "The identity was loaded and its voting key was stored. " + uncheckedNote
+                        isLoading = false
+                        loadStartTime = nil
                     } else {
                         var parts: [String] = []
                         // Kept apart so the report after a replacement can
@@ -708,17 +764,35 @@ struct LoadIdentityView: View {
                             }
                             unstoredNote = note
                         }
+                        if !unlinkedKeyIds.isEmpty {
+                            let ids = ListFormatter.localizedString(byJoining: unlinkedKeyIds.sorted().map(String.init))
+                            let noun = unlinkedKeyIds.count == 1 ? "key" : "keys"
+                            parts.append("the private \(noun) entered for key ID \(ids) could not be saved on this device")
+                            let retry = walletHeld
+                                ? "Refresh the identity from the wallet that holds it, then load it again."
+                                : "Load the identity again."
+                            let note = "The private \(noun) entered for key ID \(ids) could not be saved on this device. \(retry)"
+                            unstoredNote = unstoredNote.map { $0 + " " + note } ?? note
+                        }
                         if !conflictingKeys.isEmpty {
                             let names = ListFormatter.localizedString(byJoining: conflictingKeys)
                             let noun = conflictingKeys.count == 1 ? "private key is" : "private keys are"
                             parts.append("a different \(names) \(noun) already stored for this identity and was kept")
                         }
                         var text = "The identity was loaded, but " + parts.joined(separator: ", and ") + "."
+                        if !unlinkedKeyIds.isEmpty {
+                            text += walletHeld
+                                ? " Refresh the identity from the wallet that holds it, then load it again."
+                                : " Load the identity again."
+                        }
                         if !conflictingKeys.isEmpty {
                             text += " You can replace the stored key with the one you entered when asked, or load the identity again later to be asked again."
                         }
                         if unstoredKeys.contains("voting") && row.votingPrivateKeyIdentifier == nil {
                             text += " The identity cannot vote until it is loaded again."
+                        }
+                        if let uncheckedNote {
+                            text += " The voting key was stored. " + uncheckedNote
                         }
                         errorMessage = text
                         isLoading = false
@@ -738,7 +812,9 @@ struct LoadIdentityView: View {
                                 identityId: validIdData,
                                 keys: conflictingReplacements,
                                 unstoredNote: unstoredNote,
-                                enteredKeyDigests: enteredKeyDigests
+                                enteredKeyDigests: enteredKeyDigests,
+                                votingKeyRecord: storedVotingKeyOutcome?.record,
+                                uncheckedVotingKeyNote: uncheckedNoteIfStored
                             )
                         }
                     }
@@ -823,7 +899,9 @@ struct LoadIdentityView: View {
                 case .success(nil):
                     removed.append(name)
                     switch key.keyType {
-                    case .voting: row.votingPrivateKeyIdentifier = nil
+                    case .voting:
+                        row.votingPrivateKeyIdentifier = nil
+                        row.votingKeyCheck = nil
                     case .owner: row.ownerPrivateKeyIdentifier = nil
                     case .payout: row.payoutPrivateKeyIdentifier = nil
                     }
@@ -836,7 +914,14 @@ struct LoadIdentityView: View {
             }
             if let identifier {
                 switch key.keyType {
-                case .voting: row.votingPrivateKeyIdentifier = identifier
+                case .voting:
+                    row.votingPrivateKeyIdentifier = identifier
+                    // The slot now holds the entered key: record what Rust's
+                    // outcome at the load says for it, or keep what is
+                    // recorded.
+                    if let record = pending.votingKeyRecord {
+                        row.recordedVotingKey = record
+                    }
                 case .owner: row.ownerPrivateKeyIdentifier = identifier
                 case .payout: row.payoutPrivateKeyIdentifier = identifier
                 }
@@ -900,6 +985,9 @@ struct LoadIdentityView: View {
         // including roles stored by the load itself, so a key changed in
         // another window while the dialog was open is not reported as done.
         var notInPlace: [String] = []
+        // Whether the entered voting key is in its slot now, stored by the
+        // load itself or by this replacement.
+        var enteredVotingKeyInPlace = false
         for (keyType, digest) in pending.enteredKeyDigests.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
             let inPlace: Bool
             if case .success(let stored?) = keychain.readSpecialKey(identityId: pending.identityId, keyType: keyType) {
@@ -907,6 +995,7 @@ struct LoadIdentityView: View {
             } else {
                 inPlace = false
             }
+            if keyType == .voting { enteredVotingKeyInPlace = inPlace }
             let handled = changed.contains(keyType.rawValue) || kept.contains(keyType.rawValue)
                 || removed.contains(keyType.rawValue) || unknown.contains(keyType.rawValue)
                 || notChosen.contains(keyType.rawValue)
@@ -919,7 +1008,12 @@ struct LoadIdentityView: View {
             let noun = notInPlace.count == 1 ? "key is" : "keys are"
             parts.append("The \(names) \(noun) no longer the one you entered; it was changed on this device since the load. Load the identity again.")
         }
-        if saved && replaced.count == pending.keys.count && pending.unstoredNote == nil && notInPlace.isEmpty {
+        let uncheckedNote = enteredVotingKeyInPlace ? pending.uncheckedVotingKeyNote : nil
+        if let uncheckedNote {
+            parts.append(uncheckedNote)
+        }
+        if saved && replaced.count == pending.keys.count && pending.unstoredNote == nil && notInPlace.isEmpty
+            && uncheckedNote == nil {
             errorMessage = nil
             showSuccess = true
         } else {
@@ -929,50 +1023,71 @@ struct LoadIdentityView: View {
         }
     }
 
-    /// Bring `identity`'s public-key rows in line with the keys fetched from
-    /// Platform. A row whose key id, key type and bytes are unchanged is
-    /// updated in place, so its local signing references (Keychain
-    /// identifier, wallet id, derivation path) survive a reload; any other
-    /// fetched key gets a new row. Rows for keys no longer fetched, or whose
-    /// bytes changed, are taken off the identity as before, and their
-    /// Keychain items are left alone.
+    /// What the load reports when the entered voting key could not be
+    /// checked against Platform, worded from Rust's `outcome` for it: whether
+    /// what was recorded is kept. `nil` when the key was checked. Shown only
+    /// when the entered key is in the voting slot.
+    private static func uncheckedVotingKeyNote(
+        _ check: MasternodeVotingKeyCheck?,
+        outcome: MasternodeVotingKeyCheckOutcome?
+    ) -> String? {
+        guard case .undetermined(let reason) = check, let outcome else { return nil }
+        if outcome.record == nil {
+            return reason + " The result of its earlier check is kept."
+        }
+        return reason + " It is checked again when you pick this identity to vote."
+    }
+
+    /// The message a voting key check carries, empty for a valid one.
+    private static func reason(of check: MasternodeVotingKeyCheck) -> String {
+        switch check {
+        case .valid: return ""
+        case .invalid(let message), .undetermined(let message): return message
+        }
+    }
+
+    /// The identity's row, when it is stored for `network`.
     @MainActor
-    private static func mergeFetchedPublicKeys(_ fetched: [IdentityPublicKey], into identity: PersistentIdentity) {
-        let identityHex = identity.identityId.toHexString()
-        var matched = Set<ObjectIdentifier>()
-        var additions: [PersistentPublicKey] = []
-        for publicKey in fetched {
-            // Built the same way as a new row, so the in-place update
-            // writes exactly the columns a new row would have.
-            guard let fresh = PersistentPublicKey.from(publicKey, identityId: identityHex) else {
-                continue
-            }
-            guard let current = identity.publicKeys.first(where: {
-                !matched.contains(ObjectIdentifier($0))
-                    && $0.keyId == fresh.keyId
-                    && $0.keyType == fresh.keyType
-                    && $0.publicKeyData == fresh.publicKeyData
-            }) else {
-                additions.append(fresh)
-                continue
-            }
-            matched.insert(ObjectIdentifier(current))
-            current.purpose = fresh.purpose
-            current.securityLevel = fresh.securityLevel
-            current.readOnly = fresh.readOnly
-            current.disabledAt = fresh.disabledAt
-            current.totalBudget = fresh.totalBudget
-            current.expiresAt = fresh.expiresAt
-            // Contract bounds are left as stored: this form's parsers do not
-            // read them from the fetch (`contractBounds: nil`), so copying
-            // would turn a contract-, document-type- or group-bound key into
-            // an unbounded one.
-            current.identityId = fresh.identityId
+    private static func identityRow(_ identityId: Data, on network: Network, in modelContext: ModelContext) -> PersistentIdentity? {
+        guard let row = PersistentIdentity.fetch(in: modelContext, identityId: identityId),
+              row.network == network else {
+            return nil
         }
-        identity.publicKeys.removeAll { !matched.contains(ObjectIdentifier($0)) }
-        for addition in additions {
-            identity.addPublicKey(addition)
+        return row
+    }
+
+    /// What this device's voting key slot for the identity holds compared
+    /// with `enteredKey`, the fact Rust's rules take
+    /// (`MasternodeVotingKeyCheck.outcome(votingAddress:slot:)`), and whether
+    /// the stored key could not be read. The keys are compared by SHA-256
+    /// digest, so no copy of the stored key outlives the read; the recorded
+    /// check, with its key's address, comes from the identity's row on
+    /// `network`, if any.
+    @MainActor
+    private static func votingKeySlot(
+        holding enteredKey: Data,
+        identityId: Data,
+        network: Network,
+        in modelContext: ModelContext
+    ) -> (slot: MasternodeVotingKeySlot, storedKeyUnreadable: Bool) {
+        let storedDigest: Data
+        switch KeychainManager.shared.readSpecialKey(identityId: identityId, keyType: .voting) {
+        case .success(nil):
+            return (.empty, false)
+        case .success(let stored?):
+            storedDigest = Data(SHA256.hash(data: stored))
+        case .failure:
+            // The stored key could not be read, so it is not known to be
+            // the entered one: reported as a different key, the
+            // conservative fact (Rust records nothing on a different key),
+            // and the caller tells the user.
+            return (.differentKey, true)
         }
+        guard storedDigest == Data(SHA256.hash(data: enteredKey)) else {
+            return (.differentKey, false)
+        }
+        let recorded = identityRow(identityId, on: network, in: modelContext)?.recordedVotingKey
+        return (.sameKey(recorded: recorded), false)
     }
 
     private func fillRandomHPMN() {

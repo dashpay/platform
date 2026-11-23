@@ -15,7 +15,7 @@ extension UInt64 {
     /// string. Returns `nil` for `nil`, `NSNull`, a negative or fractional
     /// number, a value outside the `UInt64` range, a boolean, and anything
     /// that is not a number or a string.
-    init?(jsonValue: Any?) {
+    public init?(jsonValue: Any?) {
         switch jsonValue {
         case let text as String:
             // The shape a value above the safe-integer ceiling arrives in.
