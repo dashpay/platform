@@ -91,6 +91,24 @@ class ShieldedTokenPoolsTest {
         assertNull(shieldedTokenOrchardRecipient(mainnet, Network.TESTNET))
         assertNull(shieldedTokenOrchardRecipient("", Network.TESTNET))
         assertNull(shieldedTokenOrchardRecipient("not an address", Network.TESTNET))
+        assertTrue(
+            "a real address fits the bound",
+            testnet.length <= MAX_ORCHARD_ADDRESS_LENGTH && mainnet.length <= MAX_ORCHARD_ADDRESS_LENGTH,
+        )
+    }
+
+    @Test
+    fun `refuses long recipient text before decoding it`() {
+        // Base58 characters only, so the generic parser's Base58 fallback
+        // would otherwise run over all of it.
+        val pasted = "z".repeat(200_000)
+        val started = System.nanoTime()
+        assertNull(shieldedTokenOrchardRecipient(pasted, Network.TESTNET))
+        assertTrue(
+            "refused without decoding",
+            System.nanoTime() - started < 1_000_000_000L,
+        )
+        assertNull(shieldedTokenOrchardRecipient("z".repeat(MAX_ORCHARD_ADDRESS_LENGTH + 1), Network.TESTNET))
     }
 
     @Test
@@ -181,5 +199,13 @@ class ShieldedTokenPoolsTest {
         assertEquals("−1.0000 DASH", signedAmount(KIND_TOKEN_PURCHASE, direction = 1, amount = 100_000_000_000))
         assertTrue(amountIsTokens(KIND_TOKEN_TRANSFER))
         assertFalse(amountIsTokens(KIND_TOKEN_PURCHASE))
+    }
+
+    @Test
+    fun `the storage explorer names each stored amount's unit, token principals unsigned`() {
+        assertEquals("18446744073709551615 token units", storedActivityAmountText(KIND_TOKEN_TRANSFER, -1))
+        assertEquals("7 token units", storedActivityAmountText(KIND_TOKEN_UNSHIELD, 7))
+        assertEquals("a purchase's price is credits", "250000 credits", storedActivityAmountText(KIND_TOKEN_PURCHASE, 250_000))
+        assertEquals("100 credits", storedActivityAmountText(3, 100))
     }
 }

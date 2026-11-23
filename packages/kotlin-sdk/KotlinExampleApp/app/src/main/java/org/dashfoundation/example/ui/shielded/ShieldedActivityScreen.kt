@@ -282,6 +282,15 @@ internal fun amountIsTokens(kindTag: Int): Boolean =
     kindTag == KIND_TOKEN_TRANSFER || kindTag == KIND_TOKEN_UNSHIELD
 
 /**
+ * A stored activity row's raw `amount` with its unit, unsigned: token units
+ * for the kinds [amountIsTokens] names, credits otherwise (a token
+ * purchase's price included). For views that show the stored number as is,
+ * such as the Storage Explorer. ← Swift `ShieldedActivityKindDisplay.rawAmountText`.
+ */
+internal fun storedActivityAmountText(kindTag: Int, amount: Long): String =
+    if (amountIsTokens(kindTag)) "${amount.toULong()} token units" else "${amount.toULong()} credits"
+
+/**
  * What a token purchase row says about its tokens, by its stored status:
  * minted only once Confirmed (1). The row is recorded before the purchase
  * is broadcast, so its kind alone says what the buyer intended, not what

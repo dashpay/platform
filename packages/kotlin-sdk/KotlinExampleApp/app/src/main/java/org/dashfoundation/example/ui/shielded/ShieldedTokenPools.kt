@@ -101,9 +101,18 @@ internal fun shieldedTokenSmallestUnitAmount(text: String): ULong? {
  */
 internal fun shieldedTokenOrchardRecipient(text: String, network: Network): ByteArray? {
     val trimmed = text.trim()
-    if (trimmed.isEmpty()) return null
+    // Longer text cannot be an Orchard address, and the generic parser's
+    // Base58 fallback is costly on long input: refuse it before decoding.
+    if (trimmed.isEmpty() || trimmed.length > MAX_ORCHARD_ADDRESS_LENGTH) return null
     return (DashAddress.parse(trimmed, network) as? DashAddressType.Orchard)?.raw43
 }
+
+/**
+ * The longest bech32m text an Orchard address can be: an Orchard address is
+ * 83 characters on testnet (`tdash1`, 71 data characters, 6 checksum), and
+ * BIP-173 caps bech32 strings at 90.
+ */
+internal const val MAX_ORCHARD_ADDRESS_LENGTH = 90
 
 /** At most 44 Base58 characters encode 32 bytes; longer text is refused before decoding. */
 private const val MAX_BASE58_IDENTIFIER_LENGTH = 44

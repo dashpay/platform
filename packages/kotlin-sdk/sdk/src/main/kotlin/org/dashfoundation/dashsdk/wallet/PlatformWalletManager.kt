@@ -2637,7 +2637,10 @@ class PlatformWalletManager(
      * Returning means SUBMITTED, not confirmed: the transfer stays pending,
      * its notes reserved ([ShieldedTokenPoolBalance.reservedBalance]), until
      * a shielded sync confirms it. Do not show it as complete and do not
-     * retry it. Errors are read as for [shieldedTokenPurchaseFromPool]:
+     * retry it. A caller cancelled while the native call runs still gets
+     * this return once the call finished ([opReturningCompletedResult]), so
+     * a submitted transfer is never reported as a cancellation. Errors are
+     * read as for [shieldedTokenPurchaseFromPool]:
      * [DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed] (and the other
      * "result not known" errors) mean it may have gone through.
      *
@@ -2654,7 +2657,7 @@ class PlatformWalletManager(
         recipientRaw43: ByteArray,
         amount: ULong,
         account: Int = 0,
-    ): Unit = teardownGate.op {
+    ): Unit = teardownGate.opReturningCompletedResult {
         require(account >= 0) { "account must be non-negative, got $account" }
         require(walletId.size == 32) { "walletId must be exactly 32 bytes, got ${walletId.size}" }
         require(contractId.size == 32) {
@@ -2687,8 +2690,8 @@ class PlatformWalletManager(
      * Rust checks and selects as for [shieldedTokenTransfer] and records a
      * Token Unshield activity row (kind tag 12).
      *
-     * Submitted, never confirmed, exactly as for [shieldedTokenTransfer]: do
-     * not retry it.
+     * Submitted, never confirmed, exactly as for [shieldedTokenTransfer]
+     * (including its cancellation rule): do not retry it.
      */
     @Suppress("LongParameterList")
     suspend fun shieldedTokenUnshield(
@@ -2698,7 +2701,7 @@ class PlatformWalletManager(
         recipientIdentityId: ByteArray,
         amount: ULong,
         account: Int = 0,
-    ): Unit = teardownGate.op {
+    ): Unit = teardownGate.opReturningCompletedResult {
         require(account >= 0) { "account must be non-negative, got $account" }
         require(walletId.size == 32) { "walletId must be exactly 32 bytes, got ${walletId.size}" }
         require(contractId.size == 32) {

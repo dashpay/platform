@@ -4439,7 +4439,7 @@
           "host": "kotlin",
           "kind": "device",
           "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/ShieldedTokenPoolFfiTest.kt",
-          "id": "shouldThrowFromEveryExportWhenTheManagerHandleIsInvalid",
+          "id": "shouldListNothingAndRefuseAZeroSpendAsNothingSent",
           "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
           "covers_restart": false
         }
@@ -4535,7 +4535,7 @@
           "host": "kotlin",
           "kind": "device",
           "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/ShieldedTokenPoolFfiTest.kt",
-          "id": "shouldRefuseArgumentsItCannotReadBeforeAnyWalletCodeRuns",
+          "id": "shouldRefuseArgumentsJniCannotReadBeforeAnyWalletCodeRuns",
           "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
           "covers_restart": false
         }

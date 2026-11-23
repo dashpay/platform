@@ -53,13 +53,13 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
 import org.dashfoundation.dashsdk.wallet.ShieldedTokenPoolBalance
 import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
 import org.dashfoundation.example.di.LocalAppContainer
-import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.ShieldedTokenSend
 import org.dashfoundation.example.navigation.ShieldedTokenUnshield
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
@@ -95,15 +95,18 @@ import org.dashfoundation.example.util.toHex
 @Composable
 fun ShieldedTokenPoolsScreen(walletIdHex: String, navController: NavHostController) {
     val container = LocalAppContainer.current
-    val appState = LocalAppState.current
     val walletId = remember(walletIdHex) { walletIdHex.hexToBytes() }
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
-    val network by appState.currentNetwork.collectAsStateWithLifecycle()
+    // The known tokens (names, decimals, the watch picker) are those of the
+    // network the listing manager is locked to, not the app's selection,
+    // which can differ during a network switch.
+    val network = manager?.network
     val syncState by container.shieldedService.state.collectAsStateWithLifecycle()
     val canResume by container.shieldedService.canResume.collectAsStateWithLifecycle()
     val hasShielded = remember { Sdk.hasShielded() }
     val tokens by remember(network) {
-        container.database.tokenDao().observeTokensByNetwork(network.ffiValue)
+        network?.let { container.database.tokenDao().observeTokensByNetwork(it.ffiValue) }
+            ?: flowOf(emptyList())
     }.collectAsStateWithLifecycle(initialValue = emptyList())
     val scope = rememberCoroutineScope()
 
@@ -118,6 +121,11 @@ fun ShieldedTokenPoolsScreen(walletIdHex: String, navController: NavHostControll
     var checkStatus by remember { mutableStateOf<CheckNowStatus>(CheckNowStatus.Idle) }
     var showWatchSheet by remember { mutableStateOf(false) }
     var unwatchError by remember { mutableStateOf<String?>(null) }
+    // The watch call belongs to this screen, not to the picker sheet: closing
+    // the sheet while Rust reads the token's configuration must not cancel
+    // the reload that shows a watch Rust saved.
+    var watchingTokenId by remember { mutableStateOf<String?>(null) }
+    var watchError by remember { mutableStateOf<String?>(null) }
 
     LifecycleResumeEffect(Unit) {
         readEpoch++
@@ -312,11 +320,34 @@ fun ShieldedTokenPoolsScreen(walletIdHex: String, navController: NavHostControll
 
     if (showWatchSheet) {
         ShieldedTokenPoolWatchSheet(
-            walletId = walletId,
             tokens = tokens,
             watched = balances.orEmpty(),
-            onWatched = { readEpoch++ },
-            onDismiss = { showWatchSheet = false },
+            watchingTokenId = watchingTokenId,
+            watchError = watchError,
+            onWatch = onWatch@{ token ->
+                val activeManager = manager ?: return@onWatch
+                if (watchingTokenId != null) return@onWatch
+                watchingTokenId = token.id.toHex()
+                watchError = null
+                scope.launch {
+                    try {
+                        activeManager.shieldedTokenPoolWatch(walletId, token.contractId, token.position)
+                        showWatchSheet = false
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        watchError = e.message ?: "unknown error"
+                    } finally {
+                        watchingTokenId = null
+                        // Read whatever Rust now holds, success or not.
+                        readEpoch++
+                    }
+                }
+            },
+            onDismiss = {
+                showWatchSheet = false
+                watchError = null
+            },
         )
     }
 
@@ -452,18 +483,14 @@ private fun BalanceRow(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ShieldedTokenPoolWatchSheet(
-    walletId: ByteArray,
     tokens: List<TokenEntity>,
     watched: List<ShieldedTokenPoolBalance>,
-    onWatched: () -> Unit,
+    watchingTokenId: String?,
+    watchError: String?,
+    onWatch: (TokenEntity) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val container = LocalAppContainer.current
-    val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
-    val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var watchingId by remember { mutableStateOf<String?>(null) }
-    var watchError by remember { mutableStateOf<String?>(null) }
     val sortedTokens = remember(tokens) { tokens.sortedBy { it.name } }
 
     ModalBottomSheet(
@@ -523,24 +550,7 @@ private fun ShieldedTokenPoolWatchSheet(
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth()
-                        .clickable(enabled = watchingId == null) {
-                            val activeManager = manager ?: return@clickable
-                            watchingId = tokenKey
-                            watchError = null
-                            scope.launch {
-                                try {
-                                    activeManager.shieldedTokenPoolWatch(walletId, token.contractId, token.position)
-                                    onWatched()
-                                    onDismiss()
-                                } catch (e: CancellationException) {
-                                    throw e
-                                } catch (e: Exception) {
-                                    watchError = e.message ?: "unknown error"
-                                } finally {
-                                    watchingId = null
-                                }
-                            }
-                        }
+                        .clickable(enabled = watchingTokenId == null) { onWatch(token) }
                         .padding(vertical = 8.dp)
                         .testTag("shieldedTokens.watchSheet.token.$contractBase58.${token.position}"),
                     verticalAlignment = Alignment.CenterVertically,
@@ -557,7 +567,7 @@ private fun ShieldedTokenPoolWatchSheet(
                         )
                     }
                     when {
-                        watchingId == tokenKey -> CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        watchingTokenId == tokenKey -> CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                         isWatched -> Text(
                             "Watching",
                             style = MaterialTheme.typography.bodySmall,

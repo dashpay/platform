@@ -32,7 +32,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,6 +47,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
@@ -57,7 +57,6 @@ import org.dashfoundation.dashsdk.wallet.ShieldedTokenPoolSpendKind
 import org.dashfoundation.dashsdk.wallet.ShieldedTokenSpendPreview
 import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
 import org.dashfoundation.example.di.LocalAppContainer
-import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.tokens.displayLabel
@@ -83,12 +82,25 @@ import org.dashfoundation.example.util.toHex
 // An accepted spend is reported as submitted, never as complete.
 
 /**
- * Holds a spend form's call and its answer for the form's back-stack entry,
- * so a rotation or a tab switch while the proof runs neither drops the
- * answer nor lets a second spend start. ← the role of Swift's `@State`
- * submit flags plus `interactiveDismissDisabled`.
+ * Holds a spend form's draft, its call and its answer for the form's
+ * back-stack entry, so a rotation or a tab switch while the proof runs
+ * neither drops the answer nor lets a second spend start. ← the role of
+ * Swift's `@State` plus `interactiveDismissDisabled`.
+ *
+ * The draft (recipient and amount) lives here and not in saved instance
+ * state on purpose: after Android ends the process the ViewModel is gone,
+ * and so must the draft be. A restored form must never offer a recipient
+ * and amount that may already have been sent; it starts empty, with the
+ * earlier spend's notes shown as Pending and its activity row pending, as a
+ * Swift sheet does after a relaunch.
  */
 class ShieldedTokenSpendViewModel : ViewModel() {
+
+    /** The recipient as typed. */
+    var recipientText by mutableStateOf("")
+
+    /** The amount as typed, in the token's smallest unit. */
+    var amountText by mutableStateOf("")
 
     var isSubmitting by mutableStateOf(false)
         private set
@@ -135,21 +147,27 @@ fun ShieldedTokenSendScreen(
     navController: NavHostController,
 ) {
     val container = LocalAppContainer.current
-    val appState = LocalAppState.current
-    val network by appState.currentNetwork.collectAsStateWithLifecycle()
+    val viewModel: ShieldedTokenSpendViewModel = viewModel()
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val walletId = remember(walletIdHex) { walletIdHex.hexToBytes() }
-    var recipientText by rememberSaveable { mutableStateOf("") }
-    val recipientRaw = shieldedTokenOrchardRecipient(recipientText, network)
-    // This account's own default Orchard address, once the account is bound.
-    val ownAddress by produceState<String?>(null, manager, network, account) {
+    val recipientText = viewModel.recipientText
+    // The recipient is read against the network of the manager that spends
+    // and broadcasts, never the app's selected network: during a network
+    // switch the two can differ, and an address of the other network must
+    // not pass.
+    val spendingNetwork = manager?.network
+    val recipientRaw = spendingNetwork?.let { shieldedTokenOrchardRecipient(recipientText, it) }
+    // This account's own default Orchard address, once the account is bound,
+    // encoded for that same manager's network.
+    val ownAddress by produceState<String?>(null, manager, account) {
         value = manager?.let { m ->
             runCatching { m.shieldedDefaultAddress(walletId, account) }.getOrNull()
-                ?.let { raw -> DashAddress.encodeOrchard(raw, network) }
+                ?.let { raw -> DashAddress.encodeOrchard(raw, m.network) }
         }
     }
 
     ShieldedTokenSpendForm(
+        viewModel = viewModel,
         walletIdHex = walletIdHex,
         tokenIdHex = tokenIdHex,
         account = account,
@@ -165,7 +183,7 @@ fun ShieldedTokenSendScreen(
             FormSection(title = "Recipient") {
                 OutlinedTextField(
                     value = recipientText,
-                    onValueChange = { recipientText = it },
+                    onValueChange = { viewModel.recipientText = it },
                     placeholder = { Text("tdash1… or dash1…") },
                     enabled = enabled,
                     textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
@@ -173,7 +191,7 @@ fun ShieldedTokenSendScreen(
                 )
                 ownAddress?.let { address ->
                     TextButton(
-                        onClick = { recipientText = address },
+                        onClick = { viewModel.recipientText = address },
                         enabled = enabled,
                         modifier = Modifier.testTag("shieldedTokenSend.ownAddressButton"),
                     ) { Text("My Address") }
@@ -223,13 +241,14 @@ fun ShieldedTokenUnshieldScreen(
     navController: NavHostController,
 ) {
     val container = LocalAppContainer.current
+    val viewModel: ShieldedTokenSpendViewModel = viewModel()
     val walletId = remember(walletIdHex) { walletIdHex.hexToBytes() }
     // Projected to plain values: Room entities compare by id only.
     val identities by remember(walletIdHex) {
         container.database.identityDao().observeByWallet(walletId)
             .map { rows -> rows.map { Base58.encode(it.identityId) to it.displayLabel() } }
     }.collectAsStateWithLifecycle(initialValue = emptyList())
-    var recipientText by rememberSaveable { mutableStateOf("") }
+    val recipientText = viewModel.recipientText
     val recipientId = shieldedTokenIdentityRecipient(recipientText)
     val recipientName = recipientId?.let { id ->
         val idBase58 = Base58.encode(id)
@@ -238,6 +257,7 @@ fun ShieldedTokenUnshieldScreen(
     var pickerOpen by remember { mutableStateOf(false) }
 
     ShieldedTokenSpendForm(
+        viewModel = viewModel,
         walletIdHex = walletIdHex,
         tokenIdHex = tokenIdHex,
         account = account,
@@ -254,7 +274,7 @@ fun ShieldedTokenUnshieldScreen(
             FormSection(title = "Recipient Identity") {
                 OutlinedTextField(
                     value = recipientText,
-                    onValueChange = { recipientText = it },
+                    onValueChange = { viewModel.recipientText = it },
                     placeholder = { Text("Identity ID (Base58)") },
                     enabled = enabled,
                     textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
@@ -273,7 +293,7 @@ fun ShieldedTokenUnshieldScreen(
                                     text = { Text(label) },
                                     onClick = {
                                         pickerOpen = false
-                                        recipientText = idBase58
+                                        viewModel.recipientText = idBase58
                                     },
                                     modifier = Modifier.testTag("shieldedTokenUnshield.identity.$idBase58"),
                                 )
@@ -328,6 +348,7 @@ fun ShieldedTokenUnshieldScreen(
 @Composable
 @Suppress("LongParameterList", "LongMethod")
 private fun ShieldedTokenSpendForm(
+    viewModel: ShieldedTokenSpendViewModel,
     walletIdHex: String,
     tokenIdHex: String,
     account: Int,
@@ -343,13 +364,14 @@ private fun ShieldedTokenSpendForm(
     spend: (PlatformWalletManager, ShieldedTokenPoolBalance, ULong) -> (suspend () -> Unit)?,
 ) {
     val container = LocalAppContainer.current
-    val appState = LocalAppState.current
-    val viewModel: ShieldedTokenSpendViewModel = viewModel()
-    val network by appState.currentNetwork.collectAsStateWithLifecycle()
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val walletId = remember(walletIdHex) { walletIdHex.hexToBytes() }
-    val tokens by remember(network) {
-        container.database.tokenDao().observeTokensByNetwork(network.ffiValue)
+    // The token's name and decimals (display only) for the spending
+    // manager's network.
+    val spendingNetwork = manager?.network
+    val tokens by remember(spendingNetwork) {
+        spendingNetwork?.let { container.database.tokenDao().observeTokensByNetwork(it.ffiValue) }
+            ?: flowOf(emptyList())
     }.collectAsStateWithLifecycle(initialValue = emptyList())
 
     // The row this form spends from, read again on every return and after
@@ -381,7 +403,7 @@ private fun ShieldedTokenSpendForm(
     val balance = tokenRows.firstOrNull { it.accountIndex == account }
     val token = balance?.let { knownShieldedToken(it, tokens) }
 
-    var amountText by rememberSaveable { mutableStateOf("") }
+    val amountText = viewModel.amountText
     val trimmedAmount = amountText.trim()
     val amount = shieldedTokenSmallestUnitAmount(trimmedAmount)
     val amountRefused = trimmedAmount.isNotEmpty() && amount == null
@@ -436,7 +458,7 @@ private fun ShieldedTokenSpendForm(
             FormSection(title = "Amount (smallest unit)") {
                 OutlinedTextField(
                     value = amountText,
-                    onValueChange = { amountText = it },
+                    onValueChange = { viewModel.amountText = it },
                     placeholder = { Text("0") },
                     enabled = !isSubmitting && result == null,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),

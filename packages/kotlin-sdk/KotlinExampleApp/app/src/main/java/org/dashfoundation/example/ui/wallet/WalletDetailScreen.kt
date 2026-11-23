@@ -277,6 +277,16 @@ fun WalletDetailScreen(
                         onClick = { navController.navigate(PlatformBalanceHistory(walletIdHex)) },
                         modifier = Modifier.testTag("balanceCard.platform.history"),
                     ) { Text("Balance History") }
+                    // Tokens in watched token shielded pools are not part of
+                    // these balances (Rust keeps them in the shielded store):
+                    // a wallet holding only those must still reach them, and
+                    // Watch a Token Pool, as Swift's always-shown link does.
+                    if (hasShielded) {
+                        TextButton(
+                            onClick = { navController.navigate(ShieldedTokens(walletIdHex)) },
+                            modifier = Modifier.testTag("walletDetail.shieldedTokensLink"),
+                        ) { Text("Shielded Tokens") }
+                    }
                     return@FormSection
                 }
                 LabeledContent("Core Balance", formatDuffs(core?.confirmed ?: 0))
