@@ -17,6 +17,8 @@ use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use super::asset_lock::manager::AssetLockManager;
 use super::asset_lock::tracked::TrackedAssetLock;
 use super::core::{CoreWallet, WalletBalance, WalletGeneration};
+#[cfg(feature = "shielded")]
+use super::identity::state::manager::NewIdentityKeyOrigin;
 use super::identity::{IdentityManager, IdentityWallet};
 #[cfg(feature = "shielded")]
 use super::persister::PrivatePaymentRestoreRetry;
@@ -2408,22 +2410,14 @@ impl PlatformWallet {
         {
             let mut wm = self.wallet_manager.write().await;
             match wm.get_wallet_info_mut(&self.wallet_id) {
-                Some(info) => {
-                    if let Err(e) = info.identity_manager.add_identity(
-                        identity,
-                        identity_index,
-                        self.wallet_id,
-                        &self.persister,
-                    ) {
-                        tracing::warn!(
-                            identity_index,
-                            error = %e,
-                            "IdentityCreateFromShieldedPool broadcast succeeded but registering the \
-                             identity in the local manager failed; the on-chain identity exists and \
-                             the next sync will heal the local row"
-                        );
-                    }
-                }
+                Some(info) => info.identity_manager.record_new_identity(
+                    identity,
+                    identity_index,
+                    self.wallet_id,
+                    NewIdentityKeyOrigin::Unrecorded,
+                    "shielded_identity_create_from_pool",
+                    &self.persister,
+                ),
                 None => {
                     tracing::warn!(
                         identity_index,

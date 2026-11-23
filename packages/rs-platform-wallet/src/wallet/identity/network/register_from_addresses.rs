@@ -14,6 +14,7 @@ use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 
 use crate::error::PlatformWalletError;
+use crate::wallet::identity::state::manager::NewIdentityKeyOrigin;
 
 use super::*;
 
@@ -155,22 +156,14 @@ impl IdentityWallet {
         {
             let mut wm = self.wallet_manager.write().await;
             match wm.get_wallet_info_mut(&self.wallet_id) {
-                Some(info) => {
-                    if let Err(e) = info.identity_manager.add_identity(
-                        identity.clone(),
-                        identity_index,
-                        self.wallet_id,
-                        &self.persister,
-                    ) {
-                        tracing::warn!(
-                            error = %e,
-                            identity_id = %identity.id(),
-                            "register_from_addresses: identity registered on Platform but \
-                             local add_identity failed; returning the registered identity \
-                             anyway so address balances can reconcile"
-                        );
-                    }
-                }
+                Some(info) => info.identity_manager.record_new_identity(
+                    identity.clone(),
+                    identity_index,
+                    self.wallet_id,
+                    NewIdentityKeyOrigin::Unrecorded,
+                    "register_from_addresses",
+                    &self.persister,
+                ),
                 None => {
                     tracing::warn!(
                         identity_id = %identity.id(),

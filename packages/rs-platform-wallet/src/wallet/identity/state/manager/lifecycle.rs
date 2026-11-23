@@ -7,14 +7,32 @@
 //! [`IdentityManager::add_identity_unstored`], whose caller stores.
 
 use super::{IdentityLocation, IdentityManager};
-use crate::changeset::{IdentityChangeSet, IdentityEntry, PlatformWalletChangeSet};
+use crate::changeset::{
+    IdentityChangeSet, IdentityEntry, KeyWithBreadcrumb, PlatformWalletChangeSet,
+};
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::state::managed_identity::ManagedIdentity;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Identity;
 use dpp::prelude::Identifier;
+
+/// Where the keys of a newly registered identity came from, which decides
+/// the derivation breadcrumb [`IdentityManager::record_new_identity`] stores
+/// with each of them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NewIdentityKeyOrigin {
+    /// Each key was derived from the wallet seed at the identity's own index
+    /// with the key's id as the key index, so it is stored with the
+    /// breadcrumb `(wallet_id, identity_index, key_id)`.
+    DerivedAtKeyId,
+    /// The flow does not record where the keys came from: they are stored
+    /// without a breadcrumb, as [`IdentityManager::add_identity`] stores
+    /// them.
+    Unrecorded,
+}
 
 impl IdentityManager {
     /// Create a new identity manager
@@ -71,6 +89,71 @@ impl IdentityManager {
         }
 
         Ok(())
+    }
+
+    /// Record an identity Platform has just accepted: add it at its HD slot
+    /// and store it with its keys as one changeset, each key carrying the
+    /// derivation breadcrumb `key_origin` says it has.
+    ///
+    /// Best-effort, and the only owner of that rule: the identity exists on
+    /// chain whatever happens here, so every failure (the slot or id already
+    /// held, the store) is logged under `flow` and none is returned. A
+    /// returned error would make the calling flow report a failed
+    /// registration and skip what it still owes after acceptance (consuming
+    /// the asset lock, reconciling the funding addresses). An identity missed
+    /// here is added by the next identity re-sync.
+    ///
+    /// A failed add records no keys either: `IdentityAlreadyExists` can mean
+    /// an out-of-wallet entry, and stamping a wallet breadcrumb on its keys
+    /// would contradict the manager's location index.
+    pub(crate) fn record_new_identity(
+        &mut self,
+        identity: Identity,
+        identity_index: u32,
+        wallet_id: WalletId,
+        key_origin: NewIdentityKeyOrigin,
+        flow: &str,
+        persister: &WalletPersister,
+    ) {
+        let identity_id = identity.id();
+        let keys: Vec<KeyWithBreadcrumb> = identity
+            .public_keys()
+            .values()
+            .map(|key| KeyWithBreadcrumb {
+                key: key.clone(),
+                breadcrumb: match key_origin {
+                    NewIdentityKeyOrigin::DerivedAtKeyId => {
+                        Some((wallet_id, identity_index, key.id()))
+                    }
+                    NewIdentityKeyOrigin::Unrecorded => None,
+                },
+            })
+            .collect();
+
+        if let Err(e) = self.add_identity_unstored(identity, identity_index, wallet_id) {
+            tracing::warn!(
+                flow,
+                %identity_id,
+                identity_index,
+                error = %e,
+                "identity accepted by Platform but not added to the local manager; \
+                 the next identity re-sync adds it"
+            );
+            return;
+        }
+        let Some(managed) = self.managed_identity_mut(&identity_id) else {
+            return;
+        };
+        if let Err(e) = managed.store_keys_with_snapshot(keys, persister) {
+            tracing::warn!(
+                flow,
+                %identity_id,
+                identity_index,
+                error = %e,
+                "identity accepted by Platform and held in memory, but the identity \
+                 and its keys were not persisted"
+            );
+        }
     }
 
     /// [`Self::add_identity`] in memory only: the caller stores the identity
@@ -296,3 +379,202 @@ impl IdentityManager {
 
 // `dpp::identity::accessors::IdentityGettersV0` is referenced via the
 // `id()` calls above through the imports at the top.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::changeset::{
+        ClientStartState, IdentityKeyDerivationIndices, PersistenceError, PlatformWalletPersistence,
+    };
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::v0::IdentityV0;
+    use dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
+    use std::collections::BTreeMap;
+    use std::sync::{Arc, Mutex};
+
+    const WALLET_ID: WalletId = [9u8; 32];
+    const IDENTITY_INDEX: u32 = 3;
+
+    /// Records every changeset stored, and fails every store when armed.
+    #[derive(Default)]
+    struct RecordingPersister {
+        fail: bool,
+        stores: Mutex<Vec<PlatformWalletChangeSet>>,
+    }
+
+    impl PlatformWalletPersistence for RecordingPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            if self.fail {
+                return Err(PersistenceError::backend("store armed to fail"));
+            }
+            self.stores.lock().unwrap().push(changeset);
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    fn persister(fail: bool) -> (Arc<RecordingPersister>, WalletPersister) {
+        let backend = Arc::new(RecordingPersister {
+            fail,
+            ..Default::default()
+        });
+        let persister = WalletPersister::new(WALLET_ID, backend.clone());
+        (backend, persister)
+    }
+
+    fn identity_with_keys(id: [u8; 32], key_ids: &[KeyID]) -> Identity {
+        let public_keys: BTreeMap<KeyID, IdentityPublicKey> = key_ids
+            .iter()
+            .map(|key_id| {
+                let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                    id: *key_id,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::HIGH,
+                    contract_bounds: None,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    read_only: false,
+                    data: BinaryData::new(vec![0x02; 33]),
+                    disabled_at: None,
+                });
+                (*key_id, key)
+            })
+            .collect();
+        Identity::V0(IdentityV0 {
+            id: Identifier::from(id),
+            public_keys,
+            balance: 0,
+            revision: 0,
+        })
+    }
+
+    /// The registration flows call this after Platform accepted the identity
+    /// and still owe work after it (the asset-lock flow consumes its lock).
+    /// The method returns nothing, so a store that fails cannot turn the
+    /// accepted registration into an error or skip that work; the identity
+    /// stays usable in memory for the rest of the session.
+    #[test]
+    fn should_keep_an_accepted_identity_in_memory_when_its_keys_cannot_be_stored() {
+        let mut manager = IdentityManager::new();
+        let (_, failing) = persister(true);
+        let identity = identity_with_keys([1u8; 32], &[0, 1]);
+        let identity_id = identity.id();
+
+        manager.record_new_identity(
+            identity,
+            IDENTITY_INDEX,
+            WALLET_ID,
+            NewIdentityKeyOrigin::DerivedAtKeyId,
+            "test_flow",
+            &failing,
+        );
+
+        let managed = manager.identity(&identity_id).expect("held in memory");
+        assert_eq!(managed.wallet_id, Some(WALLET_ID));
+        assert_eq!(managed.identity_index, Some(IDENTITY_INDEX));
+        assert_eq!(managed.identity.public_keys().len(), 2);
+        assert_eq!(manager.identity_index(&identity_id), Some(IDENTITY_INDEX));
+    }
+
+    #[test]
+    fn should_store_a_new_identity_and_its_key_breadcrumbs_as_one_changeset() {
+        let mut manager = IdentityManager::new();
+        let (backend, recording) = persister(false);
+        let identity = identity_with_keys([2u8; 32], &[0, 1]);
+        let identity_id = identity.id();
+
+        manager.record_new_identity(
+            identity,
+            IDENTITY_INDEX,
+            WALLET_ID,
+            NewIdentityKeyOrigin::DerivedAtKeyId,
+            "test_flow",
+            &recording,
+        );
+
+        let stores = backend.stores.lock().unwrap();
+        assert_eq!(
+            stores.len(),
+            1,
+            "identity and keys reach the store together"
+        );
+        let identities = stores[0].identities.as_ref().expect("identity entry");
+        assert!(identities.identities.contains_key(&identity_id));
+        let keys = stores[0].identity_keys.as_ref().expect("key entries");
+        assert_eq!(keys.upserts.len(), 2);
+        for key_id in [0, 1] {
+            let entry = &keys.upserts[&(identity_id, key_id)];
+            assert_eq!(entry.wallet_id, Some(WALLET_ID));
+            assert_eq!(
+                entry.derivation_indices,
+                Some(IdentityKeyDerivationIndices {
+                    identity_index: IDENTITY_INDEX,
+                    key_index: key_id,
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn should_store_no_breadcrumb_for_keys_of_unrecorded_origin() {
+        let mut manager = IdentityManager::new();
+        let (backend, recording) = persister(false);
+        let identity = identity_with_keys([3u8; 32], &[0]);
+        let identity_id = identity.id();
+
+        manager.record_new_identity(
+            identity,
+            IDENTITY_INDEX,
+            WALLET_ID,
+            NewIdentityKeyOrigin::Unrecorded,
+            "test_flow",
+            &recording,
+        );
+
+        let stores = backend.stores.lock().unwrap();
+        assert_eq!(stores.len(), 1);
+        let keys = stores[0].identity_keys.as_ref().expect("key entries");
+        let entry = &keys.upserts[&(identity_id, 0)];
+        assert_eq!(entry.wallet_id, None);
+        assert_eq!(entry.derivation_indices, None);
+    }
+
+    /// An id the manager already holds may be an out-of-wallet entry: it is
+    /// left as it was, and no wallet breadcrumb is stored for its keys.
+    #[test]
+    fn should_leave_an_identity_already_held_untouched() {
+        let mut manager = IdentityManager::new();
+        let (backend, recording) = persister(false);
+        let identity = identity_with_keys([4u8; 32], &[0]);
+        let identity_id = identity.id();
+        manager
+            .add_out_of_wallet_identity(identity.clone(), &recording)
+            .unwrap();
+        let stores_before = backend.stores.lock().unwrap().len();
+
+        manager.record_new_identity(
+            identity,
+            IDENTITY_INDEX,
+            WALLET_ID,
+            NewIdentityKeyOrigin::DerivedAtKeyId,
+            "test_flow",
+            &recording,
+        );
+
+        let managed = manager.identity(&identity_id).expect("still held");
+        assert_eq!(managed.wallet_id, None);
+        assert_eq!(manager.identity_index(&identity_id), None);
+        assert_eq!(backend.stores.lock().unwrap().len(), stores_before);
+    }
+}

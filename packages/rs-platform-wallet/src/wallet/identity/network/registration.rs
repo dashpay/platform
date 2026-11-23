@@ -58,11 +58,11 @@
 
 use std::collections::BTreeMap;
 
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
-use dpp::identity::KeyID;
 use dpp::identity::Purpose;
 use dpp::identity::SecurityLevel;
 use dpp::prelude::Identifier;
@@ -77,6 +77,7 @@ use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, FundingResolution, ResolvedFunding,
 };
 use crate::wallet::asset_lock::AssetLockFunding;
+use crate::wallet::identity::state::manager::NewIdentityKeyOrigin;
 use crate::BlockTime;
 
 use super::*;
@@ -270,59 +271,16 @@ impl IdentityWallet {
         // rejection. A missed local add self-heals on the next identity
         // re-sync. This mirrors `register_from_addresses` Step 3.
         {
-            use dpp::identity::accessors::IdentityGettersV0;
-
             let mut wm = self.wallet_manager.write().await;
             match wm.get_wallet_info_mut(&self.wallet_id) {
-                Some(info) => match info.identity_manager.add_identity(
+                Some(info) => info.identity_manager.record_new_identity(
                     identity.clone(),
                     identity_index,
                     self.wallet_id,
+                    NewIdentityKeyOrigin::DerivedAtKeyId,
+                    "register_identity_with_funding",
                     &self.persister,
-                ) {
-                    Ok(()) => {
-                        let wallet_id = self.wallet_id;
-                        let identity_id = identity.id();
-                        let public_keys: Vec<(KeyID, IdentityPublicKey)> = identity
-                            .public_keys()
-                            .iter()
-                            .map(|(k, v)| (*k, v.clone()))
-                            .collect();
-
-                        if let Some(managed) =
-                            info.identity_manager.managed_identity_mut(&identity_id)
-                        {
-                            managed.wallet_id = Some(wallet_id);
-                            for (key_id, pub_key) in public_keys {
-                                let key_index = key_id;
-                                managed
-                                    .add_key(
-                                        pub_key,
-                                        Some((wallet_id, identity_index, key_index)),
-                                        &self.persister,
-                                    )
-                                    .map_err(|e| {
-                                        PlatformWalletError::Persistence(format!(
-                                            "identity key not persisted after registration: {e}"
-                                        ))
-                                    })?;
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        // Breadcrumbs are skipped too: `IdentityAlreadyExists`
-                        // can mean an out-of-wallet entry, and stamping
-                        // `wallet_id` on one without moving buckets would
-                        // contradict the manager's location index.
-                        tracing::warn!(
-                            error = %e,
-                            identity_id = %identity.id(),
-                            "register_identity_with_funding: identity registered on \
-                             Platform but local add_identity failed; continuing so \
-                             the spent asset lock is still consumed"
-                        );
-                    }
-                },
+                ),
                 None => {
                     tracing::warn!(
                         identity_id = %identity.id(),
