@@ -1,5 +1,6 @@
 package org.dashfoundation.example.ui.wallet
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -58,10 +59,15 @@ import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.QrScanner
+import org.dashfoundation.example.ui.components.AccessiblePicker
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.shielded.IdentityShieldMessages
+import org.dashfoundation.example.ui.shielded.IdentityShieldOutcome
+import org.dashfoundation.example.ui.tokens.displayLabel
+import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.DashAddress
 import org.dashfoundation.example.util.DashAddressType
 import org.dashfoundation.example.util.ScannedPayment
@@ -70,13 +76,14 @@ import org.dashfoundation.example.util.formatDuffs
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.parseDashToCredits
 import org.dashfoundation.example.util.parseDashToDuffs
+import org.dashfoundation.example.util.toHex
 
 /**
  * The send flows this screen routes — the Android-bridged subset of iOS
  * `SendFlow` (SendViewModel.swift:6). The three shielded OUTFLOW spends
- * (types 16/17/19) ride the manager wrappers; the shield inflows
- * (`coreToShielded` / `platformToShielded`) live on their dedicated
- * screens (`ShieldedFundScreen`) / aren't bridged yet, and
+ * (types 16/17/19) ride the manager wrappers, as do the shields from the
+ * Platform balance (type 15) and from an identity's balance (type 21);
+ * `coreToShielded` lives on its dedicated screen (`ShieldedFundScreen`), and
  * `platformToPlatform` has the dedicated `TransferPlatformAddressScreen`.
  */
 private enum class SendFlow(val displayName: String) {
@@ -85,6 +92,7 @@ private enum class SendFlow(val displayName: String) {
     SHIELDED_TO_SHIELDED("Shielded Transfer"),
     SHIELDED_TO_PLATFORM("Unshield"),
     SHIELDED_TO_CORE("Withdrawal to Core"),
+    IDENTITY_TO_SHIELDED("Shield from Identity"),
 }
 
 /** Fund source for sending (← iOS `FundSource`, SendViewModel.swift:58). */
@@ -92,6 +100,7 @@ private enum class FundSource(val label: String) {
     CORE("Core"),
     PLATFORM("Platform"),
     SHIELDED("Shielded"),
+    IDENTITY("Identity"),
 }
 
 /**
@@ -133,6 +142,13 @@ private const val SHIELDED_SEND_ACCOUNT = 0
  *   `PlatformWalletManager.shieldedUnshield` (bech32m string parsed Rust-side).
  * - **Shielded → Core** (Type 19, SH-08) —
  *   `PlatformWalletManager.shieldedWithdraw` (`coreFeePerByte = 1`).
+ * - **Identity → Shielded** (Type 21, SH-21):
+ *   `PlatformWalletManager.shieldedShieldFromIdentity`, signed with the
+ *   identity's TRANSFER key, into this wallet's own shielded address. Rust
+ *   reads the identity's proved balance and refuses an amount plus fee it
+ *   does not cover before anything is saved; a call that returns is only
+ *   "submitted", and one that may have gone through is listed under
+ *   In-Progress Identity Shields in Shielded Activity (SH-23).
  *
  * The shielded flows settle in credits (1 DASH = 1e11) and block through a
  * ~30s Halo 2 proof; their consensus-pinned fee comes from
@@ -169,6 +185,13 @@ fun SendTransactionScreen(
     var isSending by remember { mutableStateOf(false) }
     var sentTxidHex by remember { mutableStateOf<String?>(null) }
     var successMessage by remember { mutableStateOf<String?>(null) }
+    // Identity shield (type 21) outcomes, never shown as a success
+    // (← SendViewModel.submittedMessage / unconfirmedMessage).
+    var submittedMessage by remember { mutableStateOf<String?>(null) }
+    var unconfirmedMessage by remember { mutableStateOf<String?>(null) }
+    // The identity an identity shield debits (its id is public, not key
+    // material) (← SendViewModel.selectedIdentityId).
+    var selectedIdentityHex by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Result hand-back from the QR scanner (← QRScannerView's onScan).
     val savedStateHandle = navController.currentBackStackEntry?.savedStateHandle
@@ -219,6 +242,16 @@ fun SendTransactionScreen(
             .map { rows -> rows.sumOf { it.balance } }
     }.collectAsStateWithLifecycle(initialValue = 0L)
 
+    // This wallet's identities with a balance: one of them funds an identity
+    // shield (← SendTransactionView.eligibleIdentities).
+    val walletIdentities by remember(walletIdHex) {
+        container.database.identityDao().observeByWallet(walletId)
+    }.collectAsStateWithLifecycle(initialValue = emptyList())
+    val eligibleIdentities = remember(walletIdentities) {
+        walletIdentities.filter { it.balance > 0 }.sortedBy { it.identityIndex }
+    }
+    val selectedIdentity = eligibleIdentities.firstOrNull { it.identityId.toHex() == selectedIdentityHex }
+
     // ── Address detection + flow routing (← SendViewModel.detectAddressType /
     //    updateFlow) ────────────────────────────────────────────────────
     val trimmedRecipient = recipient.trim()
@@ -231,7 +264,14 @@ fun SendTransactionScreen(
     // .swift:374): the Shielded source appears once the pool holds notes;
     // Core stays first (and always offered) for Core recipients so the
     // plain L1 flow is the default.
-    val availableSources = remember(addressType, hasShielded, shieldedBalance, platformBalance) {
+    val hasIdentitySource = hasShielded && eligibleIdentities.isNotEmpty()
+    val availableSources = remember(
+        addressType,
+        hasShielded,
+        shieldedBalance,
+        platformBalance,
+        hasIdentitySource,
+    ) {
         val shieldedSource =
             if (hasShielded && shieldedBalance > 0) listOf(FundSource.SHIELDED) else emptyList()
         // Shield-from-Platform (Type 15, SH-03) funds a shielded recipient
@@ -243,9 +283,14 @@ fun SendTransactionScreen(
         // platformBalance > 0 for an .orchard recipient).
         val platformShieldSource =
             if (hasShielded && platformBalance > 0) listOf(FundSource.PLATFORM) else emptyList()
+        // Shield from an identity's balance (Type 21, SH-21), offered once an
+        // identity of this wallet holds credits; last, so the private
+        // shielded → shielded path stays the default (← SendViewModel
+        // .availableSources).
+        val identitySource = if (hasIdentitySource) listOf(FundSource.IDENTITY) else emptyList()
         when (addressType) {
             is DashAddressType.Core -> listOf(FundSource.CORE) + shieldedSource
-            is DashAddressType.Orchard -> shieldedSource + platformShieldSource
+            is DashAddressType.Orchard -> shieldedSource + platformShieldSource + identitySource
             is DashAddressType.Platform -> shieldedSource
             DashAddressType.Unknown -> emptyList()
         }
@@ -288,6 +333,7 @@ fun SendTransactionScreen(
             when (selectedSource) {
                 FundSource.SHIELDED -> SendFlow.SHIELDED_TO_SHIELDED
                 FundSource.PLATFORM -> SendFlow.PLATFORM_TO_SHIELDED
+                FundSource.IDENTITY -> SendFlow.IDENTITY_TO_SHIELDED
                 else -> null
             }
         is DashAddressType.Platform ->
@@ -353,6 +399,8 @@ fun SendTransactionScreen(
                 ShieldedProver.FeeKind.TransferOrShield
             SendFlow.SHIELDED_TO_PLATFORM -> ShieldedProver.FeeKind.Unshield
             SendFlow.SHIELDED_TO_CORE -> ShieldedProver.FeeKind.Withdrawal
+            // The fee floor the identity must hold on top of the amount.
+            SendFlow.IDENTITY_TO_SHIELDED -> ShieldedProver.FeeKind.ShieldFromIdentity
             SendFlow.CORE_TO_CORE, null -> null
         }
         value = if (activeManager != null && kind != null) {
@@ -402,15 +450,24 @@ fun SendTransactionScreen(
         SendFlow.SHIELDED_TO_SHIELDED -> (amountCredits ?: 0) > 0 && !memoOverLimit
         SendFlow.PLATFORM_TO_SHIELDED,
         SendFlow.SHIELDED_TO_PLATFORM, SendFlow.SHIELDED_TO_CORE -> (amountCredits ?: 0) > 0
+        // An identity is picked and the fee floor is known. Whether the
+        // identity covers amount plus fee is Rust's check against its
+        // proved balance, made before anything is saved.
+        SendFlow.IDENTITY_TO_SHIELDED ->
+            selectedIdentity != null && (amountCredits ?: 0) > 0 && shieldedFeeEstimate != null
         null -> false
     }
+
+    // A shielded spend proves for tens of seconds; leaving the screen would
+    // drop its result and allow a second one (← interactiveDismissDisabled).
+    BackHandler(enabled = isSending) {}
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Send Dash") },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(onClick = { navController.popBackStack() }, enabled = !isSending) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -578,10 +635,48 @@ fun SendTransactionScreen(
                                     index,
                                     availableSources.size,
                                 ),
-                                modifier = Modifier.testTag("send.source.${source.label}"),
+                                modifier = Modifier.testTag("send.source.${source.label.lowercase()}"),
                             ) { Text(source.label) }
                         }
                     }
+                }
+            }
+
+            // Source identity (identity → shielded only, ← SendTransactionView
+            // .identitySourceSection): this wallet's identities with a balance.
+            if (flow == SendFlow.IDENTITY_TO_SHIELDED) {
+                FormSection(title = "Source Identity") {
+                    AccessiblePicker(
+                        label = "Identity",
+                        options = listOf<String?>(null) + eligibleIdentities.map { it.identityId.toHex() },
+                        selected = selectedIdentity?.identityId?.toHex(),
+                        optionLabel = { hex ->
+                            eligibleIdentities.firstOrNull { it.identityId.toHex() == hex }
+                                ?.let { "${it.displayLabel()}: ${formatCredits(it.balance)}" }
+                                ?: "Select…"
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        testTag = "send.identitySourcePicker",
+                        // The identity that pays is captured at the tap.
+                        enabled = !isSending,
+                        optionTestTag = { hex ->
+                            eligibleIdentities.firstOrNull { it.identityId.toHex() == hex }
+                                ?.let { "send.identitySource.identity.${Base58.encode(it.identityId)}" }
+                                ?: "send.identitySource.none"
+                        },
+                    ) { selectedIdentityHex = it }
+                    if (shieldedFeeEstimate == null) {
+                        Text(
+                            IdentityShieldMessages.FEE_FLOOR_UNAVAILABLE,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.tertiary,
+                        )
+                    }
+                    Text(
+                        IdentityShieldMessages.FOOTER,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
 
@@ -625,6 +720,8 @@ fun SendTransactionScreen(
                         FundSource.PLATFORM -> formatCredits(platformBalance)
                         FundSource.SHIELDED ->
                             shieldedSpendable?.let { formatCredits(it) } ?: "—"
+                        FundSource.IDENTITY ->
+                            selectedIdentity?.let { formatCredits(it.balance) } ?: "Unknown"
                     },
                 )
                 // Multi-output batch total (← the iOS "Outputs" summary's
@@ -639,7 +736,7 @@ fun SendTransactionScreen(
                     // Consensus-pinned flat shielded fee in credits (2-action
                     // single-note spend with change), from the Rust estimator.
                     LabeledContent(
-                        "Estimated fee",
+                        if (flow == SendFlow.IDENTITY_TO_SHIELDED) "Fee (at least)" else "Estimated fee",
                         shieldedFeeEstimate?.let { formatCredits(it) } ?: "—",
                     )
                     LabeledContent(
@@ -685,7 +782,32 @@ fun SendTransactionScreen(
                     error = "Wallet is not ready. Try again in a moment."
                     return@SubmitButton
                 }
+                // The identity selected at the tap pays, and only while it is
+                // still the selected one (← SendViewModel.identityToSend).
+                val tappedIdentityHex = selectedIdentityHex
                 isSending = true
+                // Why the typed recipient is not this wallet's own default
+                // shielded address, or null. Rust always shields into that
+                // address, so another one would read as a payment to it while
+                // nothing reaches it (← SendViewModel.selfShieldRecipientProblem).
+                suspend fun selfShieldRecipientProblem(): String? {
+                    val recipientRaw = (addressType as? DashAddressType.Orchard)?.raw43
+                        ?: return "Invalid recipient"
+                    val ownShielded = runCatching {
+                        activeManager.shieldedDefaultAddress(walletId)
+                    }.getOrNull()
+                        // Unreadable is not "matches": without this wallet's
+                        // own address the recipient cannot be checked.
+                        ?: return "This wallet's shielded address could not be " +
+                            "read, so the recipient could not be checked. " +
+                            "Nothing was sent."
+                    if (!ownShielded.contentEquals(recipientRaw)) {
+                        return "Shield always sends to your own shielded " +
+                            "address; enter this wallet's own shielded " +
+                            "address as the recipient."
+                    }
+                    return null
+                }
                 scope.launch {
                     try {
                         // The values this handler captured are those of the
@@ -720,37 +842,17 @@ fun SendTransactionScreen(
                             }
 
                             SendFlow.PLATFORM_TO_SHIELDED -> {
-                                val recipientRaw =
-                                    (addressType as? DashAddressType.Orchard)?.raw43
                                 val credits = amountCredits
-                                if (recipientRaw == null || credits == null) {
+                                if (credits == null) {
                                     error = "Invalid recipient or amount"
                                     return@launch
                                 }
                                 // Shield from Platform balance (Type 15, SH-03):
                                 // Rust always shields into THIS wallet's own
-                                // default Orchard pool, so the typed recipient is
-                                // ignored on-chain. Constrain to self-shield so a
-                                // different pasted Orchard address can't read as
-                                // success while nothing reaches it (← iOS
-                                // platformToShielded guard).
-                                val ownShielded = runCatching {
-                                    activeManager.shieldedDefaultAddress(walletId)
-                                }.getOrNull()
-                                if (ownShielded == null) {
-                                    // Unreadable is not "matches": without
-                                    // this wallet's own address the recipient
-                                    // cannot be checked, and shielding anyway
-                                    // would read as a payment to it.
-                                    error = "This wallet's shielded address could not be " +
-                                        "read, so the recipient could not be checked. " +
-                                        "Nothing was sent."
-                                    return@launch
-                                }
-                                if (!ownShielded.contentEquals(recipientRaw)) {
-                                    error = "Shield always sends to your own shielded " +
-                                        "address — enter this wallet's own shielded " +
-                                        "address as the recipient."
+                                // default Orchard pool, so constrain to
+                                // self-shield (← iOS platformToShielded guard).
+                                selfShieldRecipientProblem()?.let {
+                                    error = it
                                     return@launch
                                 }
                                 activeManager.shieldedShield(
@@ -809,6 +911,42 @@ fun SendTransactionScreen(
                                     account = SHIELDED_SEND_ACCOUNT,
                                 )
                                 successMessage = "Withdrawal submitted"
+                            }
+
+                            SendFlow.IDENTITY_TO_SHIELDED -> {
+                                val credits = amountCredits
+                                if (credits == null) {
+                                    error = "Invalid amount"
+                                    return@launch
+                                }
+                                selfShieldRecipientProblem()?.let {
+                                    error = it
+                                    return@launch
+                                }
+                                val identityHex = tappedIdentityHex
+                                if (identityHex == null || identityHex != selectedIdentityHex) {
+                                    error = IdentityShieldMessages.IDENTITY_CHANGED
+                                    return@launch
+                                }
+                                // Signed with the identity's TRANSFER key by
+                                // the manager's identity signer.
+                                val outcome = try {
+                                    activeManager.shieldedShieldFromIdentity(
+                                        walletId = walletId,
+                                        identityId = identityHex.hexToBytes(),
+                                        amount = credits,
+                                    )
+                                    IdentityShieldMessages.outcome(null)
+                                } catch (t: Throwable) {
+                                    IdentityShieldMessages.outcome(t)
+                                }
+                                when (outcome) {
+                                    IdentityShieldOutcome.Submitted ->
+                                        submittedMessage = IdentityShieldMessages.SUBMITTED
+                                    IdentityShieldOutcome.MayHaveGoneThrough ->
+                                        unconfirmedMessage = IdentityShieldMessages.MAY_HAVE_GONE_THROUGH
+                                    is IdentityShieldOutcome.Failed -> error = outcome.message
+                                }
                             }
                         }
                     } catch (t: Throwable) {
@@ -873,6 +1011,46 @@ fun SendTransactionScreen(
                 androidx.compose.material3.TextButton(
                     onClick = {
                         successMessage = null
+                        navController.popBackStack()
+                    },
+                ) { Text("Done") }
+            },
+        )
+    }
+
+    // An identity shield is never reported as a success: a returned call is
+    // submitted, and one that may have gone through is not confirmed yet
+    // (← SendTransactionView's "Submitted" / "Not Confirmed Yet" alerts).
+    submittedMessage?.let { message ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {
+                submittedMessage = null
+                navController.popBackStack()
+            },
+            title = { Text("Submitted") },
+            text = { Text(message, modifier = Modifier.testTag("send.submittedMessage")) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        submittedMessage = null
+                        navController.popBackStack()
+                    },
+                ) { Text("Done") }
+            },
+        )
+    }
+    unconfirmedMessage?.let { message ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {
+                unconfirmedMessage = null
+                navController.popBackStack()
+            },
+            title = { Text("Not Confirmed Yet") },
+            text = { Text(message, modifier = Modifier.testTag("send.unconfirmedMessage")) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        unconfirmedMessage = null
                         navController.popBackStack()
                     },
                 ) { Text("Done") }
