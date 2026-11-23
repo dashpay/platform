@@ -313,6 +313,48 @@ fn is_token_pool_spend(kind: &super::activity::ShieldedActivityKind) -> bool {
     )
 }
 
+/// What the token note sweep does with an orphaned hold: whether to mark its
+/// spend's pending row failed, and whether to release its notes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct OrphanedHoldSettlement {
+    fail_row: bool,
+    release: bool,
+}
+
+/// Settle an orphaned token hold, `orphan`: its spend is not in flight here
+/// and its saved record, if it had one, is gone.
+///
+/// - Never saved: the spend was never sent, so it failed; release.
+/// - Signed bound (its token bundle cannot land without its fee bundle, from
+///   protocol 15): its record went because its fee anchor was pruned (it can
+///   never execute) or its fee notes were seen spent (it landed, or another
+///   spend used them). The token scan reached the credit scan's height, so a
+///   landing shows its token notes spent: with none spent, or its fee anchor
+///   pruned, it failed. Release either way; a landed spend's row is left to
+///   the scan that confirms it from its fee change.
+/// - Signed unbound (protocol 14): its token bundle can land with any fee
+///   bundle, before or after its own fee side went. With a note it holds
+///   spent, it may have been delivered that way, so nothing is concluded and
+///   the notes, spent, are released. With none spent, it failed only once the
+///   pool's own scan is at a binding version, after which it can no longer
+///   land and, unspent at that scan, never did; until then the notes stay
+///   held.
+fn settle_orphaned_token_hold(
+    orphan: &super::token_pool::OrphanedReservation,
+) -> OrphanedHoldSettlement {
+    let (fail_row, release) = if !orphan.record_saved {
+        (true, true)
+    } else if orphan.signed_bound {
+        (orphan.fee_anchor_pruned || !orphan.any_spent, true)
+    } else if orphan.any_spent {
+        (false, true)
+    } else {
+        let binds = scan_binds_token_fee_bundles(orphan);
+        (binds, binds)
+    };
+    OrphanedHoldSettlement { fail_row, release }
+}
+
 /// Whether the token pool scan that found `orphan` orphaned was proven at a
 /// protocol version that binds a token bundle to its fee bundle (from
 /// version 15). That pool's own scan decides, not the highest version the SDK
@@ -1130,21 +1172,13 @@ impl NetworkShieldedCoordinator {
     /// record does not read, or the store retained a damaged record of a
     /// wallet it could not load, nothing of that wallet is judged.
     ///
-    /// How such a spend's record went decides it:
-    /// - never saved (the store sets `record_saved` in the transaction that
-    ///   saves it): the spend was never sent. Its row, if still pending, is
-    ///   marked failed, then its notes are released, at any protocol version.
-    /// - dropped because its fee bundle's anchor was pruned
-    ///   (`fee_anchor_pruned`): where the pool's own scan was proven at a
-    ///   version that binds a token bundle to its fee bundle (from 15,
-    ///   [`scan_binds_token_fee_bundles`]), it can never execute, so its
-    ///   pending row is marked failed and its notes released. Below that its
-    ///   token bundle can still land with another fee bundle, so its notes
-    ///   stay held and its row pending, its outcome unknown.
-    /// - otherwise dropped when its fee notes were seen spent, or when it
-    ///   settled: its notes are released and its row left to the scan that
-    ///   confirms it from its fee change, so a landed spend is never shown
-    ///   failed.
+    /// What it is decided by ([`settle_orphaned_token_hold`]): whether its
+    /// record was ever saved, whether it was signed at a protocol version
+    /// that binds its token bundle to its fee bundle, whether the token scan
+    /// has seen any note it holds spent, and the version the pool's own scan
+    /// was proven at. A row is marked failed only where nothing can have
+    /// delivered the spend, and its notes stay held while its token bundle
+    /// can still land.
     ///
     /// Rows go first: an interruption before the release leaves a failed row
     /// with its notes still held, which the next pass releases.
@@ -1205,10 +1239,7 @@ impl NetworkShieldedCoordinator {
             };
             let pending_rows: Vec<(SubwalletId, [u8; 32])> = orphaned
                 .iter()
-                .filter(|orphan| {
-                    !orphan.record_saved
-                        || (orphan.fee_anchor_pruned && scan_binds_token_fee_bundles(orphan))
-                })
+                .filter(|orphan| settle_orphaned_token_hold(orphan).fail_row)
                 .filter(|orphan| {
                     store
                         .get_activity_by_entry_id(orphan.id, &orphan.marker)
@@ -1243,7 +1274,7 @@ impl NetworkShieldedCoordinator {
         }
         let releases: Vec<&super::token_pool::OrphanedReservation> = orphaned
             .iter()
-            .filter(|orphan| !orphan.fee_anchor_pruned || scan_binds_token_fee_bundles(orphan))
+            .filter(|orphan| settle_orphaned_token_hold(orphan).release)
             .collect();
         if releases.is_empty() {
             return;
@@ -4072,18 +4103,13 @@ mod tests {
         coordinator
     }
 
-    /// How a token shielded transfer's saved record went settles it, from
-    /// the token pool's own scan version, whatever version the SDK has seen:
-    /// - never saved (cut off after its hold moved to its activity id): never
-    ///   sent, so failed and released at either version;
-    /// - dropped when its fee anchor was pruned: at 15 it can never execute,
-    ///   so failed and released; at 14 its token bundle can still land with
-    ///   another fee bundle, so it stays pending with its notes held;
-    /// - dropped when its fee note was seen spent: it landed, so its notes
-    ///   are released and its row left pending for the scan that confirms it
-    ///   from its fee change, never shown failed.
+    /// A token shielded transfer whose saved record is gone is settled from
+    /// how it was signed, how its record went, whether the token scan saw a
+    /// note it holds spent, and the token pool's own scan version, whatever
+    /// version the SDK has seen. A row is shown failed only where nothing can
+    /// have delivered it, and its notes stay held while it can still land.
     #[tokio::test]
-    async fn should_settle_a_token_transfer_from_how_its_record_went() {
+    async fn should_settle_a_token_transfer_from_how_it_was_signed_and_its_record_went() {
         use super::super::store::PendingRedrive;
         use super::super::token_pool::{insert_note_for_test, insert_watch, TokenPoolNote};
 
@@ -4094,17 +4120,31 @@ mod tests {
             FeeNoteSpent,
         }
         use ShieldedActivityStatus::{Failed, Pending};
-        // (pool scan version, how the record went, row after, notes held)
-        for (network, record, settled, held) in [
-            (14, Record::NeverSaved, Failed, false),
-            (15, Record::NeverSaved, Failed, false),
-            (14, Record::FeeAnchorPruned, Pending, true),
-            (15, Record::FeeAnchorPruned, Failed, false),
-            (14, Record::FeeNoteSpent, Pending, false),
-            (15, Record::FeeNoteSpent, Pending, false),
+        // (signed bound, how the record went, a held token note spent, pool
+        // scan version, row after, notes still held)
+        for (signed_bound, record, token_spent, network, settled, held) in [
+            (false, Record::NeverSaved, false, 14, Failed, false),
+            (false, Record::NeverSaved, false, 15, Failed, false),
+            // Signed at 14: its token bundle can land with another fee bundle.
+            (false, Record::FeeAnchorPruned, false, 14, Pending, true),
+            (false, Record::FeeAnchorPruned, false, 15, Failed, false),
+            (false, Record::FeeAnchorPruned, true, 15, Pending, false),
+            (false, Record::FeeNoteSpent, true, 14, Pending, false),
+            (false, Record::FeeNoteSpent, false, 14, Pending, true),
+            (false, Record::FeeNoteSpent, false, 15, Failed, false),
+            // Signed at 15: it cannot land without its own fee bundle.
+            (true, Record::FeeAnchorPruned, false, 15, Failed, false),
+            (true, Record::FeeAnchorPruned, true, 15, Failed, false),
+            (true, Record::FeeNoteSpent, true, 15, Pending, false),
+            (true, Record::FeeNoteSpent, false, 15, Failed, false),
         ] {
-            let case = format!("network {network}, {record:?}");
-            let dir = temp_dir(&format!("token_transfer_settle_{network}_{record:?}"));
+            let case = format!(
+                "signed bound {signed_bound}, {record:?}, token note spent {token_spent}, \
+                 scan at {network}"
+            );
+            let dir = temp_dir(&format!(
+                "token_transfer_settle_{signed_bound}_{record:?}_{token_spent}_{network}"
+            ));
             let sdk = dash_sdk::Sdk::new_mock();
             sdk.mock_verified_protocol_version(15).expect("a mock SDK");
             let coordinator = coordinator_with_one_wallet_on(&dir, sdk).await;
@@ -4152,10 +4192,17 @@ mod tests {
                                 value: 5,
                                 note_data: vec![0; 115],
                                 block_height: 1,
-                                is_spent: false,
+                                is_spent: token_spent,
                                 reserved_by: Some(row.id),
                             },
+                        )?;
+                        // As the re-key to the record sets it.
+                        conn.execute(
+                            "UPDATE shielded_token_pool_notes SET signed_bound = ?1",
+                            rusqlite::params![signed_bound],
                         )
+                        .expect("signing era");
+                        Ok(())
                     })
                     .unwrap();
                 if record != Record::NeverSaved {
@@ -4227,22 +4274,29 @@ mod tests {
                 settled,
                 "{case}"
             );
-            let balances = coordinator
-                .token_pool_balances(id.wallet_id)
+            let holds: i64 = coordinator
+                .store()
+                .read()
                 .await
-                .expect("balances");
-            assert_eq!(
-                (balances[0].balance, balances[0].reserved_balance),
-                if held { (0, 5) } else { (5, 0) },
-                "{case}"
-            );
+                .with_token_pool_conn(|conn| {
+                    Ok(conn
+                        .query_row(
+                            "SELECT COUNT(*) FROM shielded_token_pool_notes \
+                             WHERE reserved_by IS NOT NULL",
+                            [],
+                            |row| row.get(0),
+                        )
+                        .expect("count holds"))
+                })
+                .unwrap();
+            assert_eq!(holds > 0, held, "{case}");
             let _ = std::fs::remove_dir_all(&dir);
         }
     }
 
-    /// A transfer whose held token note another spend used keeps the pool
-    /// watched while its record lives, and once its fee anchor is pruned a
-    /// pool scan at a binding version settles it failed and releases the
+    /// A transfer signed at a binding version whose held token note another
+    /// spend used keeps the pool watched while its record lives, and once its
+    /// fee anchor is pruned the sweep settles it failed and releases the
     /// hold, after which the pool can be unwatched.
     #[tokio::test]
     async fn should_settle_a_transfer_whose_token_note_another_spend_used() {
@@ -4301,7 +4355,11 @@ mod tests {
                             is_spent: true,
                             reserved_by: Some(row.id),
                         },
-                    )
+                    )?;
+                    // Signed at 15: it cannot land without its own fee bundle.
+                    conn.execute("UPDATE shielded_token_pool_notes SET signed_bound = 1", [])
+                        .expect("signing era");
+                    Ok(())
                 })
                 .unwrap();
             store.mark_pending(id, &fee_nf).unwrap();

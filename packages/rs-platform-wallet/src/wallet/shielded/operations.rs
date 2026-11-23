@@ -2465,7 +2465,12 @@ where
         // The token notes are held under the record's id from here on, so
         // once this spend has settled the record keeps them held.
         if let Some(entry) = &pending_entry {
-            token_reservation.rekey(&*store.read().await, entry.id)?;
+            let signed_bound = platform_version
+                .dpp
+                .methods
+                .token_pool_paid_fee_binding
+                .is_some();
+            token_reservation.rekey(&*store.read().await, entry.id, signed_bound)?;
         }
 
         save_spend_then_broadcast(
@@ -10040,7 +10045,7 @@ mod token_shielded_transfer_tests {
             .expect("fee notes")
         };
         token_reservation
-            .rekey(&*store.read().await, entry.id)
+            .rekey(&*store.read().await, entry.id, true)
             .expect("rekey");
         let pending_entry = Some(entry);
         let result = save_spend_then_broadcast(

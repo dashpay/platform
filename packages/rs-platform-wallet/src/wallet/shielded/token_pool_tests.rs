@@ -707,7 +707,7 @@ async fn should_release_only_orphaned_token_reservations_in_scanned_pools() {
         reserve_token_notes(&*tables.read().await, id, token().token_id, 7, 1).expect("reserve");
     let record = [0xEC; 32];
     recorded
-        .rekey(&*tables.read().await, record)
+        .rekey(&*tables.read().await, record, true)
         .expect("rekey");
     drop(recorded);
 
