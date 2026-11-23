@@ -178,6 +178,7 @@ class PlatformWalletPersistenceHandler(
             CAPABILITY_TRACKED_ASSET_LOCKS or
             CAPABILITY_CORE_SWEEP_REMOVAL or
             CAPABILITY_ASSET_LOCK_OPERATION_IDS or
+            CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS or
             CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
 
     /**
@@ -2528,9 +2529,11 @@ class PlatformWalletPersistenceHandler(
                     amountDuffs = amountDuffs,
                     statusRaw = incomingStatus,
                     proofBytes = proofBytes,
-                    // The id arrives through its own callback, after this
-                    // one; a later status upsert must not erase it.
+                    // The id and the shielded recipient arrive through their
+                    // own callbacks, after this one; a later status upsert
+                    // must not erase them.
                     operationId = existing?.operationId,
+                    shieldedRecipientRaw43 = existing?.shieldedRecipientRaw43,
                     createdAt = existing?.createdAt ?: java.util.Date(),
                     updatedAt = now(),
                 ),
@@ -2620,6 +2623,70 @@ class PlatformWalletPersistenceHandler(
                     "asset lock $outPointHex stores an operation id of ${id.size} bytes"
                 }
             }
+        }
+
+    /**
+     * Port of `persistAssetLockShieldedRecipient` in
+     * `packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PlatformWalletPersistenceHandler.swift`.
+     * Staged into the round, behind the lock's own upsert, and checked when
+     * the round commits: the row must be there and must not carry a
+     * different recipient. Either failure fails the commit, so the row and
+     * its recipient land together or not at all. Refused outside a round,
+     * where there would be no upsert to ride with.
+     */
+    override fun onPersistAssetLockShieldedRecipient(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        recipientRaw43: ByteArray,
+    ): Int = guarded {
+        require(outPoint.size == RAW_OUT_POINT_SIZE) {
+            "asset-lock outpoint must be $RAW_OUT_POINT_SIZE bytes, got ${outPoint.size}"
+        }
+        require(recipientRaw43.size == NativePersistenceBridge.ASSET_LOCK_SHIELDED_RECIPIENT_SIZE) {
+            "asset-lock shielded recipient must be " +
+                "${NativePersistenceBridge.ASSET_LOCK_SHIELDED_RECIPIENT_SIZE} bytes, " +
+                "got ${recipientRaw43.size}"
+        }
+        val round = checkNotNull(openRound(walletId)) {
+            "an asset-lock shielded recipient is stored only inside a changeset round"
+        }
+        val outPointHex = encodeOutPointHex(outPoint)
+        val recipient = recipientRaw43.copyOf()
+        round.ops.add { db ->
+            val dao = db.assetLockDao()
+            val row = dao.getByOutPointHex(outPointHex)
+                ?.takeIf { it.walletId.contentEquals(walletId) }
+                ?: error("asset lock $outPointHex is not stored; its shielded recipient has no row")
+            val previous = row.shieldedRecipientRaw43
+            check(previous == null || previous.contentEquals(recipient)) {
+                "asset lock $outPointHex already carries a different shielded recipient"
+            }
+            if (previous == null) {
+                check(dao.setShieldedRecipient(outPointHex, recipient) == 1) {
+                    "asset lock $outPointHex vanished before its shielded recipient was stored"
+                }
+            }
+        }
+        0
+    }
+
+    /**
+     * Port of `loadAssetLockShieldedRecipient` in the same Swift file. A lock
+     * that is not stored and a recipient of the wrong size both throw,
+     * failing the native load: a missing row is a failed read, not a lock
+     * without a recipient, and a stored value of the wrong size is
+     * corruption, not absence.
+     */
+    override fun onLoadAssetLockShieldedRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+        loadOrThrow {
+            require(outPoint.size == RAW_OUT_POINT_SIZE) {
+                "asset-lock outpoint must be $RAW_OUT_POINT_SIZE bytes, got ${outPoint.size}"
+            }
+            val outPointHex = encodeOutPointHex(outPoint)
+            val row = runBlockingResult { database.assetLockDao().getByOutPointHex(outPointHex) }
+                ?.takeIf { it.walletId.contentEquals(walletId) }
+                ?: error("asset lock $outPointHex is not stored; cannot read its shielded recipient")
+            row.shieldedRecipientRaw43?.also { checkShieldedRecipientSize(row.outPointHex, it) }
         }
 
     override fun onPersistAssetLockRemoval(walletId: ByteArray, outPoint: ByteArray): Int = guarded {
@@ -3666,6 +3733,10 @@ class PlatformWalletPersistenceHandler(
             check(row.statusRaw in 0..255) {
                 "asset-lock row ${row.outPointHex} has statusRaw out of u8 range: ${row.statusRaw}"
             }
+            // The recipient itself reaches Rust through
+            // `onLoadAssetLockShieldedRecipient`; a corrupt one fails the
+            // load here too, as Swift's `loadCachedAssetLocksOnQueue` does.
+            row.shieldedRecipientRaw43?.let { checkShieldedRecipientSize(row.outPointHex, it) }
             out.add(
                 TrackedAssetLockRestoreData(
                     outPoint = outPoint,
@@ -4434,6 +4505,16 @@ class PlatformWalletPersistenceHandler(
 
         internal const val CAPABILITY_ASSET_LOCK_OPERATION_IDS: Long =
             NativePersistenceBridge.CAPABILITY_ASSET_LOCK_OPERATION_IDS
+
+        internal const val CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS: Long =
+            NativePersistenceBridge.CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS
+
+        /** A stored shielded recipient of any size but 43 bytes is corruption. */
+        private fun checkShieldedRecipientSize(outPointHex: String, recipient: ByteArray) {
+            check(recipient.size == NativePersistenceBridge.ASSET_LOCK_SHIELDED_RECIPIENT_SIZE) {
+                "asset lock $outPointHex stores a shielded recipient of ${recipient.size} bytes"
+            }
+        }
 
         /** Bytes of a raw outpoint: the txid in wire order, then the vout. */
         private const val RAW_OUT_POINT_SIZE = 36

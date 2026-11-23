@@ -122,8 +122,22 @@ abstract class NativePersistenceBridge {
         const val ASSET_LOCK_OPERATION_ID_SIZE: Int = 16
 
         /**
+         * `PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS` (bit 14,
+         * `0x4000`): the Orchard recipient a shielded asset-lock funding was
+         * built to pay survives store and load with its row, so a resume
+         * after a restart pays that recipient and refuses another. A store
+         * declaring it implements [onPersistAssetLockShieldedRecipient] and
+         * [onLoadAssetLockShieldedRecipient]. The one Kotlin home of this
+         * bit, aliased by the public diagnostic mirror.
+         */
+        const val CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS: Long = 1L shl 14
+
+        /** Bytes of a raw Orchard recipient address. */
+        const val ASSET_LOCK_SHIELDED_RECIPIENT_SIZE: Int = 43
+
+        /**
          * `PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE`
-         * (bit 15, `0x8000`; bit 14 is `ASSET_LOCK_SHIELDED_RECIPIENTS`): the
+         * (bit 15, `0x8000`): the
          * private contact request sync's scan state is stored on its round
          * and restored at load. A store declaring it keeps a position record
          * marked unresolved through its wallet's removal, until a record
@@ -860,6 +874,41 @@ abstract class NativePersistenceBridge {
      * same Swift file.
      */
     open fun onLoadAssetLockOperationId(walletId: ByteArray, outPoint: ByteArray): ByteArray? = null
+
+    /**
+     * `on_persist_asset_lock_shielded_recipient_fn`: associate the raw
+     * 43-byte Orchard [recipientRaw43] a shielded funding was built to pay
+     * with the tracked lock at [outPoint] (36 raw bytes). Descriptor
+     * `([B[B[B)I`. Fires after the lock's [onPersistAssetLockUpsert], inside
+     * the same round, so the row and its recipient commit or roll back
+     * together. A recorded recipient never changes: a different one for the
+     * same lock must fail the round.
+     *
+     * Delivered only to a bridge that overrides this,
+     * [onLoadAssetLockShieldedRecipient] and [onPersistAssetLockUpsert]:
+     * an inherited no-op load would answer "no recipient" for a lock built
+     * to pay one, and a resume would then pay whatever recipient its caller
+     * names. Port of `persistAssetLockShieldedRecipient` in
+     * `packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PlatformWalletPersistenceHandler.swift`.
+     */
+    open fun onPersistAssetLockShieldedRecipient(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        recipientRaw43: ByteArray,
+    ): Int = 0
+
+    /**
+     * `on_load_asset_lock_shielded_recipient_fn`: the 43-byte recipient
+     * stored for the restored lock at [outPoint], or null when that lock has
+     * none (not a shielded funding, or tracked before recipients were
+     * recorded). Descriptor `([B[B)[B`. Asked once per restored lock,
+     * terminal rows included. Throw on a store that cannot be read, on a
+     * lock that is not there and on a stored value of the wrong size: the
+     * whole load fails instead. Port of `loadAssetLockShieldedRecipient` in
+     * the same Swift file.
+     */
+    open fun onLoadAssetLockShieldedRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+        null
 
     // ── Invitations (DIP-13) ──────────────────────────────────────────
 

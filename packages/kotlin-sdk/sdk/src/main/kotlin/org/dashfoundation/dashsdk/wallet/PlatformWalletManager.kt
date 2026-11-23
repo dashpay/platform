@@ -96,6 +96,14 @@ data class PlatformWalletPersistenceCapabilities(
         const val PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long =
             NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
         /**
+         * The Orchard recipient of a shielded asset-lock funding survives
+         * store and load with its row, so a resume after a restart pays the
+         * recipient the user confirmed. Mirrors
+         * `PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS`.
+         */
+        const val ASSET_LOCK_SHIELDED_RECIPIENTS: Long =
+            NativePersistenceBridge.CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS
+        /**
          * A tracked asset lock's operation id survives store and load, so a
          * wallet drain ("Max") can be found again after a restart. Mirrors
          * `PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS`.
