@@ -848,10 +848,14 @@ internal fun siblingVotingKeysNotMarkedMessage(reason: String?): String =
         "to be checked again: ${reason ?: "unknown error"}. Load the identity again to retry."
 
 /** [result] with [note] about the masternode's other voting keys, when there is one. */
-private fun withSiblingNote(result: LoadSaveResult, note: String?): LoadSaveResult {
+private fun withSiblingNote(
+    result: LoadSaveResult,
+    note: String?,
+    lead: String = "The identity was loaded.",
+): LoadSaveResult {
     note ?: return result
     return when (result) {
-        LoadSaveResult.Saved -> LoadSaveResult.SavedWithWarning("The identity was loaded. $note")
+        LoadSaveResult.Saved -> LoadSaveResult.SavedWithWarning("$lead $note")
         is LoadSaveResult.SavedWithWarning -> LoadSaveResult.SavedWithWarning("${result.message} $note")
         else -> result
     }
@@ -1196,10 +1200,26 @@ internal suspend fun replaceVotingKey(
             val note = recordStoredVotingKeyCheck(
                 entries, identityId, networkRaw, assignment.identifier, votingKeyCheck,
             )
-            withVotingKeyNote(
-                savedAfterCleanup(entries, identityId, PREVIOUS_VOTING_KEY_NOT_REMOVED_MESSAGE),
+            // As a load does, Rust says what to record for the other voting keys this device
+            // stores for the same masternode (Swift `replaceStoredKeys`, after #6145).
+            val siblingNote = try {
+                recordSiblingVotingKeys(
+                    entries, networkRaw, dao.getByIdentityId(identityId)?.masternodeProTxHash,
+                    identityId, assignment.identifier, votingKeyCheck,
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                siblingVotingKeysNotMarkedMessage(e.message)
+            }
+            withSiblingNote(
+                withVotingKeyNote(
+                    savedAfterCleanup(entries, identityId, PREVIOUS_VOTING_KEY_NOT_REMOVED_MESSAGE),
+                    lead = "The voting key was replaced.",
+                    note = note,
+                ),
+                siblingNote,
                 lead = "The voting key was replaced.",
-                note = note,
             )
         }
         is VotingKeyAssignment.Changed -> LoadSaveResult.Failed(VOTING_KEY_CHANGED_MESSAGE)

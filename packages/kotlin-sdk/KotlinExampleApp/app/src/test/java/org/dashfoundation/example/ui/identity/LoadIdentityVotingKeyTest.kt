@@ -887,6 +887,59 @@ class LoadIdentityVotingKeyTest {
     }
 
     /** A confirmed replacement records the entered key's check, the slot having held another key. */
+    /**
+     * #6145: a voting key stored through the replacement dialog marks the other stored keys of
+     * the same masternode as a load does, and says so when they could not be marked.
+     */
+    @Test
+    fun shouldMarkTheOtherKeysOfTheMasternodeAfterAReplacement() = runBlocking {
+        val keyC = ByteArray(32) { 0x0c }
+        val proTxHash = ByteArray(32) { (0x40 + it).toByte() }
+        dao.upsert(row(type = "Masternode", votingIdentifier = identifierOf(keyA)).copy(masternodeProTxHash = proTxHash))
+        entries.live += identifierOf(keyA)
+        val siblingId = ByteArray(32) { 6 }
+        dao.upsert(
+            IdentityEntity(
+                identityId = siblingId,
+                identityType = "Masternode",
+                votingPrivateKeyIdentifier = MasternodeVotingKeyStore.identifierFor(siblingId, keyC.copyOf(20)),
+                networkRaw = testnet,
+                votingKeyCheckRaw = "valid",
+                votingKeyCheckAddress = addressOf(keyC).bytes,
+                masternodeProTxHash = proTxHash,
+            ),
+        )
+        val recheck = MasternodeRecordedVotingKey(
+            MasternodeVotingKeyCheck.Undetermined("Another voting key was loaded"),
+            addressOf(keyC),
+        )
+        rules.siblingAnswer = recheck
+        rules.answer = MasternodeVotingKeyCheckOutcome(
+            storeKey = true,
+            record = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressOf(keyB)),
+        )
+
+        val result = replaceVotingKey(
+            dao, entries, identityId, testnet, identifierOf(keyA), keyB,
+            votingKeyCheck = MasternodeVotingKeyCheck.Valid,
+        )
+
+        assertEquals(LoadSaveResult.Saved, result)
+        assertEquals(recheck, dao.getByIdentityId(siblingId)!!.recordedVotingKey)
+
+        // The rows cannot be marked: the replacement stands and says so.
+        entries.siblingFailure = IllegalStateException("disk full")
+        entries.live += identifierOf(keyB)
+        val failed = replaceVotingKey(
+            dao, entries, identityId, testnet, identifierOf(keyB), keyA,
+            votingKeyCheck = MasternodeVotingKeyCheck.Valid,
+        )
+        assertEquals(
+            LoadSaveResult.SavedWithWarning("The voting key was replaced. " + siblingVotingKeysNotMarkedMessage("disk full")),
+            failed,
+        )
+    }
+
     @Test
     fun shouldRecordTheCheckOfAReplacementKey() = runBlocking {
         dao.upsert(
