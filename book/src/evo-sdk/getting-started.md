@@ -90,7 +90,9 @@ const sdk = EvoSDK.testnetTrusted({
 
 A pinned SDK speaks exactly its pinned version, whatever the network runs: pinned below
 14, it refuses the requests protocol 14 added (see
-[Features from Protocol Version 14](../sdk/protocol-version-gate.md)).
+[Features from Protocol Version 14](../sdk/protocol-version-gate.md)). Pinned above the
+network's version, its document queries and name lookups fail with a `Config` error once
+every node has answered below the pin; omit `version`, or set it to the network's version.
 
 ### Logging
 

@@ -1,4 +1,5 @@
 use dash_sdk::dpp::ProtocolError;
+use dash_sdk::error::SDK_AHEAD_OF_NETWORK_ADVICE;
 use dash_sdk::platform::encrypted_for::EncryptedForError;
 use dash_sdk::{error::StateTransitionBroadcastError, Error as SdkError};
 use rs_dapi_client::CanRetry;
@@ -167,7 +168,12 @@ impl From<SdkError> for WasmSdkError {
         let retriable = err.can_retry() || err.is_quorum_source_unavailable();
         match err {
             AlreadyExists(msg) => Self::new(WasmSdkErrorKind::AlreadyExists, msg, None, retriable),
-            Config(msg) => Self::new(WasmSdkErrorKind::Config, msg, None, retriable),
+            Config(msg) => Self::new(
+                WasmSdkErrorKind::Config,
+                with_javascript_version_advice(msg),
+                None,
+                retriable,
+            ),
             // The request has to change: no node answers it as the requested result type.
             InvalidRequest(msg) => {
                 Self::new(WasmSdkErrorKind::InvalidArgument, msg, None, retriable)
@@ -316,6 +322,22 @@ impl From<SdkError> for WasmSdkError {
                 )
             }
         }
+    }
+}
+
+/// What a JavaScript app does about an SDK set ahead of its network: it sets the protocol
+/// version with the `version` option, not with the Rust builder method the SDK's own advice
+/// names.
+const SDK_AHEAD_OF_NETWORK_JAVASCRIPT_ADVICE: &str = "if the `version` option (`withVersion` \
+     on the builder) set the SDK ahead of its network, omit it so the SDK follows the \
+     network's protocol version, or set it to the network's protocol version";
+
+/// A configuration error's message, with the SDK's advice for a protocol version set ahead
+/// of the network replaced by the advice that names the JavaScript option.
+fn with_javascript_version_advice(message: String) -> String {
+    match message.strip_suffix(SDK_AHEAD_OF_NETWORK_ADVICE) {
+        Some(diagnosis) => format!("{diagnosis}{SDK_AHEAD_OF_NETWORK_JAVASCRIPT_ADVICE}"),
+        None => message,
     }
 }
 
@@ -656,6 +678,28 @@ mod tests {
             error.message()
         );
         assert!(!error.is_retriable());
+    }
+
+    /// A JavaScript app sets the SDK's protocol version with the `version` option
+    /// (`withVersion` on the builder), and has no Rust builder to call: the error names that
+    /// option, and says to omit it or to set it to the network's version.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn should_name_the_javascript_version_option_when_the_sdk_is_ahead_of_its_network() {
+        let message =
+            WasmSdkError::from(every_node_answered_at_an_older_protocol_version().await).message();
+
+        for named in [
+            "protocol version 13",
+            "protocol version 14",
+            "`version` option",
+            "withVersion",
+            "omit it",
+            "network's protocol version",
+        ] {
+            assert!(message.contains(named), "{named}: {message}");
+        }
+        assert!(!message.contains("with_initial_version"), "{message}");
     }
 
     /// No node can help an SDK older than its network: the app has to update it. JavaScript
