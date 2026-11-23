@@ -1703,6 +1703,9 @@ mod tests {
             avatar_hash: Some([0xaa; 32]),
             avatar_fingerprint: Some([0xbb; 8]),
             public_message: Some("hello world".into()),
+            core_payment_address: Some(vec![0x00; 21]),
+            platform_payment_address: Some(vec![0x01; 21]),
+            shielded_address: Some(vec![0x02; 43]),
         };
 
         // Mutate A (persists internally via noop persister).

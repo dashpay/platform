@@ -137,6 +137,23 @@ pub struct IdentityEntryFFI {
     pub dashpay_profile_avatar_fingerprint: [u8; 8],
     /// `true` iff the source `avatar_fingerprint` was `Some(_)`.
     pub dashpay_profile_avatar_fingerprint_present: bool,
+    /// DashPay `corePaymentAddress` in storage form: a 0x00 (P2PKH) or
+    /// 0x01 (P2SH) type byte, then the 20-byte HASH160. Zeroed when the
+    /// source was `None`; gate reads on
+    /// [`Self::dashpay_profile_core_payment_address_present`].
+    pub dashpay_profile_core_payment_address: [u8; 21],
+    /// `true` iff the source `core_payment_address` was `Some(_)`.
+    pub dashpay_profile_core_payment_address_present: bool,
+    /// DashPay `platformPaymentAddress`, same 21-byte form. Zeroed when
+    /// the source was `None`.
+    pub dashpay_profile_platform_payment_address: [u8; 21],
+    /// `true` iff the source `platform_payment_address` was `Some(_)`.
+    pub dashpay_profile_platform_payment_address_present: bool,
+    /// DashPay `shieldedAddress`: the raw 43-byte Orchard address. Zeroed
+    /// when the source was `None`.
+    pub dashpay_profile_shielded_address: [u8; 43],
+    /// `true` iff the source `shielded_address` was `Some(_)`.
+    pub dashpay_profile_shielded_address_present: bool,
     /// Heap-allocated NUL-terminated UTF-8 C string for the DashPay
     /// profile's public message. `null` when the source field was
     /// `None`. Owned by this FFI struct; freed in
@@ -213,6 +230,21 @@ pub struct ContactProfileRowFFI {
     pub avatar_fingerprint: [u8; 8],
     /// `true` iff the source `avatar_fingerprint` was `Some(_)`.
     pub avatar_fingerprint_present: bool,
+    /// `corePaymentAddress` (21-byte storage form); zeroed when
+    /// [`Self::core_payment_address_present`] is `false`.
+    pub core_payment_address: [u8; 21],
+    /// `true` iff the source `core_payment_address` was `Some(_)`.
+    pub core_payment_address_present: bool,
+    /// `platformPaymentAddress` (21-byte storage form); zeroed when
+    /// [`Self::platform_payment_address_present`] is `false`.
+    pub platform_payment_address: [u8; 21],
+    /// `true` iff the source `platform_payment_address` was `Some(_)`.
+    pub platform_payment_address_present: bool,
+    /// `shieldedAddress` (raw 43-byte Orchard address); zeroed when
+    /// [`Self::shielded_address_present`] is `false`.
+    pub shielded_address: [u8; 43],
+    /// `true` iff the source `shielded_address` was `Some(_)`.
+    pub shielded_address_present: bool,
     /// Heap-allocated `publicMessage`; `null` when `None`. Freed in
     /// [`free_identity_entry_ffi`].
     pub public_message: *const c_char,
@@ -402,13 +434,19 @@ const _: [u8; 8] = [0u8; std::mem::align_of::<IdentityKeyEntryFFI>()];
 //   184       dashpay_profile_avatar_hash_present      bool
 //   185..=192 dashpay_profile_avatar_fingerprint       [u8; 8]
 //   193       dashpay_profile_avatar_fingerprint_present bool
-//   194..=199 (padding to 8 for pointer alignment)
-//   200..=207 dashpay_profile_public_message           *const c_char
-//   208..=215 contact_profiles                         *const ContactProfileRowFFI
-//   216..=223 contact_profiles_count                   usize
+//   194..=214 dashpay_profile_core_payment_address     [u8; 21]
+//   215       dashpay_profile_core_payment_address_present bool
+//   216..=236 dashpay_profile_platform_payment_address [u8; 21]
+//   237       dashpay_profile_platform_payment_address_present bool
+//   238..=280 dashpay_profile_shielded_address         [u8; 43]
+//   281       dashpay_profile_shielded_address_present bool
+//   282..=287 (padding to 8 for pointer alignment)
+//   288..=295 dashpay_profile_public_message           *const c_char
+//   296..=303 contact_profiles                         *const ContactProfileRowFFI
+//   304..=311 contact_profiles_count                   usize
 //
-// Total size = 224, alignment = 8 (from u64 / pointer).
-const _: [u8; 224] = [0u8; std::mem::size_of::<IdentityEntryFFI>()];
+// Total size = 312, alignment = 8 (from u64 / pointer).
+const _: [u8; 312] = [0u8; std::mem::size_of::<IdentityEntryFFI>()];
 const _: [u8; 8] = [0u8; std::mem::align_of::<IdentityEntryFFI>()];
 
 // ---------------------------------------------------------------------------
@@ -471,6 +509,14 @@ impl IdentityEntryFFI {
             dashpay_profile_avatar_hash_present: profile_fields.avatar_hash_present,
             dashpay_profile_avatar_fingerprint: profile_fields.avatar_fingerprint,
             dashpay_profile_avatar_fingerprint_present: profile_fields.avatar_fingerprint_present,
+            dashpay_profile_core_payment_address: profile_fields.core_payment_address,
+            dashpay_profile_core_payment_address_present: profile_fields
+                .core_payment_address_present,
+            dashpay_profile_platform_payment_address: profile_fields.platform_payment_address,
+            dashpay_profile_platform_payment_address_present: profile_fields
+                .platform_payment_address_present,
+            dashpay_profile_shielded_address: profile_fields.shielded_address,
+            dashpay_profile_shielded_address_present: profile_fields.shielded_address_present,
             dashpay_profile_public_message: profile_fields.public_message,
             contact_profiles,
             contact_profiles_count,
@@ -493,6 +539,12 @@ struct DashPayProfileFields {
     avatar_hash_present: bool,
     avatar_fingerprint: [u8; 8],
     avatar_fingerprint_present: bool,
+    core_payment_address: [u8; 21],
+    core_payment_address_present: bool,
+    platform_payment_address: [u8; 21],
+    platform_payment_address_present: bool,
+    shielded_address: [u8; 43],
+    shielded_address_present: bool,
     public_message: *const c_char,
 }
 
@@ -508,6 +560,12 @@ impl DashPayProfileFields {
             avatar_hash_present: false,
             avatar_fingerprint: [0u8; 8],
             avatar_fingerprint_present: false,
+            core_payment_address: [0; 21],
+            core_payment_address_present: false,
+            platform_payment_address: [0; 21],
+            platform_payment_address_present: false,
+            shielded_address: [0; 43],
+            shielded_address_present: false,
             public_message: ptr::null(),
         }
     }
@@ -526,6 +584,12 @@ impl DashPayProfileFields {
             Some(f) => (f, true),
             None => ([0u8; 8], false),
         };
+        let (core_payment_address, core_payment_address_present) =
+            fixed_address(profile.core_payment_address.as_deref());
+        let (platform_payment_address, platform_payment_address_present) =
+            fixed_address(profile.platform_payment_address.as_deref());
+        let (shielded_address, shielded_address_present) =
+            fixed_address(profile.shielded_address.as_deref());
         Self {
             present: true,
             display_name: optional_c_string(profile.display_name.as_deref()),
@@ -535,6 +599,12 @@ impl DashPayProfileFields {
             avatar_hash_present,
             avatar_fingerprint,
             avatar_fingerprint_present,
+            core_payment_address,
+            core_payment_address_present,
+            platform_payment_address,
+            platform_payment_address_present,
+            shielded_address,
+            shielded_address_present,
             public_message: optional_c_string(profile.public_message.as_deref()),
         }
     }
@@ -550,6 +620,18 @@ fn optional_c_string(s: Option<&str>) -> *const c_char {
             Err(_) => ptr::null(),
         },
         None => ptr::null(),
+    }
+}
+
+/// Copy an optional payment address into the fixed-size buffer an FFI
+/// struct carries it in, with its presence flag. Bytes of any other length
+/// are reported absent, with a zeroed buffer: the length is what makes the
+/// copy fit, and the wallet has already decided whether the bytes are an
+/// address.
+pub(crate) fn fixed_address<const N: usize>(address: Option<&[u8]>) -> ([u8; N], bool) {
+    match address.and_then(|a| <[u8; N]>::try_from(a).ok()) {
+        Some(bytes) => (bytes, true),
+        None => ([0; N], false),
     }
 }
 
@@ -634,6 +716,12 @@ fn allocate_contact_profile_rows(
                 avatar_hash_present: false,
                 avatar_fingerprint: [0u8; 8],
                 avatar_fingerprint_present: false,
+                core_payment_address: [0; 21],
+                core_payment_address_present: false,
+                platform_payment_address: [0; 21],
+                platform_payment_address_present: false,
+                shielded_address: [0; 43],
+                shielded_address_present: false,
                 public_message: ptr::null(),
                 checked_at_ms: entry.checked_at_ms,
             });
@@ -647,6 +735,12 @@ fn allocate_contact_profile_rows(
             Some(f) => (f, true),
             None => ([0u8; 8], false),
         };
+        let (core_payment_address, core_payment_address_present) =
+            fixed_address(profile.core_payment_address.as_deref());
+        let (platform_payment_address, platform_payment_address_present) =
+            fixed_address(profile.platform_payment_address.as_deref());
+        let (shielded_address, shielded_address_present) =
+            fixed_address(profile.shielded_address.as_deref());
         rows.push(ContactProfileRowFFI {
             contact_id: contact_id.to_buffer(),
             is_present: true,
@@ -657,6 +751,12 @@ fn allocate_contact_profile_rows(
             avatar_hash_present,
             avatar_fingerprint,
             avatar_fingerprint_present,
+            core_payment_address,
+            core_payment_address_present,
+            platform_payment_address,
+            platform_payment_address_present,
+            shielded_address,
+            shielded_address_present,
             public_message: optional_c_string(profile.public_message.as_deref()),
             checked_at_ms: entry.checked_at_ms,
         });
@@ -843,6 +943,12 @@ pub unsafe fn free_identity_entry_ffi(entry: &mut IdentityEntryFFI) {
         entry.dashpay_profile_avatar_hash_present = false;
         entry.dashpay_profile_avatar_fingerprint = [0u8; 8];
         entry.dashpay_profile_avatar_fingerprint_present = false;
+        entry.dashpay_profile_core_payment_address = [0u8; 21];
+        entry.dashpay_profile_core_payment_address_present = false;
+        entry.dashpay_profile_platform_payment_address = [0u8; 21];
+        entry.dashpay_profile_platform_payment_address_present = false;
+        entry.dashpay_profile_shielded_address = [0u8; 43];
+        entry.dashpay_profile_shielded_address_present = false;
         entry.dashpay_profile_present = false;
     }
 
@@ -934,6 +1040,15 @@ mod tests {
     use platform_wallet::changeset::{
         IdentityEntry, IdentityKeyDerivationIndices, IdentityKeyEntry,
     };
+
+    #[test]
+    fn should_copy_only_exact_length_addresses_into_fixed_buffers() {
+        assert_eq!(fixed_address::<21>(Some(&[0x11; 21])), ([0x11; 21], true));
+        assert_eq!(fixed_address::<43>(Some(&[0x22; 43])), ([0x22; 43], true));
+        assert_eq!(fixed_address::<21>(None), ([0; 21], false));
+        assert_eq!(fixed_address::<21>(Some(&[0x33; 20])), ([0; 21], false));
+        assert_eq!(fixed_address::<43>(Some(&[0x33; 21])), ([0; 43], false));
+    }
 
     #[test]
     fn test_identity_entry_ffi_round_trip() {
@@ -1050,6 +1165,9 @@ mod tests {
                 avatar_hash: Some([0xAB; 32]),
                 avatar_fingerprint: Some([0xCD; 8]),
                 public_message: None,
+                core_payment_address: Some(vec![0x00; 21]),
+                platform_payment_address: None,
+                shielded_address: Some(vec![0x33; 43]),
             }),
             dashpay_payments: Default::default(),
             contact_profiles: Default::default(),
@@ -1074,6 +1192,12 @@ mod tests {
         assert!(ffi.dashpay_profile_avatar_fingerprint_present);
         assert_eq!(ffi.dashpay_profile_avatar_fingerprint, [0xCD; 8]);
         assert!(ffi.dashpay_profile_public_message.is_null());
+        assert!(ffi.dashpay_profile_core_payment_address_present);
+        assert_eq!(ffi.dashpay_profile_core_payment_address, [0x00; 21]);
+        assert!(!ffi.dashpay_profile_platform_payment_address_present);
+        assert_eq!(ffi.dashpay_profile_platform_payment_address, [0; 21]);
+        assert!(ffi.dashpay_profile_shielded_address_present);
+        assert_eq!(ffi.dashpay_profile_shielded_address, [0x33; 43]);
 
         unsafe { free_identity_entry_ffi(&mut ffi) };
         assert!(!ffi.dashpay_profile_present);
@@ -1082,6 +1206,8 @@ mod tests {
         assert!(ffi.dashpay_profile_avatar_url.is_null());
         assert!(!ffi.dashpay_profile_avatar_hash_present);
         assert!(!ffi.dashpay_profile_avatar_fingerprint_present);
+        assert!(!ffi.dashpay_profile_core_payment_address_present);
+        assert!(!ffi.dashpay_profile_shielded_address_present);
         // Idempotent — second call must not double-free.
         unsafe { free_identity_entry_ffi(&mut ffi) };
     }
@@ -1102,6 +1228,8 @@ mod tests {
                     avatar_hash: Some([0x11; 32]),
                     avatar_fingerprint: None,
                     public_message: None,
+                    platform_payment_address: Some(vec![0x01; 21]),
+                    ..Default::default()
                 }),
                 checked_at_ms: 111,
             },
@@ -1149,6 +1277,10 @@ mod tests {
         assert!(present.avatar_hash_present);
         assert_eq!(present.avatar_hash, [0x11; 32]);
         assert!(!present.avatar_fingerprint_present);
+        assert!(!present.core_payment_address_present);
+        assert!(present.platform_payment_address_present);
+        assert_eq!(present.platform_payment_address, [0x01; 21]);
+        assert!(!present.shielded_address_present);
         assert_eq!(present.checked_at_ms, 111);
 
         let absent = &rows[1];
@@ -1160,6 +1292,7 @@ mod tests {
         assert!(absent.public_message.is_null());
         assert!(!absent.avatar_hash_present);
         assert!(!absent.avatar_fingerprint_present);
+        assert!(!absent.platform_payment_address_present);
         // The self-heal timestamp must still ride so Swift can delete the stale
         // row and the negative-cache backoff is preserved.
         assert_eq!(absent.checked_at_ms, 222);
