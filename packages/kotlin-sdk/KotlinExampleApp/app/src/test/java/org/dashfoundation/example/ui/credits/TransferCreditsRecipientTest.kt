@@ -3,11 +3,12 @@ package org.dashfoundation.example.ui.credits
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * A typed credit transfer recipient this device knows as a masternode's voter identity is
- * refused (port of the #6145 check in Swift `TransitionDetailView`).
+ * A credit or token transfer recipient this device knows, on the sender's network, as a
+ * masternode's voter identity is refused (port of the #6145 checks in SwiftExampleApp).
  */
 class TransferCreditsRecipientTest {
 
@@ -19,14 +20,17 @@ class TransferCreditsRecipientTest {
     )
 
     @Test
-    fun shouldRefuseAVoterIdentityAsACreditRecipient() {
-        assertNotNull(votingOnlyRecipientRefusal(row("voter")))
+    fun shouldRefuseAVoterIdentityAsACreditOrTokenRecipient() {
+        assertNotNull(votingOnlyRecipientRefusal(row("voter"), 1, "credits"))
+        assertTrue(votingOnlyRecipientRefusal(row("voter"), 1, "tokens")!!.contains("tokens sent to it"))
     }
 
     @Test
     fun shouldAcceptAnyOtherRecipient() {
-        assertNull(votingOnlyRecipientRefusal(row("owner")))
-        assertNull(votingOnlyRecipientRefusal(row(null)))
-        assertNull(votingOnlyRecipientRefusal(null))
+        assertNull(votingOnlyRecipientRefusal(row("owner"), 1, "credits"))
+        assertNull(votingOnlyRecipientRefusal(row(null), 1, "credits"))
+        assertNull(votingOnlyRecipientRefusal(null, 1, "credits"))
+        // A voter row stored for another network says nothing about this one.
+        assertNull(votingOnlyRecipientRefusal(row("voter"), 0, "credits"))
     }
 }

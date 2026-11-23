@@ -150,8 +150,11 @@ fun TransferCreditsScreen(identityIdHex: String, navController: NavHostControlle
                         // A recipient this device knows as a masternode's voter identity holds
                         // only a voting key, so credits sent to it could not be spent (Swift
                         // `TransitionDetailView`, after #6145).
-                        votingOnlyRecipientRefusal(container.database.identityDao().getByIdentityId(toId))
-                            ?.let { throw IllegalArgumentException(it) }
+                        votingOnlyRecipientRefusal(
+                            container.database.identityDao().getByIdentityId(toId),
+                            networkRaw = identity?.networkRaw ?: return@launch,
+                            what = "credits",
+                        )?.let { throw IllegalArgumentException(it) }
                         mgr.identityCredits.transfer(
                             walletHandle = w.handle,
                             fromIdentityId = idBytes,
@@ -174,14 +177,16 @@ fun TransferCreditsScreen(identityIdHex: String, navController: NavHostControlle
 }
 
 /**
- * Why credits cannot go to [recipient], the stored row of the typed recipient id: a masternode's
- * voter identity holds only a voting key, so credits sent to it could not be spent. Null for any
- * other recipient, stored or not.
+ * Why [what] (credits, tokens) cannot go to [recipient], the stored row of the recipient id,
+ * picked or pasted: a masternode's voter identity holds only a voting key, so what is sent to it
+ * could not be spent. Only a row on [networkRaw], the sender's network, counts. Null for any
+ * other recipient, stored or not. The caller reads the row at submit; a failed read throws, so
+ * it is never taken for an unknown recipient (Swift, after #6145).
  */
-internal fun votingOnlyRecipientRefusal(recipient: IdentityEntity?): String? =
-    if (recipient?.isVotingOnlyIdentity == true) {
+internal fun votingOnlyRecipientRefusal(recipient: IdentityEntity?, networkRaw: Int, what: String): String? =
+    if (recipient?.takeIf { it.networkRaw == networkRaw }?.isVotingOnlyIdentity == true) {
         "The recipient is a masternode's voter identity, which holds only a voting key, so " +
-            "credits sent to it could not be spent."
+            "$what sent to it could not be spent."
     } else {
         null
     }
