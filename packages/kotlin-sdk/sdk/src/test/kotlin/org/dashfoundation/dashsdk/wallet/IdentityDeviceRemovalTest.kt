@@ -356,6 +356,51 @@ class IdentityDeviceRemovalTest {
         }
 
     @Test
+    fun `should delete a key persisted after the snapshot when the host pass removes the rows`() =
+        runBlocking {
+            val lateKey = ByteArray(33) { 0x6a }
+            // A round persists a new key for the identity while Rust answers
+            // that no wallet manages it.
+            liveWallets = {
+                insertKey(identityId, 5, lateKey)
+                storage.storePrivateKey(lateKey.hex(), ByteArray(32) { 4 }, ownerWalletId = walletId)
+                false
+            }
+
+            val result = remove()
+
+            assertTrue(result.keysLeft.isEmpty())
+            assertFalse(storage.hasPrivateKey(lateKey.hex()))
+            assertFalse(storage.withPrivateKeyExclusion { isOwnedByAnotherWallet(lateKey.hex(), ByteArray(32)) })
+        }
+
+    @Test
+    fun `should delete a key two wallets still claim when both pending entries settle together`() =
+        runBlocking {
+            val otherWallet = ByteArray(32) { 0x12 }
+            val orphanKey = ByteArray(33) { 0x6b }
+            storage.storePrivateKey(orphanKey.hex(), ByteArray(32) { 5 }, ownerWalletId = walletId)
+            storage.storePrivateKey(orphanKey.hex(), ByteArray(32) { 5 }, ownerWalletId = otherWallet)
+            // Two removals were interrupted after their rows went and before
+            // any settle: both claims intact, no row names the key.
+            storage.withPrivateKeyExclusion {
+                recordPendingIdentityKeyDeletes(
+                    listOf(
+                        PendingIdentityKeyDelete(orphanKey.hex(), walletId),
+                        PendingIdentityKeyDelete(orphanKey.hex(), otherWallet),
+                    ),
+                )
+            }
+
+            // Any later removal settles them.
+            val result = remove(id = ByteArray(32) { 0x7d })
+
+            assertTrue(result.keysLeft.isEmpty())
+            assertFalse(storage.hasPrivateKey(orphanKey.hex()))
+            assertTrue(storage.withPrivateKeyExclusion { pendingIdentityKeyDeletes() }.isEmpty())
+        }
+
+    @Test
     fun `should finish a voting key an earlier removal left when removed again`() = runBlocking {
         remove()
         storage.storePrivateKey(votingIdentifier, ByteArray(32) { 2 })

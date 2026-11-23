@@ -82,9 +82,7 @@ internal suspend fun deleteIdentityFromDevice(
     require(identityId.size == 32) { "identityId must be 32 bytes, got ${identityId.size}" }
 
     // 1. Record the aliases before anything can delete their rows.
-    val walletId = database.identityDao().getByIdentityId(identityId)?.walletId
-    val aliases = database.publicKeyDao().getByIdentityId(identityId.toBase58String())
-        .map { PendingIdentityKeyDelete(it.publicKeyData.toHex(), walletId) }
+    val aliases = currentAliases(database, identityId)
     walletStorage.withPrivateKeyExclusion { recordPendingIdentityKeyDeletes(aliases) }
 
     // 2. Live wallets; a refusal throws before anything local changes.
@@ -94,6 +92,10 @@ internal suspend fun deleteIdentityFromDevice(
     val keysLeft = mutableListOf<String>()
     persistenceHandler.withCallbackExclusion {
         walletStorage.withPrivateKeyExclusion {
+            // Record the aliases the rows hold now, under both exclusions, so a
+            // key persisted after step 1 is covered when the host pass is the
+            // one deleting the rows (an identity no wallet managed).
+            recordPendingIdentityKeyDeletes(currentAliases(database, identityId))
             try {
                 persistenceHandler.deleteIdentityDataLocked(identityId)
             } catch (e: CancellationException) {
@@ -158,6 +160,16 @@ internal suspend fun settlePendingIdentityKeyDeletes(
         if (!referenced && !claimed) delete += alias
     }
     scope.settleKeys(delete, pending)
+}
+
+/** The identity's key aliases its rows hold now, each with the identity's wallet. */
+private suspend fun currentAliases(
+    database: DashDatabase,
+    identityId: ByteArray,
+): List<PendingIdentityKeyDelete> {
+    val walletId = database.identityDao().getByIdentityId(identityId)?.walletId
+    return database.publicKeyDao().getByIdentityId(identityId.toBase58String())
+        .map { PendingIdentityKeyDelete(it.publicKeyData.toHex(), walletId) }
 }
 
 /** Stands for "no wallet" in an owner-index check: every wallet's claim counts. */

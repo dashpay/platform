@@ -766,10 +766,16 @@ class PlatformWalletManager(
             // record the key, then settle it like an identity removal would
             // (kept while another identity uses it, this wallet's claim
             // released), so a failed delete is retried by the next removal.
+            // Under the callback exclusion first, as settling requires: an
+            // in-flight round that stores the alias for this wallet commits its
+            // row before or after the settle, never between its read and its
+            // release.
             abandonStoredKey = { pubkeyHex ->
-                walletStorage.withPrivateKeyExclusion {
-                    recordPendingIdentityKeyDeletes(listOf(PendingIdentityKeyDelete(pubkeyHex, walletId)))
-                    settlePendingIdentityKeyDeletes(database, this)
+                persistenceHandler.withCallbackExclusion {
+                    walletStorage.withPrivateKeyExclusion {
+                        recordPendingIdentityKeyDeletes(listOf(PendingIdentityKeyDelete(pubkeyHex, walletId)))
+                        settlePendingIdentityKeyDeletes(database, this)
+                    }
                 }
             },
         )
