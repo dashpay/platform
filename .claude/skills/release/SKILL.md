@@ -306,18 +306,33 @@ Steps (skip whatever is already done — e.g. the next dev branch and default ma
 3. **Bring the release commits into next dev.** Check how the two branches relate:
    ```sh
    git fetch origin vX.Y-dev v(X.Y+1)-dev
-   git merge-base --is-ancestor origin/vX.Y-dev origin/v(X.Y+1)-dev && echo "already contains current dev"
-   git merge-base --is-ancestor origin/v(X.Y+1)-dev origin/vX.Y-dev && echo "fast-forward"
+   git rev-parse origin/vX.Y-dev   # the current dev commit to bring over
+   git merge-base --is-ancestor origin/vX.Y-dev origin/v(X.Y+1)-dev; echo "contains: exit $?"
+   git merge-base --is-ancestor origin/v(X.Y+1)-dev origin/vX.Y-dev; echo "behind: exit $?"
    ```
-   - `already contains current dev`: nothing to do; go on with step 4.
-   - `fast-forward`: next dev has no commits of its own. After the user's go, fast-forward it to current dev:
+   Each check exits 0 for yes and 1 for no; if the fetch fails or a check exits with anything else, stop.
+   - `contains: exit 0`: next dev already contains current dev; go on with step 4.
+   - `behind: exit 0`: next dev has no commits of its own. After the user's go, fast-forward it to current dev:
      ```sh
      git push origin origin/vX.Y-dev:v(X.Y+1)-dev
      ```
-   - Neither: the branches have diverged, because next dev has commits of its own, and current dev is merged into it through a PR. Show the user what the merge brings (`git log --oneline origin/v(X.Y+1)-dev..origin/vX.Y-dev`); after their go, open the PR, then continue with step 4 once it is merged:
+   - Both exit 1: the branches have diverged. Merge the current dev commit into next dev on a branch of its own, so conflicts are resolved there and nothing of next dev reaches current dev:
      ```sh
-     gh pr create --repo dashpay/platform --base v(X.Y+1)-dev --head vX.Y-dev \
+     worktree="$(mktemp -d)" && echo "${worktree}"
+     git worktree add -b merge/vX.Y-dev-into-v(X.Y+1)-dev "${worktree:?}" origin/v(X.Y+1)-dev
+     git -C "${worktree:?}" merge --no-ff -m "chore: merge vX.Y-dev into v(X.Y+1)-dev" <current dev commit>
+     ```
+     Resolve any conflicts there and show the user the result. After their go, push the branch and open the PR, using the path printed above:
+     ```sh
+     git -C <worktree> push origin merge/vX.Y-dev-into-v(X.Y+1)-dev
+     gh pr create --repo dashpay/platform --base v(X.Y+1)-dev --head merge/vX.Y-dev-into-v(X.Y+1)-dev \
        --title "chore: merge vX.Y-dev into v(X.Y+1)-dev" --body "Brings the vX.Y.0 release into the next line."
+     git worktree remove <worktree>
+     ```
+     The PR has to be merged with a merge commit, not squashed: a squash leaves next dev without current dev in its history. Once it is merged, check that next dev contains the current dev commit, then go on with step 4:
+     ```sh
+     git fetch origin v(X.Y+1)-dev
+     git merge-base --is-ancestor <current dev commit> origin/v(X.Y+1)-dev; echo "exit $?"   # must be 0
      ```
 
 4. **Make next dev the default branch** if it isn't already (repo Settings → Branches, or `gh api`).
