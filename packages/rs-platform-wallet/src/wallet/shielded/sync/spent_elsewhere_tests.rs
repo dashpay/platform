@@ -407,6 +407,89 @@ async fn should_fail_a_restored_pending_spend_whose_single_input_another_transit
     let _ = std::fs::remove_file(&path);
 }
 
+/// A restored spend whose input note the store does not hold: the reopened
+/// store restores the saved transition, but the host has not restored the
+/// note, so the spent mark finds nothing to mark and drops no record. The
+/// pass is also short of coverage, so no reservation is released either.
+/// The scan still fails the row and drops the transition itself, so nothing
+/// broadcasts it again after another restart.
+#[tokio::test]
+async fn should_drop_the_transition_of_a_failed_spend_whose_note_the_store_does_not_hold() {
+    let path = temp_tree_path("absent_note");
+    let (id, _) = subwallet();
+    let input = nullifier(0xA1);
+    {
+        let store = open(&path);
+        save_unconfirmed_spend(
+            &mut *store.write().await,
+            id,
+            SPEND,
+            &single_input_spend(),
+            &[input],
+        );
+    }
+
+    let store = open(&path);
+    {
+        let mut store = store.write().await;
+        store
+            .save_activity(id, &pending_row(SPEND, &[input]))
+            .expect("restore the row alone");
+        assert!(store.get_all_notes(id).expect("notes").is_empty());
+        assert_eq!(store.pending_redrives(id).expect("records").len(), 1);
+    }
+
+    // The competing action in a range proved at 1000, and a tail proved at
+    // 999: the pass covers 999 only.
+    let result = scan(
+        &store,
+        futures::stream::iter(vec![
+            Ok(ShieldedChunkBatch {
+                start_index: 0,
+                notes: vec![scanned(input, cmx(9))],
+                decrypted: vec![],
+                block_height: 1_000,
+                is_partial: false,
+                total_count: 2,
+            }),
+            Ok(ShieldedChunkBatch {
+                start_index: 1,
+                notes: vec![],
+                decrypted: vec![],
+                block_height: 999,
+                is_partial: true,
+                total_count: 1,
+            }),
+        ]),
+    )
+    .await;
+
+    assert_eq!(result.covered_height, Some(999));
+    assert_eq!(
+        reported(&result, id, SPEND),
+        vec![ShieldedActivityStatus::Failed]
+    );
+    assert!(store
+        .read()
+        .await
+        .pending_redrives(id)
+        .expect("records")
+        .is_empty());
+    drop(store);
+    let reopened = open(&path);
+    assert!(
+        reopened
+            .read()
+            .await
+            .pending_redrives(id)
+            .expect("records")
+            .is_empty(),
+        "no saved transition is restored"
+    );
+    drop(reopened);
+    let _ = std::fs::remove_file(&path);
+}
+
 /// The competing transition spent both inputs, in actions on either side of
 /// a range boundary, and the second range is proved a block before it
 /// executed, so it holds nothing. The pass reads only the first action. The
