@@ -10,6 +10,7 @@ use rs_sdk_ffi::{SignerHandle, VTableSigner};
 use crate::check_ptr;
 use crate::error::*;
 use crate::handle::*;
+use crate::identity_persistence::fixed_address;
 use crate::runtime::block_on_worker;
 use crate::types::*;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
@@ -99,6 +100,12 @@ impl DashPayProfileFFI {
             Some(f) => (true, f),
             None => (false, [0u8; 8]),
         };
+        let (core_payment_address, core_payment_address_is_some) =
+            fixed_address(profile.core_payment_address.as_deref());
+        let (platform_payment_address, platform_payment_address_is_some) =
+            fixed_address(profile.platform_payment_address.as_deref());
+        let (shielded_address, shielded_address_is_some) =
+            fixed_address(profile.shielded_address.as_deref());
 
         Self {
             display_name,
@@ -108,33 +115,12 @@ impl DashPayProfileFFI {
             avatar_hash,
             avatar_fingerprint_is_some,
             avatar_fingerprint,
-            core_payment_address_is_some: profile
-                .core_payment_address
-                .as_ref()
-                .is_some_and(|a| a.len() == 21),
-            core_payment_address: profile
-                .core_payment_address
-                .as_deref()
-                .and_then(|a| a.try_into().ok())
-                .unwrap_or([0; 21]),
-            platform_payment_address_is_some: profile
-                .platform_payment_address
-                .as_ref()
-                .is_some_and(|a| a.len() == 21),
-            platform_payment_address: profile
-                .platform_payment_address
-                .as_deref()
-                .and_then(|a| a.try_into().ok())
-                .unwrap_or([0; 21]),
-            shielded_address_is_some: profile
-                .shielded_address
-                .as_ref()
-                .is_some_and(|a| a.len() == 43),
-            shielded_address: profile
-                .shielded_address
-                .as_deref()
-                .and_then(|a| a.try_into().ok())
-                .unwrap_or([0; 43]),
+            core_payment_address_is_some,
+            core_payment_address,
+            platform_payment_address_is_some,
+            platform_payment_address,
+            shielded_address_is_some,
+            shielded_address,
         }
     }
 }

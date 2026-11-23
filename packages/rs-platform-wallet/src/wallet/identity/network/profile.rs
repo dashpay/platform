@@ -359,20 +359,19 @@ fn profile_from_properties(props: &std::collections::BTreeMap<String, Value>) ->
         avatar_hash,
         avatar_fingerprint,
         public_message,
+        // The raw bytes only: `normalize_persisted_profile` is the one place
+        // that decides whether they are an address.
         core_payment_address: props
             .get("corePaymentAddress")
             .and_then(|v| v.as_bytes_slice().ok())
-            .filter(|bytes| valid_transparent_payment_address(bytes))
             .map(|bytes| bytes.to_vec()),
         platform_payment_address: props
             .get("platformPaymentAddress")
             .and_then(|v| v.as_bytes_slice().ok())
-            .filter(|bytes| valid_transparent_payment_address(bytes))
             .map(|bytes| bytes.to_vec()),
         shielded_address: props
             .get(SHIELDED_ADDRESS_PROPERTY)
             .and_then(|v| v.as_bytes_slice().ok())
-            .and_then(validated_shielded_address)
             .map(|bytes| bytes.to_vec()),
     })
 }
