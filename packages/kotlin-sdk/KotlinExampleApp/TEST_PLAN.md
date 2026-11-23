@@ -287,6 +287,8 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SH-15 | Unshield from A to a Platform address owned by B | Shielded | Uncommon | ✅ | multiwallet | A unshields (`SH-06`) to a Platform address belonging to wallet B. Both wallets are engine-bound automatically at rebind, so A can spend from its own pool without a wallet-swap. |
 | SH-16 | Shielded withdraw from A to B's Core L1 address | Shielded | Uncommon | ✅ | multiwallet, withdrawal | Wallet A's pool → a Core L1 address owned by wallet B (`SH-08`). Verify B's Core balance rises after SPV sync. Both wallets are engine-bound automatically at rebind. |
 | SH-17 | Multiple wallets bound to the shielded pool concurrently | Shielded | Uncommon | ✅ | multiwallet | `platform_wallet_manager_bind_shielded` is per `wallet_id`; the manager syncs all bound wallets. EVERY loaded wallet is engine-bound automatically at rebind (`AppContainer.rebindWalletScopedServices` → `ShieldedService.bindEngine`); the global Sync tab still mirrors one wallet, but per-wallet Receive/Balance surfaces read per-wallet. |
+| SH-24 | Buy a token from the shielded pool (Type 28) | Shielded | Common | ✅ | | Mirrors Swift `SH-24`. Not yet run on an emulator. Identity → token → **Direct Purchase** (`TokenActionScreens(directPurchase)`) → **Pay with: Shielded pool** (`tokenPurchase.fundingSource`, the option itself is `tokenPurchase.fundingSource.ShieldedPool`) → enter an amount → **Buy** (`tokenPurchase.buyButton`) → `walletManager.shieldedTokenPurchaseFromPool` → `platform_wallet_manager_shielded_token_purchase_from_pool`. The **Pay with** choice is offered only when Rust reports the token can be bought that way (`shieldedTokenPurchaseAvailability` → `platform_wallet_manager_shielded_token_purchase_availability`); for a token without a shielded pool, or whose configuration cannot be read (with **Retry**, `tokenPurchase.shieldedUnavailable.retry`), the form shows identity credits only and says why (`tokenPurchase.shieldedUnavailable`). Precondition: the token has a direct-purchase price and a shielded pool, and the identity's wallet has a synced account-0 shielded balance (`SH-01`) covering price plus fee on a network at protocol version 14 or later. The form shows the shielded balance (`tokenPurchase.shieldedBalance`), the pool fee estimate (fee kind 5) and price plus fee, and notes that the tokens go to the wallet's shielded token pool, which the app does not show (`tokenPurchase.shieldedTokensNote`). While it runs the form says it is proving and broadcasting (`tokenPurchase.proving`). Verify: the dialog (`tokenPurchase.shieldedOutcome`) says the purchase was **submitted** (not complete) and that a shielded sync confirms it once it lands; Shielded Activity lists a **Token Purchase** row as Pending with "Not confirmed yet", which turns Confirmed, and only then says the tokens were minted, after a shielded sync finds the purchase; the shielded balance drops by price plus fee; the identity's credit balance is unchanged. A purchase whose result is not known says it may have gone through and offers no retry. Kill the app while the row is Pending: after relaunch the row is still listed as Pending and the next shielded sync resolves it. A Pending purchase whose notes another device spends first never resolves (#6108). The bought tokens are on chain but are not shown anywhere in the app (`SH-25`). |
+| SH-25 | View shielded token balances / notes | Shielded | Common | 🚫 | read-only | Mirrors Swift `SH-25`. Not implemented: the wallet syncs only the credit shielded pool, so token pool notes (`SH-24`'s purchase included) are neither tracked nor shown. Needs a token pool note sync in `platform-wallet` first. |
 
 ### 4.10 DashPay — `Domain=DashPay`
 
@@ -337,7 +339,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Tier | Count (approx.) | Automatable? |
 |---|---|---|
 | Essential | 21 | yes |
-| Common | 30 | yes |
+| Common | 31 | yes |
 | Thorough | 52 | yes |
 | Uncommon | 28 | yes |
 | Manual | 1 (`CORE-08`) | no — physical device |
@@ -349,7 +351,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Core | 17 |
 | Platform | ~94 |
 | Cross | 7 |
-| Shielded | 16 |
+| Shielded | 17 |
 
 ---
 
@@ -365,7 +367,7 @@ Membership of each feature category across **all** sections (primary section mem
 - **Contract** — `DC-01..10`
 - **Document** — `DOC-01..17`
 - **Token** — `TOK-01..20`
-- **Shielded** — `SH-01..17`
+- **Shielded** — `SH-01..17`, `SH-24`, `SH-25`
 - **DashPay** — `DP-01..19` (`DP-12..19` = invitation create, claim, persistence, reclaim; funded run 2026-07-23)
 - **System / Diagnostics** — `SYS-01..09`
 
@@ -378,6 +380,6 @@ Tags are cross-cutting modalities. A test may appear under multiple tags.
 - **contested** — `DPNS-05`, `DPNS-08`, `DPNS-11`, `VOTE-01..06`
 - **withdrawal** — `ID-10`, `ADDR-04`, `SH-08`, `SH-16`
 - **regression** — `ID-18`, `TOK-17`, `DP-10`
-- **read-only** — `ADDR-10`, `ADDR-11`, `DOC-17`, `SH-13`, `SYS-05`, `SYS-06`, `VOTE-02..06`, `VOTE-08`, `VOTE-10`, `VOTE-13`, `VOTE-14`, `VOTE-16`, `VOTE-20`, `TOK-18`, `TOK-19`
+- **read-only** — `ADDR-10`, `ADDR-11`, `DOC-17`, `SH-13`, `SH-25`, `SYS-05`, `SYS-06`, `VOTE-02..06`, `VOTE-08`, `VOTE-10`, `VOTE-13`, `VOTE-14`, `VOTE-16`, `VOTE-20`, `TOK-18`, `TOK-19`
 - **masternode** — `VOTE-01`, `VOTE-12`, `VOTE-13`, `VOTE-19`, `VOTE-20`
 - **proposal** (decision proposals, yes/no and multiple choice, protocol version 15): `VOTE-08..20`
