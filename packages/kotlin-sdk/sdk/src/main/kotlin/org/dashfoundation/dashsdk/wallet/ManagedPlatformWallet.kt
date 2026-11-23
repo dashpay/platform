@@ -721,6 +721,12 @@ class ManagedPlatformWallet internal constructor(
             require(credits == null || credits > 0) {
                 "FundRecipient.credits must be positive (or null for the remainder recipient), got $credits"
             }
+            // The row carries the type as one byte; a wider value would be truncated to another
+            // type (256 → 0, P2PKH) and the funding routed to an address the caller did not
+            // name. Which byte values are supported stays Rust's decision.
+            require(addressType in 0..255) {
+                "FundRecipient.addressType must fit in a u8, got $addressType"
+            }
         }
 
         override fun equals(other: Any?): Boolean =
@@ -1016,6 +1022,11 @@ class ManagedPlatformWallet internal constructor(
         init {
             require(hash.size == 20) { "CreditOutput.hash must be 20 bytes, got ${hash.size}" }
             require(credits > 0) { "CreditOutput.credits must be positive" }
+            // One byte on the wire, as for FundRecipient: a wider value would send the
+            // credits to another type's address. Which byte values are supported stays Rust's.
+            require(addressType in 0..255) {
+                "CreditOutput.addressType must fit in a u8, got $addressType"
+            }
         }
 
         override fun equals(other: Any?): Boolean =
