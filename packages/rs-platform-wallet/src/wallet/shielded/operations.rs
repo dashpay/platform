@@ -4989,7 +4989,7 @@ async fn reserve_unspent_notes_for_denomination<S: ShieldedStore>(
 ///   ([`confirm_unless_proved_failed`]). Then the row stays failed and the
 ///   spend is reported as [`PlatformWalletError::ShieldedSpendNotExecuted`]:
 ///   the snapshot shows other transitions spent its notes.
-async fn settle_affected_state_spend<S: ShieldedStore>(
+pub(super) async fn settle_affected_state_spend<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,

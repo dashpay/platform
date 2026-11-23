@@ -7,7 +7,7 @@
 //! scan can read another transition's action for one of its inputs and fail
 //! its row on that proof, or its anchor can be proven pruned. A snapshot that
 //! arrives afterwards must leave the row failed and report the spend as not
-//! executed.
+//! executed. The notes it shows spent are marked spent either way.
 
 use super::*;
 use crate::wallet::shielded::activity::ShieldedActivityEntry;
@@ -178,6 +178,17 @@ async fn unspent(store: &Store, id: SubwalletId) -> Vec<[u8; 32]> {
     nullifiers
 }
 
+/// Whether every note of `inputs` is marked spent, which a note that is only
+/// reserved is not.
+async fn all_spent(store: &Store, id: SubwalletId, inputs: &[[u8; 32]]) -> bool {
+    let notes = store.read().await.get_all_notes(id).expect("notes");
+    inputs.iter().all(|nullifier| {
+        notes
+            .iter()
+            .any(|note| note.nullifier == *nullifier && note.is_spent)
+    })
+}
+
 /// The snapshot a node answers the result wait with: every nullifier of the
 /// spend reads spent.
 fn snapshot(inputs: &[[u8; 32]]) -> (StateTransitionProofResult, ResponseMetadata) {
@@ -252,7 +263,7 @@ async fn should_keep_a_payment_failed_when_its_result_arrives_after_the_scan_pro
         "the late result does not confirm a payment proved failed"
     );
     assert!(
-        unspent(&store, id).await.is_empty(),
+        all_spent(&store, id, &inputs).await,
         "the result proves every nullifier spent, whichever transition spent it"
     );
     assert!(store
@@ -263,15 +274,18 @@ async fn should_keep_a_payment_failed_when_its_result_arrives_after_the_scan_pro
         .is_empty());
 }
 
-/// The same result for a top-up whose row was failed when its anchor was
-/// proven pruned, which the release writes by the row's id.
+/// The settlement both spends share, for a top-up: a row that already reads
+/// failed, its notes released as the release of an expired spend leaves them,
+/// stays failed, and the snapshot still marks the notes spent. The release
+/// itself is driven in
+/// `coordinator::tests::should_fail_an_expired_spend_s_row_before_a_waiting_result_can_confirm_it`.
 #[tokio::test]
-async fn should_keep_a_top_up_failed_when_its_result_arrives_after_its_anchor_expired() {
+async fn should_report_a_top_up_as_not_executed_when_its_row_already_reads_failed() {
     let store: Store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
     let (id, _) = subwallet();
     let inputs = [nullifier(0xA1), nullifier(0xA2)];
-    let (selected, mut reservation) = reserved_spend(&store, id, &inputs).await;
-    reservation.hand_over();
+    let (selected, reservation) = reserved_spend(&store, id, &inputs).await;
+    reservation.cancel().await;
     record_activity_status_by_id(
         &store,
         None,
@@ -281,6 +295,7 @@ async fn should_keep_a_top_up_failed_when_its_result_arrives_after_its_anchor_ex
         ShieldedActivityStatus::Failed,
     )
     .await;
+    assert_eq!(unspent(&store, id).await, inputs.to_vec());
 
     let settled = settle_affected_state_spend(
         &store,
@@ -301,7 +316,7 @@ async fn should_keep_a_top_up_failed_when_its_result_arrives_after_its_anchor_ex
         "{settled:?}"
     );
     assert_eq!(row_status(&store, id).await, ShieldedActivityStatus::Failed);
-    assert!(unspent(&store, id).await.is_empty());
+    assert!(all_spent(&store, id, &inputs).await);
 }
 
 /// Nothing contradicts the snapshot: the spend is confirmed at once, without
@@ -330,5 +345,5 @@ async fn should_confirm_a_top_up_at_once_when_nothing_proved_it_failed() {
         row_status(&store, id).await,
         ShieldedActivityStatus::Confirmed
     );
-    assert!(unspent(&store, id).await.is_empty());
+    assert!(all_spent(&store, id, &inputs).await);
 }
