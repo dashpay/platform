@@ -325,6 +325,9 @@ struct OrphanedHoldSettlement {
 /// and its saved record, if it had one, is gone.
 ///
 /// - Never saved: the spend was never sent, so it failed; release.
+/// - Some of its notes spent and some not: its bundle spends them all at
+///   once, so another spend used some. It did not land and can no longer, at
+///   any version: it failed; release.
 /// - Signed bound (its token bundle cannot land without its fee bundle, from
 ///   protocol 15): its record went because its fee anchor was pruned (it can
 ///   never execute) or its fee notes were seen spent (it landed, or another
@@ -343,6 +346,8 @@ fn settle_orphaned_token_hold(
     orphan: &super::token_pool::OrphanedReservation,
 ) -> OrphanedHoldSettlement {
     let (fail_row, release) = if !orphan.record_saved {
+        (true, true)
+    } else if orphan.any_spent && !orphan.all_spent {
         (true, true)
     } else if orphan.signed_bound {
         (orphan.fee_anchor_pruned || !orphan.any_spent, true)
@@ -4120,23 +4125,28 @@ mod tests {
             FeeNoteSpent,
         }
         use ShieldedActivityStatus::{Failed, Pending};
-        // (signed bound, how the record went, a held token note spent, pool
-        // scan version, row after, notes still held)
+        // (signed bound, how the record went, how many of its two held token
+        // notes are spent, pool scan version, row after, notes still held)
         for (signed_bound, record, token_spent, network, settled, held) in [
-            (false, Record::NeverSaved, false, 14, Failed, false),
-            (false, Record::NeverSaved, false, 15, Failed, false),
+            (false, Record::NeverSaved, 0, 14, Failed, false),
+            (false, Record::NeverSaved, 0, 15, Failed, false),
             // Signed at 14: its token bundle can land with another fee bundle.
-            (false, Record::FeeAnchorPruned, false, 14, Pending, true),
-            (false, Record::FeeAnchorPruned, false, 15, Failed, false),
-            (false, Record::FeeAnchorPruned, true, 15, Pending, false),
-            (false, Record::FeeNoteSpent, true, 14, Pending, false),
-            (false, Record::FeeNoteSpent, false, 14, Pending, true),
-            (false, Record::FeeNoteSpent, false, 15, Failed, false),
+            (false, Record::FeeAnchorPruned, 0, 14, Pending, true),
+            (false, Record::FeeAnchorPruned, 0, 15, Failed, false),
+            (false, Record::FeeAnchorPruned, 2, 15, Pending, false),
+            (false, Record::FeeNoteSpent, 2, 14, Pending, false),
+            (false, Record::FeeNoteSpent, 0, 14, Pending, true),
+            (false, Record::FeeNoteSpent, 0, 15, Failed, false),
+            // One of its notes spent by another spend: its bundle spends both
+            // at once, so it never landed and can no longer, at any version.
+            (false, Record::FeeAnchorPruned, 1, 14, Failed, false),
+            (false, Record::FeeNoteSpent, 1, 15, Failed, false),
             // Signed at 15: it cannot land without its own fee bundle.
-            (true, Record::FeeAnchorPruned, false, 15, Failed, false),
-            (true, Record::FeeAnchorPruned, true, 15, Failed, false),
-            (true, Record::FeeNoteSpent, true, 15, Pending, false),
-            (true, Record::FeeNoteSpent, false, 15, Failed, false),
+            (true, Record::FeeAnchorPruned, 0, 15, Failed, false),
+            (true, Record::FeeAnchorPruned, 2, 15, Failed, false),
+            (true, Record::FeeNoteSpent, 2, 15, Pending, false),
+            (true, Record::FeeNoteSpent, 1, 15, Failed, false),
+            (true, Record::FeeNoteSpent, 0, 15, Failed, false),
         ] {
             let case = format!(
                 "signed bound {signed_bound}, {record:?}, token note spent {token_spent}, \
@@ -4181,21 +4191,23 @@ mod tests {
                             rusqlite::params![token.token_id.as_slice(), network],
                         )
                         .expect("scan row");
-                        insert_note_for_test(
-                            conn,
-                            &TokenPoolNote {
-                                id,
-                                token_id: token.token_id,
-                                position: 0,
-                                cmx: [1; 32],
-                                nullifier: [2; 32],
-                                value: 5,
-                                note_data: vec![0; 115],
-                                block_height: 1,
-                                is_spent: token_spent,
-                                reserved_by: Some(row.id),
-                            },
-                        )?;
+                        for position in 0..2u8 {
+                            insert_note_for_test(
+                                conn,
+                                &TokenPoolNote {
+                                    id,
+                                    token_id: token.token_id,
+                                    position: u64::from(position),
+                                    cmx: [1 + position; 32],
+                                    nullifier: [2 + position; 32],
+                                    value: 5,
+                                    note_data: vec![0; 115],
+                                    block_height: 1,
+                                    is_spent: position < token_spent,
+                                    reserved_by: Some(row.id),
+                                },
+                            )?;
+                        }
                         // As the re-key to the record sets it.
                         conn.execute(
                             "UPDATE shielded_token_pool_notes SET signed_bound = ?1",

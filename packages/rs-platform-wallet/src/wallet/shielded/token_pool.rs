@@ -943,14 +943,15 @@ pub(crate) fn reserve_token_notes<S: TokenPoolConnection>(
 
 /// One reservation as read: wallet id, account, token id, marker bytes,
 /// whether its spend was signed bound, whether its record was saved, whether
-/// its fee anchor was pruned, whether any note it holds is spent, and the
-/// height and protocol version the token pool's last scan read at.
+/// its fee anchor was pruned, whether any and whether every note it holds is
+/// spent, and the height and protocol version the token pool's last scan read
+/// at.
 type HeldReservation = (
     Vec<u8>,
     u32,
     Vec<u8>,
     Vec<u8>,
-    [bool; 4],
+    [bool; 5],
     Option<i64>,
     Option<u32>,
 );
@@ -977,6 +978,10 @@ pub(crate) struct OrphanedReservation {
     /// Whether any note it holds is spent, as the token pool's scan, which
     /// reached the credit scan's height, has seen.
     pub any_spent: bool,
+    /// Whether every note it holds is spent. A spend's bundle spends all its
+    /// notes at once, so some spent and some not means another spend used
+    /// some: this one did not land and can no longer.
+    pub all_spent: bool,
     /// The protocol version of the block the token pool's last scan was
     /// proven at. Protocol versions only rise, so a scan at a version that
     /// binds a token bundle to its fee bundle saw every block in which an
@@ -1041,7 +1046,7 @@ pub(crate) fn orphaned_reservations(
         .prepare(
             "SELECT n.wallet_id, n.account_index, n.token_id, n.reserved_by, \
              MAX(n.signed_bound), MAX(n.record_saved), MAX(n.fee_anchor_pruned), \
-             MAX(n.spent), s.scanned_height, s.scanned_protocol_version \
+             MAX(n.spent), MIN(n.spent), s.scanned_height, s.scanned_protocol_version \
              FROM shielded_token_pool_notes n \
              LEFT JOIN shielded_token_pool_scans s ON s.token_id = n.token_id \
              WHERE n.reserved_by IS NOT NULL \
@@ -1060,9 +1065,10 @@ pub(crate) fn orphaned_reservations(
                     row.get::<_, i64>(5)? != 0,
                     row.get::<_, i64>(6)? != 0,
                     row.get::<_, i64>(7)? != 0,
+                    row.get::<_, i64>(8)? != 0,
                 ],
-                row.get(8)?,
                 row.get(9)?,
+                row.get(10)?,
             ))
         })
         .map_err(storage("read reservations"))?
@@ -1074,7 +1080,7 @@ pub(crate) fn orphaned_reservations(
         account_index,
         token_id,
         marker,
-        [signed_bound, record_saved, fee_anchor_pruned, any_spent],
+        [signed_bound, record_saved, fee_anchor_pruned, any_spent, all_spent],
         scanned_height,
         scanned_protocol_version,
     ) in held
@@ -1100,6 +1106,7 @@ pub(crate) fn orphaned_reservations(
             record_saved,
             signed_bound,
             any_spent,
+            all_spent,
             scanned_protocol_version,
         });
     }
