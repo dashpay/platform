@@ -990,6 +990,15 @@ struct TransitionDetailView: View {
     // Normalize the recipient identity ID to base58
     let normalizedToIdentityId = normalizeIdentityId(toIdentityId)
 
+    // A recipient this device knows as a masternode's voter identity holds
+    // only a voting key, so credits sent to it could not be spent; a typed
+    // or retained selection of one is refused too.
+    if identities.contains(where: { $0.identityIdBase58 == normalizedToIdentityId && $0.isVotingOnlyIdentity }) {
+      throw SDKError.invalidParameter(
+        "The recipient is a masternode's voter identity, which holds only a voting key, so credits sent to it could not be spent."
+      )
+    }
+
     // Use the convenience method with DPPIdentity
     let dppIdentity = DPPIdentity(
       id: fromIdentity.identityId,

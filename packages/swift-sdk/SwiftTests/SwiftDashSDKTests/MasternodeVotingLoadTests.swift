@@ -14,8 +14,8 @@ final class MasternodeVotingLoadTests: XCTestCase {
     private let wireOrderProTxHash = Data((1...32).map { UInt8($0) })
 
     /// A masternode stored under its voter identity keeps the pro_tx_hash it
-    /// was loaded with, and votes name that, not anything derived from the
-    /// identity id.
+    /// was loaded with and its role, not anything derived from the identity
+    /// id, and as a voting-only identity it is never a recipient.
     func testShouldRoundTripTheProTxHashOfARowStoredUnderItsVoterIdentity() throws {
         let container = try DashModelContainer.createInMemory()
         let context = container.mainContext
@@ -26,6 +26,7 @@ final class MasternodeVotingLoadTests: XCTestCase {
             network: .testnet
         )
         identity.masternodeProTxHash = wireOrderProTxHash
+        identity.masternodeRole = .voter
         context.insert(identity)
         try context.save()
 
@@ -34,13 +35,14 @@ final class MasternodeVotingLoadTests: XCTestCase {
         XCTAssertFalse(fetched === identity)
         XCTAssertEqual(fetched.identityId, voterIdentityId)
         XCTAssertEqual(fetched.masternodeProTxHash, wireOrderProTxHash)
-        XCTAssertEqual(fetched.votingProTxHash, wireOrderProTxHash)
+        XCTAssertEqual(fetched.masternodeRole, .voter)
+        XCTAssertTrue(fetched.isVotingOnlyIdentity)
     }
 
-    /// A row stored before the pro_tx_hash was recorded was loaded at its
-    /// owner identity, whose id is the pro_tx_hash in Platform's order: its
-    /// votes name the wire order, the reverse, as they did before.
-    func testShouldNameTheOwnerIdentitysProTxHashForARowStoredBeforeItWasRecorded() throws {
+    /// A row stored before the pro_tx_hash was recorded names no masternode:
+    /// nothing is inferred from its id until Rust's load rule resolves it,
+    /// and it is not a voting-only identity.
+    func testShouldNameNoMasternodeForARowStoredBeforeItWasRecorded() throws {
         let container = try DashModelContainer.createInMemory()
         let context = container.mainContext
         let ownerIdentityId = Data(wireOrderProTxHash.reversed())
@@ -55,7 +57,64 @@ final class MasternodeVotingLoadTests: XCTestCase {
         let fresh = ModelContext(container)
         let fetched = try XCTUnwrap(fresh.fetch(FetchDescriptor<PersistentIdentity>()).first)
         XCTAssertNil(fetched.masternodeProTxHash)
-        XCTAssertEqual(fetched.votingProTxHash, wireOrderProTxHash)
+        XCTAssertNil(fetched.masternodeRole)
+        XCTAssertFalse(fetched.isVotingOnlyIdentity)
+    }
+
+    /// A successful voter load decodes from the C struct: role, id, the
+    /// Rust-owned JSON (freed, pointer cleared) and the verdict.
+    func testShouldDecodeASuccessfulVoterLoad() throws {
+        // Rust-owned strings, so `consume` can free them as it frees the
+        // load's: `dash_sdk_utils_hex_to_base58` allocates its answer in Rust.
+        func rustString(_ hex: String) throws -> (UnsafeMutablePointer<CChar>, String) {
+            let result = hex.withCString { dash_sdk_utils_hex_to_base58($0) }
+            XCTAssertNil(result.error)
+            let pointer = try XCTUnwrap(result.data).assumingMemoryBound(to: CChar.self)
+            return (pointer, String(cString: pointer))
+        }
+        let (json, jsonText) = try rustString(String(repeating: "5a", count: 32))
+        var load = DashSDKMasternodeVotingLoad()
+        load.kind = DashSDKMasternodeVotingLoadKind_VoterIdentity
+        let identityId = Data((101...132).map { UInt8($0) })
+        withUnsafeMutableBytes(of: &load.identity_id) { $0.copyBytes(from: identityId) }
+        load.identity_json = json
+        load.has_voting_key_verdict = true
+        load.voting_key_verdict = DashSDKVotingKeyVerdict_Valid
+        guard case .loaded(let loaded) = try MasternodeVotingLoadFFI.consume(&load) else {
+            return XCTFail("expected a load")
+        }
+        XCTAssertEqual(loaded.role, .voter)
+        XCTAssertEqual(loaded.identityId, identityId)
+        XCTAssertEqual(loaded.identityJSON, jsonText)
+        XCTAssertEqual(loaded.votingKeyCheck, .valid)
+        XCTAssertNil(load.identity_json, "the string was freed and its pointer cleared")
+        XCTAssertNil(load.message)
+    }
+
+    /// Rust's sibling rule crosses the wrapper: once one key is proved
+    /// valid, a valid record of another key is checked again, with the
+    /// wrapper's message; a refused key is left as it is.
+    func testShouldCheckAgainAValidSiblingKeyOnceAnotherKeyIsProvedValid() throws {
+        let loaded = try XCTUnwrap(MasternodeVotingKeyAddress(Data(repeating: 0x07, count: 20)))
+        let other = try XCTUnwrap(MasternodeVotingKeyAddress(Data(repeating: 0x09, count: 20)))
+        XCTAssertEqual(
+            MasternodeVotingKeyCheck.valid.siblingRecord(
+                votingAddress: loaded,
+                sibling: MasternodeRecordedVotingKey(check: .valid, votingAddress: other)
+            ),
+            MasternodeRecordedVotingKey(
+                check: .undetermined(message: MasternodeVotingKeyCheck.checkAgainAfterAnotherKeyMessage),
+                votingAddress: other
+            )
+        )
+        XCTAssertNil(MasternodeVotingKeyCheck.valid.siblingRecord(
+            votingAddress: loaded,
+            sibling: MasternodeRecordedVotingKey(check: .invalid(message: "rotated"), votingAddress: other)
+        ))
+        XCTAssertNil(MasternodeVotingKeyCheck.undetermined(message: "timeout").siblingRecord(
+            votingAddress: loaded,
+            sibling: MasternodeRecordedVotingKey(check: .valid, votingAddress: other)
+        ))
     }
 
     func testShouldReadARefusalWithoutAMessageAsAnEmptyReason() throws {

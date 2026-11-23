@@ -439,10 +439,30 @@ struct LoadIdentityView: View {
                 let rowId: Data
                 let identityData: [String: Any]
                 var masternodeProTxHash: Data?
+                var masternodeRole: MasternodeVotingLoadedIdentity.Role?
                 var votingKeyCheck: MasternodeVotingKeyCheck?
                 var votingKeyAddress: MasternodeVotingKeyAddress?
                 if isMasternodeType {
-                    let proTxHash = MasternodeVoter.wireOrderProTxHash(displayOrder: validIdData)
+                    // A typed id that names a row this device stores for a
+                    // masternode (its detail screen shows the row's id, which
+                    // for a shared masternode is the voter identity) loads
+                    // that row's masternode again, by its recorded
+                    // pro_tx_hash. Any other id is read as the pro_tx_hash.
+                    let storedProTxHash: Data?
+                    do {
+                        storedProTxHash = try await MainActor.run {
+                            try Self.storedIdentityRow(validIdData, on: network, in: modelContext)?.masternodeProTxHash
+                        }
+                    } catch {
+                        await MainActor.run {
+                            errorMessage = "The stored identity could not be read, so nothing was saved: \(error.localizedDescription)"
+                            isLoading = false
+                            loadStartTime = nil
+                        }
+                        return
+                    }
+                    let proTxHash = storedProTxHash
+                        ?? MasternodeVoter.wireOrderProTxHash(displayOrder: validIdData)
                     if let votingKeyData {
                         votingKeyAddress = try SDK.masternodeVotingAddress(privateKey: votingKeyData)
                     }
@@ -483,6 +503,7 @@ struct LoadIdentityView: View {
                     rowId = loaded.identityId
                     identityData = try loaded.identityObject()
                     masternodeProTxHash = proTxHash
+                    masternodeRole = loaded.role
                     votingKeyCheck = loaded.votingKeyCheck
                 } else {
                     rowId = validIdData
@@ -548,6 +569,7 @@ struct LoadIdentityView: View {
                 let capturedVotingKeyCheck = votingKeyCheck
                 let capturedVotingKeyAddress = votingKeyAddress
                 let capturedMasternodeProTxHash = masternodeProTxHash
+                let capturedMasternodeRole = masternodeRole
 
                 await MainActor.run {
                     // Read the keys the network returned before writing
@@ -628,9 +650,11 @@ struct LoadIdentityView: View {
                     }
 
                     // A masternode or evonode row records the pro_tx_hash its
-                    // votes name, apart from its identity id.
+                    // votes name, apart from its identity id, and which of
+                    // the masternode's identities Rust loaded.
                     if let capturedMasternodeProTxHash {
                         row.masternodeProTxHash = capturedMasternodeProTxHash
+                        row.masternodeRole = capturedMasternodeRole
                     }
 
                     // Keep the fetched keys' DPP projection for matching the
@@ -745,6 +769,32 @@ struct LoadIdentityView: View {
                         row.payoutPrivateKeyIdentifier = identifier
                     }
 
+                    // Once the entered voting key is in its slot, Rust says
+                    // what to record for the other voting keys this device
+                    // stores for the same masternode (a rotation gives each
+                    // voting address its own voter identity, so each has its
+                    // own row). A list that cannot be read is reported.
+                    var siblingNote: String?
+                    if enteredVotingKeyStored, let check = capturedVotingKeyCheck,
+                       let address = capturedVotingKeyAddress,
+                       let proTxHash = capturedMasternodeProTxHash {
+                        let target: Data? = proTxHash
+                        do {
+                            let siblings = try modelContext.fetch(
+                                FetchDescriptor<PersistentIdentity>(
+                                    predicate: #Predicate { $0.masternodeProTxHash == target }
+                                )
+                            )
+                            for sibling in siblings where sibling.identityId != rowId && sibling.network == network {
+                                if let record = check.siblingRecord(votingAddress: address, sibling: sibling.recordedVotingKey) {
+                                    sibling.recordedVotingKey = record
+                                }
+                            }
+                        } catch {
+                            siblingNote = "Other voting keys stored for this masternode could not be read, so they were not marked to be checked again: \(error.localizedDescription). Load the identity again to retry."
+                        }
+                    }
+
                     // The identity itself loaded, so its row is saved
                     // even when a key could not be stored.
                     do {
@@ -771,10 +821,16 @@ struct LoadIdentityView: View {
                         outcome: storedVotingKeyOutcome
                     )
                     let uncheckedNote = enteredVotingKeyStored ? uncheckedNoteIfStored : nil
-                    if unstoredKeys.isEmpty && conflictingKeys.isEmpty && unlinkedKeyIds.isEmpty && uncheckedNote == nil {
+                    if unstoredKeys.isEmpty && conflictingKeys.isEmpty && unlinkedKeyIds.isEmpty && uncheckedNote == nil,
+                       let siblingNote {
+                        errorMessage = "The identity was loaded. " + siblingNote
+                        isLoading = false
+                        loadStartTime = nil
+                    } else if unstoredKeys.isEmpty && conflictingKeys.isEmpty && unlinkedKeyIds.isEmpty && uncheckedNote == nil {
                         showSuccess = true
                     } else if unstoredKeys.isEmpty && conflictingKeys.isEmpty && unlinkedKeyIds.isEmpty, let uncheckedNote {
                         errorMessage = "The identity was loaded and its voting key was stored. " + uncheckedNote
+                            + (siblingNote.map { " " + $0 } ?? "")
                         isLoading = false
                         loadStartTime = nil
                     } else {
@@ -821,6 +877,9 @@ struct LoadIdentityView: View {
                         }
                         if let uncheckedNote {
                             text += " The voting key was stored. " + uncheckedNote
+                        }
+                        if let siblingNote {
+                            text += " " + siblingNote
                         }
                         errorMessage = text
                         isLoading = false
@@ -899,17 +958,29 @@ struct LoadIdentityView: View {
         network: Network,
         refusal: String
     ) -> Bool {
+        // One read of the row, for the slot decision and the update. A row
+        // that is absent changes nothing; one that cannot be read stops the
+        // load, since what is recorded for its key would be unknown.
+        let row: PersistentIdentity?
+        do {
+            row = try Self.storedIdentityRow(identityId, on: network, in: modelContext)
+        } catch {
+            var text = "The stored identity could not be read, so nothing was saved and what is recorded for its voting key was not updated: \(error.localizedDescription). Load the identity again."
+            if case .invalid = check { text = refusal + " " + text }
+            errorMessage = text
+            isLoading = false
+            loadStartTime = nil
+            return false
+        }
         let read = Self.votingKeySlot(
             holding: votingKeyData,
             identityId: identityId,
-            network: network,
-            in: modelContext
+            recorded: row?.recordedVotingKey
         )
         let outcome = check.outcome(votingAddress: votingAddress, slot: read.slot)
         guard !outcome.storeKey else { return true }
         var text = refusal
-        if let record = outcome.record,
-           let row = Self.identityRow(identityId, on: network, in: modelContext) {
+        if let record = outcome.record, let row {
             row.recordedVotingKey = record
             do {
                 try modelContext.save()
@@ -1116,15 +1187,22 @@ struct LoadIdentityView: View {
         }
     }
 
-    /// The identity's row, when it is stored for `network`.
+    /// The identity's row on `network`, `nil` when there is none; a failed
+    /// read throws, so it is never mistaken for an absent row.
     @MainActor
-    private static func identityRow(_ identityId: Data, on network: Network, in modelContext: ModelContext) -> PersistentIdentity? {
-        guard let row = PersistentIdentity.fetch(in: modelContext, identityId: identityId),
-              row.network == network else {
-            return nil
-        }
+    private static func storedIdentityRow(
+        _ identityId: Data,
+        on network: Network,
+        in modelContext: ModelContext
+    ) throws -> PersistentIdentity? {
+        let target = identityId
+        let row = try modelContext.fetch(
+            FetchDescriptor<PersistentIdentity>(predicate: #Predicate { $0.identityId == target })
+        ).first
+        guard let row, row.network == network else { return nil }
         return row
     }
+
 
     /// What this device's voting key slot for the identity holds compared
     /// with `enteredKey`, the fact Rust's rules take
@@ -1137,8 +1215,7 @@ struct LoadIdentityView: View {
     private static func votingKeySlot(
         holding enteredKey: Data,
         identityId: Data,
-        network: Network,
-        in modelContext: ModelContext
+        recorded: MasternodeRecordedVotingKey?
     ) -> (slot: MasternodeVotingKeySlot, storedKeyUnreadable: Bool) {
         let storedDigest: Data
         switch KeychainManager.shared.readSpecialKey(identityId: identityId, keyType: .voting) {
@@ -1156,7 +1233,6 @@ struct LoadIdentityView: View {
         guard storedDigest == Data(SHA256.hash(data: enteredKey)) else {
             return (.differentKey, false)
         }
-        let recorded = identityRow(identityId, on: network, in: modelContext)?.recordedVotingKey
         return (.sameKey(recorded: recorded), false)
     }
 
