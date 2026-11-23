@@ -162,12 +162,16 @@ class IdentityDeviceRemovalTest {
 
     private suspend fun remove(
         id: ByteArray = identityId,
+        hostPass: (suspend () -> Unit)? = null,
         settleKeys: suspend WalletStorage.PrivateKeyExclusion.(
             Collection<String>,
             Collection<PendingIdentityKeyDelete>,
         ) -> Unit =
             { delete, settled -> settlePendingIdentityKeyDeletes(delete, settled) },
-    ) = deleteIdentityFromDevice(id, handler, db, storage, liveWallets, votingKeys, settleKeys)
+    ) = deleteIdentityFromDevice(
+        id, handler, db, storage, liveWallets, votingKeys, settleKeys,
+        hostPass ?: { handler.deleteIdentityDataLocked(id) },
+    )
 
     @Test
     fun `should remove every row and key of the identity and keep the sibling`() = runBlocking {
@@ -270,17 +274,24 @@ class IdentityDeviceRemovalTest {
     @Test
     fun `should still clean up keys when the host pass fails after the persisted removal committed`() =
         runBlocking {
-            // Rust accepts and its persisted round deletes the identity row.
-            liveWallets = { id -> db.identityDao().deleteByIdentityId(id); true }
-            // The host's redundant footprint pass then fails.
-            db.openHelper.writableDatabase.execSQL(
-                "CREATE TRIGGER refuse_balance_delete BEFORE DELETE ON token_balances " +
-                    "BEGIN SELECT RAISE(ABORT, 'refused'); END",
-            )
+            // Rust accepts and emits the removal: the real persisted callback
+            // commits its round, deleting the identity's whole footprint.
+            liveWallets = { id ->
+                handler.onChangesetBegin(walletId)
+                handler.onPersistIdentityRemoval(walletId, id)
+                handler.onChangesetEnd(walletId, success = true)
+                true
+            }
 
-            val result = remove()
+            // The host's redundant footprint pass then fails.
+            val result = remove(hostPass = { throw IllegalStateException("database closed") })
 
             assertTrue(result.wasManaged)
+            assertEquals(listOf("token-bob"), db.tokenDao().getBalancesOrderedByAmount().map { it.tokenId })
+            assertTrue(
+                db.privateContactScanStateDao().positionsByWallet(walletId)
+                    .none { it.identityId.contentEquals(identityId) },
+            )
             assertTrue(result.keysLeft.isEmpty())
             assertNull(db.identityDao().getByIdentityId(identityId))
             assertFalse(storage.hasPrivateKey(ownKey.hex()))

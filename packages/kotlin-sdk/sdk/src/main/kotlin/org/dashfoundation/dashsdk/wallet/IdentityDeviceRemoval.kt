@@ -78,6 +78,8 @@ internal suspend fun deleteIdentityFromDevice(
         delete: Collection<String>,
         settled: Collection<PendingIdentityKeyDelete>,
     ) -> Unit = { delete, settled -> settlePendingIdentityKeyDeletes(delete, settled) },
+    // Test seam: the host's footprint pass of step 3.
+    hostPass: suspend () -> Unit = { persistenceHandler.deleteIdentityDataLocked(identityId) },
 ): IdentityDeviceRemovalResult {
     require(identityId.size == 32) { "identityId must be 32 bytes, got ${identityId.size}" }
 
@@ -97,7 +99,7 @@ internal suspend fun deleteIdentityFromDevice(
             // one deleting the rows (an identity no wallet managed).
             recordPendingIdentityKeyDeletes(currentAliases(database, identityId))
             try {
-                persistenceHandler.deleteIdentityDataLocked(identityId)
+                hostPass()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
