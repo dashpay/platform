@@ -48,7 +48,9 @@ public final class PersistentShieldedActivity {
     /// 1 ShieldFromAssetLock, 2 Received, 3 Sent, 4 Unshield,
     /// 5 Withdrawal, 6 IdentityCreate, 7 ShieldedSpend,
     /// 8 ShieldFromIdentity, 9 IdentityTopUp (from the pool),
-    /// 10 TokenPurchase (from the pool; `counterparty` is the token id).
+    /// 10 TokenPurchase (from the pool; `counterparty` is the token id),
+    /// 11 TokenShieldedTransfer (`counterparty` is the token id and
+    /// `amount` the tokens sent, in the token's smallest unit).
     public var kindTag: Int
     /// Direction: 0 In, 1 Out, 2 Self.
     public var direction: Int
@@ -56,7 +58,8 @@ public final class PersistentShieldedActivity {
     public var status: Int
 
     /// Display amount in credits (principal; excludes self-change /
-    /// zero-value fillers).
+    /// zero-value fillers). For `kindTag == 11` (TokenShieldedTransfer) it
+    /// is the tokens sent, in the token's smallest unit, not credits.
     public var amount: UInt64
     /// Exact fee in credits when `hasFee == true`; otherwise unknown.
     public var fee: UInt64
@@ -93,7 +96,8 @@ public final class PersistentShieldedActivity {
     /// `kindTag == 9` (IdentityTopUp from the pool). Empty otherwise.
     public var identityId: Data
     /// Counterparty bytes (43B Orchard / 21B PlatformAddress / Core
-    /// script) when present; empty otherwise.
+    /// script, or the 32-byte token id for `kindTag` 10 and 11) when
+    /// present; empty otherwise.
     public var counterparty: Data
     /// 36-byte memo when present and non-zero; empty otherwise.
     public var memo: Data

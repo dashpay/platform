@@ -124,6 +124,13 @@ pub enum ShieldedActivityKind {
     /// Recorded only by the live path: the scan sees the credit pool
     /// change alone and derives [`Self::ShieldedSpend`].
     TokenPurchase,
+    /// Type 26: tokens sent from the wallet's notes in a token's shielded
+    /// pool to an Orchard address there, the fee paid from the credit pool.
+    /// The amount is the tokens sent, in the token's smallest unit; the
+    /// entry's counterparty is the 32-byte token id. Recorded only by the
+    /// live path, keyed by the fee bundle's credit pool change, as
+    /// [`Self::TokenPurchase`] is.
+    TokenShieldedTransfer,
 }
 
 impl ShieldedActivityKind {
@@ -144,6 +151,7 @@ impl ShieldedActivityKind {
             ShieldedActivityKind::ShieldFromIdentity { .. } => 8,
             ShieldedActivityKind::IdentityTopUp { .. } => 9,
             ShieldedActivityKind::TokenPurchase => 10,
+            ShieldedActivityKind::TokenShieldedTransfer => 11,
         }
     }
 }
@@ -1207,6 +1215,7 @@ mod tests {
                 identity_id: [0u8; 32],
             },
             ShieldedActivityKind::TokenPurchase,
+            ShieldedActivityKind::TokenShieldedTransfer,
         ];
         let tags: Set<u8> = kinds.iter().map(|k| k.tag()).collect();
         assert_eq!(tags.len(), kinds.len(), "every kind tag must be distinct");
