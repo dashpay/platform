@@ -701,6 +701,28 @@ class LoadIdentityVotingKeyTest {
         assertEquals(identifierOf(keyA), dao.getByIdentityId(identityId)!!.votingPrivateKeyIdentifier)
     }
 
+    /** #6099: a load refused for a voter identity shows Rust's words and records on that row. */
+    @Test
+    fun shouldShowRustsRefusalAndRecordItOnTheStoredVoterRow() = runBlocking {
+        dao.upsert(row(type = "Masternode", votingIdentifier = identifierOf(keyA)))
+        val refusal = MasternodeVotingKeyCheck.Invalid("No owner identity, and the key was rotated.")
+        rules.answer = MasternodeVotingKeyCheckOutcome(
+            storeKey = false,
+            record = MasternodeRecordedVotingKey(refusal, addressOf(keyA)),
+        )
+
+        val result = checkEnteredVotingKey(
+            dao, entries, rules, identityId, testnet, identifierOf(keyA), refusal,
+            refusalText = refusal.message,
+        )
+
+        assertEquals(EnteredVotingKeyCheck.Refused(refusal.message), result)
+        assertEquals(
+            MasternodeRecordedVotingKey(refusal, addressOf(keyA)),
+            dao.getByIdentityId(identityId)!!.recordedVotingKey,
+        )
+    }
+
     @Test
     fun shouldSayWhenTheRefusalOfTheStoredKeyCouldNotBeRecorded() = runBlocking {
         dao.upsert(row(type = "Masternode", votingIdentifier = identifierOf(keyA)))

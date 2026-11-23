@@ -329,7 +329,30 @@ fun LoadIdentityScreen(navController: NavHostController) {
                             }
                             when (val load = activeSdk.voting.loadMasternodeForVoting(proTxHash, address)) {
                                 is MasternodeVotingLoad.Refused -> {
-                                    error = load.message
+                                    // A voting key refused for a voter identity is recorded on
+                                    // a row this device already stores for it holding the same
+                                    // key, as Rust's outcome says; nothing is created or
+                                    // replaced (Swift `applyVotingKeyCheck`).
+                                    val refusedFor = load.votingKeyRefusedFor
+                                    val key = votingKey
+                                    error = if (refusedFor != null && key != null &&
+                                        appState.sdk.value === activeSdk
+                                    ) {
+                                        val applied = checkEnteredVotingKey(
+                                            dao = container.database.identityDao(),
+                                            entries = StoredVotingKeyEntries(keys, container.database),
+                                            rules = MasternodeVotingKeyRules.Native,
+                                            identityId = refusedFor,
+                                            networkRaw = activeNetwork.ffiValue,
+                                            enteredIdentifier = MasternodeVotingKeyStore
+                                                .identifierFor(refusedFor, keys.votingAddress(key)),
+                                            check = MasternodeVotingKeyCheck.Invalid(load.message),
+                                            refusalText = load.message,
+                                        )
+                                        (applied as? EnteredVotingKeyCheck.Refused)?.message ?: load.message
+                                    } else {
+                                        load.message
+                                    }
                                     return@launch
                                 }
                                 is MasternodeVotingLoad.Loaded -> {
@@ -768,7 +791,8 @@ internal sealed interface EnteredVotingKeyCheck {
  * the identity's row on [networkRaw]: empty, the same key (the row names [enteredIdentifier],
  * with the record it holds), or a different key. [rules] decide whether the key is stored.
  * When they refuse it and say to record the refusal on the same stored key, that record is
- * written on the row through [VotingKeyEntries.recordCheck].
+ * written on the row through [VotingKeyEntries.recordCheck]. [refusalText] replaces the
+ * default wording, for a refusal Rust already worded (a load refused for the voter identity).
  */
 internal suspend fun checkEnteredVotingKey(
     dao: IdentityDao,
@@ -778,6 +802,7 @@ internal suspend fun checkEnteredVotingKey(
     networkRaw: Int,
     enteredIdentifier: String,
     check: MasternodeVotingKeyCheck,
+    refusalText: String? = null,
 ): EnteredVotingKeyCheck {
     val row = dao.getByIdentityId(identityId)?.takeIf { it.networkRaw == networkRaw }
     val stored = row?.votingPrivateKeyIdentifier
@@ -790,7 +815,7 @@ internal suspend fun checkEnteredVotingKey(
     val address = MasternodeVotingKeyAddress.ofIdentifier(enteredIdentifier)
     val outcome = rules.outcome(check, address, slot)
     if (outcome.storeKey) return EnteredVotingKeyCheck.Proceed
-    var text = votingKeyNotOfMasternodeMessage(identityId.toHex(), reasonOf(check))
+    var text = refusalText ?: votingKeyNotOfMasternodeMessage(identityId.toHex(), reasonOf(check))
     if (outcome.record != null && stored != null && slot is MasternodeVotingKeySlot.SameKey) {
         // Nothing entered is stored. What Rust says to record is for the key already stored.
         try {

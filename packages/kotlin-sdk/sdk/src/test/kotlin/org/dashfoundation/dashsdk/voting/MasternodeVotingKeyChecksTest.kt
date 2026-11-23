@@ -159,6 +159,18 @@ class MasternodeVotingKeyChecksTest {
         assertThrows(DashSdkError.SerializationError::class.java) {
             MasternodeVotingKeyCheckCodec.decodeLoad("""{"kind":1,"identityId":"ab","identityJson":"{}"}""")
         }
+
+        // A voting key refused for a voter identity names it.
+        val refused = MasternodeVotingKeyCheckCodec.decodeLoad(
+            """{"kind":2,"identityId":"${"ef".repeat(32)}","identityJson":null,"votingKeyVerdict":1,"message":"rotated"}""",
+        ) as MasternodeVotingLoad.Refused
+        assertEquals("rotated", refused.message)
+        assertArrayEquals(ByteArray(32) { 0xef.toByte() }, refused.votingKeyRefusedFor)
+        assertThrows(DashSdkError.SerializationError::class.java) {
+            MasternodeVotingKeyCheckCodec.decodeLoad(
+                """{"kind":2,"identityId":null,"identityJson":null,"votingKeyVerdict":1,"message":"x"}""",
+            )
+        }
     }
 
     @Test

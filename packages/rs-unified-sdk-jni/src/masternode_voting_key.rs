@@ -322,7 +322,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_MasternodeVotingKeyNa
 /// "votingKeyVerdict":0|1|2|null,"message":string|null}`: kind `OwnerIdentity`,
 /// `VoterIdentity` or `Refused`, the loaded identity's id and JSON (the shape
 /// `dash_sdk_identity_fetch` returns), the voting key's verdict when it was checked, and the
-/// sentence Rust wrote for a refusal or an `Invalid` or `Undetermined` verdict. Null after
+/// sentence Rust wrote for a refusal or an `Invalid` or `Undetermined` verdict. A `Refused`
+/// load carries an id only with a verdict (always `Invalid`): the voter identity the voting key
+/// was refused for. Null after
 /// throwing: a value of the wrong length (code 1), or the C function's error when nothing is
 /// proved (the owner identity, or the voter identity after a proved-absent owner, could not
 /// be fetched).
@@ -404,10 +406,11 @@ fn load_json(
     verdict: Option<DashSDKVotingKeyVerdict>,
     message: Option<String>,
 ) -> String {
-    let refused = kind == DashSDKMasternodeVotingLoadKind::Refused;
+    // A refusal names an identity only when the voting key was refused for one.
+    let names_identity = kind != DashSDKMasternodeVotingLoadKind::Refused || verdict.is_some();
     json!({
         "kind": kind as i32,
-        "identityId": (!refused).then(|| to_hex(&identity_id)),
+        "identityId": names_identity.then(|| to_hex(&identity_id)),
         "identityJson": identity_json,
         "votingKeyVerdict": verdict.map(|verdict| verdict as i32),
         "message": message,
@@ -722,6 +725,23 @@ mod tests {
                 "identityJson": null,
                 "votingKeyVerdict": null,
                 "message": "no owner",
+            })
+        );
+        // A voting key refused for a voter identity names that identity, as invalid.
+        assert_eq!(
+            parsed(load_json(
+                DashSDKMasternodeVotingLoadKind::Refused,
+                [0xef; 32],
+                None,
+                Some(DashSDKVotingKeyVerdict::Invalid),
+                Some("rotated".to_string()),
+            )),
+            json!({
+                "kind": 2,
+                "identityId": "ef".repeat(32),
+                "identityJson": null,
+                "votingKeyVerdict": 1,
+                "message": "rotated",
             })
         );
     }

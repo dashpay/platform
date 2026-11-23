@@ -248,8 +248,27 @@ sealed interface MasternodeVotingLoad {
     /** An identity to store for the masternode. */
     data class Loaded(val identity: MasternodeVotingLoadedIdentity) : MasternodeVotingLoad
 
-    /** Nothing is loaded; [message] says why, worded in Rust. */
-    data class Refused(val message: String) : MasternodeVotingLoad
+    /**
+     * Nothing is loaded; [message] says why, worded in Rust. When the voting key was refused
+     * for a voter identity, [votingKeyRefusedFor] is that identity's id: the host records the
+     * refusal on a row it already stores for it holding the same key (Rust's
+     * `voting_key_check_outcome` with an invalid check), and creates or replaces nothing.
+     * Swift `MasternodeVotingLoad.refused(message:votingKeyRefusedFor:)`.
+     */
+    class Refused(val message: String, votingKeyRefusedFor: ByteArray? = null) : MasternodeVotingLoad {
+        private val refusedFor = votingKeyRefusedFor?.copyOf()
+
+        /** A copy of the voter identity id the voting key was refused for, if any. */
+        val votingKeyRefusedFor: ByteArray? get() = refusedFor?.copyOf()
+
+        override fun equals(other: Any?): Boolean =
+            other is Refused && message == other.message &&
+                (refusedFor?.contentEquals(other.refusedFor) ?: (other.refusedFor == null))
+
+        override fun hashCode(): Int = 31 * message.hashCode() + (refusedFor?.contentHashCode() ?: 0)
+
+        override fun toString(): String = "Refused($message)"
+    }
 }
 
 /**
@@ -360,7 +379,7 @@ internal object MasternodeVotingKeyCheckCodec {
         val role = when (val kind = root["kind"]?.jsonPrimitive?.intOrNull) {
             LOAD_OWNER_IDENTITY -> MasternodeVotingLoadedIdentity.Role.OWNER
             LOAD_VOTER_IDENTITY -> MasternodeVotingLoadedIdentity.Role.VOTER
-            LOAD_REFUSED -> return MasternodeVotingLoad.Refused(message.orEmpty())
+            LOAD_REFUSED -> return decodeRefusal(function, root, message.orEmpty())
             else -> throw DashSdkError.SerializationError("$function returned an unknown kind $kind")
         }
         val identityId = root["identityId"]?.jsonPrimitive?.contentOrNull
@@ -379,6 +398,20 @@ internal object MasternodeVotingKeyCheckCodec {
         return MasternodeVotingLoad.Loaded(
             MasternodeVotingLoadedIdentity(role, identityId, identityJson, check),
         )
+    }
+
+    /** A refused load; with a verdict (always invalid) it names the refused voter identity. */
+    private fun decodeRefusal(function: String, root: JsonObject, message: String): MasternodeVotingLoad.Refused {
+        val verdict = root["votingKeyVerdict"]?.jsonPrimitive?.intOrNull
+            ?: return MasternodeVotingLoad.Refused(message)
+        if (verdict != VERDICT_INVALID) {
+            throw DashSdkError.SerializationError("$function refused with verdict $verdict, not invalid")
+        }
+        val refusedFor = root["identityId"]?.jsonPrimitive?.contentOrNull
+            ?.let { runCatching { it.hexToByteArray() }.getOrNull() }
+            ?.takeIf { it.size == 32 }
+            ?: throw DashSdkError.SerializationError("$function refused a voting key without its 32-byte voter identity")
+        return MasternodeVotingLoad.Refused(message, refusedFor)
     }
 
     /** `{"canVote":bool,"checkBeforeUse":bool}` from `recordedVotingKeyUse`. */
