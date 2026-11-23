@@ -46,6 +46,7 @@ use std::ffi::CStr;
 use std::os::raw::{c_char, c_void};
 
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
+use dpp::prelude::Identifier;
 use dpp::shielded::{
     compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee,
     compute_shielded_identity_top_up_fee, compute_shielded_unshield_fee,
@@ -1056,6 +1057,20 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
         r
     });
 
+    map_identity_create_result(result, &mut *out_identity_id)
+}
+
+/// Operation name the identity-create-from-pool export reports in the
+/// messages `map_spend_result` builds.
+const IDENTITY_CREATE_FROM_POOL_OPERATION: &str = "shielded identity-create-from-pool";
+
+/// Map the identity-create-from-pool outcome to its FFI result, writing the
+/// identity id to `out_identity_id` on success and on an unconfirmed
+/// broadcast (the only two arms that touch it).
+fn map_identity_create_result(
+    result: Result<Identifier, PlatformWalletError>,
+    out_identity_id: &mut [u8; 32],
+) -> PlatformWalletFFIResult {
     match result {
         Ok(identity_id) => {
             *out_identity_id = identity_id.to_buffer();
@@ -1091,6 +1106,14 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
             format!("shielded identity-create-from-pool failed: {e}"),
         ),
+        // The spend admission's refusals (a wallet removed before the spend
+        // started, keys not bound since the last Clear): nothing was read,
+        // signed or sent. Converted as every other credit-pool spend converts
+        // them, so a removed wallet keeps `NotFound` here too.
+        Err(e @ PlatformWalletError::WalletRemovedBeforeSend(_))
+        | Err(e @ PlatformWalletError::ShieldedNotBound) => {
+            map_spend_result(Err(e), IDENTITY_CREATE_FROM_POOL_OPERATION)
+        }
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded identity-create-from-pool failed: {e}"),
@@ -4178,6 +4201,38 @@ mod tests {
         assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
         assert_eq!(result.code as i32, 98);
         assert!(message_of(&result).contains("wallet removed"));
+    }
+
+    /// The spend admission's two refusals leave identity create from the pool
+    /// with the codes every other credit-pool spend gives them (a removed
+    /// wallet is `NotFound`, not the generic operation failure), and write no
+    /// identity id.
+    #[test]
+    fn should_map_spend_admission_refusals_in_identity_create_as_other_spends() {
+        let refusals: [(fn() -> PlatformWalletError, PlatformWalletFFIResultCode); 2] = [
+            (
+                || PlatformWalletError::WalletRemovedBeforeSend("wallet removed".to_string()),
+                PlatformWalletFFIResultCode::NotFound,
+            ),
+            (
+                || PlatformWalletError::ShieldedNotBound,
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+            ),
+        ];
+        for (make, code) in refusals {
+            let rendered = make().to_string();
+            let spend = map_spend_result(Err(make()), "shielded transfer");
+            assert_eq!(spend.code, code, "{rendered}: other spends");
+
+            let mut out_identity_id = [0xAB; 32];
+            let create = map_identity_create_result(Err(make()), &mut out_identity_id);
+            assert_eq!(create.code, code, "{rendered}: identity create");
+            assert_eq!(
+                out_identity_id, [0xAB; 32],
+                "{rendered}: no identity id written"
+            );
+            assert!(message_of(&create).contains(&rendered));
+        }
     }
 
     /// A key-unavailable signer completion preserved under `Sdk` by the wallet
