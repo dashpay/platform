@@ -1037,8 +1037,11 @@ abstract class NativePersistenceBridge {
      * bytes), the platform / core sync watermarks, the wallet's
      * identities, its cached platform-address balances, and its unspent
      * Core UTXOs; the remaining nested arrays (tracked asset locks,
-     * address pools) are optional for this milestone and default to
-     * empty.
+     * address pools) default to empty. A bridge that declares
+     * [CAPABILITY_ASSET_LOCK_OPERATION_IDS] or
+     * [CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS] must return every
+     * tracked asset lock it stores, terminal rows included: Rust reads an
+     * operation id or a recipient only for a lock this restore hands back.
      */
     open fun onLoadWalletList(): Array<WalletRestoreData> = emptyArray()
 
