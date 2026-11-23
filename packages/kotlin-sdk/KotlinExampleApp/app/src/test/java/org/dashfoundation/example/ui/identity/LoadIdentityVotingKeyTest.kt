@@ -12,6 +12,15 @@ import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
 import org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore
 import org.dashfoundation.dashsdk.security.VotingKeyAssignment
+import org.dashfoundation.dashsdk.voting.MasternodeRecordedVotingKey
+import org.dashfoundation.dashsdk.voting.MasternodeRecordedVotingKeyUse
+import org.dashfoundation.dashsdk.voting.MasternodeVotingKeyAddress
+import org.dashfoundation.dashsdk.voting.MasternodeVotingKeyCheck
+import org.dashfoundation.dashsdk.voting.MasternodeVotingKeyCheckOutcome
+import org.dashfoundation.dashsdk.voting.MasternodeVotingKeyRecords
+import org.dashfoundation.dashsdk.voting.MasternodeVotingKeyRules
+import org.dashfoundation.dashsdk.voting.MasternodeVotingKeySlot
+import org.dashfoundation.dashsdk.voting.recordedVotingKey
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -40,12 +49,14 @@ class LoadIdentityVotingKeyTest {
     private lateinit var db: DashDatabase
     private lateinit var dao: IdentityDao
     private lateinit var entries: RecordedEntries
+    private lateinit var rules: AnsweringRules
 
     @Before
     fun setUp() {
         db = DashDatabase.createInMemory(RuntimeEnvironment.getApplication())
         dao = db.identityDao()
         entries = RecordedEntries()
+        rules = AnsweringRules()
     }
 
     @After
@@ -506,6 +517,7 @@ class LoadIdentityVotingKeyTest {
         pickedType: LoadIdentityType,
         typePicked: Boolean,
         votingKey: ByteArray? = null,
+        votingKeyCheck: MasternodeVotingKeyCheck? = null,
     ): LoadSaveResult = saveLoadedIdentity(
         dao = dao,
         entries = entries,
@@ -516,6 +528,7 @@ class LoadIdentityVotingKeyTest {
         pickedType = pickedType,
         typePicked = typePicked,
         votingKey = votingKey,
+        votingKeyCheck = votingKeyCheck,
     )
 
     private fun row(
@@ -601,5 +614,305 @@ class LoadIdentityVotingKeyTest {
                 live.removeAll { it.startsWith("$prefix.") && it != keep }
                 true
             }
+
+        /** The SDK's real record write over the in-memory database, with [rules]' answer. */
+        override suspend fun recordCheck(
+            identityId: ByteArray,
+            networkRaw: Int,
+            identifier: String,
+            check: MasternodeVotingKeyCheck,
+        ): MasternodeVotingKeyCheckOutcome? {
+            recordFailure?.let { throw it }
+            beforeRecord?.invoke()
+            return MasternodeVotingKeyRecords.record(db, identityId, networkRaw, identifier, check, rules)
+        }
+
+        /** When set, recording a check throws it. */
+        var recordFailure: Exception? = null
+
+        /** Runs just before a check is recorded (another write landing in between). */
+        var beforeRecord: (suspend () -> Unit)? = null
     }
+
+    /**
+     * Returns the outcome each test sets and records what it was asked. Stands in for Rust,
+     * which the JVM cannot load; it never decides anything itself.
+     */
+    private class AnsweringRules : MasternodeVotingKeyRules {
+        var answer = MasternodeVotingKeyCheckOutcome(storeKey = true, record = null)
+        val asked = mutableListOf<MasternodeVotingKeySlot>()
+
+        override fun outcome(
+            check: MasternodeVotingKeyCheck,
+            votingAddress: MasternodeVotingKeyAddress,
+            slot: MasternodeVotingKeySlot,
+        ): MasternodeVotingKeyCheckOutcome {
+            asked += slot
+            return answer
+        }
+
+        override fun use(
+            recorded: MasternodeRecordedVotingKey?,
+            storedVotingAddress: MasternodeVotingKeyAddress?,
+        ): MasternodeRecordedVotingKeyUse = error("not used by Load Identity")
+    }
+
+    // ── Checking the entered key against Platform (#6086) ───────────────
+
+    private fun addressOf(key: ByteArray) = MasternodeVotingKeyAddress.of(key.copyOf(20))!!
+
+    private suspend fun preflight(
+        check: MasternodeVotingKeyCheck,
+        key: ByteArray = keyA,
+        stillCurrent: () -> Boolean = { true },
+    ) = checkEnteredVotingKey(dao, entries, rules, identityId, testnet, identifierOf(key), check, stillCurrent)
+
+    /** A key Rust refuses stops the load: nothing is saved, and the reason is Rust's. */
+    @Test
+    fun shouldRefuseAKeyRustDoesNotStoreAndSaveNothing() = runBlocking {
+        rules.answer = MasternodeVotingKeyCheckOutcome(storeKey = false, record = null)
+
+        val result = preflight(MasternodeVotingKeyCheck.Invalid("No voting identity exists."))
+
+        assertEquals(
+            EnteredVotingKeyCheck.Refused(
+                votingKeyNotOfMasternodeMessage(identityId.toHexString(), "No voting identity exists."),
+            ),
+            result,
+        )
+        assertEquals(listOf<MasternodeVotingKeySlot>(MasternodeVotingKeySlot.Empty), rules.asked)
+        assertNull(dao.getByIdentityId(identityId))
+    }
+
+    /** Swift: a refusal of the key already stored is recorded on it, so it is no longer offered. */
+    @Test
+    fun shouldRecordARefusalOfTheStoredKeyOnItsRow() = runBlocking {
+        dao.upsert(row(type = "Masternode", votingIdentifier = identifierOf(keyA)))
+        val refusal = MasternodeVotingKeyCheck.Invalid("rotated")
+        rules.answer = MasternodeVotingKeyCheckOutcome(
+            storeKey = false,
+            record = MasternodeRecordedVotingKey(refusal, addressOf(keyA)),
+        )
+
+        val result = preflight(refusal)
+
+        assertTrue(result is EnteredVotingKeyCheck.Refused)
+        assertEquals(MasternodeVotingKeySlot.SameKey(null), rules.asked.first())
+        assertEquals(
+            MasternodeRecordedVotingKey(refusal, addressOf(keyA)),
+            dao.getByIdentityId(identityId)!!.recordedVotingKey,
+        )
+        assertEquals(identifierOf(keyA), dao.getByIdentityId(identityId)!!.votingPrivateKeyIdentifier)
+    }
+
+    @Test
+    fun shouldSayWhenTheRefusalOfTheStoredKeyCouldNotBeRecorded() = runBlocking {
+        dao.upsert(row(type = "Masternode", votingIdentifier = identifierOf(keyA)))
+        val refusal = MasternodeVotingKeyCheck.Invalid("rotated")
+        rules.answer = MasternodeVotingKeyCheckOutcome(
+            storeKey = false,
+            record = MasternodeRecordedVotingKey(refusal, addressOf(keyA)),
+        )
+        entries.recordFailure = IllegalStateException("disk full")
+
+        val result = preflight(refusal) as EnteredVotingKeyCheck.Refused
+
+        assertTrue(result.message, result.message.endsWith(verdictNotSavedMessage("disk full")))
+    }
+
+    @Test
+    fun shouldReportAnotherStoredKeyAsADifferentKey() = runBlocking {
+        dao.upsert(row(type = "Masternode", votingIdentifier = identifierOf(keyB)))
+
+        assertEquals(EnteredVotingKeyCheck.Proceed, preflight(MasternodeVotingKeyCheck.Valid))
+        assertEquals(listOf<MasternodeVotingKeySlot>(MasternodeVotingKeySlot.DifferentKey), rules.asked)
+    }
+
+    /** Once the new key is in its empty slot, what Rust says to record is written on the row. */
+    @Test
+    fun shouldRecordTheCheckOnceTheNewKeyIsStored() = runBlocking {
+        val valid = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressOf(keyA))
+        rules.answer = MasternodeVotingKeyCheckOutcome(storeKey = true, record = valid)
+
+        val result = save(
+            pickedType = LoadIdentityType.MASTERNODE,
+            typePicked = true,
+            votingKey = keyA,
+            votingKeyCheck = MasternodeVotingKeyCheck.Valid,
+        )
+
+        assertEquals(LoadSaveResult.Saved, result)
+        // The new key is in its slot with nothing recorded for it yet.
+        assertEquals(listOf<MasternodeVotingKeySlot>(MasternodeVotingKeySlot.SameKey(null)), rules.asked)
+        assertEquals(valid, dao.getByIdentityId(identityId)!!.recordedVotingKey)
+    }
+
+    /** The same key loaded again is reported with the record it holds. */
+    @Test
+    fun shouldReportTheSameKeyWithItsRecordWhenItIsLoadedAgain() = runBlocking {
+        val valid = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressOf(keyA))
+        dao.upsert(
+            row(type = "Masternode", votingIdentifier = identifierOf(keyA)).copy(
+                votingKeyCheckRaw = "valid",
+                votingKeyCheckAddress = addressOf(keyA).bytes,
+            ),
+        )
+        entries.live += identifierOf(keyA)
+        val undetermined = MasternodeVotingKeyCheck.Undetermined("Platform did not answer.")
+        // Rust keeps a proven record of the same key when the check could not run.
+        rules.answer = MasternodeVotingKeyCheckOutcome(storeKey = true, record = null)
+
+        val result = save(
+            pickedType = LoadIdentityType.MASTERNODE,
+            typePicked = true,
+            votingKey = keyA,
+            votingKeyCheck = undetermined,
+        )
+
+        assertEquals(listOf<MasternodeVotingKeySlot>(MasternodeVotingKeySlot.SameKey(valid)), rules.asked)
+        assertEquals(valid, dao.getByIdentityId(identityId)!!.recordedVotingKey)
+        assertEquals(
+            LoadSaveResult.SavedWithWarning(
+                "The identity was loaded and its voting key was stored. " +
+                    "Platform did not answer. The result of its earlier check is kept.",
+            ),
+            result,
+        )
+    }
+
+    @Test
+    fun shouldSayAnUncheckedNewKeyIsCheckedWhenPicked() = runBlocking {
+        val undetermined = MasternodeVotingKeyCheck.Undetermined("Platform did not answer.")
+        rules.answer = MasternodeVotingKeyCheckOutcome(
+            storeKey = true,
+            record = MasternodeRecordedVotingKey(undetermined, addressOf(keyA)),
+        )
+
+        val result = save(
+            pickedType = LoadIdentityType.MASTERNODE,
+            typePicked = true,
+            votingKey = keyA,
+            votingKeyCheck = undetermined,
+        )
+
+        assertEquals(
+            LoadSaveResult.SavedWithWarning(
+                "The identity was loaded and its voting key was stored. Platform did not " +
+                    "answer. It is checked again when you pick this identity to vote.",
+            ),
+            result,
+        )
+        assertEquals("undetermined", dao.getByIdentityId(identityId)!!.votingKeyCheckRaw)
+    }
+
+    /** A record that could not be written leaves the key stored and says it is checked later. */
+    @Test
+    fun shouldKeepTheStoredKeyWhenItsCheckCannotBeRecorded() = runBlocking {
+        entries.recordFailure = IllegalStateException("disk full")
+
+        val result = save(
+            pickedType = LoadIdentityType.MASTERNODE,
+            typePicked = true,
+            votingKey = keyA,
+            votingKeyCheck = MasternodeVotingKeyCheck.Valid,
+        )
+
+        assertEquals(
+            LoadSaveResult.SavedWithWarning(
+                "The identity was loaded and its voting key was stored. " +
+                    votingKeyCheckNotSavedMessage("disk full"),
+            ),
+            result,
+        )
+        assertEquals(identifierOf(keyA), dao.getByIdentityId(identityId)!!.votingPrivateKeyIdentifier)
+        assertNull(dao.getByIdentityId(identityId)!!.votingKeyCheckRaw)
+    }
+
+    /** A confirmed replacement records the entered key's check, the slot having held another key. */
+    @Test
+    fun shouldRecordTheCheckOfAReplacementKey() = runBlocking {
+        dao.upsert(
+            row(type = "Masternode", votingIdentifier = identifierOf(keyA)).copy(
+                votingKeyCheckRaw = "invalid",
+                votingKeyCheckMessage = "rotated",
+                votingKeyCheckAddress = addressOf(keyA).bytes,
+            ),
+        )
+        entries.live += identifierOf(keyA)
+        val valid = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressOf(keyB))
+        rules.answer = MasternodeVotingKeyCheckOutcome(storeKey = true, record = valid)
+
+        val result = replaceVotingKey(
+            dao, entries, identityId, testnet, identifierOf(keyA), keyB,
+            votingKeyCheck = MasternodeVotingKeyCheck.Valid,
+        )
+
+        assertEquals(LoadSaveResult.Saved, result)
+        // Rust is given the new key with the record the row holds, the old key's, which Rust
+        // does not count for the new one.
+        assertEquals(
+            listOf<MasternodeVotingKeySlot>(
+                MasternodeVotingKeySlot.SameKey(
+                    MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Invalid("rotated"), addressOf(keyA)),
+                ),
+            ),
+            rules.asked,
+        )
+        assertEquals(valid, dao.getByIdentityId(identityId)!!.recordedVotingKey)
+    }
+
+    /** A refusal of the stored key is not recorded once the network changed during the read. */
+    @Test
+    fun shouldNotRecordARefusalAfterTheNetworkChanged() = runBlocking {
+        dao.upsert(row(type = "Masternode", votingIdentifier = identifierOf(keyA)))
+        val refusal = MasternodeVotingKeyCheck.Invalid("rotated")
+        rules.answer = MasternodeVotingKeyCheckOutcome(
+            storeKey = false,
+            record = MasternodeRecordedVotingKey(refusal, addressOf(keyA)),
+        )
+
+        assertTrue(preflight(refusal, stillCurrent = { false }) is EnteredVotingKeyCheck.Refused)
+        assertNull(dao.getByIdentityId(identityId)!!.votingKeyCheckRaw)
+    }
+
+    /** A key replaced before its check is recorded is reported, not passed as a success. */
+    @Test
+    fun shouldSayWhenTheKeyChangedBeforeItsCheckWasSaved() = runBlocking {
+        entries.beforeRecord = {
+            dao.replaceVotingPrivateKeyIdentifier(identityId, testnet, identifierOf(keyA), identifierOf(keyB), 0L)
+        }
+
+        val result = save(
+            pickedType = LoadIdentityType.MASTERNODE,
+            typePicked = true,
+            votingKey = keyA,
+            votingKeyCheck = MasternodeVotingKeyCheck.Valid,
+        )
+
+        assertEquals(
+            LoadSaveResult.SavedWithWarning(
+                "The identity was loaded and its voting key was stored. $VOTING_KEY_CHANGED_BEFORE_CHECK_MESSAGE",
+            ),
+            result,
+        )
+    }
+
+    @Test
+    fun shouldWordTheUncheckedNoteFromRustsOutcome() {
+        val undetermined = MasternodeVotingKeyCheck.Undetermined("Down.")
+        val kept = MasternodeVotingKeyCheckOutcome(true, null)
+        val written = MasternodeVotingKeyCheckOutcome(
+            true,
+            MasternodeRecordedVotingKey(undetermined, addressOf(keyA)),
+        )
+        assertEquals("Down. The result of its earlier check is kept.", uncheckedVotingKeyNote(undetermined, kept))
+        assertEquals(
+            "Down. It is checked again when you pick this identity to vote.",
+            uncheckedVotingKeyNote(undetermined, written),
+        )
+        assertNull(uncheckedVotingKeyNote(MasternodeVotingKeyCheck.Valid, written))
+        assertNull(uncheckedVotingKeyNote(undetermined, null))
+    }
+
+    private fun ByteArray.toHexString(): String = joinToString("") { "%02x".format(it) }
 }

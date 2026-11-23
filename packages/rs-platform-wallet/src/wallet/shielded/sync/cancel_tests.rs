@@ -410,3 +410,174 @@ async fn should_report_the_height_a_completed_scan_covers() {
         let _ = std::fs::remove_file(&path);
     }
 }
+
+/// A pass that sees a saved spend's fee note spent keeps, durably and
+/// before the mark drops the spend's record, the highest height any of its
+/// batches was proven at, even when a later batch was proven lower: the
+/// token note sweep must not judge that spend from a token pool scan below
+/// it, after a restart too.
+#[tokio::test]
+async fn should_keep_the_highest_batch_height_before_a_spend_drops_its_record() {
+    use crate::wallet::shielded::store::{PendingRedrive, ShieldedNote};
+    use crate::wallet::shielded::token_pool::{raise_sweep_height, TokenPoolConnection};
+
+    let path = temp_tree_path("spend_floor");
+    let store = Arc::new(RwLock::new(
+        FileBackedShieldedStore::open_path(&path, 100).expect("open store"),
+    ));
+    let subwallets = one_subwallet();
+    let sub = subwallets[0].0;
+    // Every note of the synthetic batches reveals this nullifier.
+    let fee_nf = [0xAA; 32];
+    {
+        let mut store = store.write().await;
+        store
+            .save_note(
+                sub,
+                &ShieldedNote {
+                    position: 0,
+                    cmx: [0x11; 32],
+                    nullifier: fee_nf,
+                    block_height: 10,
+                    is_spent: false,
+                    value: 1_000,
+                    note_data: vec![0u8; 115],
+                },
+            )
+            .unwrap();
+        store
+            .arm_redrive(
+                sub,
+                PendingRedrive {
+                    activity_id: [0xA1; 32],
+                    anchor: [0xA2; 32],
+                    nullifiers: vec![fee_nf],
+                    st_bytes: vec![0],
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                    anchor_height: Some(1),
+                },
+            )
+            .unwrap();
+    }
+    let mut first = batch(0, 4, 8);
+    first.block_height = 1_011;
+    let mut last = batch(4, 4, 8);
+    last.block_height = 1_010;
+    let cancel = CancellationToken::new();
+    run(
+        &store,
+        &subwallets,
+        &cancel,
+        futures::stream::iter(vec![Ok(first), Ok(last)]),
+    )
+    .await;
+
+    let floor = |store: &FileBackedShieldedStore| {
+        store
+            .with_token_pool_conn(|conn| raise_sweep_height(conn, 0))
+            .unwrap()
+    };
+    {
+        let store = store.read().await;
+        assert!(
+            store.pending_redrives(sub).unwrap().is_empty(),
+            "the fee note seen spent dropped the record"
+        );
+        assert_eq!(
+            floor(&store),
+            1_011,
+            "the highest batch height, not the last"
+        );
+    }
+    drop(store);
+    let reopened = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+    assert_eq!(floor(&reopened), 1_011, "kept across a restart");
+    let _ = std::fs::remove_file(&path);
+}
+
+/// The spend-scan height is kept before anything the pass marks: when that
+/// write fails, the pass fails with the fee note still unspent and the saved
+/// spend's record still there, so a retry sees the spend again.
+#[tokio::test]
+async fn should_mark_nothing_spent_when_the_spend_scan_height_is_not_kept() {
+    use crate::wallet::shielded::store::{PendingRedrive, ShieldedNote};
+    use crate::wallet::shielded::token_pool::TokenPoolConnection;
+
+    let path = temp_tree_path("spend_floor_fails");
+    let store = Arc::new(RwLock::new(
+        FileBackedShieldedStore::open_path(&path, 100).expect("open store"),
+    ));
+    let subwallets = one_subwallet();
+    let sub = subwallets[0].0;
+    let fee_nf = [0xAA; 32];
+    {
+        let mut store = store.write().await;
+        store
+            .save_note(
+                sub,
+                &ShieldedNote {
+                    position: 0,
+                    cmx: [0x11; 32],
+                    nullifier: fee_nf,
+                    block_height: 10,
+                    is_spent: false,
+                    value: 1_000,
+                    note_data: vec![0u8; 115],
+                },
+            )
+            .unwrap();
+        store
+            .arm_redrive(
+                sub,
+                PendingRedrive {
+                    activity_id: [0xA1; 32],
+                    anchor: [0xA2; 32],
+                    nullifiers: vec![fee_nf],
+                    st_bytes: vec![0],
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                    anchor_height: Some(1),
+                },
+            )
+            .unwrap();
+        // The height write fails from here on.
+        store
+            .with_token_pool_conn(|conn| {
+                conn.execute("DROP TABLE shielded_token_pool_sweep", [])
+                    .expect("drop the sweep table");
+                Ok(())
+            })
+            .unwrap();
+    }
+    let cancel = CancellationToken::new();
+    let pass = sync_notes_from_stream(&store, &subwallets, None, &cancel, |_, _| {
+        futures::stream::iter(vec![Ok(batch(0, 4, 4))])
+    })
+    .await;
+    assert!(pass.is_err(), "the pass fails when the height is not kept");
+
+    let store = store.read().await;
+    assert!(
+        store
+            .get_unspent_notes(sub)
+            .unwrap()
+            .iter()
+            .any(|note| note.nullifier == fee_nf),
+        "the fee note is not marked spent"
+    );
+    assert_eq!(
+        store
+            .pending_redrives(sub)
+            .unwrap()
+            .into_iter()
+            .map(|record| record.activity_id)
+            .collect::<Vec<_>>(),
+        vec![[0xA1; 32]],
+        "the saved spend's record is still there"
+    );
+    drop(store);
+    let _ = std::fs::remove_file(&path);
+}

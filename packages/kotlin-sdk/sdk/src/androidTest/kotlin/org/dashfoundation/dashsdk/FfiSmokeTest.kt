@@ -15,6 +15,7 @@ import org.dashfoundation.dashsdk.ffi.IdentityKeyLimitsNative
 import org.dashfoundation.dashsdk.ffi.IdentityNative
 import org.dashfoundation.dashsdk.ffi.IdentityRemovalNative
 import org.dashfoundation.dashsdk.ffi.IdentityWithdrawalsNative
+import org.dashfoundation.dashsdk.ffi.MasternodeVotingKeyNative
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
@@ -462,6 +463,55 @@ class FfiSmokeTest {
      * `platform_wallet_identity_withdrawals`, which answers `NotFound` (98, thrown shifted
      * by the platform-wallet offset). Nothing reaches the network.
      */
+    /**
+     * The masternode voting key check exports bind with the descriptors
+     * `MasternodeVotingKeyNative` declares: bad input is refused at the JNI
+     * boundary (code 1), a null SDK handle by the C function
+     * (`InvalidParameter`, code 1), and the two pure rules answer Rust's JSON
+     * without an SDK. The rules themselves are rs-sdk's and tested there.
+     */
+    @Test
+    fun masternodeVotingKeyCheckSymbolsBindAndRejectInvalidInput() {
+        NativeLoader.ensureLoaded()
+        fun code(block: () -> Unit): Int = assertThrows(DashSDKException::class.java) { block() }.code
+        val proTxHash = ByteArray(32) { 1 }
+        val address = ByteArray(20) { 3 }
+
+        assertEquals(1, code { MasternodeVotingKeyNative.checkVotingKey(0L, ByteArray(31), address) })
+        assertEquals(1, code { MasternodeVotingKeyNative.checkVotingKey(0L, proTxHash, ByteArray(19)) })
+        assertEquals(1, code { MasternodeVotingKeyNative.checkVotingKey(0L, proTxHash, address) })
+
+        // Valid, same key with a refusal recorded of it: stored, recorded valid.
+        val outcome = MasternodeVotingKeyNative.votingKeyCheckOutcome(0, address, 1, 2, address)
+        assertNotNull(outcome)
+        assertTrue(outcome!!, outcome.contains("\"storeKey\":true"))
+        assertTrue(outcome, outcome.contains("03".repeat(20)))
+        // Invalid into an empty slot: refused, nothing recorded.
+        val refused = MasternodeVotingKeyNative.votingKeyCheckOutcome(1, address, 0, 0, null)
+        assertTrue(refused!!, refused.contains("\"storeKey\":false"))
+        assertTrue(refused, refused.contains("\"record\":null"))
+        assertEquals(1, code { MasternodeVotingKeyNative.votingKeyCheckOutcome(3, address, 0, 0, null) })
+        assertEquals(1, code { MasternodeVotingKeyNative.votingKeyCheckOutcome(0, address, 3, 0, null) })
+        assertEquals(1, code { MasternodeVotingKeyNative.votingKeyCheckOutcome(0, address, 1, 4, address) })
+        assertEquals(1, code { MasternodeVotingKeyNative.votingKeyCheckOutcome(0, address, 1, 1, null) })
+        assertEquals(1, code { MasternodeVotingKeyNative.votingKeyCheckOutcome(0, address, 1, 0, address) })
+
+        // Nothing recorded, address read: offered and checked before use.
+        val never = MasternodeVotingKeyNative.recordedVotingKeyUse(0, null, address)
+        assertTrue(never!!, never.contains("\"canVote\":true"))
+        assertTrue(never, never.contains("\"checkBeforeUse\":true"))
+        // A refusal of this key: not offered.
+        val refusedUse = MasternodeVotingKeyNative.recordedVotingKeyUse(2, address, address)
+        assertTrue(refusedUse!!, refusedUse.contains("\"canVote\":false"))
+        // A refusal recorded for another key (address A) does not refuse the stored key B: it
+        // is offered and checked first, so the stored address crosses JNI as its own argument.
+        val otherAddress = ByteArray(20) { 4 }
+        val otherKeyUse = MasternodeVotingKeyNative.recordedVotingKeyUse(2, otherAddress, address)
+        assertTrue(otherKeyUse!!, otherKeyUse.contains("\"canVote\":true"))
+        assertTrue(otherKeyUse, otherKeyUse.contains("\"checkBeforeUse\":true"))
+        assertEquals(1, code { MasternodeVotingKeyNative.recordedVotingKeyUse(0, null, ByteArray(21)) })
+    }
+
     @Test
     fun identityWithdrawalsSymbolBindsAndRejectsInvalidInput() {
         NativeLoader.ensureLoaded()

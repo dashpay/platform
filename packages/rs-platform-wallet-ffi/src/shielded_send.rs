@@ -1,7 +1,8 @@
 //! FFI bindings for the shielded spend pipeline (transitions
 //! 15/16/17/19/20 — shield, transfer, unshield, withdraw,
 //! identity-create-from-pool — plus 22, identity top-up from the pool,
-//! and 28, token purchase from the pool).
+//! 26, token shielded transfer with a pool-paid fee, and 28, token purchase
+//! from the pool).
 //!
 //! Transitions 16/17/19 sign with the bound shielded wallet's
 //! Orchard `SpendAuthorizingKey`, which lives on the
@@ -56,6 +57,7 @@ use platform_wallet::wallet::shielded::note_selection::compute_token_purchase_fr
 use platform_wallet::wallet::shielded::operations::token_shielded_purchase_availability;
 use platform_wallet::wallet::shielded::{
     CachedOrchardProver, ShieldedTokenPurchaseAvailability, ShieldedTokenPurchaseOutcome,
+    ShieldedTokenSpendOutcome,
 };
 use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::{
@@ -1540,6 +1542,151 @@ fn map_token_purchase_result(
     )
 }
 
+/// Send tokens from the wallet's notes in a token's shielded pool to an
+/// Orchard address in that pool: the Type 26
+/// `TokenShieldedTransferWithShieldedFee` transition. `amount` of the token at
+/// `token_contract_position` of `data_contract_id` (in the token's smallest
+/// unit) leaves `account`'s notes in the token's shielded pool for
+/// `recipient_raw_43`, the change goes back to the account, and the fee is
+/// paid from the account's notes in the credit pool. The manager's
+/// `ShieldedTokenPurchaser::transfer` checks, selects both note sets, builds,
+/// broadcasts, records the activity (kind tag 11) and requests a shielded sync
+/// when the transfer may be on the network; this export only marshals the
+/// arguments and the result.
+///
+/// Success means submitted, not confirmed: Platform accepted the transfer, but
+/// its result proof does not show that it executed, so it stays pending (its
+/// notes in both pools reserved) until a shielded sync confirms it. Do not
+/// retry it. `mnemonic_resolver_handle` supplies the transient spend authority
+/// exactly as for `platform_wallet_manager_shielded_transfer`, and
+/// `recipient_raw_43` has the same shape that export takes. Errors follow the
+/// other note-spending exports (`ErrorShieldedSpendUnconfirmed` once the spend
+/// may have reached a node: do not retry); a malformed recipient is
+/// `ErrorInvalidParameter`.
+///
+/// # Safety
+/// - `wallet_id_bytes` and `data_contract_id` must each point to 32 readable bytes.
+/// - `mnemonic_resolver_handle` must be a valid, non-destroyed handle.
+/// - `recipient_raw_43` must point to 43 readable bytes (a raw Orchard payment
+///   address).
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_token_transfer(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    data_contract_id: *const u8,
+    token_contract_position: u16,
+    recipient_raw_43: *const u8,
+    amount: u64,
+) -> PlatformWalletFFIResult {
+    // Runs under `catch_unwind` like the purchase export: a panic in the
+    // proving task must not reach this `extern "C"` frame, and the notes may
+    // already be reserved or the transition broadcast when it strikes.
+    catch_spend_panic(TOKEN_TRANSFER_OPERATION, || {
+        shielded_token_transfer_inner(
+            handle,
+            wallet_id_bytes,
+            mnemonic_resolver_handle,
+            account,
+            data_contract_id,
+            token_contract_position,
+            recipient_raw_43,
+            amount,
+        )
+    })
+}
+
+/// The operation name the token shielded transfer export reports.
+const TOKEN_TRANSFER_OPERATION: &str = "shielded token transfer";
+
+/// Body of [`platform_wallet_manager_shielded_token_transfer`], as an ordinary
+/// Rust function so a panic unwinds into [`catch_spend_panic`] instead of
+/// across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[allow(clippy::too_many_arguments)]
+unsafe fn shielded_token_transfer_inner(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    data_contract_id: *const u8,
+    token_contract_position: u16,
+    recipient_raw_43: *const u8,
+    amount: u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(mnemonic_resolver_handle);
+    check_ptr!(data_contract_id);
+    check_ptr!(recipient_raw_43);
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+    let data_contract_id = unwrap_result_or_return!(read_identifier(data_contract_id));
+    let mut recipient_bytes = [0u8; 43];
+    std::ptr::copy_nonoverlapping(recipient_raw_43, recipient_bytes.as_mut_ptr(), 43);
+    let recipient = match OrchardAddress::from_raw_bytes(&recipient_bytes) {
+        Ok(recipient) => recipient,
+        Err(e) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!("invalid Orchard recipient address: {e}"),
+            );
+        }
+    };
+
+    let Some(purchaser) = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(manager.shielded_token_purchaser(&wallet_id))
+    }) else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            format!("invalid manager handle: {handle}"),
+        );
+    };
+    let purchaser = match purchaser {
+        Ok(purchaser) => purchaser,
+        Err(e) => return map_token_transfer_result(Err(e)),
+    };
+
+    let seed = match resolve_seed_from_resolver(mnemonic_resolver_handle, &wallet_id) {
+        Ok(seed) => seed,
+        Err(result) => return result,
+    };
+
+    let result = block_on_worker(async move {
+        let prover = CachedOrchardProver::new();
+        purchaser
+            .transfer(
+                seed.as_ref(),
+                account,
+                &data_contract_id,
+                token_contract_position,
+                &recipient,
+                amount,
+                &prover,
+            )
+            .await
+    });
+    map_token_transfer_result(result)
+}
+
+/// Map a shielded token transfer's result: submitted is success (a shielded
+/// sync confirms it once it lands), every error as the other note-spending
+/// exports map it ([`map_spend_result`]).
+fn map_token_transfer_result(
+    result: Result<ShieldedTokenSpendOutcome, PlatformWalletError>,
+) -> PlatformWalletFFIResult {
+    map_spend_result(
+        result.map(|outcome| match outcome {
+            ShieldedTokenSpendOutcome::Submitted => (),
+        }),
+        TOKEN_TRANSFER_OPERATION,
+    )
+}
+
 /// Whether the token at `token_contract_position` of `data_contract_id` can be
 /// bought from the shielded pool, from a verified read of its configuration
 /// (`token_shielded_purchase_availability`), written to `out_availability`:
@@ -2942,6 +3089,152 @@ mod tests {
             .code,
             PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
         );
+    }
+
+    /// A submitted token transfer is a success (a shielded sync confirms it
+    /// once it lands), one that may have reached a node keeps the do-not-retry
+    /// code, a transfer the token notes cannot cover reaches the host with
+    /// Rust's figures, and a missing recorded anchor keeps its retry code.
+    #[test]
+    fn should_map_a_submitted_token_transfer_to_success_and_its_refusals_apart() {
+        assert_eq!(
+            map_token_transfer_result(Ok(ShieldedTokenSpendOutcome::Submitted)).code,
+            PlatformWalletFFIResultCode::Success
+        );
+        assert_eq!(
+            map_token_transfer_result(Err(PlatformWalletError::ShieldedSpendUnconfirmed {
+                operation: "token shielded transfer",
+                reason: "the result wait timed out".to_string(),
+            }))
+            .code,
+            PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
+        );
+        assert_eq!(
+            map_token_transfer_result(Err(PlatformWalletError::ShieldedNoRecordedAnchor(
+                "the token pool records no anchor for the kept leaves".to_string(),
+            )))
+            .code,
+            PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor
+        );
+
+        let insufficient =
+            map_token_transfer_result(Err(PlatformWalletError::TokenShieldedInsufficientBalance {
+                token_id: dpp::prelude::Identifier::from([3; 32]),
+                available: 40,
+                required: 75,
+            }));
+        assert_eq!(
+            insufficient.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        let message = unsafe { CStr::from_ptr(insufficient.message) }
+            .to_str()
+            .expect("UTF-8");
+        assert!(message.contains(TOKEN_TRANSFER_OPERATION), "{message}");
+        assert!(
+            message.contains("available 40") && message.contains("required 75"),
+            "{message}"
+        );
+    }
+
+    /// A raw 43-byte Orchard address that decodes.
+    fn valid_orchard_recipient() -> [u8; 43] {
+        platform_wallet::wallet::shielded::OrchardKeySet::from_seed(
+            &[9; 64],
+            dashcore::Network::Testnet,
+            0,
+        )
+        .expect("keys")
+        .default_address
+        .to_raw_address_bytes()
+    }
+
+    /// Every required pointer of the token transfer export is checked before
+    /// anything else.
+    #[test]
+    fn should_refuse_null_pointers_in_the_token_transfer() {
+        let id = [1u8; 32];
+        let recipient = valid_orchard_recipient();
+        // Never dereferenced: every call fails before the resolver is used.
+        let resolver = std::ptr::NonNull::<MnemonicResolverHandle>::dangling().as_ptr();
+
+        for (wallet, resolver, contract, recipient) in [
+            (std::ptr::null(), resolver, id.as_ptr(), recipient.as_ptr()),
+            (
+                id.as_ptr(),
+                std::ptr::null_mut(),
+                id.as_ptr(),
+                recipient.as_ptr(),
+            ),
+            (id.as_ptr(), resolver, std::ptr::null(), recipient.as_ptr()),
+            (id.as_ptr(), resolver, id.as_ptr(), std::ptr::null()),
+        ] {
+            let result = unsafe {
+                platform_wallet_manager_shielded_token_transfer(
+                    Handle::MAX,
+                    wallet,
+                    resolver,
+                    0,
+                    contract,
+                    0,
+                    recipient,
+                    10,
+                )
+            };
+            assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        }
+    }
+
+    /// A recipient that is not an Orchard address is refused as a parameter
+    /// error before the manager is looked up.
+    #[test]
+    fn should_refuse_a_malformed_token_transfer_recipient_before_the_manager() {
+        let id = [1u8; 32];
+        // A non-zero diversifier with an all-zero pk_d, which is not a valid
+        // Pallas point.
+        let mut recipient = [0u8; 43];
+        recipient[0] = 0x01;
+        let resolver = std::ptr::NonNull::<MnemonicResolverHandle>::dangling().as_ptr();
+
+        let result = unsafe {
+            platform_wallet_manager_shielded_token_transfer(
+                Handle::MAX,
+                id.as_ptr(),
+                resolver,
+                0,
+                id.as_ptr(),
+                0,
+                recipient.as_ptr(),
+                10,
+            )
+        };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+    }
+
+    /// A handle that names no manager has its own code, through the panic
+    /// guard, before the resolver is asked for the mnemonic.
+    #[test]
+    fn should_answer_an_unknown_manager_in_the_token_transfer() {
+        let id = [1u8; 32];
+        let recipient = valid_orchard_recipient();
+        let resolver = std::ptr::NonNull::<MnemonicResolverHandle>::dangling().as_ptr();
+
+        let result = unsafe {
+            platform_wallet_manager_shielded_token_transfer(
+                Handle::MAX,
+                id.as_ptr(),
+                resolver,
+                0,
+                id.as_ptr(),
+                0,
+                recipient.as_ptr(),
+                10,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
     }
 
     /// The availability export answers a handle that names no manager with

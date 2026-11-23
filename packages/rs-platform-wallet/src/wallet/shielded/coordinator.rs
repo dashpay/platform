@@ -110,6 +110,7 @@ use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::calculate_token_id;
+use dpp::version::PlatformVersion;
 use futures::StreamExt;
 
 /// Network-scoped shielded coordinator.
@@ -301,6 +302,74 @@ pub struct NetworkShieldedCoordinator {
     /// Watched by the balance emitter
     /// ([`super::balance_emitter::run_balance_emitter`]).
     balance_change: BalanceChangeSignal,
+}
+
+/// Whether `kind` is a token pool spend paid from the credit pool whose token
+/// bundle carries tokens out of the wallet (a shielded token transfer).
+fn is_token_pool_spend(kind: &super::activity::ShieldedActivityKind) -> bool {
+    matches!(
+        kind,
+        super::activity::ShieldedActivityKind::TokenShieldedTransfer
+    )
+}
+
+/// What the token note sweep does with an orphaned hold: whether to mark its
+/// spend's pending row failed, and whether to release its notes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct OrphanedHoldSettlement {
+    fail_row: bool,
+    release: bool,
+}
+
+/// Settle an orphaned token hold, `orphan`: its spend is not in flight here
+/// and its saved record, if it had one, is gone.
+///
+/// - Never saved: the spend was never sent, so it failed; release.
+/// - Some of its notes spent and some not: its bundle spends them all at
+///   once, so another spend used some. It did not land and can no longer, at
+///   any version: it failed; release.
+/// - Signed bound (its token bundle cannot land without its fee bundle, from
+///   protocol 15): its record went because its fee anchor was pruned (it can
+///   never execute) or its fee notes were seen spent (it landed, or another
+///   spend used them). The token scan reached the credit scan's height, so a
+///   landing shows its token notes spent: with none spent, or its fee anchor
+///   pruned, it failed. Release either way; a landed spend's row is left to
+///   the scan that confirms it from its fee change.
+/// - Signed unbound (protocol 14): its token bundle can land with any fee
+///   bundle, before or after its own fee side went. With a note it holds
+///   spent, it may have been delivered that way, so nothing is concluded and
+///   the notes, spent, are released. With none spent, it failed only once the
+///   pool's own scan is at a binding version, after which it can no longer
+///   land and, unspent at that scan, never did; until then the notes stay
+///   held.
+fn settle_orphaned_token_hold(
+    orphan: &super::token_pool::OrphanedReservation,
+) -> OrphanedHoldSettlement {
+    let partly_spent = orphan.any_spent && !orphan.all_spent;
+    let (fail_row, release) = if !orphan.record_saved || partly_spent {
+        (true, true)
+    } else if orphan.signed_bound {
+        (orphan.fee_anchor_pruned || !orphan.any_spent, true)
+    } else if orphan.any_spent {
+        (false, true)
+    } else {
+        let binds = scan_binds_token_fee_bundles(orphan);
+        (binds, binds)
+    };
+    OrphanedHoldSettlement { fail_row, release }
+}
+
+/// Whether the token pool scan that found `orphan` orphaned was proven at a
+/// protocol version that binds a token bundle to its fee bundle (from
+/// version 15). That pool's own scan decides, not the highest version the SDK
+/// has seen: a scan proven at a binding version saw every block in which the
+/// spend's token bundle could still have landed with another fee bundle. A
+/// scan with no version recorded binds nothing.
+fn scan_binds_token_fee_bundles(orphan: &super::token_pool::OrphanedReservation) -> bool {
+    orphan
+        .scanned_protocol_version
+        .and_then(|version| PlatformVersion::get(version).ok())
+        .is_some_and(|version| version.dpp.methods.token_pool_paid_fee_binding.is_some())
 }
 
 /// Exclusive handle on one wallet's shielded install transaction,
@@ -1097,6 +1166,137 @@ impl NetworkShieldedCoordinator {
             .with_token_pool_conn(|conn| super::token_pool::balances(conn, wallet_id, &accounts))
     }
 
+    /// Settle the token pool spends whose token notes no saved record or
+    /// spend in flight holds any more, in the pools `scanned` (the ones this
+    /// pass scanned to their end, after the credit pool), once each pool's
+    /// scan reached the highest height a credit pool scan has read
+    /// (`scanned_from` is this pass's, kept by
+    /// [`super::token_pool::raise_sweep_height`] whether or not a pool
+    /// completed) ([`super::token_pool::orphaned_reservations`]). When a
+    /// record does not read, or the store retained a damaged record of a
+    /// wallet it could not load, nothing of that wallet is judged.
+    ///
+    /// What it is decided by ([`settle_orphaned_token_hold`]): whether its
+    /// record was ever saved, whether it was signed at a protocol version
+    /// that binds its token bundle to its fee bundle, whether the token scan
+    /// has seen any note it holds spent, and the version the pool's own scan
+    /// was proven at. A row is marked failed only where nothing can have
+    /// delivered the spend, and its notes stay held while its token bundle
+    /// can still land.
+    ///
+    /// Rows go first: an interruption before the release leaves a failed row
+    /// with its notes still held, which the next pass releases.
+    async fn release_orphaned_token_reservations(
+        &self,
+        subwallets: &[(SubwalletId, AccountViewingKeys)],
+        scanned: &BTreeSet<Identifier>,
+        scanned_from: Option<u64>,
+    ) {
+        let Some(scanned_from) = scanned_from else {
+            return;
+        };
+        // The credit scan's height is kept even when no token pool completed:
+        // a record it dropped stays dropped, and a later pass answered from
+        // below must not lower the height a token scan has to reach.
+        let floor = match self
+            .store
+            .read()
+            .await
+            .with_token_pool_conn(|conn| super::token_pool::raise_sweep_height(conn, scanned_from))
+        {
+            Ok(floor) => floor,
+            Err(e) => {
+                tracing::warn!(error = %e, "token note reservations kept: the sweep height was not kept");
+                return;
+            }
+        };
+        if scanned.is_empty() {
+            return;
+        }
+        let (orphaned, pending_rows) = {
+            let store = self.store.read().await;
+            let mut owners = BTreeSet::new();
+            let mut live = BTreeSet::new();
+            for (id, _) in subwallets {
+                if store.has_unloaded_note_spends(id.wallet_id) {
+                    continue;
+                }
+                match store.pending_redrives(*id) {
+                    Ok(records) => {
+                        live.extend(records.into_iter().map(|record| record.activity_id));
+                        owners.insert(*id);
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "token note reservations kept: a saved record does not read");
+                        return;
+                    }
+                }
+            }
+            let orphaned = match store.with_token_pool_conn(|conn| {
+                super::token_pool::orphaned_reservations(conn, &owners, scanned, floor, &live)
+            }) {
+                Ok(orphaned) => orphaned,
+                Err(e) => {
+                    tracing::warn!(error = %e, "reading orphaned token note reservations failed");
+                    return;
+                }
+            };
+            let pending_rows: Vec<(SubwalletId, [u8; 32])> = orphaned
+                .iter()
+                .filter(|orphan| settle_orphaned_token_hold(orphan).fail_row)
+                .filter(|orphan| {
+                    store
+                        .get_activity_by_entry_id(orphan.id, &orphan.marker)
+                        .ok()
+                        .flatten()
+                        .is_some_and(|entry| {
+                            is_token_pool_spend(&entry.kind)
+                                && entry.status == ShieldedActivityStatus::Pending
+                        })
+                })
+                .map(|orphan| (orphan.id, orphan.marker))
+                .collect();
+            (orphaned, pending_rows)
+        };
+        if orphaned.is_empty() {
+            return;
+        }
+        // Rows first: a pending row is failed before its notes come back.
+        if !pending_rows.is_empty() {
+            let persisters = self.persisters.read().await;
+            for (id, entry_id) in &pending_rows {
+                super::operations::record_activity_status_by_id(
+                    &self.store,
+                    persisters.get(&id.wallet_id),
+                    id.wallet_id,
+                    *id,
+                    entry_id,
+                    ShieldedActivityStatus::Failed,
+                )
+                .await;
+            }
+        }
+        let releases: Vec<&super::token_pool::OrphanedReservation> = orphaned
+            .iter()
+            .filter(|orphan| settle_orphaned_token_hold(orphan).release)
+            .collect();
+        if releases.is_empty() {
+            return;
+        }
+        let released = releases.len();
+        match self.store.read().await.with_token_pool_conn(|conn| {
+            super::token_pool::release_reservations(conn, releases.iter().copied())
+        }) {
+            Ok(()) => tracing::info!(
+                spends = released,
+                "released the token notes of token pool spends that cannot execute"
+            ),
+            Err(e) => {
+                tracing::warn!(error = %e, "releasing orphaned token note reservations failed")
+            }
+        }
+    }
+
     /// Refuse a wallet with no registered account.
     async fn ensure_registered(&self, wallet_id: WalletId) -> Result<(), PlatformWalletError> {
         if self
@@ -1764,6 +1964,12 @@ impl NetworkShieldedCoordinator {
             let token_pools =
                 super::token_pool::sync_token_pools(&*self.sdk, &self.store, &subwallets, cancel)
                     .await;
+            self.release_orphaned_token_reservations(
+                &subwallets,
+                &token_pools.completed,
+                notes.covered_height,
+            )
+            .await;
             token_pools.new_notes > 0
                 || token_pools.newly_spent > 0
                 || !token_pools.failed.is_empty()
@@ -2132,6 +2338,25 @@ impl NetworkShieldedCoordinator {
                     );
                     continue;
                 }
+                // A token pool spend's token note hold is marked before its
+                // saved record goes, so the token note sweep tells it from a
+                // spend never sent (`release_orphaned_token_reservations`).
+                // Marked first: an interruption between the two leaves the
+                // record, which the next pass judges again.
+                if let Some(entry_id) = activity_id {
+                    if let Err(e) = store.with_token_pool_conn(|conn| {
+                        super::token_pool::mark_fee_anchor_pruned(conn, id, &entry_id)
+                    }) {
+                        tracing::warn!(
+                            wallet_id = %hex::encode(id.wallet_id),
+                            account = id.account_index,
+                            error = %e,
+                            "shielded reservation release: the token note hold was not marked; \
+                             the spend's record stays until it is"
+                        );
+                        continue;
+                    }
+                }
                 match store.clear_pending(id, &nullifier) {
                     // `still_same` held under this same guard, so the clear
                     // removes exactly the snapshot's reservation.
@@ -2160,6 +2385,22 @@ impl NetworkShieldedCoordinator {
             // wallet's own persister (cloned out — `WalletPersister: Clone`).
             if let Some(entry_id) = activity_id {
                 if !flipped.insert(entry_id) {
+                    continue;
+                }
+                // A token pool spend's fee bundle no longer landing does not
+                // settle it: below the protocol version that binds the two
+                // bundles its token bundle can land with another fee bundle.
+                // Its row is settled from its token notes once a token pool
+                // scan has read them (`release_orphaned_token_reservations`).
+                let token_pool_spend = self
+                    .store
+                    .read()
+                    .await
+                    .get_activity_by_entry_id(id, &entry_id)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|entry| is_token_pool_spend(&entry.kind));
+                if token_pool_spend {
                     continue;
                 }
                 let persister = persisters.get(&id.wallet_id).cloned();
@@ -4005,11 +4246,19 @@ mod tests {
     /// Build a coordinator backed by a fresh file store under `dir`, with one
     /// wallet registered so `accounts` / `persisters` are both non-empty.
     async fn coordinator_with_one_wallet(dir: &std::path::Path) -> NetworkShieldedCoordinator {
+        coordinator_with_one_wallet_on(dir, dash_sdk::Sdk::new_mock()).await
+    }
+
+    /// [`coordinator_with_one_wallet`] scanning through `sdk`.
+    async fn coordinator_with_one_wallet_on(
+        dir: &std::path::Path,
+        sdk: dash_sdk::Sdk,
+    ) -> NetworkShieldedCoordinator {
         std::fs::create_dir_all(dir).expect("create temp dir");
         let db_path = dir.join("tree.sqlite");
         let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store");
         let coordinator = NetworkShieldedCoordinator::new(
-            Arc::new(dash_sdk::Sdk::new_mock()),
+            Arc::new(sdk),
             dashcore::Network::Testnet,
             db_path,
             store,
@@ -4027,6 +4276,603 @@ mod tests {
             .await
             .expect("register wallet");
         coordinator
+    }
+
+    /// A token shielded transfer whose saved record is gone is settled from
+    /// how it was signed, how its record went, whether the token scan saw a
+    /// note it holds spent, and the token pool's own scan version, whatever
+    /// version the SDK has seen. A row is shown failed only where nothing can
+    /// have delivered it, and its notes stay held while it can still land.
+    #[tokio::test]
+    async fn should_settle_a_token_transfer_from_how_it_was_signed_and_its_record_went() {
+        use super::super::store::PendingRedrive;
+        use super::super::token_pool::{insert_note_for_test, insert_watch, TokenPoolNote};
+
+        #[derive(Debug, Clone, Copy, PartialEq)]
+        enum Record {
+            NeverSaved,
+            FeeAnchorPruned,
+            FeeNoteSpent,
+        }
+        use ShieldedActivityStatus::{Failed, Pending};
+        // (signed bound, how the record went, how many of its two held token
+        // notes are spent, pool scan version, row after, notes still held)
+        for (signed_bound, record, token_spent, network, settled, held) in [
+            (false, Record::NeverSaved, 0, 14, Failed, false),
+            (false, Record::NeverSaved, 0, 15, Failed, false),
+            // Signed at 14: its token bundle can land with another fee bundle.
+            (false, Record::FeeAnchorPruned, 0, 14, Pending, true),
+            (false, Record::FeeAnchorPruned, 0, 15, Failed, false),
+            (false, Record::FeeAnchorPruned, 2, 15, Pending, false),
+            (false, Record::FeeNoteSpent, 2, 14, Pending, false),
+            (false, Record::FeeNoteSpent, 0, 14, Pending, true),
+            (false, Record::FeeNoteSpent, 0, 15, Failed, false),
+            // One of its notes spent by another spend: its bundle spends both
+            // at once, so it never landed and can no longer, at any version.
+            (false, Record::FeeAnchorPruned, 1, 14, Failed, false),
+            (false, Record::FeeNoteSpent, 1, 15, Failed, false),
+            // Signed at 15: it cannot land without its own fee bundle.
+            (true, Record::FeeAnchorPruned, 0, 15, Failed, false),
+            (true, Record::FeeAnchorPruned, 2, 15, Failed, false),
+            (true, Record::FeeNoteSpent, 2, 15, Pending, false),
+            (true, Record::FeeNoteSpent, 1, 15, Failed, false),
+            (true, Record::FeeNoteSpent, 0, 15, Failed, false),
+        ] {
+            let case = format!(
+                "signed bound {signed_bound}, {record:?}, token note spent {token_spent}, \
+                 scan at {network}"
+            );
+            let dir = temp_dir(&format!(
+                "token_transfer_settle_{signed_bound}_{record:?}_{token_spent}_{network}"
+            ));
+            let sdk = dash_sdk::Sdk::new_mock();
+            sdk.mock_verified_protocol_version(15).expect("a mock SDK");
+            let coordinator = coordinator_with_one_wallet_on(&dir, sdk).await;
+            let id = SubwalletId::new([0x11; 32], 0);
+            let subwallets: Vec<(SubwalletId, AccountViewingKeys)> = coordinator
+                .accounts
+                .read()
+                .await
+                .iter()
+                .map(|(id, views)| (*id, views.clone()))
+                .collect();
+            let token = ShieldedTokenPoolWatch {
+                token_id: Identifier::from([0x77; 32]),
+                data_contract_id: Identifier::from([0x66; 32]),
+                token_contract_position: 0,
+            };
+            let fee_nf = [0xF1u8; 32];
+            let pruned_anchor = [0xF2u8; 32];
+            let row = ShieldedActivityEntry {
+                kind: ShieldedActivityKind::TokenShieldedTransfer,
+                ..pending_purchase_row(fee_nf, [0xF3; 32])
+            };
+            {
+                let mut store = coordinator.store().write().await;
+                store.save_note(id, &test_note(fee_nf, 0, false)).unwrap();
+                store.save_activity(id, &row).unwrap();
+                store
+                    .with_token_pool_conn(|conn| {
+                        insert_watch(conn, id.wallet_id, &token)?;
+                        conn.execute(
+                            "INSERT INTO shielded_token_pool_scans \
+                             (token_id, pool_note_count, scanned_height, \
+                              scanned_protocol_version) VALUES (?1, 1, 10, ?2)",
+                            rusqlite::params![token.token_id.as_slice(), network],
+                        )
+                        .expect("scan row");
+                        for position in 0..2u8 {
+                            insert_note_for_test(
+                                conn,
+                                &TokenPoolNote {
+                                    id,
+                                    token_id: token.token_id,
+                                    position: u64::from(position),
+                                    cmx: [1 + position; 32],
+                                    nullifier: [2 + position; 32],
+                                    value: 5,
+                                    note_data: vec![0; 115],
+                                    block_height: 1,
+                                    is_spent: position < token_spent,
+                                    reserved_by: Some(row.id),
+                                },
+                            )?;
+                        }
+                        // As the re-key to the record sets it.
+                        conn.execute(
+                            "UPDATE shielded_token_pool_notes SET signed_bound = ?1",
+                            rusqlite::params![signed_bound],
+                        )
+                        .expect("signing era");
+                        Ok(())
+                    })
+                    .unwrap();
+                if record != Record::NeverSaved {
+                    // Saved as the spend saves it: the hold is marked saved in
+                    // the same transaction.
+                    store.mark_pending(id, &fee_nf).unwrap();
+                    store
+                        .set_pending_spend(id, &fee_nf, pruned_anchor, row.id, Some(10))
+                        .unwrap();
+                    store
+                        .arm_redrive(
+                            id,
+                            PendingRedrive {
+                                activity_id: row.id,
+                                anchor: pruned_anchor,
+                                nullifiers: vec![fee_nf],
+                                st_bytes: vec![0],
+                                attempts: 0,
+                                identity_nonce_finalized: false,
+                                identity_user_abandoned: false,
+                                anchor_height: Some(10),
+                            },
+                        )
+                        .unwrap();
+                }
+                if record == Record::FeeNoteSpent {
+                    store.mark_spent(id, &fee_nf).unwrap();
+                }
+            }
+
+            if record == Record::FeeAnchorPruned {
+                coordinator
+                    .release_stranded_spends(
+                        vec![(id, (fee_nf, pruned_anchor, Some(row.id), Some(10)))],
+                        PrunedAnchorEvidence {
+                            recorded: &HashSet::new(),
+                            height: 10,
+                            scan_covered_height: Some(10),
+                            heightless: None,
+                        },
+                    )
+                    .await;
+                assert_eq!(
+                    row_status(&coordinator, id, &row.id).await,
+                    Pending,
+                    "{case}: the fee anchor's pruning alone settles nothing"
+                );
+            }
+            assert!(
+                coordinator
+                    .store()
+                    .read()
+                    .await
+                    .pending_redrives(id)
+                    .unwrap()
+                    .is_empty(),
+                "{case}: no saved record is left"
+            );
+
+            coordinator
+                .release_orphaned_token_reservations(
+                    &subwallets,
+                    &BTreeSet::from([token.token_id]),
+                    Some(10),
+                )
+                .await;
+            assert_eq!(
+                row_status(&coordinator, id, &row.id).await,
+                settled,
+                "{case}"
+            );
+            let holds: i64 = coordinator
+                .store()
+                .read()
+                .await
+                .with_token_pool_conn(|conn| {
+                    Ok(conn
+                        .query_row(
+                            "SELECT COUNT(*) FROM shielded_token_pool_notes \
+                             WHERE reserved_by IS NOT NULL",
+                            [],
+                            |row| row.get(0),
+                        )
+                        .expect("count holds"))
+                })
+                .unwrap();
+            assert_eq!(holds > 0, held, "{case}");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
+    /// The height a credit scan marked a fee note spent at is kept before the
+    /// mark drops the spend's saved record, and survives a reopen: a later
+    /// pass whose scans are answered one block below cannot settle the
+    /// spend from token evidence that does not reach that height.
+    #[tokio::test]
+    async fn should_keep_the_height_a_fee_note_was_seen_spent_at_before_dropping_its_record() {
+        use super::super::store::PendingRedrive;
+        use super::super::token_pool::{
+            insert_note_for_test, insert_watch, raise_sweep_height, TokenPoolNote,
+        };
+
+        let dir = temp_dir("token_spend_floor_before_record_drop");
+        let sdk = dash_sdk::Sdk::new_mock();
+        sdk.mock_verified_protocol_version(15).expect("a mock SDK");
+        let coordinator = coordinator_with_one_wallet_on(&dir, sdk).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let subwallets: Vec<(SubwalletId, AccountViewingKeys)> = coordinator
+            .accounts
+            .read()
+            .await
+            .iter()
+            .map(|(id, views)| (*id, views.clone()))
+            .collect();
+        let token = ShieldedTokenPoolWatch {
+            token_id: Identifier::from([0x77; 32]),
+            data_contract_id: Identifier::from([0x66; 32]),
+            token_contract_position: 0,
+        };
+        let fee_nf = [0xF1u8; 32];
+        let row = ShieldedActivityEntry {
+            kind: ShieldedActivityKind::TokenShieldedTransfer,
+            ..pending_purchase_row(fee_nf, [0xF3; 32])
+        };
+        let scan_token_pool = |height: i64, spent: bool| {
+            move |conn: &mut rusqlite::Connection| {
+                conn.execute(
+                    "INSERT INTO shielded_token_pool_scans \
+                     (token_id, pool_note_count, scanned_height, scanned_protocol_version) \
+                     VALUES (?1, 1, ?2, 15) ON CONFLICT(token_id) DO UPDATE SET \
+                     scanned_height = excluded.scanned_height",
+                    rusqlite::params![token.token_id.as_slice(), height],
+                )
+                .expect("scan row");
+                conn.execute(
+                    "UPDATE shielded_token_pool_notes SET spent = ?1",
+                    rusqlite::params![spent],
+                )
+                .expect("spent");
+                Ok(())
+            }
+        };
+        {
+            let mut store = coordinator.store().write().await;
+            store.save_note(id, &test_note(fee_nf, 0, false)).unwrap();
+            store.save_activity(id, &row).unwrap();
+            store
+                .with_token_pool_conn(|conn| {
+                    insert_watch(conn, id.wallet_id, &token)?;
+                    insert_note_for_test(
+                        conn,
+                        &TokenPoolNote {
+                            id,
+                            token_id: token.token_id,
+                            position: 0,
+                            cmx: [1; 32],
+                            nullifier: [2; 32],
+                            value: 5,
+                            note_data: vec![0; 115],
+                            block_height: 1,
+                            is_spent: false,
+                            reserved_by: Some(row.id),
+                        },
+                    )?;
+                    conn.execute("UPDATE shielded_token_pool_notes SET signed_bound = 1", [])
+                        .expect("signing era");
+                    scan_token_pool(10, false)(conn)
+                })
+                .unwrap();
+            store.mark_pending(id, &fee_nf).unwrap();
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: row.id,
+                        anchor: [0xF2; 32],
+                        nullifiers: vec![fee_nf],
+                        st_bytes: vec![0],
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                        anchor_height: Some(10),
+                    },
+                )
+                .unwrap();
+            // The credit scan at 11 sees the transfer's fee note spent: the
+            // height is kept first, then the mark drops the record.
+            store.note_spend_scan_height(11).unwrap();
+            store.mark_spent(id, &fee_nf).unwrap();
+            assert!(store.pending_redrives(id).unwrap().is_empty());
+        }
+        let holds = || async {
+            coordinator
+                .store()
+                .read()
+                .await
+                .with_token_pool_conn(|conn| {
+                    Ok(conn
+                        .query_row(
+                            "SELECT COUNT(*) FROM shielded_token_pool_notes \
+                             WHERE reserved_by IS NOT NULL",
+                            [],
+                            |row| row.get::<_, i64>(0),
+                        )
+                        .expect("count holds"))
+                })
+                .unwrap()
+        };
+
+        // A pass answered one block below: the token scan has not reached the
+        // height the fee note was seen spent at, so nothing is concluded.
+        coordinator
+            .release_orphaned_token_reservations(
+                &subwallets,
+                &BTreeSet::from([token.token_id]),
+                Some(10),
+            )
+            .await;
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Pending
+        );
+        assert_eq!(holds().await, 1);
+
+        // The kept height is on disk: a store reopened on the same file reads it.
+        let reopened =
+            FileBackedShieldedStore::open_path(dir.join("tree.sqlite"), 100).expect("reopen");
+        assert_eq!(
+            reopened
+                .with_token_pool_conn(|conn| raise_sweep_height(conn, 0))
+                .unwrap(),
+            11
+        );
+        drop(reopened);
+
+        // The token scan catches up and sees the transfer's note spent: it
+        // landed, so its hold goes and its row waits for its confirmation.
+        coordinator
+            .store()
+            .read()
+            .await
+            .with_token_pool_conn(scan_token_pool(11, true))
+            .unwrap();
+        coordinator
+            .release_orphaned_token_reservations(
+                &subwallets,
+                &BTreeSet::from([token.token_id]),
+                Some(10),
+            )
+            .await;
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Pending
+        );
+        assert_eq!(holds().await, 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A transfer signed at a binding version whose held token note another
+    /// spend used keeps the pool watched while its record lives, and once its
+    /// fee anchor is pruned the sweep settles it failed and releases the
+    /// hold, after which the pool can be unwatched.
+    #[tokio::test]
+    async fn should_settle_a_transfer_whose_token_note_another_spend_used() {
+        use super::super::store::PendingRedrive;
+        use super::super::token_pool::{insert_note_for_test, insert_watch, TokenPoolNote};
+
+        let dir = temp_dir("token_transfer_competing_spend");
+        let sdk = dash_sdk::Sdk::new_mock();
+        sdk.mock_verified_protocol_version(15).expect("a mock SDK");
+        let coordinator = coordinator_with_one_wallet_on(&dir, sdk).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let subwallets: Vec<(SubwalletId, AccountViewingKeys)> = coordinator
+            .accounts
+            .read()
+            .await
+            .iter()
+            .map(|(id, views)| (*id, views.clone()))
+            .collect();
+        let token = ShieldedTokenPoolWatch {
+            token_id: Identifier::from([0x77; 32]),
+            data_contract_id: Identifier::from([0x66; 32]),
+            token_contract_position: 0,
+        };
+        let fee_nf = [0xF1u8; 32];
+        let pruned_anchor = [0xF2u8; 32];
+        let row = ShieldedActivityEntry {
+            kind: ShieldedActivityKind::TokenShieldedTransfer,
+            ..pending_purchase_row(fee_nf, [0xF3; 32])
+        };
+        {
+            let mut store = coordinator.store().write().await;
+            store.save_note(id, &test_note(fee_nf, 0, false)).unwrap();
+            store.save_activity(id, &row).unwrap();
+            store
+                .with_token_pool_conn(|conn| {
+                    insert_watch(conn, id.wallet_id, &token)?;
+                    conn.execute(
+                        "INSERT INTO shielded_token_pool_scans \
+                         (token_id, pool_note_count, scanned_height, scanned_protocol_version) \
+                         VALUES (?1, 1, 10, 15)",
+                        rusqlite::params![token.token_id.as_slice()],
+                    )
+                    .expect("scan row");
+                    // Held by this transfer, and seen spent by another.
+                    insert_note_for_test(
+                        conn,
+                        &TokenPoolNote {
+                            id,
+                            token_id: token.token_id,
+                            position: 0,
+                            cmx: [1; 32],
+                            nullifier: [2; 32],
+                            value: 5,
+                            note_data: vec![0; 115],
+                            block_height: 1,
+                            is_spent: true,
+                            reserved_by: Some(row.id),
+                        },
+                    )?;
+                    // Signed at 15: it cannot land without its own fee bundle.
+                    conn.execute("UPDATE shielded_token_pool_notes SET signed_bound = 1", [])
+                        .expect("signing era");
+                    Ok(())
+                })
+                .unwrap();
+            store.mark_pending(id, &fee_nf).unwrap();
+            store
+                .set_pending_spend(id, &fee_nf, pruned_anchor, row.id, Some(10))
+                .unwrap();
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: row.id,
+                        anchor: pruned_anchor,
+                        nullifiers: vec![fee_nf],
+                        st_bytes: vec![0],
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                        anchor_height: Some(10),
+                    },
+                )
+                .unwrap();
+        }
+        let unwatch = || coordinator.unwatch_token_pool(id.wallet_id, token.token_id);
+        assert!(
+            matches!(
+                unwatch().await,
+                Err(PlatformWalletError::TokenShieldedPoolSpendPending { .. })
+            ),
+            "a hold on a spent note still keeps the pool watched"
+        );
+
+        // While its record lives, the sweep leaves it alone.
+        coordinator
+            .release_orphaned_token_reservations(
+                &subwallets,
+                &BTreeSet::from([token.token_id]),
+                Some(10),
+            )
+            .await;
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Pending
+        );
+
+        coordinator
+            .release_stranded_spends(
+                vec![(id, (fee_nf, pruned_anchor, Some(row.id), Some(10)))],
+                PrunedAnchorEvidence {
+                    recorded: &HashSet::new(),
+                    height: 10,
+                    scan_covered_height: Some(10),
+                    heightless: None,
+                },
+            )
+            .await;
+        coordinator
+            .release_orphaned_token_reservations(
+                &subwallets,
+                &BTreeSet::from([token.token_id]),
+                Some(10),
+            )
+            .await;
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Failed
+        );
+        unwatch().await.expect("nothing is held any more");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A credit scan's height is kept even from a pass in which no token
+    /// pool completed: a later pass answered from below cannot lower the
+    /// height a token pool's scan must reach before its holds are judged.
+    #[tokio::test]
+    async fn should_keep_the_credit_height_from_a_pass_with_no_token_pool_scanned() {
+        use super::super::token_pool::{insert_note_for_test, insert_watch, TokenPoolNote};
+
+        let dir = temp_dir("token_sweep_floor");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let subwallets: Vec<(SubwalletId, AccountViewingKeys)> = coordinator
+            .accounts
+            .read()
+            .await
+            .iter()
+            .map(|(id, views)| (*id, views.clone()))
+            .collect();
+        let token = ShieldedTokenPoolWatch {
+            token_id: Identifier::from([0x77; 32]),
+            data_contract_id: Identifier::from([0x66; 32]),
+            token_contract_position: 0,
+        };
+        let record_scan = |height: i64| {
+            move |conn: &mut rusqlite::Connection| {
+                conn.execute(
+                    "INSERT INTO shielded_token_pool_scans \
+                     (token_id, pool_note_count, scanned_height, scanned_protocol_version) \
+                     VALUES (?1, 1, ?2, 15) ON CONFLICT(token_id) DO UPDATE SET \
+                     scanned_height = excluded.scanned_height",
+                    rusqlite::params![token.token_id.as_slice(), height],
+                )
+                .expect("scan row");
+                Ok(())
+            }
+        };
+        coordinator
+            .store()
+            .read()
+            .await
+            .with_token_pool_conn(|conn| {
+                insert_watch(conn, id.wallet_id, &token)?;
+                record_scan(100)(conn)?;
+                insert_note_for_test(
+                    conn,
+                    &TokenPoolNote {
+                        id,
+                        token_id: token.token_id,
+                        position: 0,
+                        cmx: [1; 32],
+                        nullifier: [2; 32],
+                        value: 5,
+                        note_data: vec![0; 115],
+                        block_height: 1,
+                        is_spent: false,
+                        reserved_by: Some([0xD5; 32]),
+                    },
+                )
+            })
+            .unwrap();
+        let reserved = || async {
+            coordinator
+                .token_pool_balances(id.wallet_id)
+                .await
+                .expect("balances")[0]
+                .reserved_balance
+        };
+
+        coordinator
+            .release_orphaned_token_reservations(&subwallets, &BTreeSet::new(), Some(101))
+            .await;
+        coordinator
+            .release_orphaned_token_reservations(
+                &subwallets,
+                &BTreeSet::from([token.token_id]),
+                Some(100),
+            )
+            .await;
+        assert_eq!(reserved().await, 5, "the token scan has not reached 101");
+
+        coordinator
+            .store()
+            .read()
+            .await
+            .with_token_pool_conn(record_scan(101))
+            .unwrap();
+        coordinator
+            .release_orphaned_token_reservations(
+                &subwallets,
+                &BTreeSet::from([token.token_id]),
+                Some(100),
+            )
+            .await;
+        assert_eq!(reserved().await, 0);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The network-checked watch refuses a token whose verified configuration

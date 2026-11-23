@@ -46,10 +46,15 @@ pub struct ShieldedTokenPoolBalanceFFI {
     /// The Orchard account the notes belong to.
     pub account_index: u32,
     /// The value of the account's notes whose nullifiers the scan has not
-    /// seen, in the token's smallest unit.
+    /// seen and that no spend in flight holds, in the token's smallest unit:
+    /// what a token pool spend can use now.
     pub balance: u64,
     /// How many notes make up `balance`.
     pub unspent_note_count: u32,
+    /// The value of the account's unspent notes a spend in flight holds, in
+    /// the token's smallest unit: they leave when a scan sees them spent, or
+    /// return to `balance` if the spend can no longer execute.
+    pub reserved_balance: u64,
     /// The scan has checked some of the pool's notes for this account.
     pub has_scanned_note_count: bool,
     /// How many of the pool's notes, from the first without a gap, were
@@ -57,11 +62,14 @@ pub struct ShieldedTokenPoolBalanceFFI {
     pub scanned_note_count: u64,
     /// The scan has read a chunk of the pool.
     pub has_pool_note_count: bool,
-    /// The pool's note count at the last chunk read.
+    /// The highest note count a page of the pool's scans has proved. A page
+    /// answered by a lagging node never lowers it, and it does not mean a
+    /// scan covered it: `scanned_note_count` is what was checked.
     pub pool_note_count: u64,
     /// The scan has read a chunk of the pool.
     pub has_scanned_height: bool,
-    /// The height the last chunk read was proven at.
+    /// The highest height a page of the pool's scans was proven at. It does
+    /// not by itself certify that a scan reached the pool's end.
     pub scanned_height: u64,
     /// Why the last scan of the pool stopped early, NUL-terminated UTF-8;
     /// null when it did not (or when the reason could not be encoded).
@@ -79,6 +87,7 @@ impl ShieldedTokenPoolBalanceFFI {
             account_index: balance.account_index,
             balance: balance.balance,
             unspent_note_count: balance.unspent_note_count,
+            reserved_balance: balance.reserved_balance,
             has_scanned_note_count: balance.scanned_note_count.is_some(),
             scanned_note_count: balance.scanned_note_count.unwrap_or_default(),
             has_pool_note_count: balance.pool_note_count.is_some(),
@@ -357,6 +366,7 @@ mod tests {
             account_index: 1,
             balance: 1_500,
             unspent_note_count: 3,
+            reserved_balance: 250,
             scanned_note_count: scanned.then_some(2_048),
             pool_note_count: scanned.then_some(4_096),
             scanned_height: scanned.then_some(123_456),
@@ -395,6 +405,7 @@ mod tests {
         assert_eq!(row.account_index, 1);
         assert_eq!(row.balance, 1_500);
         assert_eq!(row.unspent_note_count, 3);
+        assert_eq!(row.reserved_balance, 250);
         assert!(row.has_scanned_note_count);
         assert_eq!(row.scanned_note_count, 2_048);
         assert!(row.has_pool_note_count);
