@@ -54,6 +54,11 @@ struct PrivateDocumentEntryCreateView: View {
 
     @State private var isSubmitting = false
     @State private var outcome: Outcome?
+    /// The last create may have gone through (`ShieldedSpendUnconfirmed`):
+    /// Create stays disabled until an input changes, as another tap would
+    /// pay for a second entry. Leaving the screen drops it with the rest of
+    /// this state.
+    @State private var heldAfterUnconfirmed = false
 
     private enum Outcome {
         case created(PrivateDocumentEntryCreated)
@@ -86,6 +91,13 @@ struct PrivateDocumentEntryCreateView: View {
         .onChange(of: wallets) {
             ensureDefaultSelection()
         }
+        // Any input changed: a create from here is not the one that may
+        // have gone through.
+        .onChange(of: selectedWalletId) { inputChanged() }
+        .onChange(of: selectedSenderId) { inputChanged() }
+        .onChange(of: recipientText) { inputChanged() }
+        .onChange(of: selectedRecipientKeyId) { inputChanged() }
+        .onChange(of: auth) { inputChanged() }
         .task {
             await loadFee()
         }
@@ -262,7 +274,18 @@ struct PrivateDocumentEntryCreateView: View {
 
     private var fieldsSection: some View {
         Section {
-            DocumentFieldsView(documentType: documentType, fieldValues: $fieldValues)
+            // `[String: Any]` is not `Equatable`, so its edits clear the hold
+            // here rather than through `onChange`.
+            DocumentFieldsView(
+                documentType: documentType,
+                fieldValues: Binding(
+                    get: { fieldValues },
+                    set: { newValues in
+                        fieldValues = newValues
+                        inputChanged()
+                    }
+                )
+            )
                 .disabled(isSubmitting)
                 .accessibilityIdentifier("privateEntryCreate.fields")
         } header: {
@@ -427,6 +450,7 @@ struct PrivateDocumentEntryCreateView: View {
         let typeName = documentTypeName
         isSubmitting = true
         outcome = nil
+        heldAfterUnconfirmed = false
         Task {
             defer { isSubmitting = false }
             do {
@@ -450,6 +474,7 @@ struct PrivateDocumentEntryCreateView: View {
                 // Rust keeps the notes reserved until a shielded sync sees
                 // the transition: another tap would pay for a second entry.
                 outcome = .unconfirmed("The entry may have gone through; a shielded sync settles it. Do not create it again. Read Entries shows it once it is in the store.")
+                heldAfterUnconfirmed = true
             } catch let walletError as PlatformWalletError {
                 switch walletError {
                 case .protocolVersionNotActive:
@@ -501,12 +526,19 @@ struct PrivateDocumentEntryCreateView: View {
     }
 
     private var canSubmit: Bool {
-        guard let walletId = selectedWalletId else { return false }
+        guard !heldAfterUnconfirmed, let walletId = selectedWalletId else { return false }
         return walletManager.wallet(for: walletId) != nil
             && selectedSenderId != nil
             && recipientKeysFor != nil
             && recipientKeysFor == recipientId
             && selectedRecipientKeyId != nil
+    }
+
+    /// An input changed after a create that may have gone through: the
+    /// create the inputs now describe may be submitted. The outcome stays
+    /// shown.
+    private func inputChanged() {
+        heldAfterUnconfirmed = false
     }
 
     private func ensureDefaultSelection() {
