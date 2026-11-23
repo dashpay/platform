@@ -268,7 +268,9 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// the input cap; nothing was broadcast.
     case errorAssetLockTooManyInputs = 60
     /// A shielded fund-from-asset-lock resume named a different Orchard
-    /// recipient than the one its tracked lock recorded; nothing was paid.
+    /// recipient than the one its tracked lock recorded, or an unbound
+    /// identity top-up lock was resumed or assigned to a different identity
+    /// than the one its row recorded; nothing was paid.
     case errorAssetLockRecipientMismatch = 61
     /// The contact requests with that identity came or went privately, so a
     /// public request to it, in reply or as a rotation, would publish the
@@ -322,6 +324,11 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// outcome yet. Nothing new was signed. Unconfirmed, not failed: do not
     /// submit it again; a public contact request sync settles it.
     case errorPublicContactRequestUnconfirmed = 76
+    /// An unbound identity top-up lock records no identity to pay (it was
+    /// rebuilt from the chain, for example after a restore from the seed),
+    /// so no resume pays it. Nothing was submitted or paid. Not retryable as
+    /// is: assign it a recipient the user chooses, then resume it.
+    case errorAssetLockRecipientUnknown = 81
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -473,6 +480,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorSdkPinnedBelowProtocolVersion
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PUBLIC_CONTACT_REQUEST_UNCONFIRMED:
             self = .errorPublicContactRequestUnconfirmed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_RECIPIENT_UNKNOWN:
+            self = .errorAssetLockRecipientUnknown
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -671,7 +680,22 @@ public enum PlatformWalletError: LocalizedError {
     /// (`PersistentAssetLock.shieldedRecipientRaw43` /
     /// `TrackedAssetLock.shieldedRecipientRaw43`). Locks tracked before the
     /// recipient was recorded carry none and accept the caller's.
+    ///
+    /// Also an unbound identity top-up lock resumed or assigned to a
+    /// different identity than the one its row recorded. Nothing was
+    /// submitted; resume it with
+    /// `ManagedPlatformWallet.resumeTopUpToRecordedRecipient`, which pays the
+    /// recorded identity (`TrackedAssetLock.identityRecipient`).
     case assetLockRecipientMismatch(String)
+    /// Code 81: an unbound identity top-up lock records no identity to pay —
+    /// it was rebuilt from the chain, for example after a restore from the
+    /// seed — so no resume pays it; it may have been meant for someone
+    /// else's identity. Nothing was submitted or paid. Not retryable as is:
+    /// assign the lock a recipient the user chooses
+    /// (`ManagedPlatformWallet.assignTopUpRecipient`), then resume it. Such a
+    /// lock is flagged `identityRecipientUnassigned` on the tracked-lock
+    /// lists.
+    case assetLockRecipientUnknown(String)
     /// The contact requests with that identity came or went privately
     /// (protocol version 15): a public request to it, in reply or as a
     /// rotation, would publish the relationship, so the public accept and
@@ -971,6 +995,7 @@ public enum PlatformWalletError: LocalizedError {
              .assetLockNotTracked(let m), .assetLockAlreadyConsumed(let m),
              .assetLockFundingMismatch(let m), .assetLockInsufficientFunds(let m),
              .assetLockTooManyInputs(let m), .assetLockRecipientMismatch(let m),
+             .assetLockRecipientUnknown(let m),
              .privateContactRequestNeedsPrivateReply(let m),
              .shieldedBuildRequired(let m), .protocolVersionNotActive(let m),
              .privateContactRequestPending(let m), .privateContactPaymentsNotRestored(let m),
@@ -1096,6 +1121,7 @@ public enum PlatformWalletError: LocalizedError {
         case .errorAssetLockInsufficientFunds: self = .assetLockInsufficientFunds(detail)
         case .errorAssetLockTooManyInputs: self = .assetLockTooManyInputs(detail)
         case .errorAssetLockRecipientMismatch: self = .assetLockRecipientMismatch(detail)
+        case .errorAssetLockRecipientUnknown: self = .assetLockRecipientUnknown(detail)
         case .errorPrivateContactRequestNeedsPrivateReply:
             self = .privateContactRequestNeedsPrivateReply(detail)
         case .errorShieldedBuildRequired:
