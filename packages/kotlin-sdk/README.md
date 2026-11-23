@@ -55,6 +55,41 @@ See [CLAUDE.md](CLAUDE.md) for the layering rules (persist / load / bridge —
 all orchestration lives in the Rust `platform-wallet` crate) and
 [../swift-sdk/CLAUDE.md](../swift-sdk/CLAUDE.md) for the reference doctrine.
 
+## Shielded tips
+
+A shielded tip pays a DashPay username at the shielded address its profile
+publishes. Rust decides everything; a screen shows what it returns.
+
+1. Parse the typed amount with `manager.parseShieldedTipAmount(text)`, which
+   returns credits. Show the parsed amount in the confirmation, not the typed
+   text.
+2. Call `manager.reviewShieldedTip(walletId, username)`. Show the recipient and
+   the change: `New` for a name never tipped from this wallet, `Unchanged`, or
+   `Changed(previous)` when the name now pays another identity or address.
+   `unresolved` means an earlier payment to the recipient may still execute, so
+   a send would be refused.
+3. Send with `manager.sendShieldedTip(walletId, source, username,
+   expectedRecipient, amount, memo)`, passing the review's `recipient` back
+   unchanged. `source` is `ShieldedTipSource.Identity(id)` to pay from an
+   identity's own shielded account, or `ShieldedTipSource.Account(n)` for an
+   account by number. Rust resolves the name again and refuses a recipient that
+   changed, so the user reviews again.
+
+`DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed` means the tip may have
+left the wallet and may still execute: never send it again; a shielded sync
+resolves it. `ShieldedTipPending` means nothing was sent because an earlier
+payment to the recipient is unresolved, or another tip is being sent; a
+shielded sync resolves it, after which review and send again. Every other error
+means the tip was not sent.
+
+To show what an identity can tip from, call
+`manager.shieldedIdentityBalance(walletId, identityId)` and show its state
+instead of summing notes: `Unverified` until `prepareShieldedIdentityAddress`
+proves the identity's account in this session, `Unavailable(account)` while the
+account's ledger is not established (not known, which is not zero), and
+`Available(account, credits)`. The read is local and waits at most 100 ms; a
+busy `WalletOperation` means keep the last state and read again later.
+
 ## Identity-funded shield recovery
 
 An unresolved identity-funded shield blocks another debit from the same identity

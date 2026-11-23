@@ -663,6 +663,41 @@ meets unusable persisted shielded state, and `walletOperation` for every other
 failure, such as a wallet that was not bound or a seed that does not derive the
 identity's key.
 
+## Shielded tips
+
+A shielded tip pays a DashPay username at the shielded address its profile
+publishes. Rust decides everything; the screen only shows what it returns.
+
+1. Parse the typed amount with
+   `PlatformWalletManager.parseShieldedTipAmount(_:)`, which returns credits.
+   Show the parsed amount in the confirmation, not the typed text.
+2. Call `await manager.reviewShieldedTip(walletId:username:)`. Show the
+   recipient and the change: `.new` for a name never tipped from this wallet,
+   `.unchanged`, or `.changed(previous:)` when the name now pays another
+   identity or address. `unresolved` means an earlier payment to the recipient
+   may still execute, so a send would be refused.
+3. Send with `await manager.sendShieldedTip(walletId:source:username:expectedRecipient:amount:memo:resolver:)`,
+   passing the review's `recipient` back unchanged. `source` is
+   `.identity(id)` to pay from an identity's own shielded account, or
+   `.account(n)` for an account by number. Rust resolves the name again and
+   refuses a recipient that changed, so the user reviews again.
+
+`shieldedSpendUnconfirmed` means the tip may have left the wallet and may still
+execute: never send it again; a shielded sync resolves it.
+`shieldedTipPending` means nothing was sent because an earlier payment to the
+recipient is unresolved (or another tip is being sent); a shielded sync
+resolves it, after which review and send again. Every other error means the tip
+was not sent.
+
+To show what an identity can tip from, call
+`await manager.shieldedIdentityBalance(walletId:identityId:)` and show its
+state instead of summing notes: `.unverified` until
+`prepareShieldedIdentityAddress` proves the identity's account in this session,
+`.unavailable(account:)` while the account's ledger is not established (not
+known, which is not zero), and `.available(account:credits:)`. The read is
+local and waits at most 100 ms; a busy `walletOperation` means keep the last
+state and read again later.
+
 ## Identity-funded shield recovery
 
 An unresolved identity-funded shield blocks another debit from the same identity
