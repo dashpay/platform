@@ -2332,6 +2332,30 @@ where
     })
 }
 
+/// [`token_pool_spend_preview`] at the protocol version a spend through `sdk`
+/// would sign at, chosen as the spend chooses it
+/// ([`token_pool_paid_signing_version`]) from the network version `sdk` last
+/// verified, with no network read: an SDK whose version is not that one is
+/// refused here as the spend refuses it
+/// ([`PlatformWalletError::ShieldedProtocolVersionMismatch`]).
+pub async fn token_pool_spend_preview_for<S>(
+    sdk: &dash_sdk::Sdk,
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    token_id: Identifier,
+    kind: TokenPoolSpendKind,
+    amount: TokenAmount,
+) -> Result<ShieldedTokenSpendPreview, PlatformWalletError>
+where
+    S: ShieldedStore + TokenPoolConnection,
+{
+    let platform_version = token_pool_paid_signing_version(
+        sdk.version(),
+        sdk.protocol_version_info().verified_version,
+    )?;
+    token_pool_spend_preview(store, id, token_id, kind, amount, platform_version).await
+}
+
 /// The anchors `token_id`'s shielded pool records, read with a proof.
 async fn fetch_token_pool_anchor_set(
     sdk: &Arc<dash_sdk::Sdk>,
@@ -10496,6 +10520,54 @@ mod token_shielded_transfer_tests {
             "got {err:?}"
         );
         assert_nothing_held(&store, 50).await;
+    }
+
+    /// The preview through an SDK refuses, as the spend does, an SDK whose
+    /// version is not the network version it last verified, and prices at the
+    /// SDK's version when they agree.
+    #[tokio::test]
+    async fn should_refuse_a_token_spend_preview_when_the_sdk_is_not_at_the_network_version() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = store_with(
+            &dir,
+            &[credit_note(1_000_000_000_000, 0)],
+            &[token_note(10, 0)],
+        )
+        .await;
+        let latest = PlatformVersion::latest();
+        let sdk_at = |verified: u32| {
+            let sdk = SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .with_version(latest)
+                .build()
+                .expect("mock sdk");
+            sdk.mock_verified_protocol_version(verified)
+                .expect("a mock SDK");
+            sdk
+        };
+        let kind = TokenPoolSpendKind::Unshield;
+
+        let skewed = sdk_at(latest.protocol_version - 1);
+        let err = token_pool_spend_preview_for(&skewed, &store, subwallet(), token_id(), kind, 5)
+            .await
+            .expect_err("the SDK is not at the network's version");
+        assert!(
+            matches!(
+                err,
+                PlatformWalletError::ShieldedProtocolVersionMismatch { sdk_version, network_version }
+                    if sdk_version == latest.protocol_version
+                        && network_version == latest.protocol_version - 1
+            ),
+            "got {err:?}"
+        );
+
+        let agreeing = sdk_at(latest.protocol_version);
+        let preview =
+            token_pool_spend_preview_for(&agreeing, &store, subwallet(), token_id(), kind, 5)
+                .await
+                .expect("a preview");
+        assert_eq!(preview.fee, kind.fee(2, 2, latest).expect("fee"));
+        assert_nothing_held(&store, 1).await;
     }
 
     /// The preview's fee and note counts are the ones the spend reserves on

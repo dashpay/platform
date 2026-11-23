@@ -17,9 +17,7 @@ use crate::error::PlatformWalletError;
 use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::manager::PlatformWalletManager;
 use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
-use crate::wallet::shielded::operations::{
-    token_pool_paid_signing_version, token_pool_spend_preview,
-};
+use crate::wallet::shielded::operations::token_pool_spend_preview_for;
 use crate::wallet::shielded::{
     NetworkShieldedCoordinator, ShieldedTokenPoolWatch, ShieldedTokenPurchaseOutcome,
     ShieldedTokenSpendOutcome, ShieldedTokenSpendPreview, SubwalletId, TokenPoolSpendKind,
@@ -182,12 +180,10 @@ impl ShieldedTokenPurchaser {
     /// What a token pool spend of `kind` moving `amount` of the token at
     /// `token_contract_position` of `data_contract_id` would take from
     /// `account`'s notes, from local state alone and reserving nothing
-    /// ([`token_pool_spend_preview`]): the fee a form shows before sending, or
-    /// the refusal the spend would meet on these notes. It prices at the
-    /// version the spend would sign at, chosen as the spend chooses it
-    /// ([`token_pool_paid_signing_version`]) from the network version the SDK
-    /// last verified, with no network read: an SDK whose version is not that
-    /// one is refused here as the spend refuses it
+    /// ([`token_pool_spend_preview_for`]): the fee a form shows before
+    /// sending, or the refusal the spend would meet on these notes. It prices
+    /// at the version the spend would sign at, and refuses an SDK whose
+    /// version is not the network's as the spend does
     /// ([`PlatformWalletError::ShieldedProtocolVersionMismatch`]).
     pub async fn preview_spend(
         &self,
@@ -197,7 +193,8 @@ impl ShieldedTokenPurchaser {
         kind: TokenPoolSpendKind,
         amount: TokenAmount,
     ) -> Result<ShieldedTokenSpendPreview, PlatformWalletError> {
-        token_pool_spend_preview(
+        token_pool_spend_preview_for(
+            self.wallet.sdk(),
             self.coordinator.store(),
             SubwalletId::new(self.wallet.wallet_id(), account),
             Identifier::from(calculate_token_id(
@@ -206,10 +203,6 @@ impl ShieldedTokenPurchaser {
             )),
             kind,
             amount,
-            token_pool_paid_signing_version(
-                self.wallet.sdk().version(),
-                self.wallet.sdk().protocol_version_info().verified_version,
-            )?,
         )
         .await
     }
