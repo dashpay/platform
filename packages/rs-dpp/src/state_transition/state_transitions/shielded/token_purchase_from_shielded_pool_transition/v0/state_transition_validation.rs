@@ -37,6 +37,9 @@ impl StateTransitionStructureValidation for TokenPurchaseFromShieldedPoolTransit
                 .into(),
             );
         }
+        // `!is_valid_token_count(c)` is exactly `c == 0 || c > MAX_DISTRIBUTION_PARAM`, the
+        // condition this check rejected before it moved into the predicate: the in-place edit
+        // of this shipped generation accepts and rejects the same transitions.
         if !Self::is_valid_token_count(self.token_count) {
             return SimpleConsensusValidationResult::new_with_error(
                 BasicError::InvalidTokenAmountError(InvalidTokenAmountError::new(
@@ -171,6 +174,30 @@ mod tests {
                 BasicError::InvalidTokenAmountError(_)
             )]
         );
+    }
+
+    /// At protocol version 14, where this generation shipped, the count rule rejects 0 and
+    /// `MAX_DISTRIBUTION_PARAM + 1` and accepts `MAX_DISTRIBUTION_PARAM`, as it did before it
+    /// moved into `is_valid_token_count`.
+    #[test]
+    fn should_bound_the_token_count_at_the_shipped_protocol_version() {
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14");
+        for token_count in [0, MAX_DISTRIBUTION_PARAM + 1] {
+            let mut t = valid();
+            t.token_count = token_count;
+            let result = t.validate_structure(platform_version);
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::InvalidTokenAmountError(_)
+                )],
+                "count {token_count}"
+            );
+        }
+        let mut t = valid();
+        t.token_count = MAX_DISTRIBUTION_PARAM;
+        let result = t.validate_structure(platform_version);
+        assert!(result.is_valid(), "{:?}", result.errors);
     }
 
     #[test]
