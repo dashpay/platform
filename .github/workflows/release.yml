@@ -44,13 +44,13 @@ jobs:
       contents: read
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Check Tenderdash seed snapshot freshness
         run: node packages/dashmate/scripts/generate-tenderdash-seeds.js --check
 
       - name: Check package version matches tag
-        uses: geritol/match-tag-to-package-version@0.2.0
+        uses: geritol/match-tag-to-package-version@dd6acafe4382a73f4282687d5ee384b238ea1df7 # 0.2.0
         if: github.event_name == 'release'
         env:
           TAG_PREFIX: v
@@ -76,12 +76,12 @@ jobs:
       # attempt token auth instead of the trusted-publishing OIDC exchange.
       # npm's default registry is already registry.npmjs.org.
       - name: Setup Node.JS
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24.14.1'
 
       - name: Download built package artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: js-build-${{ github.sha }}
           path: release-artifacts
@@ -136,7 +136,7 @@ jobs:
           NODE
 
       - name: Set suffix
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         id: suffix
         with:
           result-encoding: string
@@ -151,7 +151,7 @@ jobs:
             }
 
       - name: Set NPM release tag
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         id: tag
         with:
           result-encoding: string
@@ -335,13 +335,13 @@ jobs:
             os: macos-15
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Download JS build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: js-build-${{ github.sha }}
           # The mixed JS/NPM artifact is rooted at the repository, since its
@@ -355,7 +355,7 @@ jobs:
 
       - name: Set up Docker for macOS
         if: runner.os == 'macOS'
-        uses: docker-practice/actions-setup-docker@master
+        uses: docker-practice/actions-setup-docker@509de4a162d8fd24b2721a9fb3721131a6a4776b # master
 
       - name: Install Linux build deps
         if: runner.os == 'Linux'
@@ -387,7 +387,7 @@ jobs:
       # Under another name, so the release job does not sign them.
       - name: Keep rejected macOS packages for inspection
         if: failure() && steps.check_macos_packages.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dashmate-macos-rejected-${{ github.sha }}
           path: packages/dashmate/dist/**
@@ -396,7 +396,7 @@ jobs:
       # Overwritten when a published release's packages are rebuilt by re-running
       # this job; the artifact of the earlier attempt has the same name.
       - name: Upload Dashmate packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dashmate-${{ matrix.package_type }}-${{ github.sha }}
           path: packages/dashmate/dist/**
@@ -438,14 +438,14 @@ jobs:
       # cleans the workspace, so it comes before the download.
       - name: Check out the signing action
         if: runner.os == 'macOS'
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
           sparse-checkout: /.github/actions/macos-sign-notarize/
           sparse-checkout-cone-mode: false
 
       - name: Download Dashmate packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: dashmate-${{ matrix.package_type }}-${{ github.sha }}
           path: release-artifacts
@@ -465,7 +465,7 @@ jobs:
           notary_api_issuer_id: ${{ secrets.MACOS_NOTARY_API_ISSUER_ID }}
 
       - name: Upload artifacts to release
-        uses: softprops/action-gh-release@v0.1.15
+        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v0.1.15
         if: github.event_name == 'release'
         with:
           files: release-artifacts/**

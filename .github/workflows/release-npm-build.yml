@@ -41,14 +41,14 @@ jobs:
             *) echo '::error::NPM release runners accept only release tags or protected-branch dispatches'; exit 1 ;;
           esac
 
-      - uses: softwareforgood/check-artifact-v4-existence@v0
+      - uses: softwareforgood/check-artifact-v4-existence@aa38f28173867521c7f5a7d26285f2c2d9a014bd # v0
         id: check-artifact
         with:
           name: js-build-${{ github.sha }}
 
       # The entire runner, including HOME and Git state, is new for this job.
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
@@ -68,7 +68,7 @@ jobs:
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Upload the archive of built files
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: js-build-${{ github.sha }}
           path: |

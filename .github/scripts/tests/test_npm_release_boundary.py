@@ -78,11 +78,13 @@ class ReleaseBoundaryTests(unittest.TestCase):
         cache_input = node.split('  cache:\n', 1)[1].split('  node-version:', 1)[0]
         self.assertIn('default: "true"', cache_input)
         self.assertIn("if: inputs.cache == 'true'", node)
-        self.assertIn('uses: actions/cache@v5', node)
+        self.assertIn('uses: actions/cache@', node)
         npm = (ROOT / '.github/actions/npm-release-build/action.yaml').read_text()
         self.assertIn("cache: ${{ env.DASH_RELEASE_RUNNER != '1' }}", npm)
         kotlin = (ROOT / '.github/workflows/release-kotlin-sdk.yml').read_text()
-        for gradle in kotlin.split('uses: gradle/actions/setup-gradle@v4')[1:]:
+        gradle_steps = kotlin.split('uses: gradle/actions/setup-gradle@')[1:]
+        self.assertEqual(len(gradle_steps), 2)
+        for gradle in gradle_steps:
             self.assertIn('cache-disabled: true', gradle.split('\n      - ', 1)[0])
         # The ordinary image-validation workflow retains its own cache name
         # and does not opt into the release runtime marker.

@@ -60,7 +60,7 @@ runs:
         cache: ${{ env.DASH_RELEASE_RUNNER != '1' }}
 
     - name: Install Cargo binstall
-      uses: cargo-bins/cargo-binstall@v1.3.1
+      uses: cargo-bins/cargo-binstall@82e5fc4781666bf57476d025f1b6e7a5719da4c9 # v1.3.1
 
     # Always reinstalled, never trusted from an earlier job: a binary left on
     # this persistent runner can print the pinned version and still be
