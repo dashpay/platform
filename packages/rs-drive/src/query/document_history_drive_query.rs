@@ -10,7 +10,9 @@ use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::verify::RootHash;
-use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
+use dpp::data_contract::document_type::{
+    DecodedValueBudget, DocumentPropertyType, DocumentTypeRef,
+};
 use dpp::document::lifecycle::DocumentLifecycleRecord;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
@@ -118,6 +120,93 @@ pub struct DocumentHistoryDriveQueryExecutionResult {
     pub lifecycle: Option<DocumentHistoryLifecycle>,
 }
 
+/// One retained edit with its document body left in serialized bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SerializedDocumentHistoryEntry {
+    /// Block timestamp in milliseconds.
+    pub time_ms: u64,
+    /// History sequence, equal to the document revision when present.
+    pub revision: u64,
+    /// Serialized document bytes at this revision.
+    pub document_bytes: Vec<u8>,
+}
+
+/// The result of a serialized history query: raw revision bytes validated by their
+/// headers plus the lifecycle of the whole history.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SerializedDocumentHistoryDriveQueryExecutionResult {
+    /// Ordered retained revisions in this page, kept serialized.
+    pub entries: Vec<SerializedDocumentHistoryEntry>,
+    /// Metadata for the whole history. Drive always returns it, including empty pages.
+    pub lifecycle: Option<DocumentHistoryLifecycle>,
+}
+
+impl SerializedDocumentHistoryDriveQueryExecutionResult {
+    /// Materializes each header-validated revision entry into a [`Document`], enforcing
+    /// `budget` across the entire page.
+    pub fn into_documents(
+        self,
+        document_id: &[u8; 32],
+        document_type: DocumentTypeRef,
+        budget: &mut DecodedValueBudget,
+        platform_version: &PlatformVersion,
+    ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
+        self.into_documents_inner(document_id, document_type, Some(budget), platform_version)
+    }
+
+    #[cfg(any(feature = "server", test))]
+    pub(crate) fn into_documents_unbounded(
+        self,
+        document_id: &[u8; 32],
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
+        self.into_documents_inner(document_id, document_type, None, platform_version)
+    }
+
+    fn into_documents_inner(
+        self,
+        document_id: &[u8; 32],
+        document_type: DocumentTypeRef,
+        mut budget: Option<&mut DecodedValueBudget>,
+        platform_version: &PlatformVersion,
+    ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
+        let entries = self
+            .entries
+            .into_iter()
+            .map(|entry| {
+                let document = match budget.as_deref_mut() {
+                    Some(budget) => Document::from_bytes_with_budget(
+                        &entry.document_bytes,
+                        document_type,
+                        budget,
+                        platform_version,
+                    )?,
+                    None => Document::from_bytes(
+                        &entry.document_bytes,
+                        document_type,
+                        platform_version,
+                    )?,
+                };
+                if document.id().as_slice() != document_id
+                    || document.revision().unwrap_or(1) != entry.revision
+                {
+                    return Err(corrupt("history revision does not match its key"));
+                }
+                Ok(DocumentHistoryEntry {
+                    time_ms: entry.time_ms,
+                    revision: entry.revision,
+                    document,
+                })
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        Ok(DocumentHistoryDriveQueryExecutionResult {
+            entries,
+            lifecycle: self.lifecycle,
+        })
+    }
+}
+
 pub(crate) fn invalid(message: &str) -> Error {
     Error::Query(QuerySyntaxError::Unsupported(message.to_owned()))
 }
@@ -207,12 +296,12 @@ impl DocumentHistoryDriveQuery {
         )?)
     }
 
-    pub(crate) fn decode_result(
+    pub(crate) fn decode_result_serialized(
         &self,
         rows: Vec<grovedb::query_result_type::PathKeyOptionalElementTrio>,
         document_type: DocumentTypeRef,
         version: &PlatformVersion,
-    ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
+    ) -> Result<SerializedDocumentHistoryDriveQueryExecutionResult, Error> {
         let mut entry_path =
             contract_document_type_path_vec(&self.contract_id, &self.document_type_name);
         entry_path.push(vec![DOCUMENT_HISTORY_TREE_KEY]);
@@ -252,7 +341,7 @@ impl DocumentHistoryDriveQuery {
         } else if entries.len() as u64 > maximum {
             return Err(corrupt("history page exceeds its limit or revision count"));
         }
-        let entries = self.decode_entries(entries, document_type, version)?;
+        let entries = self.decode_entries_serialized(entries, document_type, version)?;
         if let Some(record) = record {
             if entries.iter().any(|entry| {
                 entry.time_ms > record.deleted_at_ms() || entry.revision > record.latest_revision()
@@ -262,10 +351,27 @@ impl DocumentHistoryDriveQuery {
                 ));
             }
         }
-        Ok(DocumentHistoryDriveQueryExecutionResult {
+        Ok(SerializedDocumentHistoryDriveQueryExecutionResult {
             entries,
             lifecycle: Some(lifecycle),
         })
+    }
+
+    #[cfg(any(feature = "server", test))]
+    pub(crate) fn decode_result(
+        &self,
+        rows: Vec<grovedb::query_result_type::PathKeyOptionalElementTrio>,
+        document_type: DocumentTypeRef,
+        budget: Option<&mut DecodedValueBudget>,
+        version: &PlatformVersion,
+    ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
+        let serialized = self.decode_result_serialized(rows, document_type, version)?;
+        match budget {
+            Some(budget) => {
+                serialized.into_documents(&self.document_id, document_type, budget, version)
+            }
+            None => serialized.into_documents_unbounded(&self.document_id, document_type, version),
+        }
     }
 
     pub(crate) fn lifecycle(
@@ -312,13 +418,14 @@ impl DocumentHistoryDriveQuery {
                         ))
                     }
                 };
-                let document = Document::from_bytes(&bytes, document_type, version)?;
-                if document.id().as_slice() != self.document_id {
+                let (document_id, revision) =
+                    Document::id_and_revision_from_bytes(&bytes, document_type, version)?;
+                if document_id.as_slice() != self.document_id {
                     return Err(corrupt(
                         "history current document id does not match the query",
                     ));
                 }
-                latest_revision = Some(document.revision().unwrap_or(1));
+                latest_revision = Some(revision.unwrap_or(1));
                 if active {
                     return Err(corrupt("duplicate history current pointer"));
                 }
@@ -413,12 +520,12 @@ impl DocumentHistoryDriveQuery {
         ))
     }
 
-    pub(crate) fn decode_entries(
+    pub(crate) fn decode_entries_serialized(
         &self,
         entries: Vec<(Vec<u8>, Element)>,
         document_type: DocumentTypeRef,
         version: &PlatformVersion,
-    ) -> Result<Vec<DocumentHistoryEntry>, Error> {
+    ) -> Result<Vec<SerializedDocumentHistoryEntry>, Error> {
         entries
             .into_iter()
             .enumerate()
@@ -440,9 +547,10 @@ impl DocumentHistoryDriveQuery {
                 let Element::Item(bytes, _) = element else {
                     return Err(corrupt("history revision is not a plain item"));
                 };
-                let document = Document::from_bytes(&bytes, document_type, version)?;
-                if document.id().as_slice() != self.document_id
-                    || document.revision().unwrap_or(1) != revision
+                let (document_id, header_revision) =
+                    Document::id_and_revision_from_bytes(&bytes, document_type, version)?;
+                if document_id.as_slice() != self.document_id
+                    || header_revision.unwrap_or(1) != revision
                 {
                     return Err(corrupt("history revision does not match its key"));
                 }
@@ -455,10 +563,10 @@ impl DocumentHistoryDriveQuery {
                         ));
                     }
                 }
-                Ok(DocumentHistoryEntry {
+                Ok(SerializedDocumentHistoryEntry {
                     time_ms,
                     revision,
-                    document,
+                    document_bytes: bytes,
                 })
             })
             .collect()

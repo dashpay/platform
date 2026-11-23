@@ -311,6 +311,22 @@ struct SwiftExampleAppApp: App {
                     + error.localizedDescription
             )
         }
+
+        // Read Max transfers (wallet drains) a process death interrupted, so
+        // the wallet screen lists them. A separate task: reconcile cannot
+        // throw, and a slow status read must not hold up the steps above.
+        // Resuming stays user-initiated from the wallet screen, because it
+        // needs the Keychain mnemonic and a ~30 s proof.
+        let drainManager = walletManager
+        let drainNetworkRaw = platformState.currentNetwork.rawValue
+        let drainWalletIds = Array(walletManager.wallets.keys)
+        Task {
+            await drainManager.walletDrainCoordinator.reconcile(
+                walletManager: drainManager,
+                networkRaw: drainNetworkRaw,
+                walletIds: drainWalletIds
+            )
+        }
     }
 
     /// Auto-start Core SPV sync for the launch network. The gate matrix

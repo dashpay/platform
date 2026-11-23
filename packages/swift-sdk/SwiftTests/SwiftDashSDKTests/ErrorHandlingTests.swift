@@ -604,6 +604,22 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// A balance history read that could not reach consistent heights keeps
+    /// its own code and typed case, not the unknown error.
+    func testShouldReportInconsistentBalanceHistoryHeightsByTheirOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_BALANCE_HISTORY_INCONSISTENT_HEIGHTS
+        )
+        XCTAssertEqual(code, .errorBalanceHistoryInconsistentHeights)
+        XCTAssertEqual(code.rawValue, 83)
+        let detail = "all 3 attempts to read a page were below the required height 12"
+        guard case .balanceHistoryInconsistentHeights(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed balance history height error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     func testShouldReadEveryFieldOfThePrivateContactReadiness() {
         var ffi = PrivateContactReadinessFFI()
         ffi.private_payments_restored = false

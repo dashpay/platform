@@ -220,7 +220,7 @@ fn note_parts_to(
 /// A note nobody owns at tree position `pos`: an empty ciphertext never
 /// decrypts or OVK-recovers, and a distinct small commitment is a valid
 /// Pallas element the tree can append.
-fn opaque_note(pos: u64) -> ShieldedEncryptedNote {
+pub(super) fn opaque_note(pos: u64) -> ShieldedEncryptedNote {
     let mut cmx = [0u8; 32];
     cmx[0] = pos as u8;
     cmx[1] = (pos >> 8) as u8;

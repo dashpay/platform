@@ -146,6 +146,43 @@ class DecisionProposals internal constructor(private val sdk: Sdk) {
             )
         }
     }
+
+    /**
+     * Vote on [proposalId] for a masternode with [voter], the signer of its stored voting key,
+     * and wait for the response: the vote of the `votingPrivateKey` overload, for a key the
+     * app stores ([org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore]). Kotlin
+     * counterpart of the signer form of `SDK.castDecisionProposalVote` in Swift's
+     * `SDK+DecisionProposals.swift`.
+     *
+     * Call it inside `PlatformWalletManager.withStoredMasternodeVotingKey`, which supplies
+     * [voter]. Rust builds the ECDSA_HASH160 voting key from the voter's voting address and
+     * asks the signer to sign with it. The voter's signer and the SDK both stay alive until
+     * the call returns.
+     *
+     * @param proTxHash 32-byte pro_tx_hash in wire order, as for the `votingPrivateKey`
+     *   overload.
+     * @param voter the signer of the masternode's stored voting key.
+     * @throws IllegalStateException when [voter] is used after its call ended.
+     */
+    suspend fun castVote(
+        proposalId: String,
+        choice: YesNoAbstainVoteChoice,
+        proTxHash: ByteArray,
+        voter: MasternodeVotingSigner,
+    ): Unit = voter.withSignerHandle { signerHandle ->
+        sdk.queryGate.op {
+            mapNativeErrors {
+                DecisionProposalsNative.castVoteWithSigner(
+                    sdk.handle,
+                    proposalId,
+                    choice.discriminant,
+                    proTxHash,
+                    voter.votingAddress,
+                    signerHandle,
+                )
+            }
+        }
+    }
 }
 
 /**

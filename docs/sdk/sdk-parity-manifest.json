@@ -6,6 +6,7 @@
     "asset_lock_funding_indices",
     "asset_lock_operation_ids",
     "atomic_changesets",
+    "dpns_name_states",
     "invitations",
     "pending_contact_crypto",
     "private_contact_request_scan_state",
@@ -27,10 +28,27 @@
     "core_wallet_tx_builder_change_to_first_input": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
     "core_wallet_tx_builder_finalize": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
     "core_wallet_tx_builder_preserve_output_order": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
+    "dash_sdk_contested_resource_cast_vote_with_signer": "packages/rs-sdk-ffi/src/contested_resource/transitions/cast_vote.rs",
+    "dash_sdk_contract_get_fee_pots": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_action_counts": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_document_removals": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_document_removals_by_ids": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_entries": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_status": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_team_action_signers": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+    "dash_sdk_contract_moderation_get_team_actions": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
     "dash_sdk_create_adaptive": "packages/rs-sdk-ffi/src/sdk.rs",
+    "dash_sdk_decision_proposal_cast_vote_with_signer": "packages/rs-sdk-ffi/src/decision_proposal/transitions.rs",
     "dash_sdk_get_context_provider_source": "packages/rs-sdk-ffi/src/sdk.rs",
+    "dash_sdk_masternode_voting_address_from_private_key": "packages/rs-sdk-ffi/src/voting/masternode_vote.rs",
+    "dash_sdk_multiple_choice_proposal_cast_vote_with_signer": "packages/rs-sdk-ffi/src/decision_proposal/multiple_choice/mod.rs",
+    "dash_sdk_private_key_bytes_from_text": "packages/rs-sdk-ffi/src/crypto/mod.rs",
     "dash_sdk_set_context_provider_mode": "packages/rs-sdk-ffi/src/sdk.rs",
     "dash_sdk_sign_async_completion": "packages/rs-sdk-ffi/src/signer.rs",
+    "dash_sdk_system_get_blocks": "packages/rs-sdk-ffi/src/system/queries/blocks.rs",
+    "dash_sdk_system_get_owner_transactions_in_block": "packages/rs-sdk-ffi/src/system/queries/blocks.rs",
+    "dash_sdk_system_get_recent_state_transition_status": "packages/rs-sdk-ffi/src/system/queries/transition_status.rs",
+    "dash_sdk_system_get_state_transition_status_by_hash": "packages/rs-sdk-ffi/src/system/queries/transition_status.rs",
     "dpns_name_array_free": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "managed_identity_get_contested_dpns_names": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "managed_identity_get_dashpay_payments": "packages/rs-platform-wallet-ffi/src/dashpay_payment.rs",
@@ -46,14 +64,19 @@
     "on_persist_private_contact_scan_state_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_persist_shielded_viewing_keys_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "platform_address_wallet_addresses_with_balances": "packages/rs-platform-wallet-ffi/src/platform_addresses/wallet.rs",
+    "platform_address_wallet_balance_history": "packages/rs-platform-wallet-ffi/src/platform_addresses/balance_history.rs",
     "platform_wallet_claim_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
     "platform_wallet_create_document_with_signer": "packages/rs-platform-wallet-ffi/src/document.rs",
     "platform_wallet_create_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
+    "platform_wallet_dpns_give_up_name": "packages/rs-platform-wallet-ffi/src/dpns_marketplace.rs",
+    "platform_wallet_dpns_name_give_up_choices": "packages/rs-platform-wallet-ffi/src/dpns_marketplace.rs",
     "platform_wallet_drain_pending_contact_crypto": "packages/rs-platform-wallet-ffi/src/dashpay.rs",
     "platform_wallet_get_private_contact_readiness": "packages/rs-platform-wallet-ffi/src/contact_request.rs",
     "platform_wallet_get_private_pair_held": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_get_private_payments_restore_failure": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_get_public_contact_request_unconfirmed": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
+    "platform_wallet_identity_withdrawals": "packages/rs-platform-wallet-ffi/src/identity_withdrawals.rs",
+    "platform_wallet_identity_withdrawals_free": "packages/rs-platform-wallet-ffi/src/identity_withdrawals.rs",
     "platform_wallet_manager_accept_contact_request_replying_in_kind": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_manager_accept_private_contact_request": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_manager_create_with_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
@@ -65,7 +88,11 @@
     "platform_wallet_manager_shielded_wallet_drain_status": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
     "platform_wallet_manager_spv_rescan_filters": "packages/rs-platform-wallet-ffi/src/spv.rs",
     "platform_wallet_manager_sync_fault_detected": "packages/rs-platform-wallet-ffi/src/manager.rs",
+    "platform_wallet_preview_data_contract_update": "packages/rs-platform-wallet-ffi/src/data_contract.rs",
+    "platform_wallet_private_document_read_free": "packages/rs-platform-wallet-ffi/src/private_documents.rs",
+    "platform_wallet_read_private_document_entries": "packages/rs-platform-wallet-ffi/src/private_documents.rs",
     "platform_wallet_resume_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
+    "platform_wallet_split_contract_update_source": "packages/rs-platform-wallet-ffi/src/data_contract.rs",
     "platform_wallet_sync_contested_dpns_names": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "platform_wallet_sync_private_contact_requests": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_token_purchase": "packages/rs-platform-wallet-ffi/src/tokens/purchase.rs",
@@ -75,7 +102,9 @@
     "platform_wallet_topup_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
     "platform_wallet_tracked_asset_locks_free": "packages/rs-platform-wallet-ffi/src/manager_diagnostics.rs",
     "platform_wallet_tracked_asset_locks_list": "packages/rs-platform-wallet-ffi/src/manager_diagnostics.rs",
-    "restore_provider_special_txs": "packages/rs-platform-wallet-ffi/src/persistence.rs"
+    "restore_provider_special_txs": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+    "platform_wallet_manager_shielded_token_purchase_from_pool": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+    "platform_wallet_manager_shielded_token_purchase_availability": "packages/rs-platform-wallet-ffi/src/shielded_send.rs"
   },
   "capabilities": [
     {
@@ -1274,6 +1303,80 @@
       ]
     },
     {
+      "id": "dpns.give_up_name",
+      "title": "Delete or tombstone a DPNS name the identity holds (protocol version 15)",
+      "area": "shared_policy",
+      "shared_apis": [
+        "platform_wallet_dpns_name_give_up_choices",
+        "platform_wallet_dpns_give_up_name"
+      ],
+      "required_persistence_capabilities": [
+        "dpns_name_states"
+      ],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "GiveUpNameView offers only the ways Rust reports (a contested name: tombstone only), refuses below protocol version 15 from the SDK's typed refusal, and drops the name through the persister after the network confirms it. The TEST_PLAN gates DPNS-09..13 are written but not yet run on a simulator or device. Restart is required and not yet met: the hold on a give-up that was sent but not confirmed is session-scoped, so after a process restart such a give-up is offered again until the name is seen gone."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI binding in rs-unified-sdk-jni and no Kotlin wrapper or KotlinExampleApp screen for platform_wallet_dpns_name_give_up_choices / platform_wallet_dpns_give_up_name yet."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/dpns_marketplace/tests/give_up.rs",
+          "id": "should_refuse_to_give_up_a_name_on_a_network_below_protocol_version_15",
+          "command": "cargo test -p platform-wallet --lib give_up",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/dpns_marketplace/tests/give_up.rs",
+          "id": "should_offer_only_a_tombstone_for_a_contested_name",
+          "command": "cargo test -p platform-wallet --lib give_up",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/dpns_marketplace.rs",
+          "id": "should_refuse_an_unknown_give_up_method_before_touching_the_wallet",
+          "command": "cargo test -p platform-wallet-ffi --lib dpns",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/DpnsMarketplaceDecodingTests.swift",
+          "id": "testUnknownOrInconsistentGivenUpResultsFailClosed",
+          "command": "swift test --package-path packages/swift-sdk --filter DpnsMarketplaceDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DPNS-09",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DPNS-13",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
       "id": "persistence.sync_fault_latch",
       "title": "Watermark-freeze sync fault latch is host-visible",
       "area": "recovery",
@@ -1636,6 +1739,129 @@
       ]
     },
     {
+      "id": "contracts.update_preview",
+      "title": "Data contract update is reviewed through the wallet's preview before it is broadcast",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_preview_data_contract_update",
+        "platform_wallet_split_contract_update_source"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "UpdateContractView (Contracts -> contract -> Update Contract) calls previewDataContractUpdate and offers the update only when the preview reports a change, but the flow has not been driven on a device or simulator yet: TEST_PLAN DC-04 is the manual gate still to run."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "Kotlin's UpdateContractScreen broadcasts without a preview, and the JNI bridge (rs-unified-sdk-jni) does not expose platform_wallet_preview_data_contract_update or platform_wallet_split_contract_update_source."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/DataContractUpdatePreviewDecodingTests.swift",
+          "id": "testShouldDecodeAPreviewWithEveryField",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/DataContractUpdatePreviewDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DC-04",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "documents.private_document_entries_read",
+      "title": "Read the entries of any private document type a wallet's identities can open (protocol version 15)",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_read_private_document_entries",
+        "platform_wallet_private_document_read_free"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "PrivateDocuments.swift wraps the read (ManagedPlatformWallet.readPrivateDocumentEntries: proved store pages scanned with keys derived inside the Keychain mnemonic resolver, each opened payload decoded and checked against the type's schema in Rust, the sender reported as an unverified claim) and PersistentDocumentType.isPrivate / privateEntrySize read the keyword off the stored schema. The example app badges a private type, leaves it out of the ordinary document create and query pickers, and reads its entries page budget by page budget from the type's detail screen (TEST_PLAN DOC-17), handing back the cursor Rust returned (the position, the largest store size proved and the key set read with, so a node behind does not end the reading early and changed keys restart it), holding the entries in view state: the read keeps nothing, so there is nothing to resume after a restart. The Rust read and the FFI marshalling are unit-tested; no gate records the Swift call or the screen against a protocol version 15 network holding a private type. Keys the wallet does not derive at their identity key slot, such as DashPay Connect application keys, are reported as not scanned rather than scanned. Appending an entry of an arbitrary private type has no wallet entry point yet: only DashPay private contact requests append entries."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "Not ported: no JNI binding for platform_wallet_read_private_document_entries, and the example app neither marks a private document type nor reads its entries."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/private_documents.rs",
+          "id": "should_read_the_entries_a_wallet_s_identity_received_and_sent",
+          "command": "cargo test -p platform-wallet --lib should_read_the_entries_a_wallet_s_identity_received_and_sent",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/private_documents.rs",
+          "id": "should_read_on_from_the_cursor_a_bounded_read_stopped_at",
+          "command": "cargo test -p platform-wallet --lib should_read_on_from_the_cursor_a_bounded_read_stopped_at",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/private_documents.rs",
+          "id": "should_keep_a_read_incomplete_below_a_store_size_an_earlier_read_proved",
+          "command": "cargo test -p platform-wallet --lib should_keep_a_read_incomplete_below_a_store_size_an_earlier_read_proved",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/private_documents.rs",
+          "id": "should_read_a_payload_written_under_a_newer_version_of_the_type",
+          "command": "cargo test -p platform-wallet --lib should_read_a_payload_written_under_a_newer_version_of_the_type",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/private_documents.rs",
+          "id": "should_list_a_key_its_identity_key_slot_does_not_derive_as_unscanned",
+          "command": "cargo test -p platform-wallet --lib should_list_a_key_its_identity_key_slot_does_not_derive_as_unscanned",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/private_documents.rs",
+          "id": "should_marshal_received_sent_and_refused_entries_and_free_them",
+          "command": "cargo test -p platform-wallet-ffi --lib should_marshal_received_sent_and_refused_entries_and_free_them",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/DocumentTypePrivateTests.swift",
+          "id": "testShouldReadAPrivateTypesEntrySizeThroughTheParser",
+          "command": "swift test --package-path packages/swift-sdk --filter DocumentTypePrivateTests",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
       "id": "tokens.max_supply_proposal_discovery",
       "title": "Pending max-supply group proposals are discoverable",
       "area": "example_app",
@@ -1917,9 +2143,9 @@
       "hosts": {
         "swift": {
           "sdk": "supported",
-          "example_app": "unsupported",
+          "example_app": "partial",
           "restart": "tested",
-          "reason": "Swift exposes preview, execution, and status with durable operation UUIDs. Restart recovery resumes the exact asset-lock outpoint: a fresh Type18 that Platform executes, or that Platform rejects because the outpoint was already consumed by an earlier attempt, durably completes the operation. Unit tests cover store reopen, failed persistence and the terminal DrainCompleted rule. An iOS wallet testnet process-death test confirmed recovery after dispatch and enabled a subsequent Max transfer. SwiftExampleApp does not yet expose this flow."
+          "reason": "Swift exposes preview, execution, and status with durable operation UUIDs. Restart recovery resumes the exact asset-lock outpoint: a fresh Type18 that Platform executes, or that Platform rejects because the outpoint was already consumed by an earlier attempt, durably completes the operation. Unit tests cover store reopen, failed persistence and the terminal DrainCompleted rule. An iOS wallet testnet process-death test confirmed recovery after dispatch and enabled a subsequent Max transfer. SwiftExampleApp exposes the flow (TEST_PLAN SH-18 to SH-20): a Max toggle on the Core to shielded screen shows the preview and runs the drain, the operation UUID is written to a file before the call, the status is read at launch, and an unfinished transfer is listed on the wallet screen and resumed from the exact asset-lock outpoint its status names. Max in the app is shield-to-self only. The app is partial because only its unit tests have run (marker store reopen, the rule for forgetting a marker, the resume-list filter): the funded testnet run and the process-death run of SH-19 have not been executed in SwiftExampleApp, and the CoinJoin drain is not exposed there."
         },
         "kotlin": {
           "sdk": "unsupported",
@@ -1944,6 +2170,14 @@
           "id": "testOperationIdSurvivesConsumptionAndStoreReopen",
           "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -sdk iphonesimulator -destination \"platform=iOS Simulator,name=iPhone 17\" ARCHS=arm64 -only-testing:SwiftDashSDKTests/AssetLockOperationPersistenceTests",
           "covers_restart": true
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/WalletDrainRecoveryTests.swift",
+          "id": "testShouldReadARecordBackFromANewStoreOnTheSameDirectory",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SwiftExampleAppTests/WalletDrainRecoveryTests",
+          "covers_restart": false
         },
         {
           "host": "shared",
@@ -2050,6 +2284,640 @@
           "kind": "manual",
           "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "SYS-09",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "contracts.moderation_reads",
+      "title": "Contract moderation and fee pot reads (protocol version 14)",
+      "area": "example_app",
+      "shared_apis": [
+        "dash_sdk_contract_get_fee_pots",
+        "dash_sdk_contract_moderation_get_action_counts",
+        "dash_sdk_contract_moderation_get_document_removals",
+        "dash_sdk_contract_moderation_get_document_removals_by_ids",
+        "dash_sdk_contract_moderation_get_entries",
+        "dash_sdk_contract_moderation_get_status",
+        "dash_sdk_contract_moderation_get_team_action_signers",
+        "dash_sdk_contract_moderation_get_team_actions"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "supported",
+          "restart": "not_applicable",
+          "reason": null
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI bridge, Kotlin wrapper or KotlinExampleApp screen yet for the contract moderation and fee pot reads. Port from packages/swift-sdk/Sources/SwiftDashSDK/ContractModeration and the SwiftExampleApp Views/ContractModeration screens, reusing their contractModeration.* accessibility identifiers as testTags; the list and team action status arguments are the bytes 0 banlist, 1 suspensions, 2 warnings and 0 active, 1 closed."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
+          "id": "should_refuse_a_null_handle_or_a_missing_or_malformed_id_before_any_request",
+          "command": "cargo test -p rs-sdk-ffi --lib contract_moderation",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk-ffi/src/contract_moderation/json.rs",
+          "id": "should_write_removals_with_their_kept_fields_and_cursor",
+          "command": "cargo test -p rs-sdk-ffi --lib contract_moderation",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ContractModerationDecodingTests.swift",
+          "id": "testShouldDecodeRemovalsWithKeptFieldsRestorationAndCursor",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ContractModerationDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DC-06",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "system.block_and_transition_status_reads",
+      "title": "Read blocks with their state transitions, an identity's transitions in a block, and a transition's status by hash (protocol version 15)",
+      "area": "example_app",
+      "shared_apis": [
+        "dash_sdk_system_get_blocks",
+        "dash_sdk_system_get_owner_transactions_in_block",
+        "dash_sdk_system_get_recent_state_transition_status",
+        "dash_sdk_system_get_state_transition_status_by_hash"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "SDK.getBlocks, getOwnerTransactionsInBlock, getRecentStateTransitionStatus and getStateTransitionStatusByHash decode the FFI's JSON one to one, with the proved flag Rust sets. The example app reaches them from the Platform Queries catalog and from two views, the Block Explorer (blocks, a block's transitions, an identity's transitions in it) and the Transition Status Checker (proved in a block, otherwise the node's unproved word), but no gate has run them against a protocol version 15 network yet: TEST_PLAN SYS-09..12 are the manual gates still to run. No write result screen links to the status checker, since none has the transition hash at hand. The reads keep nothing, so there is nothing to resume after a restart."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "Not ported: rs-unified-sdk-jni binds none of dash_sdk_system_get_blocks, dash_sdk_system_get_owner_transactions_in_block, dash_sdk_system_get_recent_state_transition_status or dash_sdk_system_get_state_transition_status_by_hash, and KotlinExampleApp has no block or transition status screen."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk/src/platform/transition/status_by_hash.rs",
+          "id": "should_prove_a_transition_the_named_block_holds",
+          "command": "cargo test -p dash-sdk --lib status_by_hash",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk/src/platform/transition/status_by_hash.rs",
+          "id": "should_refute_a_committed_claim_the_proved_block_does_not_hold",
+          "command": "cargo test -p dash-sdk --lib status_by_hash",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk-ffi/src/system/queries/blocks.rs",
+          "id": "should_write_a_block_with_its_transactions",
+          "command": "cargo test -p rs-sdk-ffi --lib system::queries::blocks",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk-ffi/src/system/queries/blocks.rs",
+          "id": "should_refuse_a_missing_or_malformed_owner_id_before_asking_the_network",
+          "command": "cargo test -p rs-sdk-ffi --lib system::queries::blocks",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk-ffi/src/system/queries/transition_status.rs",
+          "id": "should_write_only_a_transition_found_in_its_block_as_proved",
+          "command": "cargo test -p rs-sdk-ffi --lib system::queries::transition_status",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk-ffi/src/system/queries/transition_status.rs",
+          "id": "should_write_a_node_view_as_unproved",
+          "command": "cargo test -p rs-sdk-ffi --lib system::queries::transition_status",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/PlatformBlocksDecodingTests.swift",
+          "id": "testShouldDecodeEveryStatusByHash",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SwiftDashSDKTests/PlatformBlocksDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/PlatformBlocksDecodingTests.swift",
+          "id": "testShouldDecodeBlocksWithTheirTransactions",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SwiftDashSDKTests/PlatformBlocksDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "SYS-09",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "SYS-10",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "SYS-11",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "SYS-12",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "voting.masternode_vote_stored_key",
+      "title": "Cast masternode votes signed with a stored voting key, with raw keys only in debug builds",
+      "area": "example_app",
+      "shared_apis": [
+        "dash_sdk_contested_resource_cast_vote_with_signer",
+        "dash_sdk_decision_proposal_cast_vote_with_signer",
+        "dash_sdk_multiple_choice_proposal_cast_vote_with_signer"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "KeychainSigner.withStoredMasternodeVotingKey makes an identity's stored voting key signable under its voting address for one call, unit-tested. The DPNS contest, decision proposal and multiple choice proposal vote sheets pick a loaded masternode or evonode identity on the current network (MasternodeVoterSection.swift) and cast through the signer forms; typed credentials (pro_tx_hash and raw voting key) are compiled only under #if DEBUG, and a typed pro_tx_hash without a key reads any masternode's answer in every build (TEST_PLAN VOTE-01, VOTE-08, VOTE-09). No gate recorded here casts a vote with a stored key against a network holding a registered masternode. The vote itself is one call, and the key is read from the Keychain at vote time, so there is nothing to resume."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "VoteCasting.castVote, DecisionProposals.castVote and MultipleChoiceProposals.castVote have overloads that take a MasternodeVotingSigner; no public vote takes a bare signer handle. MasternodeVotingKeyStore keeps each identity's voting key in its own WalletStorage entry (mnvoting.<identityIdHex>.<votingAddressHex>), never shared with a wallet's identity keys, and refuses any other name. PlatformWalletManager.withStoredMasternodeVotingKey (port of the per-vote KeychainSigner of MasternodeVoterSection.swift and of KeychainSigner.withStoredMasternodeVotingKey) refuses an identifier that no identity row names or whose key is not readable, and otherwise builds a KeystoreSigner for that one call bound to exactly the voting address with key type ECDSA_HASH160, which reads that entry and refuses every other key (wallet keys and platform addresses included), holding the manager's teardown gate; the manager's own signer never can, so a vote does not change what a concurrent wallet operation signs with, and the vote's signer is freed after votes in flight return. The identifier format, the refusal of bare addresses and the absent-key paths are unit-tested; an instrumented test signs a payload with the stored key through the vote's own signer, matches Rust's signature of the fixture key, shows the vote's signer refuses a wallet key present in the same storage, and shows the manager's signer cannot sign for the address during or after the vote. The JNI marshalling is exercised only by instrumented tests. The example app's three vote dialogs pick a loaded masternode or evonode identity with a stored voting key on the current network (MasternodeVoterSection.kt) and cast inside withStoredMasternodeVotingKey; typed credentials are composed and cast only when BuildConfig.DEBUG, the generic raw-key Masternode Vote transition is listed only in debug builds, and a typed pro_tx_hash without a key reads any masternode's answer in every build (TEST_PLAN VOTE-01, VOTE-12, VOTE-19). The picker, wire-order and publishing logic are unit-tested; no gate records a vote cast with a stored key against a network holding a registered masternode. The vote is one call and the key is read from WalletStorage at vote time, so there is nothing to resume."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/KeychainSignerStoredVotingKeyTests.swift",
+          "id": "testStoredVotingKeyIsSignableUnderItsAddressWithinScopeOnly",
+          "command": "swift test --package-path packages/swift-sdk --filter KeychainSignerStoredVotingKeyTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "VOTE-01",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/voting/MasternodeVoterSectionTest.kt",
+          "id": "shouldNeverPublishTypedCredentialsInAReleaseBuild",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/voting/MasternodeVoterSectionTest.kt",
+          "id": "shouldReverseTheIdentityIdIntoWireOrder",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/voting/MasternodeVoterSectionTest.kt",
+          "id": "shouldKeepOnlyMasternodeAndEvonodeIdentitiesOnTheNetworkWithAVotingKey",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/services/transitions/StateTransitionDefinitionsTest.kt",
+          "id": "shouldListTheRawKeyMasternodeVoteOnlyAmongTheDebugEntries",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/security/MasternodeVotingKeyStoreTest.kt",
+          "id": "shouldReportAKeyNeverStoredAsAbsentAndDeleteItQuietly",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests 'org.dashfoundation.dashsdk.security.MasternodeVotingKeyStoreTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/security/MasternodeVotingKeyStoreTest.kt",
+          "id": "shouldRefuseABareAddressInLookupsAndDeletes",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests 'org.dashfoundation.dashsdk.security.MasternodeVotingKeyStoreTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/security/MasternodeVotingKeySigningTest.kt",
+          "id": "shouldSignWithTheStoredKeyOnlyThroughTheVotesOwnSigner",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "VOTE-01",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "identity.load_masternode_voting_key",
+      "title": "Load a masternode or evonode identity with its voting private key",
+      "area": "example_app",
+      "shared_apis": [
+        "dash_sdk_private_key_bytes_from_text",
+        "dash_sdk_masternode_voting_address_from_private_key"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "Load Identity reads the voting, owner and payout keys as hex or WIF through Rust (KeyValidation.privateKeyBytes(fromText:)), stops the load on a refused key, and stores each into an empty Keychain slot only (KeychainManager.storeSpecialKeyIfAbsent, unit-tested), asking before a conflicting key replaces the stored one (loadIdentity.replaceKey.*). No gate recorded here loads a registered masternode with its real voting key. The key is written once at load time; there is no flow to resume."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "MasternodeVotingKeyStore reads hex or WIF through Rust, and its one public write, assignToIdentity, stores the voting key in the identity's own WalletStorage entry (mnvoting.<identityIdHex>.<votingAddressHex>, apart from every wallet key) and records it on the identity row only while the row is on the network being loaded and names the expected key (checked before anything is written, and again after), deleting nothing else, so a rolled-back enclosing transaction leaves the row's old key stored (unit-tested with the dispatcher hop a thread check cannot see); removeStaleEntries then deletes the identity's other entries once the change has committed, keeping (and reporting as an incomplete cleanup, which the app shows as a warning) any entry an assignment wrote that no row has been seen to name yet, so a cleanup during an uncommitted enclosing transaction cannot delete the key its commit records (unit-tested on a WAL database with the cleanup running inside the open transaction; a rolled-back leftover is removed by the next process's first cleanup); the JNI marshalling is exercised only by instrumented tests. Load Identity offers the identity type (loadIdentity.identityType, following the typed id's stored type and User for an unseen id until the user picks one; an unpicked type never overwrites a stored one) and, for a masternode or evonode, a masked voting key field (loadIdentity.votingKey); a refused key stops the load with Rust's reason, an identity stored for another network is refused, an existing row changes only in the fields a load owns (a wallet's identity keeps its synced balance), the same key entered again rewrites its entry and a write failure is shown, the key is stored when the row names none, and a different stored key is kept until the user confirms replacing it (loadIdentity.replaceKey.voting / .cancel), which happens only while the row still names the key the question showed; every other entry of the identity is then deleted after each successful load or replacement, a failure there is reported and retried by the next load (TEST_PLAN ID-02). Clearing Identities & Keys, or all data, deletes the imported voting keys before the rows, so an interrupted clear can be finished. Every store-and-record (assignToIdentity), sweep (removeStaleEntries) and clear runs under one process-wide lock (MasternodeVotingKeyStore.withVotingKeyLock), so a reload cannot sweep away a key a replacement is recording and a clear cannot miss a key an import is recording; the interleavings are unit-tested with the public operation as the importer, each waiting until the other operation is seen waiting on the lock. The outcome decision and the Room writes are unit-tested; no gate records a load of a registered masternode with its real voting key. Owner and payout keys are not imported: nothing in the app signs with them. The key is written once at load time; there is no flow to resume."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/KeychainManagerStoreSpecialKeyIfAbsentTests.swift",
+          "id": "testAStoredKeyIsNeverReplaced",
+          "command": "swift test --package-path packages/swift-sdk --filter KeychainManagerStoreSpecialKeyIfAbsentTests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/identity/LoadIdentityVotingKeyTest.kt",
+          "id": "shouldKeepADifferentStoredKeyAndNameItInTheConflict",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/identity/LoadIdentityVotingKeyTest.kt",
+          "id": "shouldTreatTheKeyTheRowAlreadyNamesAsStored",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/identity/LoadIdentityVotingKeyTest.kt",
+          "id": "shouldKeepAnEvonodesTypeAndVotingKeyOnAnAliasOnlyReload",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/identity/LoadIdentityVotingKeyTest.kt",
+          "id": "shouldKeepTheCurrentKeyWhenTheRowChangedAfterTheQuestion",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/services/DataManagerTest.kt",
+          "id": "shouldDeleteImportedVotingKeysWhenClearingIdentities",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests 'org.dashfoundation.dashsdk.services.DataManagerTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/security/MasternodeVotingKeyStoreTest.kt",
+          "id": "shouldReadAnIdentifierBackAsItsIdentityAndVotingAddress",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests 'org.dashfoundation.dashsdk.security.MasternodeVotingKeyStoreTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "ID-02",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "addresses.balance_history",
+      "title": "Platform-address balance change history of the wallet's own addresses",
+      "area": "shared_policy",
+      "shared_apis": [
+        "platform_address_wallet_balance_history"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "PlatformAddressBalanceHistoryView renders what Rust returns from one call (paging, the filter to every platform payment account's addresses, the reconciliation of the recent and compacted zones, the newest-first order and the bech32m addresses are in platform-wallet). The TEST_PLAN gate ADDR-10 is written but not yet run on a simulator or device."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI binding in rs-unified-sdk-jni and no Kotlin wrapper or KotlinExampleApp screen for platform_address_wallet_balance_history yet."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/platform_addresses/balance_history.rs",
+          "id": "should_keep_only_wallet_addresses_in_recent_changes",
+          "command": "cargo test -p platform-wallet --lib balance_history",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/platform_addresses/balance_history.rs",
+          "id": "should_order_recent_changes_newest_block_first_then_by_address",
+          "command": "cargo test -p platform-wallet --lib balance_history",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/platform_addresses/balance_history.rs",
+          "id": "should_stop_paging_when_the_cursor_does_not_advance",
+          "command": "cargo test -p platform-wallet --lib balance_history",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/platform_addresses/balance_history.rs",
+          "id": "should_show_a_top_up_in_the_compaction_block_once_in_its_range",
+          "command": "cargo test -p platform-wallet --lib balance_history",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/platform_addresses/balance_history.rs",
+          "id": "should_hold_the_floor_instead_of_restarting_when_both_zones_lag",
+          "command": "cargo test -p platform-wallet --lib balance_history",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/platform_addresses/balance_history.rs",
+          "id": "should_keep_a_shown_top_up_when_the_next_read_starts_from_its_height",
+          "command": "cargo test -p platform-wallet --lib balance_history",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/platform_addresses/balance_history.rs",
+          "id": "should_read_both_zones_through_the_sdk_with_their_proved_heights",
+          "command": "cargo test -p platform-wallet --lib balance_history",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/error.rs",
+          "id": "should_report_inconsistent_balance_history_heights_by_their_own_code",
+          "command": "cargo test -p platform-wallet-ffi --lib inconsistent_balance_history",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/platform_addresses/balance_history.rs",
+          "id": "should_hold_the_given_floor_and_report_the_reached_height_through_the_export",
+          "command": "cargo test -p platform-wallet-ffi --lib balance_history",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/platform_addresses/balance_history.rs",
+          "id": "should_marshal_and_free_both_sections_with_rust_encoded_addresses",
+          "command": "cargo test -p platform-wallet-ffi --lib balance_history",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "ADDR-10",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "shielded.token_purchase_from_pool",
+      "title": "Buy a token at its direct purchase price from the shielded credit pool (type 28)",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_manager_shielded_token_purchase_availability",
+        "platform_wallet_manager_shielded_token_purchase_from_pool"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PlatformWalletManager.shieldedTokenPurchaseFromPool and shieldedTokenPurchaseAvailability wrap the two FFI entry points; the platform-wallet manager checks the token count, the network's protocol version, the token's shielded pool and the note count, selects the credit pool notes for price plus fee, builds, broadcasts with the shielded spend recovery record, records a TokenPurchase activity row (kind tag 10) and requests a shielded sync. An accepted purchase stays pending until a shielded sync confirms it once it lands, as its result proof does not show it executed. The example app's Direct Purchase form offers a Shielded pool funding choice only on Rust's availability answer (TEST_PLAN SH-24). Partial because no device, simulator or network run has been recorded, and the bought tokens land in the token's shielded pool, which the wallet does not sync yet, so they are not shown and cannot be spent (SH-25 to SH-27). Restart recovery reuses the generic shielded spend record and redrive, with no test specific to this transition."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI wrapper or KotlinExampleApp flow for the shielded token purchase yet."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "SH-24",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
+          "id": "should_refuse_a_token_purchase_its_notes_cannot_pay_without_reserving_them",
+          "command": "cargo test -p platform-wallet --features shielded --lib token_purchase_from_pool_tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/note_selection.rs",
+          "id": "should_reserve_a_token_purchase_price_plus_the_fee_the_builder_charges",
+          "command": "cargo test -p platform-wallet --features shielded --lib should_reserve_a_token_purchase_price_plus_the_fee_the_builder_charges",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
+          "id": "should_keep_a_purchase_pending_when_platform_answers_with_the_pool_balance",
+          "command": "cargo test -p platform-wallet --features shielded --lib token_purchase_from_pool_tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
+          "id": "should_refuse_a_token_purchase_needing_more_notes_than_fit",
+          "command": "cargo test -p platform-wallet --features shielded --lib token_purchase_from_pool_tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
+          "id": "should_refuse_a_token_purchase_for_a_token_without_a_shielded_pool",
+          "command": "cargo test -p platform-wallet --features shielded --lib token_purchase_from_pool_tests",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "identity.withdrawal_status",
+      "title": "An identity's withdrawals to Core and where each stands, read with a proof",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_identity_withdrawals",
+        "platform_wallet_identity_withdrawals_free"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "IdentityWithdrawalsView (IdentityDetailView -> Withdrawals, and View withdrawals after a submit in WithdrawCreditsView) lists the withdrawals Rust reads from the withdrawals contract with their status, finality and asset unlock index. The TEST_PLAN gates ID-19 and ID-20 are written but not yet run on a simulator or device. Nothing is stored locally, so there is no restart state: the list is read from the chain each time."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI binding in rs-unified-sdk-jni and no Kotlin wrapper or KotlinExampleApp screen for platform_wallet_identity_withdrawals; KotlinExampleApp's withdrawal screens show no status after a submit."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk/src/platform/identity_withdrawals.rs",
+          "id": "should_serve_the_listing_through_the_identity_recent_index_newest_first",
+          "command": "cargo test -p dash-sdk --lib identity_withdrawals",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk/src/platform/identity_withdrawals.rs",
+          "id": "should_treat_only_complete_and_failed_as_final",
+          "command": "cargo test -p dash-sdk --lib identity_withdrawals",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/identity_withdrawals.rs",
+          "id": "should_carry_the_core_transaction_and_rust_finality_for_each_status",
+          "command": "cargo test -p platform-wallet-ffi --lib identity_withdrawals",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/IdentityWithdrawalDecodingTests.swift",
+          "id": "testShouldThrowForAnUnknownStatusCode",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/IdentityWithdrawalDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "ID-19",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "ID-20",
           "covers_restart": false
         }
       ]

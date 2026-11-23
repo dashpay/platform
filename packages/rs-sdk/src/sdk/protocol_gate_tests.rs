@@ -18,7 +18,8 @@ use crate::platform::contract_groups::{
 };
 use crate::platform::contract_moderation::{
     ContractDocumentRemovals, ContractModerationActionCounts, ContractModerationEntries,
-    ContractModerationListStatuses, ContractTeamActionSigners, ContractTeamActions,
+    ContractModerationListStatuses, ContractModerationStatusQuery, ContractTeamActionSigners,
+    ContractTeamActions,
 };
 use crate::platform::data_contracts_by_range::DataContractsByRange;
 use crate::platform::data_contracts_latest_versions::{
@@ -79,6 +80,10 @@ use dapi_grpc::platform::v0::{
     GetShieldedNullifiersRequest, GetShieldedPoolStateRequest, GetYesNoVotePollStateRequest, Proof,
     ResponseMetadata,
 };
+use dapi_grpc::platform::v0::{
+    get_data_contract_request, get_data_contract_response, get_epochs_info_response,
+    GetDataContractRequest, GetDataContractResponse,
+};
 use dapi_grpc::tonic::Status;
 use dapi_grpc::Message;
 use dash_context_provider::{ContextProvider, ContextProviderError};
@@ -93,6 +98,9 @@ use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::shielded::{OrchardBundleParams, SerializedAction};
 use dpp::state_transition::private_document_create_from_shielded_pool_transition::methods::PrivateDocumentCreateFromShieldedPoolTransitionMethodsV0;
 use dpp::state_transition::private_document_create_from_shielded_pool_transition::PrivateDocumentCreateFromShieldedPoolTransition;
+use dpp::state_transition::token_purchase_from_shielded_pool_transition::v0::TokenPurchaseFromShieldedPoolTransitionV0;
+use dpp::state_transition::token_purchase_from_shielded_pool_transition::TokenPurchaseFromShieldedPoolTransition;
+use dpp::state_transition::StateTransition;
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::version::v13::PROTOCOL_VERSION_13;
 use dpp::version::v14::PROTOCOL_VERSION_14;
@@ -659,6 +667,365 @@ async fn should_refuse_when_the_network_proves_protocol_13() {
     assert_eq!(probes(&sdk).await, 1);
     assert_eq!(sent(&sdk, &fee_pots()).await, 0);
     assert!(!sdk.address_list().is_banned(&node()));
+}
+
+/// A status read over every list the contract keeps, on a network proven at 13, is refused
+/// as the status fetch would refuse it, before the contract is asked for: not taken for a
+/// contract that is not moderated.
+#[tokio::test]
+async fn should_refuse_a_status_over_every_list_below_protocol_14_without_a_contract_request() {
+    let sdk = mock_sdk(V13, false, 0);
+    sdk.mock_verified_protocol_version(V13).unwrap();
+    let contract_id = Identifier::new([7; 32]);
+    let result =
+        ContractModerationStatusQuery::resolve(&sdk, contract_id, Identifier::new([8; 32]), None)
+            .await;
+    match result {
+        Err(Error::ProtocolVersionNotActive {
+            method, required, ..
+        }) => {
+            assert_eq!((method, required), ("get_contract_moderation_status", V14));
+        }
+        other => panic!("expected the status read refused below 14, got {other:?}"),
+    }
+    let contract_request: GetDataContractRequest =
+        contract_id.query(&sdk.query_settings()).unwrap();
+    assert_eq!(sent(&sdk, &contract_request).await, 0);
+    assert_eq!(probes(&sdk).await, 0);
+}
+
+/// The positive counterpart: an unpinned SDK that starts below 14, with nothing verified,
+/// reads the status over every list the contract keeps through the public call alone. The
+/// call asks the network for its version (the probe answers 14), then fetches the contract,
+/// then sends the status request over the lists the contract keeps.
+///
+/// The fixtures are protocol 14 answers, encoded without advancing the SDK under test. The
+/// mock keeps no request log, only counts, so the order is shown by a twin SDK whose probe
+/// gets no answer: it sends the probe and is refused without any contract request, so the
+/// contract request waits on the probe's outcome and comes after it.
+#[tokio::test]
+async fn should_resolve_and_send_a_status_over_every_list_once_the_probe_shows_protocol_14() {
+    use crate::platform::contract_moderation::ContractModerationList;
+    use dapi_grpc::platform::v0::get_contract_moderation_status_request;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::config::moderation::ContractModerationListStatus;
+    use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+    use dpp::data_contract::DataContractFactory;
+    use dpp::platform_value::platform_value;
+
+    // The contract request waits on the probe: unanswered, the probe goes out and the read
+    // is refused before the contract is asked for
+    let unanswered = mock_sdk(V13, false, 0);
+    let refused = unanswered
+        .fetch_contract_moderation_status(Identifier::new([7; 32]), Identifier::new([8; 32]), None)
+        .await;
+    assert!(
+        matches!(refused, Err(Error::ProtocolVersionNotActive { .. })),
+        "{refused:?}"
+    );
+    assert_eq!(probes(&unanswered).await, 1);
+    let unanswered_contract: GetDataContractRequest = Identifier::new([7; 32])
+        .query(&unanswered.query_settings())
+        .unwrap();
+    assert_eq!(sent(&unanswered, &unanswered_contract).await, 0);
+
+    let mut sdk = mock_sdk(V13, false, 0);
+    answer_probe(&sdk, "pv14").await;
+    let mut contract = DataContractFactory::new(V14)
+        .unwrap()
+        .create_with_value_config(
+            Identifier::new([7; 32]),
+            1,
+            platform_value!({
+                "note": {
+                    "type": "object",
+                    "properties": { "text": { "type": "string", "maxLength": 10, "position": 0 } },
+                    "additionalProperties": false,
+                },
+            }),
+            None,
+            None,
+        )
+        .unwrap()
+        .data_contract_owned();
+    let config = contract
+        .config()
+        .clone()
+        .with_moderation(Some(ContractModerationConfig {
+            banlist: true,
+            suspensions: false,
+            moderators: ContractModerators::ContractOwner,
+            warnings: true,
+        }));
+    contract.set_config(config);
+    let contract_id = contract.id();
+    let identity_id = Identifier::new([8; 32]);
+    let resolved = ContractModerationStatusQuery {
+        contract_id,
+        identity_id,
+        lists: vec![
+            ContractModerationList::Banlist,
+            ContractModerationList::Warnings,
+        ],
+    };
+    let statuses = ContractModerationListStatuses(vec![
+        ContractModerationListStatus::Banlist { ban: None },
+        ContractModerationListStatus::Warnings { warnings: vec![] },
+    ]);
+    // The fixtures are protocol 14 answers; the SDK under test stays at 13 until the probe
+    sdk.mock()
+        .encode_expectations_at(Some(PlatformVersion::get(V14).unwrap()));
+    sdk.mock()
+        .expect_fetch(contract_id, Some(contract))
+        .await
+        .unwrap();
+    sdk.mock()
+        .expect_fetch(resolved.clone(), Some(statuses.clone()))
+        .await
+        .unwrap();
+    sdk.mock().encode_expectations_at(None);
+    assert_eq!(verified(&sdk), 0);
+    assert_eq!(sdk.protocol_version_number(), V13);
+
+    let fetched = sdk
+        .fetch_contract_moderation_status(contract_id, identity_id, None)
+        .await
+        .expect("the network serves the status read once the probe shows 14");
+
+    assert_eq!(fetched, Some(statuses));
+    assert_eq!(probes(&sdk).await, 1);
+    assert_eq!(verified(&sdk), V14);
+    let contract_request: GetDataContractRequest =
+        contract_id.query(&sdk.query_settings()).unwrap();
+    assert_eq!(sent(&sdk, &contract_request).await, 1);
+    let status_request: GetContractModerationStatusRequest =
+        resolved.query(&sdk.query_settings()).unwrap();
+    assert!(matches!(
+        status_request.version,
+        Some(get_contract_moderation_status_request::Version::V0(_))
+    ));
+    assert_eq!(sent(&sdk, &status_request).await, 1);
+}
+
+/// A proved contract request and an answer to it that this build cannot read: its proof is
+/// not one GroveDB decodes. The answer names protocol version `named`.
+fn unreadable_contract_answer(named: u32) -> (GetDataContractRequest, GetDataContractResponse) {
+    let request = GetDataContractRequest {
+        version: Some(get_data_contract_request::Version::V0(
+            get_data_contract_request::GetDataContractRequestV0 {
+                id: vec![7; 32],
+                prove: true,
+            },
+        )),
+    };
+    let response = GetDataContractResponse {
+        version: Some(get_data_contract_response::Version::V0(
+            get_data_contract_response::GetDataContractResponseV0 {
+                result: Some(
+                    get_data_contract_response::get_data_contract_response_v0::Result::Proof(
+                        Proof {
+                            grovedb_proof: vec![0xff; 16],
+                            ..Default::default()
+                        },
+                    ),
+                ),
+                metadata: Some(ResponseMetadata {
+                    protocol_version: named,
+                    height: 10,
+                    time_ms: chrono::Utc::now().timestamp_millis() as u64,
+                    ..Default::default()
+                }),
+            },
+        )),
+    };
+    (request, response)
+}
+
+/// A fresh SDK has no verified answer yet. When its first request meets a form it cannot
+/// read, in an answer naming a protocol version newer than the build knows, it asks the
+/// network for its version before deciding about the node: on a network that proves such a
+/// version the node is not banned, and the request fails as a configuration error naming the
+/// update. A pinned SDK asks too. Once the newer version is verified, nothing more is asked.
+#[tokio::test]
+async fn should_ask_the_network_before_banning_a_node_for_an_answer_it_cannot_read() {
+    let latest = PlatformVersion::latest().protocol_version;
+    for pinned in [false, true] {
+        let sdk = mock_sdk(latest, pinned, 0);
+        answer_probe(&sdk, "newer").await;
+        let (request, response) = unreadable_contract_answer(NEWER);
+        answer(&sdk, &request, Ok(response)).await;
+        for call in 1..=2 {
+            let error = DataContract::fetch_with_settings(&sdk, Identifier::new([7; 32]), once())
+                .await
+                .expect_err("the answer cannot be read");
+            assert!(
+                matches!(
+                    &error,
+                    Error::Config(reason) if reason.contains("update the SDK")
+                        && reason.contains(&format!("runs protocol version {NEWER}"))
+                ),
+                "pinned {pinned}, call {call}: {error:?}"
+            );
+            assert_eq!(probes(&sdk).await, 1, "pinned {pinned}, call {call}");
+            assert_eq!(sent(&sdk, &request).await, call, "pinned {pinned}");
+            assert!(!sdk.address_list().is_banned(&node()), "pinned {pinned}");
+        }
+        assert_eq!(verified(&sdk), NEWER, "pinned {pinned}");
+    }
+}
+
+/// Requests made together on a fresh SDK each meet a form the build cannot read. The one
+/// that asks the network for its version does so while the others wait for the answer: one
+/// probe serves them all, and none bans its node before the answer is known.
+#[tokio::test]
+async fn should_wait_for_the_network_version_being_asked_before_banning_a_node() {
+    let sdk = mock_sdk(PlatformVersion::latest().protocol_version, false, 0);
+    answer_probe(&sdk, "newer").await;
+    let (request, response) = unreadable_contract_answer(NEWER);
+    answer(&sdk, &request, Ok(response)).await;
+    let fetch = || DataContract::fetch_with_settings(&sdk, Identifier::new([7; 32]), once());
+    // The node answers only once every call waits for it, so each call gets its answer
+    // before any of them has asked the network for its version.
+    let held = sdk.mock_dapi().lock().await;
+    let answer_all = async move {
+        tokio::task::yield_now().await;
+        drop(held);
+    };
+    let (first, second, third, ()) = tokio::join!(fetch(), fetch(), fetch(), answer_all);
+    for (call, result) in [first, second, third].into_iter().enumerate() {
+        let error = result.expect_err("the answer cannot be read");
+        assert!(
+            matches!(&error, Error::Config(reason) if reason.contains("update the SDK")),
+            "call {call}: {error:?}"
+        );
+    }
+    assert_eq!(probes(&sdk).await, 1);
+    assert_eq!(sent(&sdk, &request).await, 3);
+    assert!(!sdk.address_list().is_banned(&node()));
+}
+
+/// A probe that fails serves the calls that waited for it as it serves the call that asked:
+/// each decides without it, and none asks again, so calls made together cost one question
+/// of one attempt, whatever the SDK's own retry settings.
+#[tokio::test]
+async fn should_ask_once_when_the_question_fails_for_calls_made_together() {
+    let sdk = mock_sdk(PlatformVersion::latest().protocol_version, false, 0);
+    answer(
+        &sdk,
+        &probe_request(),
+        Err(Status::unavailable("node unreachable")),
+    )
+    .await;
+    let (request, response) = unreadable_contract_answer(NEWER);
+    answer(&sdk, &request, Ok(response)).await;
+    let fetch = || DataContract::fetch_with_settings(&sdk, Identifier::new([7; 32]), once());
+    let held = sdk.mock_dapi().lock().await;
+    let answer_all = async move {
+        tokio::task::yield_now().await;
+        drop(held);
+    };
+    let (first, second, third, ()) = tokio::join!(fetch(), fetch(), fetch(), answer_all);
+    for (call, result) in [first, second, third].into_iter().enumerate() {
+        let error = result.expect_err("the answer cannot be read");
+        assert!(matches!(error, Error::Proof(_)), "call {call}: {error:?}");
+    }
+    assert_eq!(probes(&sdk).await, 1);
+    assert_eq!(verified(&sdk), 0);
+}
+
+/// An answer to the probe itself that the build cannot read is classified as it is: the
+/// probe does not wait for itself, the request it served ends, and its node is banned.
+#[tokio::test]
+async fn should_not_wait_for_itself_when_the_probe_answer_cannot_be_read() {
+    let sdk = mock_sdk(PlatformVersion::latest().protocol_version, false, 0);
+    let mut unreadable_probe: GetEpochsInfoResponse = vector("epoch-probe-newer.bin");
+    let Some(get_epochs_info_response::Version::V0(v0)) = unreadable_probe.version.as_mut() else {
+        panic!("v0 probe answer")
+    };
+    v0.result = Some(
+        get_epochs_info_response::get_epochs_info_response_v0::Result::Proof(Proof {
+            grovedb_proof: vec![0xff; 16],
+            ..Default::default()
+        }),
+    );
+    answer(&sdk, &probe_request(), Ok(unreadable_probe)).await;
+    let (request, response) = unreadable_contract_answer(NEWER);
+    answer(&sdk, &request, Ok(response)).await;
+    let error = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        DataContract::fetch_with_settings(&sdk, Identifier::new([7; 32]), once()),
+    )
+    .await
+    .expect("the probe does not wait for itself")
+    .expect_err("the answer cannot be read");
+    assert!(matches!(error, Error::Proof(_)), "{error:?}");
+    assert_eq!(verified(&sdk), 0);
+    assert!(sdk.address_list().is_banned(&node()));
+}
+
+/// The version an unread answer names is only a reason to ask. When the network proves a
+/// version this build knows, the answer is its node's fault, and the node is banned.
+#[tokio::test]
+async fn should_ban_a_node_for_an_unreadable_answer_when_the_network_proves_a_known_version() {
+    let sdk = mock_sdk(PlatformVersion::latest().protocol_version, false, 0);
+    answer_probe(&sdk, "pv14").await;
+    let (request, response) = unreadable_contract_answer(NEWER);
+    answer(&sdk, &request, Ok(response)).await;
+    let error = DataContract::fetch_with_settings(&sdk, Identifier::new([7; 32]), once())
+        .await
+        .expect_err("the answer cannot be read");
+    assert!(matches!(error, Error::Proof(_)), "{error:?}");
+    assert_eq!(probes(&sdk).await, 1);
+    assert_eq!(verified(&sdk), V14);
+    assert!(sdk.address_list().is_banned(&node()));
+    // The question is not followed by the epoch query that holds the gate's probes.
+    assert_eq!(sdk.probe_hold.get(), None);
+    assert_eq!(
+        sdk.mock_dapi().lock().await.request_count(&probe_request()),
+        1
+    );
+}
+
+/// The hold of an earlier probe can outlast the epoch it proved, so it does not stand in for
+/// asking: an unreadable answer naming a newer version is asked about while a hold covers,
+/// and the node is not banned once the network proves the newer version.
+#[tokio::test]
+async fn should_ask_about_an_unreadable_answer_while_an_earlier_probe_holds() {
+    let latest = PlatformVersion::latest().protocol_version;
+    let sdk = mock_sdk(latest, false, latest);
+    sdk.probe_hold.set(ProbeHold {
+        network: latest,
+        epoch: 2,
+        until_ms: u64::MAX,
+    });
+    answer_probe(&sdk, "newer").await;
+    let (request, response) = unreadable_contract_answer(NEWER);
+    answer(&sdk, &request, Ok(response)).await;
+    let error = DataContract::fetch_with_settings(&sdk, Identifier::new([7; 32]), once())
+        .await
+        .expect_err("the answer cannot be read");
+    assert!(
+        matches!(&error, Error::Config(reason) if reason.contains("update the SDK")),
+        "{error:?}"
+    );
+    assert_eq!(probes(&sdk).await, 1);
+    assert!(!sdk.address_list().is_banned(&node()));
+}
+
+/// An unreadable answer that names a version this build knows gives no reason to ask.
+#[tokio::test]
+async fn should_not_ask_the_network_about_an_unreadable_answer_naming_a_known_version() {
+    let sdk = mock_sdk(PlatformVersion::latest().protocol_version, false, 0);
+    answer_probe(&sdk, "newer").await;
+    let (request, response) =
+        unreadable_contract_answer(PlatformVersion::latest().protocol_version);
+    answer(&sdk, &request, Ok(response)).await;
+    let error = DataContract::fetch_with_settings(&sdk, Identifier::new([7; 32]), once())
+        .await
+        .expect_err("the answer cannot be read");
+    assert!(matches!(error, Error::Proof(_)), "{error:?}");
+    assert_eq!(probes(&sdk).await, 0);
+    assert!(sdk.address_list().is_banned(&node()));
 }
 
 /// A pin at 13 speaks 13 even on a network at 14, so there is nothing to ask.
@@ -2682,6 +3049,93 @@ fn unbuilt_bundle() -> OrchardBundleParams {
     }
 }
 
+/// A signer the direct identity-shield send must not reach when the gate refuses it.
+#[derive(Debug)]
+struct UnreachableSigner;
+
+#[async_trait::async_trait]
+impl dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> for UnreachableSigner {
+    async fn sign(
+        &self,
+        _: &dpp::identity::IdentityPublicKey,
+        _: &[u8],
+    ) -> Result<BinaryData, dpp::ProtocolError> {
+        panic!("the refused send must not sign")
+    }
+
+    async fn sign_create_witness(
+        &self,
+        _: &dpp::identity::IdentityPublicKey,
+        _: &[u8],
+    ) -> Result<dpp::address_funds::AddressWitness, dpp::ProtocolError> {
+        panic!("the refused send must not sign")
+    }
+
+    fn can_sign_with(&self, _: &dpp::identity::IdentityPublicKey) -> bool {
+        true
+    }
+}
+
+/// The direct identity-shield send refuses an SDK pinned below protocol version 14 before it
+/// fetches or bumps the identity nonce or asks the signer: the mock has no nonce answer and
+/// the signer panics, so either step would end the test differently.
+#[tokio::test]
+async fn should_refuse_a_direct_identity_shield_before_the_nonce_and_signer() {
+    use crate::platform::transition::shield_from_identity::ShieldFromIdentity;
+    use dpp::identity::v0::IdentityV0;
+
+    let sdk = mock_sdk(V13, true, 0);
+    let identity = Identity::V0(IdentityV0 {
+        id: Identifier::new([4; 32]),
+        public_keys: Default::default(),
+        balance: 1_000_000_000,
+        revision: 0,
+    });
+    let result = identity
+        .shield_from_identity(
+            &sdk,
+            1_000,
+            unbuilt_bundle(),
+            None,
+            &UnreachableSigner,
+            None,
+        )
+        .await;
+    match result {
+        Err(Error::ProtocolVersionNotActive {
+            method: "broadcast_state_transition",
+            required: V14,
+            pinned: true,
+            ..
+        }) => {}
+        other => panic!("expected the pinned refusal, got {other:?}"),
+    }
+    assert_eq!(probes(&sdk).await, 0, "a pinned SDK below 14 asks nothing");
+}
+
+/// The direct pool top-up send refuses an SDK pinned below protocol version 14 before it
+/// builds or structure-checks the transition: the bundle is empty, so building first would
+/// end in a structure error instead.
+#[tokio::test]
+async fn should_refuse_a_direct_identity_top_up_from_the_pool_before_building_it() {
+    use crate::platform::transition::identity_top_up_from_shielded_pool::IdentityTopUpFromShieldedPool;
+
+    let sdk = mock_sdk(V13, true, 0);
+    let result = sdk
+        .identity_top_up_from_shielded_pool(Identifier::new([4; 32]), 1_000, unbuilt_bundle(), None)
+        .await;
+    match result {
+        Err(Error::ProtocolVersionNotActive {
+            method: "broadcast_state_transition",
+            required: V14,
+            pinned: true,
+            ..
+        }) => {}
+        other => panic!("expected the pinned refusal, got {other:?}"),
+    }
+    assert_eq!(probes(&sdk).await, 0, "a pinned SDK below 14 asks nothing");
+}
+
 /// An unpinned SDK below protocol version 15 that asks for no proofs still learns the
 /// network's version before refusing a private document send: the gate's probe asks for a
 /// proof whatever the SDK's setting, and the refusal is of the network proven at 14, not of
@@ -2871,5 +3325,446 @@ async fn should_refuse_a_generic_broadcast_of_a_private_document_transition_unti
             other => panic!("pinned {pinned}: expected a local refusal, got {other:?}"),
         }
         assert_eq!(probes(&sdk).await, 1, "pinned {pinned}");
+    }
+}
+
+/// A shield from an identity (type 21) or an identity top-up from the shielded pool (type 22)
+/// built elsewhere and sent through the generic broadcast is gated from protocol version 14:
+/// from an SDK at 14, seeded or pinned, on a network a verified answer shows at 13, it is
+/// refused locally instead of broadcast to be rejected.
+#[tokio::test]
+async fn should_refuse_a_generic_broadcast_of_identity_shielded_payments_until_14() {
+    use dpp::state_transition::identity_top_up_from_shielded_pool_transition::v0::IdentityTopUpFromShieldedPoolTransitionV0;
+    use dpp::state_transition::identity_top_up_from_shielded_pool_transition::IdentityTopUpFromShieldedPoolTransition;
+    use dpp::state_transition::shield_from_identity_transition::v0::ShieldFromIdentityTransitionV0;
+    use dpp::state_transition::shield_from_identity_transition::ShieldFromIdentityTransition;
+    use dpp::state_transition::StateTransition;
+
+    let action = SerializedAction {
+        nullifier: [1; 32],
+        rk: [2; 32],
+        cmx: [3; 32],
+        encrypted_note: vec![4; 216],
+        cv_net: [5; 32],
+        spend_auth_sig: [6; 64],
+    };
+    let shield = StateTransition::ShieldFromIdentity(ShieldFromIdentityTransition::V0(
+        ShieldFromIdentityTransitionV0 {
+            identity_id: Identifier::new([4; 32]),
+            amount: 1_000,
+            actions: vec![action.clone(), action.clone()],
+            anchor: [7; 32],
+            proof: vec![8; 64],
+            binding_signature: [9; 64],
+            nonce: 1,
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        },
+    ));
+    let top_up = StateTransition::IdentityTopUpFromShieldedPool(
+        IdentityTopUpFromShieldedPoolTransition::V0(IdentityTopUpFromShieldedPoolTransitionV0 {
+            identity_id: Identifier::new([4; 32]),
+            actions: vec![action.clone(), action],
+            top_up_amount: 1_000,
+            anchor: [7; 32],
+            proof: vec![8; 64],
+            binding_signature: [9; 64],
+        }),
+    );
+    for (kind, transition) in [("type 21", shield), ("type 22", top_up)] {
+        for pinned in [false, true] {
+            let sdk = mock_sdk(V14, pinned, V13);
+            answer_probe(&sdk, "pv13").await;
+            match transition.broadcast(&sdk, None).await {
+                Err(Error::ProtocolVersionNotActive {
+                    method: "broadcast_state_transition",
+                    required: V14,
+                    network: V13,
+                    cause: None,
+                    ..
+                }) => {}
+                other => {
+                    panic!("{kind}, pinned {pinned}: expected a local refusal, got {other:?}")
+                }
+            }
+            assert_eq!(probes(&sdk).await, 1, "{kind}, pinned {pinned}");
+        }
+    }
+}
+
+/// A token purchase paid from the shielded pool (type 28) built elsewhere and sent through the
+/// generic broadcast is gated from protocol version 14, when token shielded pools activate:
+/// from an SDK at 14, seeded or pinned, on a network a verified answer shows at 13, it is
+/// refused locally instead of broadcast to be rejected.
+#[tokio::test]
+async fn should_refuse_a_generic_broadcast_of_a_shielded_token_purchase_until_14() {
+    let action = SerializedAction {
+        nullifier: [1; 32],
+        rk: [2; 32],
+        cmx: [3; 32],
+        encrypted_note: vec![4; 216],
+        cv_net: [5; 32],
+        spend_auth_sig: [6; 64],
+    };
+    let purchase = StateTransition::TokenPurchaseFromShieldedPool(
+        TokenPurchaseFromShieldedPoolTransition::V0(TokenPurchaseFromShieldedPoolTransitionV0 {
+            data_contract_id: Identifier::new([4; 32]),
+            token_contract_position: 0,
+            token_id: Identifier::new([5; 32]),
+            token_count: 10,
+            total_agreed_price: 1_000,
+            token_actions: vec![action.clone(), action.clone()],
+            token_anchor: [7; 32],
+            token_proof: vec![8; 64],
+            token_binding_signature: [9; 64],
+            fee_actions: vec![action.clone(), action],
+            fee_anchor: [7; 32],
+            fee_proof: vec![8; 64],
+            fee_binding_signature: [9; 64],
+            credit_amount: 2_000,
+        }),
+    );
+    for pinned in [false, true] {
+        let sdk = mock_sdk(V14, pinned, V13);
+        answer_probe(&sdk, "pv13").await;
+        match purchase.broadcast(&sdk, None).await {
+            Err(Error::ProtocolVersionNotActive {
+                method: "broadcast_state_transition",
+                required: V14,
+                network: V13,
+                cause: None,
+                ..
+            }) => {}
+            other => panic!("pinned {pinned}: expected a local refusal, got {other:?}"),
+        }
+        assert_eq!(probes(&sdk).await, 1, "pinned {pinned}");
+    }
+}
+
+/// History reads choose their request version from what the gate's probe proves: request V0
+/// on a network below protocol 15, V1 at it.
+mod document_history {
+    use super::*;
+    use crate::platform::DocumentHistoryQuery;
+    use dapi_grpc::platform::v0::get_document_history_request::GetDocumentHistoryRequestV0;
+    use dapi_grpc::platform::v0::GetDocumentHistoryRequest;
+    use dpp::document::DocumentV0;
+    use drive::query::document_history_drive_query::DocumentHistoryFilter;
+    use drive_proof_verifier::types::{DocumentHistory, DocumentHistoryEntry};
+
+    fn query() -> DocumentHistoryQuery {
+        DocumentHistoryQuery {
+            data_contract_id: [1; 32].into(),
+            document_type_name: "note".into(),
+            document_id: [2; 32].into(),
+            filter: DocumentHistoryFilter::StartAtTime(2000),
+            limit: Some(5),
+        }
+    }
+
+    fn v1() -> GetDocumentHistoryRequest {
+        query()
+            .query(&QuerySettings {
+                request_settings: &RequestSettings::default(),
+                protocol_version: PlatformVersion::latest(),
+                verified_protocol_version: 0,
+                prove: true,
+            })
+            .unwrap()
+    }
+
+    /// The V0 request for revisions from 2000 on: after 1999.
+    fn v0() -> GetDocumentHistoryRequest {
+        GetDocumentHistoryRequestV0 {
+            data_contract_id: vec![1; 32],
+            document_type_name: "note".into(),
+            document_id: vec![2; 32],
+            limit: Some(5),
+            offset: None,
+            start_at_ms: 1999,
+            prove: true,
+        }
+        .into()
+    }
+
+    /// What a node at protocol 15 answers request V0 with.
+    fn v0_refusal() -> Status {
+        Status::unknown(
+            "unsupported version for query: document_history, currently supporting versions 1 \
+             to 1 on platform protocol 15, given 0",
+        )
+    }
+
+    fn history() -> DocumentHistory {
+        DocumentHistory {
+            entries: vec![DocumentHistoryEntry {
+                time_ms: 2000,
+                revision: 2,
+                document: Document::V0(DocumentV0 {
+                    revision: Some(2),
+                    ..Default::default()
+                }),
+            }],
+            lifecycle: None,
+        }
+    }
+
+    /// An SDK pinned at 14, as in the upgrade rehearsal, asks the network for its version,
+    /// and sends V0 to a network proven at 14.
+    #[tokio::test]
+    async fn should_send_v0_to_a_network_the_probe_proves_at_14() {
+        let mut sdk = mock_sdk(V14, true, 0);
+        answer_probe(&sdk, "pv14").await;
+        sdk.mock()
+            .expect_fetch(v0(), Some(history()))
+            .await
+            .unwrap();
+        let fetched = DocumentHistory::fetch(&sdk, query()).await.unwrap();
+        assert_eq!(fetched, Some(history()));
+        assert_eq!(probes(&sdk).await, 1);
+        assert_eq!(sent(&sdk, &v0()).await, 1);
+        assert_eq!(sent(&sdk, &v1()).await, 0);
+    }
+
+    /// A network the probe proves at 15 or above gets V1.
+    #[tokio::test]
+    async fn should_send_v1_to_a_network_the_probe_proves_at_15() {
+        let mut sdk = mock_sdk(V14, false, 0);
+        answer_probe(&sdk, "newer").await;
+        sdk.mock()
+            .expect_fetch(v1(), Some(history()))
+            .await
+            .unwrap();
+        let fetched = DocumentHistory::fetch(&sdk, query()).await.unwrap();
+        assert_eq!(fetched, Some(history()));
+        assert_eq!(probes(&sdk).await, 1);
+        assert_eq!(sent(&sdk, &v1()).await, 1);
+        assert_eq!(sent(&sdk, &v0()).await, 0);
+    }
+
+    /// When the probe fails, neither version is sent, and the refusal says why.
+    #[tokio::test]
+    async fn should_refuse_with_the_cause_and_send_nothing_when_the_probe_fails() {
+        let sdk = mock_sdk(V14, true, 0);
+        match DocumentHistory::fetch(&sdk, query()).await {
+            Err(Error::ProtocolVersionNotActive {
+                method: "get_document_history",
+                required: PROTOCOL_VERSION_15,
+                feature: None,
+                cause: Some(_),
+                ..
+            }) => {}
+            other => panic!("expected a refusal with its cause, got {other:?}"),
+        }
+        assert_eq!(probes(&sdk).await, 1);
+        assert_eq!(sent(&sdk, &v0()).await, 0);
+        assert_eq!(sent(&sdk, &v1()).await, 0);
+    }
+
+    /// The network reached 15 after V0 was chosen, while a hold still showed it at 14:
+    /// the node refuses V0 and is not banned for it, so the SDK can ask it once more past
+    /// the hold, and sends V1.
+    #[tokio::test]
+    async fn should_send_v1_when_the_network_reaches_15_after_v0_was_chosen() {
+        let mut sdk = mock_sdk(V14, false, V14);
+        sdk.probe_hold.set(ProbeHold {
+            network: V14,
+            epoch: 1,
+            until_ms: u64::MAX,
+        });
+        answer(&sdk, &v0(), Err(v0_refusal())).await;
+        answer_probe(&sdk, "newer").await;
+        sdk.mock()
+            .expect_fetch(v1(), Some(history()))
+            .await
+            .unwrap();
+        let fetched = DocumentHistory::fetch_with_settings(&sdk, query(), once())
+            .await
+            .unwrap();
+        assert_eq!(fetched, Some(history()));
+        assert_eq!(sent(&sdk, &v0()).await, 1);
+        assert_eq!(probes(&sdk).await, 1);
+        assert_eq!(sent(&sdk, &v1()).await, 1);
+    }
+
+    /// A raw request without a proof is refused as written before the network is asked for
+    /// its version: a cold SDK sends neither the probe nor a history request.
+    #[tokio::test]
+    async fn should_refuse_an_unproved_request_before_asking_for_the_network_version() {
+        use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v1::Filter;
+        use dapi_grpc::platform::v0::get_document_history_request::GetDocumentHistoryRequestV1;
+
+        let sdk = mock_sdk(V14, true, 0);
+        for filter in [Filter::StartAtMs(2000), Filter::StartAtRevision(1)] {
+            let unproved: GetDocumentHistoryRequest = GetDocumentHistoryRequestV1 {
+                data_contract_id: vec![1; 32],
+                document_type_name: "note".into(),
+                document_id: vec![2; 32],
+                limit: Some(5),
+                prove: false,
+                filter: Some(filter),
+            }
+            .into();
+            let error = DocumentHistory::fetch(&sdk, unproved.clone())
+                .await
+                .expect_err("history is read with proofs only");
+            assert!(
+                matches!(&error, Error::InvalidRequest(message) if message.contains("proofs only")),
+                "{error:?}"
+            );
+            assert_eq!(sent(&sdk, &unproved).await, 0);
+        }
+        assert_eq!(probes(&sdk).await, 0);
+    }
+
+    /// The lifecycle read needs the lifecycle proof V1 carries, so on a network proven at
+    /// 14 it is refused as before the fallback, and V0 is not sent for a page it would drop.
+    #[tokio::test]
+    async fn should_refuse_the_lifecycle_read_below_protocol_15_without_sending_v0() {
+        let sdk = mock_sdk(V14, false, 0);
+        answer_probe(&sdk, "pv14").await;
+        let lifecycle_v0: GetDocumentHistoryRequest = GetDocumentHistoryRequestV0 {
+            data_contract_id: vec![1; 32],
+            document_type_name: "note".into(),
+            document_id: vec![2; 32],
+            limit: Some(1),
+            offset: None,
+            start_at_ms: 0,
+            prove: true,
+        }
+        .into();
+        let error = sdk
+            .document_current_lifecycle([1; 32].into(), "note".into(), [2; 32].into())
+            .await
+            .expect_err("lifecycle is not proven below protocol 15");
+        assert!(
+            matches!(
+                error,
+                Error::ProtocolVersionNotActive {
+                    method: "get_document_history",
+                    required: 15,
+                    network: V14,
+                    ..
+                }
+            ),
+            "{error:?}"
+        );
+        assert_eq!(sent(&sdk, &lifecycle_v0).await, 0);
+    }
+
+    /// Any other V0 failure is returned as it is: the network is not asked again and V1
+    /// is not sent.
+    #[tokio::test]
+    async fn should_not_ask_again_after_any_other_v0_failure() {
+        let sdk = mock_sdk(V14, false, V14);
+        sdk.probe_hold.set(ProbeHold {
+            network: V14,
+            epoch: 1,
+            until_ms: u64::MAX,
+        });
+        answer(&sdk, &v0(), Err(Status::not_found("document not found"))).await;
+        answer_probe(&sdk, "newer").await;
+        DocumentHistory::fetch_with_settings(&sdk, query(), once())
+            .await
+            .expect_err("V0 failed");
+        assert_eq!(sent(&sdk, &v0()).await, 1);
+        assert_eq!(probes(&sdk).await, 0);
+        assert_eq!(sent(&sdk, &v1()).await, 0);
+        assert!(sdk.probe_hold.get().is_some(), "the hold is kept");
+    }
+
+    /// When V0 is refused and the probe after it fails, the read is refused with the
+    /// probe's error as the cause, as when the first probe fails: a caller can tell a
+    /// passing failure from a refusal. V1 is not sent, and the hold is kept.
+    #[tokio::test]
+    async fn should_refuse_with_the_probe_error_when_the_probe_after_a_refused_v0_fails() {
+        let sdk = mock_sdk(V14, false, V14);
+        sdk.probe_hold.set(ProbeHold {
+            network: V14,
+            epoch: 1,
+            until_ms: u64::MAX,
+        });
+        answer(&sdk, &v0(), Err(v0_refusal())).await;
+        let error = DocumentHistory::fetch_with_settings(&sdk, query(), once())
+            .await
+            .expect_err("V0 refused and the network's version unknown");
+        assert!(
+            matches!(
+                &error,
+                Error::ProtocolVersionNotActive {
+                    method: "get_document_history",
+                    required: 15,
+                    network: V14,
+                    cause: Some(_),
+                    ..
+                }
+            ),
+            "{error:?}"
+        );
+        assert_eq!(sent(&sdk, &v0()).await, 1);
+        assert_eq!(sent(&sdk, &v1()).await, 0);
+        assert_eq!(probes(&sdk).await, 1);
+        assert!(sdk.probe_hold.get().is_some(), "the hold is kept");
+    }
+
+    /// When V0 is refused and the probe after it proves the network still at 14, V0's
+    /// error stands and V1 is not sent.
+    #[tokio::test]
+    async fn should_keep_the_v0_error_when_the_probe_after_it_proves_14() {
+        let sdk = mock_sdk(V14, false, V14);
+        sdk.probe_hold.set(ProbeHold {
+            network: V14,
+            epoch: 1,
+            until_ms: u64::MAX,
+        });
+        answer(&sdk, &v0(), Err(v0_refusal())).await;
+        answer_probe(&sdk, "pv14").await;
+        let error = DocumentHistory::fetch_with_settings(&sdk, query(), once())
+            .await
+            .expect_err("V0 refused on a network proven at 14");
+        assert!(
+            matches!(&error, Error::DapiClientError(_)),
+            "V0's error stands: {error:?}"
+        );
+        assert_eq!(sent(&sdk, &v0()).await, 1);
+        assert_eq!(probes(&sdk).await, 1);
+        assert_eq!(sent(&sdk, &v1()).await, 0);
+    }
+
+    /// A raw V1 request that V1 itself refuses is invalid as written, whatever the
+    /// network's version: a cold SDK sends neither the probe nor a history request.
+    #[tokio::test]
+    async fn should_refuse_a_malformed_request_before_asking_for_the_network_version() {
+        use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v1::Filter;
+        use dapi_grpc::platform::v0::get_document_history_request::GetDocumentHistoryRequestV1;
+
+        let sdk = mock_sdk(V14, true, 0);
+        for filter in [None, Some(Filter::Revision(0))] {
+            let malformed: GetDocumentHistoryRequest = GetDocumentHistoryRequestV1 {
+                data_contract_id: vec![1; 32],
+                document_type_name: "note".into(),
+                document_id: vec![2; 32],
+                limit: Some(1),
+                prove: true,
+                filter,
+            }
+            .into();
+            let error = DocumentHistory::fetch(&sdk, malformed.clone())
+                .await
+                .expect_err("V1 refuses the request too");
+            assert!(matches!(&error, Error::InvalidRequest(_)), "{error:?}");
+            assert_eq!(sent(&sdk, &malformed).await, 0);
+
+            // The same on a network already proven at the version that serves V1.
+            let latest = PlatformVersion::latest().protocol_version;
+            let at_latest = mock_sdk(latest, false, latest);
+            let error = DocumentHistory::fetch(&at_latest, malformed.clone())
+                .await
+                .expect_err("V1 refuses the request too");
+            assert!(matches!(&error, Error::InvalidRequest(_)), "{error:?}");
+            assert_eq!(sent(&at_latest, &malformed).await, 0);
+        }
+        assert_eq!(probes(&sdk).await, 0);
     }
 }

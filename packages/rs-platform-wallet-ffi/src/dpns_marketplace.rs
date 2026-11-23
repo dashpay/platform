@@ -1,8 +1,15 @@
 //! FFI bindings for the DPNS username marketplace on the platform-wallet
 //! [`IdentityWallet`](platform_wallet::IdentityWallet): search with sale
 //! state, the local name-state rows, the four trade ops (list / delist /
-//! transfer / purchase), the per-name trade history, and the on-demand
-//! marketplace sync pass.
+//! transfer / purchase), the per-name trade history, the on-demand
+//! marketplace sync pass, and giving up a name the wallet identity holds
+//! ([`platform_wallet_dpns_name_give_up_choices`] then
+//! [`platform_wallet_dpns_give_up_name`]): a delete, which frees the name
+//! for anybody to register again, or a tombstone, which nobody can undo.
+//! Which of the two the network accepts for a name is decided in
+//! `platform-wallet`, and this module only reports it. Both give-up entry
+//! points need Platform protocol version 15: on a network proven below it
+//! they return `ErrorProtocolVersionNotActive` (70) and nothing is signed.
 //!
 //! Wallet-layer design record:
 //! `platform-wallet`. The typed rejections
@@ -23,7 +30,16 @@
 //! [`dpns_name_history_events_free`]. A single value and an array are
 //! DIFFERENT allocations (a `Box<T>` vs a `Box<[T]>`), so the free
 //! functions are not interchangeable. Empty results are reported as
-//! `null` + count `0` with a success code, never as an error.
+//! `null` + count `0` with a success code, never as an error. The two
+//! give-up results ([`DpnsNameGiveUpChoicesFFI`], [`DpnsNameGivenUpFFI`])
+//! are plain data written into caller-owned structs and have no `*_free`.
+//!
+//! Every export here clones the wallet's identity handle under the wallet
+//! registry's lock and runs the operation after releasing it. An operation
+//! can wait on the host's signer and persistence callbacks, or on the DPNS
+//! operation gate behind one that does, and a callback tearing down a wallet
+//! (any alias) takes the registry lock for writing: held across the wait,
+//! the two would wait on each other.
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -32,7 +48,8 @@ use std::ptr;
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{DpnsNameSaleStatus, DpnsNameStateEntry};
 use platform_wallet::wallet::identity::network::{
-    DpnsDomainState, DpnsNameHistoryEvent, DpnsNameHistoryEventKind,
+    DpnsDomainState, DpnsNameGiveUpChoices, DpnsNameGiveUpMethod, DpnsNameGiveUpOutcome,
+    DpnsNameGivenUp, DpnsNameHistoryEvent, DpnsNameHistoryEventKind,
 };
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
@@ -232,6 +249,59 @@ impl Default for DpnsMarketplaceSyncSummaryFFI {
     }
 }
 
+/// `method` value of [`platform_wallet_dpns_give_up_name`] and
+/// [`DpnsNameGivenUpFFI::method`]: the name's `domain` document is deleted,
+/// and anybody may register the name again.
+pub const DPNS_NAME_GIVE_UP_METHOD_DELETE: u8 = 0;
+/// `method` value of [`platform_wallet_dpns_give_up_name`] and
+/// [`DpnsNameGivenUpFFI::method`]: a `tombstone` document takes the name's
+/// place, and nobody can register it again. Nobody can undo it, the
+/// identity that created it included.
+pub const DPNS_NAME_GIVE_UP_METHOD_TOMBSTONE: u8 = 1;
+
+/// Which ways the network accepts for giving up one name a wallet identity
+/// holds, as [`platform_wallet_dpns_name_give_up_choices`] reports them.
+/// A host offers exactly the ways whose flag is `true`.
+///
+/// Plain data (no heap members): it is written into a caller-owned struct
+/// and has no `*_free` function.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DpnsNameGiveUpChoicesFFI {
+    /// The name's `domain` document id.
+    pub document_id: [u8; 32],
+    /// Whether the network accepts a delete
+    /// ([`DPNS_NAME_GIVE_UP_METHOD_DELETE`]) for this name.
+    pub can_delete: bool,
+    /// Whether the network accepts a tombstone
+    /// ([`DPNS_NAME_GIVE_UP_METHOD_TOMBSTONE`]) for this name.
+    pub can_tombstone: bool,
+}
+
+/// A name given up, as the network confirmed it
+/// ([`platform_wallet_dpns_give_up_name`]).
+///
+/// Plain data (no heap members): it is written into a caller-owned struct
+/// and has no `*_free` function.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DpnsNameGivenUpFFI {
+    /// The `domain` document checked before signing. A delete removed exactly
+    /// this one. A tombstone consumed the owner's domain of the name at
+    /// execution, which is this one unless the name was deleted and
+    /// registered again in the moments between.
+    pub document_id: [u8; 32],
+    /// How it was given up: [`DPNS_NAME_GIVE_UP_METHOD_DELETE`] or
+    /// [`DPNS_NAME_GIVE_UP_METHOD_TOMBSTONE`].
+    pub method: u8,
+    /// Whether `tombstone_id` is populated: true exactly when `method` is
+    /// [`DPNS_NAME_GIVE_UP_METHOD_TOMBSTONE`].
+    pub has_tombstone: bool,
+    /// The id of the tombstone document the network stored. Ignore unless
+    /// `has_tombstone`.
+    pub tombstone_id: [u8; 32],
+}
+
 // ---------------------------------------------------------------------------
 // Conversions
 // ---------------------------------------------------------------------------
@@ -369,13 +439,61 @@ impl DpnsNameHistoryEventFFI {
     }
 }
 
+/// Read a host's `method` byte. `None` for a value that names no method;
+/// the caller refuses it before the wallet is touched.
+fn give_up_method_from_u8(method: u8) -> Option<DpnsNameGiveUpMethod> {
+    match method {
+        DPNS_NAME_GIVE_UP_METHOD_DELETE => Some(DpnsNameGiveUpMethod::Delete),
+        DPNS_NAME_GIVE_UP_METHOD_TOMBSTONE => Some(DpnsNameGiveUpMethod::Tombstone),
+        _ => None,
+    }
+}
+
+/// The `method` byte of `method`. Wildcard-free, so a new method is a
+/// compile error here rather than a silent mis-map.
+fn give_up_method_to_u8(method: DpnsNameGiveUpMethod) -> u8 {
+    match method {
+        DpnsNameGiveUpMethod::Delete => DPNS_NAME_GIVE_UP_METHOD_DELETE,
+        DpnsNameGiveUpMethod::Tombstone => DPNS_NAME_GIVE_UP_METHOD_TOMBSTONE,
+    }
+}
+
+impl DpnsNameGiveUpChoicesFFI {
+    /// Flatten the wallet's answer. The label stays behind: the host asked
+    /// with it.
+    fn from_choices(choices: &DpnsNameGiveUpChoices) -> Self {
+        Self {
+            document_id: choices.document_id.to_buffer(),
+            can_delete: choices.can_delete,
+            can_tombstone: choices.can_tombstone,
+        }
+    }
+}
+
+impl DpnsNameGivenUpFFI {
+    /// Flatten a confirmed give-up. Every field is derived from its outcome, so a
+    /// tombstone id crosses exactly with a tombstone.
+    fn from_given_up(given_up: &DpnsNameGivenUp) -> Self {
+        let (has_tombstone, tombstone_id) = match given_up.outcome {
+            DpnsNameGiveUpOutcome::Tombstoned { tombstone_id } => (true, tombstone_id.to_buffer()),
+            DpnsNameGiveUpOutcome::Deleted => (false, [0u8; 32]),
+        };
+        Self {
+            document_id: given_up.document_id.to_buffer(),
+            method: give_up_method_to_u8(given_up.outcome.method()),
+            has_tombstone,
+            tombstone_id,
+        }
+    }
+}
+
 /// Move `values` into a heap array and publish it through the out-params.
 /// An empty input writes `null` + `0` — an expected outcome, not an
 /// error, and one the paired `*_free` tolerates.
 ///
 /// # Safety
 /// `out_ptr` / `out_count` must be valid, writable, non-null.
-unsafe fn publish_array<T>(values: Vec<T>, out_ptr: *mut *mut T, out_count: *mut usize) {
+pub(crate) unsafe fn publish_array<T>(values: Vec<T>, out_ptr: *mut *mut T, out_count: *mut usize) {
     if values.is_empty() {
         unsafe {
             *out_ptr = ptr::null_mut();
@@ -436,15 +554,14 @@ pub unsafe extern "C" fn platform_wallet_dpns_marketplace_search(
         }))
     };
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        block_on_worker(async move {
-            identity
-                .search_dpns_names_with_state(&prefix_str, limit_opt, start_after_id)
-                .await
-        })
+    let identity = unwrap_option_or_return!(
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone())
+    );
+    let result = block_on_worker(async move {
+        identity
+            .search_dpns_names_with_state(&prefix_str, limit_opt, start_after_id)
+            .await
     });
-    let result = unwrap_option_or_return!(option);
     let states = unwrap_result_or_return!(result);
 
     let rows: Vec<DpnsMarketplaceNameFFI> = states
@@ -473,11 +590,10 @@ pub unsafe extern "C" fn platform_wallet_dpns_marketplace_name_state(
 
     let name_str = unwrap_result_or_return!(unsafe { CStr::from_ptr(name) }.to_str()).to_string();
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.dpns_name_state(&name_str).await })
-    });
-    let result = unwrap_option_or_return!(option);
+    let identity = unwrap_option_or_return!(
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone())
+    );
+    let result = block_on_worker(async move { identity.dpns_name_state(&name_str).await });
     let state_opt = unwrap_result_or_return!(result);
     if let Some(state) = state_opt {
         let boxed = Box::new(DpnsMarketplaceNameFFI::from_state(&state));
@@ -515,11 +631,11 @@ pub unsafe extern "C" fn platform_wallet_dpns_marketplace_my_names(
         }))
     };
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.local_dpns_name_states(filter.as_ref()).await })
-    });
-    let result = unwrap_option_or_return!(option);
+    let identity = unwrap_option_or_return!(
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone())
+    );
+    let result =
+        block_on_worker(async move { identity.local_dpns_name_states(filter.as_ref()).await });
     let entries = unwrap_result_or_return!(result);
 
     let rows: Vec<DpnsNameStateRowFFI> = entries
@@ -555,11 +671,10 @@ pub unsafe extern "C" fn platform_wallet_dpns_name_history(
 
     let name_str = unwrap_result_or_return!(unsafe { CStr::from_ptr(name) }.to_str()).to_string();
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.dpns_name_history(&name_str).await })
-    });
-    let result = unwrap_option_or_return!(option);
+    let identity = unwrap_option_or_return!(
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone())
+    );
+    let result = block_on_worker(async move { identity.dpns_name_history(&name_str).await });
     let events = unwrap_result_or_return!(result);
 
     let rows: Vec<DpnsNameHistoryEventFFI> = events
@@ -609,16 +724,15 @@ pub unsafe extern "C" fn platform_wallet_dpns_set_name_price(
     // ownership contract. Same idiom as `document.rs`.
     let signer_addr = signer_handle as usize;
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        block_on_worker(async move {
-            let signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
-            identity
-                .set_dpns_name_price(&owner_id, &name_str, price_credits, signer)
-                .await
-        })
+    let identity = unwrap_option_or_return!(
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone())
+    );
+    let result = block_on_worker(async move {
+        let signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
+        identity
+            .set_dpns_name_price(&owner_id, &name_str, price_credits, signer)
+            .await
     });
-    let result = unwrap_option_or_return!(option);
     let state = unwrap_result_or_return!(result);
     unsafe { *out_state = Box::into_raw(Box::new(DpnsMarketplaceNameFFI::from_state(&state))) };
     PlatformWalletFFIResult::ok()
@@ -653,16 +767,15 @@ pub unsafe extern "C" fn platform_wallet_dpns_delist_name(
 
     let signer_addr = signer_handle as usize;
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        block_on_worker(async move {
-            let signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
-            identity
-                .delist_dpns_name(&owner_id, &name_str, signer)
-                .await
-        })
+    let identity = unwrap_option_or_return!(
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone())
+    );
+    let result = block_on_worker(async move {
+        let signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
+        identity
+            .delist_dpns_name(&owner_id, &name_str, signer)
+            .await
     });
-    let result = unwrap_option_or_return!(option);
     let state = unwrap_result_or_return!(result);
     unsafe { *out_state = Box::into_raw(Box::new(DpnsMarketplaceNameFFI::from_state(&state))) };
     PlatformWalletFFIResult::ok()
@@ -700,16 +813,15 @@ pub unsafe extern "C" fn platform_wallet_dpns_transfer_name(
 
     let signer_addr = signer_handle as usize;
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        block_on_worker(async move {
-            let signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
-            identity
-                .transfer_dpns_name(&owner_id, &name_str, &recipient, signer)
-                .await
-        })
+    let identity = unwrap_option_or_return!(
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone())
+    );
+    let result = block_on_worker(async move {
+        let signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
+        identity
+            .transfer_dpns_name(&owner_id, &name_str, &recipient, signer)
+            .await
     });
-    let result = unwrap_option_or_return!(option);
     let state = unwrap_result_or_return!(result);
     unsafe { *out_state = Box::into_raw(Box::new(DpnsMarketplaceNameFFI::from_state(&state))) };
     PlatformWalletFFIResult::ok()
@@ -751,18 +863,160 @@ pub unsafe extern "C" fn platform_wallet_dpns_purchase_name(
 
     let signer_addr = signer_handle as usize;
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        block_on_worker(async move {
-            let signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
-            identity
-                .purchase_dpns_name(&purchaser_id, &name_str, expected_price_credits, signer)
-                .await
-        })
+    let identity = unwrap_option_or_return!(
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone())
+    );
+    let result = block_on_worker(async move {
+        let signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
+        identity
+            .purchase_dpns_name(&purchaser_id, &name_str, expected_price_credits, signer)
+            .await
     });
-    let result = unwrap_option_or_return!(option);
     let state = unwrap_result_or_return!(result);
     unsafe { *out_state = Box::into_raw(Box::new(DpnsMarketplaceNameFFI::from_state(&state))) };
+    PlatformWalletFFIResult::ok()
+}
+
+// ---------------------------------------------------------------------------
+// Giving up a name
+// ---------------------------------------------------------------------------
+
+/// Which ways the network accepts for `owner_identity_id` to give up
+/// `name` (`"alice"` or `"alice.dash"`): a delete, a tombstone, or either.
+/// Nothing is signed or broadcast.
+///
+/// Goes through `IdentityWallet::dpns_name_give_up_choices`, which owns
+/// the rule (a contested name can only be tombstoned); a host offers
+/// exactly the ways whose flag is `true` in `out_choices`.
+///
+/// Typed results:
+/// - `ErrorProtocolVersionNotActive` (70): a verified answer shows the
+///   network below Platform protocol version 15, where no name can be
+///   given up.
+/// - `ErrorSdkPinnedBelowProtocolVersion` (75): the SDK is pinned to a
+///   version below 15, whatever the network runs.
+/// - `ErrorUnknown`: the network's version could not be learned (a
+///   failed version probe); the refusal may pass on a retry.
+/// - `NotFound`: the name is not registered.
+/// - `ErrorInvalidParameter`: another identity holds it.
+///
+/// `out_choices` is caller-owned and is zeroed before any fallible work, so
+/// an error leaves it all-`false`. It holds no heap memory: there is
+/// nothing to free.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_dpns_name_give_up_choices(
+    wallet_handle: Handle,
+    owner_identity_id: *const u8,
+    name: *const c_char,
+    out_choices: *mut DpnsNameGiveUpChoicesFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_choices);
+    unsafe { *out_choices = DpnsNameGiveUpChoicesFFI::default() };
+    check_ptr!(name);
+
+    let owner_id = unwrap_result_or_return!(unsafe { read_identifier(owner_identity_id) });
+    let name_str = unwrap_result_or_return!(unsafe { CStr::from_ptr(name) }.to_str()).to_string();
+
+    let identity = unwrap_option_or_return!(
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone())
+    );
+    let result = block_on_worker(async move {
+        identity
+            .dpns_name_give_up_choices(&owner_id, &name_str)
+            .await
+    });
+    let choices = unwrap_result_or_return!(result);
+    unsafe { *out_choices = DpnsNameGiveUpChoicesFFI::from_choices(&choices) };
+    PlatformWalletFFIResult::ok()
+}
+
+/// Give up `name`, held by the wallet identity `owner_identity_id`, by
+/// `method`: [`DPNS_NAME_GIVE_UP_METHOD_DELETE`] frees the name for anybody
+/// to register again; [`DPNS_NAME_GIVE_UP_METHOD_TOMBSTONE`] removes it and
+/// nobody can register it again or undo the tombstone. Any other `method`
+/// value is refused with `ErrorInvalidParameter` before the wallet is
+/// touched.
+///
+/// `expected_document_id` is the 32-byte `domain` document id the host showed
+/// its user (`DpnsNameGiveUpChoicesFFI::document_id`): a replacement
+/// registration the pre-signing read detects is refused with
+/// `ErrorInvalidParameter`. A delete targets that document; a tombstone is
+/// bound to the owner and name, so a replacement made between that read and
+/// execution is the one it consumes.
+///
+/// Goes through `IdentityWallet::give_up_dpns_name`, which reads the name
+/// again before signing (protocol version 15, registered, held by
+/// `owner_identity_id`, still `expected_document_id`, `method` accepted for
+/// it), selects the signing key on the owner, and broadcasts. The wallet's
+/// stored state changes only once the network confirmed the name gone: the
+/// persister commits the name's marketplace-row removal, then an identity
+/// snapshot without the label. On an error before that nothing stored
+/// changes. If the backend refuses that cleanup, the result is still a
+/// success (the network confirmed it) and the next marketplace sync removes
+/// the name.
+///
+/// Typed results:
+/// - `ErrorProtocolVersionNotActive` (70): a verified answer shows the
+///   network below protocol version 15. Nothing is signed.
+/// - `ErrorSdkPinnedBelowProtocolVersion` (75): the SDK is pinned below 15.
+/// - `ErrorUnknown` for a refusal whose version probe failed; it may pass
+///   on a retry.
+/// - `NotFound`: the name is not registered.
+/// - `ErrorInvalidParameter`: another identity holds it, it is no longer
+///   `expected_document_id`, or the network does not accept `method` for it.
+/// - `ErrorTransactionBroadcastUnconfirmed` (20): the
+///   transition may have been delivered; do not give the name up again
+///   until a read shows whether it was.
+/// - `ErrorSigningKeyUnavailable` (31): the signer has no key for the
+///   selected public key.
+///
+/// `signer_handle` must be a valid, non-destroyed handle produced by
+/// `dash_sdk_signer_create_with_ctx` (typically `KeychainSigner.handle`);
+/// the caller retains ownership. `out_given_up` is caller-owned and is
+/// zeroed before any fallible work. It holds no heap memory: there is
+/// nothing to free.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_dpns_give_up_name(
+    wallet_handle: Handle,
+    owner_identity_id: *const u8,
+    name: *const c_char,
+    expected_document_id: *const u8,
+    method: u8,
+    signer_handle: *mut SignerHandle,
+    out_given_up: *mut DpnsNameGivenUpFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_given_up);
+    unsafe { *out_given_up = DpnsNameGivenUpFFI::default() };
+    check_ptr!(name);
+    check_ptr!(signer_handle);
+
+    let Some(give_up_method) = give_up_method_from_u8(method) else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!(
+                "unknown DPNS name give-up method {method}: expected \
+                 {DPNS_NAME_GIVE_UP_METHOD_DELETE} (delete) or \
+                 {DPNS_NAME_GIVE_UP_METHOD_TOMBSTONE} (tombstone)"
+            ),
+        );
+    };
+    let owner_id = unwrap_result_or_return!(unsafe { read_identifier(owner_identity_id) });
+    let expected_id = unwrap_result_or_return!(unsafe { read_identifier(expected_document_id) });
+    let name_str = unwrap_result_or_return!(unsafe { CStr::from_ptr(name) }.to_str()).to_string();
+
+    let signer_addr = signer_handle as usize;
+
+    let identity = unwrap_option_or_return!(
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone())
+    );
+    let result = block_on_worker(async move {
+        let signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
+        identity
+            .give_up_dpns_name(&owner_id, &name_str, &expected_id, give_up_method, signer)
+            .await
+    });
+    let given_up = unwrap_result_or_return!(result);
+    unsafe { *out_given_up = DpnsNameGivenUpFFI::from_given_up(&given_up) };
     PlatformWalletFFIResult::ok()
 }
 
@@ -809,11 +1063,10 @@ pub unsafe extern "C" fn platform_wallet_dpns_marketplace_sync(
         }
     }
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.sync_dpns_marketplace().await })
-    });
-    let result = unwrap_option_or_return!(option);
+    let identity = unwrap_option_or_return!(
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone())
+    );
+    let result = block_on_worker(async move { identity.sync_dpns_marketplace().await });
     let summary = unwrap_result_or_return!(result);
 
     unsafe {
@@ -844,11 +1097,10 @@ pub unsafe extern "C" fn platform_wallet_dpns_marketplace_sync_detailed(
     check_ptr!(out_summary);
     unsafe { *out_summary = DpnsMarketplaceSyncSummaryFFI::default() };
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.sync_dpns_marketplace().await })
-    });
-    let result = unwrap_option_or_return!(option);
+    let identity = unwrap_option_or_return!(
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone())
+    );
+    let result = block_on_worker(async move { identity.sync_dpns_marketplace().await });
     let summary = unwrap_result_or_return!(result);
 
     let added: Vec<DpnsNameAddedFFI> = summary
@@ -1417,5 +1669,205 @@ mod tests {
         };
         assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
         assert!(state.is_null());
+    }
+
+    /// The method bytes are the ABI contract with the host's give-up
+    /// mirror: each one reads back as the method it names and writes back
+    /// as the same byte, and no other byte names a method.
+    #[test]
+    fn should_map_give_up_methods_to_their_bytes_both_ways() {
+        for (method, byte) in [
+            (DpnsNameGiveUpMethod::Delete, 0u8),
+            (DpnsNameGiveUpMethod::Tombstone, 1u8),
+        ] {
+            assert_eq!(give_up_method_to_u8(method), byte);
+            assert_eq!(give_up_method_from_u8(byte), Some(method));
+        }
+        assert_eq!(DPNS_NAME_GIVE_UP_METHOD_DELETE, 0);
+        assert_eq!(DPNS_NAME_GIVE_UP_METHOD_TOMBSTONE, 1);
+        for byte in 2..=u8::MAX {
+            assert_eq!(give_up_method_from_u8(byte), None, "byte {byte}");
+        }
+    }
+
+    #[test]
+    fn should_flatten_give_up_choices_with_both_flags_as_reported() {
+        for (can_delete, can_tombstone) in [(true, true), (false, true)] {
+            let ffi = DpnsNameGiveUpChoicesFFI::from_choices(&DpnsNameGiveUpChoices {
+                document_id: Identifier::from([1u8; 32]),
+                label: "Alice".to_string(),
+                can_delete,
+                can_tombstone,
+            });
+            assert_eq!(ffi.document_id, [1u8; 32]);
+            assert_eq!(ffi.can_delete, can_delete);
+            assert_eq!(ffi.can_tombstone, can_tombstone);
+        }
+    }
+
+    /// A tombstone id crosses only with its flag, and a delete carries no
+    /// fabricated one.
+    #[test]
+    fn should_flatten_a_given_up_name_with_the_tombstone_only_when_present() {
+        let deleted = DpnsNameGivenUpFFI::from_given_up(&DpnsNameGivenUp {
+            document_id: Identifier::from([1u8; 32]),
+            label: "Alice".to_string(),
+            outcome: DpnsNameGiveUpOutcome::Deleted,
+        });
+        assert_eq!(deleted.document_id, [1u8; 32]);
+        assert_eq!(deleted.method, DPNS_NAME_GIVE_UP_METHOD_DELETE);
+        assert!(!deleted.has_tombstone);
+        assert_eq!(deleted.tombstone_id, [0u8; 32]);
+
+        let tombstoned = DpnsNameGivenUpFFI::from_given_up(&DpnsNameGivenUp {
+            document_id: Identifier::from([1u8; 32]),
+            label: "Alice".to_string(),
+            outcome: DpnsNameGiveUpOutcome::Tombstoned {
+                tombstone_id: Identifier::from([9u8; 32]),
+            },
+        });
+        assert_eq!(tombstoned.method, DPNS_NAME_GIVE_UP_METHOD_TOMBSTONE);
+        assert!(tombstoned.has_tombstone);
+        assert_eq!(tombstoned.tombstone_id, [9u8; 32]);
+    }
+
+    /// An unknown method is refused as a bad argument before the handle is
+    /// looked up: an unknown handle would otherwise answer `NotFound`.
+    #[test]
+    fn should_refuse_an_unknown_give_up_method_before_touching_the_wallet() {
+        let bogus: Handle = 0xDEAD_BEEF;
+        let name = CString::new("alice").unwrap();
+        // Any non-null address passes the signer null check; the call
+        // returns before it could be dereferenced.
+        let signer = ptr::NonNull::<SignerHandle>::dangling().as_ptr();
+        let mut out = DpnsNameGivenUpFFI {
+            method: 7,
+            has_tombstone: true,
+            ..Default::default()
+        };
+        let r = unsafe {
+            platform_wallet_dpns_give_up_name(
+                bogus,
+                [0u8; 32].as_ptr(),
+                name.as_ptr(),
+                [1u8; 32].as_ptr(),
+                2,
+                signer,
+                &mut out,
+            )
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        assert_eq!(out, DpnsNameGivenUpFFI::default());
+
+        let r = unsafe {
+            platform_wallet_dpns_give_up_name(
+                bogus,
+                [0u8; 32].as_ptr(),
+                name.as_ptr(),
+                [1u8; 32].as_ptr(),
+                DPNS_NAME_GIVE_UP_METHOD_TOMBSTONE,
+                signer,
+                &mut out,
+            )
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
+    }
+
+    /// Required pointers are rejected with `ErrorNullPointer`, an unknown
+    /// handle with `NotFound`, and every out-struct is left zeroed.
+    #[test]
+    fn should_reject_null_pointers_and_unknown_handles_on_give_up_entry_points() {
+        let bogus: Handle = 0xDEAD_BEEF;
+        let name = CString::new("alice").unwrap();
+        let owner = [0u8; 32];
+
+        let mut choices = DpnsNameGiveUpChoicesFFI {
+            can_delete: true,
+            can_tombstone: true,
+            ..Default::default()
+        };
+        let r = unsafe {
+            platform_wallet_dpns_name_give_up_choices(
+                bogus,
+                owner.as_ptr(),
+                name.as_ptr(),
+                &mut choices,
+            )
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
+        assert_eq!(choices, DpnsNameGiveUpChoicesFFI::default());
+
+        let r = unsafe {
+            platform_wallet_dpns_name_give_up_choices(
+                bogus,
+                owner.as_ptr(),
+                name.as_ptr(),
+                ptr::null_mut(),
+            )
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+
+        choices.can_delete = true;
+        choices.document_id = [9u8; 32];
+        let r = unsafe {
+            platform_wallet_dpns_name_give_up_choices(
+                bogus,
+                owner.as_ptr(),
+                ptr::null(),
+                &mut choices,
+            )
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert_eq!(choices, DpnsNameGiveUpChoicesFFI::default());
+
+        let signer = ptr::NonNull::<SignerHandle>::dangling().as_ptr();
+        let mut stale = DpnsNameGivenUpFFI {
+            method: 1,
+            has_tombstone: true,
+            tombstone_id: [9u8; 32],
+            ..Default::default()
+        };
+        let r = unsafe {
+            platform_wallet_dpns_give_up_name(
+                bogus,
+                owner.as_ptr(),
+                ptr::null(),
+                [1u8; 32].as_ptr(),
+                DPNS_NAME_GIVE_UP_METHOD_DELETE,
+                signer,
+                &mut stale,
+            )
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert_eq!(stale, DpnsNameGivenUpFFI::default());
+
+        let mut given_up = DpnsNameGivenUpFFI::default();
+        let r = unsafe {
+            platform_wallet_dpns_give_up_name(
+                bogus,
+                owner.as_ptr(),
+                name.as_ptr(),
+                [1u8; 32].as_ptr(),
+                DPNS_NAME_GIVE_UP_METHOD_DELETE,
+                ptr::null_mut(),
+                &mut given_up,
+            )
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert_eq!(given_up, DpnsNameGivenUpFFI::default());
+
+        let signer = ptr::NonNull::<SignerHandle>::dangling().as_ptr();
+        let r = unsafe {
+            platform_wallet_dpns_give_up_name(
+                bogus,
+                owner.as_ptr(),
+                name.as_ptr(),
+                [1u8; 32].as_ptr(),
+                DPNS_NAME_GIVE_UP_METHOD_DELETE,
+                signer,
+                ptr::null_mut(),
+            )
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
     }
 }

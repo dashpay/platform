@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Security
 import os.log
@@ -162,8 +163,22 @@ public final class KeychainManager: Sendable {
             query[kSecAttrAccessGroup as String] = accessGroup
         }
 
-        // Delete any existing item first
-        SecItemDelete(query as CFDictionary)
+        // Delete any existing item first, matched by its identity only
+        // (class, service, account and access group). The add query also
+        // carries the key bytes and a metadata blob with a fresh
+        // `createdAt`, so deleting with it matched no stored item and the
+        // add below then failed as a duplicate: storing a key into an
+        // occupied slot, even the same key again on a retried load, always
+        // returned nil.
+        var existingItem: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: keyIdentifier,
+        ]
+        if let accessGroup = accessGroup {
+            existingItem[kSecAttrAccessGroup as String] = accessGroup
+        }
+        SecItemDelete(existingItem as CFDictionary)
 
         // Add the new item
         let status = SecItemAdd(query as CFDictionary, nil)
@@ -289,6 +304,172 @@ public final class KeychainManager: Sendable {
         return storeKeyData(keyData, identifier: keyIdentifier)
     }
 
+    /// What `storeSpecialKeyIfAbsent(_:identityId:keyType:)` did.
+    public enum SpecialKeyStoreOutcome: Sendable, Equatable {
+        /// The slot was empty and now holds the key.
+        case stored(identifier: String)
+        /// The slot already held these exact bytes; nothing was written.
+        case alreadyStored(identifier: String)
+        /// The slot holds a different key, which was kept; nothing was written.
+        /// `storedKeyDigest` is the SHA-256 digest of that kept key, so a
+        /// caller can name the key a user agrees to replace without keeping
+        /// the key itself.
+        case conflicting(storedKeyDigest: Data)
+        /// The slot could not be read or written.
+        case failed
+        /// `replaceSpecialKey(_:identityId:keyType:replacing:)` only: the
+        /// slot no longer holds the key the user confirmed replacing (it
+        /// holds a different key, or none), so nothing was changed.
+        case changedSinceConfirmation
+    }
+
+    /// Store a special key only into an empty slot. An existing key is never
+    /// replaced or deleted, so an import cannot lose a stored credential:
+    /// the same bytes are reported as already stored, different bytes as
+    /// conflicting, and an unreadable slot as failed.
+    /// - Parameters:
+    ///   - keyData: The key data
+    ///   - identityId: The identity ID (32 bytes)
+    ///   - keyType: The type of special key
+    public func storeSpecialKeyIfAbsent(
+        _ keyData: Data,
+        identityId: Data,
+        keyType: SpecialKeyType
+    ) -> SpecialKeyStoreOutcome {
+        storeSpecialKeyIfAbsent(keyData, identityId: identityId, keyType: keyType, afterEmptyRead: {})
+    }
+
+    /// `storeSpecialKeyIfAbsent(_:identityId:keyType:)` with a hook that
+    /// runs after the slot was read as empty and before the add, so a test
+    /// can fill the slot in between.
+    func storeSpecialKeyIfAbsent(
+        _ keyData: Data,
+        identityId: Data,
+        keyType: SpecialKeyType,
+        afterEmptyRead: () -> Void
+    ) -> SpecialKeyStoreOutcome {
+        let identifier = generateSpecialKeyIdentifier(identityId: identityId, keyType: keyType)
+        switch readKeyData(identifier: identifier) {
+        case .success(nil):
+            afterEmptyRead()
+            // Add only, with no delete first: if another writer filled the
+            // slot since the read, the add reports a duplicate and the slot
+            // is compared again instead of being overwritten.
+            var add: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: serviceName,
+                kSecAttrAccount as String: identifier,
+                kSecValueData as String: keyData,
+                kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+                kSecAttrSynchronizable as String: false,
+            ]
+            if let accessGroup = accessGroup {
+                add[kSecAttrAccessGroup as String] = accessGroup
+            }
+            switch SecItemAdd(add as CFDictionary, nil) {
+            case errSecSuccess:
+                return .stored(identifier: identifier)
+            case errSecDuplicateItem:
+                return compareStoredKey(keyData, identifier: identifier)
+            default:
+                return .failed
+            }
+        case .success(let existing?):
+            return existing == keyData
+                ? .alreadyStored(identifier: identifier)
+                : .conflicting(storedKeyDigest: Data(SHA256.hash(data: existing)))
+        case .failure:
+            return .failed
+        }
+    }
+
+    /// Replace the key in one special-key slot. Used only after the user
+    /// confirmed replacing a conflicting key, which is why the slot is
+    /// deleted before the add: the user chose to give up the old key.
+    ///
+    /// The replacement is bound to the key the user saw: when the slot no
+    /// longer holds the key whose digest is `expectedDigest` (another
+    /// window replaced or removed it since), nothing is changed and the
+    /// result is `.changedSinceConfirmation`. Returns `.failed` with the
+    /// old key untouched when the slot cannot be read or the Keychain
+    /// refuses the delete. Once the delete succeeded the result is that of
+    /// `storeSpecialKeyIfAbsent(_:identityId:keyType:)`, so `.failed` there
+    /// leaves the slot empty and `.conflicting` means another writer filled
+    /// it in between.
+    ///
+    /// Limits: the check and the delete are two Keychain calls, so a writer
+    /// outside the main actor (another process sharing an access group, or
+    /// a `nonisolated` sweep such as `deleteAllKeychainItems(forIdentityId:)`
+    /// running on another thread) can change the slot between them. With `accessGroup == nil` on a host
+    /// entitled to several access groups, the read names one item but the
+    /// delete removes every match; construct the manager with an explicit
+    /// access group on such a host. If the process ends between the delete
+    /// and the add, the slot is left empty and the next store fills it.
+    /// - Parameters:
+    ///   - keyData: The key data
+    ///   - identityId: The identity ID (32 bytes)
+    ///   - keyType: The type of special key
+    ///   - expectedDigest: the `storedKeyDigest` of the `.conflicting`
+    ///     outcome the user was asked about
+    public func replaceSpecialKey(
+        _ keyData: Data,
+        identityId: Data,
+        keyType: SpecialKeyType,
+        replacing expectedDigest: Data
+    ) -> SpecialKeyStoreOutcome {
+        replaceSpecialKey(
+            keyData,
+            identityId: identityId,
+            keyType: keyType,
+            replacing: expectedDigest,
+            afterDelete: {}
+        )
+    }
+
+    /// `replaceSpecialKey(_:identityId:keyType:replacing:)` with a hook that
+    /// runs after the delete and before the add, so a test can fill the
+    /// emptied slot in between.
+    func replaceSpecialKey(
+        _ keyData: Data,
+        identityId: Data,
+        keyType: SpecialKeyType,
+        replacing expectedDigest: Data,
+        afterDelete: () -> Void
+    ) -> SpecialKeyStoreOutcome {
+        let identifier = generateSpecialKeyIdentifier(identityId: identityId, keyType: keyType)
+        switch readKeyData(identifier: identifier) {
+        case .success(let stored?):
+            guard Data(SHA256.hash(data: stored)) == expectedDigest else {
+                return .changedSinceConfirmation
+            }
+        case .success(nil):
+            return .changedSinceConfirmation
+        case .failure:
+            return .failed
+        }
+        guard deleteSpecialKey(identityId: identityId, keyType: keyType) else {
+            return .failed
+        }
+        return storeSpecialKeyIfAbsent(
+            keyData,
+            identityId: identityId,
+            keyType: keyType,
+            afterEmptyRead: afterDelete
+        )
+    }
+
+    /// The outcome for `keyData` against what the slot holds now.
+    private func compareStoredKey(_ keyData: Data, identifier: String) -> SpecialKeyStoreOutcome {
+        switch readKeyData(identifier: identifier) {
+        case .success(let existing?):
+            return existing == keyData
+                ? .alreadyStored(identifier: identifier)
+                : .conflicting(storedKeyDigest: Data(SHA256.hash(data: existing)))
+        case .success(nil), .failure:
+            return .failed
+        }
+    }
+
     /// Retrieve a special key from the keychain
     /// - Parameters:
     ///   - identityId: The identity ID (32 bytes)
@@ -297,6 +478,26 @@ public final class KeychainManager: Sendable {
     public func retrieveSpecialKey(identityId: Data, keyType: SpecialKeyType) -> Data? {
         let keyIdentifier = generateSpecialKeyIdentifier(identityId: identityId, keyType: keyType)
         return retrieveKeyData(identifier: keyIdentifier)
+    }
+
+    /// Read a special key from the keychain, telling a missing key apart
+    /// from a Keychain that could not be read.
+    ///
+    /// `retrieveSpecialKey` returns `nil` for every failed lookup, so a
+    /// locked device looks like a key that was never stored. This read
+    /// keeps the status: `errSecItemNotFound` is `.success(nil)`, any
+    /// other failure is `.failure(.retrieveFailed(status))`, and an item
+    /// that holds no data is `.failure(.invalidData)`.
+    ///
+    /// `nonisolated` for the same reason as `retrieveKeyData(identifier:)`.
+    /// - Parameters:
+    ///   - identityId: The identity ID (32 bytes)
+    ///   - keyType: The type of special key
+    public nonisolated func readSpecialKey(
+        identityId: Data,
+        keyType: SpecialKeyType
+    ) -> Result<Data?, KeychainError> {
+        readKeyData(identifier: generateSpecialKeyIdentifier(identityId: identityId, keyType: keyType))
     }
 
     /// Delete a special key from the keychain
@@ -395,6 +596,15 @@ public final class KeychainManager: Sendable {
     /// - Parameter identifier: The identifier for the stored data
     /// - Returns: The stored data, or nil if not found
     public nonisolated func retrieveKeyData(identifier: String) -> Data? {
+        (try? readKeyData(identifier: identifier).get()) ?? nil
+    }
+
+    /// The one lookup behind `retrieveKeyData(identifier:)` and
+    /// `readSpecialKey(identityId:keyType:)`, keeping the status:
+    /// `errSecItemNotFound` is `.success(nil)`, any other failure is
+    /// `.failure(.retrieveFailed(status))`, and an item that holds no data
+    /// is `.failure(.invalidData)`.
+    nonisolated func readKeyData(identifier: String) -> Result<Data?, KeychainError> {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
@@ -409,8 +619,15 @@ public final class KeychainManager: Sendable {
 
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        return status == errSecSuccess ? result as? Data : nil
+        switch status {
+        case errSecSuccess:
+            guard let data = result as? Data else { return .failure(.invalidData) }
+            return .success(data)
+        case errSecItemNotFound:
+            return .success(nil)
+        default:
+            return .failure(.retrieveFailed(status))
+        }
     }
 
     /// Delete data from the keychain by identifier
@@ -459,7 +676,9 @@ public final class KeychainManager: Sendable {
         return "privkey_\(identityId.toHexString())_\(keyIndex)"
     }
 
-    private func generateSpecialKeyIdentifier(identityId: Data, keyType: SpecialKeyType) -> String {
+    /// Nonisolated for the same reason as `generateKeyIdentifier`: it is
+    /// shared with the off-actor `readSpecialKey`.
+    private nonisolated func generateSpecialKeyIdentifier(identityId: Data, keyType: SpecialKeyType) -> String {
         return "specialkey_\(identityId.toHexString())_\(keyType.rawValue)"
     }
 }
@@ -1003,6 +1222,31 @@ extension KeychainManager {
     /// (`identity_privkey.<path>`) accounts uniformly. Idempotent;
     /// no-op when nothing matches.
     public nonisolated func deleteAllIdentityPrivateKeys(forIdentityIdBase58 identityIdBase58: String) throws {
+        try deleteIdentityPrivateKeys(owners: [identityIdBase58], pendingPublicKeys: [])
+    }
+
+    /// Owner tags written into the metadata before the identity id is
+    /// known: `pending` (`MnemonicResolverAndPersister`) and the empty
+    /// string (the DashPay key pair written by Create Identity and by an
+    /// invitation claim). Confirmation links such a key to its public-key
+    /// row without rewriting the owner.
+    private nonisolated static let unattributedIdentityOwners: Set<String> = ["pending", ""]
+
+    /// Deletes the `identity_privkey.*` items whose metadata owner is one
+    /// of `owners`, and the unattributed items (owner `pending` or empty)
+    /// whose full metadata public key is one of `pendingPublicKeys`. An
+    /// item that names another owner is never matched by its public key:
+    /// Platform lets identities share some keys (for example a HASH160
+    /// payout key), so an explicit owner decides. Empty entries in
+    /// `owners` and `pendingPublicKeys` never match.
+    private nonisolated func deleteIdentityPrivateKeys(
+        owners: Set<String>,
+        pendingPublicKeys: [Data]
+    ) throws {
+        let owners = owners.filter { !$0.isEmpty }
+        let pendingPublicKeyHexes = Set(
+            pendingPublicKeys.filter { !$0.isEmpty }.map { $0.toHexString().lowercased() }
+        )
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
@@ -1055,11 +1299,44 @@ extension KeychainManager {
                 )
                 continue
             }
-            guard metadata.identityId == identityIdBase58 else {
+            let ownedHere = owners.contains(metadata.identityId)
+            let pendingHere = Self.unattributedIdentityOwners.contains(metadata.identityId)
+                && !metadata.publicKey.isEmpty
+                && pendingPublicKeyHexes.contains(metadata.publicKey.lowercased())
+            guard ownedHere || pendingHere else {
                 continue
             }
             try deleteGenericPassword(account: account)
         }
+    }
+
+    /// Delete every Keychain item that holds a private key of one
+    /// identity, whatever format it was written in:
+    ///  * `privkey_<identityHex>_*` and `specialkey_<identityHex>_*`
+    ///    (keys imported or loaded directly, and the voting / owner /
+    ///    payout slots), via `deleteAllKeychainItems(forIdentityId:)`;
+    ///  * `identity_privkey.*` items whose metadata names the identity,
+    ///    by its Base58 id or its hex id (Add Key writes the hex id);
+    ///  * unattributed `identity_privkey.*` items (owner `pending` or
+    ///    empty, as registration and the DashPay key pair write them) whose
+    ///    full metadata public key is one of `publicKeys`; confirmation
+    ///    links such a key without rewriting the owner.
+    ///    An item naming another identity is left alone even when its
+    ///    public key matches, since identities can share some keys.
+    ///
+    /// Used when an identity is removed from the device. Idempotent;
+    /// no-op when nothing matches.
+    public nonisolated func deleteAllPrivateKeys(
+        ofIdentityId identityId: Data,
+        publicKeys: [Data]
+    ) throws {
+        try deleteAllKeychainItems(forIdentityId: identityId)
+        // Both owner encodings come from the one binary id, so a caller
+        // cannot mix in another identity's id.
+        try deleteIdentityPrivateKeys(
+            owners: [identityId.toBase58String(), identityId.toHexString().lowercased()],
+            pendingPublicKeys: publicKeys
+        )
     }
 
     /// Subsystem-tagged logger for Keychain operations. Surfaces

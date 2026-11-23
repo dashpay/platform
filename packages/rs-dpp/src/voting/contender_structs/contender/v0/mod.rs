@@ -1,4 +1,4 @@
-use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::document_type::{DecodedValueBudget, DocumentTypeRef};
 use crate::data_contract::DataContract;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::Document;
@@ -139,6 +139,63 @@ impl ContenderWithSerializedDocumentV0 {
                 .as_ref()
                 .map(|document| {
                     Document::from_bytes(document.as_slice(), document_type_ref, platform_version)
+                })
+                .transpose()?,
+            vote_tally: *vote_tally,
+        })
+    }
+
+    pub fn try_into_contender_with_budget(
+        self,
+        document_type_ref: DocumentTypeRef,
+        budget: &mut DecodedValueBudget,
+        platform_version: &PlatformVersion,
+    ) -> Result<ContenderV0, ProtocolError> {
+        let ContenderWithSerializedDocumentV0 {
+            identity_id,
+            serialized_document,
+            vote_tally,
+        } = self;
+
+        Ok(ContenderV0 {
+            identity_id,
+            document: serialized_document
+                .map(|document| {
+                    Document::from_bytes_with_budget(
+                        document.as_slice(),
+                        document_type_ref,
+                        budget,
+                        platform_version,
+                    )
+                })
+                .transpose()?,
+            vote_tally,
+        })
+    }
+
+    pub fn try_to_contender_with_budget(
+        &self,
+        document_type_ref: DocumentTypeRef,
+        budget: &mut DecodedValueBudget,
+        platform_version: &PlatformVersion,
+    ) -> Result<ContenderV0, ProtocolError> {
+        let ContenderWithSerializedDocumentV0 {
+            identity_id,
+            serialized_document,
+            vote_tally,
+        } = self;
+
+        Ok(ContenderV0 {
+            identity_id: *identity_id,
+            document: serialized_document
+                .as_ref()
+                .map(|document| {
+                    Document::from_bytes_with_budget(
+                        document.as_slice(),
+                        document_type_ref,
+                        budget,
+                        platform_version,
+                    )
                 })
                 .transpose()?,
             vote_tally: *vote_tally,

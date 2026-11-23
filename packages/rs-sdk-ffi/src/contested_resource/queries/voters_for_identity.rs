@@ -1,4 +1,4 @@
-use crate::contested_resource::request_limit;
+use crate::contested_resource::{parse_index_values_json, request_limit};
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::platform_value::Value;
@@ -20,9 +20,12 @@ use std::ffi::{c_char, c_void, CStr, CString};
 /// * `contract_id` - Base58-encoded contract identifier
 /// * `document_type_name` - Name of the document type
 /// * `index_name` - Name of the index
-/// * `index_values_json` - JSON array of index values. A `"0x"`-prefixed
-///   element is hex-decoded to bytes; any other element is taken verbatim as
-///   text (matches the cast-vote write path).
+/// * `index_values_json` - JSON array of index values. An
+///   element starting with a backslash is text with that one backslash
+///   removed; otherwise a `"0x"`-prefixed element is hex-decoded to bytes;
+///   otherwise the element is text, verbatim. To pass text that itself starts
+///   with `"0x"` or a backslash (the DPNS label "oxford" normalizes to
+///   `"0xf0rd"`), prepend one backslash. Shared with the read and vote FFIs.
 /// * `contestant_id` - Base58-encoded contestant identifier
 /// * `count` - Maximum number of voters to return; 0 sends no limit (the
 ///   node's default page). A value above `u16::MAX` is refused with
@@ -189,16 +192,9 @@ fn get_contested_resource_voters_for_identity(
         let contestant_id = dash_sdk::platform::Identifier::new(contestant_id);
 
         // Parse index values
-        let index_values_array: Vec<String> = serde_json::from_str(index_values_str)
-            .map_err(|e| format!("Failed to parse index values JSON: {}", e))?;
-
-        // Explicit type tag: a `"0x"`-prefixed value is hex-decoded to
-        // `Value::Bytes`, anything else is verbatim `Value::Text`. Shared with
-        // the cast-vote write path so read and write stay in lockstep.
-        let index_values: Vec<Value> = index_values_array
-            .into_iter()
-            .map(crate::contested_resource::parse_index_value)
-            .collect::<Result<Vec<Value>, String>>()?;
+        // Explicit type tags (see `parse_index_value`), shared with the
+        // cast-vote write path so read and write stay in lockstep.
+        let index_values: Vec<Value> = parse_index_values_json(index_values_str)?;
 
         let vote_poll = ContestedDocumentResourceVotePoll {
             contract_id,

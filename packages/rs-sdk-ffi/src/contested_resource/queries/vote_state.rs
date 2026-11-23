@@ -1,5 +1,5 @@
 use crate::contested_resource::contender_document::json_members;
-use crate::contested_resource::request_limit;
+use crate::contested_resource::{parse_index_values_json, request_limit};
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -12,7 +12,7 @@ use dash_sdk::dpp::voting::vote_polls::contested_document_resource_vote_poll::Co
 use dash_sdk::drive::query::vote_poll_vote_state_query::{
     ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
 };
-use dash_sdk::platform::dpns_usernames::ContenderRequest;
+use dash_sdk::platform::dpns_usernames::{ContenderRequest, ContestRequests};
 use dash_sdk::platform::FetchMany;
 use dash_sdk::platform::{DataContract, Fetch, Identifier};
 use dash_sdk::query_types::Contenders;
@@ -25,9 +25,12 @@ use std::ffi::{c_char, c_void, CStr, CString};
 /// * `contract_id` - Base58-encoded contract identifier
 /// * `document_type_name` - Name of the document type
 /// * `index_name` - Name of the index
-/// * `index_values_json` - JSON array of index values. A `"0x"`-prefixed
-///   element is hex-decoded to bytes; any other element is taken verbatim as
-///   text (matches the cast-vote write path).
+/// * `index_values_json` - JSON array of index values. An
+///   element starting with a backslash is text with that one backslash
+///   removed; otherwise a `"0x"`-prefixed element is hex-decoded to bytes;
+///   otherwise the element is text, verbatim. To pass text that itself starts
+///   with `"0x"` or a backslash (the DPNS label "oxford" normalizes to
+///   `"0xf0rd"`), prepend one backslash. Shared with the read and vote FFIs.
 /// * `result_type` - Result type (0=DOCUMENTS, 1=VOTE_TALLY, 2=DOCUMENTS_AND_VOTE_TALLY)
 /// * `allow_include_locked_and_abstaining_vote_tally` - Whether to include locked and abstaining votes
 /// * `count` - The Drive request limit for this single request: at most
@@ -195,16 +198,9 @@ fn get_contested_resource_vote_state(
         let contract_id = Identifier::new(contract_id);
 
         // Parse index values
-        let index_values_array: Vec<String> = serde_json::from_str(index_values_str)
-            .map_err(|e| format!("Failed to parse index values JSON: {}", e))?;
-
-        // Explicit type tag: a `"0x"`-prefixed value is hex-decoded to
-        // `Value::Bytes`, anything else is verbatim `Value::Text`. Shared with
-        // the cast-vote write path so read and write stay in lockstep.
-        let index_values: Vec<Value> = index_values_array
-            .into_iter()
-            .map(crate::contested_resource::parse_index_value)
-            .collect::<Result<Vec<Value>, String>>()?;
+        // Explicit type tags (see `parse_index_value`), shared with the
+        // cast-vote write path so read and write stay in lockstep.
+        let index_values: Vec<Value> = parse_index_values_json(index_values_str)?;
 
         let result_type = match result_type {
             0 => ContestedDocumentVotePollDriveQueryResultType::Documents,
@@ -310,14 +306,21 @@ fn vote_state_json(
             winner_json, block_info.height, block_info.core_height, block_info.time_ms
         ));
     }
+    let requests = result_type.has_documents().then(|| {
+        ContestRequests::decode(
+            contenders.contenders.values(),
+            document_type,
+            platform_version,
+        )
+        .requests
+    });
     let contenders_json: Vec<String> = contenders
         .contenders
         .iter()
-        .map(|(id, contender)| {
-            let request = result_type
-                .has_documents()
-                .then(|| ContenderRequest::decode(contender, document_type, platform_version));
-            contender_json(id, contender, request.as_ref())
+        .enumerate()
+        .map(|(index, (id, contender))| {
+            let request = requests.as_ref().and_then(|requests| requests.get(index));
+            contender_json(id, contender, request)
         })
         .collect();
     result_json_parts.push(format!(r#""contenders":[{}]"#, contenders_json.join(",")));

@@ -6,7 +6,9 @@
 //! because protocol versions 1–8 wrote the 0 prefix for either layout.
 //! Shipped consensus code: this file must never change.
 
-use crate::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
+use crate::data_contract::document_type::{
+    DecodedValueBudget, DocumentPropertyType, DocumentTypeRef,
+};
 use crate::data_contract::errors::DataContractError;
 
 use crate::document::property_names::{
@@ -264,6 +266,18 @@ impl DocumentV0 {
     pub(super) fn from_bytes_v0(
         serialized_document: &[u8],
         document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DataContractError> {
+        Self::from_bytes_v0_with_budget(serialized_document, document_type, None, platform_version)
+    }
+
+    /// Format-0 reader parameterized by an optional client-side [`DecodedValueBudget`].
+    /// Consensus calls [`Self::from_bytes_v0`], which passes `None` and is output-identical
+    /// at every protocol version.
+    pub(super) fn from_bytes_v0_with_budget(
+        serialized_document: &[u8],
+        document_type: DocumentTypeRef,
+        mut budget: Option<&mut DecodedValueBudget>,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, DataContractError> {
         let mut buf = BufReader::new(serialized_document);
@@ -444,14 +458,16 @@ impl DocumentV0 {
 
                 // In version 0 all integers are encoded as I64 (in theory)
                 let read_value = if property.property_type.is_integer() {
-                    DocumentPropertyType::I64.read_optionally_from(
+                    DocumentPropertyType::I64.read_optionally_from_with_budget(
                         &mut buf,
                         property.always_required() & !property.transient,
+                        budget.as_deref_mut(),
                     )
                 } else {
-                    property.property_type.read_optionally_from(
+                    property.property_type.read_optionally_from_with_budget(
                         &mut buf,
                         property.always_required() & !property.transient,
+                        budget.as_deref_mut(),
                     )
                 };
 

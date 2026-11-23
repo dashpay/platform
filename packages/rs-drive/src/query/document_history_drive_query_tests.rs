@@ -109,6 +109,7 @@ impl Fixture {
             self.contract
                 .document_type_for_name("profile")
                 .expect("profile type"),
+            None,
             PlatformVersion::latest(),
         )
     }
@@ -551,4 +552,118 @@ fn should_reject_a_lifecycle_record_without_retained_history() {
             );
         }
     }
+}
+
+#[test]
+fn should_read_lifecycle_current_pointer_from_header_without_decoding_properties() {
+    use dpp::data_contract::document_type::DecodedValueBudget;
+
+    let fixture = Fixture::new();
+    let document_type = fixture
+        .contract
+        .document_type_for_name("profile")
+        .expect("profile type");
+    let query = fixture.query(DocumentHistoryFilter::StartAtRevision(4), Some(1));
+
+    // Explicitly construct a format-3 header truncated immediately after the revision:
+    // 1-byte format (3) + 1-byte contract version stamp (7) + 32-byte id + 32-byte owner_id
+    // + 1-byte revision (3) = 67 bytes with zero property bytes following.
+    // Using distinct stamp (7) and revision (3) values proves `lifecycle` consumes the
+    // format-3 stamp and reads revision 3 (matching remaining_revisions == 3) without
+    // decoding properties. `Document::from_bytes` must reject this slice.
+    let mut header_only = Vec::with_capacity(67);
+    header_only.push(3u8); // format 3
+    header_only.push(7u8); // contract version stamp 7
+    header_only.extend_from_slice(fixture.document.id().as_bytes());
+    header_only.extend_from_slice(fixture.document.owner_id().as_bytes());
+    header_only.push(3u8); // revision 3
+    assert_eq!(header_only.len(), 67);
+    assert_eq!(header_only[0], 3);
+    assert_eq!(header_only[1], 7);
+    assert_eq!(header_only[66], 3);
+    assert!(
+        Document::from_bytes(&header_only, document_type, PlatformVersion::latest()).is_err(),
+        "header-only bytes must not decode as a full document"
+    );
+
+    let rows = vec![
+        fixture.metadata_row(0, Some(Element::new_item(header_only))),
+        fixture.metadata_row(
+            DOCUMENT_HISTORY_TREE_KEY,
+            Some(Element::ProvableCountTree(Some(vec![1]), 3, None)),
+        ),
+    ];
+    let mut budget = DecodedValueBudget::new(1);
+    let result = query
+        .decode_result(
+            rows,
+            document_type,
+            Some(&mut budget),
+            PlatformVersion::latest(),
+        )
+        .expect("lifecycle must read current document id and revision from format-3 header only");
+    assert!(result.entries.is_empty());
+    assert_eq!(budget.remaining(), 1);
+}
+
+#[test]
+fn should_enforce_shared_decoded_value_budget_across_history_entries() {
+    use dpp::data_contract::document_type::DecodedValueBudget;
+    use dpp::data_contract::errors::DataContractError;
+    use dpp::ProtocolError;
+
+    let fixture = Fixture::new();
+    let document_type = fixture
+        .contract
+        .document_type_for_name("profile")
+        .expect("profile type");
+    let query = fixture.query(DocumentHistoryFilter::StartAtTime(0), Some(10));
+
+    // Measure the decoded value cost of a single profile revision by decoding 1 entry.
+    let mut single_budget = DecodedValueBudget::new(1_000);
+    query
+        .decode_result(
+            fixture.rows(&[1]),
+            document_type,
+            Some(&mut single_budget),
+            PlatformVersion::latest(),
+        )
+        .expect("single entry fits");
+    let per_entry = 1_000 - single_budget.remaining();
+    assert!(per_entry > 0);
+
+    // A budget covering 2 entries succeeds on 2 entries and refuses 3 entries.
+    let mut two_entry_budget = DecodedValueBudget::new(per_entry * 2);
+    let ok = query
+        .decode_result(
+            fixture.rows(&[1, 2]),
+            document_type,
+            Some(&mut two_entry_budget),
+            PlatformVersion::latest(),
+        )
+        .expect("two entries fit in shared budget");
+    assert_eq!(ok.entries.len(), 2);
+
+    let mut tight_budget = DecodedValueBudget::new(per_entry * 2);
+    let error = query
+        .decode_result(
+            fixture.rows(&[1, 2, 3]),
+            document_type,
+            Some(&mut tight_budget),
+            PlatformVersion::latest(),
+        )
+        .expect_err("three entries must exceed the two-entry shared budget");
+    assert!(
+        matches!(
+            error,
+            Error::Protocol(ref protocol_error)
+                if matches!(
+                    protocol_error.as_ref(),
+                    ProtocolError::DataContractError(
+                        DataContractError::DecodedValueBudgetExceeded(_)
+                    )
+                )
+        ),
+        "expected DecodedValueBudgetExceeded, got: {error:?}"
+    );
 }

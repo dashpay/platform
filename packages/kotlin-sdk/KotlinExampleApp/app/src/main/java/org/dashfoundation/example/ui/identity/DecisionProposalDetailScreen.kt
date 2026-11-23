@@ -31,9 +31,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.SecureFlagPolicy
@@ -49,6 +47,7 @@ import org.dashfoundation.dashsdk.voting.YesNoAbstainVoteChoice
 import org.dashfoundation.dashsdk.voting.YesNoMinimumVotingPower
 import org.dashfoundation.dashsdk.voting.YesNoVotePollState
 import org.dashfoundation.dashsdk.voting.YesNoVotePollStatus
+import org.dashfoundation.example.BuildConfig
 import org.dashfoundation.example.LocalSecureScreen
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
@@ -56,6 +55,9 @@ import org.dashfoundation.example.ui.components.AccessiblePicker
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.voting.MasternodeVoteCall
+import org.dashfoundation.example.ui.voting.MasternodeVoter
+import org.dashfoundation.example.ui.voting.MasternodeVoterSection
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.formatDate
 import org.dashfoundation.example.util.toHex
@@ -67,7 +69,7 @@ import org.dashfoundation.example.util.truncateMiddle
  * Reads the proposal, its poll's state and the poll's id through `Sdk.decisionProposals`
  * (each independently, so one failing read leaves the others shown) and shows the rule,
  * the tallies while voting is open and the result once it finished. Offers the masternode
- * vote ([DecisionProposalVoteDialog], the same credentials [ContestDetailScreen] collects)
+ * vote ([DecisionProposalVoteDialog], the same voter picker [ContestDetailScreen] uses)
  * and, when a local wallet identity filed the proposal, the text edit
  * ([EditDecisionProposalDialog]).
  */
@@ -199,8 +201,9 @@ fun DecisionProposalDetailScreen(
                     showVote = true
                 }
                 Text(
-                    "Only masternodes vote, with the voting key of a pro_tx_hash. A " +
-                        "regular wallet has no voting key, so Platform refuses its vote.",
+                    "Only masternodes vote, with the voting key of a pro_tx_hash. Load a " +
+                        "masternode or evonode identity with its voting private key " +
+                        "(Identities, Load Identity) to vote with it here.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -380,13 +383,17 @@ private fun PollStateRows(state: YesNoVotePollState) {
 }
 
 /**
- * Picks an answer and takes masternode credentials: port of `DecisionProposalVoteSheet`
- * in `DecisionProposalDetailView.swift`. Votes through
- * `Sdk.decisionProposals.castVote`, and reads the masternode's current answer through
- * `Sdk.decisionProposals.masternodeVote`.
+ * Picks an answer and the masternode that votes: port of `DecisionProposalVoteSheet` in
+ * `DecisionProposalDetailView.swift`. The voter is a masternode or evonode identity loaded
+ * with its voting key, picked in the shared [MasternodeVoterSection]; the vote goes through
+ * the signer form of `Sdk.decisionProposals.castVote`, signed with the stored key. Reads the
+ * picked masternode's current answer through `Sdk.decisionProposals.masternodeVote`; in
+ * every build the answer of any masternode can also be read from a typed wire-order
+ * pro_tx_hash, which cannot cast.
  *
- * The voting private key is masked as it is typed, and screen capture is blocked while the
- * dialog is open (see [HoldSecureWindow]). The dialog cannot be dismissed while a call runs.
+ * Debug builds also offer typed test credentials, so there the voting key field is masked
+ * and screen capture is blocked while the dialog is open (see [HoldSecureWindow]). The
+ * dialog cannot be dismissed while a call runs.
  */
 @Composable
 private fun DecisionProposalVoteDialog(
@@ -395,23 +402,31 @@ private fun DecisionProposalVoteDialog(
     onVoted: (String) -> Unit,
 ) {
     val appState = LocalAppState.current
+    val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
     val sdk by appState.sdk.collectAsStateWithLifecycle()
-    HoldSecureWindow()
+    // Only a debug build can show a raw voting key field (typed test credentials).
+    if (BuildConfig.DEBUG) HoldSecureWindow()
 
     var choice by remember { mutableStateOf(YesNoAbstainVoteChoice.YES) }
-    var proTxHashHex by remember { mutableStateOf("") }
-    var votingKeyHex by remember { mutableStateOf("") }
+    var voter by remember { mutableStateOf<MasternodeVoter?>(null) }
     var isBusy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var messageIsError by remember { mutableStateOf(false) }
 
+    // A message names the previous voter's answer, or one read on the previous SDK (a
+    // network switch or new options); drop it.
+    LaunchedEffect(voter, sdk) { message = null }
+
     AlertDialog(
         onDismissRequest = { if (!isBusy) onDismiss() },
-        properties = secureDialogProperties(dismissible = !isBusy),
+        properties = secureDialogProperties(dismissible = !isBusy, secure = BuildConfig.DEBUG),
         title = { Text("Vote · ${truncateMiddle(proposal.title, 20, 8)}") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+            ) {
                 AccessiblePicker(
                     label = "Answer",
                     options = YesNoAbstainVoteChoice.entries,
@@ -421,59 +436,41 @@ private fun DecisionProposalVoteDialog(
                     enabled = !isBusy,
                     onSelected = { choice = it },
                 )
-                OutlinedTextField(
-                    value = proTxHashHex,
-                    onValueChange = { proTxHashHex = it },
-                    label = { Text("pro_tx_hash (64 hex chars, wire order)") },
-                    singleLine = true,
+                MasternodeVoterSection(
+                    testTagPrefix = "decisionProposalVote",
+                    onVoterChange = { voter = it },
+                    allowsTypedProTxHash = true,
                     enabled = !isBusy,
-                    textStyle = MaterialTheme.typography.bodySmall
-                        .copy(fontFamily = FontFamily.Monospace),
-                    modifier = Modifier.fillMaxWidth().testTag("decisionProposalVote.proTxHash"),
-                )
-                OutlinedTextField(
-                    value = votingKeyHex,
-                    onValueChange = { votingKeyHex = it },
-                    label = { Text("voting private key (64 hex chars)") },
-                    singleLine = true,
-                    enabled = !isBusy,
-                    textStyle = MaterialTheme.typography.bodySmall
-                        .copy(fontFamily = FontFamily.Monospace),
-                    // KeyboardType.Password only configures the keyboard; the
-                    // transformation masks what the field shows.
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    modifier = Modifier.fillMaxWidth().testTag("decisionProposalVote.votingKey"),
-                )
-                Text(
-                    "The pro_tx_hash goes in wire order, the reverse of the hex Core " +
-                        "displays. The voting public key and signer are derived from the " +
-                        "private key on the Rust side; the key bytes are not stored.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 TextButton(
-                    enabled = !isBusy && proTxHashHex.isNotBlank(),
+                    enabled = !isBusy && voter != null,
                     onClick = {
                         val currentSdk = sdk ?: return@TextButton
-                        val proTxHash = decode32ByteHex(proTxHashHex)
-                        if (proTxHash == null) {
-                            message = "pro_tx_hash must be 32 bytes (64 hex characters)."
-                            messageIsError = true
-                            return@TextButton
-                        }
+                        val requested = voter ?: return@TextButton
+                        val proTxHash = requested.wireOrderProTxHash
                         isBusy = true
                         scope.launch {
                             try {
                                 val answer = currentSdk.decisionProposals
                                     .masternodeVote(proTxHash, proposal.id)
+                                // The voter or the SDK changed while the read was in flight:
+                                // this answer is not the picked masternode's on the network
+                                // now shown.
+                                if (voter != requested || appState.sdk.value !== currentSdk) {
+                                    return@launch
+                                }
                                 message = answer?.let {
                                     "This masternode answered ${it.choice.label()} " +
                                         "(${it.timesVoted} vote" +
                                         (if (it.timesVoted == 1) "" else "s") + ")."
                                 } ?: "This masternode has no answer on the open poll."
                                 messageIsError = false
+                            } catch (e: CancellationException) {
+                                throw e
                             } catch (e: Exception) {
+                                if (voter != requested || appState.sdk.value !== currentSdk) {
+                                    return@launch
+                                }
                                 message = "Reading the answer failed: ${e.message}"
                                 messageIsError = true
                             } finally {
@@ -499,36 +496,45 @@ private fun DecisionProposalVoteDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = !isBusy && proTxHashHex.isNotBlank() && votingKeyHex.isNotBlank(),
+                enabled = !isBusy && voter?.canCast == true,
                 onClick = {
                     val currentSdk = sdk ?: return@TextButton
-                    val proTxHash = decode32ByteHex(proTxHashHex)
-                    if (proTxHash == null) {
-                        message = "pro_tx_hash must be 32 bytes (64 hex characters)."
-                        messageIsError = true
-                        return@TextButton
-                    }
-                    val votingKey = decode32ByteHex(votingKeyHex)
-                    if (votingKey == null) {
-                        message = "Voting private key must be 32 bytes (64 hex characters)."
-                        messageIsError = true
-                        return@TextButton
+                    val picked = voter ?: return@TextButton
+                    val pickedChoice = choice
+                    val call = MasternodeVoteCall { proTxHash, signer, _ ->
+                        currentSdk.decisionProposals.castVote(
+                            proposalId = proposal.id,
+                            choice = pickedChoice,
+                            proTxHash = proTxHash,
+                            voter = signer,
+                        )
+                    }.let { call ->
+                        // Debug builds only: the raw-key call is not reachable in a release
+                        // build.
+                        if (BuildConfig.DEBUG) {
+                            call.allowingTypedKey { proTxHash, votingPrivateKey ->
+                                currentSdk.decisionProposals.castVote(
+                                    proposalId = proposal.id,
+                                    choice = pickedChoice,
+                                    proTxHash = proTxHash,
+                                    votingPrivateKey = votingPrivateKey,
+                                )
+                            }
+                        } else {
+                            call
+                        }
                     }
                     isBusy = true
                     scope.launch {
                         try {
-                            currentSdk.decisionProposals.castVote(
-                                proposalId = proposal.id,
-                                choice = choice,
-                                proTxHash = proTxHash,
-                                votingPrivateKey = votingKey,
-                            )
+                            call.run(picked, container)
                             onVoted("Vote accepted by Platform.")
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             message = "Vote rejected: ${e.message}"
                             messageIsError = true
                         } finally {
-                            votingKey.fill(0)
                             isBusy = false
                         }
                     }
@@ -545,7 +551,8 @@ private fun DecisionProposalVoteDialog(
 /**
  * Block screenshots, screen recording and the recents thumbnail of the app window while the
  * calling composable is shown (the app's FLAG_SECURE toggle, [LocalSecureScreen]). Shared
- * with the contested-name vote dialog, which takes the same voting private key.
+ * by the vote dialogs, which in debug builds can take a typed voting private key, and Load
+ * Identity, which takes a masternode's voting private key.
  */
 @Composable
 internal fun HoldSecureWindow() {
@@ -557,16 +564,19 @@ internal fun HoldSecureWindow() {
 }
 
 /**
- * The properties of a dialog that takes a voting private key. A dialog is a window of its
+ * The properties of a dialog that can take a voting private key. A dialog is a window of its
  * own: FLAG_SECURE on the app window reaches it only when the dialog reads its parent's
- * flags, so the dialog sets the flag itself. [dismissible] false holds Back and taps outside
- * while a call runs, so the dialog (and the call in its scope) stays.
+ * flags, so the dialog sets the flag itself when [secure] (the vote dialogs pass
+ * `BuildConfig.DEBUG`: only a debug build shows a raw key field there). [dismissible] false
+ * holds Back and taps outside while a call runs, so the dialog (and the call in its scope)
+ * stays.
  */
-internal fun secureDialogProperties(dismissible: Boolean): DialogProperties = DialogProperties(
-    dismissOnBackPress = dismissible,
-    dismissOnClickOutside = dismissible,
-    securePolicy = SecureFlagPolicy.SecureOn,
-)
+internal fun secureDialogProperties(dismissible: Boolean, secure: Boolean = true): DialogProperties =
+    DialogProperties(
+        dismissOnBackPress = dismissible,
+        dismissOnClickOutside = dismissible,
+        securePolicy = if (secure) SecureFlagPolicy.SecureOn else SecureFlagPolicy.Inherit,
+    )
 
 /** Display name of a vote answer. */
 private fun YesNoAbstainVoteChoice.label(): String = when (this) {

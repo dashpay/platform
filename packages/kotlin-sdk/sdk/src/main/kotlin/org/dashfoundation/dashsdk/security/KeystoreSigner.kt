@@ -79,6 +79,50 @@ class KeystoreSigner(
         aliases[lookupHex.lowercase()] = storageKeyHex.lowercase()
     }
 
+    /**
+     * The one key a bound signer serves: requests for exactly [pubkeyBytes] with
+     * [keyType] read the `WalletStorage` entry [storageKey]. Every other request, a wallet
+     * identity key or a platform address included, is refused as key unavailable.
+     */
+    internal class BoundKey(pubkeyBytes: ByteArray, val keyType: Int, val storageKey: String) {
+        private val bytes = pubkeyBytes.copyOf()
+
+        fun matches(pubkeyBytes: ByteArray, keyType: Int): Boolean =
+            keyType == this.keyType && pubkeyBytes.contentEquals(bytes)
+    }
+
+    /** Set only by the bound constructor, before the handle is handed to Rust. */
+    @Volatile
+    private var boundKey: BoundKey? = null
+
+    /**
+     * A signer that serves only [onlyKey]; see [forBoundKey]. Private, so Java source sees
+     * exactly the public constructors it always had.
+     */
+    private constructor(
+        storage: WalletStorage,
+        network: Network,
+        biometricGate: BiometricGate?,
+        platformAddressDao: PlatformAddressDao,
+        onlyKey: BoundKey,
+    ) : this(storage, network, biometricGate, platformAddressDao) {
+        boundKey = onlyKey
+    }
+
+    /** Whether this signer may serve ([pubkeyBytes], [keyType]): always, unless bound. */
+    private fun serves(pubkeyBytes: ByteArray, keyType: Int): Boolean =
+        boundKey?.matches(pubkeyBytes, keyType) ?: true
+
+    /** The refusal a bound signer completes with for a key it does not hold. */
+    private fun completeNotServed(complete: (ByteArray?, Int, String?) -> Unit) {
+        complete(
+            null,
+            SignerNative.SIGNER_ERROR_CODE_KEY_UNAVAILABLE,
+            "${DashSdkError.PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER} " +
+                "(this signer holds only the key it was made for)",
+        )
+    }
+
     override fun signAsync(
         pubkeyBytes: ByteArray,
         keyType: Int,
@@ -101,13 +145,7 @@ class KeystoreSigner(
                 }
             }
             try {
-                // Platform-payment addresses (0xFF) have no stored private
-                // key — derive on demand from (mnemonic, derivationPath).
-                if (keyType == PLATFORM_ADDRESS_HASH_KEY_TYPE) {
-                    signPlatformAddressOnDemand(pubkeyBytes, data, complete)
-                    return@launch
-                }
-                signWithStoredKey(pubkeyBytes, data, complete)
+                dispatchSign(pubkeyBytes, keyType, data, complete)
             } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
                 // Structured-concurrency cancellation: a teardown of the signer's
                 // IO scope, or cancellation surfaced by the suspend invalidation
@@ -131,6 +169,30 @@ class KeystoreSigner(
                 complete(null, completionErrorCodeFor(e), e.message ?: "signing failed")
             }
         }
+    }
+
+    /**
+     * Route one sign request: a bound signer refuses any key but its own FIRST, then the
+     * platform-address or the stored-key path runs. [signAsync] and the test seam both come
+     * through here, so the seam exercises the native callback's own checks.
+     */
+    private suspend fun dispatchSign(
+        pubkeyBytes: ByteArray,
+        keyType: Int,
+        data: ByteArray,
+        complete: (ByteArray?, Int, String?) -> Unit,
+    ) {
+        if (!serves(pubkeyBytes, keyType)) {
+            completeNotServed(complete)
+            return
+        }
+        // Platform-payment addresses (0xFF) have no stored private
+        // key: derive on demand from (mnemonic, derivationPath).
+        if (keyType == PLATFORM_ADDRESS_HASH_KEY_TYPE) {
+            signPlatformAddressOnDemand(pubkeyBytes, data, complete)
+            return
+        }
+        signWithStoredKey(pubkeyBytes, data, complete)
     }
 
     /** Identity-key path: decrypt the stored private key and sign. */
@@ -229,6 +291,35 @@ class KeystoreSigner(
         }
     }
 
+    /** What one sign attempt completed with: the signature, or the error code and message. */
+    internal class SignCompletion(val signature: ByteArray?, val code: Int, val message: String?)
+
+    /**
+     * Test seam: run the sign request for [pubkeyBytes] with [keyType] over [data] through
+     * the same dispatcher as [signAsync] (the bound-key check, then lookup, decrypt, Rust
+     * signature, zeroing), and return what it completed with instead of handing it to a
+     * native completion token. A failure completes as [signAsync] would complete it.
+     */
+    internal suspend fun signWithStoredKeyForTesting(
+        pubkeyBytes: ByteArray,
+        keyType: Int,
+        data: ByteArray,
+    ): SignCompletion {
+        var completion: SignCompletion? = null
+        val complete: (ByteArray?, Int, String?) -> Unit = { signature, code, message ->
+            if (completion == null) completion = SignCompletion(signature, code, message)
+        }
+        try {
+            dispatchSign(pubkeyBytes, keyType, data, complete)
+        } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
+            throw cancellation
+        } catch (e: Exception) {
+            complete(null, completionErrorCodeFor(e), e.message ?: "signing failed")
+        }
+        return completion
+            ?: SignCompletion(null, SignerNative.SIGNER_ERROR_CODE_GENERIC, "no completion")
+    }
+
     /**
      * Platform-address (`keyType == 0xFF`) path — port of
      * `KeychainSigner.signPlatformAddressOnDemand`. Resolves the
@@ -303,7 +394,9 @@ class KeystoreSigner(
     }
 
     override fun canSignWith(pubkeyBytes: ByteArray, keyType: Int): Boolean = try {
-        if (keyType == PLATFORM_ADDRESS_HASH_KEY_TYPE) {
+        if (!serves(pubkeyBytes, keyType)) {
+            false
+        } else if (keyType == PLATFORM_ADDRESS_HASH_KEY_TYPE) {
             // Prerequisites for the derive-and-sign path: a row with a
             // non-empty derivation path plus a stored wallet mnemonic.
             // Existence-only — hasMnemonic never decrypts, so no plaintext
@@ -324,6 +417,8 @@ class KeystoreSigner(
     }
 
     private fun storageKeyFor(pubkeyBytes: ByteArray): String {
+        // A bound signer reaches this only for its own key.
+        boundKey?.let { return it.storageKey }
         val hex = pubkeyBytes.joinToString("") { "%02x".format(it) }
         return aliases[hex] ?: hex
     }
@@ -363,6 +458,24 @@ class KeystoreSigner(
     }
 
     companion object {
+        /** DPP `KeyType::ECDSA_HASH160`, the type a masternode voting key is asked for. */
+        internal const val KEY_TYPE_ECDSA_HASH160: Int = 2
+
+        /**
+         * A signer that serves only [onlyKey], such as the signer of one masternode vote
+         * (`PlatformWalletManager.withStoredMasternodeVotingKey`): it never falls back to the
+         * wallet's identity keys or derives platform address keys, so it holds no credential
+         * beyond the one it was made for. Synthetic, so Java source cannot call it.
+         */
+        @JvmSynthetic
+        internal fun forBoundKey(
+            storage: WalletStorage,
+            network: Network,
+            biometricGate: BiometricGate?,
+            platformAddressDao: PlatformAddressDao,
+            onlyKey: BoundKey,
+        ): KeystoreSigner = KeystoreSigner(storage, network, biometricGate, platformAddressDao, onlyKey)
+
         /**
          * FFI dispatch tag the Rust `Signer<PlatformAddress>` vtable ships
          * instead of a `KeyType` discriminant when the "pubkey bytes" are a

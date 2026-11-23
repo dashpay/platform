@@ -281,8 +281,12 @@ pub fn document_count_of_element(index: &Index, element: &grovedb::Element) -> u
 
 /// A `summableOffCountIndex` index's sum read as a document count. A
 /// counter is never negative: it counts entries.
-pub fn counter_sum_as_document_count(sum: i64) -> u64 {
-    u64::try_from(sum).unwrap_or_default()
+///
+/// Takes the sum at either width: a counter sum read from an element is an
+/// `i64`, and one a sum proof verifier returns is an `i128`. The count is the
+/// same for the same value at both widths.
+pub fn counter_sum_as_document_count(sum: impl Into<i128>) -> u64 {
+    u64::try_from(sum.into()).unwrap_or_default()
 }
 
 /// A sum entry read through [`DriveDocumentCountQuery::counter_sums_query`],

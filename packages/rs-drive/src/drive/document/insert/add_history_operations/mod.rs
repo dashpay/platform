@@ -83,7 +83,6 @@ impl Drive {
 mod tests {
     use super::*;
     use crate::drive::document::paths::contract_document_type_path_vec;
-    use crate::error::proof::ProofError;
     use crate::query::drive_document_sum_query::DriveDocumentSumQuery;
     use crate::query::{WhereClause, WhereOperator};
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
@@ -286,7 +285,7 @@ mod tests {
     fn proved_price_totals(
         drive: &Drive,
         platform_version: &PlatformVersion,
-    ) -> (Result<i64, Error>, Result<(u64, i64), Error>) {
+    ) -> (Result<i128, Error>, Result<(u64, i128), Error>) {
         let contract = drive
             .cache
             .system_data_contracts
@@ -392,15 +391,13 @@ mod tests {
         );
     }
 
-    /// A proved sum past 64 bits verifies against the root, and is refused as too wide for
-    /// the result that carries it, never read as another number. The refusal carries the
-    /// root the proof reconstructs, so a client authenticates it before taking it for the
-    /// network's answer rather than the node's fault.
+    /// A proved sum past 64 bits verifies against the root and is returned whole, at the
+    /// 128 bits the type keeps it in, alone and with the count of the listings.
     #[test]
-    fn should_refuse_a_proved_sum_past_64_bits_as_too_wide() {
+    fn should_prove_and_verify_a_sum_past_64_bits() {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_document_history(platform_version);
-        for nonce in 1..=2 {
+        for nonce in 1..=3 {
             record(
                 &drive,
                 DocumentEvent::PriceUpdate {
@@ -413,23 +410,68 @@ mod tests {
         }
 
         let (sum, count_and_sum) = proved_price_totals(&drive, platform_version);
-        let live_root = drive
+        let total = 3 * i128::from(i64::MAX);
+        assert_eq!(sum.expect("expected the proved sum"), total);
+        assert_eq!(
+            count_and_sum.expect("expected the proved count and sum"),
+            (3, total)
+        );
+    }
+
+    /// The total of every purchase price, kept in the `purchase` type's primary tree, is
+    /// proved and verified past 64 bits, alone and with the count of the purchases.
+    #[test]
+    fn should_prove_and_verify_a_primary_tree_total_past_64_bits() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_document_history(platform_version);
+        for nonce in 1..=2 {
+            record(
+                &drive,
+                DocumentEvent::Purchase {
+                    seller_id: Identifier::new([2; 32]),
+                    price: i64::MAX as u64,
+                },
+                nonce,
+                platform_version,
+            )
+            .expect("expected to record the purchase");
+        }
+
+        let contract_id = SystemDataContract::DocumentHistory.id().to_buffer();
+        let proof = drive
+            .grove
+            .get_proved_path_query(
+                &DriveDocumentSumQuery::primary_key_sum_path_query(contract_id, "purchase"),
+                None,
+                None,
+                &platform_version.drive.grove_version,
+            )
+            .value
+            .expect("expected to prove the primary tree");
+        let root_hash = drive
             .grove
             .root_hash(None, &platform_version.drive.grove_version)
-            .unwrap()
+            .value
             .expect("expected the root hash");
-        for error in [
-            sum.expect_err("expected the sum to be refused"),
-            count_and_sum.expect_err("expected the count and sum to be refused"),
-        ] {
-            assert!(
-                matches!(
-                    &error,
-                    Error::Proof(ProofError::SumPastResultWidth { root_hash })
-                        if *root_hash == live_root
-                ),
-                "{error:?}"
-            );
-        }
+        let total = 2 * i128::from(i64::MAX);
+
+        let (proved_root, sum) = DriveDocumentSumQuery::verify_primary_key_sum_tree_proof(
+            &proof,
+            contract_id,
+            "purchase",
+            platform_version,
+        )
+        .expect("expected the proved total");
+        assert_eq!((proved_root, sum), (root_hash, total));
+
+        let (proved_root, count, sum) =
+            DriveDocumentSumQuery::verify_primary_key_count_sum_tree_proof(
+                &proof,
+                contract_id,
+                "purchase",
+                platform_version,
+            )
+            .expect("expected the proved count and total");
+        assert_eq!((proved_root, count, sum), (root_hash, 2, total));
     }
 }

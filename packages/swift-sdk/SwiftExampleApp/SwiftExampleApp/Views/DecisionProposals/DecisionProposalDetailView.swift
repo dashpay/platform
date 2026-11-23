@@ -379,9 +379,10 @@ private func capture<T: Sendable>(
 
 // MARK: - Masternode vote
 
-/// Picks the answer and takes the masternode credentials, the same way the
-/// DPNS contest vote sheet does: the pro_tx_hash and the voting private key
-/// as hex. Also reads the masternode's current answer.
+/// Picks the answer and the masternode that votes, the same way the DPNS
+/// contest vote sheet does: a masternode or evonode identity loaded with its
+/// voting key, picked in the shared `MasternodeVoterSection`. Also reads the
+/// masternode's current answer.
 private struct DecisionProposalVoteSheet: View {
     let proposalId: String
     let proposalTitle: String
@@ -389,11 +390,11 @@ private struct DecisionProposalVoteSheet: View {
     let onVoted: (String) -> Void
 
     @EnvironmentObject var appState: AppState
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
     @State private var choice: YesNoAbstainVoteChoice = .yes
-    @State private var proTxHashHex = ""
-    @State private var votingKeyHex = ""
+    @State private var voter: MasternodeVoter?
     @State private var isCasting = false
     @State private var isLookingUp = false
     @State private var message: String?
@@ -417,60 +418,13 @@ private struct DecisionProposalVoteSheet: View {
                     .accessibilityIdentifier("decisionProposalVote.choice")
                 }
 
-                Section {
-                    TextField("pro_tx_hash (64 hex chars)", text: $proTxHashHex)
-                        .font(.system(.caption, design: .monospaced))
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .accessibilityIdentifier("decisionProposalVote.proTxHash")
-                    SecureField("voting private key (64 hex chars)", text: $votingKeyHex)
-                        .font(.system(.caption, design: .monospaced))
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .accessibilityIdentifier("decisionProposalVote.votingKey")
-                } header: {
-                    Text("Masternode Credentials")
-                } footer: {
-                    Text("The pro_tx_hash goes in wire order, the reverse of the hex Core displays. The voting public key and signer are derived from the private key on the Rust side; the key bytes are not stored.")
-                }
+                MasternodeVoterSection(
+                    accessibilityPrefix: "decisionProposalVote",
+                    voter: $voter,
+                    allowsTypedProTxHash: true
+                )
 
-                Section {
-                    Button {
-                        Task { await castVote() }
-                    } label: {
-                        if isCasting {
-                            HStack {
-                                ProgressView()
-                                Text("Broadcasting…")
-                            }
-                        } else {
-                            Text("Submit Vote")
-                        }
-                    }
-                    .disabled(isCasting || isLookingUp || proTxHashHex.isEmpty || votingKeyHex.isEmpty)
-                    .accessibilityIdentifier("decisionProposalVote.submit")
-
-                    Button {
-                        Task { await lookUpAnswer() }
-                    } label: {
-                        if isLookingUp {
-                            HStack {
-                                ProgressView()
-                                Text("Reading…")
-                            }
-                        } else {
-                            Text("Read This Masternode's Answer")
-                        }
-                    }
-                    .disabled(isCasting || isLookingUp || proTxHashHex.isEmpty)
-                    .accessibilityIdentifier("decisionProposalVote.lookUp")
-
-                    if let message {
-                        Text(message)
-                            .font(.caption)
-                            .foregroundColor(messageIsError ? .orange : .secondary)
-                    }
-                }
+                actionSection
             }
             .navigationTitle("Vote")
             .navigationBarTitleDisplayMode(.inline)
@@ -481,18 +435,54 @@ private struct DecisionProposalVoteSheet: View {
                 }
             }
             .interactiveDismissDisabled(isCasting)
+            // A message names the previous voter's answer; drop it.
+            .onChange(of: voter) { _, _ in message = nil }
+            // So does a message read on the previous network.
+            .onChange(of: appState.currentNetwork) { _, _ in message = nil }
+            // Options can publish a new SDK on the same network; an answer
+            // shown from the previous SDK no longer applies.
+            .onChange(of: appState.sdk.map { ObjectIdentifier($0) }) { _, _ in message = nil }
         }
     }
 
-    /// Decode a 32-byte value typed as 64 hex characters. `Data(hexString:)`
-    /// drops a trailing odd nibble, so the length is checked first, as on the
-    /// contest vote sheet.
-    private static func decode32(_ hex: String) -> Data? {
-        let trimmed = hex.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count == 64, let data = Data(hexString: trimmed), data.count == 32 else {
-            return nil
+    private var actionSection: some View {
+        Section {
+            Button {
+                Task { await castVote() }
+            } label: {
+                if isCasting {
+                    HStack {
+                        ProgressView()
+                        Text("Broadcasting…")
+                    }
+                } else {
+                    Text("Submit Vote")
+                }
+            }
+            .disabled(isCasting || isLookingUp || voter?.canCast != true)
+            .accessibilityIdentifier("decisionProposalVote.submit")
+
+            Button {
+                Task { await lookUpAnswer() }
+            } label: {
+                if isLookingUp {
+                    HStack {
+                        ProgressView()
+                        Text("Reading…")
+                    }
+                } else {
+                    Text("Read This Masternode's Answer")
+                }
+            }
+            .disabled(isCasting || isLookingUp || voter == nil)
+            .accessibilityIdentifier("decisionProposalVote.lookUp")
+
+            if let message {
+                Text(message)
+                    .font(.caption)
+                    .foregroundColor(messageIsError ? .orange : .secondary)
+            }
         }
-        return data
     }
 
     private func castVote() async {
@@ -500,23 +490,36 @@ private struct DecisionProposalVoteSheet: View {
             show("SDK not initialized", isError: true)
             return
         }
-        guard let proTxHash = Self.decode32(proTxHashHex) else {
-            show("pro_tx_hash must be 32 bytes (64 hex characters).", isError: true)
-            return
-        }
-        guard let votingKey = Self.decode32(votingKeyHex) else {
-            show("Voting private key must be 32 bytes (64 hex characters).", isError: true)
-            return
-        }
-
-        isCasting = true
-        defer { isCasting = false }
-        do {
+        guard let voter else { return }
+        let proposalId = proposalId
+        let choice = choice
+        let call = MasternodeVoteCall { proTxHash, votingAddress, signer in
             try await sdk.castDecisionProposalVote(
                 proposalId: proposalId,
                 choice: choice,
                 proTxHash: proTxHash,
-                votingPrivateKey: votingKey
+                votingAddress: votingAddress,
+                signer: signer
+            )
+        }
+        #if DEBUG
+        .allowingTypedKey { proTxHash, votingPrivateKey in
+            try await sdk.castDecisionProposalVote(
+                proposalId: proposalId,
+                choice: choice,
+                proTxHash: proTxHash,
+                votingPrivateKey: votingPrivateKey
+            )
+        }
+        #endif
+
+        isCasting = true
+        defer { isCasting = false }
+        do {
+            try await call.run(
+                as: voter,
+                modelContainer: modelContext.container,
+                network: appState.currentNetwork
             )
             onVoted("Vote \"\(choice.rawValue)\" accepted by Platform.")
             dismiss()
@@ -530,18 +533,22 @@ private struct DecisionProposalVoteSheet: View {
             show("SDK not initialized", isError: true)
             return
         }
-        guard let proTxHash = Self.decode32(proTxHashHex) else {
-            show("pro_tx_hash must be 32 bytes (64 hex characters).", isError: true)
-            return
-        }
+        guard let voter else { return }
+        let proTxHash = voter.wireOrderProTxHash
 
         isLookingUp = true
         defer { isLookingUp = false }
         do {
-            if let vote = try await sdk.decisionProposalMasternodeVote(
+            let vote = try await sdk.decisionProposalMasternodeVote(
                 proposalId: proposalId,
                 proTxHash: proTxHash
-            ) {
+            )
+            // The voter or the network changed while the read was in
+            // flight: this answer is not the picked masternode's on the
+            // network now shown.
+            guard self.voter?.wireOrderProTxHash == proTxHash,
+                  appState.sdk === sdk else { return }
+            if let vote {
                 show(
                     "Current answer: \(vote.choice.rawValue), voted \(vote.timesVoted) time\(vote.timesVoted == 1 ? "" : "s").",
                     isError: false
@@ -550,6 +557,8 @@ private struct DecisionProposalVoteSheet: View {
                 show("This masternode has no answer on the poll (none yet, or the poll has finished).", isError: false)
             }
         } catch {
+            guard self.voter?.wireOrderProTxHash == proTxHash,
+                  appState.sdk === sdk else { return }
             show("Reading the answer failed: \(error.localizedDescription)", isError: true)
         }
     }

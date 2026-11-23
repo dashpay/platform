@@ -11,6 +11,47 @@ use platform_value::Identifier;
 use platform_version::version::FeatureVersion;
 use std::io::Read;
 
+/// Reads the common header prefix shared by all document serialization formats
+/// (formats 0 to 3): the serialization format varint, the format-3 contract
+/// version stamp (validated to fit in a `u32`), and the 32-byte document `$id`.
+/// Returns `(format, id, remaining_bytes)` without touching the document's
+/// properties.
+pub(crate) fn read_document_header_prefix<'a>(
+    mut serialized_document: &'a [u8],
+    method_name: &str,
+) -> Result<(FeatureVersion, Identifier, &'a [u8]), ProtocolError> {
+    let format: FeatureVersion = serialized_document
+        .read_varint()
+        .map_err(|error| header_error("serialization format", error))?;
+    match format {
+        0..=2 => {}
+        3 => {
+            let stamp: u64 = serialized_document
+                .read_varint()
+                .map_err(|error| header_error("contract version stamp", error))?;
+            if stamp > u32::MAX as u64 {
+                return Err(ProtocolError::DataContractError(
+                    DataContractError::CorruptedSerialization(
+                        "contract version stamp does not fit in a u32".to_string(),
+                    ),
+                ));
+            }
+        }
+        version => {
+            return Err(ProtocolError::UnknownVersionMismatch {
+                method: format!("{method_name} (serialization format)"),
+                known_versions: vec![0, 1, 2, 3],
+                received: version,
+            })
+        }
+    }
+    let mut id = [0; 32];
+    serialized_document
+        .read_exact(&mut id)
+        .map_err(|error| header_error("id", error))?;
+    Ok((format, Identifier::new(id), serialized_document))
+}
+
 /// Reads the id and the revision of a serialized document from the fields every
 /// serialization format (0 to 3) writes ahead of the document's properties,
 /// without decoding the properties.
@@ -32,38 +73,11 @@ use std::io::Read;
 /// never changes: a different reading is a new generation.
 #[inline(always)]
 pub(super) fn id_and_revision_from_bytes_v0(
-    mut serialized_document: &[u8],
+    serialized_document: &[u8],
     document_type: DocumentTypeRef,
 ) -> Result<(Identifier, Option<Revision>), ProtocolError> {
-    let format: FeatureVersion = serialized_document
-        .read_varint()
-        .map_err(|error| header_error("serialization format", error))?;
-    match format {
-        0..=2 => {}
-        3 => {
-            let stamp: u64 = serialized_document
-                .read_varint()
-                .map_err(|error| header_error("contract version stamp", error))?;
-            if stamp > u32::MAX as u64 {
-                return Err(ProtocolError::DataContractError(
-                    DataContractError::CorruptedSerialization(
-                        "contract version stamp does not fit in a u32".to_string(),
-                    ),
-                ));
-            }
-        }
-        version => {
-            return Err(ProtocolError::UnknownVersionMismatch {
-                method: "Document::id_and_revision_from_bytes (serialization format)".to_string(),
-                known_versions: vec![0, 1, 2, 3],
-                received: version,
-            })
-        }
-    }
-    let mut id = [0; 32];
-    serialized_document
-        .read_exact(&mut id)
-        .map_err(|error| header_error("id", error))?;
+    let (format, id, mut serialized_document) =
+        read_document_header_prefix(serialized_document, "Document::id_and_revision_from_bytes")?;
     let mut identifier = [0; 32];
     serialized_document
         .read_exact(&mut identifier)
@@ -91,7 +105,7 @@ pub(super) fn id_and_revision_from_bytes_v0(
     } else {
         None
     };
-    Ok((Identifier::new(id), revision))
+    Ok((id, revision))
 }
 
 fn header_error(field: &str, error: std::io::Error) -> ProtocolError {

@@ -530,7 +530,7 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     pub(crate) document_erase_gate: Arc<super::DocumentEraseGate>,
     /// Serializes DPNS marketplace mutations and sync reconciliation for
     /// this wallet. Every cloned handle shares the same gate.
-    pub(crate) dpns_operation_gate: Arc<tokio::sync::Mutex<()>>,
+    pub(crate) dpns_operation_gate: Arc<super::dpns_marketplace::DpnsOperationGate>,
     /// Bounded ownership-scan cursors, one per wallet identity. This is a
     /// short-lived in-memory optimization; durable marketplace rows remain
     /// the source rendered after process restart.

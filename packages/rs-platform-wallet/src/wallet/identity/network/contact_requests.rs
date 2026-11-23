@@ -70,6 +70,23 @@ pub trait ContactCryptoProvider {
         path: &key_wallet::bip32::DerivationPath,
     ) -> Result<key_wallet::bip32::ExtendedPubKey, PlatformWalletError>;
 
+    /// Extended public keys at each of `paths`, in their order: what
+    /// [`Self::receiving_xpub`] derives, for several paths at once. A provider
+    /// backed by a seed it must resolve resolves it once for all of them.
+    ///
+    /// Defaulted to one [`Self::receiving_xpub`] call per path, so adding this
+    /// method is not a source-breaking change.
+    async fn extended_public_keys(
+        &self,
+        paths: &[key_wallet::bip32::DerivationPath],
+    ) -> Result<Vec<key_wallet::bip32::ExtendedPubKey>, PlatformWalletError> {
+        let mut keys = Vec::with_capacity(paths.len());
+        for path in paths {
+            keys.push(self.receiving_xpub(path).await?);
+        }
+        Ok(keys)
+    }
+
     /// ECDH shared secret between our key at `path` and the contact's `peer`
     /// pubkey. Returned in [`zeroize::Zeroizing`] so the DIP-15 friendship AES
     /// key is scrubbed on drop — it stays wrapped through the send / accept /
@@ -283,6 +300,8 @@ pub(crate) struct SeedCryptoProvider {
     /// How many times the private document scan keys were derived: once per scan call, a
     /// page's or a batch's.
     pub(crate) scan_key_derivations: std::sync::atomic::AtomicUsize,
+    /// How many `extended_public_keys` calls it answered, each for all its paths at once.
+    pub(crate) public_key_batches: std::sync::atomic::AtomicUsize,
 }
 
 #[cfg(test)]
@@ -294,6 +313,7 @@ impl SeedCryptoProvider {
             wallet: Wallet::from_seed_bytes(seed, network, WalletAccountCreationOptions::None)
                 .expect("test seed wallet"),
             scan_key_derivations: std::sync::atomic::AtomicUsize::new(0),
+            public_key_batches: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 }
@@ -308,6 +328,25 @@ impl ContactCryptoProvider for SeedCryptoProvider {
         self.wallet.derive_extended_public_key(path).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!("test receiving_xpub: {e}"))
         })
+    }
+
+    async fn extended_public_keys(
+        &self,
+        paths: &[key_wallet::bip32::DerivationPath],
+    ) -> Result<Vec<key_wallet::bip32::ExtendedPubKey>, PlatformWalletError> {
+        // Once for the batch, as a signer-backed provider resolves its seed once.
+        self.public_key_batches
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        paths
+            .iter()
+            .map(|path| {
+                self.wallet.derive_extended_public_key(path).map_err(|e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "test extended_public_keys: {e}"
+                    ))
+                })
+            })
+            .collect()
     }
 
     async fn ecdh_shared_secret(
@@ -7681,7 +7720,7 @@ mod stamp_race_tests {
 }
 
 /// Where a contact request send's signing stands, for [`GatedSigner`].
-enum SigningGate {
+pub(super) enum SigningGate {
     /// The host has not signed yet: no gate is held.
     Unsigned,
     /// Signed, and the wallet generation's lifecycle gate is held from then
@@ -7693,19 +7732,29 @@ enum SigningGate {
     Removed,
 }
 
-/// The host's signer for a contact request send, taking the wallet
-/// generation's lifecycle gate once a signature returns and before it can
-/// leave: the SDK broadcasts right after signing, so the broadcast and the
-/// send's bookkeeping run under the gate, while the host's signing prompt
-/// does not. A signature made after the wallet was removed, or re-created
-/// under its id, is refused, so nothing is published.
-struct GatedSigner<'a, S: ?Sized, B: TransactionBroadcaster + ?Sized> {
-    signer: &'a S,
-    wallet: &'a IdentityWallet<B>,
-    gate: std::sync::Mutex<SigningGate>,
+/// The host's signer for a contact request send (and a key limits update, and the
+/// DPNS name writes),
+/// taking the wallet generation's lifecycle gate once a signature returns and
+/// before it can leave: the SDK broadcasts right after signing, so the
+/// broadcast and the send's bookkeeping run under the gate, while the host's
+/// signing prompt does not. A signature made after the wallet was removed, or
+/// re-created under its id, is refused, so nothing is published.
+pub(super) struct GatedSigner<'a, S: ?Sized, B: TransactionBroadcaster + ?Sized> {
+    pub(super) signer: &'a S,
+    pub(super) wallet: &'a IdentityWallet<B>,
+    pub(super) gate: std::sync::Mutex<SigningGate>,
 }
 
-impl<S: ?Sized, B: TransactionBroadcaster + ?Sized> GatedSigner<'_, S, B> {
+impl<'a, S: ?Sized, B: TransactionBroadcaster + ?Sized> GatedSigner<'a, S, B> {
+    /// `signer`, gated on `wallet`'s generation: nothing is held until a signature returns.
+    pub(super) fn new(signer: &'a S, wallet: &'a IdentityWallet<B>) -> Self {
+        Self {
+            signer,
+            wallet,
+            gate: std::sync::Mutex::new(SigningGate::Unsigned),
+        }
+    }
+
     fn gate(&self) -> std::sync::MutexGuard<'_, SigningGate> {
         self.gate
             .lock()
@@ -7714,7 +7763,7 @@ impl<S: ?Sized, B: TransactionBroadcaster + ?Sized> GatedSigner<'_, S, B> {
 
     /// Whether a signature was refused because the wallet was removed or
     /// replaced while the host signed.
-    fn removed(&self) -> bool {
+    pub(super) fn removed(&self) -> bool {
         matches!(*self.gate(), SigningGate::Removed)
     }
 

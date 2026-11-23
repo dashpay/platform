@@ -145,4 +145,24 @@ internal object DecisionProposalsNative {
         votingPrivateKey: ByteArray,
         networkOrd: Int,
     )
+
+    /**
+     * Vote on [proposalId] for a masternode with a host signer and wait for the response.
+     * Bridges `dash_sdk_decision_proposal_cast_vote_with_signer`: Rust builds the
+     * ECDSA_HASH160 voting key from [votingAddress] and asks [signerHandle] to sign with it.
+     *
+     * @param voteChoice `0` yes, `1` no, `2` abstain.
+     * @param voterProTxHash 32 bytes in wire order (the reverse of the hex Core displays).
+     * @param votingAddress the 20-byte voting address (hash160 of the compressed voting
+     *   public key).
+     * @param signerHandle a live signer handle the caller keeps alive for the call.
+     */
+    external fun castVoteWithSigner(
+        sdk: Long,
+        proposalId: String,
+        voteChoice: Int,
+        voterProTxHash: ByteArray,
+        votingAddress: ByteArray,
+        signerHandle: Long,
+    )
 }

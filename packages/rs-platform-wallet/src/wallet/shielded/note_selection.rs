@@ -6,15 +6,119 @@
 
 use super::store::ShieldedNote;
 use crate::error::PlatformWalletError;
+use dpp::balances::credits::TokenAmount;
+use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::MAX_DISTRIBUTION_PARAM;
 use dpp::fee::Credits;
+use dpp::prelude::Identifier;
+use dpp::serialization::PlatformSerializable;
 use dpp::shielded::{
     compute_minimum_shielded_fee, compute_private_document_create_from_shielded_pool_fee,
     compute_shielded_identity_create_fee, compute_shielded_identity_top_up_fee,
     compute_shielded_unshield_fee, compute_shielded_withdrawal_fee,
-    is_allowed_identity_create_denomination,
+    compute_token_purchase_from_shielded_pool_fee, is_allowed_identity_create_denomination,
+    SerializedAction,
 };
+use dpp::state_transition::state_transitions::shielded::common_validation::ENCRYPTED_NOTE_SIZE;
+use dpp::state_transition::token_purchase_from_shielded_pool_transition::v0::TokenPurchaseFromShieldedPoolTransitionV0;
+use dpp::state_transition::token_purchase_from_shielded_pool_transition::TokenPurchaseFromShieldedPoolTransition;
+use dpp::state_transition::{validate_state_transition_size, StateTransition};
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
+use grovedb_commitment_tree::Proof;
+
+/// Orchard actions in a `TokenPurchaseFromShieldedPool`'s token bundle: its one output (the
+/// bought tokens' note) with spends disabled, which Orchard pads to its two-action minimum.
+const TOKEN_PURCHASE_TOKEN_BUNDLE_ACTIONS: usize = 2;
+
+/// The fee of a `TokenPurchaseFromShieldedPool` (type 28) whose credit pool fee bundle has
+/// `fee_actions` actions, paid on top of the price: the consensus formula over the token
+/// bundle's two actions and the fee bundle's.
+pub fn compute_token_purchase_from_pool_fee(
+    fee_actions: usize,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, ProtocolError> {
+    compute_token_purchase_from_shielded_pool_fee(
+        TOKEN_PURCHASE_TOKEN_BUNDLE_ACTIONS,
+        fee_actions,
+        platform_version,
+    )
+}
+
+/// Refuse a `TokenPurchaseFromShieldedPool` token count its basic structure validation refuses
+/// (DPP's `is_valid_token_count`: zero, or above [`MAX_DISTRIBUTION_PARAM`]). Store- and
+/// network-free, so a purchase is refused with it before anything is reserved or asked.
+pub(crate) fn ensure_token_purchase_count(
+    token_count: TokenAmount,
+) -> Result<(), PlatformWalletError> {
+    if !TokenPurchaseFromShieldedPoolTransitionV0::is_valid_token_count(token_count) {
+        return Err(PlatformWalletError::InvalidParameter(format!(
+            "a shielded token purchase buys from 1 to {MAX_DISTRIBUTION_PARAM} tokens, not \
+             {token_count}"
+        )));
+    }
+    Ok(())
+}
+
+/// The serialized size of a `TokenPurchaseFromShieldedPool` whose fee bundle has `fee_actions`
+/// actions, with every variable field at its largest: the two bundles' actions and proofs (each
+/// of the canonical length Orchard gives a proof over its actions, [`Proof::expected_proof_size`])
+/// and the amounts at `u64::MAX`.
+fn token_purchase_wire_size(fee_actions: usize) -> Result<u64, ProtocolError> {
+    let action = SerializedAction {
+        nullifier: [0; 32],
+        rk: [0; 32],
+        cmx: [0; 32],
+        encrypted_note: vec![0; ENCRYPTED_NOTE_SIZE],
+        cv_net: [0; 32],
+        spend_auth_sig: [0; 64],
+    };
+    let proof = |actions: usize| vec![0u8; Proof::expected_proof_size(actions)];
+    let transition = StateTransition::TokenPurchaseFromShieldedPool(
+        TokenPurchaseFromShieldedPoolTransition::V0(TokenPurchaseFromShieldedPoolTransitionV0 {
+            data_contract_id: Identifier::from([0xFF; 32]),
+            token_contract_position: u16::MAX,
+            token_id: Identifier::from([0xFF; 32]),
+            token_count: u64::MAX,
+            total_agreed_price: u64::MAX,
+            token_actions: vec![action.clone(); TOKEN_PURCHASE_TOKEN_BUNDLE_ACTIONS],
+            token_anchor: [0xFF; 32],
+            token_proof: proof(TOKEN_PURCHASE_TOKEN_BUNDLE_ACTIONS),
+            token_binding_signature: [0xFF; 64],
+            fee_actions: vec![action; fee_actions],
+            fee_anchor: [0xFF; 32],
+            fee_proof: proof(fee_actions),
+            fee_binding_signature: [0xFF; 64],
+            credit_amount: u64::MAX,
+        }),
+    );
+    Ok(transition.serialize_to_bytes()?.len() as u64)
+}
+
+/// The most credit pool notes a `TokenPurchaseFromShieldedPool`'s fee bundle may spend at
+/// `platform_version`: the fee bundle has `max(notes, 2)` actions, each bundle at most
+/// `max_shielded_transition_actions`, and the transition must fit `max_state_transition_size`,
+/// which every node and DAPI enforce. The size binds first: the token bundle's two-action proof
+/// and a four-action fee proof alone take 19,072 of the 20,480 bytes, so a purchase pays from
+/// three notes at most. A purchase needing more is refused before anything is reserved or
+/// proved.
+pub fn max_token_purchase_fee_notes(
+    platform_version: &PlatformVersion,
+) -> Result<usize, ProtocolError> {
+    let max_actions = usize::from(
+        platform_version
+            .system_limits
+            .max_shielded_transition_actions,
+    );
+    let mut fitting = 0;
+    for notes in 1..=max_actions {
+        let size = token_purchase_wire_size(notes.max(2))?;
+        if validate_state_transition_size(size, platform_version).is_err() {
+            break;
+        }
+        fitting = notes;
+    }
+    Ok(fitting)
+}
 
 /// Which consensus fee formula the wallet must reserve notes against for a spend.
 ///
@@ -60,6 +164,11 @@ pub enum ShieldedFeeKind {
         /// The bytes of each, the private type's `entrySize`.
         entry_size: u32,
     },
+    /// [`compute_token_purchase_from_pool_fee`]: TokenPurchaseFromShieldedPool. The action count
+    /// is the credit pool fee bundle's, which spends the selected notes and always carries a
+    /// change output, so it is `max(selected, 2)` as for any spend with change. The price is the
+    /// amount selected for, the fee comes on top.
+    TokenPurchase,
 }
 
 impl ShieldedFeeKind {
@@ -92,6 +201,9 @@ impl ShieldedFeeKind {
                 entry_size,
                 platform_version,
             ),
+            ShieldedFeeKind::TokenPurchase => {
+                compute_token_purchase_from_pool_fee(num_actions, platform_version)
+            }
         }
     }
 }
@@ -380,6 +492,97 @@ mod tests {
             select_notes_with_fee(&notes[1..], 0, 2, kind, platform_version),
             Err(PlatformWalletError::ShieldedInsufficientBalance { .. })
         ));
+    }
+
+    /// A token purchase reserves the price plus the fee the builder charges: the consensus
+    /// formula over the token bundle's two actions and the fee bundle's `max(selected, 2)`. A
+    /// note one credit short of price plus fee does not cover it.
+    #[test]
+    fn should_reserve_a_token_purchase_price_plus_the_fee_the_builder_charges() {
+        let platform_version = PlatformVersion::latest();
+        let kind = ShieldedFeeKind::TokenPurchase;
+        for fee_actions in [2usize, 3, 7] {
+            assert_eq!(
+                kind.compute(fee_actions, platform_version)
+                    .expect("the fee"),
+                compute_token_purchase_from_shielded_pool_fee(2, fee_actions, platform_version)
+                    .expect("the consensus fee"),
+                "{fee_actions} fee actions"
+            );
+        }
+        let fee = compute_token_purchase_from_pool_fee(2, platform_version).expect("the fee");
+        let price = 5_000_000u64;
+
+        let notes = vec![test_note(price + fee, 0), test_note(price + fee - 1, 1)];
+        let (selected, total, exact_fee) =
+            select_notes_with_fee(&notes, price, 2, kind, platform_version)
+                .expect("covers price plus fee");
+        assert_eq!((selected.len(), total, exact_fee), (1, price + fee, fee));
+        assert!(matches!(
+            select_notes_with_fee(&notes[1..], price, 2, kind, platform_version),
+            Err(PlatformWalletError::ShieldedInsufficientBalance { .. })
+        ));
+    }
+
+    /// A token purchase pays from three notes at most: with the token bundle's two-action proof,
+    /// a fee bundle of three actions fits the 20,480-byte transition limit and one of four does
+    /// not, at every protocol version that has the transition.
+    #[test]
+    fn should_bound_a_token_purchase_to_the_notes_that_fit_the_size_limit() {
+        for protocol_version in [14, PlatformVersion::latest().protocol_version] {
+            let platform_version = PlatformVersion::get(protocol_version).expect("the version");
+            let max = platform_version.system_limits.max_state_transition_size;
+            assert_eq!(
+                max_token_purchase_fee_notes(platform_version).expect("the bound"),
+                3,
+                "protocol version {protocol_version}"
+            );
+            assert!(token_purchase_wire_size(3).expect("the size") <= max);
+            assert!(token_purchase_wire_size(4).expect("the size") > max);
+        }
+        // The proof share the bound rests on: a two-action and a four-action proof alone.
+        assert_eq!(
+            Proof::expected_proof_size(2) + Proof::expected_proof_size(4),
+            19_072
+        );
+    }
+
+    /// Basic structure accepts token counts from 1 to `MAX_DISTRIBUTION_PARAM`, and so does the
+    /// local check.
+    #[test]
+    fn should_check_a_token_purchase_count_as_basic_structure_does() {
+        assert!(ensure_token_purchase_count(1).is_ok());
+        assert!(ensure_token_purchase_count(MAX_DISTRIBUTION_PARAM).is_ok());
+        for count in [0, MAX_DISTRIBUTION_PARAM + 1, u64::MAX] {
+            assert!(matches!(
+                ensure_token_purchase_count(count),
+                Err(PlatformWalletError::InvalidParameter(_))
+            ));
+        }
+    }
+
+    /// When several notes pay a token purchase, the reserved fee is the one for that many fee
+    /// bundle actions, as the builder computes it from `max(spends, 2)`.
+    #[test]
+    fn should_price_a_multi_note_token_purchase_by_its_selected_note_count() {
+        let platform_version = PlatformVersion::latest();
+        let price = 1_000_000u64;
+        let notes: Vec<ShieldedNote> = (0..20).map(|i| test_note(60_000_000, i)).collect();
+        let (selected, total, exact_fee) = select_notes_with_fee(
+            &notes,
+            price,
+            2,
+            ShieldedFeeKind::TokenPurchase,
+            platform_version,
+        )
+        .expect("selection ok");
+        assert!(selected.len() > 2, "expected more than two notes selected");
+        assert_eq!(
+            exact_fee,
+            compute_token_purchase_from_shielded_pool_fee(2, selected.len(), platform_version)
+                .expect("the consensus fee")
+        );
+        assert!(total >= price + exact_fee);
     }
 
     #[test]

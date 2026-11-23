@@ -19,8 +19,10 @@
 //!   * document purchase / set-price ->
 //!     `platform_wallet_document_purchase` / `platform_wallet_document_set_price`
 //!     (`ManagedPlatformWallet.purchaseDocument`),
-//!   * cast vote -> `dash_sdk_contested_resource_cast_vote`
-//!     (`SDK.castContestedResourceVote` behind `ContestDetailView`).
+//!   * cast vote -> `dash_sdk_contested_resource_cast_vote`, or
+//!     `dash_sdk_contested_resource_cast_vote_with_signer` for a voting key
+//!     the host's signer holds (`SDK.castContestedResourceVote` behind
+//!     `ContestDetailView`).
 //!
 //! ## Result convention
 //!
@@ -38,6 +40,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
+use crate::decision_proposals::{c_ptr, read_fixed_bytes, read_optional_cstring, to_unsigned};
 use crate::pubkey_rows::decode_update_pubkeys_blob;
 use crate::support::{guard, net_from_ord, take_pwffi_error, throw_sdk_exception};
 use dpp::platform_value::string_encoding::Encoding;
@@ -1053,6 +1056,129 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_ca
         // On success there is no data pointer to free (the FFI returns
         // `success(null)`), so nothing else to release here.
     })
+}
+
+/// Cast a masternode contested-resource vote with the host's signer and wait
+/// for the response: the JNI bridge over
+/// `dash_sdk_contested_resource_cast_vote_with_signer` (Swift
+/// `SDK.castContestedResourceVote(..., votingAddress:, signer:)` in
+/// `PlatformQueryExtensions.swift`).
+///
+/// The vote of [`Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_castContestedResourceVote`],
+/// signed by `signerHandle` with the voting key Rust builds from
+/// `votingAddress` (an `ECDSA_HASH160` key whose data is the address); the
+/// private key stays with the host.
+///
+/// * `voteChoice` - `0` TowardsIdentity (requires `contenderIdentityId`),
+///   `1` Abstain, `2` Lock. A value outside `u8` is refused here rather than
+///   wrapped onto a valid choice.
+/// * `contenderIdentityId` - base58 contender id; required only when
+///   `voteChoice == 0`, else may be null.
+/// * `voterProTxHash` - 32-byte pro_tx_hash in wire order.
+/// * `votingAddress` - 20-byte voting address (hash160 of the compressed
+///   voting public key).
+/// * `signerHandle` - a live `SignerHandle` the caller keeps alive for the
+///   call; rs-sdk-ffi refuses 0.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_castContestedResourceVoteWithSigner(
+    mut env: JNIEnv,
+    _class: JClass,
+    sdk_handle: jlong,
+    contract_id: JString,
+    document_type: JString,
+    index_name: JString,
+    index_values_json: JString,
+    vote_choice: jint,
+    contender_identity_id: JString,
+    voter_pro_tx_hash: JByteArray,
+    voting_address: JByteArray,
+    signer_handle: jlong,
+) {
+    guard(&mut env, (), |env| {
+        let Some(contract) = read_cstring(env, &contract_id, "contractId") else {
+            return;
+        };
+        let Some(doc_type) = read_cstring(env, &document_type, "documentType") else {
+            return;
+        };
+        let Some(idx_name) = read_cstring(env, &index_name, "indexName") else {
+            return;
+        };
+        let Some(idx_values) = read_cstring(env, &index_values_json, "indexValuesJson") else {
+            return;
+        };
+        let Some(choice) = to_unsigned::<u8>(env, vote_choice.into(), "voteChoice") else {
+            return;
+        };
+        let Some(contender) =
+            read_optional_cstring(env, &contender_identity_id, "contenderIdentityId")
+        else {
+            return;
+        };
+        let Some(pro_tx_hash) = read_id32(env, &voter_pro_tx_hash, "voterProTxHash") else {
+            return;
+        };
+        let Some(address) = read_fixed_bytes::<20>(env, &voting_address, "votingAddress") else {
+            return;
+        };
+
+        let result = unsafe {
+            rs_sdk_ffi::dash_sdk_contested_resource_cast_vote_with_signer(
+                sdk_handle as *const rs_sdk_ffi::SDKHandle,
+                contract.as_ptr(),
+                doc_type.as_ptr(),
+                idx_name.as_ptr(),
+                idx_values.as_ptr(),
+                choice,
+                c_ptr(&contender),
+                pro_tx_hash.as_ptr(),
+                address.as_ptr(),
+                signer_handle as *const SignerHandle,
+            )
+        };
+        // Success carries no payload; take_error throws and frees on error.
+        unsafe { crate::results::take_error(env, &result) };
+    })
+}
+
+#[cfg(test)]
+mod signer_vote_signature_tests {
+    use crate::decision_proposals::tests::kotlin_signature_in;
+
+    const TRANSACTIONS_NATIVE_KT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../kotlin-sdk/sdk/src/main/kotlin/org/dashfoundation/dashsdk/ffi/TransactionsNative.kt"
+    ));
+
+    /// JNI binds an export by its name alone, so a Kotlin declaration that drifted from the
+    /// export's parameters would only fail on a device.
+    #[test]
+    fn should_declare_the_contested_signer_vote_as_the_export_takes_it() {
+        assert_eq!(
+            kotlin_signature_in(
+                TRANSACTIONS_NATIVE_KT,
+                "castContestedResourceVoteWithSigner"
+            ),
+            (
+                [
+                    "Long",      // sdk_handle
+                    "String",    // contract_id
+                    "String",    // document_type
+                    "String",    // index_name
+                    "String",    // index_values_json
+                    "Int",       // vote_choice
+                    "String?",   // contender_identity_id
+                    "ByteArray", // voter_pro_tx_hash
+                    "ByteArray", // voting_address
+                    "Long",      // signer_handle
+                ]
+                .map(String::from)
+                .to_vec(),
+                "Unit".to_string()
+            )
+        );
+    }
 }
 
 #[cfg(test)]

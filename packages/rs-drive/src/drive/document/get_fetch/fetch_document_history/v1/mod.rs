@@ -3,23 +3,23 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::query::document_history_drive_query::{
     invalid, DocumentHistoryDriveQuery, DocumentHistoryDriveQueryExecutionResult,
+    SerializedDocumentHistoryDriveQueryExecutionResult,
 };
 use crate::query::refuse_a_private_document_type;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
+use grovedb::query_result_type::PathKeyOptionalElementTrio;
 use grovedb::{Element, TransactionArg};
 
 impl Drive {
-    /// Fetches a page of the per-type history tree with the document's
-    /// current lifecycle metadata.
-    pub(super) fn fetch_document_history_v1(
+    fn fetch_document_history_rows_v1(
         &self,
         query: &DocumentHistoryDriveQuery,
         document_type: DocumentTypeRef,
         transaction: TransactionArg,
         version: &PlatformVersion,
-    ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
+    ) -> Result<Vec<PathKeyOptionalElementTrio>, Error> {
         refuse_a_private_document_type(document_type).map_err(Error::Query)?;
         if !document_type.documents_keep_history() {
             return Err(invalid("document type does not keep history"));
@@ -54,12 +54,38 @@ impl Drive {
                     .value?;
             }
         }
-        query.decode_result(
-            rows.into_iter()
-                .map(|(path, key, element)| (path, key, Some(element)))
-                .collect(),
-            document_type,
-            version,
-        )
+        Ok(rows
+            .into_iter()
+            .map(|(path, key, element)| (path, key, Some(element)))
+            .collect())
+    }
+
+    /// Fetches a page of the per-type history tree with the document's
+    /// current lifecycle metadata, keeping revision bodies serialized and
+    /// validating them from their headers alone.
+    pub(crate) fn fetch_document_history_serialized_v1(
+        &self,
+        query: &DocumentHistoryDriveQuery,
+        document_type: DocumentTypeRef,
+        transaction: TransactionArg,
+        version: &PlatformVersion,
+    ) -> Result<SerializedDocumentHistoryDriveQueryExecutionResult, Error> {
+        let rows =
+            self.fetch_document_history_rows_v1(query, document_type, transaction, version)?;
+        query.decode_result_serialized(rows, document_type, version)
+    }
+
+    /// Fetches a page of the per-type history tree with the document's
+    /// current lifecycle metadata.
+    pub(super) fn fetch_document_history_v1(
+        &self,
+        query: &DocumentHistoryDriveQuery,
+        document_type: DocumentTypeRef,
+        transaction: TransactionArg,
+        version: &PlatformVersion,
+    ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
+        let rows =
+            self.fetch_document_history_rows_v1(query, document_type, transaction, version)?;
+        query.decode_result(rows, document_type, None, version)
     }
 }

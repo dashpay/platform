@@ -21,7 +21,11 @@ use dpp::state_transition::proof_result::{
 use dpp::state_transition::StateTransition;
 use dpp::system_data_contracts::SystemDataContract;
 use dpp::util::hash::hash_single;
-use dpp::version::feature_initial_protocol_versions::PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION;
+use dpp::version::feature_initial_protocol_versions::{
+    IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+    PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+    SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION, TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+};
 use dpp::version::PlatformVersion;
 use rs_dapi_client::AddressList;
 use rs_dapi_client::CanRetry;
@@ -53,13 +57,62 @@ pub(crate) fn private_document_create_requirement() -> ProtocolRequirement {
     }
 }
 
+/// What a shield from an identity's balance (type 21) needs: every node serves it from
+/// protocol version 14. Wallets check it before they prove or save the transition
+/// ([`Sdk::ensure_protocol_requirement`]); the broadcast checks it again.
+pub fn shield_from_identity_requirement() -> ProtocolRequirement {
+    ProtocolRequirement {
+        protocol_version: SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION,
+        method: BROADCAST_STATE_TRANSITION_METHOD,
+        feature: Some("shield from identity transitions"),
+    }
+}
+
+/// What a top-up of an identity from the shielded pool (type 22) needs: every node serves
+/// it from protocol version 14. Wallets check it before they reserve notes or prove the
+/// transition ([`Sdk::ensure_protocol_requirement`]); the broadcast checks it again.
+pub fn identity_top_up_from_shielded_pool_requirement() -> ProtocolRequirement {
+    ProtocolRequirement {
+        protocol_version: IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+        method: BROADCAST_STATE_TRANSITION_METHOD,
+        feature: Some("identity top up from shielded pool transitions"),
+    }
+}
+
+/// What a token purchase paid from the shielded credit pool (type 28) needs: every node serves
+/// it from protocol version 14, with the token shielded pools. Wallets check it before they
+/// reserve notes or prove the transition ([`Sdk::ensure_protocol_requirement`]); the broadcast
+/// checks it again.
+pub fn token_purchase_from_shielded_pool_requirement() -> ProtocolRequirement {
+    ProtocolRequirement {
+        protocol_version: TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+        method: BROADCAST_STATE_TRANSITION_METHOD,
+        feature: Some("token purchase from shielded pool transitions"),
+    }
+}
+
 /// The protocol version `transition`'s kind needs before every node serves it, for a kind
 /// newer than every node may run: nodes of an older release reject it, which the client would
-/// take for the transition's own rejection.
-fn transition_protocol_requirement(transition: &StateTransition) -> Option<ProtocolRequirement> {
+/// take for the transition's own rejection. The broadcast gate applies it; a caller that keeps
+/// saved transitions to send again checks it first with [`Sdk::ensure_protocol_requirement`],
+/// so a local refusal does not count as a send.
+///
+/// This lists only the kinds the SDK's broadcast gate checks. `None` means no broadcast
+/// preflight is registered for the kind, not that every node accepts it: Drive-ABCI keeps its
+/// own activation checks (for example `IdentityKeyLimitsUpdate` below protocol version 14).
+pub fn transition_protocol_requirement(
+    transition: &StateTransition,
+) -> Option<ProtocolRequirement> {
     match transition {
         StateTransition::PrivateDocumentCreateFromShieldedPool(_) => {
             Some(private_document_create_requirement())
+        }
+        StateTransition::ShieldFromIdentity(_) => Some(shield_from_identity_requirement()),
+        StateTransition::IdentityTopUpFromShieldedPool(_) => {
+            Some(identity_top_up_from_shielded_pool_requirement())
+        }
+        StateTransition::TokenPurchaseFromShieldedPool(_) => {
+            Some(token_purchase_from_shielded_pool_requirement())
         }
         _ => None,
     }
@@ -724,7 +777,7 @@ mod tests {
             Error::ExecutionNotProved("affected-state snapshot only".into()),
             Error::TimeoutReached(Duration::from_secs(10), "no verified result".into()),
         ] {
-            let expected = format!("state transition outcome is unconfirmed; reconcile the original operation before submitting a replacement: {wait_error}");
+            let expected = format!("state transition outcome is unconfirmed: a node accepted it or may have received it; reconcile the original operation before submitting a replacement; last error: {wait_error}");
             let result: Result<(), Error> = wait_after_broadcast(
                 Err(Error::AlreadyExists("tx already exists in cache".into())),
                 async { Err(wait_error) },

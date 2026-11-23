@@ -3432,8 +3432,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
         let (_peer_cstrings, peer_ptrs) = match read_cstring_array(env, &peers) {
             Ok(v) => v,
             Err(_) => {
-                let _ = env.exception_clear();
-                throw_sdk_exception(env, 1, "peers array was null/invalid");
+                // A pending JVM error (out of memory) is the caller's to
+                // see as it is; anything else is a bad argument.
+                if !env.exception_check().unwrap_or(false) {
+                    throw_sdk_exception(env, 1, "peers array was null/invalid");
+                }
                 return;
             }
         };
@@ -3794,8 +3797,10 @@ fn read_cstring_opt(env: &mut JNIEnv, s: &JString) -> Result<Option<std::ffi::CS
 
 /// Read a Java `String[]` into owned `CString`s plus a parallel `*const
 /// c_char` pointer vec. The returned `Vec<CString>` OWNS the memory the
-/// pointer vec references — both must outlive the FFI call. Null / invalid
-/// elements are skipped (mirrors the FFI's per-peer tolerance).
+/// pointer vec references — both must outlive the FFI call. A null element,
+/// or one that cannot become a C string (an interior NUL), is passed as an
+/// empty string: the count the caller gave is kept, so the FFI can tell a
+/// list of unusable entries from an empty one.
 fn read_cstring_array(
     env: &mut JNIEnv,
     arr: &JObjectArray,
@@ -3806,21 +3811,21 @@ fn read_cstring_array(
     let len = env.get_array_length(arr)? as usize;
     let mut owned: Vec<std::ffi::CString> = Vec::with_capacity(len);
     for i in 0..len {
-        let element = env.get_object_array_element(arr, i as i32)?;
-        if element.is_null() {
-            continue;
-        }
-        let jstr = JString::from(element);
-        let s: String = match env.get_string(&jstr) {
-            Ok(v) => v.into(),
-            Err(_) => {
-                let _ = env.exception_clear();
-                continue;
+        // One local frame per element: the element and the two class
+        // references `get_string` takes would otherwise stay in the native
+        // frame until the call returns, three per entry of the list.
+        let entry = env.with_local_frame(4, |env| -> Result<_, jni::errors::Error> {
+            let element = env.get_object_array_element(arr, i as i32)?;
+            if element.is_null() {
+                return Ok(std::ffi::CString::default());
             }
-        };
-        if let Ok(c) = std::ffi::CString::new(s) {
-            owned.push(c);
-        }
+            // A string the JVM cannot hand over (out of memory) fails the
+            // whole call: the caller must not start with part of the list.
+            let jstr = JString::from(element);
+            let s: String = env.get_string(&jstr)?.into();
+            Ok(std::ffi::CString::new(s).unwrap_or_default())
+        })?;
+        owned.push(entry);
     }
     let ptrs: Vec<*const std::os::raw::c_char> = owned.iter().map(|c| c.as_ptr()).collect();
     Ok((owned, ptrs))

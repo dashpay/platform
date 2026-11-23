@@ -5,6 +5,7 @@ pub(super) mod v0_methods;
 mod version;
 
 use crate::balances::credits::TokenAmount;
+use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::MAX_DISTRIBUTION_PARAM;
 use crate::data_contract::TokenContractPosition;
 use crate::fee::Credits;
 use crate::prelude::Identifier;
@@ -81,4 +82,12 @@ pub struct TokenPurchaseFromShieldedPoolTransitionV0 {
     pub fee_binding_signature: [u8; 64],
     /// Credits leaving the credit pool: the fee bundle's value balance.
     pub credit_amount: Credits,
+}
+
+impl TokenPurchaseFromShieldedPoolTransitionV0 {
+    /// Whether `token_count` is a count this transition's structure validation accepts: from 1
+    /// to [`MAX_DISTRIBUTION_PARAM`]. A wallet asks it before reserving notes for a purchase.
+    pub fn is_valid_token_count(token_count: TokenAmount) -> bool {
+        token_count != 0 && token_count <= MAX_DISTRIBUTION_PARAM
+    }
 }

@@ -10,8 +10,8 @@ use crate::queries::utils::{deserialize_required_query, parse_contract_id};
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dash_sdk::dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
+use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::contract_moderation::{
@@ -24,9 +24,11 @@ use dash_sdk::platform::contract_moderation::{
     ContractTeamActionSigners, ContractTeamActionSignersQuery, ContractTeamActions,
     ContractTeamActionsPageQuery, GroupActionStatus,
 };
-use dash_sdk::platform::{DataContract, Fetch, Identifier};
+use dash_sdk::platform::{Fetch, Identifier};
+use dash_sdk::Error as SdkError;
 use js_sys::Array;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::data_contract::{moderation_reason_to_js, moderation_warnings_to_js};
@@ -533,8 +535,10 @@ fn required_query(query: JsValue) -> Result<JsValue, WasmSdkError> {
 }
 
 impl WasmSdk {
-    /// The status query for `query`. Without `lists`, the contract is fetched and every list
-    /// it keeps is read, because the node refuses a list the contract does not keep.
+    /// The status query for `query`, resolved by rs-sdk
+    /// (`ContractModerationStatusQuery::resolve`): without `lists`, the contract is fetched
+    /// and every list it keeps is read, because the node refuses a list the contract does not
+    /// keep.
     async fn contract_moderation_status_query(
         &self,
         query: ContractModerationStatusQueryJs,
@@ -546,28 +550,22 @@ impl WasmSdk {
         )?;
         let contract_id = Identifier::from(input.contract_id);
         let identity_id = Identifier::from(input.identity_id);
+        let lists = input
+            .lists
+            .map(|lists| lists.into_iter().map(Into::into).collect());
 
-        if let Some(lists) = input.lists {
-            return Ok(ContractModerationStatusQuery {
-                contract_id,
-                identity_id,
-                lists: lists.into_iter().map(Into::into).collect(),
-            });
-        }
-
-        let contract = DataContract::fetch(self.as_ref(), contract_id)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found(format!("contract {contract_id} not found")))?;
-        ContractModerationStatusQuery::for_contract(&contract, identity_id).ok_or_else(|| {
-            // A moderated contract may keep no list at all, when its moderators only delete
-            // documents: there is then no status to read, which is not the same as no
-            // moderation.
-            let reason = match contract.config().moderation() {
-                Some(_) => "keeps no moderation list, so no identity has a status on it",
-                None => "is not moderated",
-            };
-            WasmSdkError::invalid_argument(format!("contract {contract_id} {reason}"))
-        })
+        // Without `lists`, rs-sdk reads every list the contract keeps; an absent contract,
+        // and one with no list to read (not moderated, or moderated without a list), keep
+        // their JavaScript errors.
+        ContractModerationStatusQuery::resolve(self.as_ref(), contract_id, identity_id, lists)
+            .await
+            .map_err(|error| match error {
+                SdkError::MissingDependency(_, _) => {
+                    WasmSdkError::not_found(format!("contract {contract_id} not found"))
+                }
+                SdkError::InvalidRequest(reason) => WasmSdkError::invalid_argument(reason),
+                other => other.into(),
+            })
     }
 }
 
@@ -793,6 +791,16 @@ pub(crate) fn set_removal_fields(
     document_type: DocumentTypeRef,
     id_to_js: impl Fn(Identifier) -> JsValue,
 ) -> Result<(), WasmSdkError> {
+    let kept_values = removal.kept_values_with_default_budget(document_type)?;
+    set_removal_fields_from_decoded(target, removal, &kept_values, id_to_js)
+}
+
+pub(crate) fn set_removal_fields_from_decoded(
+    target: &js_sys::Object,
+    removal: &ContractDocumentRemoval,
+    kept_values: &BTreeMap<String, Value>,
+    id_to_js: impl Fn(Identifier) -> JsValue,
+) -> Result<(), WasmSdkError> {
     let set = |key: &str, value: JsValue| {
         js_sys::Reflect::set(target, &key.into(), &value)
             .map(|_| ())
@@ -813,20 +821,17 @@ pub(crate) fn set_removal_fields(
             js_sys::BigInt::from(restoration.restored_at).into(),
         )?;
     }
-    // Read under the document's type, as its documents are
-    set(
-        "keptFields",
-        kept_fields_to_js(&removal.kept_values(document_type)?)?,
-    )?;
+    set("keptFields", kept_fields_to_js(kept_values)?)?;
     Ok(())
 }
 
-/// One removal record with its document id, identifiers written by `id_to_js`: base58 strings
-/// for the removals query ([`ContractDocumentRemovalEntry`]), `Identifier`s for a join through a
-/// `moderatedDocument` reference (`JoinedDocumentRemoval`), as the join's other ids are.
+/// One removal record with its document id and already-decoded kept values, identifiers written
+/// by `id_to_js`: base58 strings for the removals query ([`ContractDocumentRemovalEntry`]),
+/// `Identifier`s for a join through a `moderatedDocument` reference (`JoinedDocumentRemoval`),
+/// as the join's other ids are.
 pub(crate) fn removal_entry_to_js(
     entry: &ContractDocumentRemovalEntry,
-    document_type: DocumentTypeRef,
+    kept_values: &BTreeMap<String, Value>,
     id_to_js: impl Fn(Identifier) -> JsValue,
 ) -> Result<JsValue, WasmSdkError> {
     let js_entry = js_sys::Object::new();
@@ -836,7 +841,7 @@ pub(crate) fn removal_entry_to_js(
         &id_to_js(entry.document_id),
     )
     .map_err(|_| WasmSdkError::generic("failed to set `documentId` on the removal"))?;
-    set_removal_fields(&js_entry, &entry.removal, document_type, id_to_js)?;
+    set_removal_fields_from_decoded(&js_entry, &entry.removal, kept_values, id_to_js)?;
     Ok(js_entry.into())
 }
 
@@ -845,6 +850,7 @@ fn removals_to_js(
     query: &ContractDocumentRemovalsPageQuery,
     document_type: DocumentTypeRef,
 ) -> Result<JsValue, WasmSdkError> {
+    let kept_values_list = page.decode_kept_values(document_type)?;
     let result = js_sys::Object::new();
     let set = |target: &js_sys::Object, key: &str, value: JsValue| {
         js_sys::Reflect::set(target, &key.into(), &value)
@@ -852,10 +858,8 @@ fn removals_to_js(
     };
     let id_to_js = |id: Identifier| JsValue::from_str(&IdentifierWasm::from(id).to_base58());
     let removals = Array::new();
-    for entry in page.removals() {
-        removals.push(&removal_entry_to_js(entry, document_type, |id| {
-            JsValue::from_str(&IdentifierWasm::from(id).to_base58())
-        })?);
+    for (entry, kept_values) in page.removals().iter().zip(kept_values_list.iter()) {
+        removals.push(&removal_entry_to_js(entry, kept_values, id_to_js)?);
     }
     set(&result, "removals", removals.into())?;
     // A page shorter than the limit is the last one, and a read by ids has no page after it:

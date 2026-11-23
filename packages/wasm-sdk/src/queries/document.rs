@@ -2,7 +2,6 @@ use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
-use dapi_grpc::platform::v0::get_document_history_response::get_document_history_response_v1::Result as HistoryResponseResult;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::platform_value::Value;
@@ -12,13 +11,14 @@ use dash_sdk::platform::documents::document_history_query::{
     DocumentHistoryFilter, DocumentHistoryQuery,
 };
 use dash_sdk::platform::documents::document_query::DocumentQuery;
+use dash_sdk::platform::proto::{Proof, ResponseMetadata};
 use dash_sdk::platform::Fetch;
 use dash_sdk::platform::FetchMany;
 use drive::query::{
     IntegerRangeGridSpec, OrderClause, TimeRangeGridSpec, TimeRangeSelector, WhereClause,
     WhereOperator,
 };
-use drive_proof_verifier::types::{DocumentHistory, DocumentHistoryProofInfo};
+use drive_proof_verifier::types::DocumentHistory;
 use drive_proof_verifier::{DocumentSplitAverages, DocumentSplitCounts, DocumentSplitSums};
 use js_sys::{BigInt, Map};
 use serde::{Deserialize, Serialize};
@@ -221,7 +221,12 @@ export interface DocumentHistoryQuery {
    * JavaScript would have rounded it before the query is built.
    */
   startAtMs?: bigint | number;
-  /** Complete exclusive cursor returned by a previous page. */
+  /**
+   * Complete exclusive cursor returned by a previous page.
+   *
+   * `startAfter`, `startAtRevision` and `revision` need Platform protocol version 15.
+   * Below it only `startAtMs` is served, and the others are refused before sending.
+   */
   startAfter?: { timeMs: bigint | number; revision: bigint | number } | DocumentHistoryEntry;
   startAtRevision?: bigint | number;
   revision?: bigint | number;
@@ -513,7 +518,8 @@ impl DocumentHistoryResultWasm {
     }
 
     /// Missing when the legacy storage generation cannot authenticate lifecycle
-    /// metadata.
+    /// metadata: always below Platform protocol version 15, whose history proofs
+    /// carry revisions only.
     #[wasm_bindgen(getter)]
     pub fn lifecycle(&self) -> Option<DocumentHistoryLifecycleWasm> {
         self.lifecycle.clone()
@@ -1102,20 +1108,13 @@ pub(super) fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, Wasm
 }
 
 fn document_history_proof_response(
-    result: DocumentHistoryProofInfo,
+    (history, metadata, proof): (DocumentHistory, ResponseMetadata, Proof),
     contract_id: Identifier,
     document_type_name: &str,
 ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-    let Some(HistoryResponseResult::Proof(proof)) = result.response.result else {
-        return Err(WasmSdkError::generic(
-            "verified document history response carries no proof",
-        ));
-    };
     Ok(ProofMetadataResponseWasm::from_sdk_parts(
-        DocumentHistoryResultWasm::from_history(result.history, contract_id, document_type_name)?,
-        result.response.metadata.ok_or_else(|| {
-            WasmSdkError::generic("verified document history response carries no metadata")
-        })?,
+        DocumentHistoryResultWasm::from_history(history, contract_id, document_type_name)?,
+        metadata,
         proof,
     ))
 }
@@ -1159,10 +1158,15 @@ impl WasmSdk {
             .map_err(|error| {
                 WasmSdkError::not_found(format!("Document type not found: {error}"))
             })?;
-        let result = DocumentHistoryProofInfo::fetch(self.as_ref(), query)
-            .await?
+        let (history, metadata, proof) =
+            DocumentHistory::fetch_with_metadata_and_proof(self.as_ref(), query, None).await?;
+        let history = history
             .ok_or_else(|| WasmSdkError::not_found("document history response is missing"))?;
-        document_history_proof_response(result, contract_id, &document_type_name)
+        document_history_proof_response(
+            (history, metadata, proof),
+            contract_id,
+            &document_type_name,
+        )
     }
 
     #[wasm_bindgen(
@@ -1410,7 +1414,8 @@ impl WasmSdk {
     /// `GroupByCompound`); `DocumentSplitSums::fetch` dispatches
     /// internally on the request shape.
     ///
-    /// The map values are `bigint` (signed `i64` on the wire); the
+    /// The map values are `bigint` (signed, up to 128 bits from
+    /// protocol version 15, when a type keeps its sums in 128 bits); the
     /// `Aggregate` mode emits a single entry with empty-string key
     /// carrying the total. `GroupByIn` / `GroupByRange` emit one
     /// entry per matched group keyed by the hex-encoded canonical
@@ -1538,26 +1543,27 @@ fn split_counts_to_js_map(splits: Option<DocumentSplitCounts>) -> Map {
 /// — callers needing the unmerged view should consume
 /// `DocumentSplitSums.0` directly).
 ///
-/// Values are `i64` per grovedb's signed SumTree value type.
-/// `bigint` on the JS side preserves the full i64 range that
+/// Values are `i128`: from protocol version 15 a document type may
+/// keep its sums in 128 bits. `bigint` on the JS side preserves the
+/// full range that
 /// `Number` can't — avoids the silent precision loss past
 /// `Number.MAX_SAFE_INTEGER` (2^53 - 1) that an `f64` conversion
 /// would introduce.
 ///
 /// Returns a `WasmSdkError` if the fold across In-fork branches
-/// crosses the i64 range at any terminator key
+/// crosses the i128 range at any terminator key
 /// (`try_into_flat_map` does `checked_add` on each step). JS sees
 /// a structured error rather than a debug-build panic or a
 /// release-build wrap.
 fn split_sums_to_js_map(splits: Option<DocumentSplitSums>) -> Result<Map, WasmSdkError> {
     let map = Map::new();
     if let Some(split_sums) = splits {
-        // `try_into_flat_map` uses `i64::checked_add` and surfaces
+        // `try_into_flat_map` uses `i128::checked_add` and surfaces
         // overflow as `drive_proof_verifier::Error::RequestError`.
         // Convert to `WasmSdkError::generic` so JS callers see a
         // structured error (rather than the debug-build panic /
         // release-build wrap that the previous unchecked `+=`
-        // would produce on a compound-In merge crossing i64::MAX).
+        // would produce on a compound-In merge crossing i128::MAX).
         let flat = split_sums
             .try_into_flat_map()
             .map_err(|e| WasmSdkError::generic(format!("{e}")))?;
@@ -1573,7 +1579,7 @@ fn split_sums_to_js_map(splits: Option<DocumentSplitSums>) -> Result<Map, WasmSd
 /// {count: bigint, sum: bigint}>`.
 ///
 /// Average analog of [`split_counts_to_js_map`]. Per-entry values
-/// are JS objects with `count` (`u64` → `bigint`) and `sum` (`i64`
+/// are JS objects with `count` (`u64` → `bigint`) and `sum` (`i128`
 /// → `bigint`) fields; the JS caller divides with whichever
 /// representation it prefers (`Number(sum) / Number(count)` for
 /// f64-precision arithmetic, BigInt division for integer-truncated,
@@ -1583,7 +1589,7 @@ fn split_sums_to_js_map(splits: Option<DocumentSplitSums>) -> Result<Map, WasmSd
 ///
 /// Hex-encoded keys + `try_into_flat_map` fork-merging match the
 /// count and sum helpers' conventions exactly. Returns a
-/// `WasmSdkError` if either the u64 count or the i64 sum fold
+/// `WasmSdkError` if either the u64 count or the i128 sum fold
 /// crosses its range at any terminator key, matching the
 /// hardening on [`split_sums_to_js_map`].
 fn split_averages_to_js_map(splits: Option<DocumentSplitAverages>) -> Result<Map, WasmSdkError> {
@@ -1591,7 +1597,7 @@ fn split_averages_to_js_map(splits: Option<DocumentSplitAverages>) -> Result<Map
     if let Some(split_averages) = splits {
         // Same overflow hardening rationale as `split_sums_to_js_map`
         // above — `try_into_flat_map` uses `u64::checked_add` (count
-        // axis) and `i64::checked_add` (sum axis); either overflow
+        // axis) and `i128::checked_add` (sum axis); either overflow
         // surfaces as a typed JS error instead of a panic / wrap.
         let flat = split_averages
             .try_into_flat_map()
@@ -1831,8 +1837,6 @@ mod tests {
 #[cfg(all(test, target_arch = "wasm32"))]
 mod history_wasm_tests {
     use super::*;
-    use crate::error::WasmSdkErrorKind;
-    use dash_sdk::platform::proto::get_document_history_response::GetDocumentHistoryResponseV1;
     use drive_proof_verifier::types::{
         DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryLifecycleTimes,
         DocumentHistoryState,
@@ -1840,45 +1844,6 @@ mod history_wasm_tests {
     use js_sys::{Array, Reflect};
     use wasm_bindgen::JsCast;
     use wasm_bindgen_test::wasm_bindgen_test;
-
-    #[wasm_bindgen_test]
-    fn should_return_an_error_when_history_proof_metadata_is_missing() {
-        let result = DocumentHistoryProofInfo {
-            history: DocumentHistory {
-                entries: vec![],
-                lifecycle: None,
-            },
-            response: GetDocumentHistoryResponseV1 {
-                metadata: None,
-                result: Some(HistoryResponseResult::Proof(Default::default())),
-            },
-        };
-        let error = document_history_proof_response(result, [1; 32].into(), "note")
-            .expect_err("missing metadata must return an error");
-        assert_eq!(error.kind(), WasmSdkErrorKind::Generic);
-        assert_eq!(
-            error.to_string(),
-            "verified document history response carries no metadata"
-        );
-    }
-
-    #[wasm_bindgen_test]
-    fn should_return_an_error_when_history_response_has_no_proof() {
-        let result = DocumentHistoryProofInfo {
-            history: DocumentHistory {
-                entries: vec![],
-                lifecycle: None,
-            },
-            response: Default::default(),
-        };
-        let error = document_history_proof_response(result, [1; 32].into(), "note")
-            .expect_err("missing proof must return an error");
-        assert_eq!(error.kind(), WasmSdkErrorKind::Generic);
-        assert_eq!(
-            error.to_string(),
-            "verified document history response carries no proof"
-        );
-    }
 
     fn returned_history_entry(time_ms: u64, revision: u64) -> JsValue {
         let history = DocumentHistory {
@@ -2120,6 +2085,45 @@ mod history_wasm_tests {
         }
     }
 
+    /// Below protocol 15 the SDK sends request V0, whose proof carries revisions only: the
+    /// page reaches JavaScript with its entries, metadata and proof, and no `lifecycle`.
+    #[wasm_bindgen_test]
+    fn should_return_a_protocol_14_history_page_without_lifecycle() {
+        let history = DocumentHistory {
+            entries: vec![DocumentHistoryEntry {
+                time_ms: 2000,
+                revision: 2,
+                document: Document::V0(Default::default()),
+            }],
+            lifecycle: None,
+        };
+        let metadata = ResponseMetadata {
+            protocol_version: 14,
+            ..Default::default()
+        };
+        let proof = Proof {
+            grovedb_proof: vec![7, 8, 9],
+            ..Default::default()
+        };
+        let response =
+            document_history_proof_response((history, metadata, proof), [1; 32].into(), "note")
+                .unwrap();
+
+        assert_eq!(response.metadata().protocol_version(), 14);
+        assert_eq!(response.proof().grovedb_proof().to_vec(), vec![7, 8, 9]);
+        let json = response.to_json().unwrap();
+        let data = Reflect::get(&json, &"data".into()).unwrap();
+        let entries = Array::from(&Reflect::get(&data, &"entries".into()).unwrap());
+        assert_eq!(entries.length(), 1);
+        assert_eq!(
+            Reflect::get(&entries.get(0), &"revision".into()).unwrap(),
+            JsValue::from_str("2")
+        );
+        assert!(Reflect::get(&data, &"lifecycle".into())
+            .unwrap()
+            .is_undefined());
+    }
+
     #[wasm_bindgen_test]
     fn should_serialize_history_data_in_a_proof_metadata_response() {
         let history = DocumentHistory {
@@ -2135,13 +2139,7 @@ mod history_wasm_tests {
             }),
         };
         let response = document_history_proof_response(
-            DocumentHistoryProofInfo {
-                history,
-                response: GetDocumentHistoryResponseV1 {
-                    metadata: Some(Default::default()),
-                    result: Some(HistoryResponseResult::Proof(Default::default())),
-                },
-            },
+            (history, Default::default(), Default::default()),
             [1; 32].into(),
             "note",
         )

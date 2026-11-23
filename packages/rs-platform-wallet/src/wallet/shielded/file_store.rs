@@ -14,12 +14,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
 use std::fmt;
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use dpp::serialization::{PlatformDeserializableTrusted, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
+use tokio::sync::watch;
 
 use super::balance::{ShieldedBalanceSource, ShieldedLocalAccountBalance};
 use super::store::{
@@ -81,6 +83,58 @@ impl From<FileShieldedStoreError> for PlatformWalletError {
     }
 }
 
+/// A counter raised whenever the local shielded balance state may have
+/// changed. The store raises it on every mutable access to its per-subwallet
+/// state ([`SignalledSubwallets`]); the coordinator raises the same counter
+/// when its account registry or a wallet's hydration changes. Watchers
+/// compare states rather than counting, so a raise that changed nothing is
+/// harmless and several raises coalesce into one wake.
+pub(crate) type BalanceChangeSignal = Arc<watch::Sender<u64>>;
+
+/// Raise `signal` (see [`BalanceChangeSignal`]). Never fails and never waits
+/// on anything but the channel's own short lock, so it is safe to call from a
+/// synchronous method while the caller holds the store write lock.
+pub(crate) fn raise_balance_change(signal: &watch::Sender<u64>) {
+    signal.send_modify(|counter| *counter = counter.wrapping_add(1));
+}
+
+/// The store's per-subwallet state. Everything the local balance reads
+/// (`FileBackedShieldedStore::local_account_balance`: notes, spent marks,
+/// pending reservations, the scan watermark and the balance provenance)
+/// lives here, so every mutable access raises the balance change signal
+/// before handing out the map: a mutating method cannot change the balance
+/// without raising it. The raise lands while the caller still holds the
+/// store exclusively, so a watcher reads the store only once the mutation is
+/// done.
+struct SignalledSubwallets {
+    map: BTreeMap<SubwalletId, SubwalletState>,
+    signal: BalanceChangeSignal,
+}
+
+impl SignalledSubwallets {
+    fn new() -> Self {
+        Self {
+            map: BTreeMap::new(),
+            signal: Arc::new(watch::Sender::new(0)),
+        }
+    }
+}
+
+impl Deref for SignalledSubwallets {
+    type Target = BTreeMap<SubwalletId, SubwalletState>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.map
+    }
+}
+
+impl DerefMut for SignalledSubwallets {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        raise_balance_change(&self.signal);
+        &mut self.map
+    }
+}
+
 /// File-backed shielded store: SQLite-persisted commitment tree
 /// plus in-memory per-subwallet decrypted notes / nullifier
 /// bookkeeping.
@@ -108,8 +162,10 @@ pub struct FileBackedShieldedStore {
     /// [`reset_commitment_tree`]: ShieldedStore::reset_commitment_tree
     max_checkpoints: usize,
     /// Per-subwallet notes + sync state, keyed by `(wallet_id,
-    /// account_index)`. Lazily populated on first use of an id.
-    subwallets: BTreeMap<SubwalletId, SubwalletState>,
+    /// account_index)`. Lazily populated on first use of an id. Every
+    /// mutable access raises the balance change signal
+    /// ([`Self::balance_change_signal`]).
+    subwallets: SignalledSubwallets,
     /// Second connection on the same SQLite file, owning the recovery
     /// tables: `shielded_pending_spends` (armed [`PendingRedrive`] records)
     /// and the private payment journal. Separate from `tree` because the
@@ -349,6 +405,14 @@ impl FileBackedShieldedStore {
         Ok(())
     }
 
+    /// The signal this store raises on every change to what
+    /// [`Self::local_account_balance`] returns (see [`SignalledSubwallets`]).
+    /// The coordinator takes it before it wraps the store in its lock, so
+    /// watching it never needs the store lock.
+    pub(crate) fn balance_change_signal(&self) -> BalanceChangeSignal {
+        Arc::clone(&self.subwallets.signal)
+    }
+
     /// Called under the coordinator's store read guard so amount and provenance
     /// cannot straddle a sync or a pending-spend reservation.
     pub(super) fn local_account_balance(
@@ -512,7 +576,7 @@ impl FileBackedShieldedStore {
             tree: Mutex::new(tree),
             path,
             max_checkpoints,
-            subwallets: BTreeMap::new(),
+            subwallets: SignalledSubwallets::new(),
             pending_conn: Mutex::new(pending_conn),
             private_contact_payments: BTreeMap::new(),
             unloaded_private_contact_payments: BTreeSet::new(),
@@ -794,6 +858,9 @@ impl FileBackedShieldedStore {
             }
             StateTransition::PrivateDocumentCreateFromShieldedPool(_) => {
                 Some(PRIVATE_DOCUMENT_CREATE_KIND)
+            }
+            StateTransition::TokenPurchaseFromShieldedPool(_) => {
+                Some("token purchase from shielded pool")
             }
             _ => None,
         }
@@ -3403,6 +3470,106 @@ mod tests {
         assert!(store
             .private_contact_redrives_for_wallet([0x7B; 32])
             .is_ok());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Every method that can change what `local_account_balance` returns
+    /// raises the balance change signal: notes saved, spent marks, pending
+    /// reservations taken and cleared in each of their forms, saved spend
+    /// records (which carry reservations), the scan watermark and the
+    /// balance provenance, and every purge. The signal is raised by the
+    /// per-subwallet map itself on any mutable access, so a method added
+    /// later that changes that state raises it too.
+    #[test]
+    fn should_raise_the_balance_change_signal_on_every_balance_mutation() {
+        let path = temp_tree_path("balance_signal");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+        let mut changes = store.balance_change_signal().subscribe();
+        changes.borrow_and_update();
+        let id = SubwalletId::new([0x31; 32], 0);
+        let note = |n: u8, value: u64| ShieldedNote {
+            position: u64::from(n),
+            cmx: [n; 32],
+            nullifier: [n; 32],
+            block_height: 1,
+            is_spent: false,
+            value,
+            note_data: vec![n; 115],
+        };
+        let redrive = |activity: u8, nullifier: u8| PendingRedrive {
+            activity_id: [activity; 32],
+            anchor: [2u8; 32],
+            nullifiers: vec![[nullifier; 32]],
+            st_bytes: vec![0xAB; 96],
+            attempts: 0,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
+            anchor_height: None,
+        };
+        let mut assert_raised = |name: &str| {
+            assert!(
+                changes.has_changed().expect("signal open"),
+                "{name} must raise the balance change signal"
+            );
+            changes.borrow_and_update();
+        };
+
+        store.save_note(id, &note(1, 100)).expect("save");
+        assert_raised("save_note");
+        store.mark_pending(id, &[1; 32]).expect("mark pending");
+        assert_raised("mark_pending");
+        store.clear_pending(id, &[1; 32]).expect("clear pending");
+        assert_raised("clear_pending");
+        store
+            .mark_pending_by(id, &[1; 32], 9)
+            .expect("mark pending by");
+        assert_raised("mark_pending_by");
+        store
+            .set_pending_spend(id, &[1; 32], [2; 32], [3; 32], None)
+            .expect("set pending spend");
+        assert_raised("set_pending_spend");
+        store
+            .note_anchor_recorded(id, &[2; 32], 5)
+            .expect("note anchor recorded");
+        assert_raised("note_anchor_recorded");
+        store
+            .clear_pending_reserved_by(id, &[1; 32], 9)
+            .expect("clear pending reserved by");
+        assert_raised("clear_pending_reserved_by");
+        store.arm_redrive(id, redrive(4, 1)).expect("arm");
+        assert_raised("arm_redrive");
+        store.bump_redrive_attempts(id, &[4; 32]).expect("bump");
+        assert_raised("bump_redrive_attempts");
+        store.clear_redrive(id, &[4; 32]).expect("clear redrive");
+        assert_raised("clear_redrive");
+        store.arm_redrive(id, redrive(5, 1)).expect("arm again");
+        assert_raised("arm_redrive");
+        assert!(store
+            .retire_undelivered_spend(id, &[5; 32], &[])
+            .expect("retire"));
+        assert_raised("retire_undelivered_spend");
+        store.mark_spent(id, &[1; 32]).expect("mark spent");
+        assert_raised("mark_spent");
+        store.set_last_synced_note_index(id, 7).expect("watermark");
+        assert_raised("set_last_synced_note_index");
+        store.restore_balance_metadata(id, 9, true, false);
+        assert_raised("restore_balance_metadata");
+        store.purge_subwallet(id).expect("purge subwallet");
+        assert_raised("purge_subwallet");
+        store.save_note(id, &note(2, 50)).expect("save");
+        assert_raised("save_note");
+        store.purge_wallet(id.wallet_id).expect("purge wallet");
+        assert_raised("purge_wallet");
+        store.save_note(id, &note(3, 50)).expect("save");
+        assert_raised("save_note");
+        store.purge_all_subwallets().expect("purge all");
+        assert_raised("purge_all_subwallets");
+
+        // Reads leave it alone.
+        let _ = store.local_account_balance(id).expect("balance");
+        let _ = store.get_unspent_notes(id).expect("notes");
+        assert!(!changes.has_changed().expect("signal open"));
+        drop(store);
         let _ = std::fs::remove_file(&path);
     }
 }
