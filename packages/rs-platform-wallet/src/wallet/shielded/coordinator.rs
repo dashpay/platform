@@ -1129,6 +1129,7 @@ impl NetworkShieldedCoordinator {
             return;
         }
         let store = self.store.read().await;
+        let owners: BTreeSet<SubwalletId> = subwallets.iter().map(|(id, _)| *id).collect();
         let mut live = BTreeSet::new();
         for (id, _) in subwallets {
             match store.pending_redrives(*id) {
@@ -1140,7 +1141,7 @@ impl NetworkShieldedCoordinator {
             }
         }
         let released = match store.with_token_pool_conn(|conn| {
-            super::token_pool::release_orphaned_reservations(conn, scanned, &live)
+            super::token_pool::release_orphaned_reservations(conn, &owners, scanned, &live)
         }) {
             Ok(released) => released,
             Err(e) => {

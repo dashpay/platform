@@ -2135,7 +2135,8 @@ impl PlatformWallet {
     ///
     /// An accepted transfer stays pending until a shielded sync sees it
     /// ([`ShieldedTokenSpendOutcome::Submitted`]). The lifecycle gate is held
-    /// as the purchase holds it, through settlement.
+    /// as the purchase holds it, through settlement, and so is the
+    /// coordinator's operation guard, so a Clear waits for the transfer.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_token_transfer<P: OrchardProver>(
@@ -2155,6 +2156,9 @@ impl PlatformWallet {
                 self.wallet_id,
             )));
         }
+        // Held through settlement, so a Clear waits for the transfer instead
+        // of purging the store it reserves in and settles against.
+        let _operation = coordinator.operation_guard().await;
         let keyset = self.derive_spend_keyset(seed, account).await?;
         token_shielded_transfer(
             &self.sdk,

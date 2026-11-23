@@ -678,7 +678,9 @@ async fn should_release_only_orphaned_token_reservations_in_scanned_pools() {
         tables_ref
             .read()
             .await
-            .with_token_pool_conn(|conn| release_orphaned_reservations(conn, &scanned, &live))
+            .with_token_pool_conn(|conn| {
+                release_orphaned_reservations(conn, &BTreeSet::from([id]), &scanned, &live)
+            })
             .expect("sweep")
     };
     assert!(
@@ -725,6 +727,12 @@ async fn should_give_token_notes_paths_to_the_root_of_the_kept_leaves() {
     let (paths, anchor) = store
         .with_token_pool_conn(|conn| spend_paths(conn, token().token_id, &owned_notes))
         .expect("paths");
+    assert_eq!(owned_notes.len(), 2, "the scan found both owned notes");
+    assert_eq!(
+        paths.len(),
+        owned_notes.len(),
+        "every owned note has a path"
+    );
     for (note, (position, path)) in owned_notes.iter().zip(&paths) {
         assert_eq!(*position, note.position);
         let cmx = grovedb_commitment_tree::ExtractedNoteCommitment::from_bytes(&note.cmx)
@@ -744,4 +752,37 @@ async fn should_give_token_notes_paths_to_the_root_of_the_kept_leaves() {
         err,
         PlatformWalletError::ShieldedMerkleWitnessUnavailable(_)
     ));
+}
+
+/// The sweep judges only the accounts it was given: a reservation of an
+/// account not registered now (its records unread) is kept, even in a pool
+/// another account's scan completed.
+#[tokio::test]
+async fn should_keep_the_reservations_of_accounts_outside_the_sweep() {
+    let scanned_account = SubwalletId::new(WALLET, 0);
+    let absent_account = SubwalletId::new(OTHER_WALLET, 0);
+    let held_elsewhere = TokenPoolNote {
+        reserved_by: Some([0xD2; 32]),
+        ..owned(absent_account, 0, 5)
+    };
+    let tables = tables_with(&[held_elsewhere]).await;
+    let released = tables
+        .read()
+        .await
+        .with_token_pool_conn(|conn| {
+            release_orphaned_reservations(
+                conn,
+                &BTreeSet::from([scanned_account]),
+                &BTreeSet::from([token().token_id]),
+                &BTreeSet::new(),
+            )
+        })
+        .expect("sweep");
+    assert!(released.is_empty());
+    let held = tables
+        .read()
+        .await
+        .with_token_pool_conn(|conn| notes(conn, absent_account, token().token_id))
+        .expect("notes");
+    assert_eq!(held[0].reserved_by, Some([0xD2; 32]));
 }

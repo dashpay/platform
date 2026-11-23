@@ -2394,6 +2394,22 @@ where
             fee_used, exact_fee,
             "builder fee must match the reserved token shielded transfer fee"
         );
+        // Proving takes a while, and other reads may have shown the network
+        // past the version this was signed at meanwhile; from protocol
+        // version 15 the token bundle must bind the fee bundle, so a
+        // transition signed at another version is refused before anything is
+        // recorded, saved or sent.
+        let network_now = token_pool_paid_signing_version(
+            sdk.version(),
+            sdk.protocol_version_info().verified_version,
+        )?;
+        if network_now.protocol_version != platform_version.protocol_version {
+            return Err(PlatformWalletError::ShieldedProtocolVersionMismatch {
+                sdk_version: platform_version.protocol_version,
+                network_version: network_now.protocol_version,
+            }
+            .into());
+        }
 
         pending_entry = record_pending_activity(
             store,
