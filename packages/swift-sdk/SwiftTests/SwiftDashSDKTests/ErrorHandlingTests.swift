@@ -506,15 +506,15 @@ final class ErrorHandlingTests: XCTestCase {
     }
 
     /// The identity-slot refusals keep pinned raw values and typed cases with
-    /// their JSON detail, so a host re-acquires on 78 by its case, not its text.
+    /// their JSON detail, so a host re-acquires on 82 by its case, not its text.
     func testShouldPreserveIdentitySlotRefusalsFromFFI() {
         let codes: [(PlatformWalletFFIResultCode, PlatformWalletResultCode, Int32)] = [
             (PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_SLOT_NOT_HELD,
-             .errorIdentitySlotNotHeld, 77),
+             .errorIdentitySlotNotHeld, 81),
             (PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_SLOT_TAKEN_ON_CHAIN,
-             .errorIdentitySlotTakenOnChain, 78),
+             .errorIdentitySlotTakenOnChain, 82),
             (PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_SLOT_CLAIM_SUBMITTED,
-             .errorIdentitySlotClaimSubmitted, 79),
+             .errorIdentitySlotClaimSubmitted, 83),
         ]
         for (ffi, code, raw) in codes {
             XCTAssertEqual(PlatformWalletResultCode(ffi: ffi), code)
@@ -548,7 +548,7 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(ManagedPlatformWallet.identitySlotTakenRetryLimit, 5)
     }
 
-    /// 78 always names its identity; a payload without one, or prose, degrades
+    /// 82 always names its identity; a payload without one, or prose, degrades
     /// to `.unknown` instead of inventing an index or an id.
     func testShouldDegradeAnUndecodableIdentitySlotDetailToUnknown() {
         guard case .unknown = PlatformWalletError(
@@ -737,6 +737,23 @@ final class ErrorHandlingTests: XCTestCase {
         guard case .publicContactRequestUnconfirmed(let message) =
             PlatformWalletError(code: code, message: detail) else {
             return XCTFail("lost typed public-unconfirmed error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A failed identity lookup, which sent nothing, has its own code and
+    /// typed case, apart from the unmapped SDK errors a host reads as possibly
+    /// delivered.
+    func testShouldReportAFailedIdentityLookupByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_LOOKUP_FAILED
+        )
+        XCTAssertEqual(code, .errorIdentityLookupFailed)
+        XCTAssertEqual(code.rawValue, 80)
+        let detail = "could not look up identity 9fRYTJZW on Platform; nothing was sent"
+        guard case .identityLookupFailed(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed identity-lookup-failed error")
         }
         XCTAssertEqual(message, detail)
     }

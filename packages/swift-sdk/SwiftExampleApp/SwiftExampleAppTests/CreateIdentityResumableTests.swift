@@ -384,7 +384,7 @@ final class CreateIdentityResumableTests: XCTestCase {
     // MARK: - failure next step
 
     /// A resumed lock keeps its own index, so `.identitySlotTakenOnChain`
-    /// (78) must never re-run the same resume: it offers to top up the
+    /// (82) must never re-run the same resume: it offers to top up the
     /// identity found at that index, whatever the retry count.
     func testResumedLockSlotTakenOffersTopUpInsteadOfRetry() {
         let taken = PlatformWalletError.identitySlotTakenOnChain(
@@ -402,7 +402,7 @@ final class CreateIdentityResumableTests: XCTestCase {
         }
     }
 
-    /// A fresh registration keeps acquiring a new slot on 78, up to the
+    /// A fresh registration keeps acquiring a new slot on 82, up to the
     /// retry limit, then shows the failure.
     func testFreshRegistrationSlotTakenRetriesUpToLimit() {
         let taken = PlatformWalletError.identitySlotTakenOnChain(identityIndex: 1, identityId: "x")

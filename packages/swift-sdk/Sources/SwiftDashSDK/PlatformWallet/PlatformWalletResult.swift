@@ -71,10 +71,12 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorMasternodeListUnavailable = 46
     /// Address-nonce race: Platform rejected an address-funds transition (a
     /// transfer or withdrawal from Platform addresses, or an identity
-    /// registration or top-up from them) because the submitted address nonce
+    /// registration from them) because the submitted address nonce
     /// raced Platform's expected value (a lagging DAPI replica read). Safe to
     /// retry; the retry re-fetches the nonce and self-heals. A shield does not
-    /// return it (see `errorShieldedSpendUnconfirmed`). The submitted/expected
+    /// return it (see `errorShieldedSpendUnconfirmed`), nor does an identity
+    /// top-up from Platform addresses (its nonce verdict is
+    /// `errorTransactionBroadcastUnconfirmed`, 20). The submitted/expected
     /// nonce values travel in the message string, not as structured fields.
     case errorAddressNonceMismatch = 21
     /// Atomic Core selection found no or insufficient unreserved UTXOs.
@@ -335,20 +337,24 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// outcome yet. Nothing new was signed. Unconfirmed, not failed: do not
     /// submit it again; a public contact request sync settles it.
     case errorPublicContactRequestUnconfirmed = 76
+    /// Platform could not be asked for an identity the operation names (the
+    /// lookup failed, which is not Platform's answer that it does not exist,
+    /// 7). Nothing was signed, reserved or broadcast: retry as it is.
+    case errorIdentityLookupFailed = 80
     /// A registration or an invitation claim named an identity index its
     /// slot does not lease (never acquired, or released). Nothing was funded
     /// or sent. The message is a JSON detail naming the index.
-    case errorIdentitySlotNotHeld = 77
+    case errorIdentitySlotNotHeld = 81
     /// The identity keys derived at the slot already belong to an identity
     /// on Platform. The wallet recorded that identity in the slot and
     /// released the lease; nothing was funded. Acquire a slot again and
     /// derive the keys at the new index. The message is a JSON detail.
-    case errorIdentitySlotTakenOnChain = 78
+    case errorIdentitySlotTakenOnChain = 82
     /// The release of an invitation claim's slot was refused: the claim may
     /// have reached Platform, and only its outcome frees the slot. Retry the
     /// claim (it gets the same slot). The message is a JSON detail naming
     /// the index.
-    case errorIdentitySlotClaimSubmitted = 79
+    case errorIdentitySlotClaimSubmitted = 83
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -508,6 +514,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorSdkPinnedBelowProtocolVersion
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PUBLIC_CONTACT_REQUEST_UNCONFIRMED:
             self = .errorPublicContactRequestUnconfirmed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_LOOKUP_FAILED:
+            self = .errorIdentityLookupFailed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_SLOT_NOT_HELD:
             self = .errorIdentitySlotNotHeld
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_SLOT_TAKEN_ON_CHAIN:
@@ -806,19 +814,24 @@ public enum PlatformWalletError: LocalizedError {
     /// or accept made while another public request to that identity is being
     /// sent: one is sent at a time, and nothing is signed for the second.
     case publicContactRequestUnconfirmed(String)
+    /// Platform could not be asked for an identity the operation names (code
+    /// 80): the lookup itself failed, before anything was signed, reserved or
+    /// broadcast. Not sent, so it may be retried as it is; unlike an unmapped
+    /// SDK error it is never a possibly delivered operation.
+    case identityLookupFailed(String)
     /// A registration or an invitation claim named an identity index its
-    /// slot does not lease (code 77): never acquired, or released. Nothing
+    /// slot does not lease (code 81): never acquired, or released. Nothing
     /// was funded or sent. Acquire a slot and derive the keys there.
     case identitySlotNotHeld(identityIndex: UInt32)
     /// The identity keys derived at `identityIndex` already belong to the
-    /// identity `identityId` (base58) on Platform (code 78). The wallet
+    /// identity `identityId` (base58) on Platform (code 82). The wallet
     /// recorded it in that slot and released the operation's lease; nothing
     /// was funded. Acquire a slot again, derive the keys at the new index and
     /// retry, at most `ManagedPlatformWallet.identitySlotTakenRetryLimit`
     /// times in a row.
     case identitySlotTakenOnChain(identityIndex: UInt32, identityId: String)
     /// The invitation claim holding slot `identityIndex` may have reached
-    /// Platform, so its slot was not given up (code 79); only the claim's
+    /// Platform, so its slot was not given up (code 83); only the claim's
     /// outcome frees it. Retry the claim, which gets the same slot.
     case identitySlotClaimSubmitted(identityIndex: UInt32)
     case walletAlreadyExists(String)
@@ -872,12 +885,14 @@ public enum PlatformWalletError: LocalizedError {
     /// Core definitively rejected the transaction and its input reservation
     /// was released. Unlike `transactionBroadcastUnconfirmed`, retry is safe.
     case transactionBroadcastRejected(String)
-    /// Address-nonce race (transfer or withdrawal from Platform addresses, or
-    /// identity registration / top-up from them): Platform rejected the
-    /// transition because the submitted address nonce raced its expected
-    /// value. Safe to retry: the retry re-fetches the address nonce so the
-    /// mismatch self-heals. A shield does not return it. The submitted and
-    /// expected nonce values are in the message.
+    /// Address-nonce race for a transfer, withdrawal, or identity registration
+    /// from Platform addresses: Platform rejected the transition because the
+    /// submitted address nonce raced its expected value. Safe to retry: the
+    /// retry re-fetches the address nonce so the mismatch self-heals. Shields
+    /// and address-funded identity top-ups do not return this error: a top-up
+    /// that cannot be confirmed after a nonce refusal returns
+    /// `transactionBroadcastUnconfirmed` instead. The submitted and expected
+    /// nonce values are in the message.
     case addressNonceMismatch(String)
     /// A quiesce/drain barrier (Clear / reset / sync-stop) timed out with a
     /// sync pass still in flight. The operation failed closed — retry once
@@ -1061,7 +1076,7 @@ public enum PlatformWalletError: LocalizedError {
              .privateContactRequestPending(let m), .privateContactPaymentsNotRestored(let m),
              .privateContactRecoveryUnsupported(let m),
              .privateContactStoreNotRead(let m), .sdkPinnedBelowProtocolVersion(let m),
-             .publicContactRequestUnconfirmed(let m),
+             .publicContactRequestUnconfirmed(let m), .identityLookupFailed(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -1234,8 +1249,10 @@ public enum PlatformWalletError: LocalizedError {
             self = .sdkPinnedBelowProtocolVersion(detail)
         case .errorPublicContactRequestUnconfirmed:
             self = .publicContactRequestUnconfirmed(detail)
-        // Codes 77-79 carry a stable JSON detail naming the index (and the
-        // identity for 78); a payload that does not decode degrades to
+        case .errorIdentityLookupFailed:
+            self = .identityLookupFailed(detail)
+        // Codes 81-83 carry a stable JSON detail naming the index (and the
+        // identity for 82); a payload that does not decode degrades to
         // `.unknown(detail)`.
         case .errorIdentitySlotNotHeld:
             if let d = IdentitySlotErrorDetail.decode(detail) {
@@ -1434,8 +1451,8 @@ private enum InvitationErrorDetail {
 
 // MARK: - Identity-slot error detail decoding
 
-/// Decoder for the JSON detail FFI result codes 77-79 put in the result
-/// `message`: `{"identityIndex":<u32>}`, plus `"identityId":"<base58>"` for 78.
+/// Decoder for the JSON detail FFI result codes 81-83 put in the result
+/// `message`: `{"identityIndex":<u32>}`, plus `"identityId":"<base58>"` for 82.
 private enum IdentitySlotErrorDetail {
     struct Detail: Decodable {
         let identityIndex: UInt32

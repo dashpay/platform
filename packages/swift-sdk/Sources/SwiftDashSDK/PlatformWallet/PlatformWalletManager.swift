@@ -126,11 +126,17 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// only honours the declaration when the extension carries the five
     /// scan-state callbacks.
     public static let privateContactRequestScanState: UInt64 = 1 << 15
+    /// Locked outpoints (masternode collateral, and outpoints locked by
+    /// hand) are persisted and restored across restarts, through the
+    /// persistence extension's outpoint-lock persist / load / free slots.
+    /// Mirrors `PersistenceCapabilities::OUTPOINT_LOCKS`; Rust only honours
+    /// the declaration when all three slots are wired.
+    public static let outpointLocks: UInt64 = 1 << 16
     /// Invitation-claim slot leases are stored and restored. Mirrors
     /// `PersistenceCapabilities::IDENTITY_SLOT_LEASES`; Rust only honours the
     /// declaration when the extension carries the three lease callbacks, and
     /// refuses an invitation claim on a store without it.
-    public static let identitySlotLeases: UInt64 = 1 << 16
+    public static let identitySlotLeases: UInt64 = 1 << 17
 
     public let version: UInt32
     public let bits: UInt64
@@ -723,6 +729,13 @@ public class PlatformWalletManager: ObservableObject {
     /// Native snapshot reads and their paired allocation release. Kept
     /// injectable so ownership and shutdown admission are tested together.
     internal var nativeShieldedLocalBalanceCalls = PlatformWalletNativeShieldedLocalBalanceCalls.live
+
+    /// Test seam for the native call behind
+    /// `shieldedShieldFromIdentityToRecipient`, so its shutdown admission is
+    /// tested without a signer or network; same contract as
+    /// [`nativeTeardownCalls`].
+    internal var nativeShieldFromIdentityToRecipientCall: ShieldFromIdentityToRecipientCall =
+        platform_wallet_manager_shielded_shield_from_identity_to_recipient
 
     /// Test seam for the native reads behind the progress poller; same
     /// contract as [`nativeTeardownCalls`].
@@ -1388,7 +1401,8 @@ public class PlatformWalletManager: ObservableObject {
     // MARK: - Wallet creation
 
     /// Admission gate for the SYNCHRONOUS native entrypoints (`createWallet`,
-    /// `createWalletFromSeed`, `loadFromPersistor`, `deleteWallet`). Rejects:
+    /// `createWalletFromSeed`, `loadFromPersistor`, `deleteWallet`,
+    /// `clearShielded`). Rejects:
     ///
     /// - once shutdown has closed admission — including the drain window,
     ///   where the captured native handle remains live for an
@@ -1409,7 +1423,7 @@ public class PlatformWalletManager: ObservableObject {
     /// permit mutation before a completed read's MainActor delivery: deletion
     /// could otherwise remove the wallet while its old snapshot is still queued.
     /// Both operations remain counted through delivery to close that window.
-    private func ensureSyncNativeOpAllowed(_ name: String) throws {
+    func ensureSyncNativeOpAllowed(_ name: String) throws {
         try ensureConfigured()
         guard !shutdownRequested else {
             throw PlatformWalletError.invalidHandle(

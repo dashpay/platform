@@ -8,7 +8,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/** Codes 77-79 from the identity-slot lease (`rs-platform-wallet-ffi/src/error.rs`). */
+/** Codes 81-83 from the identity-slot lease (`rs-platform-wallet-ffi/src/error.rs`). */
 @RunWith(RobolectricTestRunner::class)
 class IdentitySlotErrorTest {
     private fun map(code: Int, message: String) =
@@ -16,7 +16,7 @@ class IdentitySlotErrorTest {
 
     @Test
     fun shouldReportASlotNotHeldWithItsIndex() {
-        val notHeld = map(77, "{\"identityIndex\":3}")
+        val notHeld = map(81, "{\"identityIndex\":3}")
         assertTrue(notHeld is DashSdkError.PlatformWallet.IdentitySlotNotHeld)
         assertEquals(3, (notHeld as DashSdkError.PlatformWallet.IdentitySlotNotHeld).identityIndex)
         assertFalse(notHeld.isRetryable)
@@ -25,7 +25,7 @@ class IdentitySlotErrorTest {
     @Test
     fun shouldReportASlotTakenOnChainWithItsIndexAndIdentity() {
         val id = "8eTDkBhpQjHeqgbVeriwLeZr1tCa6yBGw76SckvD1cwc"
-        val taken = map(78, "{\"identityIndex\":2,\"identityId\":\"$id\"}")
+        val taken = map(82, "{\"identityIndex\":2,\"identityId\":\"$id\"}")
         assertTrue(taken is DashSdkError.PlatformWallet.IdentitySlotTakenOnChain)
         taken as DashSdkError.PlatformWallet.IdentitySlotTakenOnChain
         assertEquals(2, taken.identityIndex)
@@ -35,7 +35,7 @@ class IdentitySlotErrorTest {
 
     @Test
     fun shouldReportASubmittedClaimsRefusedReleaseWithItsIndex() {
-        val submitted = map(79, "{\"identityIndex\":5}")
+        val submitted = map(83, "{\"identityIndex\":5}")
         assertTrue(submitted is DashSdkError.PlatformWallet.IdentitySlotClaimSubmitted)
         assertEquals(5, (submitted as DashSdkError.PlatformWallet.IdentitySlotClaimSubmitted).identityIndex)
         assertFalse(submitted.isRetryable)
@@ -43,10 +43,10 @@ class IdentitySlotErrorTest {
 
     @Test
     fun shouldKeepAMalformedSlotPayloadGeneric() {
-        assertTrue(map(77, "not json") is DashSdkError.PlatformWallet.Generic)
-        assertTrue(map(79, "not json") is DashSdkError.PlatformWallet.Generic)
-        assertTrue(map(77, "{\"identityIndex\":4294967295}") is DashSdkError.PlatformWallet.Generic)
-        assertTrue(map(78, "{\"identityIndex\":2}") is DashSdkError.PlatformWallet.Generic)
-        assertTrue(map(78, "{\"identityIndex\":2,\"identityId\":null}") is DashSdkError.PlatformWallet.Generic)
+        assertTrue(map(81, "not json") is DashSdkError.PlatformWallet.Generic)
+        assertTrue(map(83, "not json") is DashSdkError.PlatformWallet.Generic)
+        assertTrue(map(81, "{\"identityIndex\":4294967295}") is DashSdkError.PlatformWallet.Generic)
+        assertTrue(map(82, "{\"identityIndex\":2}") is DashSdkError.PlatformWallet.Generic)
+        assertTrue(map(82, "{\"identityIndex\":2,\"identityId\":null}") is DashSdkError.PlatformWallet.Generic)
     }
 }

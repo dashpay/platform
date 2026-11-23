@@ -128,14 +128,14 @@ abstract class NativePersistenceBridge {
         const val PRIVATE_CLEARED_IDENTITY_ENTRY_SIZE: Int = 32
 
         /**
-         * `PersistenceCapabilities::IDENTITY_SLOT_LEASES` (bit 16,
-         * `0x10000`): the invitation-claim slot leases are stored on their
+         * `PersistenceCapabilities::IDENTITY_SLOT_LEASES` (bit 17,
+         * `0x20000`): the invitation-claim slot leases are stored on their
          * round and restored at load ([onPersistIdentitySlotLeases],
          * [onLoadIdentitySlotLeases]). Without it an invitation claim is
          * refused before it takes a slot. The one Kotlin home of this bit,
          * aliased by the public diagnostic mirror.
          */
-        const val CAPABILITY_IDENTITY_SLOT_LEASES: Long = 1L shl 16
+        const val CAPABILITY_IDENTITY_SLOT_LEASES: Long = 1L shl 17
 
         /**
          * Packed row widths of [onPersistIdentitySlotLeases] and

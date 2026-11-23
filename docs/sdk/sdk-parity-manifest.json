@@ -55,10 +55,6 @@
     "platform_wallet_get_private_pair_held": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_get_private_payments_restore_failure": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_get_public_contact_request_unconfirmed": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
-    "platform_wallet_identity_slot_acquire_invitation_claim": "packages/rs-platform-wallet-ffi/src/identity_slot.rs",
-    "platform_wallet_identity_slot_acquire_registration": "packages/rs-platform-wallet-ffi/src/identity_slot.rs",
-    "platform_wallet_identity_slot_release_invitation_claim": "packages/rs-platform-wallet-ffi/src/identity_slot.rs",
-    "platform_wallet_identity_slot_release_registration": "packages/rs-platform-wallet-ffi/src/identity_slot.rs",
     "platform_wallet_invitation_claim_status_for_identity": "packages/rs-platform-wallet-ffi/src/invitation.rs",
     "platform_wallet_manager_accept_contact_request_replying_in_kind": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_manager_accept_private_contact_request": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
@@ -67,24 +63,30 @@
     "platform_wallet_manager_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_manager_send_private_contact_request": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_manager_shielded_fund_from_wallet_drain": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
-    "platform_wallet_manager_shielded_identity_create_from_pool": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+    "platform_wallet_manager_shielded_shield_from_identity_to_recipient": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
     "platform_wallet_manager_shielded_wallet_drain_preview": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
     "platform_wallet_manager_shielded_wallet_drain_status": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
     "platform_wallet_manager_spv_rescan_filters": "packages/rs-platform-wallet-ffi/src/spv.rs",
     "platform_wallet_manager_sync_fault_detected": "packages/rs-platform-wallet-ffi/src/manager.rs",
-    "platform_wallet_register_identity_with_funding_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
-    "platform_wallet_register_identity_with_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_with_signer.rs",
     "platform_wallet_resume_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
     "platform_wallet_sync_contested_dpns_names": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "platform_wallet_sync_private_contact_requests": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_token_purchase": "packages/rs-platform-wallet-ffi/src/tokens/purchase.rs",
     "platform_wallet_token_transfer": "packages/rs-platform-wallet-ffi/src/tokens/transfer.rs",
     "platform_wallet_token_update_config": "packages/rs-platform-wallet-ffi/src/tokens/update_config.rs",
+    "platform_wallet_top_up_external_identity_from_addresses_with_signer": "packages/rs-platform-wallet-ffi/src/identity_top_up.rs",
     "platform_wallet_top_up_from_addresses_with_signer": "packages/rs-platform-wallet-ffi/src/identity_top_up.rs",
     "platform_wallet_topup_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
     "platform_wallet_tracked_asset_locks_free": "packages/rs-platform-wallet-ffi/src/manager_diagnostics.rs",
     "platform_wallet_tracked_asset_locks_list": "packages/rs-platform-wallet-ffi/src/manager_diagnostics.rs",
-    "restore_provider_special_txs": "packages/rs-platform-wallet-ffi/src/persistence.rs"
+    "restore_provider_special_txs": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+    "platform_wallet_identity_slot_acquire_invitation_claim": "packages/rs-platform-wallet-ffi/src/identity_slot.rs",
+    "platform_wallet_identity_slot_acquire_registration": "packages/rs-platform-wallet-ffi/src/identity_slot.rs",
+    "platform_wallet_identity_slot_release_invitation_claim": "packages/rs-platform-wallet-ffi/src/identity_slot.rs",
+    "platform_wallet_identity_slot_release_registration": "packages/rs-platform-wallet-ffi/src/identity_slot.rs",
+    "platform_wallet_manager_shielded_identity_create_from_pool": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+    "platform_wallet_register_identity_with_funding_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
+    "platform_wallet_register_identity_with_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_with_signer.rs"
   },
   "capabilities": [
     {
@@ -1519,6 +1521,39 @@
       ]
     },
     {
+      "id": "identity.external_top_up_from_addresses",
+      "title": "Top up an identity the wallet does not manage from Platform addresses",
+      "area": "correctness",
+      "shared_apis": [
+        "platform_wallet_top_up_external_identity_from_addresses_with_signer"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "ManagedPlatformWallet.topUpExternalIdentityFromAddresses bridges the export; the example app has no screen that pays to someone else's identity."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI bridge or Kotlin wrapper for the external identity top-up yet."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ExternalIdentityTopUpTests.swift",
+          "id": "testMarshalsArgumentsAndReturnsTheBalanceTheExportWrites",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ExternalIdentityTopUpTests",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
       "id": "tokens.authorization_decisions",
       "title": "Shared token authorization and group-proposal decisions",
       "area": "shared_policy",
@@ -2105,6 +2140,39 @@
       ]
     },
     {
+      "id": "shielded.shield_from_identity_to_recipient",
+      "title": "Shield an identity's credits to someone else's shielded address",
+      "area": "correctness",
+      "shared_apis": [
+        "platform_wallet_manager_shielded_shield_from_identity_to_recipient"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "PlatformWalletManager.shieldedShieldFromIdentityToRecipient bridges the export; the example app has no screen that pays an identity's credits to another wallet's shielded address."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI bridge or Kotlin wrapper for shielding an identity's credits to a recipient yet."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ShieldFromIdentityToRecipientGuardTests.swift",
+          "id": "testRecipientNot43BytesThrowsInvalidParameter",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ShieldFromIdentityToRecipientGuardTests",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
       "id": "identity.slot_leases",
       "title": "Wallet-owned identity slots for registration (asset lock, platform address, shielded pool), invitation claim and voucher reclaim",
       "area": "shared_policy",
@@ -2129,13 +2197,13 @@
           "sdk": "supported",
           "example_app": "partial",
           "restart": "required",
-          "reason": "SDK wraps acquire/release and types codes 77/78; SwiftExampleApp takes every index from the wallet on every registration path. No restart or on-chain-taken retry was executed."
+          "reason": "SDK wraps acquire/release and types codes 81/82; SwiftExampleApp takes every index from the wallet on every registration path. No restart or on-chain-taken retry was executed."
         },
         "kotlin": {
           "sdk": "supported",
           "example_app": "partial",
           "restart": "required",
-          "reason": "JNI + SDK wrap acquire/release and type codes 77/78; KotlinExampleApp takes every index from the wallet on every registration path. Instrumented JNI smoke not run; no restart executed."
+          "reason": "JNI + SDK wrap acquire/release and type codes 81/82; KotlinExampleApp takes every index from the wallet on every registration path. Instrumented JNI smoke not run; no restart executed."
         }
       },
       "verification": [

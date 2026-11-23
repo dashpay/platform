@@ -360,7 +360,7 @@ impl IdentityWallet {
     /// holds the wallet's master key at `identity_index`
     /// ([`Self::invitation_claimed_by_this_wallet`]). A "no" covers only that
     /// index: a claim this wallet made at another index and has not recorded
-    /// yet reads as someone else's.
+    /// yet reads as not this wallet's.
     ///
     /// The master key is needed only when the invitation was claimed, so
     /// `resolve_master` is called only then, and only for a wallet without
@@ -442,7 +442,7 @@ impl IdentityWallet {
     /// The wallet error for a refused claim. The invitation's identity may not
     /// hold the key at the claimed index and still be one this wallet
     /// already records (a claim it made at another index): that is its own
-    /// claim, not someone else's.
+    /// claim, not one unproven to be its.
     ///
     /// "This wallet's claim" sends the host to load that identity through
     /// this handle, so it is reported only while the handle's wallet is
@@ -491,9 +491,11 @@ impl IdentityWallet {
 
     /// Whether this wallet claimed the invitation as its identity at
     /// `identity_index`: the claimed identity holds the master key this
-    /// wallet derives for that index. The test is the one the claim's own
-    /// preflight uses ([`identity_holds_master_key`]), so the status and the
-    /// claim never disagree about the same identity.
+    /// wallet derives for that index ([`identity_holds_master_key`]). The
+    /// claim's preflight accepts any submitted ECDSA or BLS key; the wallet
+    /// always submits a full ECDSA master derived at the index, which every
+    /// identity its claim created holds, so the status and the claim agree
+    /// for the wallet's own claims.
     ///
     /// - `claimed` is `None` (nobody claimed it) → `Some(false)`, and `key`
     ///   is not used.

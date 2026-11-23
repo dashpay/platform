@@ -851,7 +851,32 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorIdentitySlotNotHeld` (native code 77): a registration or an
+         * `ErrorIdentityLookupFailed` (native code 80). Platform could not be
+         * asked for an identity the operation names (the lookup failed, which
+         * is not Platform's answer that it does not exist, code 7). Nothing
+         * was signed, reserved or broadcast, so the operation may be retried
+         * as it is and is never a possibly delivered one.
+         * ← Swift `PlatformWalletError.identityLookupFailed`.
+         */
+        class IdentityLookupFailed(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * `ErrorIdentityBalanceUnavailable` (native code 58). Platform
+         * returned no balance for a managed identity (not yet visible, or a
+         * lagging node). Nothing was signed or broadcast, so the read may be
+         * retried as it is.
+         * ← Swift `PlatformWalletError.identityBalanceUnavailable`.
+         */
+        class IdentityBalanceUnavailable(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * `ErrorIdentitySlotNotHeld` (native code 81): a registration or an
          * invitation claim named an identity index ([identityIndex]) its
          * slot does not lease (never acquired, or released). Nothing was
          * funded or sent. Acquire a slot and derive the keys at its index.
@@ -865,7 +890,7 @@ sealed class DashSdkError(
         )
 
         /**
-         * `ErrorIdentitySlotTakenOnChain` (native code 78): the identity keys
+         * `ErrorIdentitySlotTakenOnChain` (native code 82): the identity keys
          * derived at [identityIndex] already belong to identity [identityId]
          * (base58) on Platform. The wallet recorded that identity in the slot
          * and released the operation's lease; nothing was funded. Acquire a
@@ -883,7 +908,7 @@ sealed class DashSdkError(
         )
 
         /**
-         * `ErrorIdentitySlotClaimSubmitted` (native code 79): the release of
+         * `ErrorIdentitySlotClaimSubmitted` (native code 83): the release of
          * the invitation claim's slot [identityIndex] was refused because the
          * claim may have reached Platform; only its outcome frees the slot.
          * Retry the claim, which gets the same slot, instead of abandoning it.
@@ -1112,6 +1137,7 @@ sealed class DashSdkError(
             55 -> PlatformWallet.ShieldedIdentityDebitPending(message, cause)
             56 -> PlatformWallet.ShieldedRecoveryCorrupted(message, cause)
             57 -> PlatformWallet.ShieldedRecoveryKeysRequired(message, cause)
+            58 -> PlatformWallet.IdentityBalanceUnavailable(message, cause) // ErrorIdentityBalanceUnavailable
             59 -> PlatformWallet.SpvProcessRestartRequired(message, cause) // ErrorSpvProcessRestartRequired
             // ErrorPrivateContactRequestNeedsPrivateReply: the explicitly
             // public accept or send refused a contact that went private.
@@ -1124,7 +1150,8 @@ sealed class DashSdkError(
             74 -> PlatformWallet.PrivateContactStoreNotRead(message, cause) // ErrorPrivateContactStoreNotRead
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
-            77 -> parseErrorDetail(message)?.let { detail ->
+            80 -> PlatformWallet.IdentityLookupFailed(message, cause) // ErrorIdentityLookupFailed
+            81 -> parseErrorDetail(message)?.let { detail ->
                 runCatching {
                     PlatformWallet.IdentitySlotNotHeld(
                         identityIndex = detail.requiredIndex("identityIndex"),
@@ -1132,7 +1159,7 @@ sealed class DashSdkError(
                     )
                 }.getOrNull()
             } ?: PlatformWallet.Generic(code, message, cause)
-            78 -> parseErrorDetail(message)?.let { detail ->
+            82 -> parseErrorDetail(message)?.let { detail ->
                 runCatching {
                     PlatformWallet.IdentitySlotTakenOnChain(
                         identityIndex = detail.requiredIndex("identityIndex"),
@@ -1141,7 +1168,7 @@ sealed class DashSdkError(
                     )
                 }.getOrNull()
             } ?: PlatformWallet.Generic(code, message, cause)
-            79 -> parseErrorDetail(message)?.let { detail ->
+            83 -> parseErrorDetail(message)?.let { detail ->
                 runCatching {
                     PlatformWallet.IdentitySlotClaimSubmitted(
                         identityIndex = detail.requiredIndex("identityIndex"),
