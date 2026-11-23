@@ -3057,8 +3057,9 @@ const IDENTITY_CREATE_OPERATION: &str = "identity create from shielded pool";
 ///     ([`probe_identity_create`]): its nullifiers all spent and its identity absent at or above
 ///     the height they were spent by is
 ///     [`PlatformWalletError::ShieldedIdentityCreateInputsConsumed`]: it can never execute and
-///     did not create its identity. Its notes and record are kept as for an unconfirmed create:
-///     the scan marks the notes spent. Its paid failure path and this wallet's notes spent by
+///     did not create its identity. Its notes and record are kept as for an unconfirmed create
+///     (the scan marks the notes spent), and its row reads failed ([`settle_failed_spend`]). Its
+///     paid failure path and this wallet's notes spent by
 ///     another transition (another device with the same keys) read the same.
 ///
 /// Every read after the broadcast names the transition (its nullifiers, its identity id), so
@@ -3146,7 +3147,7 @@ async fn await_identity_create(
             // node we hit, so retry a few times with a short, fixed backoff before concluding
             // it's truly absent: long enough to ride out routine indexing/replica lag, short
             // enough not to wedge the caller's UI for minutes.
-            let found = match fetch_identity_with_retries(&reader(), identity_id).await {
+            let found = match fetch_identity_with_retries(reader, identity_id).await {
                 Some(identity) => Some(identity),
                 // No node is known to hold the transition: nothing more may be asked about it.
                 None if endpoint.is_none() => None,
@@ -3264,14 +3265,18 @@ const IDENTITY_CREATE_FETCH_RETRY_DELAY: std::time::Duration = std::time::Durati
 /// proof the transition landed. Returns `Some(identity)` on the first hit, or `None` if every
 /// attempt comes back empty or errors (transport hiccup, not-yet-indexed, …) — the caller then
 /// surfaces `ShieldedBroadcastUnconfirmed` rather than a hard failure.
+///
+/// `sdk` gives the SDK for each attempt: with a node known to hold the create, a fresh copy
+/// scoped to it, so a transport failure that bans the node in one attempt's copy does not end
+/// the later attempts.
 async fn fetch_identity_with_retries(
-    sdk: &Arc<dash_sdk::Sdk>,
+    sdk: impl Fn() -> Arc<dash_sdk::Sdk>,
     identity_id: Identifier,
 ) -> Option<Identity> {
     use dash_sdk::platform::Fetch;
 
     for attempt in 0..IDENTITY_CREATE_FETCH_RETRIES {
-        match Identity::fetch(sdk, identity_id).await {
+        match Identity::fetch(&sdk(), identity_id).await {
             Ok(Some(identity)) => return Some(identity),
             Ok(None) => {
                 trace!(
@@ -4071,8 +4076,9 @@ where
 ///   scan and the redrive pass to resolve, and the activity row stays
 ///   pending. It reads as unconfirmed, whatever error ended it, except an
 ///   identity create proven unable to execute
-///   ([`PlatformWalletError::ShieldedIdentityCreateInputsConsumed`]), which
-///   is reported as such and settled the same way.
+///   ([`PlatformWalletError::ShieldedIdentityCreateInputsConsumed`]): it is
+///   reported as such, its notes and record are kept the same way, and its
+///   activity row reads failed at the height its notes were spent by.
 /// - It failed before its record was saved: nothing was broadcast. The notes
 ///   are released and the activity row reads failed.
 #[allow(clippy::too_many_arguments)]
@@ -4123,9 +4129,28 @@ async fn settle_failed_spend<S: ShieldedStore>(
         return match error {
             unconfirmed @ (PlatformWalletError::ShieldedSpendUnconfirmed { .. }
             | PlatformWalletError::ShieldedBroadcastUnconfirmed { .. }) => unconfirmed,
-            // Proven unable to execute: reported as such, settled as an
-            // unconfirmed spend (the scan marks its notes spent).
-            consumed @ PlatformWalletError::ShieldedIdentityCreateInputsConsumed { .. } => consumed,
+            // Proven unable to execute: its notes and record are kept for
+            // the scan, which marks the notes spent, and its row reads
+            // failed at a height by which they were spent. A row failed
+            // with a height is final: a later scan sighting of the create's
+            // outputs (the paid failure path appends them) does not confirm
+            // it.
+            consumed @ PlatformWalletError::ShieldedIdentityCreateInputsConsumed {
+                consumed_by_height,
+                ..
+            } => {
+                record_activity_status(
+                    store,
+                    persister,
+                    wallet_id,
+                    id,
+                    pending_entry,
+                    ShieldedActivityStatus::Failed,
+                    Some(consumed_by_height),
+                )
+                .await;
+                consumed
+            }
             other => {
                 // The reported error keeps the cause's text alone: its type
                 // goes to the log.
@@ -7858,9 +7883,10 @@ mod redrive_tests {
         }
     }
 
-    /// A delivered identity create reported as inputs consumed is settled as
-    /// an unconfirmed one: the notes stay reserved, the record stays and the
-    /// row stays pending, for the scan to settle. The report keeps its type.
+    /// A delivered identity create reported as inputs consumed keeps its notes
+    /// reserved and its record for the scan, as an unconfirmed one does, and
+    /// its row reads failed at the height its notes were spent by. The report
+    /// keeps its type.
     #[tokio::test(start_paused = true)]
     async fn should_keep_an_identity_create_reported_inputs_consumed_for_the_scan() {
         let wallet_id = [0x74; 32];
@@ -7915,7 +7941,12 @@ mod redrive_tests {
             .get_activity_by_entry_id(id, &activity_id)
             .expect("the row reads")
             .expect("the row");
-        assert_eq!(row.status, ShieldedActivityStatus::Pending);
+        assert_eq!(row.status, ShieldedActivityStatus::Failed);
+        assert_eq!(
+            row.block_height,
+            Some(0),
+            "failed at the height its notes were spent by"
+        );
         drop(store);
         let records = FileBackedShieldedStore::open_path(&path, 100)
             .expect("reopened")

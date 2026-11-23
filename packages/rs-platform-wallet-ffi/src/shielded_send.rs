@@ -568,6 +568,7 @@ pub(crate) fn poke_sync_on_unconfirmed<T>(result: &Result<T, PlatformWalletError
         result,
         Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
             | Err(PlatformWalletError::ShieldedBroadcastUnconfirmed { .. })
+            | Err(PlatformWalletError::ShieldedIdentityCreateInputsConsumed { .. })
     );
     if !ambiguous {
         return;

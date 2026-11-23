@@ -770,9 +770,9 @@ public enum PlatformWalletError: LocalizedError {
     /// An identity create from the pool did not create its identity and can
     /// never execute, as proven reads show (code 77): every note it spends is
     /// spent and the identity is absent at or above the height they were
-    /// spent by. The wallet keeps the notes reserved, the saved transition
-    /// and the pending activity row, as for an unconfirmed create, until a
-    /// scan sees the notes spent; do not re-submit. The
+    /// spent by. The wallet keeps the notes reserved and the saved
+    /// transition, as for an unconfirmed create, until a scan sees the notes
+    /// spent, and marks the activity row failed; do not re-submit. The
     /// reads do not say what spent the notes: Platform's paid failure path for
     /// this transition (a key-state check failing in the block, such as a
     /// public-key hash already registered, which credits the denomination

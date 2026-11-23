@@ -153,7 +153,7 @@ pub enum PlatformWalletFFIResultCode {
     /// could not confirm its execution result (a broadcast attempt that failed
     /// in transport, an endpoint's refusal or verdict, a result-proof
     /// fetch/verify failure, …), and a direct fetch of the derived id also
-    /// came back empty, without proven reads showing a paid failure
+    /// came back empty, without proven reads showing its inputs consumed
     /// ([`Self::ErrorShieldedIdentityCreateInputsConsumed`]). The wallet keeps the notes reserved and the create's
     /// recovery record, which it saved before the broadcast. The identity may
     /// already exist on chain, so the caller must NOT treat
@@ -777,9 +777,9 @@ pub enum PlatformWalletFFIResultCode {
     /// can never execute, as proven reads (at the node it was delivered to)
     /// show: every note it spends is spent, and the identity is absent at or
     /// above the height they were spent by. The wallet keeps the notes
-    /// reserved, the recovery record and the pending activity row, as for an
-    /// unconfirmed create, until a scan sees the notes spent. Nothing is
-    /// to be re-submitted. The reads do not show what
+    /// reserved and the recovery record, as for an unconfirmed create, until a
+    /// scan sees the notes spent; the activity row reads failed at that
+    /// height. Nothing is to be re-submitted. The reads do not show what
     /// spent the notes: Platform's paid failure path for this transition (a
     /// key-state check failing in the block, which credits the denomination
     /// minus a penalty to `send_to_address_on_creation_failure`) is one
