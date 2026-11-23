@@ -2161,12 +2161,11 @@ impl PlatformWallet {
         let _operation = coordinator.operation_guard().await;
         // Bound on this coordinator, with no Clear since: the keys this
         // handle holds outlive a Clear, and a caller may pass another
-        // coordinator. Checked under the config lock, as a bind writes it;
-        // the operation guard keeps a Clear out until the transfer settles.
-        {
-            let _config = self.shielded_config_lock.lock().await;
-            self.ensure_shielded_bound_on(coordinator)?;
-        }
+        // coordinator. The config lock is held through settlement too: a bind
+        // or an added account writes under it, and a bind that dropped this
+        // account would purge the notes the transfer reserves and settles.
+        let _config = self.shielded_config_lock.lock().await;
+        self.ensure_shielded_bound_on(coordinator)?;
         let keyset = self.derive_spend_keyset(seed, account).await?;
         token_shielded_transfer(
             &self.sdk,
