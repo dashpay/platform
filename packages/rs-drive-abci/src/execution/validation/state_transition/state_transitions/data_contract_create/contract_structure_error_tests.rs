@@ -11,7 +11,7 @@ use crate::execution::validation::state_transition::state_transitions::data_cont
     one_pattern_too_many, patterned_schema,
     private_schema, regex_format_schema,
     resign_with_contract, summed_u64_schema, terminal_without_index_only_schema,
-    transient_summed_schema, Outcome,
+    transient_summed_schema, unmeetable_required_schema, Outcome,
     CONTESTED_UNBOUNDED_SUM_MESSAGE, EXPIRING_UNBOUNDED_SUM_MESSAGE, PATTERN_FOLDS_TOO_MUCH_MESSAGE,
     PATTERN_TOO_LARGE_MESSAGE, PATTERN_TOO_LONG_MESSAGE,
     PRIVATE_ENTRY_SIZE_OVER_CAP_MESSAGE, SMALL_PATTERN, SUMMED_U64_MESSAGE, TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE,
@@ -447,36 +447,32 @@ async fn should_keep_registering_a_summed_transient_property_at_protocol_version
     );
 }
 
-/// A document type whose object requires a name the object does not have, so no document of
-/// the type could be stored.
-fn unmeetable_required_schema() -> Value {
-    platform_value!({
-        "type": "object",
-        "properties": {
-            "meta": {
-                "type": "object",
-                "position": 0,
-                "properties": { "y": { "type": "boolean", "position": 0 } },
-                "required": ["w"],
-                "additionalProperties": false,
-            },
-        },
-        "additionalProperties": false,
-    })
+/// Whether the contract the registration's owner signed with its first nonce is stored.
+fn is_stored(registration: &Registration, platform_version: &PlatformVersion) -> bool {
+    let contract_id = DataContract::generate_data_contract_id_v0(registration.owner.id(), 1);
+    registration
+        .platform
+        .drive
+        .fetch_contract(contract_id.to_buffer(), None, None, None, platform_version)
+        .value
+        .expect("expected to fetch the contract")
+        .is_some()
 }
 
 /// Every object of a contract being registered is one it gains, held as an update holds the
 /// objects it adds: from protocol version 15 a `required` list no document could meet is
-/// refused on the parsed contract registration would store, so `check_tx` refuses the
-/// transition with the error the block charges the owner for, bumping its nonce.
+/// refused on the parsed contract registration would store. `check_tx` refuses the transition
+/// with the error the block charges the owner for, bumping its nonce, and the block stores no
+/// contract.
 #[tokio::test]
 async fn should_refuse_a_new_contract_whose_required_list_no_document_could_meet() {
-    let outcome = register_contract_with_schema(
+    let platform_version = PlatformVersion::latest();
+    let registration = register_contract_with_schema(
         unmeetable_required_schema(),
-        PlatformVersion::latest().protocol_version,
+        platform_version.protocol_version,
     )
-    .await
-    .outcome;
+    .await;
+    let outcome = &registration.outcome;
 
     assert_matches!(
         outcome.check_tx.as_deref(),
@@ -510,13 +506,23 @@ async fn should_refuse_a_new_contract_whose_required_list_no_document_could_meet
         outcome.balance_before,
         outcome.balance_after
     );
+    assert!(
+        !is_stored(&registration, platform_version),
+        "the refused contract is not stored"
+    );
 }
 
+/// Contract create `transform_into_action` 0 and `state` 1, which protocol version 14 selects,
+/// register such a contract as they always have.
 #[tokio::test]
 async fn should_keep_registering_a_required_list_no_document_could_meet_at_protocol_version_14() {
-    let outcome = register_contract_with_schema(unmeetable_required_schema(), 14)
-        .await
-        .outcome;
+    let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+    let registration = register_contract_with_schema(
+        unmeetable_required_schema(),
+        platform_version.protocol_version,
+    )
+    .await;
+    let outcome = &registration.outcome;
 
     assert_matches!(
         outcome.check_tx.as_deref(),
@@ -529,6 +535,10 @@ async fn should_keep_registering_a_required_list_no_document_could_meet_at_proto
         StateTransitionExecutionResult::SuccessfulExecution { .. },
         "block: {:?}",
         outcome.block
+    );
+    assert!(
+        is_stored(&registration, platform_version),
+        "the contract is stored"
     );
 }
 

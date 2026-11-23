@@ -4,8 +4,10 @@ mod basic_structure;
 mod contract_group_tests;
 #[cfg(test)]
 mod contract_structure_error_tests;
+mod gained_requirements;
 mod identity_nonce;
 mod state;
+mod transform_into_action;
 
 use advanced_structure::v1::DataContractCreatedStateTransitionAdvancedStructureValidationV1;
 use basic_structure::v0::DataContractCreateStateTransitionBasicStructureValidationV0;
@@ -33,6 +35,8 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::execution::validation::state_transition::data_contract_create::advanced_structure::v0::DataContractCreatedStateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::data_contract_create::state::v0::DataContractCreateStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::data_contract_create::state::v1::DataContractCreateStateTransitionStateValidationV1;
+use crate::execution::validation::state_transition::data_contract_create::state::v2::DataContractCreateStateTransitionStateValidationV2;
+use crate::execution::validation::state_transition::data_contract_create::transform_into_action::v1::DataContractCreateStateTransitionTransformIntoActionV1;
 use crate::execution::validation::state_transition::processor::advanced_structure_without_state::StateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
@@ -81,9 +85,15 @@ impl StateTransitionActionTransformer for DataContractCreateTransition {
                 execution_context,
                 platform_version,
             ),
+            1 => self.transform_into_action_v1::<C>(
+                block_info,
+                validation_mode,
+                execution_context,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract create transition: transform_into_action".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -188,9 +198,17 @@ impl StateTransitionStateValidation for DataContractCreateTransition {
                 execution_context,
                 platform_version,
             ),
+            2 => self.validate_state_v2(
+                platform,
+                block_info,
+                validation_mode,
+                tx,
+                execution_context,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract create transition: validate_state".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }

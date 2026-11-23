@@ -459,17 +459,6 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
             action
                 .data_contract_ref()
                 .validate_no_transient_summed_property(platform_version)?;
-            // Every object a document type of a contract being registered reaches is one it
-            // gains: its `required` lists are ones a document can meet, and each member is
-            // required exactly when a list names it, as an update holds the objects it adds. Edited in place: the
-            // method's gate, `validate_gained_requirements`, is `None` before protocol version
-            // 15, so it refuses nothing there
-            let gained = action
-                .data_contract_ref()
-                .validate_gained_requirements(None, platform_version)?;
-            if let Some(error) = gained.errors.into_iter().next() {
-                return Err(ProtocolError::ConsensusError(Box::new(error)));
-            }
             Ok(action)
         });
 

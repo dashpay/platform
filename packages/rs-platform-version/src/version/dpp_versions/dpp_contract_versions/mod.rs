@@ -68,7 +68,7 @@ pub struct DataContractMethodVersions {
     /// with a `required` list no document could meet, or a type whose parsed requiredness
     /// differs from what its lists name. Contract registration and update run it on the
     /// contract they would store. `None` on versions that predate the rule: the method refuses
-    /// nothing there, so the shipped contract create state validation that calls it is inert.
+    /// nothing there.
     pub validate_gained_requirements: OptionalFeatureVersion,
 }
 
