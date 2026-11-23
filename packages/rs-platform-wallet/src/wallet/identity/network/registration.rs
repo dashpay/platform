@@ -59,7 +59,6 @@
 use std::collections::BTreeMap;
 
 use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
-use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::v0::IdentityV0;
@@ -69,10 +68,6 @@ use dpp::identity::KeyID;
 use dpp::identity::Purpose;
 use dpp::identity::SecurityLevel;
 use dpp::prelude::Identifier;
-use dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
-use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
-use dpp::state_transition::StateTransitionEstimatedFeeValidation;
-use dpp::version::{PlatformVersion, PLATFORM_VERSIONS};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
 use dash_sdk::platform::transition::put_identity::PutIdentity;
@@ -86,7 +81,7 @@ use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, FundingResolution, ResolvedFunding,
 };
 use crate::wallet::asset_lock::sync::tracking::not_an_unbound_top_up;
-use crate::wallet::asset_lock::{AssetLockBuiltObserver, AssetLockFunding};
+use crate::wallet::asset_lock::{min_top_up_duffs, AssetLockBuiltObserver, AssetLockFunding};
 use crate::BlockTime;
 
 use super::*;
@@ -455,7 +450,8 @@ impl IdentityWallet {
     ///    the lock is broadcast, so an interrupted top-up resumes to this
     ///    identity and to no other (see
     ///    [`Self::resume_identity_top_up_to_recorded_recipient`]). Requires a
-    ///    persister declaring `ASSET_LOCK_IDENTITY_RECIPIENTS`.
+    ///    persister declaring `IDENTITY_RECIPIENT_TOP_UP` (atomic changesets,
+    ///    funding indices and identity recipients).
     /// 3. Submit the `IdentityTopUp` with the same IS→CL fallbacks as the
     ///    managed top-up, and return the identity's proved new balance.
     /// 4. Consume the tracked lock. Nothing is added to the identity
@@ -517,7 +513,7 @@ impl IdentityWallet {
     /// Afterwards a resume pays this identity and refuses any other.
     ///
     /// Also refused on a backend that cannot keep the assignment
-    /// (`PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS`), for a lock
+    /// (`PersistenceCapabilities::IDENTITY_RECIPIENT_TOP_UP`), for a lock
     /// that is not an unbound top-up, for a consumed lock
     /// ([`PlatformWalletError::AssetLockAlreadyConsumed`]), for a
     /// recipient-less lock whose Platform consumption is unknown
@@ -803,38 +799,6 @@ impl IdentityWallet {
     }
 }
 
-/// The minimum asset-lock funding, in duffs, Platform accepts for an
-/// identity top-up under every protocol version this build supports.
-///
-/// Platform rejects an `IdentityTopUp` whose asset-lock output value (in
-/// credits) is below `IdentityTopUpTransition::calculate_min_required_fee`,
-/// so that calculation is the minimum: 50_000 duffs under fee v0, and 50_500
-/// under v1 (protocol v11+), which adds `identity_topup_base_cost`. Below it,
-/// a lock built and broadcast is accepted by Core (spending real UTXOs) but
-/// rejected by Platform, stranding the funds in a lock that can never
-/// complete the top-up.
-///
-/// The largest minimum across the versions, not the SDK's current one: the
-/// SDK's version can move during the top-up (a proved fetch ratchets it up,
-/// and a pinned SDK can lag the network), so an amount held to the version
-/// read first could clear a lower floor and then be submitted under a higher
-/// one, after its Core funds are locked.
-pub fn min_top_up_duffs() -> Result<u64, PlatformWalletError> {
-    PLATFORM_VERSIONS
-        .iter()
-        .try_fold(0, |max, platform_version| {
-            Ok(max.max(min_top_up_duffs_at(platform_version)?))
-        })
-}
-
-/// Platform's top-up minimum, in duffs, under `platform_version` alone.
-fn min_top_up_duffs_at(platform_version: &PlatformVersion) -> Result<u64, PlatformWalletError> {
-    let credits = IdentityTopUpTransition::V0(IdentityTopUpTransitionV0::default())
-        .calculate_min_required_fee(platform_version)
-        .map_err(dash_sdk::Error::Protocol)?;
-    Ok(credits.div_ceil(CREDITS_PER_DUFF))
-}
-
 /// Hold a new top-up lock to [`min_top_up_duffs`] before anything is looked
 /// up, built or broadcast. An amount below it is refused; a drain gets it as
 /// its floor, which the builder enforces on the built lock before tracking or
@@ -1110,7 +1074,7 @@ mod tests {
         }
 
         fn persistence_capabilities(&self) -> crate::changeset::PersistenceCapabilities {
-            crate::changeset::PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS
+            crate::changeset::PersistenceCapabilities::IDENTITY_RECIPIENT_TOP_UP
         }
     }
 
@@ -1241,31 +1205,6 @@ mod tests {
             Ok(AssetLockFunding::FromWalletBalance { amount_duffs, .. })
                 if amount_duffs == min
         ));
-    }
-
-    /// The minimum is Platform's own top-up fee floor, the largest across the
-    /// protocol versions this build supports, so it holds whichever of them
-    /// the top-up is submitted under: the bare asset-lock floor under fee v0,
-    /// plus the top-up base cost under v1.
-    #[test]
-    fn should_take_the_top_up_minimum_from_every_protocol_version() {
-        assert_eq!(
-            min_top_up_duffs_at(PlatformVersion::first()).unwrap(),
-            50_000
-        );
-        assert_eq!(
-            min_top_up_duffs_at(PlatformVersion::latest()).unwrap(),
-            50_500
-        );
-        let min = min_top_up_duffs().unwrap();
-        assert_eq!(min, 50_500);
-        for platform_version in PLATFORM_VERSIONS {
-            assert!(
-                min >= min_top_up_duffs_at(platform_version).unwrap(),
-                "protocol version {}",
-                platform_version.protocol_version
-            );
-        }
     }
 
     /// A top-up's proved balance lands on the identity when this wallet holds

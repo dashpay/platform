@@ -85,6 +85,13 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// Shared (`Arc`) so a [`shared_handle`](Self::shared_handle) sees the
     /// same gate.
     pub(super) build_persist_serial: Arc<tokio::sync::Mutex<()>>,
+    /// Serializes recipient assignments
+    /// ([`assign_identity_top_up_recipient`](Self::assign_identity_top_up_recipient))
+    /// from the check through the durable store and the in-memory
+    /// publication, so two assignments of one lock cannot interleave their
+    /// stores and publications. Taken after the generation's lifecycle gate
+    /// and never while holding the wallet manager's lock.
+    pub(super) recipient_assignment_serial: Arc<tokio::sync::Mutex<()>>,
     /// Outpoints whose `Built` row is excluded from rejected-build cleanup,
     /// counted so concurrent resumes of the same lock each hold their own
     /// claim. A live resume releases its claim on pre-dispatch exit. Once a
@@ -177,6 +184,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             broadcaster,
             persister,
             build_persist_serial: Arc::new(tokio::sync::Mutex::new(())),
+            recipient_assignment_serial: Arc::new(tokio::sync::Mutex::new(())),
             resume_dispatch_claims: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
             drain_operations: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
             deferred_resumes: Arc::new(std::sync::Mutex::new(BTreeSet::new())),
@@ -214,6 +222,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             broadcaster: Arc::clone(&self.broadcaster),
             persister: self.persister.clone(),
             build_persist_serial: Arc::clone(&self.build_persist_serial),
+            recipient_assignment_serial: Arc::clone(&self.recipient_assignment_serial),
             resume_dispatch_claims: Arc::clone(&self.resume_dispatch_claims),
             drain_operations: Arc::clone(&self.drain_operations),
             deferred_resumes: Arc::clone(&self.deferred_resumes),

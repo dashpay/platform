@@ -478,7 +478,8 @@ pub unsafe extern "C" fn platform_wallet_top_up_identity_with_funding_signer(
 /// (the largest top-up minimum across the supported protocol versions, 50_500
 /// duffs today), `ErrorIdentityNotFound` (7) for an identity
 /// Platform does not know, and a persistence error when the host's persister
-/// does not declare `ASSET_LOCK_IDENTITY_RECIPIENTS`, and
+/// does not declare `ASSET_LOCK_IDENTITY_RECIPIENTS` with `ATOMIC_CHANGESETS` and
+/// `ASSET_LOCK_FUNDING_INDICES`, and
 /// `ErrorIdentityLookupFailed` (80) for a lookup that fails in transport or
 /// proof. In every one of these
 /// `out_asset_lock_outpoint` is all zero: nothing was built, nothing was
@@ -501,10 +502,11 @@ pub unsafe extern "C" fn platform_wallet_top_up_identity_with_funding_signer(
 ///   network, or its row may come back after a restart while its inputs stay
 ///   reserved: do not retry; resume this outpoint (after the next launch if
 ///   it is not tracked now).
-/// - Any other failure: resume this outpoint. A resume answering
-///   `ErrorAssetLockNotTracked` (23) means the lock was removed before it was
-///   sent (its row could not be made durable, and its removal was), so
-///   nothing was paid and a new call is safe.
+/// - Any other failure: reconcile this outpoint before building a new lock
+///   (resume it). A resume answering `ErrorAssetLockNotTracked` (23) means
+///   only that the current wallet does not track the outpoint: it does not
+///   establish that nothing was sent or paid (a wallet removed and re-created
+///   may not have restored the row yet), so it is no reason to pay again.
 ///
 /// # Safety
 /// Same contract as [`platform_wallet_top_up_identity_with_funding_signer`],

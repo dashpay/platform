@@ -163,23 +163,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// ([`PlatformWalletError::AssetLockConsumptionUnknown`] for a
     /// [`RecoveredFromChain`](AssetLockStatus::RecoveredFromChain) lock).
     ///
-    /// The identity is recorded in memory first and then stored and flushed.
-    /// What a failure leaves in memory follows what it may have left in the
-    /// backend, as for
-    /// [`mark_asset_lock_consumption_unknown`](Self::mark_asset_lock_consumption_unknown):
-    ///
-    /// - A transient failure, or a failed flush on a backend whose store
-    ///   commits inline, may leave the assignment queued or already
-    ///   committed. It holds in memory for this session, so a later
-    ///   assignment of another identity is
-    ///   [`PlatformWalletError::AssetLockIdentityRecipientMismatch`] rather
-    ///   than a change the store would drop; assigning the same identity
-    ///   again stores it again, so a retry makes it durable.
-    /// - Any other failure (a refused store, or a flush the backend failed
-    ///   for good, such as a stored row already recording another identity)
-    ///   left nothing to commit. The assignment is rolled back, so a refused
-    ///   value does not stay in memory to fail every later snapshot of the
-    ///   row.
+    /// The assignment is made durable first
+    /// ([`WalletPersister::store_durably`](crate::wallet::persister::WalletPersister::store_durably))
+    /// and only then recorded in memory, where a resume reads it: a resume
+    /// never pays a recipient the store has not committed. Assignments are
+    /// serialized, so two of the same lock cannot interleave. A failure
+    /// leaves the lock unassigned in memory, whatever it left in the backend:
+    /// a retry with the same identity stores it again (the backend accepts the
+    /// identity it already records), and one with another identity is refused
+    /// by the backend if the first one committed. Either way nothing pays a
+    /// recipient that is not durable.
     ///
     /// `generation` is the caller's handle's wallet generation. A wallet
     /// removed, or re-created under its id, since the handle was taken is
@@ -197,61 +190,52 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // outpoint (one it restored from the store): assigning there would make
         // a later resume pay this caller's identity from the replacement's
         // lock. The generation's lifecycle gate is held from the check through
-        // the store, taken before the manager lock as teardown takes them, so
-        // a removal cannot land between them.
+        // the publication, taken before the manager lock as teardown takes
+        // them, so a removal cannot land between them.
         let _lifecycle = generation.payment_guard().await;
-        let (entry, newly_assigned) = {
-            let mut wm = self.wallet_manager.write().await;
+        let _serial = self.recipient_assignment_serial.lock().await;
+        let entry = {
+            let wm = self.wallet_manager.read().await;
             let lock = wm
-                .get_wallet_info_mut(&self.wallet_id)
+                .get_wallet_info(&self.wallet_id)
                 .filter(|info| Arc::ptr_eq(&info.generation, generation))
                 .ok_or_else(|| {
                     PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id))
                 })?
                 .tracked_asset_locks
-                .get_mut(out_point)
+                .get(out_point)
                 .ok_or(PlatformWalletError::AssetLockNotTracked(*out_point))?;
             check_identity_recipient_assignable(lock, identity)?;
-            let newly_assigned = lock.identity_recipient.is_none();
-            lock.identity_recipient = Some(identity);
-            (AssetLockEntry::from(&*lock), newly_assigned)
+            let mut entry = AssetLockEntry::from(lock);
+            entry.identity_recipient = Some(identity);
+            entry
         };
-        let store_commits_inline = self.persister.store_commits_inline();
-        let persist_failure = match self.persister.store(PlatformWalletChangeSet {
-            asset_locks: Some(AssetLockChangeSet {
-                asset_locks: [(*out_point, entry)].into(),
+        self.persister
+            .store_durably(PlatformWalletChangeSet {
+                asset_locks: Some(AssetLockChangeSet {
+                    asset_locks: [(*out_point, entry)].into(),
+                    ..Default::default()
+                }),
                 ..Default::default()
-            }),
-            ..Default::default()
-        }) {
-            Err(error) => Some((error, true)),
-            Ok(()) => self
-                .persister
-                .flush()
-                .err()
-                .map(|error| (error, !store_commits_inline)),
-        };
-        let Some((error, may_roll_back)) = persist_failure else {
-            return Ok(());
-        };
-        if newly_assigned && may_roll_back && !error.is_transient() {
-            // Still under the lifecycle gate, so the generation checked above
-            // is still the wallet's; an assignment is never changed by
-            // another writer, so the identity set above is still this one.
-            let mut wm = self.wallet_manager.write().await;
-            if let Some(lock) = wm
-                .get_wallet_info_mut(&self.wallet_id)
-                .filter(|info| Arc::ptr_eq(&info.generation, generation))
-                .and_then(|info| info.tracked_asset_locks.get_mut(out_point))
-            {
-                if lock.identity_recipient == Some(identity) {
-                    lock.identity_recipient = None;
-                }
-            }
+            })
+            .map_err(|error| {
+                PlatformWalletError::Persistence(format!(
+                    "asset-lock identity recipient was not made durable, so it is not \
+                     assigned; assigning the same identity again retries: {error}"
+                ))
+            })?;
+        // Still under the lifecycle gate, so the generation checked above is
+        // still the wallet's; the serial gate keeps any other assignment out,
+        // and nothing else sets a recipient on a tracked lock.
+        let mut wm = self.wallet_manager.write().await;
+        if let Some(lock) = wm
+            .get_wallet_info_mut(&self.wallet_id)
+            .filter(|info| Arc::ptr_eq(&info.generation, generation))
+            .and_then(|info| info.tracked_asset_locks.get_mut(out_point))
+        {
+            lock.identity_recipient = Some(identity);
         }
-        Err(PlatformWalletError::Persistence(format!(
-            "asset-lock identity recipient was not made durable: {error}"
-        )))
+        Ok(())
     }
 
     /// Track a new asset lock in memory, returning a changeset describing
