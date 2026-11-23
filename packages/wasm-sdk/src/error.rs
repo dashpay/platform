@@ -95,12 +95,13 @@ impl WasmSdkError {
     }
 
     /// Converts `err` as `?` would, keeping its kind, consensus code and whether it can be
-    /// retried, under the message `"{context}: {err}"`.
+    /// retried, under the message `"{context}: {err}"`, with the SDK's advice for a protocol
+    /// version set ahead of the network replaced as `?` replaces it.
     pub(crate) fn with_context<E>(context: &str, err: E) -> Self
     where
         E: std::fmt::Display + Into<Self>,
     {
-        let message = format!("{context}: {err}");
+        let message = with_javascript_version_advice(format!("{context}: {err}"));
         Self {
             message,
             ..err.into()
@@ -699,6 +700,23 @@ mod tests {
         ] {
             assert!(message.contains(named), "{named}: {message}");
         }
+        assert!(!message.contains("with_initial_version"), "{message}");
+    }
+
+    /// The JavaScript advice survives the context of the operation that failed, which
+    /// prefixes the message.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn should_name_the_javascript_version_option_under_the_operation_that_failed() {
+        let error = WasmSdkError::with_context(
+            "Failed to broadcast",
+            every_node_answered_at_an_older_protocol_version().await,
+        );
+        let message = error.message();
+
+        assert_eq!(error.kind(), WasmSdkErrorKind::Config);
+        assert!(message.starts_with("Failed to broadcast: "), "{message}");
+        assert!(message.contains("`version` option"), "{message}");
         assert!(!message.contains("with_initial_version"), "{message}");
     }
 
