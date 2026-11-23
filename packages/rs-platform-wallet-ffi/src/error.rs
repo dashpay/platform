@@ -782,6 +782,15 @@ pub enum PlatformWalletFFIResultCode {
     /// branches hold 77 to 82 (see `ERROR_CODE_REGISTRY.md`).
     ErrorBalanceHistoryInconsistentHeights = 83,
 
+    /// Maps `PlatformWalletError::ShieldedTipPending`: a shielded tip was
+    /// refused before anything was selected, built or sent, because another
+    /// tip from this wallet is being sent or an earlier shielded payment to
+    /// the same recipient may still execute. Nothing was sent. A shielded
+    /// sync resolves the earlier payment, after which the tip can be reviewed
+    /// and sent again. Not the "may have left the wallet" code
+    /// ([`Self::ErrorShieldedSpendUnconfirmed`], 18).
+    ErrorShieldedTipPending = 84,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1269,6 +1278,12 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // heights: no history was returned, and the read can be retried.
             PlatformWalletError::BalanceHistoryInconsistentHeights { .. } => {
                 PlatformWalletFFIResultCode::ErrorBalanceHistoryInconsistentHeights
+            }
+            // A shielded tip refused with nothing sent while an earlier
+            // payment to the recipient is unresolved: pending, not failed and
+            // not unconfirmed.
+            PlatformWalletError::ShieldedTipPending => {
+                PlatformWalletFFIResultCode::ErrorShieldedTipPending
             }
             // The wallet's private payments from an earlier process are not
             // restored yet: wallet readiness, not one contact's pending request.
@@ -3222,6 +3237,28 @@ mod private_contact_request_error_tests {
         assert!(message.contains("height 11"), "{message}");
         assert!(message.contains("height 12"), "{message}");
         unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    /// A shielded tip refused while an earlier payment to its recipient is
+    /// unresolved reaches the host by its own code, through the blanket
+    /// conversion and the spend contract alike, never as unconfirmed.
+    #[test]
+    fn should_report_a_pending_shielded_tip_by_its_own_code() {
+        let mut result = PlatformWalletFFIResult::from(PlatformWalletError::ShieldedTipPending);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedTipPending
+        );
+        assert_eq!(result.code as u32, 84);
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+        #[cfg(feature = "shielded")]
+        {
+            assert_eq!(
+                map_spend_result(Err(PlatformWalletError::ShieldedTipPending), "shielded tip").code
+                    as u32,
+                84
+            );
+        }
     }
 
     /// A public contact request a loaded wallet refuses until its private

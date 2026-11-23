@@ -1,0 +1,617 @@
+//! Shielded tips to a DashPay username: an ordinary shielded transfer to the
+//! shielded address the name's profile publishes.
+//!
+//! The wallet decides everything a payment screen would otherwise decide for
+//! itself, so two hosts cannot decide differently:
+//!
+//! - what the typed amount is ([`parse_shielded_tip_amount`]);
+//! - who the name pays, whether that changed since this wallet last paid the
+//!   name, and whether an earlier payment to it is still unresolved
+//!   ([`PlatformWallet::review_shielded_tip`]);
+//! - which account pays ([`ShieldedTipSource`]), proved with the seed when it
+//!   is an identity's account;
+//! - whether the tip may be sent now ([`PlatformWallet::send_shielded_tip`]);
+//! - whether an identity's shielded balance is known
+//!   ([`PlatformWallet::shielded_identity_balance`]).
+//!
+//! A tip keeps nothing of its own to survive a restart. Every shielded
+//! spend saves its signed transition before its first dispatch
+//! ([`PendingRedrive`](super::store::PendingRedrive)) and keeps it until the
+//! spend is seen executed or is proven unable to execute, across restarts.
+//! The address a saved transfer pays is read back from that transition with
+//! the paying account's outgoing viewing key, so "an earlier payment to this
+//! recipient is unresolved" is answered from the record that would execute.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+
+use dash_sdk::platform::dpns_usernames::normalize_dpns_label;
+use dash_sdk::platform::shielded::try_recover_outgoing_note;
+use dash_sdk::query_types::ShieldedEncryptedNote;
+use dpp::balances::credits::CREDITS_PER_DUFF;
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::prelude::Identifier;
+use dpp::serialization::PlatformDeserializableTrusted;
+use dpp::shielded::builder::OrchardProver;
+use dpp::state_transition::StateTransition;
+
+use super::balance::ShieldedLocalBalanceState;
+use super::file_store::FileBackedShieldedStore;
+use super::keys::AccountViewingKeys;
+use super::operations::shielded_actions;
+use super::store::ShieldedStore;
+use super::tips::{is_shielded_identity_account, SHIELDED_IDENTITY_ACCOUNT_BASE};
+use super::NetworkShieldedCoordinator;
+use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
+use crate::PlatformWalletError;
+
+/// Whom a tip to a username pays: the identity the name resolves to and the
+/// shielded address that identity's profile publishes. A review returns it
+/// and a send takes it back, so a name or a profile that changed in between
+/// cannot redirect the payment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShieldedTipRecipient {
+    /// The identity the username resolves to.
+    pub identity_id: Identifier,
+    /// The raw Orchard address (11-byte diversifier, 32-byte `pk_d`) its
+    /// profile publishes as `shieldedAddress`.
+    pub address: [u8; 43],
+}
+
+/// The account a tip is paid from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShieldedTipSource {
+    /// The identity's own shielded account
+    /// ([`shielded_identity_account_index`](super::shielded_identity_account_index)),
+    /// at the slot the seed proves the identity holds when the tip is sent.
+    Identity(Identifier),
+    /// An account named by its number: an ordinary account, or the identity
+    /// account of a slot that holds no identity (the funds of an identity
+    /// this wallet no longer holds). The account of a slot that holds an
+    /// identity is spent through [`Self::Identity`] instead.
+    Account(u32),
+}
+
+/// How a tip recipient compares with the one this wallet last confirmed for
+/// the same name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShieldedTipRecipientChange {
+    /// This wallet has not sent a tip to the name before.
+    New,
+    /// The same identity and address as last confirmed.
+    Unchanged,
+    /// The name now resolves to another identity, or its profile publishes
+    /// another address.
+    Changed {
+        /// The recipient last confirmed for the name.
+        previous: ShieldedTipRecipient,
+    },
+}
+
+/// What the user confirms before tipping a name
+/// ([`PlatformWallet::review_shielded_tip`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShieldedTipReview {
+    /// Whom the name pays now. A send takes it back unchanged.
+    pub recipient: ShieldedTipRecipient,
+    /// How it compares with the recipient last confirmed for the name.
+    pub change: ShieldedTipRecipientChange,
+    /// An earlier shielded payment from this wallet to the recipient may
+    /// still execute, so a send to it is refused
+    /// ([`PlatformWalletError::ShieldedTipPending`]) until a shielded sync
+    /// resolves that payment.
+    pub unresolved: bool,
+}
+
+/// The shielded balance of a wallet identity's own account, as far as the
+/// wallet can vouch for it ([`PlatformWallet::shielded_identity_balance`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShieldedIdentityBalance {
+    /// The seed has not proved in this session which account is the
+    /// identity's. Preparing the identity's shielded address
+    /// ([`PlatformWallet::prepare_shielded_identity_address`]) proves it.
+    Unverified,
+    /// The account is proved, but its ledger is not established: it is not
+    /// restored or scanned yet, as after a shielded Clear. Its balance is
+    /// not known, which is not the same as zero.
+    Unavailable {
+        /// The identity's shielded account.
+        account: u32,
+    },
+    /// Spendable credits of the identity's account, without the notes that
+    /// pending spends reserve.
+    Available {
+        /// The identity's shielded account.
+        account: u32,
+        /// Its spendable credits.
+        credits: u64,
+    },
+}
+
+/// Credits in one DASH: 10^8 duffs of [`CREDITS_PER_DUFF`] credits each.
+const CREDITS_PER_DASH: u64 = 100_000_000 * CREDITS_PER_DUFF;
+/// Fractional DASH digits a credit amount can carry.
+const DASH_DECIMALS: usize = 11;
+
+/// Parse a tip amount the user typed in DASH into exact credits.
+///
+/// Accepts ASCII digits with one optional decimal separator, `.` or `,`
+/// (decimal keypads type the locale's), and ignores surrounding whitespace.
+/// Refuses signs, digit grouping, exponents, zero, an amount past `u64`
+/// credits, and nonzero digits finer than one credit (extra trailing zeros
+/// are exact and allowed). A host shows the parsed amount in its
+/// confirmation, not the typed text: `1,000` is one DASH.
+pub fn parse_shielded_tip_amount(text: &str) -> Result<u64, PlatformWalletError> {
+    let invalid =
+        || PlatformWalletError::InvalidParameter(format!("Invalid DASH amount: {text:?}"));
+    let trimmed = text.trim();
+    let (whole, fraction, separated) = match trimmed.split_once(['.', ',']) {
+        Some((whole, fraction)) => (whole, fraction, true),
+        None => (trimmed, "", false),
+    };
+    let digits = |part: &str| part.bytes().all(|b| b.is_ascii_digit());
+    if (whole.is_empty() && fraction.is_empty())
+        || (separated && fraction.is_empty())
+        || !digits(whole)
+        || !digits(fraction)
+        || fraction.bytes().skip(DASH_DECIMALS).any(|b| b != b'0')
+    {
+        return Err(invalid());
+    }
+    let fraction = &fraction[..fraction.len().min(DASH_DECIMALS)];
+    let fractional_credits = format!("{fraction:0<DASH_DECIMALS$}")
+        .parse::<u64>()
+        .map_err(|_| invalid())?;
+    let whole = if whole.is_empty() { "0" } else { whole };
+    whole
+        .parse::<u64>()
+        .ok()
+        .and_then(|whole| whole.checked_mul(CREDITS_PER_DASH))
+        .and_then(|credits| credits.checked_add(fractional_credits))
+        .filter(|credits| *credits > 0)
+        .ok_or_else(invalid)
+}
+
+/// The key a confirmed recipient is kept under: the trimmed name as the
+/// SDK's DPNS resolver normalizes it, so the key names what resolution
+/// matched (`Alice`, `alice.dash` and `a11ce` are one name).
+pub(super) fn tip_recipient_label(username: &str) -> String {
+    normalize_dpns_label(username.trim())
+}
+
+/// How `current` compares with `previous`, the recipient last confirmed for
+/// the same name.
+pub(super) fn recipient_change(
+    previous: Option<ShieldedTipRecipient>,
+    current: &ShieldedTipRecipient,
+) -> ShieldedTipRecipientChange {
+    match previous {
+        None => ShieldedTipRecipientChange::New,
+        Some(previous) if previous == *current => ShieldedTipRecipientChange::Unchanged,
+        Some(previous) => ShieldedTipRecipientChange::Changed { previous },
+    }
+}
+
+/// The recipient `wallet_id` last confirmed for `label`, if any.
+fn confirmed_recipient(
+    store: &FileBackedShieldedStore,
+    wallet_id: WalletId,
+    label: &str,
+) -> Result<Option<ShieldedTipRecipient>, PlatformWalletError> {
+    Ok(store
+        .confirmed_tip_recipient(wallet_id, label)?
+        .map(|(identity_id, address)| ShieldedTipRecipient {
+            identity_id: Identifier::from(identity_id),
+            address,
+        }))
+}
+
+/// The addresses of other wallets that `wallet_id`'s unresolved shielded
+/// transfers pay: one whose signed transition is saved and has not been seen
+/// executed or proven unable to execute, so it may still pay its recipient.
+///
+/// Each address is read from the saved transition itself. A transfer keys
+/// the outgoing ciphertext of its outputs to the paying account's outgoing
+/// viewing key, so that key opens the recipient of each. The change the
+/// transfer returns to its own account is not a payment and is left out.
+///
+/// Fails, rather than reporting no payment, when it cannot tell whom a
+/// saved transfer pays: a damaged record that was retained without being
+/// loaded, a transition that does not decode, an account whose keys are not
+/// bound, or a transfer none of whose outputs opens.
+pub(super) fn unresolved_transfer_recipients(
+    store: &FileBackedShieldedStore,
+    wallet_id: WalletId,
+    keys: &BTreeMap<u32, AccountViewingKeys>,
+) -> Result<BTreeSet<[u8; 43]>, PlatformWalletError> {
+    if store.has_unloaded_note_spends(wallet_id) {
+        return Err(PlatformWalletError::ShieldedRecoveryCorrupted {
+            account_index: None,
+            reason: "a saved shielded spend of this wallet does not read, so whom it pays is \
+                     not known"
+                .to_string(),
+        });
+    }
+    let records = store
+        .pending_redrives_for_wallet(wallet_id)
+        .map_err(PlatformWalletError::from)?;
+    let mut recipients = BTreeSet::new();
+    for (id, record) in records {
+        // An identity-funded shield consumes no note and pays this wallet.
+        if record.nullifiers.is_empty() {
+            continue;
+        }
+        let account_index = id.account_index;
+        let transition = StateTransition::deserialize_from_bytes_trusted(&record.st_bytes)
+            .map_err(|e| PlatformWalletError::ShieldedRecoveryCorrupted {
+                account_index: Some(account_index),
+                reason: format!("a saved shielded spend does not decode: {e}"),
+            })?;
+        // Only a transfer pays an Orchard address of the credit pool. The
+        // other note spends pay a Platform address, a Core address, an
+        // identity, a document or a token pool.
+        if !matches!(transition, StateTransition::ShieldedTransfer(_)) {
+            continue;
+        }
+        let views = keys.get(&account_index).ok_or_else(|| {
+            PlatformWalletError::ShieldedRecoveryKeysRequired {
+                account_index,
+                reason: "an unresolved shielded transfer was paid from it".to_string(),
+            }
+        })?;
+        let mut opened = false;
+        for action in shielded_actions(&transition) {
+            let output = ShieldedEncryptedNote {
+                cmx: action.cmx.to_vec(),
+                nullifier: action.nullifier.to_vec(),
+                cv_net: action.cv_net.to_vec(),
+                encrypted_note: action.encrypted_note.clone(),
+            };
+            let Some((_, recipient, _)) =
+                try_recover_outgoing_note(&views.outgoing_viewing_key, &output)
+            else {
+                // A padding output, which no key opens.
+                continue;
+            };
+            opened = true;
+            let recipient = recipient.to_raw_address_bytes();
+            if !views.is_own_recipient(&recipient) {
+                recipients.insert(recipient);
+            }
+        }
+        if !opened {
+            return Err(PlatformWalletError::ShieldedRecoveryCorrupted {
+                account_index: Some(account_index),
+                reason: "no output of an unresolved shielded transfer opens under its \
+                         account's outgoing viewing key, so whom it pays is not known"
+                    .to_string(),
+            });
+        }
+    }
+    Ok(recipients)
+}
+
+/// Whether an unresolved payment may still reach the recipient of a tip:
+/// one to its current address, or one to the address last confirmed for the
+/// name, which the recipient may have replaced since that payment.
+pub(super) fn pays_unresolved(
+    unresolved: &BTreeSet<[u8; 43]>,
+    current: &ShieldedTipRecipient,
+    previous: Option<&ShieldedTipRecipient>,
+) -> bool {
+    unresolved.contains(&current.address)
+        || previous.is_some_and(|previous| unresolved.contains(&previous.address))
+}
+
+impl PlatformWallet {
+    /// Resolve whom a tip to `username` pays: the identity the DPNS name
+    /// resolves to and the shielded address its DashPay profile publishes,
+    /// both fetched with proof. Accepts `alice` and `alice.dash`, with
+    /// surrounding whitespace ignored.
+    ///
+    /// Fails with [`PlatformWalletError::InvalidIdentityData`] for a name
+    /// that does not exist and for a profile that publishes no valid
+    /// shielded address. The profile does not prove its owner can spend
+    /// from the address.
+    pub async fn resolve_shielded_tip(
+        &self,
+        username: &str,
+    ) -> Result<ShieldedTipRecipient, PlatformWalletError> {
+        let username = username.trim();
+        let identity_id = self
+            .sdk
+            .resolve_dpns_name(username)
+            .await
+            .map_err(PlatformWalletError::Sdk)?
+            .ok_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "The username '{username}' was not found"
+                ))
+            })?;
+        let address = self
+            .identity
+            .dashpay()
+            .published_shielded_address(&identity_id)
+            .await?
+            .ok_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "The profile of '{username}' publishes no valid shielded address"
+                ))
+            })?;
+        Ok(ShieldedTipRecipient {
+            identity_id,
+            address,
+        })
+    }
+
+    /// Resolve `username` for the user to confirm a tip: whom it pays now
+    /// ([`Self::resolve_shielded_tip`]), how that compares with the recipient
+    /// this wallet last confirmed for the name, and whether an earlier
+    /// shielded payment to that recipient is still unresolved, in which case
+    /// a send is refused.
+    ///
+    /// Confirmed recipients are kept per wallet in `coordinator`'s store by
+    /// the name's normalized label. A send records the recipient it pays, a
+    /// shielded Clear keeps the record, and removing the wallet drops it.
+    ///
+    /// Requires the wallet's shielded accounts to be bound
+    /// ([`PlatformWalletError::ShieldedNotBound`] otherwise). Changes
+    /// nothing.
+    pub async fn review_shielded_tip(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        username: &str,
+    ) -> Result<ShieldedTipReview, PlatformWalletError> {
+        let keys = self.bound_shielded_keys().await?;
+        let recipient = self.resolve_shielded_tip(username).await?;
+        let store = coordinator.store().read().await;
+        let previous =
+            confirmed_recipient(&store, self.wallet_id(), &tip_recipient_label(username))?;
+        let unresolved = pays_unresolved(
+            &unresolved_transfer_recipients(&store, self.wallet_id(), &keys)?,
+            &recipient,
+            previous.as_ref(),
+        );
+        Ok(ShieldedTipReview {
+            change: recipient_change(previous, &recipient),
+            recipient,
+            unresolved,
+        })
+    }
+
+    /// Send a shielded tip of `amount` credits to `username`, from `source`,
+    /// with `memo` on the recipient's note.
+    ///
+    /// The tip pays `expected_recipient`, what the user confirmed in a review
+    /// ([`Self::review_shielded_tip`]), and nothing else: the name and its
+    /// profile are resolved again, and a recipient that differs is refused
+    /// with [`PlatformWalletError::InvalidIdentityData`], for the user to
+    /// review again. There is no fallback to a transparent address.
+    ///
+    /// Refused with [`PlatformWalletError::ShieldedTipPending`], before
+    /// anything is selected, built or sent, while another tip from this
+    /// wallet is being sent, and while an earlier shielded payment to the
+    /// recipient (its current address, or the address last confirmed for the
+    /// name) may still execute. That payment's record is saved before its
+    /// first dispatch and survives a restart, so a relaunch refuses the same
+    /// tip. A shielded sync resolves it: it is seen executed, or its anchor
+    /// is proven pruned, after which it can never execute.
+    ///
+    /// An identity's tip is paid from the account of the slot the seed
+    /// proves the identity holds, checked under the locks the spend runs
+    /// under ([`ShieldedTipSource::Identity`]).
+    ///
+    /// A failure with [`PlatformWalletError::ShieldedSpendUnconfirmed`] means
+    /// the tip may have left the wallet and may still execute: it must not
+    /// be sent again. Every other failure means it was not sent.
+    ///
+    /// Holds the wallet's lifecycle gate, `coordinator`'s operation
+    /// admission and the account-set lock through the spend, so a removal
+    /// of the wallet, a shielded Clear and a bind wait for it.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn send_shielded_tip<P: OrchardProver>(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        seed: &[u8],
+        source: ShieldedTipSource,
+        username: &str,
+        expected_recipient: &ShieldedTipRecipient,
+        amount: u64,
+        memo: [u8; 36],
+        prover: P,
+    ) -> Result<(), PlatformWalletError> {
+        // Not waited for: a second request while a tip is being sent is the
+        // same tip sent twice, and queued behind the first it would pay
+        // again once the first had executed.
+        let _sending = self
+            .tip_send_in_progress
+            .try_lock()
+            .map_err(|_| PlatformWalletError::ShieldedTipPending)?;
+        let _lifecycle = self.core().generation_payment_guard().await;
+        if !self.core().is_current_generation().await {
+            return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
+                self.wallet_id(),
+            )));
+        }
+        coordinator.ensure_network(self.sdk.network)?;
+        // Held through settlement, so a Clear waits for the tip instead of
+        // purging the store it reserves in and settles against.
+        let _operation = coordinator.operation_guard().await;
+        // A bind that dropped the paying account would purge the notes the
+        // tip reserves, and its saved record with them.
+        let _config = self.shielded_config_lock.lock().await;
+        self.ensure_shielded_bound_on(coordinator)?;
+        let account = self.tip_source_account(seed, source).await?;
+        let current = self.resolve_shielded_tip(username).await?;
+        if current != *expected_recipient {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "The tip recipient changed; review and confirm the payment again".to_string(),
+            ));
+        }
+        self.send_resolved_shielded_tip(
+            coordinator,
+            seed,
+            account,
+            &tip_recipient_label(username),
+            &current,
+            amount,
+            memo,
+            prover,
+        )
+        .await
+    }
+
+    /// The part of [`Self::send_shielded_tip`] that follows the resolution
+    /// of the recipient, under the locks it holds: refuse the tip while an
+    /// earlier payment to `recipient` is unresolved, record `recipient` as
+    /// the one confirmed for `label`, and send the transfer from `account`.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn send_resolved_shielded_tip<P: OrchardProver>(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        seed: &[u8],
+        account: u32,
+        label: &str,
+        recipient: &ShieldedTipRecipient,
+        amount: u64,
+        memo: [u8; 36],
+        prover: P,
+    ) -> Result<(), PlatformWalletError> {
+        let keys = self.bound_shielded_keys().await?;
+        {
+            let mut store = coordinator.store().write().await;
+            let previous = confirmed_recipient(&store, self.wallet_id(), label)?;
+            let unresolved = unresolved_transfer_recipients(&store, self.wallet_id(), &keys)?;
+            if pays_unresolved(&unresolved, recipient, previous.as_ref()) {
+                return Err(PlatformWalletError::ShieldedTipPending);
+            }
+            // What the user confirmed becomes the recipient on file for the
+            // name, whatever happens to the payment.
+            store.confirm_tip_recipient(
+                self.wallet_id(),
+                label,
+                &(recipient.identity_id.to_buffer(), recipient.address),
+            )?;
+        }
+        self.shielded_transfer_to(
+            coordinator,
+            seed,
+            account,
+            &recipient.address,
+            amount,
+            memo,
+            prover,
+        )
+        .await
+    }
+
+    /// The shielded balance of the wallet identity `identity_id`'s own
+    /// account, with what the wallet knows about it:
+    ///
+    /// - [`ShieldedIdentityBalance::Unverified`] until the seed has proved
+    ///   in this session which account is the identity's
+    ///   ([`Self::prepared_shielded_identity_account`]). A recorded identity
+    ///   index is not proof: it may be a placeholder a host restored, whose
+    ///   account belongs to another identity.
+    /// - [`ShieldedIdentityBalance::Unavailable`] while that account's
+    ///   ledger is not established on `coordinator` (not bound, or neither
+    ///   restored nor scanned).
+    /// - [`ShieldedIdentityBalance::Available`] with its spendable credits.
+    ///
+    /// A host shows these states and does not add up stored notes, which
+    /// cannot tell an empty account from one whose ledger was cleared.
+    /// Reads local state only. Fails with
+    /// [`PlatformWalletError::IdentityNotFound`] for an identity this wallet
+    /// does not hold.
+    pub async fn shielded_identity_balance(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        identity_id: &Identifier,
+    ) -> Result<ShieldedIdentityBalance, PlatformWalletError> {
+        self.ensure_wallet_identity(identity_id).await?;
+        let Some(account) = self.prepared_shielded_identity_account(identity_id).await else {
+            return Ok(ShieldedIdentityBalance::Unverified);
+        };
+        let established = match coordinator.local_balance_snapshot(self.wallet_id()).await? {
+            ShieldedLocalBalanceState::Ready(snapshot) => snapshot
+                .accounts
+                .get(&account)
+                .filter(|balance| balance.is_established())
+                .map(|balance| balance.spendable_credits),
+            ShieldedLocalBalanceState::Unbound | ShieldedLocalBalanceState::RestoreIncomplete => {
+                None
+            }
+        };
+        Ok(match established {
+            Some(credits) => ShieldedIdentityBalance::Available { account, credits },
+            None => ShieldedIdentityBalance::Unavailable { account },
+        })
+    }
+
+    /// The account `source` spends.
+    ///
+    /// An identity spends the account of the slot the seed proves it holds
+    /// ([`Self::verified_identity_account`]). An identity account named by
+    /// its number is refused while its slot holds an identity: the number
+    /// says nothing about which identity the user meant, and that identity's
+    /// tips go through [`ShieldedTipSource::Identity`], which proves it.
+    pub(crate) async fn tip_source_account(
+        &self,
+        seed: &[u8],
+        source: ShieldedTipSource,
+    ) -> Result<u32, PlatformWalletError> {
+        match source {
+            ShieldedTipSource::Identity(identity_id) => {
+                self.verified_identity_account(seed, &identity_id).await
+            }
+            ShieldedTipSource::Account(account) if is_shielded_identity_account(account) => {
+                let wm = self.wallet_manager.read().await;
+                let info = wm.get_wallet_info(&self.wallet_id()).ok_or_else(|| {
+                    PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id()))
+                })?;
+                let occupant = info
+                    .identity_manager
+                    .wallet_identities
+                    .get(&self.wallet_id())
+                    .and_then(|slots| slots.get(&(account - SHIELDED_IDENTITY_ACCOUNT_BASE)));
+                match occupant {
+                    Some(owner) => Err(PlatformWalletError::InvalidIdentityData(format!(
+                        "Account {account} is the shielded account of identity {}; send from \
+                         that identity instead",
+                        owner.identity.id()
+                    ))),
+                    None => Ok(account),
+                }
+            }
+            ShieldedTipSource::Account(account) => Ok(account),
+        }
+    }
+
+    /// The viewing keys of the wallet's bound shielded accounts, or
+    /// [`PlatformWalletError::ShieldedNotBound`].
+    async fn bound_shielded_keys(
+        &self,
+    ) -> Result<BTreeMap<u32, AccountViewingKeys>, PlatformWalletError> {
+        self.shielded_keys
+            .read()
+            .await
+            .clone()
+            .ok_or(PlatformWalletError::ShieldedNotBound)
+    }
+
+    /// [`PlatformWalletError::IdentityNotFound`] unless this wallet holds
+    /// `identity_id` as one of its own.
+    async fn ensure_wallet_identity(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<(), PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id())
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id())))?
+            .identity_manager
+            .managed_identity(identity_id)
+            .filter(|identity| identity.wallet_id == Some(self.wallet_id()))
+            .map(|_| ())
+            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))
+    }
+}

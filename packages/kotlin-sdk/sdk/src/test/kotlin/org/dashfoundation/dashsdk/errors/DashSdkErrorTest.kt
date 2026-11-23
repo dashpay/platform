@@ -425,6 +425,21 @@ class DashSdkErrorTest {
         assertTrue("the read can be made again", mapped.isRetryable)
     }
 
+    /**
+     * A refused tip has its own code (84), apart from a spend that may have
+     * left the wallet (18): nothing was sent, and a shielded sync lifts it.
+     */
+    @Test
+    fun shouldReportARefusedShieldedTipByItsOwnCode() {
+        val detail = "A shielded payment to this recipient is still being sent or is unresolved"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 84, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedTipPending)
+        assertFalse(mapped is DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed)
+        assertEquals(detail, mapped.message)
+        assertFalse("a shielded sync lifts it, not a retry", mapped.isRetryable)
+    }
+
     @Test
     fun platformShieldCapacityCode41MapsTyped() {
         val message =

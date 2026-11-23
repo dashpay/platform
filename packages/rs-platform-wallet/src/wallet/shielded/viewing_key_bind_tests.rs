@@ -2143,7 +2143,7 @@ async fn should_bind_more_than_64_persisted_tip_accounts_from_an_ordinary_reques
 
 /// A wallet bound to account 0 whose identity at index 2 can prepare a tip
 /// address, for racing preparation against other account-set writers.
-async fn tip_race_fixture(
+pub(super) async fn tip_race_fixture(
     tag: &str,
 ) -> (
     PlatformWallet,
@@ -2600,7 +2600,7 @@ async fn should_require_fresh_tip_preparation_after_clear_even_after_rebind() {
 
 /// Add a second wallet-owned identity to the fixture's wallet at `slot`,
 /// carrying the MASTER key the seed derives there.
-async fn add_identity_at_slot(
+pub(super) async fn add_identity_at_slot(
     wallet: &PlatformWallet,
     seed: &[u8],
     id_byte: u8,

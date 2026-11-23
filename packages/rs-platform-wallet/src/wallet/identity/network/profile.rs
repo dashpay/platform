@@ -579,6 +579,25 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         Ok(written)
     }
 
+    /// The shielded address `identity_id`'s profile publishes on Platform
+    /// now, fetched with proof: `None` when the identity has no profile, or
+    /// its profile carries no valid `shieldedAddress`
+    /// ([`validated_shielded_address`]). Reads nothing from, and writes
+    /// nothing to, the local profile caches.
+    pub(crate) async fn published_shielded_address(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<Option<[u8; 43]>, PlatformWalletError> {
+        let dashpay_contract = super::dashpay_contract()?;
+        Ok(self
+            .fetch_profiles(&dashpay_contract, &[*identity_id])
+            .await?
+            .remove(identity_id)
+            .flatten()
+            .and_then(|profile| profile.shielded_address)
+            .and_then(|address| validated_shielded_address(&address)))
+    }
+
     /// Fetch profiles through [`Sdk::get_profiles`](dash_sdk::Sdk::get_profiles),
     /// returning the present profiles keyed by owner id (absent ids are simply
     /// missing). The `profile` `ownerId` index is unique, so the set lookup

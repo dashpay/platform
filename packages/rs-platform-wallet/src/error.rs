@@ -1172,6 +1172,17 @@ pub enum PlatformWalletError {
     #[error("Identity {} has an unresolved shielded debit; this request was not started. Wait for shielded sync", hex::encode(identity_id))]
     ShieldedIdentityDebitPending { identity_id: [u8; 32] },
 
+    /// A shielded tip was refused before anything was built or sent: another
+    /// tip from this wallet is being sent, or an earlier shielded payment to
+    /// the same recipient may still execute. A shielded sync resolves the
+    /// earlier payment (seen executed, or proven unable to execute), after
+    /// which the tip can be reviewed and sent again.
+    #[error(
+        "A shielded payment to this recipient is still being sent or is unresolved; this tip \
+         was not sent. Wait for shielded sync before sending it again"
+    )]
+    ShieldedTipPending,
+
     /// Durable recovery data cannot safely identify or reconstruct a payment.
     #[error("shielded recovery record is damaged (account {account_index:?}): {reason}; restore a known-good backup or inspect recovery records before explicitly accepting an unknown payment outcome")]
     ShieldedRecoveryCorrupted {

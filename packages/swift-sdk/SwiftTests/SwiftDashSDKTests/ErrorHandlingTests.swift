@@ -620,6 +620,23 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// A shielded tip refused while an earlier payment to its recipient is
+    /// unresolved keeps its own code and typed case, not the unknown error
+    /// and not the unconfirmed spend.
+    func testShouldReportAPendingShieldedTipByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_TIP_PENDING
+        )
+        XCTAssertEqual(code, .errorShieldedTipPending)
+        XCTAssertEqual(code.rawValue, 84)
+        let detail = "A shielded payment to this recipient is still being sent or is unresolved"
+        guard case .shieldedTipPending(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed shielded tip pending error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     func testShouldReadEveryFieldOfThePrivateContactReadiness() {
         var ffi = PrivateContactReadinessFFI()
         ffi.private_payments_restored = false

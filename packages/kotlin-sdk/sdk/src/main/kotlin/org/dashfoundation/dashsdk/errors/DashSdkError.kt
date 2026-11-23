@@ -827,6 +827,20 @@ sealed class DashSdkError(
         }
 
         /**
+         * `ErrorShieldedTipPending` (native code 84). A shielded tip was
+         * refused before anything was built or sent: another tip from this
+         * wallet is being sent, or an earlier shielded payment to the same
+         * recipient may still execute. Nothing was sent. Not retryable as it
+         * is: a shielded sync resolves the earlier payment (seen executed,
+         * or proven unable to execute), after which the tip can be reviewed
+         * and sent again. Distinct from [ShieldedSpendUnconfirmed] (18),
+         * which says this payment itself may have left the wallet.
+         * ← Swift `PlatformWalletError.shieldedTipPending`.
+         */
+        class ShieldedTipPending(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -1037,6 +1051,7 @@ sealed class DashSdkError(
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
             83 -> PlatformWallet.BalanceHistoryInconsistentHeights(message, cause) // ErrorBalanceHistoryInconsistentHeights
+            84 -> PlatformWallet.ShieldedTipPending(message, cause) // ErrorShieldedTipPending
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

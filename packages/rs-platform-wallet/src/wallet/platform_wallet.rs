@@ -463,6 +463,12 @@ pub struct PlatformWallet {
     #[cfg(feature = "shielded")]
     pub(crate) prepared_tip_accounts:
         Arc<std::sync::Mutex<BTreeMap<Identifier, PreparedTipAccount>>>,
+    /// Held by a shielded tip from its admission until it returns, and only
+    /// ever tried, never waited for: a second tip requested meanwhile is
+    /// refused instead of paying again after the first. `Arc` so cloned
+    /// wallet handles share it.
+    #[cfg(feature = "shielded")]
+    pub(crate) tip_send_in_progress: Arc<tokio::sync::Mutex<()>>,
     /// Set once this wallet has been removed from the manager, to stop
     /// a handle that outlives the removal from binding shielded state
     /// back onto the coordinator. Callers resolve an
@@ -916,6 +922,8 @@ impl PlatformWallet {
             shielded_config_lock: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "shielded")]
             prepared_tip_accounts,
+            #[cfg(feature = "shielded")]
+            tip_send_in_progress: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "shielded")]
             shielded_detached: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             #[cfg(feature = "shielded")]
@@ -3491,6 +3499,8 @@ impl Clone for PlatformWallet {
             shielded_config_lock: self.shielded_config_lock.clone(),
             #[cfg(feature = "shielded")]
             prepared_tip_accounts: self.prepared_tip_accounts.clone(),
+            #[cfg(feature = "shielded")]
+            tip_send_in_progress: self.tip_send_in_progress.clone(),
             #[cfg(feature = "shielded")]
             shielded_detached: self.shielded_detached.clone(),
             #[cfg(feature = "shielded")]
