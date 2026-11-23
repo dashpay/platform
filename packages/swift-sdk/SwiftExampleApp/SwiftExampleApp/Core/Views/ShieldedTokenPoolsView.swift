@@ -421,7 +421,19 @@ struct ShieldedTokenSendSheet: View {
         return raw
     }
 
-    private var amount: UInt64? { parseTokenAmount(amountText, decimals: decimals) }
+    /// The typed amount has a nonzero digit past the token's decimals (or
+    /// any fraction when the decimals are unknown), which parsing would
+    /// round down: it is refused, not truncated.
+    private var amountExceedsPrecision: Bool {
+        hasDigitsBeyondPrecision(amountText, decimals: decimals)
+    }
+
+    /// The amount in the token's smallest unit; `nil` while the text does not
+    /// parse or is not exactly representable, so neither the fee preview nor
+    /// a submission sees a rounded amount.
+    private var amount: UInt64? {
+        amountExceedsPrecision ? nil : parseTokenAmount(amountText, decimals: decimals)
+    }
 
     /// This account's own default Orchard address, when the wallet's
     /// shielded account is bound.
@@ -485,6 +497,13 @@ struct ShieldedTokenSendSheet: View {
                         .keyboardType(decimals > 0 ? .decimalPad : .numberPad)
                         .font(.body.monospacedDigit())
                         .accessibilityIdentifier("shieldedTokenSend.amount")
+                    if amountExceedsPrecision {
+                        ShieldedTokenAmountPrecisionError(
+                            decimals: decimals,
+                            decimalsKnown: token != nil,
+                            accessibilityId: "shieldedTokenSend.precisionError"
+                        )
+                    }
                     ShieldedTokenSpendFeeLine(
                         walletId: walletId,
                         balance: balance,
@@ -590,7 +609,8 @@ struct ShieldedTokenSendSheet: View {
 /// (`walletManager.shieldedTokenSpendPreview`): the fee in credits and the
 /// notes the spend would take, or Rust's refusal when the spend would be
 /// refused on the wallet's notes. Asks again a moment after the amount stops
-/// changing (a newer amount cancels the pending ask). Never computes a fee.
+/// changing, and after a shielded sync of the wallet or a clear of the local
+/// shielded state (a newer ask cancels the pending one). Never computes a fee.
 struct ShieldedTokenSpendFeeLine: View {
     let walletId: Data
     let balance: ShieldedTokenPoolBalance
@@ -601,7 +621,19 @@ struct ShieldedTokenSpendFeeLine: View {
     let accessibilityId: String
 
     @EnvironmentObject private var walletManager: PlatformWalletManager
+    @EnvironmentObject private var shieldedService: ShieldedService
     @State private var state: FeeState = .idle
+    /// Bumped by the wallet-scoped shielded sync completions and local-state
+    /// clears that also refresh the balance list: the notes Rust prices from
+    /// may have changed, so the preview is asked again.
+    @State private var localStateRevision: UInt64 = 0
+
+    /// What the preview task is keyed by: a new amount or a new local state
+    /// cancels the pending ask and starts another.
+    private struct QuoteKey: Equatable {
+        let amount: UInt64?
+        let localStateRevision: UInt64
+    }
 
     private enum FeeState: Equatable {
         case idle
@@ -612,7 +644,17 @@ struct ShieldedTokenSpendFeeLine: View {
 
     var body: some View {
         content
-            .task(id: amount) { await quote() }
+            .task(id: QuoteKey(amount: amount, localStateRevision: localStateRevision)) {
+                await quote()
+            }
+            .onReceive(walletManager.$lastShieldedSyncEvent.dropFirst()) { event in
+                if ShieldedSyncEventScope.covers(event, walletId: walletId) {
+                    localStateRevision &+= 1
+                }
+            }
+            .onReceive(shieldedService.$localStateClearCount.dropFirst()) { _ in
+                localStateRevision &+= 1
+            }
     }
 
     @ViewBuilder
@@ -675,6 +717,27 @@ struct ShieldedTokenSpendFeeLine: View {
             guard !Task.isCancelled else { return }
             state = .refused(error.localizedDescription)
         }
+    }
+}
+
+/// Shown under a token pool spend form's amount when the text has more
+/// fractional digits than the token has decimals: the amount is refused
+/// rather than rounded down.
+struct ShieldedTokenAmountPrecisionError: View {
+    let decimals: Int
+    /// The app has the token, so `decimals` is the token's own.
+    let decimalsKnown: Bool
+    let accessibilityId: String
+
+    var body: some View {
+        Text(
+            decimalsKnown
+                ? "This token has \(decimals) decimal places; enter an amount with no more than that."
+                : "Enter a whole number of the token's smallest unit: the app does not have this token's decimals."
+        )
+        .font(.caption)
+        .foregroundColor(.red)
+        .accessibilityIdentifier(accessibilityId)
     }
 }
 
@@ -756,7 +819,10 @@ struct ShieldedTokenUnshieldSheet: View {
     /// The 32-byte identity id the recipient field decodes to.
     private var recipientId: Data? {
         let trimmed = recipientText.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A 32-byte id is at most 44 Base58 characters; longer text is
+        // refused before it is decoded.
         guard !trimmed.isEmpty,
+              trimmed.utf8.count <= 44,
               let id = Data.identifier(fromBase58: trimmed),
               id.count == 32
         else { return nil }
@@ -769,7 +835,19 @@ struct ShieldedTokenUnshieldSheet: View {
         return identities.first { $0.identityId == recipientId }
     }
 
-    private var amount: UInt64? { parseTokenAmount(amountText, decimals: decimals) }
+    /// The typed amount has a nonzero digit past the token's decimals (or
+    /// any fraction when the decimals are unknown), which parsing would
+    /// round down: it is refused, not truncated.
+    private var amountExceedsPrecision: Bool {
+        hasDigitsBeyondPrecision(amountText, decimals: decimals)
+    }
+
+    /// The amount in the token's smallest unit; `nil` while the text does not
+    /// parse or is not exactly representable, so neither the fee preview nor
+    /// a submission sees a rounded amount.
+    private var amount: UInt64? {
+        amountExceedsPrecision ? nil : parseTokenAmount(amountText, decimals: decimals)
+    }
 
     private var canSubmit: Bool {
         !isSubmitting && resultMessage == nil && recipientId != nil && amount != nil
@@ -831,6 +909,13 @@ struct ShieldedTokenUnshieldSheet: View {
                         .keyboardType(decimals > 0 ? .decimalPad : .numberPad)
                         .font(.body.monospacedDigit())
                         .accessibilityIdentifier("shieldedTokenUnshield.amount")
+                    if amountExceedsPrecision {
+                        ShieldedTokenAmountPrecisionError(
+                            decimals: decimals,
+                            decimalsKnown: token != nil,
+                            accessibilityId: "shieldedTokenUnshield.precisionError"
+                        )
+                    }
                     ShieldedTokenSpendFeeLine(
                         walletId: walletId,
                         balance: balance,
