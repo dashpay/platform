@@ -428,8 +428,48 @@ struct LoadIdentityView: View {
                 // the SDK: the rows are stored under it.
                 let network = appState.currentNetwork
 
-                // Try to fetch the identity
-                let identityData = try await sdk.identityGet(identityId: validIdData.toHexString())
+                // A masternode or evonode is loaded through Rust's rule
+                // (`SDK.loadMasternodeForVoting`): its owner identity, whose
+                // id is the pro_tx_hash, or, for a masternode without an
+                // owner identity (a shared masternode), its voter identity
+                // when Platform proves that one holds the voting key. The row
+                // is stored under the loaded identity's id, with the
+                // pro_tx_hash kept beside it. Any other identity is fetched
+                // at the typed id.
+                let rowId: Data
+                let identityData: [String: Any]
+                var masternodeProTxHash: Data?
+                var votingKeyCheck: MasternodeVotingKeyCheck?
+                var votingKeyAddress: MasternodeVotingKeyAddress?
+                if isMasternodeType {
+                    let proTxHash = MasternodeVoter.wireOrderProTxHash(displayOrder: validIdData)
+                    if let votingKeyData {
+                        votingKeyAddress = try SDK.masternodeVotingAddress(privateKey: votingKeyData)
+                    }
+                    let load = try await sdk.loadMasternodeForVoting(
+                        proTxHash: proTxHash,
+                        votingAddress: votingKeyAddress
+                    )
+                    let loaded: MasternodeVotingLoadedIdentity
+                    switch load {
+                    case .refused(let message):
+                        await MainActor.run {
+                            errorMessage = message
+                            isLoading = false
+                            loadStartTime = nil
+                        }
+                        return
+                    case .loaded(let identity):
+                        loaded = identity
+                    }
+                    rowId = loaded.identityId
+                    identityData = try loaded.identityObject()
+                    masternodeProTxHash = proTxHash
+                    votingKeyCheck = loaded.votingKeyCheck
+                } else {
+                    rowId = validIdData
+                    identityData = try await sdk.identityGet(identityId: validIdData.toHexString())
+                }
 
                 // The network was switched while the fetch was in flight:
                 // the answer is from the previous network, so nothing is
@@ -443,34 +483,19 @@ struct LoadIdentityView: View {
                     return
                 }
 
-                // A masternode voting key is checked against Platform before
-                // anything is stored. Rust decides from the check and what
-                // this device stores for the voting key whether the key is
-                // stored and what is recorded for it
+                // A masternode voting key was checked against Platform with
+                // the load. Rust decides from the check and what this device
+                // stores for the voting key whether the key is stored and
+                // what is recorded for it
                 // (`MasternodeVotingKeyCheck.outcome(votingAddress:slot:)`).
                 // Every record is written with the address of the key it was
                 // made of.
-                var votingKeyCheck: MasternodeVotingKeyCheck?
-                var votingKeyAddress: MasternodeVotingKeyAddress?
-                if let votingKeyData {
-                    let votingAddress = try SDK.masternodeVotingAddress(privateKey: votingKeyData)
-                    let check = try await sdk.checkMasternodeVotingKey(
-                        proTxHash: MasternodeVoter.wireOrderProTxHash(identityId: validIdData),
-                        votingAddress: votingAddress.data
-                    )
-                    guard appState.sdk === sdk else {
-                        await MainActor.run {
-                            errorMessage = "The network changed during the load, so the identity was not saved. Load it again."
-                            isLoading = false
-                            loadStartTime = nil
-                        }
-                        return
-                    }
+                if let votingKeyData, let check = votingKeyCheck, let votingAddress = votingKeyAddress {
                     let refusal = "The voting key does not belong to masternode \(validIdData.toHexString()), so the identity was not saved: \(Self.reason(of: check))"
                     let outcome = await MainActor.run { () -> MasternodeVotingKeyCheckOutcome in
                         let read = Self.votingKeySlot(
                             holding: votingKeyData,
-                            identityId: validIdData,
+                            identityId: rowId,
                             network: network,
                             in: modelContext
                         )
@@ -480,7 +505,7 @@ struct LoadIdentityView: View {
                             // record is for the key already stored.
                             var text = refusal
                             if let record = outcome.record,
-                               let row = Self.identityRow(validIdData, on: network, in: modelContext) {
+                               let row = Self.identityRow(rowId, on: network, in: modelContext) {
                                 row.recordedVotingKey = record
                                 do {
                                     try modelContext.save()
@@ -498,8 +523,6 @@ struct LoadIdentityView: View {
                         return outcome
                     }
                     guard outcome.storeKey else { return }
-                    votingKeyCheck = check
-                    votingKeyAddress = votingAddress
                 }
 
                 // Debug: Print the entire identity data to see its structure
@@ -526,6 +549,7 @@ struct LoadIdentityView: View {
                 let capturedPayoutKey = payoutKeyData
                 let capturedVotingKeyCheck = votingKeyCheck
                 let capturedVotingKeyAddress = votingKeyAddress
+                let capturedMasternodeProTxHash = masternodeProTxHash
 
                 await MainActor.run {
                     // Read the keys the network returned before writing
@@ -534,7 +558,7 @@ struct LoadIdentityView: View {
                     // Keychain writes.
                     guard let fetchedKeys = PersistentPublicKey.fromFetchedIdentity(
                         identityData,
-                        identityId: validIdData
+                        identityId: rowId
                     ) else {
                         errorMessage = "This identity's keys could not be read from the response, so nothing was saved. Load it again."
                         isLoading = false
@@ -548,7 +572,7 @@ struct LoadIdentityView: View {
                     // unknown, so stop before writing anything.
                     let existing: PersistentIdentity?
                     do {
-                        let target = validIdData
+                        let target = rowId
                         existing = try modelContext.fetch(
                             FetchDescriptor<PersistentIdentity>(
                                 predicate: #Predicate { $0.identityId == target }
@@ -584,7 +608,7 @@ struct LoadIdentityView: View {
                         row = existing
                     } else {
                         row = PersistentIdentity(
-                            identityId: validIdData,
+                            identityId: rowId,
                             balance: Int64(bitPattern: fetchedBalance),
                             revision: 0,
                             isLocal: true,
@@ -603,6 +627,12 @@ struct LoadIdentityView: View {
                             identity: row,
                             modelContext: modelContext
                         )
+                    }
+
+                    // A masternode or evonode row records the pro_tx_hash its
+                    // votes name, apart from its identity id.
+                    if let capturedMasternodeProTxHash {
+                        row.masternodeProTxHash = capturedMasternodeProTxHash
                     }
 
                     // Keep the fetched keys' DPP projection for matching the
@@ -636,7 +666,7 @@ struct LoadIdentityView: View {
                                 && $0.publicKeyData == matched.data
                         }), let keychainId = KeychainManager.shared.storePrivateKey(
                             privateKey,
-                            identityId: validIdData,
+                            identityId: rowId,
                             keyIndex: persistentKey.keyId
                         ) else {
                             unlinkedKeyIds.append(matched.id)
@@ -661,7 +691,7 @@ struct LoadIdentityView: View {
                         guard let key else { return nil }
                         switch KeychainManager.shared.storeSpecialKeyIfAbsent(
                             key,
-                            identityId: validIdData,
+                            identityId: rowId,
                             keyType: keyType
                         ) {
                         case .stored(let identifier):
@@ -809,7 +839,7 @@ struct LoadIdentityView: View {
                                 }
                             }
                             pendingKeyReplacements = PendingKeyReplacements(
-                                identityId: validIdData,
+                                identityId: rowId,
                                 keys: conflictingReplacements,
                                 unstoredNote: unstoredNote,
                                 enteredKeyDigests: enteredKeyDigests,
@@ -823,7 +853,7 @@ struct LoadIdentityView: View {
                     Task {
                         do {
                             let usernames = try await sdk.dpnsGetUsername(
-                                identityId: validIdData.toHexString(),
+                                identityId: rowId.toHexString(),
                                 limit: 1
                             )
 
@@ -832,7 +862,7 @@ struct LoadIdentityView: View {
                                 // Update the identity with DPNS name
                                 PersistentIdentity.updateDpnsName(
                                     in: modelContext,
-                                    identityId: validIdData,
+                                    identityId: rowId,
                                     dpnsName: label
                                 )
                                 try? modelContext.save()

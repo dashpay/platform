@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **44**
+Capabilities tracked: **45**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 27 | 15 | 1 | 1 |
-| Swift | Example app | 6 | 28 | 1 | 9 |
-| Kotlin | SDK | 22 | 17 | 4 | 1 |
-| Kotlin | Example app | 7 | 23 | 4 | 10 |
+| Swift | SDK | 28 | 15 | 1 | 1 |
+| Swift | Example app | 6 | 29 | 1 | 9 |
+| Kotlin | SDK | 22 | 17 | 5 | 1 |
+| Kotlin | Example app | 7 | 23 | 5 | 10 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 14 | 28 |
-| Kotlin | 8 | 10 | 26 |
+| Swift | 2 | 14 | 29 |
+| Kotlin | 8 | 10 | 27 |
 
 ## Capability status
 
@@ -64,6 +64,7 @@ Capabilities tracked: **44**
 | `system.block_and_transition_status_reads` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `voting.masternode_vote_stored_key` | supported / partial / not_applicable | partial / partial / tested |
 | `identity.load_masternode_voting_key` | supported / partial / not_applicable | partial / partial / tested |
+| `identity.load_shared_masternode_for_voting` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
 | `addresses.balance_history` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `shielded.token_purchase_from_pool` | partial / partial / required | partial / partial / required |
 | `identity.withdrawal_status` | supported / partial / not_applicable | supported / partial / not_applicable |

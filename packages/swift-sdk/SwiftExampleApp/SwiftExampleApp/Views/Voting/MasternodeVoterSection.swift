@@ -11,9 +11,11 @@ import SwiftUI
 /// read "this masternode's answer", so both always name the same masternode.
 enum MasternodeVoter: Equatable {
     /// A masternode or evonode identity loaded on this device with its voting
-    /// key (Identities, Load Identity). The key stays in the Keychain and
-    /// signs through `KeychainSigner`.
-    case storedKey(identityId: Data)
+    /// key (Identities, Load Identity), and the pro_tx_hash (wire order) its
+    /// row records for the masternode (`PersistentIdentity.votingProTxHash`).
+    /// The two differ for a masternode stored under its voter identity. The
+    /// key stays in the Keychain and signs through `KeychainSigner`.
+    case storedKey(identityId: Data, proTxHash: Data)
     /// A pro_tx_hash (wire order) typed into the sheet, with no key: enough
     /// to read any masternode's answer, never to cast. Available in every
     /// build.
@@ -46,8 +48,8 @@ enum MasternodeVoter: Equatable {
     /// masternode's answer" FFIs take.
     var wireOrderProTxHash: Data {
         switch self {
-        case .storedKey(let identityId):
-            return Self.wireOrderProTxHash(identityId: identityId)
+        case .storedKey(_, let proTxHash):
+            return proTxHash
         case .typedProTxHash(let proTxHash):
             return proTxHash
         #if DEBUG
@@ -57,13 +59,13 @@ enum MasternodeVoter: Equatable {
         }
     }
 
-    /// A loaded masternode identity's id is the pro_tx_hash as Platform names
-    /// it, the hex Core displays. The vote FFIs take the wire order, its
-    /// reverse, and reverse it back in Rust (see "pro_tx_hash byte order" in
-    /// `rs-sdk-ffi/src/voting/masternode_vote.rs`). This is the only place
-    /// the app converts between the two.
-    static func wireOrderProTxHash(identityId: Data) -> Data {
-        Data(identityId.reversed())
+    /// A pro_tx_hash typed as Platform names it, the hex Core displays, in
+    /// the wire order the vote FFIs take: its reverse, which Rust reverses
+    /// back (see "pro_tx_hash byte order" in
+    /// `rs-sdk-ffi/src/voting/masternode_vote.rs`). Load Identity converts
+    /// the typed pro_tx_hash once with it and stores the result on the row.
+    static func wireOrderProTxHash(displayOrder proTxHash: Data) -> Data {
+        Data(proTxHash.reversed())
     }
 }
 
@@ -112,8 +114,7 @@ struct MasternodeVoteCall {
         network: Network
     ) async throws {
         switch voter {
-        case .storedKey(let identityId):
-            let proTxHash = voter.wireOrderProTxHash
+        case .storedKey(let identityId, let proTxHash):
             let signer = KeychainSigner(modelContainer: modelContainer, network: network)
             try await signer.withStoredMasternodeVotingKey(identityId: identityId) { votingAddress in
                 try await withSigner(proTxHash, votingAddress, signer)
@@ -448,7 +449,7 @@ struct MasternodeVoterSection: View {
         let check: MasternodeVotingKeyCheck
         do {
             check = try await sdk.checkMasternodeVotingKey(
-                proTxHash: MasternodeVoter.wireOrderProTxHash(identityId: identityId),
+                proTxHash: identity.votingProTxHash,
                 votingAddress: checkedAddress.data
             )
         } catch {
@@ -541,7 +542,8 @@ struct MasternodeVoterSection: View {
             voter = nil
             return
         }
-        voter = selectedIdentityId.map { .storedKey(identityId: $0) }
+        voter = votingIdentities.first { $0.identityId == selectedIdentityId }
+            .map { .storedKey(identityId: $0.identityId, proTxHash: $0.votingProTxHash) }
     }
 }
 

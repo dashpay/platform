@@ -69,6 +69,16 @@ public final class PersistentIdentity {
     /// nothing recorded. Written through ``recordedVotingKey``.
     public var votingKeyCheckAddress: Data? = nil
 
+    // MARK: - Masternode pro_tx_hash
+    /// The 32-byte pro_tx_hash of the masternode or evonode this row votes
+    /// for, in the wire order the vote functions take, recorded when the row
+    /// is loaded for voting (``SDK/loadMasternodeForVoting(proTxHash:votingAddress:)``).
+    /// Kept apart from ``identityId``: a masternode without an owner identity
+    /// (a shared masternode) is stored under its voter identity, whose id is
+    /// not the pro_tx_hash. `nil` for a row stored before it was recorded;
+    /// read it through ``votingProTxHash``.
+    public var masternodeProTxHash: Data? = nil
+
     // MARK: - Public Keys
     @Relationship(deleteRule: .cascade) public var publicKeys: [PersistentPublicKey]
 
@@ -363,6 +373,15 @@ public final class PersistentIdentity {
             }
             votingKeyCheckAddress = nil
         }
+    }
+
+    /// The pro_tx_hash, in wire order, that votes cast with this row's
+    /// voting key name: ``masternodeProTxHash``. A row stored before that was
+    /// recorded could only have been loaded at its owner identity, whose id
+    /// is the pro_tx_hash in the order Platform names it, the reverse of the
+    /// wire order; such a row gets that reverse until it is loaded again.
+    public var votingProTxHash: Data {
+        masternodeProTxHash ?? Data(identityId.reversed())
     }
 
     /// The recorded check with the address of the key it was made of, as the
