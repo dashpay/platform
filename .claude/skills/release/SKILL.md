@@ -132,7 +132,7 @@ git -C "${worktree:?}" merge --no-ff -m "Merge tag 'v<version>' into master" v<v
 git -C "${worktree:?}" diff --quiet v<version> HEAD && echo "the merge has exactly the tree of v<version>"
 ```
 
-Stop, and skip the rest of this step, if the newest stable check prints another version or the tag is already in `master`; stop and ask the user if the tag names another commit. If the merge conflicts or the tree differs from the tag's, run `git -C <worktree> merge --abort`, remove the worktree and ask the user; don't push. Otherwise, after the user's go, run the newest stable check once more, since another stable release may have come out while the user decided; push only if it still prints `v<version>`. Then remove the worktree. Use the path printed above: a shell variable does not survive into a later command.
+Stop, and skip the rest of this step, if the newest stable check prints another version or the tag is already in `master`; stop and ask the user if the tag names another commit. Don't push when the merge went wrong; ask the user. If the merge conflicted, run `git -C <worktree> merge --abort`, then `git worktree remove <worktree>`. If it merged but the tree differs from the tag's, there is nothing to abort: run `git worktree remove --force <worktree>`. The merge commit is on no branch and goes with the worktree. Otherwise, after the user's go, run the newest stable check once more, since another stable release may have come out while the user decided; push only if it still prints `v<version>`. Then remove the worktree. Use the path printed above: a shell variable does not survive into a later command.
 
 ```sh
 git -C <worktree> push origin HEAD:master
