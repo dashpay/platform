@@ -582,6 +582,31 @@ fn owned(id: SubwalletId, position: u64, value: u64) -> TokenPoolNote {
     }
 }
 
+/// Record that `token`'s pool was scanned up to `height`, as a completed scan
+/// would.
+fn record_scan(conn: &Connection, token_id: Identifier, height: i64) {
+    conn.execute(
+        "INSERT INTO shielded_token_pool_scans (token_id, pool_note_count, scanned_height) \
+         VALUES (?1, 0, ?2) ON CONFLICT(token_id) DO UPDATE SET scanned_height = ?2",
+        params![token_id.as_slice(), height],
+    )
+    .expect("scan row");
+}
+
+/// The sweep as the coordinator runs it: find the orphaned reservations, then
+/// release them.
+fn sweep_all(
+    conn: &Connection,
+    owners: &BTreeSet<SubwalletId>,
+    scanned: &BTreeSet<Identifier>,
+    scanned_from: u64,
+    live: &BTreeSet<[u8; 32]>,
+) -> Result<BTreeSet<(SubwalletId, [u8; 32])>, PlatformWalletError> {
+    let orphaned = orphaned_reservations(conn, owners, scanned, scanned_from, live)?;
+    release_reservations(conn, &orphaned)?;
+    Ok(orphaned)
+}
+
 async fn tables_with(notes: &[TokenPoolNote]) -> RwLock<TestTables> {
     let tables = TestTables::new();
     watch(&tables, WALLET).await;
@@ -663,6 +688,14 @@ async fn should_release_only_orphaned_token_reservations_in_scanned_pools() {
         ..owned(id, 0, 5)
     };
     let tables = tables_with(&[orphan, owned(id, 1, 7), owned(id, 2, 9)]).await;
+    tables
+        .read()
+        .await
+        .with_token_pool_conn(|conn| {
+            record_scan(conn, token().token_id, 50);
+            Ok(())
+        })
+        .expect("scan");
     let (_, in_flight_reservation) =
         reserve_token_notes(&*tables.read().await, id, token().token_id, 9, 1).expect("reserve");
     let (_, mut recorded) =
@@ -679,7 +712,7 @@ async fn should_release_only_orphaned_token_reservations_in_scanned_pools() {
             .read()
             .await
             .with_token_pool_conn(|conn| {
-                release_orphaned_reservations(conn, &BTreeSet::from([id]), &scanned, &live)
+                sweep_all(conn, &BTreeSet::from([id]), &scanned, 50, &live)
             })
             .expect("sweep")
     };
@@ -770,10 +803,12 @@ async fn should_keep_the_reservations_of_accounts_outside_the_sweep() {
         .read()
         .await
         .with_token_pool_conn(|conn| {
-            release_orphaned_reservations(
+            record_scan(conn, token().token_id, 50);
+            sweep_all(
                 conn,
                 &BTreeSet::from([scanned_account]),
                 &BTreeSet::from([token().token_id]),
+                50,
                 &BTreeSet::new(),
             )
         })
@@ -785,4 +820,81 @@ async fn should_keep_the_reservations_of_accounts_outside_the_sweep() {
         .with_token_pool_conn(|conn| notes(conn, absent_account, token().token_id))
         .expect("notes");
     assert_eq!(held[0].reserved_by, Some([0xD2; 32]));
+}
+
+/// A token pool scan answered from below the height the credit pool scan read
+/// may not show a landed spend's token notes spent yet: its reservations are
+/// kept until a scan reaches that height.
+#[tokio::test]
+async fn should_keep_reservations_until_the_token_scan_reaches_the_credit_scan() {
+    let id = SubwalletId::new(WALLET, 0);
+    let held = TokenPoolNote {
+        reserved_by: Some([0xD3; 32]),
+        ..owned(id, 0, 5)
+    };
+    let tables = tables_with(&[held]).await;
+    let store = tables.read().await;
+    let sweep_from = |scanned_from: u64| {
+        store
+            .with_token_pool_conn(|conn| {
+                sweep_all(
+                    conn,
+                    &BTreeSet::from([id]),
+                    &BTreeSet::from([token().token_id]),
+                    scanned_from,
+                    &BTreeSet::new(),
+                )
+            })
+            .expect("sweep")
+    };
+    assert!(
+        sweep_from(0).is_empty(),
+        "a pool with no scan recorded keeps its holds"
+    );
+    store
+        .with_token_pool_conn(|conn| {
+            record_scan(conn, token().token_id, 99);
+            Ok(())
+        })
+        .expect("scan");
+    assert!(
+        sweep_from(100).is_empty(),
+        "a token scan one block behind the credit scan keeps its holds"
+    );
+    assert_eq!(sweep_from(99), BTreeSet::from([(id, [0xD3; 32])]));
+}
+
+/// A pool cannot be unwatched while a spend holds some of the wallet's notes
+/// there: watching it again would offer them to another spend. Once nothing
+/// is held, it can.
+#[tokio::test]
+async fn should_refuse_to_unwatch_a_pool_while_a_spend_holds_its_notes() {
+    let id = SubwalletId::new(WALLET, 0);
+    let tables = tables_with(&[owned(id, 0, 5)]).await;
+    let (_, reservation) =
+        reserve_token_notes(&*tables.read().await, id, token().token_id, 5, 1).expect("reserve");
+    let err = tables
+        .read()
+        .await
+        .with_token_pool_conn(|conn| remove_watch(conn, WALLET, token().token_id))
+        .expect_err("a spend holds a note");
+    assert!(
+        matches!(
+            err,
+            PlatformWalletError::TokenShieldedPoolSpendPending { .. }
+        ),
+        "got {err:?}"
+    );
+    assert_eq!(
+        balance_rows(&tables, WALLET, &[0]).await[0].reserved_balance,
+        5
+    );
+
+    reservation.release(&*tables.read().await);
+    tables
+        .read()
+        .await
+        .with_token_pool_conn(|conn| remove_watch(conn, WALLET, token().token_id))
+        .expect("nothing held");
+    assert!(balance_rows(&tables, WALLET, &[0]).await.is_empty());
 }

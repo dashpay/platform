@@ -324,13 +324,21 @@ pub(super) fn insert_watch(
 }
 
 /// Stop `wallet_id` watching `token_id`'s pool, dropping its notes and scan
-/// state there, and the pool's own state once no wallet watches it.
+/// state there, and the pool's own state once no wallet watches it. Refused
+/// ([`PlatformWalletError::TokenShieldedPoolSpendPending`]) while a spend in
+/// flight or a saved record holds any of the wallet's notes there.
 pub(super) fn remove_watch(
     conn: &mut Connection,
     wallet_id: WalletId,
     token_id: Identifier,
 ) -> Result<(), PlatformWalletError> {
     let tx = conn.transaction().map_err(storage("unwatch"))?;
+    // Unwatching forgets the wallet's notes, and with them the holds of a
+    // spend that may still land; watching again would offer those notes to
+    // another spend. Refused, inside the same transaction, until it settles.
+    if has_held_notes(&tx, wallet_id, token_id)? {
+        return Err(PlatformWalletError::TokenShieldedPoolSpendPending { token_id });
+    }
     for table in [
         "shielded_token_pool_watches",
         "shielded_token_pool_watermarks",
@@ -869,78 +877,114 @@ pub(crate) fn reserve_token_notes<S: TokenPoolConnection>(
     })
 }
 
-/// One reservation row as read: wallet id, account, token id and marker bytes.
-type HeldReservation = (Vec<u8>, u32, Vec<u8>, Vec<u8>);
+/// One reservation row as read: wallet id, account, token id, marker bytes
+/// and the height the token pool's last scan read up to.
+type HeldReservation = (Vec<u8>, u32, Vec<u8>, Vec<u8>, Option<i64>);
 
-/// Release the reservations in the pools of `scanned` (the pools this pass
-/// scanned to their end) held by neither a spend in flight here nor a saved
-/// record in `live_records`. Their spend can no longer execute (the scan
-/// found its fee notes spent or pruned its anchor, which drops the record) or
-/// its process is gone; a note it did spend is marked spent by the scan, which
-/// ran first. Only the reservations of `owners`, the accounts whose saved
-/// records `live_records` holds and that this pass scanned for, are judged: an
-/// account not registered now has records nobody read. Returns each account
-/// and marker released: the marker is the
-/// spend's activity id once its record was saved, so the caller can settle
-/// its activity row.
+/// The reservations of `owners` in the pools of `scanned` (the pools this
+/// pass scanned to their end) that neither a spend in flight here nor a saved
+/// record in `live_records` holds: their spend is not being built or settled
+/// in this process and has no record left, so its fee bundle can no longer
+/// land or it never left the wallet. Only a pool whose scan reached
+/// `scanned_from` counts: the credit pool scan that drops a landed spend's
+/// record read up to that height, so a token pool scan answered from below it
+/// may not show that spend's token notes spent yet. Only the reservations of
+/// `owners`, the accounts whose saved records `live_records` holds, are
+/// judged: an account not registered now has records nobody read.
 ///
-/// The spends in flight are read once, up front: a reservation or a rekey
-/// takes the same connection, so none lands during the sweep, and a spend
-/// that settles meanwhile only makes its notes releasable a pass later.
-pub(crate) fn release_orphaned_reservations(
+/// Reads only; [`release_reservations`] releases. Returns each account and
+/// marker found: the marker is the spend's activity id once its record was
+/// saved. The spends in flight are read once, up front: a reservation or a
+/// rekey takes the same connection, so none lands during the read.
+pub(crate) fn orphaned_reservations(
     conn: &Connection,
     owners: &BTreeSet<SubwalletId>,
     scanned: &BTreeSet<Identifier>,
+    scanned_from: u64,
     live_records: &BTreeSet<[u8; 32]>,
 ) -> Result<BTreeSet<(SubwalletId, [u8; 32])>, PlatformWalletError> {
     let in_flight: BTreeSet<[u8; 32]> = in_flight().clone();
     let mut statement = conn
         .prepare(
-            "SELECT DISTINCT wallet_id, account_index, token_id, reserved_by \
-             FROM shielded_token_pool_notes WHERE reserved_by IS NOT NULL AND spent = 0",
+            "SELECT DISTINCT n.wallet_id, n.account_index, n.token_id, n.reserved_by, \
+             s.scanned_height FROM shielded_token_pool_notes n \
+             LEFT JOIN shielded_token_pool_scans s ON s.token_id = n.token_id \
+             WHERE n.reserved_by IS NOT NULL AND n.spent = 0",
         )
         .map_err(storage("read reservations"))?;
     let held: Vec<HeldReservation> = statement
         .query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
         })
         .map_err(storage("read reservations"))?
         .collect::<rusqlite::Result<_>>()
         .map_err(storage("read reservations"))?;
-    let mut released = BTreeSet::new();
-    // One transaction: a row that fails part way leaves every reservation as
-    // it was, for a later pass to settle, rather than releasing some whose
-    // markers the caller then never learns.
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(storage("begin release"))?;
-    for (wallet_id, account_index, token_id, marker) in held {
+    let mut orphaned = BTreeSet::new();
+    for (wallet_id, account_index, token_id, marker, scanned_height) in held {
         let id = SubwalletId::new(bytes32(wallet_id, "wallet id")?, account_index);
         let token_id = Identifier::from(bytes32(token_id, "token id")?);
         let marker = bytes32(marker, "reservation")?;
+        let scanned_far_enough = scanned_height
+            .and_then(|height| u64::try_from(height).ok())
+            .is_some_and(|height| height >= scanned_from);
         if !owners.contains(&id)
             || !scanned.contains(&token_id)
+            || !scanned_far_enough
             || in_flight.contains(&marker)
             || live_records.contains(&marker)
         {
             continue;
         }
+        orphaned.insert((id, marker));
+    }
+    Ok(orphaned)
+}
+
+/// Release the token notes `releases` hold (each an account and the marker it
+/// holds them under), in one transaction: a failure part way leaves every
+/// reservation as it was, for a later pass.
+pub(crate) fn release_reservations(
+    conn: &Connection,
+    releases: &BTreeSet<(SubwalletId, [u8; 32])>,
+) -> Result<(), PlatformWalletError> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(storage("begin release"))?;
+    for (id, marker) in releases {
         tx.execute(
             "UPDATE shielded_token_pool_notes SET reserved_by = NULL \
-             WHERE wallet_id = ?1 AND account_index = ?2 AND token_id = ?3 \
-             AND reserved_by = ?4",
-            params![
-                id.wallet_id.as_slice(),
-                id.account_index,
-                token_id.as_slice(),
-                marker.as_slice()
-            ],
+             WHERE wallet_id = ?1 AND account_index = ?2 AND reserved_by = ?3",
+            params![id.wallet_id.as_slice(), id.account_index, marker.as_slice()],
         )
         .map_err(storage("release reservation"))?;
-        released.insert((id, marker));
     }
     tx.commit().map_err(storage("commit release"))?;
-    Ok(released)
+    Ok(())
+}
+
+/// Whether `wallet_id` holds unspent token notes in `token_id`'s pool under a
+/// spend in flight or a saved record.
+fn has_held_notes(
+    conn: &Connection,
+    wallet_id: WalletId,
+    token_id: Identifier,
+) -> Result<bool, PlatformWalletError> {
+    conn.query_row(
+        "SELECT 1 FROM shielded_token_pool_notes \
+         WHERE wallet_id = ?1 AND token_id = ?2 AND reserved_by IS NOT NULL AND spent = 0 \
+         LIMIT 1",
+        params![wallet_id.as_slice(), token_id.as_slice()],
+        |_| Ok(()),
+    )
+    .optional()
+    .map(|row| row.is_some())
+    .map_err(storage("read held notes"))
 }
 
 /// The Merkle paths of `selected`, notes of `token_id`'s pool, and the anchor

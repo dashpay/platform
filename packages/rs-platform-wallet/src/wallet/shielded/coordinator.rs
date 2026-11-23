@@ -1107,83 +1107,127 @@ impl NetworkShieldedCoordinator {
             .with_token_pool_conn(|conn| super::token_pool::balances(conn, wallet_id, &accounts))
     }
 
-    /// Release the token notes held by token pool spends that can no longer
-    /// execute, in the pools `scanned` (the ones this pass scanned to their
-    /// end, after the credit pool): a reservation neither a spend in flight
-    /// nor a saved record holds ([`super::token_pool::release_orphaned_reservations`]).
-    /// When a record does not read, nothing is released.
+    /// Settle the token pool spends whose token notes no saved record or
+    /// spend in flight holds any more, in the pools `scanned` (the ones this
+    /// pass scanned to their end, after the credit pool, from at least
+    /// `scanned_from`, the height the credit pool scan read up to)
+    /// ([`super::token_pool::orphaned_reservations`]). When a record does not
+    /// read, or the store retained a damaged record of a wallet it could not
+    /// load, nothing of that wallet is judged.
     ///
-    /// A spend whose token notes come back this way is shown failed only when
-    /// the network's verified protocol version binds a token bundle to its fee
-    /// bundle (from protocol version 15). Then its token notes, unspent after
-    /// a complete scan, can never be spent by it: its fee bundle can no longer
-    /// land. Below that version the same token bundle can still land with
-    /// another fee bundle, so its row stays pending: its outcome is unknown,
-    /// and showing it failed would invite paying again.
+    /// A spend whose activity row is a pending token pool spend is settled
+    /// only when the network's verified protocol version binds a token bundle
+    /// to its fee bundle (from protocol version 15): then its token notes,
+    /// unspent after a complete scan, can never be spent by it, as its fee
+    /// bundle can no longer land, so its row is marked failed and only then
+    /// are its notes released. An interruption in between leaves a failed row
+    /// with its notes still held, which the next pass releases. Below that
+    /// version the same token bundle can still land with another fee bundle:
+    /// its notes stay held and its row pending, its outcome unknown. A
+    /// reservation with no pending row (a spend that never left the wallet,
+    /// or one already settled) is released.
     async fn release_orphaned_token_reservations(
         &self,
         subwallets: &[(SubwalletId, AccountViewingKeys)],
         scanned: &BTreeSet<Identifier>,
+        scanned_from: Option<u64>,
     ) {
+        let Some(scanned_from) = scanned_from else {
+            return;
+        };
         if scanned.is_empty() {
             return;
         }
-        let store = self.store.read().await;
-        let owners: BTreeSet<SubwalletId> = subwallets.iter().map(|(id, _)| *id).collect();
-        let mut live = BTreeSet::new();
-        for (id, _) in subwallets {
-            match store.pending_redrives(*id) {
-                Ok(records) => live.extend(records.into_iter().map(|record| record.activity_id)),
+        let binds = self.network_binds_token_fee_bundles();
+        let (orphaned, pending_rows) = {
+            let store = self.store.read().await;
+            let mut owners = BTreeSet::new();
+            let mut live = BTreeSet::new();
+            for (id, _) in subwallets {
+                if store.has_unloaded_note_spends(id.wallet_id) {
+                    continue;
+                }
+                match store.pending_redrives(*id) {
+                    Ok(records) => {
+                        live.extend(records.into_iter().map(|record| record.activity_id));
+                        owners.insert(*id);
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "token note reservations kept: a saved record does not read");
+                        return;
+                    }
+                }
+            }
+            let orphaned = match store.with_token_pool_conn(|conn| {
+                super::token_pool::orphaned_reservations(
+                    conn,
+                    &owners,
+                    scanned,
+                    scanned_from,
+                    &live,
+                )
+            }) {
+                Ok(orphaned) => orphaned,
                 Err(e) => {
-                    tracing::warn!(error = %e, "token note reservations kept: a saved record does not read");
+                    tracing::warn!(error = %e, "reading orphaned token note reservations failed");
                     return;
                 }
-            }
-        }
-        let released = match store.with_token_pool_conn(|conn| {
-            super::token_pool::release_orphaned_reservations(conn, &owners, scanned, &live)
-        }) {
-            Ok(released) => released,
-            Err(e) => {
-                tracing::warn!(error = %e, "releasing orphaned token note reservations failed");
-                return;
-            }
+            };
+            let pending_rows: BTreeSet<(SubwalletId, [u8; 32])> = orphaned
+                .iter()
+                .filter(|(id, marker)| {
+                    store
+                        .get_activity_by_entry_id(*id, marker)
+                        .ok()
+                        .flatten()
+                        .is_some_and(|entry| {
+                            is_token_pool_spend(&entry.kind)
+                                && entry.status == ShieldedActivityStatus::Pending
+                        })
+                })
+                .copied()
+                .collect();
+            (orphaned, pending_rows)
         };
-        if released.is_empty() {
+        if orphaned.is_empty() {
             return;
         }
-        tracing::info!(
-            spends = released.len(),
-            "released the token notes of token pool spends that cannot execute"
-        );
-        let mut failed = Vec::new();
-        if self.network_binds_token_fee_bundles() {
-            for (id, marker) in &released {
-                let pending_token_spend = store
-                    .get_activity_by_entry_id(*id, marker)
-                    .ok()
-                    .flatten()
-                    .is_some_and(|entry| {
-                        is_token_pool_spend(&entry.kind)
-                            && entry.status == ShieldedActivityStatus::Pending
-                    });
-                if pending_token_spend {
-                    failed.push((*id, *marker));
-                }
+        // Rows first: a pending row is failed before its notes come back.
+        if binds && !pending_rows.is_empty() {
+            let persisters = self.persisters.read().await;
+            for (id, entry_id) in &pending_rows {
+                super::operations::record_activity_status_by_id(
+                    &self.store,
+                    persisters.get(&id.wallet_id),
+                    id.wallet_id,
+                    *id,
+                    entry_id,
+                    ShieldedActivityStatus::Failed,
+                )
+                .await;
             }
         }
-        drop(store);
-        let persisters = self.persisters.read().await;
-        for (id, entry_id) in failed {
-            super::operations::record_activity_status_by_id(
-                &self.store,
-                persisters.get(&id.wallet_id),
-                id.wallet_id,
-                id,
-                &entry_id,
-                ShieldedActivityStatus::Failed,
-            )
-            .await;
+        let releases: BTreeSet<(SubwalletId, [u8; 32])> = if binds {
+            orphaned
+        } else {
+            orphaned.difference(&pending_rows).copied().collect()
+        };
+        if releases.is_empty() {
+            return;
+        }
+        match self
+            .store
+            .read()
+            .await
+            .with_token_pool_conn(|conn| super::token_pool::release_reservations(conn, &releases))
+        {
+            Ok(()) => tracing::info!(
+                spends = releases.len(),
+                "released the token notes of token pool spends that cannot execute"
+            ),
+            Err(e) => {
+                tracing::warn!(error = %e, "releasing orphaned token note reservations failed")
+            }
         }
     }
 
@@ -1864,8 +1908,12 @@ impl NetworkShieldedCoordinator {
             let token_pools =
                 super::token_pool::sync_token_pools(&*self.sdk, &self.store, &subwallets, cancel)
                     .await;
-            self.release_orphaned_token_reservations(&subwallets, &token_pools.completed)
-                .await;
+            self.release_orphaned_token_reservations(
+                &subwallets,
+                &token_pools.completed,
+                notes.covered_height,
+            )
+            .await;
             token_pools.new_notes > 0
                 || token_pools.newly_spent > 0
                 || !token_pools.failed.is_empty()
@@ -3989,9 +4037,10 @@ mod tests {
     /// A token shielded transfer whose fee bundle's anchor was pruned is not
     /// shown failed by that alone: below the protocol version that binds the
     /// two bundles its token bundle can still land with another fee bundle.
-    /// Once a complete token pool scan finds its token notes unspent and
-    /// releases them, it is shown failed only where the network binds the
-    /// bundles; at protocol version 14 it stays pending, its outcome unknown.
+    /// Once a complete token pool scan finds its token notes unspent, it is
+    /// shown failed and its notes released only where the network binds the
+    /// bundles; at protocol version 14 it stays pending with its notes held,
+    /// its outcome unknown.
     #[tokio::test]
     async fn should_settle_a_token_transfer_from_its_token_notes_only_where_the_bundles_are_bound()
     {
@@ -4036,6 +4085,12 @@ mod tests {
                 store
                     .with_token_pool_conn(|conn| {
                         insert_watch(conn, id.wallet_id, &token)?;
+                        conn.execute(
+                            "INSERT INTO shielded_token_pool_scans \
+                             (token_id, pool_note_count, scanned_height) VALUES (?1, 1, 10)",
+                            rusqlite::params![token.token_id.as_slice()],
+                        )
+                        .expect("scan row");
                         insert_note_for_test(
                             conn,
                             &TokenPoolNote {
@@ -4083,7 +4138,11 @@ mod tests {
             );
 
             coordinator
-                .release_orphaned_token_reservations(&subwallets, &BTreeSet::from([token.token_id]))
+                .release_orphaned_token_reservations(
+                    &subwallets,
+                    &BTreeSet::from([token.token_id]),
+                    Some(10),
+                )
                 .await;
             assert_eq!(
                 row_status(&coordinator, id, &row.id).await,
@@ -4094,10 +4153,15 @@ mod tests {
                 .token_pool_balances(id.wallet_id)
                 .await
                 .expect("balances");
+            let expected_held = if settled == ShieldedActivityStatus::Failed {
+                (5, 0)
+            } else {
+                (0, 5)
+            };
             assert_eq!(
                 (balances[0].balance, balances[0].reserved_balance),
-                (5, 0),
-                "network {network}: the token note is spendable again"
+                expected_held,
+                "network {network}: released only once the spend is settled failed"
             );
             let _ = std::fs::remove_dir_all(&dir);
         }

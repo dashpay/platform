@@ -187,6 +187,11 @@ pub struct FileBackedShieldedStore {
     /// restoring a covered wallet's reservations fails
     /// ([`ShieldedStore::private_contact_redrives_for_wallet`]).
     unloaded_private_contact_payments: BTreeSet<Option<WalletId>>,
+    /// The wallets of damaged note-spend recovery rows retained but not
+    /// loaded, `None` for one whose wallet does not read either: their spends
+    /// may still land, but their nullifiers and activity ids are not known
+    /// here ([`Self::has_unloaded_note_spends`]).
+    unloaded_note_spends: BTreeSet<Option<WalletId>>,
     /// The private payment journal's records, by wallet and commitment, as
     /// the `shielded_private_payment_journal` table keeps them.
     private_payment_journal: BTreeMap<(WalletId, [u8; 32]), PrivatePaymentRecord>,
@@ -417,6 +422,15 @@ impl FileBackedShieldedStore {
         Ok(())
     }
 
+    /// Whether a damaged note-spend recovery row of `wallet_id`, or of a wallet
+    /// that does not read, was retained without being loaded: a spend it
+    /// records may still land, but nothing here holds its activity id, so
+    /// what it holds must not be judged orphaned.
+    pub(crate) fn has_unloaded_note_spends(&self, wallet_id: WalletId) -> bool {
+        self.unloaded_note_spends.contains(&Some(wallet_id))
+            || self.unloaded_note_spends.contains(&None)
+    }
+
     /// The signal this store raises on every change to what
     /// [`Self::local_account_balance`] returns (see [`SignalledSubwallets`]).
     /// The coordinator takes it before it wraps the store in its lock, so
@@ -595,6 +609,7 @@ impl FileBackedShieldedStore {
             pending_conn: Mutex::new(pending_conn),
             private_contact_payments: BTreeMap::new(),
             unloaded_private_contact_payments: BTreeSet::new(),
+            unloaded_note_spends: BTreeSet::new(),
             private_payment_journal: BTreeMap::new(),
             private_payment_journals: BTreeSet::new(),
             unreadable_private_payment_journal: BTreeSet::new(),
@@ -745,6 +760,7 @@ impl FileBackedShieldedStore {
                             error = %error,
                             "retaining but skipping a damaged shielded note-spend recovery row"
                         );
+                        self.unloaded_note_spends.insert(readable_wallet_id);
                         if private_contact_payment.is_some() || kind == PRIVATE_DOCUMENT_CREATE_KIND
                         {
                             self.unloaded_private_contact_payments
@@ -824,6 +840,7 @@ impl FileBackedShieldedStore {
                             reason = %error,
                             "retaining but skipping a damaged shielded note-spend recovery row"
                         );
+                        self.unloaded_note_spends.insert(readable_wallet_id);
                         if private_contact_payment.is_some() || kind == PRIVATE_DOCUMENT_CREATE_KIND
                         {
                             self.unloaded_private_contact_payments

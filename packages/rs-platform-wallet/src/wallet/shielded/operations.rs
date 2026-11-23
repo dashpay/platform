@@ -2431,7 +2431,17 @@ where
             &views,
             LiveEntryParams {
                 kind: ShieldedActivityKind::TokenShieldedTransfer,
-                direction: ShieldedDirection::Out,
+                // To one of this account's own addresses only the fee leaves
+                // the wallet; the tokens stay in its notes.
+                direction: if keys
+                    .full_viewing_key
+                    .scope_for_address(&PaymentAddress::from(recipient))
+                    .is_some()
+                {
+                    ShieldedDirection::SelfTransfer
+                } else {
+                    ShieldedDirection::Out
+                },
                 amount,
                 fee: Some(fee_used),
                 counterparty: Some(token_id.to_vec()),

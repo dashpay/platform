@@ -1333,6 +1333,15 @@ pub enum PlatformWalletError {
         available: u64,
         required: u64,
     },
+
+    /// A token shielded pool cannot be unwatched while a spend that has not
+    /// settled holds some of the wallet's notes there: forgetting them would
+    /// offer them to another spend once the pool is watched again.
+    #[error(
+        "Token {token_id}'s shielded pool holds notes of a spend that has not settled; unwatch \
+         it once the spend settles"
+    )]
+    TokenShieldedPoolSpendPending { token_id: Identifier },
 }
 
 /// The SDK's invitation errors map onto the variants the wallet used before
