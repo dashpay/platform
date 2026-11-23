@@ -223,6 +223,21 @@ fun DataContractDetailsScreen(
                 }
             }
 
+            // Contract moderation and fee pots (protocol version 14), offered for every
+            // contract: whether it is moderated and what its pots hold are the node's to answer
+            FormSection(title = "Moderation") {
+                ListItem(
+                    headlineContent = { Text("Moderation and Fee Pots") },
+                    modifier = Modifier
+                        .clickable {
+                            navController.navigate(
+                                org.dashfoundation.example.navigation.ContractModerationHub(contractIdHex),
+                            )
+                        }
+                        .testTag("contractModeration.link"),
+                )
+            }
+
             val ownedHere = current.ownerId?.let { ownerId ->
                 walletIdentities.any { it.identityId.contentEquals(ownerId) }
             } == true
