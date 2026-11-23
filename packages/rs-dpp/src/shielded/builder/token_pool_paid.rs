@@ -596,6 +596,44 @@ mod tests {
     }
 
     #[test]
+    fn rejects_an_unshield_amount_above_the_transition_limit_before_proving() {
+        use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::MAX_DISTRIBUTION_PARAM;
+
+        let (fvk, ask) = keys();
+        let address = test_orchard_address();
+        let err = build_token_unshield_with_shielded_fee_transition(
+            Identifier::from([1u8; 32]),
+            Identifier::from([2u8; 32]),
+            0,
+            TokenPoolSpender {
+                spends: vec![test_spendable_note(100)],
+                change_address: &address,
+                fvk: &fvk,
+                ask: &ask,
+                anchor: Anchor::empty_tree(),
+            },
+            Identifier::from([3u8; 32]),
+            MAX_DISTRIBUTION_PARAM + 1,
+            [0u8; 36],
+            ShieldedFeePayer {
+                spends: vec![test_spendable_note(1_000_000_000)],
+                change_address: &address,
+                fvk: &fvk,
+                ask: &ask,
+                anchor: Anchor::empty_tree(),
+            },
+            &TestProver,
+            PlatformVersion::latest(),
+        )
+        .expect_err("an amount above the limit must be rejected before proving")
+        .to_string();
+        assert!(
+            err.contains("above the most one transition moves"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
     fn rejects_a_purchase_count_outside_the_value_balance_range() {
         let (fvk, ask) = keys();
         let address = test_orchard_address();

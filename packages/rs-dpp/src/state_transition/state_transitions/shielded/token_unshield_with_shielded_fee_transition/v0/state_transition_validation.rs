@@ -37,6 +37,11 @@ impl StateTransitionStructureValidation for TokenUnshieldWithShieldedFeeTransiti
                 .into(),
             );
         }
+        // `is_valid_amount` is `amount != 0 && amount <= MAX_DISTRIBUTION_PARAM`, so its negation
+        // is exactly the `amount == 0 || amount > MAX_DISTRIBUTION_PARAM` this shipped generation
+        // checked before the predicate was split out for the wallet and the builder to share;
+        // `should_bound_the_unshield_amount_at_the_shipped_protocol_version` pins it at protocol
+        // version 14. Changing the predicate changes this generation's validation.
         if !Self::is_valid_amount(self.amount) {
             return SimpleConsensusValidationResult::new_with_error(
                 BasicError::InvalidTokenAmountError(InvalidTokenAmountError::new(
