@@ -42,7 +42,7 @@ Capabilities tracked: **32**
 | `persistence.dashpay_payment_history` | partial / not-applicable / required | not-applicable / not-applicable / not_applicable |
 | `network.masternode_discovery` | partial / not-applicable / not_applicable | partial / not-applicable / not_applicable |
 | `identity.platform_address_auto_funding` | partial / partial / not_applicable | partial / partial / not_applicable |
-| `identity.external_top_up_from_addresses` | supported / unsupported / not_applicable | unsupported / unsupported / not_applicable |
+| `identity.external_top_up_from_addresses` | supported / unsupported / not_applicable | supported / unsupported / not_applicable |
 | `tokens.authorization_decisions` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `tokens.direct_purchase_quote` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `protocol.address_validation` | supported / supported / not_applicable | partial / partial / not_applicable |
