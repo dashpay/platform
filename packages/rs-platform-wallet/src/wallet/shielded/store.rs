@@ -507,6 +507,17 @@ pub trait ShieldedStore: Send + Sync + 'static {
     /// if a matching unspent note was found.
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error>;
 
+    /// Keep, durably, that a credit pool scan proven at `height` is about to
+    /// mark notes spent, before it does: marking a fee note spent drops the
+    /// saved record of the spend it paid for, and the token note sweep must
+    /// not judge that spend's token notes from a token pool scan below the
+    /// height that dropped it, even after a restart. A store without token
+    /// pool notes keeps nothing.
+    fn note_spend_scan_height(&mut self, height: u64) -> Result<(), Self::Error> {
+        let _ = height;
+        Ok(())
+    }
+
     /// Reserve `id`'s note with `nullifier` against an in-flight
     /// spend so concurrent callers can't pick the same note.
     /// Returns `true` if the nullifier was newly added to the

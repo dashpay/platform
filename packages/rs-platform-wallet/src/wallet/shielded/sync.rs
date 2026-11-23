@@ -523,6 +523,9 @@ where
     // proof shows the tree ending within it.
     let mut scanned_to = aligned_start;
     let mut covered_height: Option<u64> = None;
+    // The highest height any batch of this pass was proven at: every spend
+    // the pass applies was seen at or below it.
+    let mut highest_batch_height: Option<u64> = None;
     let cancelled = {
         let stream = make_stream(aligned_start, tree_size);
         futures::pin_mut!(stream);
@@ -553,6 +556,7 @@ where
             // it. Stays 0 (indeterminate) only if no batch is ever produced.
             total_target = total_target.max(batch.total_count);
             total_notes_scanned += batch.notes.len() as u64;
+            highest_batch_height = highest_batch_height.max(Some(batch.block_height));
             if batch.start_index <= scanned_to {
                 let end = batch.start_index.saturating_add(batch.notes.len() as u64);
                 scanned_to = scanned_to.max(end);
@@ -757,6 +761,16 @@ where
             appended, "Shielded note sync stopped; tree progress kept, nothing published"
         );
         return Ok(MultiSyncNotesResult::default());
+    }
+
+    // Before any spend is applied: one can drop a saved record, and the
+    // height it was seen at must outlive that, even across a restart. Kept
+    // before anything else this pass saves or records, so a failure here
+    // leaves nothing half recorded for a retry to skip.
+    if let (Some(height), false) = (highest_batch_height, scanned_nullifiers.is_empty()) {
+        store
+            .note_spend_scan_height(height)
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
     }
 
     // Save decrypted notes per subwallet; count new notes per
