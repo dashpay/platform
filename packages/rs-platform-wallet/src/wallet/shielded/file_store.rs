@@ -285,6 +285,19 @@ impl FileBackedShieldedStore {
                 ],
             )
             .map_err(|e| FileShieldedStoreError::Storage(format!("persist redrive: {e}")))?;
+            // The token notes a token pool spend holds under this record now
+            // belong to a saved spend, which may be sent: the token note sweep
+            // tells it from one never saved by this, written with the record.
+            tx.execute(
+                "UPDATE shielded_token_pool_notes SET record_saved = 1 \
+                 WHERE wallet_id = ?1 AND account_index = ?2 AND reserved_by = ?3",
+                rusqlite::params![
+                    id.wallet_id.as_slice(),
+                    id.account_index,
+                    redrive.activity_id.as_slice()
+                ],
+            )
+            .map_err(|e| FileShieldedStoreError::Storage(format!("mark token hold saved: {e}")))?;
             Self::insert_journal_rows(&tx, id.wallet_id, &journal_rows)?;
             tx.commit()
                 .map_err(|e| FileShieldedStoreError::Storage(format!("commit redrive: {e}")))?;
