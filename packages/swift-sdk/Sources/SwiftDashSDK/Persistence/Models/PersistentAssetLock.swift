@@ -229,12 +229,14 @@ public final class PersistentAssetLock {
     /// refuses another (`assetLockRecipientMismatch`). `nil` for other
     /// funding types and for unbound locks that record no identity, such as
     /// one rebuilt from the chain; a resume of those is refused
-    /// (`assetLockRecipientUnknown`) until one is assigned.
+    /// (`assetLockRecipientUnknown`). Only the SDK writes it, when the lock is
+    /// built or assigned a recipient (`assignTopUpRecipient`, which refuses a
+    /// lock rebuilt from the chain).
     ///
     /// Default `nil` on the column keeps SwiftData's lightweight migration
     /// safe for rows that pre-date this field. Lands in the live, not yet
     /// published, V5 schema.
-    public var identityRecipient: Data?
+    public internal(set) var identityRecipient: Data?
 
     /// Record timestamps.
     public var createdAt: Date

@@ -5843,7 +5843,9 @@ extension ManagedPlatformWallet {
     }
 
     /// Outcome of `resumeTopUpToRecordedRecipient`: the identity the lock
-    /// paid (32 bytes; in this wallet or not) and its proved new balance.
+    /// paid (32 bytes; in this wallet or not) and its balance after the
+    /// top-up: the proved one, or for an identity this wallet manages a newer
+    /// verified balance the wallet already holds.
     public struct IdentityTopUpResult: Equatable, Sendable {
         public let identityId: Data
         public let newBalance: UInt64
@@ -5871,10 +5873,14 @@ extension ManagedPlatformWallet {
     /// with a new lock, or the identity may be paid twice:
     /// - `transactionBroadcastRejected`: Core rejected the lock and it was
     ///   removed with its inputs released; a new call is safe.
-    /// - any other error: resume that outpoint with
+    /// - `transactionBroadcastUnconfirmed`: the lock may be on the network,
+    ///   or its row may come back after a restart while its inputs stay
+    ///   reserved. Never build a new lock; resume that outpoint with
     ///   `resumeTopUpToRecordedRecipient`, after the next launch if it is not
-    ///   tracked now. A resume answering `assetLockNotTracked` means the lock
-    ///   was removed before it was sent, so a new call is safe.
+    ///   tracked now, whatever the resume answers.
+    /// - any other error: resume that outpoint the same way. Only after one
+    ///   of these errors does a resume answering `assetLockNotTracked` mean
+    ///   the lock was removed before it was sent, so a new call is safe.
     ///
     /// The native call runs to completion even if the calling task is
     /// cancelled, and its outcome is still delivered.
@@ -5939,7 +5945,8 @@ extension ManagedPlatformWallet {
     /// `assetLockAlreadyConsumed`, `identityNotFound` for a bound lock whose
     /// identity the wallet has not loaded yet (resume once identities are
     /// synced), `assetLockRecipientUnknown` for an unbound lock recording no
-    /// identity (assign one with `assignTopUpRecipient` first), and
+    /// identity (assign one with `assignTopUpRecipient` first, unless the
+    /// lock was rebuilt from the chain), and
     /// `assetLockFundingMismatch` for a lock that is not an identity top-up.
     /// The native call runs to completion even if the calling task is
     /// cancelled, and its outcome is still delivered.

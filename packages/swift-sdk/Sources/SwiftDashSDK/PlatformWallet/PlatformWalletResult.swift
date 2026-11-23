@@ -695,14 +695,16 @@ public enum PlatformWalletError: LocalizedError {
     /// `ManagedPlatformWallet.resumeTopUpToRecordedRecipient`, which pays the
     /// recorded identity (`TrackedAssetLock.identityRecipient`).
     case assetLockRecipientMismatch(String)
-    /// Code 81: an unbound identity top-up lock records no identity to pay —
-    /// it was rebuilt from the chain, for example after a restore from the
-    /// seed — so no resume pays it; it may have been meant for someone
-    /// else's identity. Nothing was submitted or paid. Not retryable as is:
-    /// assign the lock a recipient the user chooses
-    /// (`ManagedPlatformWallet.assignTopUpRecipient`), then resume it. Such a
-    /// lock is flagged `identityRecipientUnassigned` on the tracked-lock
-    /// lists.
+    /// Code 81: an unbound identity top-up lock records no identity to pay,
+    /// so no resume pays it; it may have been meant for someone else's
+    /// identity. Nothing was submitted or paid. Not retryable as is: a lock
+    /// flagged `identityRecipientUnassigned` on the tracked-lock lists can be
+    /// assigned a recipient the user chooses
+    /// (`ManagedPlatformWallet.assignTopUpRecipient`) and then resumed. A
+    /// lock rebuilt from the chain (`RecoveredFromChain`, for example after a
+    /// restore from the seed) is not flagged: Platform may have consumed it
+    /// already, so assigning it is refused with
+    /// `assetLockConsumptionUnknown` and it stays unpaid.
     case assetLockRecipientUnknown(String)
     /// The contact requests with that identity came or went privately
     /// (protocol version 15): a public request to it, in reply or as a
