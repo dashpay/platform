@@ -1023,6 +1023,11 @@ extension PlatformWalletManager {
     /// included): it may already be on chain or may still execute, so the
     /// caller must NOT retry (the spent notes stay reserved Rust-side
     /// until a later shielded sync resolves them).
+    ///
+    /// Admitted as an async native operation until its result is delivered:
+    /// `shutdown()` waits for it, `deleteWallet` throws `invalidHandle` while
+    /// it runs, and a call made once a shutdown has begun throws
+    /// `invalidHandle` before any native work.
     public func shieldedTransfer(
         walletId: Data,
         resolver: MnemonicResolver,
@@ -1052,7 +1057,13 @@ extension PlatformWalletManager {
             )
         }
 
+        // Admitted through the detached call and the result delivery, so
+        // `shutdown()` cannot destroy the handle under the spend. Cancelling
+        // the caller does not release it early: `.value` waits for the task.
+        try admitNativeOp("shieldedTransfer")
+        defer { finishNativeOp() }
         let handle = self.handle
+        let calls = nativeShieldedSpendCalls
         try await Task.detached(priority: .userInitiated) {
             // MnemonicResolver is passed to Rust via `passUnretained`,
             // so the Rust ctx pointer dangles unless the Swift owner
@@ -1078,7 +1089,7 @@ extension PlatformWalletManager {
                         // pass the text as a C string. Rust validates the
                         // 32-byte limit and does the 36-byte encoding.
                         let send: (UnsafePointer<CChar>?) throws -> Void = { memoCStr in
-                            try platform_wallet_manager_shielded_transfer(
+                            try calls.transfer(
                                 handle, widPtr, resolverHandle, account, recipientPtr, amount,
                                 memoCStr
                             ).check()
@@ -1196,6 +1207,8 @@ extension PlatformWalletManager {
     /// already be on chain, so the caller must NOT retry (a retry signs a
     /// second transition). Its activity row stays pending until the
     /// shielded scan sees its note; nothing is reserved wallet-side.
+    ///
+    /// Admitted until its result is delivered, as [`shieldedTransfer`] is.
     public func shieldedShield(
         walletId: Data,
         shieldedAccount: UInt32 = 0,
@@ -1214,8 +1227,13 @@ extension PlatformWalletManager {
             )
         }
 
+        // Admitted through the call and the result delivery, as in
+        // `shieldedTransfer`.
+        try admitNativeOp("shieldedShield")
+        defer { finishNativeOp() }
         let handle = self.handle
         let signerHandle = addressSigner.handle
+        let calls = nativeShieldedSpendCalls
 
         try await Task.detached(priority: .userInitiated) {
             // KeychainSigner is passed to Rust via `passUnretained`, so
@@ -1231,7 +1249,7 @@ extension PlatformWalletManager {
                     else {
                         throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
                     }
-                    try platform_wallet_manager_shielded_shield(
+                    try calls.shield(
                         handle, widPtr, shieldedAccount, paymentAccount, amount, signerHandle
                     ).check()
                 }
@@ -1270,6 +1288,8 @@ extension PlatformWalletManager {
     /// with `.shieldedIdentityDebitPending`. Inspect durable records with
     /// `shieldedIdentityDebitRecoveryRecords(walletId:)`; explicit abandonment
     /// requires acknowledging that another payment may be an additional debit.
+    ///
+    /// Admitted until its balance is returned, as [`shieldedTransfer`] is.
     @discardableResult
     public func shieldedShieldFromIdentity(
         walletId: Data,
@@ -1294,8 +1314,13 @@ extension PlatformWalletManager {
             )
         }
 
+        // Admitted through the call and the delivery of the balance, as in
+        // `shieldedTransfer`.
+        try admitNativeOp("shieldedShieldFromIdentity")
+        defer { finishNativeOp() }
         let handle = self.handle
         let signerHandle = identitySigner.handle
+        let calls = nativeShieldedSpendCalls
 
         return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
             // Rust writes the proven post-debit identity balance here on
@@ -1319,7 +1344,7 @@ extension PlatformWalletManager {
                                 "identityId baseAddress is nil"
                             )
                         }
-                        try platform_wallet_manager_shielded_shield_from_identity(
+                        try calls.shieldFromIdentity(
                             handle, widPtr, shieldedAccount, idPtr, amount,
                             signerHandle, &newBalance
                         ).check()
@@ -1355,6 +1380,8 @@ extension PlatformWalletManager {
     /// already be on chain, so the caller must NOT retry (a retry signs a
     /// second transition). Its activity row stays pending until the
     /// shielded scan sees its note; nothing is reserved wallet-side.
+    ///
+    /// Admitted until its result is delivered, as [`shieldedTransfer`] is.
     public func shieldedShieldToRecipient(
         walletId: Data,
         shieldedAccount: UInt32 = 0,
@@ -1380,8 +1407,13 @@ extension PlatformWalletManager {
             )
         }
 
+        // Admitted through the call and the result delivery, as in
+        // `shieldedTransfer`.
+        try admitNativeOp("shieldedShieldToRecipient")
+        defer { finishNativeOp() }
         let handle = self.handle
         let signerHandle = addressSigner.handle
+        let calls = nativeShieldedSpendCalls
 
         try await Task.detached(priority: .userInitiated) {
             // Guaranteed signer keepalive across the whole FFI call :
@@ -1404,7 +1436,7 @@ extension PlatformWalletManager {
                         // pass the text as a C string — Rust validates the
                         // 32-byte limit and does the 36-byte encoding.
                         let send: (UnsafePointer<CChar>?) throws -> Void = { memoCStr in
-                            try platform_wallet_manager_shielded_shield_to_recipient(
+                            try calls.shieldToRecipient(
                                 handle, widPtr, shieldedAccount, paymentAccount,
                                 recipientPtr, amount, memoCStr, signerHandle
                             ).check()
@@ -1435,6 +1467,8 @@ extension PlatformWalletManager {
     /// included): it may already be on chain or may still execute, so the
     /// caller must NOT retry (the spent notes stay reserved Rust-side
     /// until a later shielded sync resolves them).
+    ///
+    /// Admitted until its result is delivered, as [`shieldedTransfer`] is.
     public func shieldedUnshield(
         walletId: Data,
         resolver: MnemonicResolver,
@@ -1463,7 +1497,12 @@ extension PlatformWalletManager {
             )
         }
 
+        // Admitted through the call and the result delivery, as in
+        // `shieldedTransfer`.
+        try admitNativeOp("shieldedUnshield")
+        defer { finishNativeOp() }
         let handle = self.handle
+        let calls = nativeShieldedSpendCalls
         try await Task.detached(priority: .userInitiated) {
             // Guaranteed resolver keepalive across the FFI call :
             // same rationale as `shieldedTransfer`.
@@ -1474,7 +1513,7 @@ extension PlatformWalletManager {
                         throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
                     }
                     try toPlatformAddress.withCString { addrCStr in
-                        try platform_wallet_manager_shielded_unshield(
+                        try calls.unshield(
                             handle, widPtr, resolverHandle, account, addrCStr, amount
                         ).check()
                     }
@@ -1502,6 +1541,8 @@ extension PlatformWalletManager {
     /// included): it may already be on chain or may still execute, so the
     /// caller must NOT retry (the spent notes stay reserved Rust-side
     /// until a later shielded sync resolves them).
+    ///
+    /// Admitted until its result is delivered, as [`shieldedTransfer`] is.
     public func shieldedIdentityTopUpFromPool(
         walletId: Data,
         resolver: MnemonicResolver,
@@ -1530,7 +1571,12 @@ extension PlatformWalletManager {
             )
         }
 
+        // Admitted through the call and the result delivery, as in
+        // `shieldedTransfer`.
+        try admitNativeOp("shieldedIdentityTopUpFromPool")
+        defer { finishNativeOp() }
         let handle = self.handle
+        let calls = nativeShieldedSpendCalls
         try await Task.detached(priority: .userInitiated) {
             // Guaranteed resolver keepalive across the FFI call :
             // same rationale as `shieldedTransfer`.
@@ -1548,7 +1594,7 @@ extension PlatformWalletManager {
                                 "identityId baseAddress is nil"
                             )
                         }
-                        try platform_wallet_manager_shielded_identity_top_up_from_pool(
+                        try calls.identityTopUpFromPool(
                             handle, widPtr, resolverHandle, account, idPtr, amount
                         ).check()
                     }
@@ -1587,6 +1633,8 @@ extension PlatformWalletManager {
     /// included): it may already be on chain or may still execute, so the
     /// caller must NOT retry (the spent notes stay reserved Rust-side
     /// until a shielded sync sees the purchase land).
+    ///
+    /// Admitted until its result is delivered, as [`shieldedTransfer`] is.
     public func shieldedTokenPurchaseFromPool(
         walletId: Data,
         resolver: MnemonicResolver,
@@ -1617,7 +1665,12 @@ extension PlatformWalletManager {
             )
         }
 
+        // Admitted through the call and the result delivery, as in
+        // `shieldedTransfer`.
+        try admitNativeOp("shieldedTokenPurchaseFromPool")
+        defer { finishNativeOp() }
         let handle = self.handle
+        let calls = nativeShieldedSpendCalls
         try await Task.detached(priority: .userInitiated) {
             // Guaranteed resolver keepalive across the FFI call:
             // same rationale as `shieldedTransfer`.
@@ -1635,7 +1688,7 @@ extension PlatformWalletManager {
                                 "contractId baseAddress is nil"
                             )
                         }
-                        try platform_wallet_manager_shielded_token_purchase_from_pool(
+                        try calls.tokenPurchaseFromPool(
                             handle,
                             widPtr,
                             resolverHandle,
@@ -2155,6 +2208,8 @@ extension PlatformWalletManager {
     /// included): it may already be on chain or may still execute, so the
     /// caller must NOT retry (the spent notes stay reserved Rust-side
     /// until a later shielded sync resolves them).
+    ///
+    /// Admitted until its result is delivered, as [`shieldedTransfer`] is.
     public func shieldedWithdraw(
         walletId: Data,
         resolver: MnemonicResolver,
@@ -2179,7 +2234,12 @@ extension PlatformWalletManager {
             )
         }
 
+        // Admitted through the call and the result delivery, as in
+        // `shieldedTransfer`.
+        try admitNativeOp("shieldedWithdraw")
+        defer { finishNativeOp() }
         let handle = self.handle
+        let calls = nativeShieldedSpendCalls
         try await Task.detached(priority: .userInitiated) {
             // Guaranteed resolver keepalive across the FFI call :
             // same rationale as `shieldedTransfer`.
@@ -2190,7 +2250,7 @@ extension PlatformWalletManager {
                         throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
                     }
                     try toCoreAddress.withCString { addrCStr in
-                        try platform_wallet_manager_shielded_withdraw(
+                        try calls.withdraw(
                             handle, widPtr, resolverHandle, account, addrCStr, amount,
                             coreFeePerByte
                         ).check()
@@ -2234,6 +2294,9 @@ extension PlatformWalletManager {
     ///
     /// Heavy CPU work (Halo 2 proof + per-key signing) runs on a
     /// detached task so the caller's actor isn't blocked.
+    ///
+    /// Admitted until the identity id or its error is delivered, as
+    /// [`shieldedTransfer`] is.
     public func shieldedIdentityCreateFromPool(
         walletId: Data,
         resolver: MnemonicResolver,
@@ -2270,9 +2333,14 @@ extension PlatformWalletManager {
             )
         }
 
+        // Admitted through the call and the delivery of the identity id or
+        // its typed error, as in `shieldedTransfer`.
+        try admitNativeOp("shieldedIdentityCreateFromPool")
+        defer { finishNativeOp() }
         let handle = self.handle
         let identitySignerHandle = identitySigner.handle
         let fallbackAddressBytes = sendToAddressOnCreationFailure
+        let calls = nativeShieldedSpendCalls
 
         return try await Task.detached(priority: .userInitiated) { () -> Data in
             var outIdentityId: (
@@ -2319,7 +2387,7 @@ extension PlatformWalletManager {
                             identityPubkeys,
                             buffers: pubkeyBuffers
                         ) { ffiRowsPtr, ffiRowsCount in
-                            platform_wallet_manager_shielded_identity_create_from_pool(
+                            calls.identityCreateFromPool(
                                 handle,
                                 widPtr,
                                 resolverHandle,

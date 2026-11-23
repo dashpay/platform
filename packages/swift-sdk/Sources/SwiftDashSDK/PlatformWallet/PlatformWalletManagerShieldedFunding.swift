@@ -132,6 +132,11 @@ extension PlatformWalletManager {
     ///     lock's outpoint (`AssetLockBuiltOutPoint`), before
     ///     the lock's row is persisted or the lock is broadcast. See
     ///     `AssetLockBuiltHandler`.
+    ///
+    /// The call holds the manager's native-operation admission until it
+    /// returns: `deleteWallet` throws `invalidHandle` and `shutdown()` waits
+    /// for it, and a call made once a shutdown has begun throws
+    /// `invalidHandle` before any native work.
     public func shieldedFundFromAssetLock(
         walletId: Data,
         fundingAccountIndex: UInt32,
@@ -145,7 +150,13 @@ extension PlatformWalletManager {
             recipients: recipients
         )
 
+        // Admitted through the call and the result delivery, so
+        // `shutdown()` cannot destroy the handle under the funding.
+        // Cancelling the caller does not release it early.
+        try admitNativeOp("shieldedFundFromAssetLock")
+        defer { finishNativeOp() }
         let handle = self.handle
+        let calls = nativeShieldedSpendCalls
         let recipientRaw43 = recipients[0].recipientRaw43
         // Constructed on the calling actor so it lives for the
         // entire detached Task. Released after `withExtendedLifetime`
@@ -177,7 +188,7 @@ extension PlatformWalletManager {
                     try Self.withOptionalSurplusOutput(surplusOutput) { surplusPtr, surplusLen in
                         let result = withExtendedLifetime(coreSigner) {
                             withAssetLockBuiltCallback(onAssetLockBuilt) { builtFn, builtContext in
-                                platform_wallet_manager_shielded_fund_from_asset_lock(
+                                calls.fundFromAssetLock(
                                     handle,
                                     widPtr,
                                     fundingAccountIndex,
@@ -221,6 +232,8 @@ extension PlatformWalletManager {
     ///     lock's outpoint (`AssetLockBuiltOutPoint`), before
     ///     the lock's row is persisted or the lock is broadcast. See
     ///     `AssetLockBuiltHandler`.
+    ///
+    /// Admitted until it returns, as [`shieldedFundFromAssetLock`] is.
     public func shieldedFundFromCoinJoinDrain(
         walletId: Data,
         coinJoinAccountIndex: UInt32 = 0,
@@ -232,7 +245,12 @@ extension PlatformWalletManager {
             recipients: recipients
         )
 
+        // Admitted through the call and the result delivery, as in
+        // `shieldedFundFromAssetLock`.
+        try admitNativeOp("shieldedFundFromCoinJoinDrain")
+        defer { finishNativeOp() }
         let handle = self.handle
+        let calls = nativeShieldedSpendCalls
         let recipientRaw43 = recipients[0].recipientRaw43
         // Constructed on the calling actor so it lives for the entire
         // detached Task — see `shieldedFundFromAssetLock` for why
@@ -259,7 +277,7 @@ extension PlatformWalletManager {
                     }
                     let result = withExtendedLifetime(coreSigner) {
                         withAssetLockBuiltCallback(onAssetLockBuilt) { builtFn, builtContext in
-                            platform_wallet_manager_shielded_fund_from_asset_lock_coinjoin_drain(
+                            calls.fundFromCoinJoinDrain(
                                 handle,
                                 widPtr,
                                 coinJoinAccountIndex,
@@ -416,6 +434,9 @@ extension PlatformWalletManager {
     ///     that index with every DashPay receiving account (change
     ///     returns to BIP44); it does not restrict DashPay contributions.
     ///   - progress: optional live-progress handler (see above).
+    ///
+    /// Admitted until it returns, as [`shieldedFundFromAssetLock`] is, so
+    /// `shutdown()` waits for the whole seeding run.
     public func seedShieldedPoolNotes(
         walletId: Data,
         account: UInt32 = 0,
@@ -434,7 +455,12 @@ extension PlatformWalletManager {
             )
         }
 
+        // Admitted through the call and the result delivery, as in
+        // `shieldedFundFromAssetLock`.
+        try admitNativeOp("seedShieldedPoolNotes")
+        defer { finishNativeOp() }
         let handle = self.handle
+        let calls = nativeShieldedSpendCalls
 
         try await Task.detached(priority: .userInitiated) {
             // Constructed inside the detached task so nothing crosses back
@@ -463,7 +489,7 @@ extension PlatformWalletManager {
                 }
 
                 let result = withExtendedLifetime(coreSigner) {
-                    platform_wallet_manager_shielded_seed_pool_notes(
+                    calls.seedPoolNotes(
                         handle,
                         widPtr,
                         account,

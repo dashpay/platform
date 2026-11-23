@@ -671,8 +671,10 @@ public class PlatformWalletManager: ObservableObject {
     /// teardown. Cleared as soon as the last admitted operation finishes.
     private var drainingNativeHandle: Handle = NULL_HANDLE
 
-    /// Async native entrypoints (create, load, and local balance snapshots)
-    /// between admission and the end of their MainActor epilogue.
+    /// Async native entrypoints (create, load, local balance snapshots,
+    /// shielded spends, shields and pool funding, wallet drains, private
+    /// documents and contact requests) between admission and the end of
+    /// their MainActor epilogue.
     /// [`shutdown()`] waits for this to reach zero before destroying the
     /// captured handle: an admitted op must complete its FULL transaction (FFI +
     /// publish) or fail on its own terms — never be failed retroactively
@@ -741,6 +743,11 @@ public class PlatformWalletManager: ObservableObject {
     /// Test seam for the native calls of the async `loadFromPersistor()`
     /// overload; same contract as [`nativeTeardownCalls`].
     internal var nativeLoadCalls = PlatformWalletNativeLoadCalls.live
+
+    /// Test seam for the native calls of the admitted shielded spend
+    /// wrappers (pool spends, shields, pool funding, identity-debit
+    /// abandonment); same contract as [`nativeTeardownCalls`].
+    internal var nativeShieldedSpendCalls = PlatformWalletNativeShieldedSpendCalls.live
 
     /// Native snapshot reads and their paired allocation release. Kept
     /// injectable so ownership and shutdown admission are tested together.
