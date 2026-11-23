@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::io::BufReader;
+use crate::verify::with_proved_root_on_budget_exceeded;
 use crate::drive::balances::balance_path_vec;
 use grovedb::query_result_type::PathKeyOptionalElementTrio;
 use grovedb::PathQuery;
@@ -478,7 +479,9 @@ impl Drive {
                                         &mut budget,
                                         platform_version,
                                     )
-                                    .map_err(Error::from)
+                                    .map_err(|error| {
+                                        with_proved_root_on_budget_exceeded(root_hash, error.into())
+                                    })
                                 })
                                 .transpose()?;
                             (root_hash, document, Some(owner_balance))
@@ -2343,7 +2346,10 @@ impl Drive {
                             document_type,
                             &mut budget,
                             platform_version,
-                        )?
+                        )
+                        .map_err(|error| {
+                            with_proved_root_on_budget_exceeded(root_hash, error.into())
+                        })?
                     }
                     Some(_) => {
                         return Err(Error::Proof(ProofError::CorruptedProof(
@@ -3578,15 +3584,8 @@ fn verify_contract_document_restore_execution(
             contract_id
         )),
     ))?;
-    let document_type = contract.document_type_for_name(document_type_name)?;
-    let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
-    let document = Document::from_bytes_with_budget(
-        document_bytes,
-        document_type,
-        &mut budget,
-        platform_version,
-    )?;
-    let document_id = document.id();
+    let _document_type = contract.document_type_for_name(document_type_name)?;
+    let document_id = Document::id_from_bytes(document_bytes, platform_version)?;
     let document_hash = hash_double(document_bytes);
     let (root_hash, mut entries) = Drive::verify_contract_document_removals(
         proof,

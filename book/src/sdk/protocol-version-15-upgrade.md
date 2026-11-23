@@ -67,10 +67,15 @@ As long as its nodes are not banned by one of the failures above:
    one epoch before the switch.
 2. If the app still supports an older build in the field, show its users an update notice
    before the activation: after it, name lookups and DashPay stop working there.
-3. Rust apps that match `dash_sdk::error::StaleNodeError` or
-   `dpp::data_contract::errors::DataContractError` exhaustively need arms for the variants 5.1
-   adds (`StaleNodeError::PrivateDocumentStoreBehind`, `StaleNodeError::NewerProtocolVersion`,
-   `DataContractError::DecodedValueBudgetExceeded`), or a wildcard arm.
+3. Rust apps that match `dash_sdk::error::StaleNodeError`,
+   `dpp::data_contract::errors::DataContractError`, or `drive::error::proof::ProofError`
+   exhaustively need arms for the variants 5.1 adds (`StaleNodeError::PrivateDocumentStoreBehind`,
+   `StaleNodeError::NewerProtocolVersion`, `DataContractError::DecodedValueBudgetExceeded`,
+   `ProofError::DecodedValueBudgetExceeded { .. }`), or a wildcard arm. Direct `drive` proof
+   verifiers return `ProofError::DecodedValueBudgetExceeded { root_hash, .. }` carrying the
+   reconstructed root hash; higher-level `drive-proof-verifier` / `dash-sdk` callers authenticate
+   that root against the quorum signature and surface an honest refusal as
+   `drive_proof_verifier::Error::UnusableVerifiedResult`.
 4. Apps that read document sums or averages: a type that keeps its sums in 128 bits can hold a
    sum past what a 64-bit integer holds, and a 5.1 SDK returns it whole from a proved query.
    The result types widen, so code that stored a sum in a 64-bit integer has to change:

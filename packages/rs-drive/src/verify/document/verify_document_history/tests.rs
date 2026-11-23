@@ -771,11 +771,10 @@ fn should_authenticate_history_pages_metadata_and_absence() {
         .unwrap();
     for key in [vec![0; 8], vec![0; 15], vec![0; 17]] {
         assert!(query
-            .decode_entries(
+            .decode_entries_serialized(
                 vec![(key, Element::new_item(bytes.clone()))],
                 document_type,
-                None,
-                version
+                version,
             )
             .is_err());
     }
@@ -1198,11 +1197,10 @@ fn should_reject_history_keys_that_are_not_sixteen_bytes() {
     key.extend(encode_u64(1));
     assert_eq!(
         query
-            .decode_entries(
+            .decode_entries_serialized(
                 vec![(key.clone(), Element::new_item(bytes.clone()))],
                 document_type,
-                None,
-                version
+                version,
             )
             .unwrap()[0]
             .revision,
@@ -1212,10 +1210,9 @@ fn should_reject_history_keys_that_are_not_sixteen_bytes() {
     overlong.push(0);
     for invalid in [key[..8].to_vec(), key[..15].to_vec(), overlong] {
         let error = query
-            .decode_entries(
+            .decode_entries_serialized(
                 vec![(invalid, Element::new_item(bytes.clone()))],
                 document_type,
-                None,
                 version,
             )
             .unwrap_err();

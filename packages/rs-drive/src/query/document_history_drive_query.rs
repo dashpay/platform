@@ -141,6 +141,52 @@ pub struct SerializedDocumentHistoryDriveQueryExecutionResult {
     pub lifecycle: Option<DocumentHistoryLifecycle>,
 }
 
+impl SerializedDocumentHistoryDriveQueryExecutionResult {
+    /// Materializes each header-validated revision entry into a [`Document`], enforcing
+    /// `budget` when supplied.
+    pub fn into_documents(
+        self,
+        document_id: &[u8; 32],
+        document_type: DocumentTypeRef,
+        mut budget: Option<&mut DecodedValueBudget>,
+        platform_version: &PlatformVersion,
+    ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
+        let entries = self
+            .entries
+            .into_iter()
+            .map(|entry| {
+                let document = match budget.as_deref_mut() {
+                    Some(budget) => Document::from_bytes_with_budget(
+                        &entry.document_bytes,
+                        document_type,
+                        budget,
+                        platform_version,
+                    )?,
+                    None => Document::from_bytes(
+                        &entry.document_bytes,
+                        document_type,
+                        platform_version,
+                    )?,
+                };
+                if document.id().as_slice() != document_id
+                    || document.revision().unwrap_or(1) != entry.revision
+                {
+                    return Err(corrupt("history revision does not match its key"));
+                }
+                Ok(DocumentHistoryEntry {
+                    time_ms: entry.time_ms,
+                    revision: entry.revision,
+                    document,
+                })
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        Ok(DocumentHistoryDriveQueryExecutionResult {
+            entries,
+            lifecycle: self.lifecycle,
+        })
+    }
+}
+
 pub(crate) fn invalid(message: &str) -> Error {
     Error::Query(QuerySyntaxError::Unsupported(message.to_owned()))
 }
@@ -291,43 +337,16 @@ impl DocumentHistoryDriveQuery {
         })
     }
 
+    #[cfg(any(feature = "server", test))]
     pub(crate) fn decode_result(
         &self,
         rows: Vec<grovedb::query_result_type::PathKeyOptionalElementTrio>,
         document_type: DocumentTypeRef,
-        mut budget: Option<&mut DecodedValueBudget>,
+        budget: Option<&mut DecodedValueBudget>,
         version: &PlatformVersion,
     ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
-        let serialized = self.decode_result_serialized(rows, document_type, version)?;
-        let entries = serialized
-            .entries
-            .into_iter()
-            .map(|entry| {
-                let document = match budget.as_deref_mut() {
-                    Some(budget) => Document::from_bytes_with_budget(
-                        &entry.document_bytes,
-                        document_type,
-                        budget,
-                        version,
-                    )?,
-                    None => Document::from_bytes(&entry.document_bytes, document_type, version)?,
-                };
-                if document.id().as_slice() != self.document_id
-                    || document.revision().unwrap_or(1) != entry.revision
-                {
-                    return Err(corrupt("history revision does not match its key"));
-                }
-                Ok(DocumentHistoryEntry {
-                    time_ms: entry.time_ms,
-                    revision: entry.revision,
-                    document,
-                })
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
-        Ok(DocumentHistoryDriveQueryExecutionResult {
-            entries,
-            lifecycle: serialized.lifecycle,
-        })
+        self.decode_result_serialized(rows, document_type, version)?
+            .into_documents(&self.document_id, document_type, budget, version)
     }
 
     pub(crate) fn lifecycle(
@@ -523,40 +542,6 @@ impl DocumentHistoryDriveQuery {
                     time_ms,
                     revision,
                     document_bytes: bytes,
-                })
-            })
-            .collect()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn decode_entries(
-        &self,
-        entries: Vec<(Vec<u8>, Element)>,
-        document_type: DocumentTypeRef,
-        mut budget: Option<&mut DecodedValueBudget>,
-        version: &PlatformVersion,
-    ) -> Result<Vec<DocumentHistoryEntry>, Error> {
-        self.decode_entries_serialized(entries, document_type, version)?
-            .into_iter()
-            .map(|entry| {
-                let document = match budget.as_deref_mut() {
-                    Some(budget) => Document::from_bytes_with_budget(
-                        &entry.document_bytes,
-                        document_type,
-                        budget,
-                        version,
-                    )?,
-                    None => Document::from_bytes(&entry.document_bytes, document_type, version)?,
-                };
-                if document.id().as_slice() != self.document_id
-                    || document.revision().unwrap_or(1) != entry.revision
-                {
-                    return Err(corrupt("history revision does not match its key"));
-                }
-                Ok(DocumentHistoryEntry {
-                    time_ms: entry.time_ms,
-                    revision: entry.revision,
-                    document,
                 })
             })
             .collect()

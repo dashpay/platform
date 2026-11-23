@@ -1641,14 +1641,27 @@ fn verify_document_history_response_v1(
             error: error.to_string(),
         })?;
     let query_version = proof_query_platform_version(metadata)?;
-    let (root, history) = Drive::verify_document_history(
+    let (root, serialized_history) = Drive::verify_document_history_serialized(
         &query,
         supported_grovedb_proof_bytes(proof)?,
         document_type,
         query_version,
     )
-    .map_proved_budget_error(proof, metadata, provider)?;
+    .map_drive_error(proof, metadata)?;
     verify_tenderdash_proof(proof, metadata, &root, provider)?;
+    let mut budget = dpp::data_contract::document_type::DecodedValueBudget::new(
+        dpp::data_contract::document_type::DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
+    );
+    let history = serialized_history
+        .into_documents(
+            &query.document_id,
+            document_type,
+            Some(&mut budget),
+            query_version,
+        )
+        .map_err(|error| Error::UnusableVerifiedResult {
+            reason: format!("verified document history revision could not be decoded: {error}"),
+        })?;
     Ok((
         Some(DocumentHistory {
             entries: history.entries,
