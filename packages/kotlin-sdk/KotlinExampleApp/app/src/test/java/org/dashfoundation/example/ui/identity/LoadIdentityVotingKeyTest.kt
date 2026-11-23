@@ -11,7 +11,6 @@ import org.dashfoundation.dashsdk.persistence.dao.IdentityDao
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
 import org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore
-import org.dashfoundation.dashsdk.security.WalletStorage
 import org.dashfoundation.dashsdk.security.VotingKeyAssignment
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -417,26 +416,15 @@ class LoadIdentityVotingKeyTest {
         }
     }
 
-    /** S3: a cleanup lookup that throws leaves the entries alone and only warns. */
+    /** A cleanup that throws instead of reporting failure still only warns. */
     @Test
-    fun shouldWarnAndDeleteNothingWhenTheCleanupLookupFails() = runBlocking<Unit> {
+    fun shouldWarnAndKeepTheSaveWhenTheCleanupThrows() = runBlocking<Unit> {
         val stale = identifierOf(ByteArray(32) { 0x0d })
         dao.upsert(row(type = "Masternode", votingIdentifier = identifierOf(keyA)))
         entries.live += setOf(identifierOf(keyA), stale)
-        // The save's own read is the first lookup; the cleanup's is the second.
-        val failingDao = ThrowingLookupDao(dao, failOnCall = 2)
+        entries.cleanupThrows = IllegalStateException("database unavailable")
 
-        val result = saveLoadedIdentity(
-            dao = failingDao,
-            entries = entries,
-            identityId = identityId,
-            networkRaw = testnet,
-            balance = 42L,
-            alias = "again",
-            pickedType = LoadIdentityType.USER,
-            typePicked = false,
-            votingKey = null,
-        )
+        val result = save(alias = "again", pickedType = LoadIdentityType.USER, typePicked = false)
 
         assertEquals(LoadSaveResult.SavedWithWarning(STALE_VOTING_KEY_NOT_REMOVED_MESSAGE), result)
         assertEquals(setOf(identifierOf(keyA), stale), entries.live)
@@ -444,20 +432,6 @@ class LoadIdentityVotingKeyTest {
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
-
-    /** An [IdentityDao] whose [failOnCall]-th `getByIdentityId` throws. */
-    private class ThrowingLookupDao(
-        private val real: IdentityDao,
-        private val failOnCall: Int,
-    ) : IdentityDao by real {
-        private var calls = 0
-
-        override suspend fun getByIdentityId(identityId: ByteArray): IdentityEntity? {
-            calls += 1
-            if (calls == failOnCall) throw IllegalStateException("database unavailable")
-            return real.getByIdentityId(identityId)
-        }
-    }
 
     private suspend fun save(
         alias: String? = null,
@@ -502,39 +476,31 @@ class LoadIdentityVotingKeyTest {
         val deletedIdentifiers = mutableListOf<String>()
         val live = mutableSetOf<String>()
         var failure: Exception? = null
+        /** When set, the cleanup reports failure (as the SDK does) and deletes nothing. */
         var sweepFailure: Exception? = null
-        var onStore: (suspend () -> Unit)? = null
 
-        /**
-         * The app's production adapter, whose [VotingKeyEntries.withLock] this fake uses, so
-         * every lock taken here is the real one the app takes. Only the key storage below it
-         * is faked.
-         */
-        private val production by lazy {
-            StoredVotingKeyEntries(
-                MasternodeVotingKeyStore(WalletStorage(RuntimeEnvironment.getApplication())),
-                db,
-            )
-        }
+        /** When set, the cleanup throws it instead. */
+        var cleanupThrows: Exception? = null
+        var onStore: (suspend () -> Unit)? = null
 
         override fun identifierFor(identityId: ByteArray, votingKey: ByteArray): String =
             MasternodeVotingKeyStore.identifierFor(identityId, votingKey.copyOf(20))
 
         /**
          * What `MasternodeVotingKeyStore.assignToIdentity` does, over [live] instead of
-         * secure storage, under the production adapter's voting key lock. The SDK's own tests
-         * cover the real operation.
+         * secure storage, under the SDK's real voting key lock. The SDK's own tests cover
+         * the real operation.
          */
         override suspend fun assign(
             identityId: ByteArray,
             votingKey: ByteArray,
             expectedIdentifier: String?,
             nowMillis: Long,
-        ): VotingKeyAssignment = withLock {
+        ): VotingKeyAssignment = MasternodeVotingKeyStore.withVotingKeyLock {
             failure?.let { throw it }
             val before = dao.getByIdentityId(identityId)
             if (before == null || before.votingPrivateKeyIdentifier != expectedIdentifier) {
-                return@withLock VotingKeyAssignment.Changed(before?.votingPrivateKeyIdentifier)
+                return@withVotingKeyLock VotingKeyAssignment.Changed(before?.votingPrivateKeyIdentifier)
             }
             val identifier = identifierFor(identityId, votingKey)
             storedIdentifiers += identifier
@@ -548,25 +514,23 @@ class LoadIdentityVotingKeyTest {
                 }
                 VotingKeyAssignment.Changed(current)
             } else {
-                val swept = try {
-                    deleteOtherEntriesOf(identityId, identifier)
-                    true
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    false
-                }
-                VotingKeyAssignment.Assigned(identifier, otherEntriesRemoved = swept)
+                VotingKeyAssignment.Assigned(identifier)
             }
         }
 
-        override suspend fun <T> withLock(block: suspend () -> T): T = production.withLock(block)
-
-        override suspend fun deleteOtherEntriesOf(identityId: ByteArray, keep: String?) {
-            sweepFailure?.let { throw it }
-            val prefix = MasternodeVotingKeyStore.identifierFor(identityId, ByteArray(20))
-                .substringBeforeLast('.')
-            live.removeAll { it.startsWith("$prefix.") && it != keep }
-        }
+        /**
+         * What `MasternodeVotingKeyStore.removeStaleEntries` does, over [live], under the
+         * SDK's real voting key lock.
+         */
+        override suspend fun removeStaleEntries(identityId: ByteArray): Boolean =
+            MasternodeVotingKeyStore.withVotingKeyLock {
+                cleanupThrows?.let { throw it }
+                if (sweepFailure != null) return@withVotingKeyLock false
+                val keep = dao.getByIdentityId(identityId)?.votingPrivateKeyIdentifier
+                val prefix = MasternodeVotingKeyStore.identifierFor(identityId, ByteArray(20))
+                    .substringBeforeLast('.')
+                live.removeAll { it.startsWith("$prefix.") && it != keep }
+                true
+            }
     }
 }

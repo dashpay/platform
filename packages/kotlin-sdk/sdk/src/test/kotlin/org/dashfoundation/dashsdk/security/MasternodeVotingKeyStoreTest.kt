@@ -2,7 +2,10 @@ package org.dashfoundation.dashsdk.security
 
 import androidx.test.core.app.ApplicationProvider
 import androidx.room.withTransaction
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.junit.After
@@ -72,8 +75,9 @@ class MasternodeVotingKeyStoreTest {
         )
     }
 
+    /** Assignment records the new key and deletes nothing; the cleanup then leaves only it. */
     @Test
-    fun shouldStoreRecordAndSweepWhenTheRowNamesTheExpectedKey() = runBlocking<Unit> {
+    fun shouldRecordTheNewKeyAndLeaveOldEntriesToTheCleanup() = runBlocking<Unit> {
         insertRow(votingIdentifier = identifierOfKey(1))
         storage.storePrivateKey(identifierOfKey(1), keyWithAddress(1))
         storage.storePrivateKey(identifierOfKey(3), keyWithAddress(3))
@@ -82,8 +86,13 @@ class MasternodeVotingKeyStoreTest {
             db, identityId, keyWithAddress(2), expectedIdentifier = identifierOfKey(1),
         )
 
-        assertEquals(VotingKeyAssignment.Assigned(identifierOfKey(2), otherEntriesRemoved = true), assignment)
+        assertEquals(VotingKeyAssignment.Assigned(identifierOfKey(2)), assignment)
         assertEquals(identifierOfKey(2), db.identityDao().getByIdentityId(identityId)?.votingPrivateKeyIdentifier)
+        assertTrue(storage.hasPrivateKey(identifierOfKey(1)))
+        assertTrue(storage.hasPrivateKey(identifierOfKey(2)))
+        assertTrue(storage.hasPrivateKey(identifierOfKey(3)))
+
+        assertTrue(assigning.removeStaleEntries(db, identityId))
         assertTrue(storage.hasPrivateKey(identifierOfKey(2)))
         assertFalse(storage.hasPrivateKey(identifierOfKey(1)))
         assertFalse(storage.hasPrivateKey(identifierOfKey(3)))
@@ -139,6 +148,56 @@ class MasternodeVotingKeyStoreTest {
         assertEquals(VotingKeyAssignment.Changed(identifierOfKey(1)), assignment)
         assertTrue(storage.hasPrivateKey(identifierOfKey(1)))
         assertFalse(storage.hasPrivateKey(identifierOfKey(2)))
+    }
+
+    /**
+     * The rollback the thread check cannot see: a caller hops to an IO worker inside
+     * `withTransaction`, so `inTransaction()` is false there while Room still routes the row
+     * update into the outer transaction. The rollback restores the row's reference to key 1,
+     * and key 1 is still stored because the assignment deletes nothing; key 2 is left as a
+     * stale entry, which the next cleanup removes.
+     */
+    @Test
+    fun shouldKeepTheOldKeyWhenAnEnclosingTransactionRollsBack() = runBlocking<Unit> {
+        insertRow(votingIdentifier = identifierOfKey(1))
+        storage.storePrivateKey(identifierOfKey(1), keyWithAddress(1))
+        var assignedInside: VotingKeyAssignment? = null
+
+        val rolledBack = runCatching {
+            // Bounded, so a transaction that cannot be re-entered fails instead of hanging.
+            withTimeout(20_000) {
+                db.withTransaction {
+                    assignedInside = withContext(Dispatchers.IO) {
+                        assigning.assignToIdentity(db, identityId, keyWithAddress(2), identifierOfKey(1))
+                    }
+                    throw IllegalStateException("roll back")
+                }
+            }
+        }.exceptionOrNull()
+
+        assertEquals("roll back", rolledBack?.message)
+        // The IO hop passed the thread-bound guard and the update joined the transaction.
+        assertEquals(VotingKeyAssignment.Assigned(identifierOfKey(2)), assignedInside)
+        assertEquals(identifierOfKey(1), db.identityDao().getByIdentityId(identityId)?.votingPrivateKeyIdentifier)
+        assertTrue(storage.hasPrivateKey(identifierOfKey(1)))
+        assertTrue(storage.hasPrivateKey(identifierOfKey(2)))
+
+        assertTrue(assigning.removeStaleEntries(db, identityId))
+        assertTrue(storage.hasPrivateKey(identifierOfKey(1)))
+        assertFalse(storage.hasPrivateKey(identifierOfKey(2)))
+    }
+
+    /** With the row gone, the cleanup removes every entry of the identity, and only those. */
+    @Test
+    fun shouldRemoveAllOfAGoneIdentitysEntries() = runBlocking<Unit> {
+        val otherIdentity = MasternodeVotingKeyStore.identifierFor(ByteArray(32) { 9 }, address)
+        storage.storePrivateKey(identifierOfKey(1), keyWithAddress(1))
+        storage.storePrivateKey(otherIdentity, keyWithAddress(1))
+
+        assertTrue(assigning.removeStaleEntries(db, identityId))
+
+        assertFalse(storage.hasPrivateKey(identifierOfKey(1)))
+        assertTrue(storage.hasPrivateKey(otherIdentity))
     }
 
     /** B1: inside a Room transaction it refuses before writing, and a rollback finds A intact. */

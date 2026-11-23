@@ -97,30 +97,33 @@ class MasternodeVotingKeyStore private constructor(
 
     /**
      * Make the 32-byte voting [privateKey] the voting key of [identityId]'s row, as one
-     * [withVotingKeyLock] section: write the identity's entry from the supplied bytes, point
-     * the row at it only while the row still names [expectedIdentifier], then delete the
-     * identity's other voting entries.
+     * [withVotingKeyLock] section: write the identity's entry from the supplied bytes and
+     * point the row at it only while the row still names [expectedIdentifier].
      *
      * - The row named [expectedIdentifier]: [VotingKeyAssignment.Assigned] with the new
-     *   identifier, and whether the other entries were deleted. A failed deletion is not an
-     *   error (the next assignment or [deleteOtherEntriesOf] under the lock retries it).
-     * - The row is gone or names another key: the entry just written is deleted unless the
-     *   row names it, and [VotingKeyAssignment.Changed] carries what the row names now.
+     *   identifier.
+     * - The row is gone or names another key: [VotingKeyAssignment.Changed] with what the row
+     *   names now. The row is checked first, inside the lock, so then nothing is written; the
+     *   conditional update after the write checks again, and if that finds a change the
+     *   entry just written is deleted unless the row names it.
      *
-     * The row is checked first, inside the lock: when it is gone or does not name
-     * [expectedIdentifier] (a clear or another assignment ran first), nothing is written and
-     * the result is [VotingKeyAssignment.Changed]. The conditional update after the write
-     * checks again.
+     * Nothing else is deleted, the entry the row named before included: call
+     * [removeStaleEntries] once the change has committed. So if the row update joins a Room
+     * transaction the caller later rolls back, the row names its old key again and that key
+     * is still stored; the new entry is merely stale until the next cleanup.
      *
      * Entering the key the row already names, with that identifier as [expectedIdentifier],
      * rewrites the entry, which repairs one that no longer reads. [privateKey] stays the
      * caller's to zero.
      *
-     * @param database the database whose `identities` row records the key. Must not be in a
-     *   transaction: the secure-storage writes cannot roll back with it, so a rolled-back row
-     *   could name a key this call already deleted.
+     * @param database the database whose `identities` row records the key. Call it outside
+     *   any Room transaction. It refuses when the calling thread is in one, but that check is
+     *   only a best-effort safety net: Room carries a transaction in the coroutine context,
+     *   which a thread check cannot see after a dispatcher switch. What keeps a rollback safe
+     *   is that nothing but the entry this call wrote is ever deleted here.
      * @param expectedIdentifier the identifier the row is expected to name, null for none.
-     * @throws IllegalStateException inside a Room transaction, before anything is written.
+     * @throws IllegalStateException when the calling thread is in a Room transaction, before
+     *   anything is written.
      * @throws Exception when the key cannot be written (nothing is recorded then);
      *   cancellation propagates.
      */
@@ -131,10 +134,7 @@ class MasternodeVotingKeyStore private constructor(
         expectedIdentifier: String?,
         nowMillis: Long = System.currentTimeMillis(),
     ): VotingKeyAssignment {
-        check(!database.inTransaction()) {
-            "assignToIdentity cannot run inside a Room transaction: its secure-storage writes " +
-                "cannot roll back with it"
-        }
+        refuseInTransaction(database, "assignToIdentity")
         return withVotingKeyLock {
             assignLocked(database, identityId, privateKey, expectedIdentifier, nowMillis)
         }
@@ -162,15 +162,43 @@ class MasternodeVotingKeyStore private constructor(
             if (current != identifier) storage.deletePrivateKey(identifier)
             return VotingKeyAssignment.Changed(current)
         }
-        val swept = try {
-            deleteOtherEntriesOf(identityId, keep = identifier)
-            true
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            false
+        return VotingKeyAssignment.Assigned(identifier)
+    }
+
+    /**
+     * Delete every voting entry of [identityId] except the one its row names now, as one
+     * [withVotingKeyLock] section: the entry a replaced key left, or one a rolled-back or
+     * interrupted assignment left. When the row is gone, all of the identity's entries go.
+     * Returns false when the row could not be read or the entries could not be deleted
+     * (nothing is deleted when the read fails); a later call retries.
+     *
+     * Call it after the write that changed the row's identifier has committed, never inside
+     * a Room transaction: run against an uncommitted row, it could delete the key a rollback
+     * restores. It refuses when the calling thread is in a transaction; like the check in
+     * [assignToIdentity], that is a best-effort, thread-bound safety net.
+     *
+     * @throws IllegalStateException when the calling thread is in a Room transaction.
+     */
+    suspend fun removeStaleEntries(database: DashDatabase, identityId: ByteArray): Boolean {
+        refuseInTransaction(database, "removeStaleEntries")
+        return withVotingKeyLock {
+            try {
+                val keep = database.identityDao().getByIdentityId(identityId)?.votingPrivateKeyIdentifier
+                deleteOtherEntriesOf(identityId, keep)
+                true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                false
+            }
         }
-        return VotingKeyAssignment.Assigned(identifier, otherEntriesRemoved = swept)
+    }
+
+    private fun refuseInTransaction(database: DashDatabase, operation: String) {
+        check(!database.inTransaction()) {
+            "$operation cannot run inside a Room transaction: its secure-storage writes " +
+                "cannot roll back with it"
+        }
     }
 
     /**
@@ -196,14 +224,14 @@ class MasternodeVotingKeyStore private constructor(
     }
 
     /**
-     * Delete every voting entry of [identityId] except [keep], in one atomic write: the
-     * entries a replaced key, or an interrupted load or replacement, left behind. Run after
-     * each successful save, so a sweep that failed is repeated by the next one.
+     * Delete every voting entry of [identityId] except [keep], in one atomic write. Internal:
+     * callers use [removeStaleEntries], which reads [keep] from the row under the lock.
      *
      * @param keep the identifier the identity's row names now, or null to delete them all.
      * @throws IllegalArgumentException when [keep] is not one of [identityId]'s identifiers.
      */
-    suspend fun deleteOtherEntriesOf(identityId: ByteArray, keep: String?) {
+    @JvmSynthetic
+    internal suspend fun deleteOtherEntriesOf(identityId: ByteArray, keep: String?) {
         require(identityId.size == 32) { "identityId must be 32 bytes, got ${identityId.size}" }
         val keepName = keep?.lowercase()?.also {
             require(parse(it).first.contentEquals(identityId)) {
@@ -274,9 +302,10 @@ class MasternodeVotingKeyStore private constructor(
          * replacement just stored but has not yet recorded, and a clear could miss a key
          * an import stores between its listing and its row delete.
          *
-         * [assignToIdentity] takes it itself. Not reentrant: [block] must not call it, or
-         * [assignToIdentity], again. [delete], [deleteAll] and [deleteOtherEntriesOf] do not
-         * take it; their callers compose them under it. Signing does not take it.
+         * [assignToIdentity] and [removeStaleEntries] take it themselves. Not reentrant:
+         * [block] must not call it, [assignToIdentity] or [removeStaleEntries] again. [delete]
+         * and [deleteAll] do not take it; their callers compose them under it. Signing does
+         * not take it.
          */
         suspend fun <T> withVotingKeyLock(block: suspend () -> T): T {
             if (votingKeyLock.isLocked) onLockContendedForTesting?.invoke()
@@ -336,11 +365,10 @@ class MasternodeVotingKeyNotStoredException :
 /** What [MasternodeVotingKeyStore.assignToIdentity] did. */
 sealed interface VotingKeyAssignment {
     /**
-     * The row names [identifier] now. [otherEntriesRemoved] is false when the identity's
-     * other voting entries could not be deleted yet; the next assignment retries.
+     * The row names [identifier] now. The entry it named before is still stored; remove it
+     * with [MasternodeVotingKeyStore.removeStaleEntries] once the change has committed.
      */
-    data class Assigned(val identifier: String, val otherEntriesRemoved: Boolean) :
-        VotingKeyAssignment
+    data class Assigned(val identifier: String) : VotingKeyAssignment
 
     /**
      * The row did not name the expected identifier, so nothing was recorded; it names

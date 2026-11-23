@@ -569,7 +569,7 @@ internal interface VotingKeyEntries {
     /** The identifier [assign] would record for [votingKey] and [identityId]. */
     fun identifierFor(identityId: ByteArray, votingKey: ByteArray): String
 
-    /** [MasternodeVotingKeyStore.assignToIdentity]: store, record and sweep, under the lock. */
+    /** [MasternodeVotingKeyStore.assignToIdentity]: store and record, under the lock. */
     suspend fun assign(
         identityId: ByteArray,
         votingKey: ByteArray,
@@ -577,11 +577,8 @@ internal interface VotingKeyEntries {
         nowMillis: Long,
     ): VotingKeyAssignment
 
-    /** [MasternodeVotingKeyStore.withVotingKeyLock]. */
-    suspend fun <T> withLock(block: suspend () -> T): T
-
-    /** Delete every entry of [identityId] except [keep] (null: all of them). Lock held. */
-    suspend fun deleteOtherEntriesOf(identityId: ByteArray, keep: String?)
+    /** [MasternodeVotingKeyStore.removeStaleEntries]: false when it failed. */
+    suspend fun removeStaleEntries(identityId: ByteArray): Boolean
 }
 
 /** [VotingKeyEntries] over [MasternodeVotingKeyStore] and the identities of [database]. */
@@ -600,11 +597,8 @@ internal class StoredVotingKeyEntries(
     ): VotingKeyAssignment =
         keys.assignToIdentity(database, identityId, votingKey, expectedIdentifier, nowMillis)
 
-    override suspend fun <T> withLock(block: suspend () -> T): T =
-        MasternodeVotingKeyStore.withVotingKeyLock(block)
-
-    override suspend fun deleteOtherEntriesOf(identityId: ByteArray, keep: String?) =
-        keys.deleteOtherEntriesOf(identityId, keep)
+    override suspend fun removeStaleEntries(identityId: ByteArray): Boolean =
+        keys.removeStaleEntries(database, identityId)
 }
 
 /**
@@ -615,9 +609,10 @@ internal class StoredVotingKeyEntries(
  * A voting key is then stored and recorded by [MasternodeVotingKeyStore.assignToIdentity]
  * against the identifier the row names now, so a write made meanwhile is never overwritten:
  * the load reports the change instead. After a successful save, any other voting entry of
- * the identity (left by an earlier replacement whose cleanup failed) is deleted, under the
- * voting key lock; when that fails the result is [LoadSaveResult.SavedWithWarning] and the
- * next load tries again. [votingKey] stays the caller's to zero.
+ * the identity (a replaced key, or one an earlier cleanup could not delete) is deleted by
+ * [MasternodeVotingKeyStore.removeStaleEntries]; when that fails the result is
+ * [LoadSaveResult.SavedWithWarning] and the next load tries again. [votingKey] stays the
+ * caller's to zero.
  */
 internal suspend fun saveLoadedIdentity(
     dao: IdentityDao,
@@ -634,11 +629,7 @@ internal suspend fun saveLoadedIdentity(
     saveLoadedFields(dao, identityId, networkRaw, balance, alias, pickedType, typePicked, nowMillis)
         ?.let { return it }
     if (votingKey == null) {
-        return if (removeStaleEntries(dao, entries, identityId)) {
-            LoadSaveResult.Saved
-        } else {
-            LoadSaveResult.SavedWithWarning(STALE_VOTING_KEY_NOT_REMOVED_MESSAGE)
-        }
+        return savedAfterCleanup(entries, identityId, STALE_VOTING_KEY_NOT_REMOVED_MESSAGE)
     }
 
     // The association as it is now, after the identity's own fields were saved; the
@@ -658,11 +649,7 @@ internal suspend fun saveLoadedIdentity(
     }
     return when (assignment) {
         is VotingKeyAssignment.Assigned ->
-            if (assignment.otherEntriesRemoved) {
-                LoadSaveResult.Saved
-            } else {
-                LoadSaveResult.SavedWithWarning(STALE_VOTING_KEY_NOT_REMOVED_MESSAGE)
-            }
+            savedAfterCleanup(entries, identityId, STALE_VOTING_KEY_NOT_REMOVED_MESSAGE)
         is VotingKeyAssignment.Changed -> LoadSaveResult.Failed(IDENTITY_CHANGED_MESSAGE)
     }
 }
@@ -717,9 +704,9 @@ private suspend fun saveLoadedFields(
  * Replace the identity's voting key with [votingKey] after the user confirmed replacing
  * [expectedIdentifier], the key the question showed, through
  * [MasternodeVotingKeyStore.assignToIdentity]: the new entry is recorded only while the row
- * still names [expectedIdentifier], and the identity's other entries, the replaced one among
- * them, are deleted; when that deletion fails, the result says so and the next load deletes
- * them. When the row changed meanwhile, the current association is kept and the result says
+ * still names [expectedIdentifier]; then [MasternodeVotingKeyStore.removeStaleEntries]
+ * deletes the identity's other entries, the replaced one among them; when that fails, the
+ * result says so and the next load deletes them. When the row changed meanwhile, the current association is kept and the result says
  * to load again, which asks again. [votingKey] stays the caller's to zero.
  */
 internal suspend fun replaceVotingKey(
@@ -736,34 +723,29 @@ internal suspend fun replaceVotingKey(
         }
     return when (assignment) {
         is VotingKeyAssignment.Assigned ->
-            if (assignment.otherEntriesRemoved) {
-                LoadSaveResult.Saved
-            } else {
-                LoadSaveResult.SavedWithWarning(PREVIOUS_VOTING_KEY_NOT_REMOVED_MESSAGE)
-            }
+            savedAfterCleanup(entries, identityId, PREVIOUS_VOTING_KEY_NOT_REMOVED_MESSAGE)
         is VotingKeyAssignment.Changed -> LoadSaveResult.Failed(VOTING_KEY_CHANGED_MESSAGE)
     }
 }
 
 /**
- * Delete every voting entry of [identityId] but the one its row names, looking the row up and
- * deleting in one voting key lock section. Returns false when the lookup or the deletion
- * failed (nothing is deleted when the lookup fails); cancellation propagates.
+ * [LoadSaveResult.Saved] once [MasternodeVotingKeyStore.removeStaleEntries] deleted the
+ * identity's other voting entries, else [LoadSaveResult.SavedWithWarning] with
+ * [warning]: the save stands and the next load retries. Cancellation propagates.
  */
-private suspend fun removeStaleEntries(
-    dao: IdentityDao,
+private suspend fun savedAfterCleanup(
     entries: VotingKeyEntries,
     identityId: ByteArray,
-): Boolean = entries.withLock {
-    try {
-        val keep = dao.getByIdentityId(identityId)?.votingPrivateKeyIdentifier
-        entries.deleteOtherEntriesOf(identityId, keep)
-        true
+    warning: String,
+): LoadSaveResult {
+    val removed = try {
+        entries.removeStaleEntries(identityId)
     } catch (e: CancellationException) {
         throw e
     } catch (_: Exception) {
         false
     }
+    return if (removed) LoadSaveResult.Saved else LoadSaveResult.SavedWithWarning(warning)
 }
 
 /**
