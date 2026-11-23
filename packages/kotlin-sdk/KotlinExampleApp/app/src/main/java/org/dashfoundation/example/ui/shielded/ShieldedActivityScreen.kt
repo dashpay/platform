@@ -19,16 +19,31 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedActivityEntity
+import org.dashfoundation.dashsdk.wallet.ShieldedIdentityDebitRecoveryRecord
+import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
 import org.dashfoundation.example.di.LocalAppContainer
+import org.dashfoundation.example.ui.components.ErrorAlertDialog
+import org.dashfoundation.example.ui.tokens.displayLabel
 import org.dashfoundation.example.util.hexToBytes
+import org.dashfoundation.example.util.toHex
 
 /**
  * Shielded activity timeline for a wallet — port of `ShieldedActivityView.swift`.
@@ -36,6 +51,13 @@ import org.dashfoundation.example.util.hexToBytes
  * [org.dashfoundation.dashsdk.persistence.dao.ShieldedDao.observeActivityByWallet]:
  * a Pending section (status 0) above a History section (status != 0), each
  * row labeled + signed by its kind / direction.
+ *
+ * Above them, In-Progress Identity Shields lists the identity shields
+ * (Type 21) whose outcome is not known yet, read from Rust's durable records
+ * (`shieldedIdentityDebitRecoveryRecords`), so one interrupted by a crash or
+ * a killed process is listed again after relaunch (SH-23). They are read on
+ * open, on every resume, after any shielded sync result for this wallet, and
+ * after Stop Retrying.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,6 +71,61 @@ fun ShieldedActivityScreen(walletIdHex: String, navController: NavHostController
 
     val pending = remember(activity) { activity.filter { it.status == 0 } }
     val history = remember(activity) { activity.filter { it.status != 0 } }
+
+    val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
+    // Projected to plain values: Room entities compare by id only, so a
+    // renamed identity would not recompose.
+    val identityLabels by remember(walletIdHex) {
+        container.database.identityDao().observeByWallet(walletId)
+            .map { rows -> rows.associate { it.identityId.toHex() to it.displayLabel() } }
+    }.collectAsStateWithLifecycle(initialValue = emptyMap())
+    val syncState by container.shieldedService.state.collectAsStateWithLifecycle()
+    val canResume by container.shieldedService.canResume.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    // A build without shielded support has no sync export to call.
+    val hasShielded = remember { Sdk.hasShielded() }
+
+    // Another wallet's or manager's records never show here: the state is
+    // keyed by both. A newer read cancels the one in flight (the effect's
+    // key changes), so only the newest read applies.
+    var recovery by remember(manager, walletIdHex) {
+        mutableStateOf(RecoveryReadState<ShieldedIdentityDebitRecoveryRecord>())
+    }
+    var readEpoch by remember { mutableIntStateOf(0) }
+    var checkStatus by remember { mutableStateOf<CheckNowStatus>(CheckNowStatus.Idle) }
+    var isChecking by remember { mutableStateOf(false) }
+    var isAbandoning by remember { mutableStateOf(false) }
+    var actionError by remember { mutableStateOf<String?>(null) }
+
+    LifecycleResumeEffect(Unit) {
+        readEpoch++
+        onPauseOrDispose {}
+    }
+    LaunchedEffect(manager, walletIdHex, readEpoch) {
+        val activeManager = manager ?: return@LaunchedEffect
+        // Without shielded support there is no export to read the records
+        // with; data an earlier build saved may still hold some, so they are
+        // unreadable here, not known to be empty.
+        if (!hasShielded) {
+            recovery = recovery.applyFailure("This build does not support shielded recovery.")
+            return@LaunchedEffect
+        }
+        recovery = try {
+            recovery.applySuccess(activeManager.shieldedIdentityDebitRecoveryRecords(walletId))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            recovery.applyFailure(e.message ?: "unknown error")
+        }
+    }
+    // A finished sync pass is what resends and resolves the records.
+    LaunchedEffect(manager, walletIdHex) {
+        manager?.syncEvents?.collect { event ->
+            if (event is WalletSyncEvent.ShieldedResult && event.walletId.contentEquals(walletId)) {
+                readEpoch++
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -67,7 +144,58 @@ fun ShieldedActivityScreen(walletIdHex: String, navController: NavHostController
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (activity.isEmpty()) {
+            item {
+                IdentityShieldRecoverySection(
+                    state = recovery,
+                    identityLabels = identityLabels,
+                    isChecking = isChecking || syncState.isSyncing,
+                    canCheck = hasShielded && canResume && manager != null,
+                    isAbandoning = isAbandoning,
+                    checkStatus = checkStatus,
+                    onCheckNow = {
+                        val activeManager = manager ?: return@IdentityShieldRecoverySection
+                        isChecking = true
+                        checkStatus = CheckNowStatus.Checking
+                        scope.launch {
+                            checkStatus = try {
+                                activeManager.syncShieldedNow()
+                                CheckNowStatus.Finished
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                CheckNowStatus.Failed(e.message ?: "unknown error")
+                            } finally {
+                                isChecking = false
+                            }
+                            // The records stay listed whatever the outcome.
+                            readEpoch++
+                        }
+                    },
+                    onStopRetrying = { record ->
+                        val activeManager = manager ?: return@IdentityShieldRecoverySection
+                        isAbandoning = true
+                        scope.launch {
+                            try {
+                                // Only after the user confirmed the warning.
+                                activeManager.abandonShieldedIdentityDebit(
+                                    walletId = walletId,
+                                    accountIndex = record.accountIndex,
+                                    activityId = record.activityId,
+                                    acknowledgePossibleExecution = true,
+                                )
+                                readEpoch++
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                actionError = e.message ?: "Could not stop retrying."
+                            } finally {
+                                isAbandoning = false
+                            }
+                        }
+                    },
+                )
+            }
+            if (activity.isEmpty() && recovery.isKnownEmpty) {
                 item {
                     Text(
                         "No shielded activity.",
@@ -90,6 +218,12 @@ fun ShieldedActivityScreen(walletIdHex: String, navController: NavHostController
             }
         }
     }
+
+    ErrorAlertDialog(
+        message = actionError,
+        title = "Could not stop retrying",
+        onDismiss = { actionError = null },
+    )
 }
 
 @Composable
@@ -107,14 +241,14 @@ private fun ActivityRow(row: ShieldedActivityEntity) {
     Card(modifier = Modifier.testTag("shieldedActivity.row")) {
         ListItem(
             headlineContent = { Text(kindLabel(row.kindTag)) },
-            supportingContent = { Text(statusLabel(row.status)) },
+            supportingContent = { Text(supportingText(row.kindTag, row.status)) },
             trailingContent = { Text(signedAmount(row)) },
         )
     }
 }
 
 /** Kind label — ← Swift `ShieldedActivityView` kind map. */
-private fun kindLabel(kindTag: Int): String = when (kindTag) {
+internal fun kindLabel(kindTag: Int): String = when (kindTag) {
     0 -> "Shielded"
     1 -> "Shielded from Asset Lock"
     2 -> "Received"
@@ -124,8 +258,33 @@ private fun kindLabel(kindTag: Int): String = when (kindTag) {
     6 -> "Identity Created"
     8 -> "Shielded from Identity"
     9 -> "Identity Top-Up from Pool"
+    KIND_TOKEN_PURCHASE -> "Token Purchase"
     else -> "Shielded Spend"
 }
+
+/** `ShieldedActivityKind::TokenPurchase`, a purchase from the shielded pool (type 28). */
+internal const val KIND_TOKEN_PURCHASE = 10
+
+/**
+ * What a token purchase row says about its tokens, by its stored status:
+ * minted only once Confirmed (1). The row is recorded before the purchase
+ * is broadcast, so its kind alone says what the buyer intended, not what
+ * executed. ← Swift `ShieldedActivityView.tokenPurchaseNote`.
+ */
+internal fun tokenPurchaseNote(status: Int): String = when (status) {
+    1 -> "The tokens were minted to this wallet's shielded token pool, which the app does not show yet."
+    2 -> "The purchase did not go through; no tokens were minted."
+    else -> "Not confirmed yet: a shielded sync confirms the purchase once it lands. " +
+        "The app does not show the shielded token pool yet."
+}
+
+/** A row's supporting line: its status, and for a token purchase what that status means. */
+internal fun supportingText(kindTag: Int, status: Int): String =
+    if (kindTag == KIND_TOKEN_PURCHASE) {
+        "${statusLabel(status)}. ${tokenPurchaseNote(status)}"
+    } else {
+        statusLabel(status)
+    }
 
 private fun statusLabel(status: Int): String = when (status) {
     0 -> "Pending"

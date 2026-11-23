@@ -183,9 +183,13 @@ impl StateTransitionActionTransformer for DataContractCreateTransition {
                 block_info, validation_mode,
                 execution_context, platform_version,
             ),
+            1 => self.transform_into_action_v1::<C>(
+                block_info, validation_mode,
+                execution_context, platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract create transition: transform_into_action".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -193,8 +197,10 @@ impl StateTransitionActionTransformer for DataContractCreateTransition {
 }
 ```
 
-The version number (`0` here) is looked up from the platform version struct, allowing
-the logic to change in future protocol upgrades without modifying the dispatch layer.
+The version number is looked up from the platform version struct, allowing the logic
+to change in future protocol upgrades without modifying the dispatch layer. Protocol
+version 14 selects `0`; protocol version 15 selects `1`, which runs `0` and then
+refuses a contract with a `required` list no document could meet.
 
 ## What Happens Inside: Reading State
 

@@ -1,5 +1,6 @@
 package org.dashfoundation.example.ui.tokens
 
+import org.dashfoundation.example.ui.credits.votingOnlyRecipientRefusal
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -15,10 +17,13 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -31,6 +36,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.flowOf
+import org.dashfoundation.dashsdk.funding.ShieldedProver
 import org.dashfoundation.dashsdk.tokens.GroupAction
 import org.dashfoundation.dashsdk.tokens.TokenConfigChange
 import org.dashfoundation.dashsdk.tokens.TokenDistributionType
@@ -188,6 +196,11 @@ private fun TransferForm(
             val amount = amountRaw ?: return@TokenActionScaffold
             val noteOrNull = note.toPublicNoteOrNull()
             viewModel.submit {
+                // A masternode's voter identity holds only a voting key: tokens sent to it could
+                // not be spent, so a picked or pasted one is refused (Swift, after #6145).
+                votingOnlyRecipientRefusal(
+                    container.database.identityDao().getByIdentityId(recipientId), networkRaw, "tokens",
+                )?.let { throw IllegalArgumentException(it) }
                 val balances = wallet.tokens.transfer(
                     identityId = context.identity.identityId,
                     tokenContractId = context.token.contractId,
@@ -708,8 +721,68 @@ private fun PurchaseForm(
 ) {
     val token = context.token
     var amountText by rememberSaveable { mutableStateOf("") }
-    val sdk by LocalAppState.current.sdk.collectAsStateWithLifecycle()
+    val appState = LocalAppState.current
+    val container = LocalAppContainer.current
+    val sdk by appState.sdk.collectAsStateWithLifecycle()
 
+    // Where the purchase is paid from. The shielded pool is offered only on
+    // Rust's answer that this token can be bought that way; identity credits
+    // stay available either way.
+    // Saved as the enum value itself (by name), so a restored form cannot
+    // pick a different source if the entries are ever reordered.
+    var savedFundingSource by rememberSaveable { mutableStateOf(PurchaseFundingSource.IdentityCredits) }
+    var availabilityAttempt by remember { mutableIntStateOf(0) }
+    var shieldedAvailability by remember {
+        mutableStateOf<ShieldedPurchaseAvailabilityState>(ShieldedPurchaseAvailabilityState.Loading)
+    }
+    val manager = context.manager
+    LaunchedEffect(manager, token.id.toHex(), availabilityAttempt) {
+        shieldedAvailability = ShieldedPurchaseAvailabilityState.Loading
+        shieldedAvailability = if (!container.shieldedService.isAvailable) {
+            ShieldedPurchaseAvailabilityState.Unsupported
+        } else if (manager == null) {
+            ShieldedPurchaseAvailabilityState.Failed
+        } else {
+            try {
+                ShieldedPurchaseAvailabilityState.Loaded(
+                    manager.shieldedTokenPurchaseAvailability(token.contractId, token.position),
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                ShieldedPurchaseAvailabilityState.Failed
+            }
+        }
+        // A funding choice the answer no longer allows falls back to
+        // identity credits.
+        if (!shieldedAvailability.offersShieldedPayment) {
+            savedFundingSource = PurchaseFundingSource.IdentityCredits
+        }
+    }
+    val fundingSource = savedFundingSource
+        .takeIf { it == PurchaseFundingSource.IdentityCredits || shieldedAvailability.offersShieldedPayment }
+        ?: PurchaseFundingSource.IdentityCredits
+    val isShielded = fundingSource == PurchaseFundingSource.ShieldedPool
+
+    // The shielded purchase spends from account 0 of the identity's wallet.
+    // Its spendable credits come from Rust; null while not known.
+    val walletId = context.identity.walletId
+    val shieldedBalance by remember(walletId?.toHex()) {
+        walletId?.let { container.shieldedService.accountBalance(it, SHIELDED_PURCHASE_ACCOUNT) }
+            ?: flowOf(null)
+    }.collectAsStateWithLifecycle(initialValue = null)
+    // Rust's fee for a purchase paid from one or two notes, at the network's
+    // protocol version (re-read when that version is published).
+    val protocolVersion by appState.platformProtocolVersion.collectAsStateWithLifecycle()
+    val shieldedFeeEstimate by produceState<Long?>(initialValue = null, manager, protocolVersion, isShielded) {
+        value = if (isShielded && manager != null) {
+            runCatching {
+                manager.estimateShieldedFee(ShieldedProver.FeeKind.TokenPurchaseFromPool)
+            }.getOrNull()
+        } else {
+            null
+        }
+    }
     // Fetch the configured direct-purchase price when the form opens
     // (mirrors the live balance/status fetch in
     // TokenActionPermissionsView). The canonical token id — needed by the
@@ -740,7 +813,8 @@ private fun PurchaseForm(
     // purchase, so this equals the chain's required price. Null means the
     // amount isn't purchasable (below the minimum or outside u64).
     val expectedTotalCost = amountRaw?.let { pricing?.costFor(it) }
-    val canSubmit = amountRaw != null && amountRaw > 0u && expectedTotalCost != null
+    val canSubmit = amountRaw != null && amountRaw > 0u && expectedTotalCost != null &&
+        (!isShielded || canSubmitShieldedPurchase(shieldedAvailability, walletId != null, shieldedBalance))
 
     TokenActionScaffold(
         title = "Direct Purchase",
@@ -751,11 +825,40 @@ private fun PurchaseForm(
         canSubmit = canSubmit,
         viewModel = viewModel,
         navController = navController,
+        submitTestTag = "tokenPurchase.buyButton",
+        // The shielded purchase proves for a minute or more, and what it
+        // returns (submitted, do not buy again) is shown by this entry's
+        // view model: leaving would discard it. Blocked for either funding
+        // source, so it does not depend on a choice that can be reset while
+        // the purchase runs.
+        backBlocked = viewModel.isSubmitting,
         onSubmit = {
             val wallet = context.wallet ?: return@TokenActionScaffold
-            val signer = context.signerHandle ?: return@TokenActionScaffold
             val amount = amountRaw ?: return@TokenActionScaffold
             val totalCost = expectedTotalCost ?: return@TokenActionScaffold
+            if (isShielded) {
+                // Buy from the wallet's shielded notes at the same agreed
+                // total the identity path submits. Rust selects the notes,
+                // proves, broadcasts and records the activity.
+                val shieldedManager = manager ?: return@TokenActionScaffold
+                val buyerWalletId = walletId ?: return@TokenActionScaffold
+                viewModel.submit {
+                    val outcome = shieldedPurchaseOutcomeMessage {
+                        shieldedManager.shieldedTokenPurchaseFromPool(
+                            walletId = buyerWalletId,
+                            contractId = token.contractId,
+                            tokenPosition = token.position,
+                            tokenCount = amount,
+                            totalAgreedPrice = totalCost,
+                            account = SHIELDED_PURCHASE_ACCOUNT,
+                        )
+                    }
+                    // The form closes when the buyer dismisses the message.
+                    viewModel.showNoticeUntilDismissed(outcome)
+                }
+                return@TokenActionScaffold
+            }
+            val signer = context.signerHandle ?: return@TokenActionScaffold
             viewModel.submit {
                 wallet.tokens.purchase(
                     identityId = context.identity.identityId,
@@ -769,6 +872,14 @@ private fun PurchaseForm(
             }
         },
     ) {
+        PurchaseFundingSection(
+            availability = shieldedAvailability,
+            selected = fundingSource,
+            // Switching mid-proof would only relabel a purchase under way.
+            enabled = !viewModel.isSubmitting,
+            onSelect = { savedFundingSource = it },
+            onRetry = { availabilityAttempt++ },
+        )
         AmountSection(
             value = amountText,
             onValueChange = { amountText = it },
@@ -812,8 +923,33 @@ private fun PurchaseForm(
                 }
             }
         }
+        if (isShielded) {
+            ShieldedPoolSection(shieldedBalance, shieldedFeeEstimate, expectedTotalCost)
+            if (viewModel.isSubmitting && viewModel.notice == null) {
+                Text(
+                    "Proving and broadcasting. Building the shielded proofs can take a minute or more.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("tokenPurchase.proving"),
+                )
+            }
+        }
+    }
+
+    viewModel.notice?.let { message ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissNotice() },
+            title = { Text("Shielded purchase") },
+            text = { Text(message, modifier = Modifier.testTag("tokenPurchase.shieldedOutcome")) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.dismissNotice() }) { Text("OK") }
+            },
+        )
     }
 }
+
+/** The shielded account a purchase spends from, as on iOS. */
+private const val SHIELDED_PURCHASE_ACCOUNT = 0
 
 /**
  * Why an entered [amount] can't be purchased at [pricing] — an under-minimum

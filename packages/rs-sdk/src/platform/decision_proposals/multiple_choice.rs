@@ -39,9 +39,6 @@ use crate::platform::{DataContract, Document, Fetch, FetchMany, Identifier};
 use crate::{Error, Sdk};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::{
-    DecodedValueBudget, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
-};
 use dpp::decision_proposal::multiple_choice::{
     choice_properties, proposal_properties, CHOICE_DOCUMENT_TYPE_NAME,
 };
@@ -269,16 +266,12 @@ impl MultipleChoiceProposalVote {
         let document_type = contract
             .document_type_for_name(CHOICE_DOCUMENT_TYPE_NAME)
             .map_err(|e| Error::Protocol(e.into()))?;
-        let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
         let choices = contenders
             .contenders
             .iter()
             .map(|(choice_id, contender)| {
-                let mut contender = contender.try_to_contender_with_budget(
-                    document_type,
-                    &mut budget,
-                    platform_version,
-                )?;
+                let mut contender =
+                    contender.try_to_contender_bounded(document_type, platform_version)?;
                 Ok((
                     *choice_id,
                     ChoiceInVote {

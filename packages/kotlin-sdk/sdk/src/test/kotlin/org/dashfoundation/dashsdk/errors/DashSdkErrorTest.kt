@@ -94,6 +94,17 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun shouldMapAnUnreadableIdentityBalanceToItsOwnType() {
+        val message = "identity balance unavailable for 7y3Q"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 58, message)
+        val mapped = DashSdkError.fromNative(native)
+
+        assertTrue(mapped is DashSdkError.PlatformWallet.IdentityBalanceUnavailable)
+        assertEquals(message, mapped.message)
+        assertEquals(native, mapped.cause)
+    }
+
+    @Test
     fun unknownNativeCodesFallBackToInternalError() {
         // A code in the rs-sdk-ffi range (< the platform-wallet offset) with
         // no dedicated mapping stays an InternalError.
@@ -398,6 +409,20 @@ class DashSdkErrorTest {
         assertFalse(mapped is DashSdkError.PlatformWallet.PrivateContactRequestPending)
         assertEquals(detail, mapped.message)
         assertFalse("a sync settles it, not a retry", mapped.isRetryable)
+    }
+
+    /**
+     * A balance history read that could not reach consistent heights has its own,
+     * retryable code (83), as Swift's `balanceHistoryInconsistentHeights`.
+     */
+    @Test
+    fun shouldReportInconsistentBalanceHistoryHeightsByTheirOwnRetryableCode() {
+        val detail = "page proved at height 11, below height 12"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 83, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.BalanceHistoryInconsistentHeights)
+        assertEquals(detail, mapped.message)
+        assertTrue("the read can be made again", mapped.isRetryable)
     }
 
     @Test

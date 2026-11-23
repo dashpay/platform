@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use dashcore::Network;
+use grovedb_commitment_tree::Scope;
 use key_wallet::account::StandardAccountType;
 
 use crate::changeset::PersistenceError;
@@ -1208,6 +1209,72 @@ async fn should_refuse_an_account_add_after_a_clear_until_the_wallet_is_bound_ag
         .await
         .expect("an account is added to the wallet bound again");
     assert_eq!(wallet.shielded_account_indices().await, vec![0, 1]);
+}
+
+/// A Clear drops the wallet's registration while the handle keeps its keys,
+/// so a token pool spend from the same seed and account would still derive
+/// its keys. The public entry points refuse it as not bound, before any
+/// network read, note selection or proving.
+#[tokio::test]
+async fn should_refuse_token_pool_spends_after_a_clear_until_the_wallet_is_bound_again() {
+    use dpp::prelude::Identifier;
+    use dpp::shielded::builder::OrchardProver;
+    use grovedb_commitment_tree::ProvingKey;
+
+    struct PanicProver;
+    impl OrchardProver for PanicProver {
+        fn proving_key(&self) -> &ProvingKey {
+            panic!("a spend refused at admission must not prove");
+        }
+    }
+
+    let wallet = platform_wallet_with(Arc::new(CapturingPersistence::default())).await;
+    let coordinator = coordinator_at(&temp_dir("token_spend_after_clear"));
+    let seed = [0x42u8; 64];
+    wallet
+        .bind_shielded(&seed, &[0], &coordinator)
+        .await
+        .expect("seed bind succeeds");
+    coordinator.clear().await.expect("clear succeeds");
+
+    let contract = Identifier::from([0x66; 32]);
+    let recipient = dpp::address_funds::OrchardAddress::from(
+        OrchardKeySet::from_seed(&[0x43; 64], wallet.network(), 0)
+            .expect("recipient keys")
+            .default_address,
+    );
+    let transfer = wallet
+        .shielded_token_transfer(
+            &coordinator,
+            &seed,
+            0,
+            &contract,
+            0,
+            &recipient,
+            5,
+            PanicProver,
+        )
+        .await;
+    assert!(
+        matches!(transfer, Err(crate::PlatformWalletError::ShieldedNotBound)),
+        "{transfer:?}"
+    );
+    let unshield = wallet
+        .shielded_token_unshield(
+            &coordinator,
+            &seed,
+            0,
+            &contract,
+            0,
+            &Identifier::from([0x11; 32]),
+            5,
+            PanicProver,
+        )
+        .await;
+    assert!(
+        matches!(unshield, Err(crate::PlatformWalletError::ShieldedNotBound)),
+        "{unshield:?}"
+    );
 }
 
 /// An account add that waited for a Clear is refused the same way: by the
@@ -2529,6 +2596,326 @@ async fn should_require_fresh_tip_preparation_after_clear_even_after_rebind() {
         wallet.prepared_shielded_identity_account(&id).await,
         Some(account)
     );
+}
+
+/// Add a second wallet-owned identity to the fixture's wallet at `slot`,
+/// carrying the MASTER key the seed derives there.
+async fn add_identity_at_slot(
+    wallet: &PlatformWallet,
+    seed: &[u8],
+    id_byte: u8,
+    slot: u32,
+) -> dpp::prelude::Identifier {
+    use dpp::identity::{Identity, IdentityV0};
+    let id = dpp::prelude::Identifier::from([id_byte; 32]);
+    let mut wm = wallet.wallet_manager.write().await;
+    wm.get_wallet_info_mut(&wallet.wallet_id())
+        .unwrap()
+        .identity_manager
+        .add_identity(
+            Identity::V0(IdentityV0 {
+                id,
+                public_keys: seed_master_key(seed, slot),
+                balance: 0,
+                revision: 0,
+            }),
+            slot,
+            wallet.wallet_id(),
+            wallet.persister(),
+        )
+        .unwrap();
+    id
+}
+
+fn publication_refusal(result: Result<(), crate::PlatformWalletError>) -> String {
+    match result {
+        Err(crate::PlatformWalletError::InvalidIdentityData(message)) => message,
+        other => panic!("expected the publication to be refused, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn should_publish_only_the_prepared_account_among_this_wallets_shielded_addresses() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("profile_publication").await;
+    wallet
+        .bind_shielded(&seed, &[0, 1], &coordinator)
+        .await
+        .unwrap();
+    let prepared = wallet
+        .prepare_shielded_identity_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+
+    // The wallet's ordinary accounts, at any diversifier and either scope.
+    for account in [0, 1] {
+        let keys = OrchardKeySet::from_seed(&seed, Network::Testnet, account).unwrap();
+        for address in [
+            keys.default_address,
+            keys.address_at(17),
+            keys.full_viewing_key.address_at(3u32, Scope::Internal),
+        ] {
+            let message = publication_refusal(
+                wallet
+                    .check_shielded_address_publication(&id, &address.to_raw_address_bytes())
+                    .await,
+            );
+            assert!(message.contains("ordinary shielded accounts"), "{message}");
+        }
+    }
+
+    // The identity's own account, but a change address.
+    let own = OrchardKeySet::from_seed(
+        &seed,
+        Network::Testnet,
+        crate::shielded_identity_account_index(2).unwrap(),
+    )
+    .unwrap();
+    for index in [0u32, 17] {
+        let address = own.full_viewing_key.address_at(index, Scope::Internal);
+        let message = publication_refusal(
+            wallet
+                .check_shielded_address_publication(&id, &address.to_raw_address_bytes())
+                .await,
+        );
+        assert!(
+            message.contains("external receiving addresses"),
+            "{message}"
+        );
+    }
+
+    // Another identity's account, prepared for that identity only.
+    let other_id = add_identity_at_slot(&wallet, &seed, 0x67, 7).await;
+    let other = wallet
+        .prepare_shielded_identity_address(&seed, &other_id, &coordinator)
+        .await
+        .unwrap();
+    let message = publication_refusal(wallet.check_shielded_address_publication(&id, &other).await);
+    assert!(message.contains("was not prepared"), "{message}");
+    wallet
+        .check_shielded_address_publication(&other_id, &other)
+        .await
+        .unwrap();
+
+    // The prepared account at any external diversifier, and any address of
+    // another wallet, whose owner alone can tell what it is.
+    let external = OrchardKeySet::from_seed(&[9; 64], Network::Testnet, 0).unwrap();
+    for address in [
+        prepared,
+        own.address_at(17).to_raw_address_bytes(),
+        external.default_address.to_raw_address_bytes(),
+        external.address_at(17).to_raw_address_bytes(),
+        external
+            .full_viewing_key
+            .address_at(17u32, Scope::Internal)
+            .to_raw_address_bytes(),
+    ] {
+        wallet
+            .check_shielded_address_publication(&id, &address)
+            .await
+            .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn should_refuse_a_prepared_address_once_its_preparation_no_longer_stands() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("profile_publication_clear").await;
+    let address = wallet
+        .prepare_shielded_identity_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    wallet
+        .check_shielded_address_publication(&id, &address)
+        .await
+        .unwrap();
+
+    // A Clear drops the registration but not the keys this handle holds, so
+    // the address is still recognised as this wallet's and is refused.
+    coordinator.clear().await.unwrap();
+    let message = publication_refusal(
+        wallet
+            .check_shielded_address_publication(&id, &address)
+            .await,
+    );
+    assert!(message.contains("was not prepared"), "{message}");
+
+    wallet
+        .bind_shielded(&seed, &[0], &coordinator)
+        .await
+        .unwrap();
+    wallet
+        .prepare_shielded_identity_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    wallet
+        .check_shielded_address_publication(&id, &address)
+        .await
+        .unwrap();
+}
+
+/// A Clear ends an identity's preparation. One that ran between a profile
+/// write's publication check and its submission would let the write publish
+/// an address whose preparation no longer stands, so the Clear waits for the
+/// write: the write is paused right after its check and the Clear must not
+/// finish until it is released.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_hold_a_clear_until_a_profile_write_publishing_a_prepared_address_returns() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("profile_write_clear").await;
+    let address = wallet
+        .prepare_shielded_identity_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+
+    let (reached, resume) = super::tips::test_hooks::pause_after_publication_check(&wallet);
+    let writing = {
+        let wallet = wallet.clone();
+        tokio::spawn(async move {
+            wallet
+                .write_dashpay_profile(
+                    &id,
+                    crate::ProfileUpdate {
+                        shielded_address: crate::PaymentAddressUpdate::Set(address.to_vec()),
+                        ..Default::default()
+                    },
+                    &simple_signer::signer::SimpleSigner::default(),
+                    false,
+                )
+                .await
+        })
+    };
+    reached
+        .await
+        .expect("the write passed its publication check");
+
+    let mut clear = std::pin::pin!(coordinator.clear());
+    assert!(
+        futures::poll!(clear.as_mut()).is_pending(),
+        "the Clear must wait for the profile write in flight"
+    );
+    resume.send(()).expect("release the parked write");
+    // The mock SDK holds no DashPay contract, so the write itself fails
+    // after the check; only its ordering against the Clear is under test.
+    let written = writing.await.expect("write task");
+    assert!(
+        !matches!(
+            written,
+            Err(crate::PlatformWalletError::InvalidIdentityData(ref message))
+                if message.contains("was not prepared")
+        ),
+        "the publication check passed before the Clear: {written:?}"
+    );
+    clear.await.expect("clear succeeds");
+    assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
+}
+
+/// A profile write chooses the coordinator admission to hold from the
+/// preparation recorded as it starts. A first preparation that lands after
+/// that choice is on a coordinator the write does not hold, so a Clear of
+/// it would not wait for the write. The write is paused right after its
+/// choice while the identity is prepared, and must then refuse to publish
+/// the prepared address; written again, it holds the admission and a Clear
+/// waits for it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_refuse_a_profile_write_that_raced_the_first_preparation_of_its_address() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("profile_write_first_prep").await;
+    // The bind already scans the identity's account, but nothing has
+    // prepared it for the identity in this session.
+    assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
+    let address = OrchardKeySet::from_seed(
+        &seed,
+        Network::Testnet,
+        crate::shielded_identity_account_index(2).unwrap(),
+    )
+    .unwrap()
+    .default_address
+    .to_raw_address_bytes();
+    let write = |wallet: PlatformWallet| async move {
+        wallet
+            .write_dashpay_profile(
+                &id,
+                crate::ProfileUpdate {
+                    shielded_address: crate::PaymentAddressUpdate::Set(address.to_vec()),
+                    ..Default::default()
+                },
+                &simple_signer::signer::SimpleSigner::default(),
+                false,
+            )
+            .await
+    };
+
+    let (reached, resume) = super::tips::test_hooks::pause_before_publication_check(&wallet);
+    let writing = tokio::spawn(write(wallet.clone()));
+    reached.await.expect("the write chose its admission");
+    assert_eq!(
+        wallet
+            .prepare_shielded_identity_address(&seed, &id, &coordinator)
+            .await
+            .unwrap(),
+        address
+    );
+    resume.send(()).expect("release the parked write");
+    let raced = writing.await.expect("write task");
+    assert!(
+        matches!(
+            raced,
+            Err(crate::PlatformWalletError::InvalidIdentityData(ref message))
+                if message.contains("was prepared while this profile write was starting")
+        ),
+        "{raced:?}"
+    );
+
+    // Written again, the write holds the coordinator the address was
+    // prepared on, and a Clear waits for it.
+    let (reached, resume) = super::tips::test_hooks::pause_after_publication_check(&wallet);
+    let writing = tokio::spawn(write(wallet.clone()));
+    reached
+        .await
+        .expect("the write passed its publication check");
+    let mut clear = std::pin::pin!(coordinator.clear());
+    assert!(
+        futures::poll!(clear.as_mut()).is_pending(),
+        "the Clear must wait for the profile write in flight"
+    );
+    resume.send(()).expect("release the parked write");
+    writing.await.expect("write task").unwrap_err();
+    clear.await.expect("clear succeeds");
+}
+
+#[tokio::test]
+async fn should_refuse_a_profile_write_that_publishes_an_ordinary_account_address() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("profile_write_refusal").await;
+    wallet
+        .prepare_shielded_identity_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    let ordinary = OrchardKeySet::from_seed(&seed, Network::Testnet, 0)
+        .unwrap()
+        .default_address
+        .to_raw_address_bytes();
+    // Refused before the contract is read or anything is signed: the mock
+    // SDK holds no expectations and the signer holds no keys.
+    let signer = simple_signer::signer::SimpleSigner::default();
+    for create in [true, false] {
+        let error = wallet
+            .write_dashpay_profile(
+                &id,
+                crate::ProfileUpdate {
+                    shielded_address: crate::PaymentAddressUpdate::Set(ordinary.to_vec()),
+                    ..Default::default()
+                },
+                &signer,
+                create,
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(
+                error,
+                crate::PlatformWalletError::InvalidIdentityData(ref message)
+                    if message.contains("ordinary shielded accounts")
+            ),
+            "{error:?}"
+        );
+    }
 }
 
 /// Move the fixture's identity from slot 2 to slot 3, as its removal and a

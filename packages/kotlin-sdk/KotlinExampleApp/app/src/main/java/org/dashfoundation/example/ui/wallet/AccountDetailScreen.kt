@@ -1,8 +1,10 @@
 package org.dashfoundation.example.ui.wallet
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -32,6 +34,7 @@ import org.dashfoundation.dashsdk.persistence.entities.CoreAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.TxoEntity
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
+import org.dashfoundation.example.navigation.CoreAddressDetail
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.util.formatDuffs
@@ -41,7 +44,8 @@ import org.dashfoundation.example.util.truncateMiddle
  * Account detail — port of `AccountDetailView.swift`: overview card,
  * balance card, address-pool summary, and the per-pool address lists
  * (External / Internal / Absent / Absent-Hardened) plus this account's
- * UTXO set, all read from Room (`CoreAddressDao` / `TxoDao`).
+ * UTXO set, all read from Room (`CoreAddressDao` / `TxoDao`). An address row
+ * opens [CoreAddressDetailScreen], where its private key can be revealed.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalStdlibApi::class)
 @Composable
@@ -155,7 +159,11 @@ fun AccountDetailScreen(
                     .sortedBy { it.addressIndex }
                 if (bucket.isNotEmpty()) {
                     FormSection(title = "$name Addresses (${bucket.size})") {
-                        bucket.forEach { AddressRow(it) }
+                        bucket.forEach { row ->
+                            AddressRow(row) {
+                                navController.navigate(CoreAddressDetail(walletIdHex, row.address))
+                            }
+                        }
                     }
                 }
             }
@@ -195,9 +203,15 @@ private fun distinctTransactionCount(txos: List<TxoEntity>): Int {
     return seen.size
 }
 
+/** One address of a pool; tapping it opens [CoreAddressDetailScreen]. */
 @Composable
-private fun AddressRow(address: CoreAddressEntity) {
-    Column(modifier = Modifier.padding(vertical = 6.dp)) {
+private fun AddressRow(address: CoreAddressEntity, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 6.dp),
+    ) {
         Text(
             address.address,
             style = MaterialTheme.typography.bodySmall,

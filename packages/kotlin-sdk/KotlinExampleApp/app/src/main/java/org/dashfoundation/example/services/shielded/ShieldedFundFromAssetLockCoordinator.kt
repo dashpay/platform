@@ -45,8 +45,16 @@ class ShieldedFundFromAssetLockCoordinator(
 
     /** Result of a [startFunding] attempt. ← Swift `StartFundingResult`. */
     sealed interface StartFundingResult {
-        /** Fresh or restarted controller for this slot. */
-        data class Started(val controller: ShieldedFundFromAssetLockController) : StartFundingResult
+        /**
+         * The controller for this slot. [bodyScheduled] is false when the
+         * call re-presented a controller that already runs (or just ran) the
+         * same operation, so the body passed to this call will never run.
+         * ← Swift `.started(controller, bodyScheduled:)`.
+         */
+        data class Started(
+            val controller: ShieldedFundFromAssetLockController,
+            val bodyScheduled: Boolean = true,
+        ) : StartFundingResult
 
         /**
          * Another recipient is already shielding on this wallet; the
@@ -126,7 +134,7 @@ class ShieldedFundFromAssetLockCoordinator(
                 -> {
                     if (existing.operationId == operationId) {
                         // Re-tap of the same operation: bind to its state.
-                        return StartFundingResult.Started(existing)
+                        return StartFundingResult.Started(existing, bodyScheduled = false)
                     }
                     if (phase is ShieldedFundFromAssetLockController.Phase.InFlight) {
                         // A different operation while one is running on this

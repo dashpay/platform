@@ -23,6 +23,7 @@ use crate::state_transition::token_purchase_from_shielded_pool_transition::Token
 use crate::state_transition::token_shielded_transfer_with_shielded_fee_transition::methods::TokenShieldedTransferWithShieldedFeeTransitionMethodsV0;
 use crate::state_transition::token_shielded_transfer_with_shielded_fee_transition::TokenShieldedTransferWithShieldedFeeTransition;
 use crate::state_transition::token_unshield_with_shielded_fee_transition::methods::TokenUnshieldWithShieldedFeeTransitionMethodsV0;
+use crate::state_transition::token_unshield_with_shielded_fee_transition::v0::TokenUnshieldWithShieldedFeeTransitionV0;
 use crate::state_transition::token_unshield_with_shielded_fee_transition::TokenUnshieldWithShieldedFeeTransition;
 use crate::state_transition::StateTransition;
 use crate::ProtocolError;
@@ -330,6 +331,11 @@ pub fn build_token_unshield_with_shielded_fee_transition<P: OrchardProver>(
             "token unshield amount must be greater than zero".to_string(),
         ));
     }
+    if !TokenUnshieldWithShieldedFeeTransitionV0::is_valid_amount(amount) {
+        return Err(ProtocolError::ShieldedBuildError(format!(
+            "token unshield amount {amount} is above the most one transition moves"
+        )));
+    }
     let total_spent = total_value(&spender.spends)?;
     if amount > total_spent {
         return Err(ProtocolError::ShieldedBuildError(format!(
@@ -587,6 +593,44 @@ mod tests {
         .expect_err("zero amount must be rejected")
         .to_string();
         assert!(err.contains("greater than zero"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn rejects_an_unshield_amount_above_the_transition_limit_before_proving() {
+        use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::MAX_DISTRIBUTION_PARAM;
+
+        let (fvk, ask) = keys();
+        let address = test_orchard_address();
+        let err = build_token_unshield_with_shielded_fee_transition(
+            Identifier::from([1u8; 32]),
+            Identifier::from([2u8; 32]),
+            0,
+            TokenPoolSpender {
+                spends: vec![test_spendable_note(100)],
+                change_address: &address,
+                fvk: &fvk,
+                ask: &ask,
+                anchor: Anchor::empty_tree(),
+            },
+            Identifier::from([3u8; 32]),
+            MAX_DISTRIBUTION_PARAM + 1,
+            [0u8; 36],
+            ShieldedFeePayer {
+                spends: vec![test_spendable_note(1_000_000_000)],
+                change_address: &address,
+                fvk: &fvk,
+                ask: &ask,
+                anchor: Anchor::empty_tree(),
+            },
+            &TestProver,
+            PlatformVersion::latest(),
+        )
+        .expect_err("an amount above the limit must be rejected before proving")
+        .to_string();
+        assert!(
+            err.contains("above the most one transition moves"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]

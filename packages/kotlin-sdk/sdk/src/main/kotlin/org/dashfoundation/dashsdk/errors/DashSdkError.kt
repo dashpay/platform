@@ -643,6 +643,17 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorIdentityBalanceUnavailable` (native code 58). The identity's
+         * balance could not be read with a proof, so the operation that needed
+         * it (a shield from the identity's balance, Type 21) was refused
+         * before anything was saved or sent. Mirrors Swift's
+         * `PlatformWalletError.identityBalanceUnavailable` in
+         * `PlatformWalletResult.swift`.
+         */
+        class IdentityBalanceUnavailable(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * `ErrorShutdownIncomplete` (native code 27). A sync pass or an SPV
          * teardown was still running; nothing was wiped. Retry the stop or
          * clear. An SPV start refused with this needs an SPV stop first.
@@ -797,6 +808,23 @@ sealed class DashSdkError(
          */
         class PublicContactRequestUnconfirmed(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
+
+        /**
+         * `ErrorBalanceHistoryInconsistentHeights` (native code 83). The
+         * Platform address balance history kept getting one page of
+         * Platform's address balance changes proved below a height it had
+         * already read, within Rust's per-page retry bound, so it returned
+         * no history rather than a partial one. Every attempt got a
+         * successfully fetched, proof-verified reply below that height;
+         * errors from the SDK itself (its own stale-node rejection,
+         * transport or proof failures) keep their own mapping. Nothing
+         * changed: load the history again.
+         * ← Swift `PlatformWalletError.balanceHistoryInconsistentHeights`.
+         */
+        class BalanceHistoryInconsistentHeights(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
 
         /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
@@ -995,6 +1023,7 @@ sealed class DashSdkError(
             55 -> PlatformWallet.ShieldedIdentityDebitPending(message, cause)
             56 -> PlatformWallet.ShieldedRecoveryCorrupted(message, cause)
             57 -> PlatformWallet.ShieldedRecoveryKeysRequired(message, cause)
+            58 -> PlatformWallet.IdentityBalanceUnavailable(message, cause) // ErrorIdentityBalanceUnavailable
             59 -> PlatformWallet.SpvProcessRestartRequired(message, cause) // ErrorSpvProcessRestartRequired
             // ErrorPrivateContactRequestNeedsPrivateReply: the explicitly
             // public accept or send refused a contact that went private.
@@ -1007,6 +1036,7 @@ sealed class DashSdkError(
             74 -> PlatformWallet.PrivateContactStoreNotRead(message, cause) // ErrorPrivateContactStoreNotRead
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
+            83 -> PlatformWallet.BalanceHistoryInconsistentHeights(message, cause) // ErrorBalanceHistoryInconsistentHeights
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

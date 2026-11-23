@@ -69,6 +69,23 @@ public final class PersistentIdentity {
     /// nothing recorded. Written through ``recordedVotingKey``.
     public var votingKeyCheckAddress: Data? = nil
 
+    // MARK: - Masternode pro_tx_hash
+    /// The 32-byte pro_tx_hash of the masternode or evonode this row votes
+    /// for, in the wire order the vote functions take, recorded when the row
+    /// is loaded for voting (``SDK/loadMasternodeForVoting(proTxHash:votingAddress:)``).
+    /// Kept apart from ``identityId``: a masternode without an owner identity
+    /// (a shared masternode) is stored under its voter identity, whose id is
+    /// not the pro_tx_hash. `nil` when no load recorded it: an identity that
+    /// is not a masternode's, or a masternode row stored before it was
+    /// recorded, which is not known to be the masternode's owner identity
+    /// until Rust's rule says so again.
+    public var masternodeProTxHash: Data? = nil
+    /// Which of the masternode's identities this row is, as Rust returned it
+    /// when the row was loaded for voting
+    /// (``MasternodeVotingLoadedIdentity/Role``): `"owner"` or `"voter"`.
+    /// `nil` when no load recorded it. Read it through ``masternodeRole``.
+    public var masternodeRoleRaw: String? = nil
+
     // MARK: - Public Keys
     @Relationship(deleteRule: .cascade) public var publicKeys: [PersistentPublicKey]
 
@@ -365,6 +382,21 @@ public final class PersistentIdentity {
         }
     }
 
+    /// Which of the masternode's identities this row is, as recorded when it
+    /// was loaded for voting; `nil` when none was recorded (or the stored
+    /// value is not one this build knows).
+    public var masternodeRole: MasternodeVotingLoadedIdentity.Role? {
+        get { masternodeRoleRaw.flatMap(MasternodeVotingLoadedIdentity.Role.init(rawValue:)) }
+        set { masternodeRoleRaw = newValue?.rawValue }
+    }
+
+    /// Whether this row is a masternode's voter identity, which holds only a
+    /// voting key: credits or tokens sent to it could not be spent, so it is
+    /// never offered as a recipient.
+    public var isVotingOnlyIdentity: Bool {
+        masternodeRole == .voter
+    }
+
     /// The recorded check with the address of the key it was made of, as the
     /// voting key rules take and return it; `nil` when nothing is recorded or
     /// the check was recorded without a whole address. Setting a record
@@ -537,12 +569,20 @@ extension PersistentIdentity {
         return true
     }
 
+    /// Marks the identity and the payment-address rows it owns for deletion.
+    /// Does not save. Throws, deleting nothing, when the owner's
+    /// payment-address rows cannot be read: they reference their owner by id
+    /// only, so no relationship cascade reaches them, and deleting the
+    /// identity without them would strand rows a later re-add of the same id
+    /// could read back.
     @discardableResult
     public static func remove(
         in context: ModelContext,
         identityId: Data
-    ) -> Bool {
+    ) throws -> Bool {
         guard let row = fetch(in: context, identityId: identityId) else { return false }
+        try PersistentDashpayPaymentAddresses.removeOwned(
+            in: context, networkRaw: row.networkRaw, ownerIdentityId: identityId)
         context.delete(row)
         return true
     }
@@ -569,6 +609,13 @@ extension PersistentIdentity {
     /// before the identity is deleted. The other relationships (public keys,
     /// documents, token balances, owned contracts, the owning wallet) have
     /// optional inverses and need no pre-deletion.
+    ///
+    /// The identity's DashPay payment-address rows
+    /// (`PersistentDashpayPaymentAddresses`) are not children: they are keyed
+    /// by owner identity id, no cascade reaches them, and this method leaves
+    /// them alone. A caller that deletes the identity removes them with
+    /// `PersistentDashpayPaymentAddresses.removeOwned`, as
+    /// `deleteChildrenFirst(_:in:)` and the persistence handler do.
     public func deleteChildrenWithRequiredInverse(in context: ModelContext) {
         for name in Array(dpnsNames) {
             context.delete(name)
@@ -592,20 +639,23 @@ extension PersistentIdentity {
 
     /// Deletes `identity` from `context` without hitting the SwiftData fatal
     /// described on `deleteChildrenWithRequiredInverse(in:)`: the children
-    /// with a non-optional inverse are deleted and saved first, then the
-    /// identity, whose cascade takes its public keys and documents, is
-    /// deleted and saved.
+    /// with a non-optional inverse, and the payment-address rows the identity
+    /// owns (keyed by owner id, so no cascade reaches them), are deleted and
+    /// saved first; then the identity, whose cascade takes its public keys
+    /// and documents, is deleted and saved.
     ///
-    /// On a failed save the context is rolled back, which drops every
+    /// On a failed read or save the context is rolled back, which drops every
     /// unsaved change in it, and the error is rethrown. A failure in the
-    /// second save leaves the identity row but not the children the first
-    /// save already removed.
+    /// second save leaves the identity row but not the children and
+    /// payment-address rows the first save already removed.
     public static func deleteChildrenFirst(
         _ identity: PersistentIdentity,
         in context: ModelContext
     ) throws {
         do {
             identity.deleteChildrenWithRequiredInverse(in: context)
+            try PersistentDashpayPaymentAddresses.removeOwned(
+                in: context, networkRaw: identity.networkRaw, ownerIdentityId: identity.identityId)
             try context.save()
             context.delete(identity)
             try context.save()
@@ -613,5 +663,28 @@ extension PersistentIdentity {
             context.rollback()
             throw error
         }
+    }
+}
+
+// Kept out of the model's class body: the schema freezer reads only stored
+// declarations there.
+extension PersistentIdentity {
+    /// Why a send to a known voting-only identity is refused.
+    public static let votingOnlyRecipientMessage =
+        "The recipient is a masternode's voter identity, which holds only a voting key, so credits or tokens sent to it could not be spent."
+
+    /// Whether this device stores `identityId` on `network` as a masternode's
+    /// voter identity (``isVotingOnlyIdentity``). An identity the device does
+    /// not know is not one; a failed read throws, so it is never taken as
+    /// "not known".
+    public static func isKnownVotingOnlyIdentity(
+        _ identityId: Data,
+        on network: Network,
+        in context: ModelContext
+    ) throws -> Bool {
+        let target = identityId
+        return try context.fetch(
+            FetchDescriptor<PersistentIdentity>(predicate: #Predicate { $0.identityId == target })
+        ).contains { $0.network == network && $0.isVotingOnlyIdentity }
     }
 }

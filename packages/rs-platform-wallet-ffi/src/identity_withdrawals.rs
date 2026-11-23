@@ -79,7 +79,7 @@ pub struct IdentityWithdrawalFFI {
 
 /// Heap-allocate `s` as an owned C string, or null if it holds an interior
 /// NUL (which neither a status label nor a Base58 address can).
-fn owned_c_string(s: String) -> *const c_char {
+pub(crate) fn owned_c_string(s: String) -> *const c_char {
     CString::new(s)
         .map(|c| CString::into_raw(c).cast_const())
         .unwrap_or(ptr::null())

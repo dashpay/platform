@@ -16,6 +16,8 @@ pub mod contact;
 pub mod contact_info;
 pub mod contact_persistence;
 pub mod contact_request;
+pub mod contract_fee_claim;
+pub mod contract_user_moderation;
 pub mod core_address_types;
 pub mod core_wallet;
 pub mod core_wallet_types;
@@ -49,6 +51,7 @@ pub mod identity_persistence;
 pub mod identity_registration;
 pub mod identity_registration_funded_with_signer;
 pub mod identity_registration_with_signer;
+pub mod identity_removal;
 pub mod identity_sync;
 pub mod identity_top_up;
 pub mod identity_transfer;
@@ -74,6 +77,7 @@ pub mod platform_address_types;
 pub mod platform_addresses;
 pub mod platform_wallet_info;
 pub mod private_contact_request;
+pub mod private_document_create;
 pub mod private_documents;
 pub mod provider_key_at_index;
 mod runtime;
@@ -84,6 +88,8 @@ pub mod shielded_persistence;
 pub mod shielded_send;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
+#[cfg(feature = "shielded")]
+pub mod shielded_token_pools;
 pub mod shielded_types;
 #[cfg(feature = "shielded")]
 pub mod shielded_wallet_drain;
@@ -111,6 +117,8 @@ pub use asset_lock_persistence::*;
 pub use contact::*;
 pub use contact_persistence::*;
 pub use contact_request::*;
+pub use contract_fee_claim::*;
+pub use contract_user_moderation::*;
 pub use core_address_types::*;
 pub use core_wallet::*;
 pub use core_wallet_types::*;
@@ -143,6 +151,7 @@ pub use identity_persistence::*;
 pub use identity_registration::*;
 pub use identity_registration_funded_with_signer::*;
 pub use identity_registration_with_signer::*;
+pub use identity_removal::*;
 pub use identity_sync::*;
 pub use identity_top_up::*;
 pub use identity_transfer::*;
@@ -164,6 +173,7 @@ pub use platform_address_types::*;
 pub use platform_addresses::*;
 pub use platform_wallet_info::*;
 pub use private_contact_request::*;
+pub use private_document_create::*;
 pub use private_documents::*;
 pub use provider_key_at_index::*;
 pub use secp256k1_primitives::*;
@@ -171,6 +181,8 @@ pub use secp256k1_primitives::*;
 pub use shielded_send::*;
 #[cfg(feature = "shielded")]
 pub use shielded_sync::*;
+#[cfg(feature = "shielded")]
+pub use shielded_token_pools::*;
 pub use shielded_types::*;
 #[cfg(feature = "shielded")]
 pub use shielded_wallet_drain::*;

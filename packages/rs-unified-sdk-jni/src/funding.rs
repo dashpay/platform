@@ -91,7 +91,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_proverI
 /// (`0` = ShieldedTransfer/Shield, `1` = Unshield, `2` = ShieldedWithdrawal,
 /// `3` = ShieldFromIdentity: the compute-only floor, no storage component,
 /// `4` = IdentityTopUpFromShieldedPool: base + the flat identity-balance
-/// write cost) and Orchard action `count` (a single-note spend with change is 2
+/// write cost, `5` = TokenPurchaseFromShieldedPool: the fee a purchase paid
+/// from the notes adds on top of the price) and Orchard action `count` (a single-note spend with change is 2
 /// actions), computed at `managerHandle`'s network-tracked platform
 /// version — the same version the shielded builders carve fees with. No
 /// network round-trip. Throws on an unknown kind, an invalid manager

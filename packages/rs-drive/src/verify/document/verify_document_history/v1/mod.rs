@@ -10,9 +10,7 @@ use crate::verify::grovedb_proof_envelope::{
 };
 use crate::verify::{with_proved_root_on_budget_exceeded, RootHash};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::{
-    DecodedValueBudget, DocumentTypeRef, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
-};
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
 
 // Count-tree offset pagination requires GroveDB proof envelopes from version 1.
@@ -58,9 +56,8 @@ impl Drive {
     ) -> Result<(RootHash, DocumentHistoryDriveQueryExecutionResult), Error> {
         let (root, serialized) =
             Self::verify_document_history_serialized_v1(query, proof, document_type, version)?;
-        let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
         let result = serialized
-            .into_documents(&query.document_id, document_type, &mut budget, version)
+            .into_documents(&query.document_id, document_type, version)
             .map_err(|error| with_proved_root_on_budget_exceeded(root, error))?;
         Ok((root, result))
     }

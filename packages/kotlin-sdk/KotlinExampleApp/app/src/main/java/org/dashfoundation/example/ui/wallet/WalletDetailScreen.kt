@@ -64,11 +64,13 @@ import org.dashfoundation.example.navigation.ShieldedActivity
 import org.dashfoundation.example.navigation.ShieldedFund
 import org.dashfoundation.example.navigation.TransferPlatformAddress
 import org.dashfoundation.example.navigation.WalletTransactions
+import org.dashfoundation.example.navigation.PlatformBalanceHistory
 import org.dashfoundation.example.navigation.WithdrawPlatformAddress
 import androidx.compose.ui.text.font.FontWeight
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.shielded.UnfinishedWalletDrainsList
 import org.dashfoundation.example.ui.theme.appStatusColors
 import org.dashfoundation.example.util.formatCredits
 import org.dashfoundation.example.util.formatDate
@@ -268,6 +270,12 @@ fun WalletDetailScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.testTag("walletDetail.emptyWallet"),
                     )
+                    // A drained wallet still has a Platform balance history (ADDR-10);
+                    // keep the way to it when the Platform row is hidden.
+                    TextButton(
+                        onClick = { navController.navigate(PlatformBalanceHistory(walletIdHex)) },
+                        modifier = Modifier.testTag("balanceCard.platform.history"),
+                    ) { Text("Balance History") }
                     return@FormSection
                 }
                 LabeledContent("Core Balance", formatDuffs(core?.confirmed ?: 0))
@@ -282,6 +290,7 @@ fun WalletDetailScreen(
                     onTopUp = { navController.navigate(FundFromAssetLock(walletIdHex)) },
                     onTransfer = { navController.navigate(TransferPlatformAddress(walletIdHex)) },
                     onWithdraw = { navController.navigate(WithdrawPlatformAddress(walletIdHex)) },
+                    onHistory = { navController.navigate(PlatformBalanceHistory(walletIdHex)) },
                 )
                 if (hasShielded) {
                     ShieldedBalanceRow(
@@ -333,6 +342,20 @@ fun WalletDetailScreen(
                         Text("($transactionCount)")
                     }
                 }
+            }
+
+            // Saved Core to shielded Max transfers (← WalletDetailView's
+            // `UnfinishedWalletDrainsList`). Renders nothing when this
+            // wallet has none. Above the accounts, whose list is long: an
+            // unfinished transfer must not sit below the fold.
+            if (hasShielded) {
+                UnfinishedWalletDrainsList(
+                    walletIdHex = walletIdHex,
+                    walletId = walletId,
+                    network = network,
+                    manager = manager,
+                    navController = navController,
+                )
             }
 
             // Accounts (← the Accounts header + AccountListView).
@@ -530,6 +553,7 @@ private fun PlatformBalanceRow(
     onTopUp: () -> Unit,
     onTransfer: () -> Unit,
     onWithdraw: () -> Unit,
+    onHistory: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Row(
@@ -589,6 +613,15 @@ private fun PlatformBalanceRow(
                         onWithdraw()
                     },
                     modifier = Modifier.testTag("walletDetail.withdrawPlatformButton"),
+                )
+                // Platform address balance change history (ADDR-10).
+                DropdownMenuItem(
+                    text = { Text("Balance History") },
+                    onClick = {
+                        menuOpen = false
+                        onHistory()
+                    },
+                    modifier = Modifier.testTag("balanceCard.platform.history"),
                 )
             }
         }

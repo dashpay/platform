@@ -5,7 +5,9 @@
 //! in milliseconds and credits as JSON integers, the document hash as 64 hex characters. Every
 //! cursor is the one rs-sdk's `after` gives; none is worked out here.
 
-use dash_sdk::dpp::data_contract::config::moderation::ContractModerationReason;
+use dash_sdk::dpp::data_contract::config::moderation::{
+    ContractDocumentRemoval, ContractModerationReason,
+};
 use dash_sdk::dpp::platform_value::string_encoding::{encode, Encoding};
 use dash_sdk::dpp::platform_value::{Identifier, Value};
 use dash_sdk::platform::contract_fee_pots::{ContractFeePotState, ContractFeePots};
@@ -77,8 +79,10 @@ fn warnings_json(warnings: &[ContractWarning]) -> JsonValue {
 }
 
 /// One identity's status on the lists read: `lists`, and the fields of those lists only, so a
-/// list not read stays absent (unknown) rather than reading as "not banned".
-pub(super) fn status_json(statuses: &ContractModerationListStatuses) -> JsonValue {
+/// list not read stays absent (unknown) rather than reading as "not banned". Public as
+/// `contract_moderation_status_json` for the platform wallet FFI, which writes the status a
+/// moderation leaves in this same shape.
+pub fn status_json(statuses: &ContractModerationListStatuses) -> JsonValue {
     let mut object = Map::new();
     let mut lists = Vec::new();
     for status in &statuses.0 {
@@ -326,9 +330,29 @@ fn removal_entry_view<'a>(
     entry: &'a ContractDocumentRemovalEntry,
     kept_values: &'a BTreeMap<String, Value>,
 ) -> RemovalEntryView<'a> {
-    let removal = &entry.removal;
+    removal_view(entry.document_id, &entry.removal, kept_values)
+}
+
+/// One removal record of document `document_id` with the values it keeps, in the shape of one
+/// entry of the removals page (`removals[i]`). Public as `contract_document_removal_json` for
+/// the platform wallet FFI, which writes the record a moderator's deletion or restore leaves in
+/// this same shape. A kept value that refuses to serialize is refused, naming the record and
+/// the field.
+pub fn document_removal_json(
+    document_id: Identifier,
+    removal: &ContractDocumentRemoval,
+    kept_values: &BTreeMap<String, Value>,
+) -> Result<JsonValue, serde_json::Error> {
+    serde_json::to_value(removal_view(document_id, removal, kept_values))
+}
+
+fn removal_view<'a>(
+    document_id: Identifier,
+    removal: &'a ContractDocumentRemoval,
+    kept_values: &'a BTreeMap<String, Value>,
+) -> RemovalEntryView<'a> {
     RemovalEntryView {
-        document_id: base58(entry.document_id),
+        document_id: base58(document_id),
         document_owner_id: base58(removal.document_owner_id),
         moderator_id: base58(removal.moderator_id),
         reason: reason_json(&removal.reason),
@@ -343,7 +367,7 @@ fn removal_entry_view<'a>(
             .as_ref()
             .map(|restoration| restoration.restored_at),
         kept_fields: KeptFieldsView {
-            document_id: entry.document_id,
+            document_id,
             kept_values,
         },
     }
@@ -413,8 +437,10 @@ pub(super) fn action_counts_json(counts: &ContractModerationActionCounts) -> Jso
 }
 
 /// One pot; the last claim's fields only when the pot was ever claimed (epoch 0 is an epoch a
-/// pot can have been claimed in, so "never" is the absent fields).
-fn fee_pot_json(pot: &ContractFeePotState) -> JsonValue {
+/// pot can have been claimed in, so "never" is the absent fields). Public as
+/// `contract_fee_pot_json` for the platform wallet FFI, which writes the pot a fee claim leaves
+/// in this same shape.
+pub fn fee_pot_json(pot: &ContractFeePotState) -> JsonValue {
     let mut object = Map::new();
     object.insert("credits".to_string(), json!(pot.credits));
     if let Some(last_claim) = pot.last_claim {
@@ -718,6 +744,26 @@ mod tests {
         let json = serde_json::to_value(removals_json(removals)).expect("writes");
         assert_eq!(json["removals"].as_array().map(Vec::len), Some(1));
         assert!(json.get("nextStartAfter").is_none());
+    }
+
+    /// One record written alone is the record the page writes, so a host decodes a
+    /// moderator's deletion or restore with the type it decodes the page with.
+    #[test]
+    fn should_write_one_removal_as_the_page_writes_it() {
+        let kept = BTreeMap::from([("hashtag".to_string(), Value::Text("dash".to_string()))]);
+        for restored in [false, true] {
+            let entry = removal_entry(3, restored);
+            let page =
+                serde_json::to_value(removals_json(ContractDocumentRemovalsWithKeptValues {
+                    removals: vec![(entry.clone(), kept.clone())],
+                    next: None,
+                }))
+                .expect("writes");
+            assert_eq!(
+                document_removal_json(entry.document_id, &entry.removal, &kept).expect("writes"),
+                page["removals"][0]
+            );
+        }
     }
 
     fn team_action_entry(seed: u8, revision: Option<u64>) -> ContractTeamActionEntry {

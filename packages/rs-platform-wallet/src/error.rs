@@ -1,5 +1,6 @@
 use dash_sdk::error::ContextProviderError;
 use dash_sdk::platform::dashpay::InvitationError;
+use dash_sdk::platform::private_document_seal::PrivateDocumentSealError;
 use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus;
 use dpp::address_funds::PlatformAddress;
 use dpp::consensus::state::address_funds::AddressInvalidNonceError;
@@ -796,6 +797,23 @@ pub enum PlatformWalletError {
     #[error("decision proposal {proposal_id} not found")]
     DecisionProposalNotFound { proposal_id: Identifier },
 
+    /// No data contract with this id exists on Platform. Distinct from
+    /// [`Self::InvalidParameter`]: the id was well-formed, the read came
+    /// back empty.
+    #[error("data contract {contract_id} not found")]
+    ContractNotFound { contract_id: Identifier },
+
+    /// No document with this id exists on Platform under the named
+    /// contract and document type, so there is nothing to act on.
+    /// Distinct from [`Self::InvalidParameter`]: the id was well-formed,
+    /// the read came back empty.
+    #[error("document {document_id} of {document_type_name} on contract {contract_id} not found")]
+    DocumentNotFound {
+        contract_id: Identifier,
+        document_type_name: String,
+        document_id: Identifier,
+    },
+
     /// The DPNS domain document carries no `$price` — it is not listed
     /// for sale. Raised by the wallet's pre-flight check and by the
     /// consensus downcast of `DocumentNotForSaleError` (DPP code 40108).
@@ -1302,6 +1320,28 @@ pub enum PlatformWalletError {
         token_id: Identifier,
         reason: String,
     },
+
+    /// The account's spendable notes in the token's shielded pool do not
+    /// cover the amount, both in the token's smallest unit. Notes a spend in
+    /// flight holds are not counted. Refused before anything was reserved.
+    #[error(
+        "Insufficient shielded balance of token {token_id}: available {available}, required \
+         {required}"
+    )]
+    TokenShieldedInsufficientBalance {
+        token_id: Identifier,
+        available: u64,
+        required: u64,
+    },
+
+    /// A token shielded pool cannot be unwatched while a spend that has not
+    /// settled holds some of the wallet's notes there: forgetting them would
+    /// offer them to another spend once the pool is watched again.
+    #[error(
+        "Token {token_id}'s shielded pool holds notes of a spend that has not settled; unwatch \
+         it once the spend settles"
+    )]
+    TokenShieldedPoolSpendPending { token_id: Identifier },
 }
 
 /// The SDK's invitation errors map onto the variants the wallet used before
@@ -1316,6 +1356,22 @@ impl From<InvitationError> for PlatformWalletError {
             }
             InvitationError::NotChainLocked(message) => Self::AssetLockNotChainLocked(message),
             InvitationError::Sdk(error) => Self::Sdk(error),
+        }
+    }
+}
+
+/// What the SDK refuses to seal as an entry of a private document type
+/// ([`PrivateDocumentSealError::is_refused_request`]: the type, a key or the
+/// properties asked for) is the caller's
+/// [`PlatformWalletError::InvalidParameter`]; a signer holding another key
+/// than the sender key, or an envelope that did not seal a checked request,
+/// is the provider's [`PlatformWalletError::InvalidIdentityData`].
+impl From<PrivateDocumentSealError> for PlatformWalletError {
+    fn from(error: PrivateDocumentSealError) -> Self {
+        if error.is_refused_request() {
+            Self::InvalidParameter(error.to_string())
+        } else {
+            Self::InvalidIdentityData(error.to_string())
         }
     }
 }

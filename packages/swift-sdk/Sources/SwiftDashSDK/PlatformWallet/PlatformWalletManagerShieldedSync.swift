@@ -82,6 +82,123 @@ public struct ShieldedSyncEvent: Sendable {
     }
 }
 
+/// Which token pool spend a `shieldedTokenSpendPreview` asks about. Mirrors
+/// the Rust `TokenPoolSpendKind`; the raw value is the FFI `kind` byte.
+public enum ShieldedTokenPoolSpendKind: UInt8, Sendable {
+    /// `shieldedTokenTransfer` (type 26): the tokens move within the pool.
+    case shieldedTransfer = 0
+    /// `shieldedTokenUnshield` (type 27): the tokens leave the pool into an
+    /// identity's token balance.
+    case unshield = 1
+}
+
+/// What a token pool spend would take from an account's notes, as Rust
+/// chooses them (`shieldedTokenSpendPreview`). Mirrors the Rust
+/// `ShieldedTokenSpendPreview`; every value is Rust's.
+public struct ShieldedTokenSpendPreview: Sendable, Hashable {
+    /// The token notes the spend would spend.
+    public let tokenNotes: UInt32
+    /// The credit pool notes that would pay its fee.
+    public let feeNotes: UInt32
+    /// The fee, in credits, paid from the credit pool.
+    public let fee: UInt64
+
+    public init(tokenNotes: UInt32, feeNotes: UInt32, fee: UInt64) {
+        self.tokenNotes = tokenNotes
+        self.feeNotes = feeNotes
+        self.fee = fee
+    }
+}
+
+/// One account's tokens in one token shielded pool a wallet watches, as the
+/// local scan knows them. Mirrors the Rust `ShieldedTokenPoolBalance`
+/// (`ShieldedTokenPoolBalanceFFI` across the FFI); every value is Rust's,
+/// copied as is. `shieldedTokenPoolBalances(walletId:)` lists them, one per
+/// watched pool and bound account.
+public struct ShieldedTokenPoolBalance: Sendable, Hashable {
+    /// The watched token's 32-byte id.
+    public let tokenId: Data
+    /// The 32-byte id of the contract that defines the token.
+    public let dataContractId: Data
+    /// The token's position in its contract.
+    public let tokenContractPosition: UInt16
+    /// The Orchard account the notes belong to.
+    public let accountIndex: UInt32
+    /// The value of the account's unspent notes in the pool that no spend in
+    /// flight holds, in the token's smallest unit: what a token pool spend
+    /// can use now. Covers exactly the `scannedNoteCount` notes checked.
+    public let balance: UInt64
+    /// How many notes make up `balance`.
+    public let unspentNoteCount: UInt32
+    /// The value of the account's unspent notes a spend in flight holds (a
+    /// submitted `shieldedTokenTransfer`), in the token's smallest unit. They
+    /// leave when a shielded sync sees them spent, or return to `balance` if
+    /// the spend can no longer execute. Not part of `balance`.
+    public let reservedBalance: UInt64
+    /// How many of the pool's notes, from the first without a gap, were
+    /// checked for this account; `nil` before the first scan reached it.
+    public let scannedNoteCount: UInt64?
+    /// The highest note count a page of the pool's scans has proved; `nil`
+    /// before any. A scan answered by a lagging node never lowers it, and it
+    /// does not mean the scan covered it: `scannedNoteCount` is what was
+    /// checked.
+    public let poolNoteCount: UInt64?
+    /// The highest height a page of the pool's scans was proven at; `nil`
+    /// before any. It does not by itself certify that a scan reached the
+    /// pool's end.
+    public let scannedHeight: UInt64?
+    /// Why the last scan of the pool stopped early, if it did. The next
+    /// chunk read clears it.
+    public let lastError: String?
+
+    public init(
+        tokenId: Data,
+        dataContractId: Data,
+        tokenContractPosition: UInt16,
+        accountIndex: UInt32,
+        balance: UInt64,
+        unspentNoteCount: UInt32,
+        reservedBalance: UInt64 = 0,
+        scannedNoteCount: UInt64?,
+        poolNoteCount: UInt64?,
+        scannedHeight: UInt64?,
+        lastError: String?
+    ) {
+        self.tokenId = tokenId
+        self.dataContractId = dataContractId
+        self.tokenContractPosition = tokenContractPosition
+        self.accountIndex = accountIndex
+        self.balance = balance
+        self.unspentNoteCount = unspentNoteCount
+        self.reservedBalance = reservedBalance
+        self.scannedNoteCount = scannedNoteCount
+        self.poolNoteCount = poolNoteCount
+        self.scannedHeight = scannedHeight
+        self.lastError = lastError
+    }
+
+    /// Copy a Rust-owned row. Each `has_*` flag gates its value: a `false`
+    /// flag becomes `nil`, never the zero the C struct holds. Must run while
+    /// the Rust allocation is alive: the error string is copied, not kept.
+    init(ffi: ShieldedTokenPoolBalanceFFI) {
+        var tokenId = ffi.token_id
+        var contractId = ffi.data_contract_id
+        self.init(
+            tokenId: withUnsafeBytes(of: &tokenId) { Data($0) },
+            dataContractId: withUnsafeBytes(of: &contractId) { Data($0) },
+            tokenContractPosition: ffi.token_contract_position,
+            accountIndex: ffi.account_index,
+            balance: ffi.balance,
+            unspentNoteCount: ffi.unspent_note_count,
+            reservedBalance: ffi.reserved_balance,
+            scannedNoteCount: ffi.has_scanned_note_count ? ffi.scanned_note_count : nil,
+            poolNoteCount: ffi.has_pool_note_count ? ffi.pool_note_count : nil,
+            scannedHeight: ffi.has_scanned_height ? ffi.scanned_height : nil,
+            lastError: ffi.last_error.map { String(cString: $0) }
+        )
+    }
+}
+
 extension PlatformWalletManager {
     /// Shutdown leaves the handle live for admitted operations after its
     /// early shielded stop. Do not restart or mutate that lifecycle while
@@ -1354,8 +1471,9 @@ extension PlatformWalletManager {
     ///
     /// `totalAgreedPrice` is the price the buyer agreed to; Drive refuses
     /// the purchase unless it covers the token's configured price for
-    /// `tokenCount`. The wallet does not sync token pool notes yet, so the
-    /// bought tokens are not shown anywhere.
+    /// `tokenCount`. Rust watches the token's pool for the wallet, so the
+    /// shielded sync that confirms the purchase also finds the bought tokens
+    /// (`shieldedTokenPoolBalances(walletId:)`).
     ///
     /// `resolver` supplies the per-operation Orchard spend authority (see
     /// [`shieldedTransfer`]). No identity is involved.
@@ -1430,6 +1548,296 @@ extension PlatformWalletManager {
         }.value
     }
 
+    /// A token's shielded pool → an Orchard address in the same pool. The
+    /// Type 26 `TokenShieldedTransferWithShieldedFee` transition: `amount`
+    /// of the token at `tokenContractPosition` of `dataContractId`, in the
+    /// token's smallest unit, leaves `walletId`'s notes on `account` in the
+    /// token's shielded pool for `recipientRaw43` (the same raw 43-byte
+    /// Orchard address `shieldedTransfer` takes), the change goes back to
+    /// the account, and the fee is paid from the account's notes in the
+    /// credit pool. Rust checks the token, the network and both note sets,
+    /// builds, broadcasts, records the activity (kind tag 11) and requests a
+    /// shielded sync when the transfer may be on the network.
+    ///
+    /// Returning means submitted, not confirmed: Platform accepted the
+    /// transfer, but its answer does not show that it executed, so its
+    /// activity row stays pending (and its notes in both pools reserved,
+    /// `ShieldedTokenPoolBalance.reservedBalance`) until a shielded sync
+    /// confirms it once it lands. Do not retry it.
+    ///
+    /// `resolver` supplies the per-operation Orchard spend authority (see
+    /// [`shieldedTransfer`]). No identity is involved.
+    ///
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` once the
+    /// spend may have reached a node and its result is not proved: it may
+    /// already be on chain or may still execute, so the caller must NOT
+    /// retry. Other refusals (not enough tokens or fee notes, too many
+    /// notes, no recorded anchor yet, a token without a shielded pool)
+    /// carry Rust's reason in the thrown error.
+    public func shieldedTokenTransfer(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32 = 0,
+        dataContractId: Data,
+        tokenContractPosition: UInt16,
+        recipientRaw43: Data,
+        amount: UInt64
+    ) async throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        guard dataContractId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "dataContractId must be exactly 32 bytes"
+            )
+        }
+        guard recipientRaw43.count == 43 else {
+            throw PlatformWalletError.invalidParameter(
+                "recipient must be exactly 43 raw Orchard bytes"
+            )
+        }
+        guard resolver.handle != nil else {
+            throw PlatformWalletError.invalidParameter(
+                "MnemonicResolver has no handle"
+            )
+        }
+
+        // Admitted from before the FFI call until its result is converted, so
+        // `shutdown()` waits for a transfer already past this point instead
+        // of destroying the handle under it.
+        try await withAdmittedNativeOperation("shieldedTokenTransfer") { handle -> Void in
+            // Guaranteed resolver keepalive across the FFI call:
+            // same rationale as `shieldedTransfer`. The handle is read here,
+            // inside the admitted body, because the raw pointer is not
+            // `Sendable` (the resolver is).
+            try withExtendedLifetime(resolver) {
+                guard let resolverHandle = resolver.handle else {
+                    throw PlatformWalletError.invalidParameter(
+                        "MnemonicResolver has no handle"
+                    )
+                }
+                try walletId.withUnsafeBytes { widRaw in
+                    guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                    }
+                    try dataContractId.withUnsafeBytes { cidRaw in
+                        guard let cidPtr = cidRaw.baseAddress?
+                            .assumingMemoryBound(to: UInt8.self)
+                        else {
+                            throw PlatformWalletError.invalidParameter(
+                                "dataContractId baseAddress is nil"
+                            )
+                        }
+                        try recipientRaw43.withUnsafeBytes { recipientRaw in
+                            guard let recipientPtr = recipientRaw.baseAddress?
+                                .assumingMemoryBound(to: UInt8.self)
+                            else {
+                                throw PlatformWalletError.invalidParameter(
+                                    "recipient baseAddress is nil"
+                                )
+                            }
+                            try platform_wallet_manager_shielded_token_transfer(
+                                handle,
+                                widPtr,
+                                resolverHandle,
+                                account,
+                                cidPtr,
+                                tokenContractPosition,
+                                recipientPtr,
+                                amount
+                            ).check()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// A token's shielded pool → an existing identity's token balance. The
+    /// Type 27 `TokenUnshieldWithShieldedFee` transition: `amount` of the
+    /// token at `tokenContractPosition` of `dataContractId`, in the token's
+    /// smallest unit, leaves `walletId`'s notes on `account` in the token's
+    /// shielded pool for the token balance of `recipientIdentityId` (32
+    /// bytes), the change goes back to the account, and the fee is paid from
+    /// the account's notes in the credit pool. Rust checks, selects, builds,
+    /// broadcasts, records the activity (kind tag 12) and requests a shielded
+    /// sync when the unshield may be on the network.
+    ///
+    /// Returning means submitted, not confirmed, as for
+    /// `shieldedTokenTransfer`: the activity row stays pending (and the notes
+    /// in both pools reserved) until a shielded sync confirms it. Do not
+    /// retry it. `resolver` supplies the per-operation Orchard spend
+    /// authority (see [`shieldedTransfer`]).
+    ///
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` once the spend
+    /// may have reached a node and its result is not proved: the caller must
+    /// NOT retry. Other refusals carry Rust's reason in the thrown error.
+    public func shieldedTokenUnshield(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32 = 0,
+        dataContractId: Data,
+        tokenContractPosition: UInt16,
+        recipientIdentityId: Data,
+        amount: UInt64
+    ) async throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        guard dataContractId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "dataContractId must be exactly 32 bytes"
+            )
+        }
+        guard recipientIdentityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "recipientIdentityId must be exactly 32 bytes"
+            )
+        }
+        guard resolver.handle != nil else {
+            throw PlatformWalletError.invalidParameter(
+                "MnemonicResolver has no handle"
+            )
+        }
+
+        // Admitted from before the FFI call until its result is converted, so
+        // `shutdown()` waits for an unshield already past this point instead
+        // of destroying the handle under it.
+        try await withAdmittedNativeOperation("shieldedTokenUnshield") { handle -> Void in
+            // Guaranteed resolver keepalive across the FFI call:
+            // same rationale as `shieldedTransfer`. The handle is read here,
+            // inside the admitted body, because the raw pointer is not
+            // `Sendable` (the resolver is).
+            try withExtendedLifetime(resolver) {
+                guard let resolverHandle = resolver.handle else {
+                    throw PlatformWalletError.invalidParameter(
+                        "MnemonicResolver has no handle"
+                    )
+                }
+                try walletId.withUnsafeBytes { widRaw in
+                    guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                    }
+                    try dataContractId.withUnsafeBytes { cidRaw in
+                        guard let cidPtr = cidRaw.baseAddress?
+                            .assumingMemoryBound(to: UInt8.self)
+                        else {
+                            throw PlatformWalletError.invalidParameter(
+                                "dataContractId baseAddress is nil"
+                            )
+                        }
+                        try recipientIdentityId.withUnsafeBytes { ridRaw in
+                            guard let ridPtr = ridRaw.baseAddress?
+                                .assumingMemoryBound(to: UInt8.self)
+                            else {
+                                throw PlatformWalletError.invalidParameter(
+                                    "recipientIdentityId baseAddress is nil"
+                                )
+                            }
+                            try platform_wallet_manager_shielded_token_unshield(
+                                handle,
+                                widPtr,
+                                resolverHandle,
+                                account,
+                                cidPtr,
+                                tokenContractPosition,
+                                ridPtr,
+                                amount
+                            ).check()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// What a token pool spend of `kind` moving `amount` (the token's
+    /// smallest unit) of the token at `tokenContractPosition` of
+    /// `dataContractId` would take from `walletId`'s notes on `account`, as
+    /// Rust chooses them: its fee in credits and the token and credit pool
+    /// note counts. Local state only: no network read, nothing reserved, no
+    /// mnemonic. Throws Rust's refusal (a zero amount, too few tokens, too few
+    /// credits for the fee, too many notes) exactly as the spend would refuse
+    /// on these notes. Async because it waits for a shielded sync pass that
+    /// holds the store.
+    public func shieldedTokenSpendPreview(
+        walletId: Data,
+        account: UInt32 = 0,
+        dataContractId: Data,
+        tokenContractPosition: UInt16,
+        kind: ShieldedTokenPoolSpendKind,
+        amount: UInt64
+    ) async throws -> ShieldedTokenSpendPreview {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        guard dataContractId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "dataContractId must be exactly 32 bytes"
+            )
+        }
+
+        let kindByte = kind.rawValue
+        // Admitted through the FFI call and the result conversion, as the
+        // spends are, so `shutdown()` waits for a preview in flight.
+        return try await withAdmittedNativeOperation("shieldedTokenSpendPreview") {
+            handle -> ShieldedTokenSpendPreview in
+            var fee: UInt64 = 0
+            var tokenNotes: UInt32 = 0
+            var feeNotes: UInt32 = 0
+            try walletId.withUnsafeBytes { widRaw in
+                guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                else {
+                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                }
+                try dataContractId.withUnsafeBytes { cidRaw in
+                    guard let cidPtr = cidRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter(
+                            "dataContractId baseAddress is nil"
+                        )
+                    }
+                    try platform_wallet_manager_shielded_token_spend_preview(
+                        handle,
+                        widPtr,
+                        account,
+                        cidPtr,
+                        tokenContractPosition,
+                        kindByte,
+                        amount,
+                        &fee,
+                        &tokenNotes,
+                        &feeNotes
+                    ).check()
+                }
+            }
+            return ShieldedTokenSpendPreview(tokenNotes: tokenNotes, feeNotes: feeNotes, fee: fee)
+        }
+    }
+
     /// Whether a token's direct purchase can be paid from the shielded pool,
     /// as Rust reads the token's verified configuration
     /// (`platform_wallet_manager_shielded_token_purchase_availability`).
@@ -1484,6 +1892,150 @@ extension PlatformWalletManager {
             )
         }
         return availability
+    }
+
+    /// Watch the shielded pool of the token at `tokenContractPosition` of
+    /// `dataContractId` for `walletId`, so every later shielded sync scans it
+    /// for the wallet's notes. Rust reads the token's configuration with
+    /// proofs first and refuses a token without a shielded pool, or one whose
+    /// configuration cannot be read (asking again may succeed); the thrown
+    /// error carries Rust's reason. Watching a watched pool again changes
+    /// nothing. Returns the token's 32-byte id.
+    ///
+    /// The new pool is scanned by the next shielded sync
+    /// (`syncShieldedNow()` or the background loop).
+    public func shieldedTokenPoolWatch(
+        walletId: Data,
+        dataContractId: Data,
+        tokenContractPosition: UInt16
+    ) async throws -> Data {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        guard dataContractId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "dataContractId must be exactly 32 bytes"
+            )
+        }
+
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) { () -> Data in
+            var outTokenId = [UInt8](repeating: 0, count: 32)
+            try walletId.withUnsafeBytes { widRaw in
+                guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                else {
+                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                }
+                try dataContractId.withUnsafeBytes { cidRaw in
+                    guard let cidPtr = cidRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter(
+                            "dataContractId baseAddress is nil"
+                        )
+                    }
+                    try outTokenId.withUnsafeMutableBufferPointer { outBp in
+                        try platform_wallet_manager_shielded_token_pool_watch(
+                            handle,
+                            widPtr,
+                            cidPtr,
+                            tokenContractPosition,
+                            outBp.baseAddress!
+                        ).check()
+                    }
+                }
+            }
+            return Data(outTokenId)
+        }.value
+    }
+
+    /// Stop watching `tokenId`'s shielded pool for `walletId`; Rust forgets
+    /// the wallet's notes and scan state there. Unwatching a pool not watched
+    /// changes nothing. Async because it waits for a shielded sync pass that
+    /// holds the store.
+    public func shieldedTokenPoolUnwatch(walletId: Data, tokenId: Data) async throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32, tokenId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId and tokenId must be exactly 32 bytes"
+            )
+        }
+
+        let handle = self.handle
+        try await Task.detached(priority: .userInitiated) {
+            try walletId.withUnsafeBytes { widRaw in
+                guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                else {
+                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                }
+                try tokenId.withUnsafeBytes { tidRaw in
+                    guard let tidPtr = tidRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter("tokenId baseAddress is nil")
+                    }
+                    try platform_wallet_manager_shielded_token_pool_unwatch(
+                        handle,
+                        widPtr,
+                        tidPtr
+                    ).check()
+                }
+            }
+        }.value
+    }
+
+    /// `walletId`'s tokens in every shielded pool it watches, one entry per
+    /// watched pool and bound account, in Rust's order, from the local scan
+    /// alone (no network read). Refresh them with a shielded sync
+    /// (`syncShieldedNow()`), which scans the watched pools. Async because it
+    /// waits for a shielded sync pass that holds the store.
+    public func shieldedTokenPoolBalances(
+        walletId: Data
+    ) async throws -> [ShieldedTokenPoolBalance] {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) {
+            try walletId.withUnsafeBytes { raw in
+                guard let widPtr = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                }
+                var rows: UnsafeMutablePointer<ShieldedTokenPoolBalanceFFI>?
+                var count: UInt = 0
+                let result = platform_wallet_manager_shielded_token_pool_balances(
+                    handle,
+                    widPtr,
+                    &rows,
+                    &count
+                )
+                // The free function accepts null and 0, and Rust resets both
+                // before any fallible work, so this is safe on every path.
+                defer { platform_wallet_manager_shielded_token_pool_balances_free(rows, count) }
+                try result.check()
+                guard let rows else { return [ShieldedTokenPoolBalance]() }
+                return UnsafeBufferPointer(start: rows, count: Int(count)).map {
+                    ShieldedTokenPoolBalance(ffi: $0)
+                }
+            }
+        }.value
     }
 
     /// Shielded → Core L1 withdraw. Spends notes from `walletId`'s

@@ -9,10 +9,12 @@
 //! another diversifier in the same account, so all old addresses remain covered.
 
 use super::NetworkShieldedCoordinator;
+use crate::wallet::identity::types::dashpay::profile::parse_shielded_address;
 use crate::wallet::platform_wallet::{PlatformWallet, PlatformWalletInfo};
 use crate::PlatformWalletError;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
+use grovedb_commitment_tree::Scope;
 use key_wallet::wallet::root_extended_keys::RootExtendedPrivKey;
 use key_wallet::Wallet;
 use key_wallet_manager::WalletManager;
@@ -28,6 +30,11 @@ pub(crate) struct PreparedTipAccount {
 }
 
 impl PreparedTipAccount {
+    /// The coordinator the account was prepared on, while it is alive.
+    pub(crate) fn coordinator(&self) -> Option<Arc<NetworkShieldedCoordinator>> {
+        self.coordinator.upgrade()
+    }
+
     /// The prepared account, while the preparation stands: its coordinator is alive
     /// and has not been cleared since.
     pub(crate) fn standing_account(&self) -> Option<u32> {
@@ -297,6 +304,89 @@ impl PlatformWallet {
             .filter(|prepared| *prepared == current)
     }
 
+    /// Refuse a profile `shieldedAddress` this wallet must not publish for
+    /// `identity_id`. An address of another wallet passes: only its owner
+    /// can tell what it is. One of this wallet's own passes only when it is
+    /// an external receiving address of the identity's dedicated account,
+    /// and that account stands prepared for the identity in this session
+    /// ([`Self::prepared_shielded_identity_account`]). An ordinary account's
+    /// address would tie the wallet's own funds to the identity, and another
+    /// identity's account would tie the two identities together.
+    ///
+    /// The wallet tells its own addresses by the viewing keys of its bound
+    /// shielded accounts. Before the first bind it holds none and could not
+    /// tell, so it refuses with [`PlatformWalletError::ShieldedNotBound`]
+    /// instead of letting one of its own through. An account of the same
+    /// seed that is not bound (never bound, or left out of the last bind)
+    /// is not recognised: the wallet holds no key of it, and its address
+    /// passes as another wallet's would.
+    ///
+    /// The caller holds the admission of the coordinator the identity's
+    /// account was prepared on ([`Self::prepared_tip_coordinator`]) from
+    /// before this check until the profile is written, so a Clear cannot
+    /// end the preparation in between.
+    pub(crate) async fn check_shielded_address_publication(
+        &self,
+        identity_id: &Identifier,
+        address: &[u8; 43],
+    ) -> Result<(), PlatformWalletError> {
+        let address = parse_shielded_address(address).ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(
+                "Invalid or unsupported shieldedAddress".to_string(),
+            )
+        })?;
+        let owning_account = {
+            let keys = self.shielded_keys.read().await;
+            let keys = keys.as_ref().ok_or(PlatformWalletError::ShieldedNotBound)?;
+            keys.iter().find_map(|(account, views)| {
+                views
+                    .full_viewing_key
+                    .scope_for_address(&address)
+                    .map(|scope| (*account, scope))
+            })
+        };
+        let Some((owning_account, scope)) = owning_account else {
+            return Ok(());
+        };
+        if !is_shielded_identity_account(owning_account) {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "An address from this wallet's ordinary shielded accounts cannot be published \
+                 in an identity profile"
+                    .to_string(),
+            ));
+        }
+        if matches!(scope, Scope::Internal) {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "Only external receiving addresses from this wallet can be published \
+                 in an identity profile"
+                    .to_string(),
+            ));
+        }
+        if self.prepared_shielded_identity_account(identity_id).await == Some(owning_account) {
+            Ok(())
+        } else {
+            Err(PlatformWalletError::InvalidIdentityData(
+                "This shielded address was not prepared for the identity's account in this \
+                 session; prepare the identity's shielded address again"
+                    .to_string(),
+            ))
+        }
+    }
+
+    /// The coordinator `identity_id`'s shielded account was prepared on in
+    /// this session, while it is alive. `None` when the identity was never
+    /// prepared.
+    pub(crate) fn prepared_tip_coordinator(
+        &self,
+        identity_id: &Identifier,
+    ) -> Option<Arc<NetworkShieldedCoordinator>> {
+        self.prepared_tip_accounts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(identity_id)
+            .and_then(PreparedTipAccount::coordinator)
+    }
+
     /// The tip account of a wallet-owned identity's slot, proved with the
     /// seed. A restored index is metadata, and hosts that cannot represent
     /// "unknown" restore a placeholder 0 for wallet-attached identities, so
@@ -340,8 +430,9 @@ impl PlatformWallet {
     }
 }
 
-/// Test-only pause point between tip preparation's account snapshot and
-/// its bind, keyed by wallet instance (shared by its clones) so parallel
+/// Test-only pause points (between tip preparation's account snapshot and
+/// its bind, and before and after a profile write's publication check),
+/// keyed by wallet instance (shared by its clones) so parallel
 /// tests built from the same mnemonic do not interfere.
 #[cfg(test)]
 pub(crate) mod test_hooks {
@@ -354,6 +445,8 @@ pub(crate) mod test_hooks {
     #[derive(Clone, Copy, PartialEq, Eq, Hash)]
     enum Stage {
         Snapshot,
+        PublicationAdmitted,
+        PublicationChecked,
     }
     static HOOKS: Mutex<Option<HashMap<(usize, Stage), Hook>>> = Mutex::new(None);
 
@@ -395,6 +488,30 @@ pub(crate) mod test_hooks {
 
     pub(crate) async fn after_snapshot(wallet: &PlatformWallet) {
         reach(wallet, Stage::Snapshot).await;
+    }
+
+    /// Pause a profile write right after it chose the coordinator admission
+    /// to hold, before its shielded publication check.
+    pub(crate) fn pause_before_publication_check(
+        wallet: &PlatformWallet,
+    ) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
+        pause(wallet, Stage::PublicationAdmitted)
+    }
+
+    pub(crate) async fn before_publication_check(wallet: &PlatformWallet) {
+        reach(wallet, Stage::PublicationAdmitted).await;
+    }
+
+    /// Pause a profile write right after its shielded publication check,
+    /// before the profile is submitted.
+    pub(crate) fn pause_after_publication_check(
+        wallet: &PlatformWallet,
+    ) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
+        pause(wallet, Stage::PublicationChecked)
+    }
+
+    pub(crate) async fn after_publication_check(wallet: &PlatformWallet) {
+        reach(wallet, Stage::PublicationChecked).await;
     }
 }
 

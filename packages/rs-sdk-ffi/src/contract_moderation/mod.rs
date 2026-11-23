@@ -38,6 +38,9 @@
 mod json;
 mod queries;
 
+pub use json::document_removal_json as contract_document_removal_json;
+pub use json::fee_pot_json as contract_fee_pot_json;
+pub use json::status_json as contract_moderation_status_json;
 pub use queries::*;
 
 use crate::FFIError;

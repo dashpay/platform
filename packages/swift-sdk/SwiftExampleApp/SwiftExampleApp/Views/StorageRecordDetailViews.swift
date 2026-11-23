@@ -190,6 +190,10 @@ struct IdentityStorageDetailView: View {
                 FieldRow(label: "Owner Key", value: record.ownerPrivateKeyIdentifier != nil ? "Present" : "Not set")
                 FieldRow(label: "Voting Key", value: record.votingPrivateKeyIdentifier != nil ? "Present" : "Not set")
                 FieldRow(label: "Payout Key", value: record.payoutPrivateKeyIdentifier != nil ? "Present" : "Not set")
+                FieldRow(
+                    label: "Masternode proTxHash (wire)",
+                    value: record.masternodeProTxHash.map(hexString) ?? "Not recorded"
+                )
             }
             Section("Relationships") {
                 // Owning wallet via the `@Relationship`. Prefer
@@ -410,6 +414,29 @@ struct DashpayContactProfileStorageDetailView: View {
             }
         }
         .navigationTitle("Contact Profile")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - PersistentDashpayPaymentAddresses
+
+struct DashpayPaymentAddressesStorageDetailView: View {
+    let record: PersistentDashpayPaymentAddresses
+
+    var body: some View {
+        Form {
+            Section("Profile") {
+                FieldRow(label: "Network", value: Network(rawValue: record.networkRaw)?.displayName ?? String(record.networkRaw))
+                FieldRow(label: "Owner ID (Hex)", value: hexString(record.ownerIdentityId))
+                FieldRow(label: "Profile ID (Hex)", value: hexString(record.profileIdentityId))
+            }
+            Section("Payment Addresses (Hex)") {
+                FieldRow(label: "Core (21 B)", value: record.corePaymentAddress.map(hexString) ?? "—")
+                FieldRow(label: "Platform (21 B)", value: record.platformPaymentAddress.map(hexString) ?? "—")
+                FieldRow(label: "Shielded (43 B)", value: record.shieldedAddress.map(hexString) ?? "—")
+            }
+        }
+        .navigationTitle("Payment Addresses")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -2581,7 +2608,15 @@ struct ShieldedActivityStorageDetailView: View {
                 FieldRow(label: "Status", value: statusDisplay(record.status))
             }
             Section("Amounts") {
-                FieldRow(label: "Amount", value: "\(record.amount) credits")
+                // Token kinds record the tokens moved, in the token's smallest
+                // unit; every other kind records credits.
+                FieldRow(
+                    label: "Amount",
+                    value: ShieldedActivityKindDisplay.rawAmountText(
+                        record.amount,
+                        tag: record.kindTag
+                    )
+                )
                 FieldRow(
                     label: "Fee",
                     value: record.hasFee ? "\(record.fee) credits" : "(unknown)"
@@ -2636,6 +2671,8 @@ struct ShieldedActivityStorageDetailView: View {
         case 8: name = "ShieldFromIdentity"
         case 9: name = "IdentityTopUpFromPool"
         case 10: name = "TokenPurchase"
+        case 11: name = "TokenShieldedTransfer"
+        case 12: name = "TokenUnshield"
         default: return "Unknown(\(tag))"
         }
         return "\(name) (\(tag))"

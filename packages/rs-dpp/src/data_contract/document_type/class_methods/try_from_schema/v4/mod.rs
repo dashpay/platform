@@ -6,11 +6,10 @@
 //! ranked index-key ceilings and the prefix-overlap rule are generation 3's,
 //! reused from that module rather than copied.
 //!
-//! Under full validation it also holds the `position`s of an object's members to
-//! integers that follow one another from the object's lowest, which generation 3
-//! does not read, and refuses typed-array properties whose element encodes to
-//! zero bytes (a byte array pinned to `minItems: 0, maxItems: 0`). Like every
-//! generation, it stores an object's members in the schema's map order.
+//! Under full validation it also refuses typed-array properties whose element
+//! encodes to zero bytes (a byte array pinned to `minItems: 0, maxItems: 0`),
+//! which generation 3 admits. Like every generation, it stores an object's members
+//! in the schema's map order and reads no member's position.
 //!
 //! The generation reuses the complete current parser body with a generation-owned
 //! admission flag. Earlier generations retain their refusal of deletable history.
@@ -150,7 +149,6 @@ impl DocumentType {
 
 const PARSER_GENERATION: common::ParserGeneration = common::ParserGeneration {
     admit_lifecycle: true,
-    check_nested_member_positions: true,
     meta_schema_method_name: "DocumentType::try_from_schema_v4 (document_type_schema)",
     ..super::v3::PARSER_GENERATION
 };
