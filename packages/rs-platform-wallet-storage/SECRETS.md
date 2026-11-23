@@ -395,28 +395,24 @@ unwrapped copy is allocated.
   One file, one passphrase, one lock — a multi-wallet
   store cannot lock its other wallets out by construction. Errors
   surface as the typed `SecretStoreError` through `SecretStore`.
-  On Unix the check covers EVERY ancestor of the vault's parent up to `/`,
-  walked twice — over the lexical path and over its canonical target — so a
-  symlink cannot hide an unsafe ancestor behind a safe-looking one. An
-  ancestor is refused at `open` with `SecretStoreError::InsecureParentDir`
-  when it is group/other writable (`mode & 0o022`) WITHOUT the sticky bit,
-  or when it is owned by neither the effective user nor a root identity
-  (both rules make exceptions for the Android identities trusted below):
-  directory write access governs rename/replace of the vault, and an
-  untrusted owner can grant itself that access at will (the A1 guarantee
-  depends on both). A sticky writable directory such as `/tmp` (`0o1777`)
-  is accepted — the sticky bit is what stops one user replacing another's
-  entries. A read-only group-accessible ancestor (`0o750`) is accepted too
-  — it only leaks filenames, never the 0600-protected vault contents. On
+  Directories the vault creates for itself are created `0700` on Unix. The
+  directories above them are not the vault's to police: `open` never fails
+  on an ancestor's permissions or ownership. On Unix it walks EVERY ancestor
+  of the vault's parent up to `/`, over the lexical path and over its
+  canonical target, and logs one `warn` naming each ancestor another local
+  user could replace (and so replace the `0600` vault below it) with the
+  `chmod`/`chown` that fixes it: group/other writable (`mode & 0o022`)
+  WITHOUT the sticky bit, or owned by neither the effective user nor a root
+  identity. A sticky writable directory such as `/tmp` (`0o1777`) and a
+  read-only group-accessible ancestor (`0o750`) are not reported. On
   Android, `system` (`AID_SYSTEM`, 1000) is trusted as well, both as an
   owner and as the group of a group-writable ancestor: Android creates every
   app's private storage beneath `system:system` `0771` directories (`/data`,
   `/data/user/0`, `/data/data`), and no app can run as or join `system`.
   The app's own per-app group (gid equal to its uid) is trusted as the group
   of a group-writable ancestor too, because Android creates the app's
-  `files` and `databases` directories `0771` in that group. Other-writable
-  ancestors and ancestors writable by any other group are still refused
-  there. The trusted sets are `PLATFORM_IDS` and `trusted_groups` in
+  `files` and `databases` directories `0771` in that group. The trusted
+  sets are `PLATFORM_IDS` and `trusted_groups` in
   `src/parent_permissions.rs`, empty on every other target. The
   walk is Unix-only; Windows ACLs are not inspected (issue #3754).
   Each secret is capped at `MAX_SECRET_LEN` (8176 B) at the write
@@ -534,7 +530,7 @@ recoverable: they ride in `NoStorageAccess` with the typed
 them via `err.source().and_then(|s| s.downcast_ref::<SecretStoreError>())`.
 The `BadStoreFormat` group (`Corruption`, `KdfFailure`, `EntropyUnavailable`,
 `VersionUnsupported`, `UnsupportedEnvelopeVersion`, `MalformedVault`,
-`InsecurePermissions`, `InsecureParentDir`, `SecretTooLarge`,
+`InsecurePermissions`, `SecretTooLarge`,
 `PassphraseTooLong`, `VaultTooLarge`, `Decrypt`, `Encrypt`, `OsKeyring`) has
 no box slot and carries only a secret-free string; those remain fully typed
 on the `SecretStore` path (so e.g.

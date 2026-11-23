@@ -348,7 +348,7 @@ struct TopUpIdentityView: View {
 
         Task {
             do {
-                let balance = try await managedWallet.topUpFromAddresses(
+                let balance = try await managedWallet.topUpIdentityFromAddresses(
                     identityId: identityId,
                     inputs: inputs,
                     addressSigner: signer
