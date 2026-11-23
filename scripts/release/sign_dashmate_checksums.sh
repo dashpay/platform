@@ -21,6 +21,13 @@ more right before the upload, and SHA256SUMS.asc is attached and read back.
   -h          --help         - show help
 "
 
+# The keys whose signatures the apt repository accepts, by primary key fingerprint. This list is
+# the one the release skill points to.
+ALLOWED_SIGNERS=(
+  19E460D55429A91B40E9E7C5EDBC0AA6BC1AA13C
+)
+# QuantumExplorer's key is added above once it exists.
+
 fail() {
   echo "Error: $*" >&2
   exit 1
@@ -159,6 +166,12 @@ verify_signature() {
   if ! echo "${status}" | awk -v key="${KEY}" '$2 == "VALIDSIG" && ($3 == key || $12 == key) {found = 1} END {exit !found}'; then
     fail "the signature on SHA256SUMS was not made by ${KEY} but by $(echo "${status}" | awk '$2 == "VALIDSIG" {print $3 " (primary key " $12 ")"}' | paste -sd ' ' -); pass the primary key's fingerprint"
   fi
+  local primary signer
+  primary="$(echo "${status}" | awk '$2 == "VALIDSIG" {print $12}')"
+  for signer in "${ALLOWED_SIGNERS[@]}"; do
+    [ "${primary}" != "${signer}" ] || return 0
+  done
+  fail "${primary} is not one of the signers this script accepts (ALLOWED_SIGNERS); the apt repository takes signatures from those keys only"
 }
 
 RELEASE_ID="$(gh api "repos/${REPO}/releases/tags/${TAG}" --jq '.id')" || fail "no release ${TAG} in ${REPO}"

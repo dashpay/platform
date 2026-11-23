@@ -12,7 +12,9 @@ import unittest
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / 'scripts/release/sign_dashmate_checksums.sh'
 TAG = 'v5.1.0'
-KEY = 'ABCDEF0123456789ABCDEF0123456789ABCDEF01'
+# A signer the script accepts, and a key it does not.
+KEY = '19E460D55429A91B40E9E7C5EDBC0AA6BC1AA13C'
+STRANGER = 'C0FFEE0123456789ABCDEF0123456789ABCDEF01'
 SUBKEY = '0123456789ABCDEF0123456789ABCDEF01234567'
 RUN_ID = 77
 HEAD_SHA = 'bb78fa2220ae0d58f5a9b5c0f6b0027a292cc3d0'
@@ -254,6 +256,7 @@ class ReleaseFixture(unittest.TestCase):
             (self.tmp / 'bin' / name).write_text(body)
             (self.tmp / 'bin' / name).chmod(0o755)
         (self.tmp / 'temp').mkdir()
+        self.script = SCRIPT
         self.files = self.tmp / 'release'
         self.files.mkdir()
         self.packages = {name: name.encode() + b' built' for name in PACKAGES}
@@ -319,7 +322,7 @@ class ReleaseFixture(unittest.TestCase):
                    RELEASE_FILES=str(self.files), CALLS=str(self.tmp / 'calls'), **env)
         if not options:
             options = (f'--tag={TAG}', f'--key={KEY}')
-        return subprocess.run(['/bin/bash', str(SCRIPT), *options], capture_output=True, text=True, env=env)
+        return subprocess.run(['/bin/bash', str(self.script), *options], capture_output=True, text=True, env=env)
 
     def calls(self, tool=None):
         path = self.tmp / 'calls'
@@ -576,6 +579,11 @@ class SignDashmateChecksumsTests(ReleaseFixture):
         with self.subTest('a second signature, e.g. from gpg.conf'):
             self.assertRefused(self.sign(GPG_TWO_SIGNATURES='1'), 'exactly one signature')
 
+    def test_should_refuse_a_key_the_apt_repository_does_not_accept(self):
+        result = self.sign(f'--tag={TAG}', f'--key={STRANGER}', '--upload')
+
+        self.assertRefused(result, f'{STRANGER} is not one of the signers this script accepts')
+
     def test_should_accept_a_signature_made_by_a_subkey_of_the_key(self):
         for key in [KEY, SUBKEY]:
             with self.subTest(key=key):
@@ -647,6 +655,17 @@ class SignWithGnuPGTests(ReleaseFixture):
         self.gpg('--quick-add-key', self.primary, 'ed25519', 'sign', 'never')
         self.subkey = self.fingerprints(self.primary)[1]
         self.other = self.new_key('Other <other@example.org>', 'sign')
+        self.script = self.accepting(self.primary)
+
+    def accepting(self, *fingerprints):
+        """A copy of the script whose list of accepted signers is `fingerprints`."""
+        text = SCRIPT.read_text()
+        start = text.index('ALLOWED_SIGNERS=(\n')
+        end = text.index('\n)\n', start)
+        copy = self.tmp / 'sign_dashmate_checksums.sh'
+        copy.write_text(text[:start] + 'ALLOWED_SIGNERS=(\n' + ''.join(f'  {f}\n' for f in fingerprints)
+                        + text[end + 1:])
+        return copy
 
     def gpg_env(self):
         return dict(os.environ, GNUPGHOME=str(self.home))

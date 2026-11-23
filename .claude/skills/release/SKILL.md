@@ -79,12 +79,7 @@ The Kotlin and Swift SDK jobs fill the release page in as they finish. The Maven
 - **Stable:** signing is required.
 - **Prerelease:** ask the maintainer whether to sign it.
 
-Signers, one signature per release:
-
-- Ivan Shumkov, key `19E460D55429A91B40E9E7C5EDBC0AA6BC1AA13C`
-- QuantumExplorer: his fingerprint will be added here once his key exists.
-
-The apt publisher enforces this list; a signature by any other key is not accepted there.
+One signature per release is enough. The keys that may sign are listed, by primary key fingerprint, in `ALLOWED_SIGNERS` at the top of `scripts/release/sign_dashmate_checksums.sh`, and the script refuses any other: today Ivan Shumkov's, with QuantumExplorer's added once his key exists. The apt publisher accepts signatures from these keys only.
 
 `scripts/release/sign_dashmate_checksums.sh` runs where the maintainer's key is, and gpg asks the maintainer for the passphrase. Run it there, or hand the maintainer the command. It refuses until every `release.yml` run of the tag has finished, so sign after step 4. Don't re-run any job of that run until the signature is attached: a release job checks for a signature before it uploads, so one that is already running can still replace packages. It checks that `SHA256SUMS` is the asset the run's `Release Dashmate checksums` job attached, by the record that job keeps with the run, downloads the packages and the file into a new empty directory, checks every line, signs the downloaded file and verifies the signature. Without `--upload` it stops there and prints the upload command:
 
