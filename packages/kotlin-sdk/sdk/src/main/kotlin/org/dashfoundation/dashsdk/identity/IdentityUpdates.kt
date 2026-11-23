@@ -5,6 +5,7 @@ import org.dashfoundation.dashsdk.wallet.op
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
+import org.dashfoundation.dashsdk.ffi.IdentityKeyLimitsNative
 import org.dashfoundation.dashsdk.ffi.TransactionsNative
 
 /**
@@ -283,5 +284,89 @@ class IdentityUpdates internal constructor(
                 signerHandle,
             )
         }
+    }
+
+    /**
+     * What raising key [keyId] of [identityId] would do, signing and sending nothing: port
+     * of Swift's `ManagedPlatformWallet.previewIdentityKeyLimitsUpdate(identityId:keyId:
+     * addBudget:expiresAt:signer:)`, bridging
+     * `platform_wallet_preview_identity_key_limits_update`.
+     *
+     * With neither [addBudget] (credits) nor [expiresAt] (block time in milliseconds), Rust
+     * answers whether the key can be raised at all and by which key; with a change it also
+     * returns the absolute limits the update would set. Every rule is Rust's: a missing,
+     * disabled or unlimited key, a change that is not a raise (a zero top-up, an expiry that
+     * is not later), a key the change would leave expired, and a signer at [signerHandle]
+     * holding no MASTER key and no CRITICAL authentication key without limits or contract
+     * bounds are refused with Rust's reason as a [org.dashfoundation.dashsdk.errors.DashSdkError].
+     * The answer comes from the identity as the wallet at [walletHandle] holds it; call
+     * [refreshIdentity] first to start from Platform.
+     */
+    suspend fun previewKeyLimitsUpdate(
+        walletHandle: Long,
+        identityId: ByteArray,
+        keyId: Int,
+        addBudget: ULong? = null,
+        expiresAt: ULong? = null,
+        signerHandle: Long,
+    ): IdentityKeyLimitsUpdatePreview = gate.op {
+        require(identityId.size == 32) {
+            "identityId must be 32 bytes, got ${identityId.size}"
+        }
+        val slots = mapNativeErrors {
+            IdentityKeyLimitsNative.previewKeyLimitsUpdate(
+                walletHandle,
+                identityId,
+                keyId,
+                addBudget != null,
+                (addBudget ?: 0uL).toLong(),
+                expiresAt != null,
+                (expiresAt ?: 0uL).toLong(),
+                signerHandle,
+            )
+        }
+        IdentityKeyLimitsUpdatePreview.fromSlots(identityId, keyId, slots)
+    }
+
+    /**
+     * Raise the limits of the key [reviewed] names to exactly what it shows: port of Swift's
+     * `ManagedPlatformWallet.updateIdentityKeyLimits(asReviewed:signer:)`, bridging
+     * `platform_wallet_update_identity_key_limits_as_reviewed_with_signer`.
+     *
+     * Rust signs the reviewed total, expiry and signing key, or refuses before a nonce is
+     * taken when the wallet's copy moved since the review. A
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed]
+     * means the update may have landed; do not send it again. Room learns of the raised
+     * limits through the persistence changeset.
+     */
+    suspend fun updateKeyLimitsAsReviewed(
+        walletHandle: Long,
+        reviewed: IdentityKeyLimitsUpdatePreview,
+        signerHandle: Long,
+    ) = gate.op {
+        mapNativeErrors {
+            IdentityKeyLimitsNative.updateKeyLimitsAsReviewed(
+                walletHandle,
+                reviewed.identityId,
+                reviewed.keyId,
+                reviewed.toSlots(),
+                signerHandle,
+            )
+        }
+    }
+
+    /**
+     * Fetch [identityId] from Platform with a proof and fold it into the wallet at
+     * [walletHandle]: port of Swift's `ManagedPlatformWallet.refreshIdentity(identityId:)`,
+     * bridging `platform_wallet_refresh_identity`. Keys added or raised on another client
+     * are taken in, and a node behind the wallet's copy cannot roll it back. Changed key rows
+     * reach Room through the persister; as for every refresh, a failed store is logged by
+     * Rust, not thrown, so success means the wallet's copy is current.
+     */
+    suspend fun refreshIdentity(walletHandle: Long, identityId: ByteArray) = gate.op {
+        require(identityId.size == 32) {
+            "identityId must be 32 bytes, got ${identityId.size}"
+        }
+        mapNativeErrors { IdentityKeyLimitsNative.refreshIdentity(walletHandle, identityId) }
     }
 }
