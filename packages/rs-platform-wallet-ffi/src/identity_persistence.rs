@@ -584,6 +584,12 @@ impl DashPayProfileFields {
             Some(f) => (f, true),
             None => ([0u8; 8], false),
         };
+        let (core_payment_address, core_payment_address_present) =
+            fixed_address(profile.core_payment_address.as_deref());
+        let (platform_payment_address, platform_payment_address_present) =
+            fixed_address(profile.platform_payment_address.as_deref());
+        let (shielded_address, shielded_address_present) =
+            fixed_address(profile.shielded_address.as_deref());
         Self {
             present: true,
             display_name: optional_c_string(profile.display_name.as_deref()),
@@ -593,33 +599,12 @@ impl DashPayProfileFields {
             avatar_hash_present,
             avatar_fingerprint,
             avatar_fingerprint_present,
-            core_payment_address: profile
-                .core_payment_address
-                .as_deref()
-                .and_then(|a| a.try_into().ok())
-                .unwrap_or([0; 21]),
-            core_payment_address_present: profile
-                .core_payment_address
-                .as_ref()
-                .is_some_and(|a| a.len() == 21),
-            platform_payment_address: profile
-                .platform_payment_address
-                .as_deref()
-                .and_then(|a| a.try_into().ok())
-                .unwrap_or([0; 21]),
-            platform_payment_address_present: profile
-                .platform_payment_address
-                .as_ref()
-                .is_some_and(|a| a.len() == 21),
-            shielded_address: profile
-                .shielded_address
-                .as_deref()
-                .and_then(|a| a.try_into().ok())
-                .unwrap_or([0; 43]),
-            shielded_address_present: profile
-                .shielded_address
-                .as_ref()
-                .is_some_and(|a| a.len() == 43),
+            core_payment_address,
+            core_payment_address_present,
+            platform_payment_address,
+            platform_payment_address_present,
+            shielded_address,
+            shielded_address_present,
             public_message: optional_c_string(profile.public_message.as_deref()),
         }
     }
@@ -635,6 +620,18 @@ fn optional_c_string(s: Option<&str>) -> *const c_char {
             Err(_) => ptr::null(),
         },
         None => ptr::null(),
+    }
+}
+
+/// Copy an optional payment address into the fixed-size buffer an FFI
+/// struct carries it in, with its presence flag. Bytes of any other length
+/// are reported absent, with a zeroed buffer: the length is what makes the
+/// copy fit, and the wallet has already decided whether the bytes are an
+/// address.
+pub(crate) fn fixed_address<const N: usize>(address: Option<&[u8]>) -> ([u8; N], bool) {
+    match address.and_then(|a| <[u8; N]>::try_from(a).ok()) {
+        Some(bytes) => (bytes, true),
+        None => ([0; N], false),
     }
 }
 
@@ -738,6 +735,12 @@ fn allocate_contact_profile_rows(
             Some(f) => (f, true),
             None => ([0u8; 8], false),
         };
+        let (core_payment_address, core_payment_address_present) =
+            fixed_address(profile.core_payment_address.as_deref());
+        let (platform_payment_address, platform_payment_address_present) =
+            fixed_address(profile.platform_payment_address.as_deref());
+        let (shielded_address, shielded_address_present) =
+            fixed_address(profile.shielded_address.as_deref());
         rows.push(ContactProfileRowFFI {
             contact_id: contact_id.to_buffer(),
             is_present: true,
@@ -748,33 +751,12 @@ fn allocate_contact_profile_rows(
             avatar_hash_present,
             avatar_fingerprint,
             avatar_fingerprint_present,
-            core_payment_address: profile
-                .core_payment_address
-                .as_deref()
-                .and_then(|a| a.try_into().ok())
-                .unwrap_or([0; 21]),
-            core_payment_address_present: profile
-                .core_payment_address
-                .as_ref()
-                .is_some_and(|a| a.len() == 21),
-            platform_payment_address: profile
-                .platform_payment_address
-                .as_deref()
-                .and_then(|a| a.try_into().ok())
-                .unwrap_or([0; 21]),
-            platform_payment_address_present: profile
-                .platform_payment_address
-                .as_ref()
-                .is_some_and(|a| a.len() == 21),
-            shielded_address: profile
-                .shielded_address
-                .as_deref()
-                .and_then(|a| a.try_into().ok())
-                .unwrap_or([0; 43]),
-            shielded_address_present: profile
-                .shielded_address
-                .as_ref()
-                .is_some_and(|a| a.len() == 43),
+            core_payment_address,
+            core_payment_address_present,
+            platform_payment_address,
+            platform_payment_address_present,
+            shielded_address,
+            shielded_address_present,
             public_message: optional_c_string(profile.public_message.as_deref()),
             checked_at_ms: entry.checked_at_ms,
         });
@@ -1058,6 +1040,15 @@ mod tests {
     use platform_wallet::changeset::{
         IdentityEntry, IdentityKeyDerivationIndices, IdentityKeyEntry,
     };
+
+    #[test]
+    fn should_copy_only_exact_length_addresses_into_fixed_buffers() {
+        assert_eq!(fixed_address::<21>(Some(&[0x11; 21])), ([0x11; 21], true));
+        assert_eq!(fixed_address::<43>(Some(&[0x22; 43])), ([0x22; 43], true));
+        assert_eq!(fixed_address::<21>(None), ([0; 21], false));
+        assert_eq!(fixed_address::<21>(Some(&[0x33; 20])), ([0; 21], false));
+        assert_eq!(fixed_address::<43>(Some(&[0x33; 21])), ([0; 43], false));
+    }
 
     #[test]
     fn test_identity_entry_ffi_round_trip() {

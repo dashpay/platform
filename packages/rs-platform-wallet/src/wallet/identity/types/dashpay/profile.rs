@@ -124,10 +124,19 @@ pub struct ProfileUpdate {
     pub shielded_address: PaymentAddressUpdate,
 }
 
-/// Validate public Orchard address metadata independently of spending support.
-pub fn validated_shielded_address(bytes: &[u8]) -> Option<[u8; 43]> {
+/// The Orchard address `bytes` encode, if they are the raw 43 bytes of one.
+/// The one definition of a valid `shieldedAddress`: reading a profile and
+/// the shielded publication check both go through it. Independent of
+/// spending support, so a wallet without the `shielded` feature reads other
+/// identities' shielded addresses too.
+pub(crate) fn parse_shielded_address(bytes: &[u8]) -> Option<OrchardRawAddress> {
     let raw: [u8; 43] = bytes.try_into().ok()?;
-    Option::<OrchardRawAddress>::from(OrchardRawAddress::from_raw_address_bytes(&raw)).map(|_| raw)
+    OrchardRawAddress::from_raw_address_bytes(&raw).into()
+}
+
+/// The raw 43 bytes of a valid Orchard address, or `None`.
+pub fn validated_shielded_address(bytes: &[u8]) -> Option<[u8; 43]> {
+    parse_shielded_address(bytes).map(|address| address.to_raw_address_bytes())
 }
 
 /// Storage-form transparent address validation, matching the DashPay trigger.

@@ -9,11 +9,12 @@
 //! another diversifier in the same account, so all old addresses remain covered.
 
 use super::NetworkShieldedCoordinator;
+use crate::wallet::identity::types::dashpay::profile::parse_shielded_address;
 use crate::wallet::platform_wallet::{PlatformWallet, PlatformWalletInfo};
 use crate::PlatformWalletError;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
-use grovedb_commitment_tree::{PaymentAddress, Scope};
+use grovedb_commitment_tree::Scope;
 use key_wallet::wallet::root_extended_keys::RootExtendedPrivKey;
 use key_wallet::Wallet;
 use key_wallet_manager::WalletManager;
@@ -329,13 +330,11 @@ impl PlatformWallet {
         identity_id: &Identifier,
         address: &[u8; 43],
     ) -> Result<(), PlatformWalletError> {
-        let address =
-            Option::<PaymentAddress>::from(PaymentAddress::from_raw_address_bytes(address))
-                .ok_or_else(|| {
-                    PlatformWalletError::InvalidIdentityData(
-                        "Invalid or unsupported shieldedAddress".to_string(),
-                    )
-                })?;
+        let address = parse_shielded_address(address).ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(
+                "Invalid or unsupported shieldedAddress".to_string(),
+            )
+        })?;
         let owning_account = {
             let keys = self.shielded_keys.read().await;
             let keys = keys.as_ref().ok_or(PlatformWalletError::ShieldedNotBound)?;
