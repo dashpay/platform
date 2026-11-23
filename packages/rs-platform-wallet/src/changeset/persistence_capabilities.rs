@@ -170,6 +170,14 @@ impl PersistenceCapabilities {
     /// [`assign_asset_lock_identity_recipient`](crate::changeset::PlatformWalletPersistence::assign_asset_lock_identity_recipient),
     /// which records an assigned recipient alone on the stored row.
     pub const ASSET_LOCK_IDENTITY_RECIPIENTS: Self = Self(1 << 17);
+    /// The Platform addresses an external Platform-address funding
+    /// (`fund_from_asset_lock_external`) was built to pay survive store/load
+    /// with its row, so a resume after restart pays those recipients or is
+    /// refused, and never consumes the lock as an owned top-up. Required, as
+    /// [`Self::ASSET_LOCK_IDENTITY_RECIPIENTS`] is: nothing on chain names the
+    /// payee, and a backend that lost the record would reload the lock as an
+    /// owned one, so the wallet builds no external funding for it.
+    pub const ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS: Self = Self(1 << 18);
 
     /// Index of the highest bit declared above. It lives here, beside the
     /// constants, so adding a bit and bumping this is one edit in one place
@@ -177,7 +185,7 @@ impl PersistenceCapabilities {
     /// bit that never reaches `KNOWN` fails a test instead of gating
     /// behaviour invisibly. The same test asserts nothing above it is named,
     /// which is what catches a bit added without bumping this.
-    const HIGHEST_DECLARED_BIT: u32 = 17;
+    const HIGHEST_DECLARED_BIT: u32 = 18;
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
@@ -318,6 +326,10 @@ impl PersistenceCapabilities {
                 PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS,
                 "asset_lock_identity_recipients",
             ),
+            (
+                PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS,
+                "asset_lock_platform_address_recipients",
+            ),
         ];
 
         KNOWN
@@ -335,7 +347,7 @@ impl PersistenceCapabilities {
 /// failure the test exists to catch. Written as a module-level `const _` so
 /// it is evaluated in every build, test or not.
 const _: () = assert!(
-    PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS.bits()
+    PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS.bits()
         == 1u64 << PersistenceCapabilities::HIGHEST_DECLARED_BIT,
     "HIGHEST_DECLARED_BIT must name the highest declared capability bit"
 );
@@ -379,6 +391,10 @@ mod tests {
         assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS.bits(),
             0x20000
+        );
+        assert_eq!(
+            PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS.bits(),
+            0x40000
         );
         assert_eq!(PersistenceCapabilities::WALLET_DRAIN.bits(), 0x2285);
         assert_eq!(

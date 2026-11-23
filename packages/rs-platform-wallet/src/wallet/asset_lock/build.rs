@@ -7,7 +7,7 @@ use crate::broadcaster::TransactionBroadcaster;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::changeset::{AssetLockRecipient, ShieldedRecipientRaw};
+use crate::changeset::{AssetLockRecipient, PlatformAddressRecipients, ShieldedRecipientRaw};
 use dashcore::Address as DashAddress;
 use dashcore::{OutPoint, Transaction, TxOut};
 use dpp::prelude::Identifier;
@@ -1366,10 +1366,33 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         }
     }
 
+    /// An external Platform-address funding is built only for a backend that
+    /// keeps its recipients across a restart
+    /// ([`PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS`]).
+    /// Nothing on chain names the payee, so a backend that loses the record
+    /// would reload the lock as an owned top-up, and a resume would refund
+    /// the sender instead of paying the payee. Checked before anything is
+    /// built or reserved.
+    pub(crate) fn require_platform_address_recipient_persistence(
+        &self,
+    ) -> Result<(), PlatformWalletError> {
+        let capabilities = self.persister.persistence_capabilities();
+        let required = PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS;
+        if capabilities.contains(required) {
+            Ok(())
+        } else {
+            Err(PlatformWalletError::Persistence(format!(
+                "an external Platform-address funding requires persistence capabilities {:?}",
+                capabilities.missing(required).names()
+            )))
+        }
+    }
+
     /// The build → persist → track → broadcast pipeline every funded lock
     /// goes through. `recipient` is who the lock will pay. For a shielded
-    /// funding (Type 18, the Orchard address) and an unbound identity top-up
-    /// (the identity) it is recorded on the row created here (see
+    /// funding (Type 18, the Orchard address), an unbound identity top-up
+    /// (the identity) and an external Platform-address funding (the
+    /// recipient map) it is recorded on the row created here (see
     /// [`recorded_recipients`]), so it is exactly as durable before dispatch
     /// as `operation_id`: flushed before the broadcast for a drain, and for a
     /// recipient the backend can record; queued before it otherwise.
@@ -1389,10 +1412,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         if operation.is_some() {
             self.require_wallet_drain_persistence()?;
         }
-        let (shielded_recipient, identity_recipient) =
-            recorded_recipients(funding_type, recipient)?;
+        let RecordedRecipients {
+            shielded: shielded_recipient,
+            identity: identity_recipient,
+            platform_addresses: platform_address_recipients,
+        } = recorded_recipients(funding_type, recipient)?;
         if identity_recipient.is_some() {
             self.require_identity_recipient_persistence()?;
+        }
+        if platform_address_recipients.is_some() {
+            self.require_platform_address_recipient_persistence()?;
         }
         let amount = hold_top_up_to_minimum(funding_type, amount)?;
         // Serialize build→persist so a concurrent build cannot interleave its
@@ -1631,10 +1660,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
         // Only where the backend can record a recipient at all: a host without
         // the capability keeps the best-effort row every other funding has.
-        // An identity recipient always: the backend's capability was required
-        // before the build.
+        // An identity recipient and Platform-address recipients always: the
+        // backend's capability was required before the build.
         let recipient_must_be_durable = operation.is_none()
             && (identity_recipient.is_some()
+                || platform_address_recipients.is_some()
                 || (shielded_recipient.is_some()
                     && self
                         .persister
@@ -1652,7 +1682,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             proof: None,
             shielded_recipient,
             identity_recipient,
-            platform_address_recipients: None,
+            platform_address_recipients,
         };
         if let Some(operation) = operation {
             operation.retain_checkpoint(tracked.clone());
@@ -1742,6 +1772,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 drop(build_persist_guard);
                 let kind = if identity_recipient.is_some() {
                     "identity"
+                } else if tracked.platform_address_recipients.is_some() {
+                    "Platform-address"
                 } else {
                     "shielded"
                 };
@@ -2088,8 +2120,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     }
 }
 
-/// The recipients the tracked row of a new lock records, as
-/// `(shielded_recipient, identity_recipient)`.
+/// The recipients the tracked row of a new lock records (see
+/// [`recorded_recipients`]).
+#[derive(Debug, Default, PartialEq)]
+struct RecordedRecipients {
+    shielded: Option<ShieldedRecipientRaw>,
+    identity: Option<Identifier>,
+    platform_addresses: Option<PlatformAddressRecipients>,
+}
+
+/// The recipients the tracked row of a new lock records.
 ///
 /// - A shielded funding records its Orchard address when it has one.
 /// - An unbound identity top-up must name the identity it pays: its credit
@@ -2098,27 +2138,42 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 ///   could later be resumed into whichever identity a recovery passes.
 /// - A bound top-up may name its identity, but records nothing: the account's
 ///   registration index already names it.
+/// - A Platform-address funding records its recipient map when it pays
+///   someone else (an external funding); an owned one names none.
 /// - Every other pairing of a funding type and a recipient is refused, so a
 ///   recipient is never silently dropped.
 fn recorded_recipients(
     funding_type: AssetLockFundingType,
     recipient: Option<AssetLockRecipient>,
-) -> Result<(Option<ShieldedRecipientRaw>, Option<Identifier>), PlatformWalletError> {
+) -> Result<RecordedRecipients, PlatformWalletError> {
     match (funding_type, recipient) {
         (
             AssetLockFundingType::AssetLockShieldedAddressTopUp,
             Some(AssetLockRecipient::Shielded(raw)),
-        ) => Ok((Some(raw), None)),
+        ) => Ok(RecordedRecipients {
+            shielded: Some(raw),
+            ..Default::default()
+        }),
         (AssetLockFundingType::IdentityTopUpNotBound, Some(AssetLockRecipient::Identity(id))) => {
-            Ok((None, Some(id)))
+            Ok(RecordedRecipients {
+                identity: Some(id),
+                ..Default::default()
+            })
         }
+        (
+            AssetLockFundingType::AssetLockAddressTopUp,
+            Some(AssetLockRecipient::PlatformAddresses(recipients)),
+        ) => Ok(RecordedRecipients {
+            platform_addresses: Some(recipients),
+            ..Default::default()
+        }),
         (AssetLockFundingType::IdentityTopUpNotBound, _) => {
             Err(PlatformWalletError::InvalidParameter(
                 "an unbound identity top-up lock must name the identity it pays".into(),
             ))
         }
         (AssetLockFundingType::IdentityTopUp, Some(AssetLockRecipient::Identity(_)))
-        | (_, None) => Ok((None, None)),
+        | (_, None) => Ok(RecordedRecipients::default()),
         (funding_type, Some(recipient)) => Err(PlatformWalletError::InvalidParameter(format!(
             "a {funding_type:?} asset lock cannot record recipient {recipient:?}"
         ))),
@@ -3331,6 +3386,66 @@ mod tests {
                 "{recipient:?}"
             );
             assert_eq!(broadcaster.calls(), 0, "{recipient:?}");
+        }
+    }
+
+    /// A Platform-address funding records its recipient map only when it
+    /// names one; the map is refused on any other funding type, and a
+    /// Platform-address funding records no other kind of recipient.
+    #[test]
+    fn should_record_platform_address_recipients_only_for_an_address_funding() {
+        use super::{recorded_recipients, RecordedRecipients};
+        use crate::changeset::{AssetLockRecipient, PlatformAddressRecipients};
+        use dpp::address_funds::PlatformAddress;
+
+        let recipients = PlatformAddressRecipients::new(
+            [
+                (PlatformAddress::P2pkh([0x31; 20]), Some(1_000)),
+                (PlatformAddress::P2pkh([0x32; 20]), None),
+            ]
+            .into(),
+        )
+        .unwrap();
+        assert_eq!(
+            recorded_recipients(
+                AssetLockFundingType::AssetLockAddressTopUp,
+                Some(AssetLockRecipient::PlatformAddresses(recipients.clone())),
+            )
+            .unwrap(),
+            RecordedRecipients {
+                platform_addresses: Some(recipients.clone()),
+                ..Default::default()
+            }
+        );
+        assert_eq!(
+            recorded_recipients(AssetLockFundingType::AssetLockAddressTopUp, None).unwrap(),
+            RecordedRecipients::default()
+        );
+        for (funding_type, recipient) in [
+            (
+                AssetLockFundingType::IdentityTopUp,
+                AssetLockRecipient::PlatformAddresses(recipients.clone()),
+            ),
+            (
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                AssetLockRecipient::PlatformAddresses(recipients.clone()),
+            ),
+            (
+                AssetLockFundingType::AssetLockAddressTopUp,
+                AssetLockRecipient::Identity(dpp::prelude::Identifier::from([0x33; 32])),
+            ),
+            (
+                AssetLockFundingType::AssetLockAddressTopUp,
+                AssetLockRecipient::Shielded([0x34; 43]),
+            ),
+        ] {
+            assert!(
+                matches!(
+                    recorded_recipients(funding_type, Some(recipient)),
+                    Err(PlatformWalletError::InvalidParameter(_))
+                ),
+                "{funding_type:?}"
+            );
         }
     }
 
