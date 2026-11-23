@@ -200,7 +200,6 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS:
 /// un-ignore stores the sender's removal and the read-position rewind it
 /// brings in one changeset.
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: u64 = 1 << 15;
-
 /// Locked outpoints (masternode collateral, and outpoints locked by hand)
 /// are persisted AND restored. Requires the extension trio
 /// `on_persist_wallet_changeset_outpoint_locks_fn` +
@@ -209,6 +208,13 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_ST
 /// (`on_load_wallet_list_fn` + `on_load_wallet_list_free_fn`) that brings
 /// the stored locks back, and the host declaring the bit.
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_OUTPOINT_LOCKS: u64 = 1 << 16;
+
+/// The host deletes every shielded row it keeps for a network when asked
+/// (`on_wipe_shielded_state_fn`). Required by a shielded Clear, which calls
+/// the slot itself after the native reset and before it returns: a host
+/// without it cannot be cleared. Attested when the host wires the slot and
+/// declares the bit.
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_SHIELDED_STATE_WIPE: u64 = 1 << 17;
 
 /// Version of [`PersistenceCallbacksExtension`]. The extension is deliberately
 /// separate from [`PersistenceCallbacks`]: existing hosts pass the latter by
@@ -496,6 +502,18 @@ pub type LoadWalletLockedOutpointsFn = unsafe extern "C" fn(
 /// Release an array previously returned by a [`LoadWalletLockedOutpointsFn`].
 pub type FreeWalletLockedOutpointsFn =
     unsafe extern "C" fn(context: *mut c_void, outpoints: *const OutPointFFI, count: usize);
+/// Delete every shielded row the host keeps for `network`: the viewing keys,
+/// notes, outgoing notes, sync watermarks and activity of every wallet it
+/// holds on that network, loaded or not, in one transaction. Returns 0 once
+/// the rows are gone; non-zero leaves them in place.
+///
+/// Called only by `platform_wallet_manager_shielded_clear`, on the calling
+/// thread, after the native reset and before that call returns, with every
+/// other shielded operation of the manager held out. The host deletes
+/// nothing of its own around the Clear call. The vtable's reentrancy
+/// contract applies: the callback must not call back into the manager.
+pub type WipeShieldedStateFn =
+    unsafe extern "C" fn(context: *mut c_void, network: FFINetwork) -> i32;
 
 /// Size- and version-tagged additive persistence callbacks.
 ///
@@ -777,6 +795,12 @@ pub struct PersistenceCallbacksExtension {
     pub on_load_wallet_locked_outpoints_free_fn: Option<
         unsafe extern "C" fn(context: *mut c_void, outpoints: *const OutPointFFI, count: usize),
     >,
+    /// Delete the host's shielded rows for a network (see
+    /// [`WipeShieldedStateFn`]). Appended under the same version: a host
+    /// whose `struct_size` predates it is never called and does not attest
+    /// `SHIELDED_STATE_WIPE`, so its Clear is refused.
+    pub on_wipe_shielded_state_fn:
+        Option<unsafe extern "C" fn(context: *mut c_void, network: FFINetwork) -> i32>,
     /// Authoritative profile overlays. `contact_id` is the profile identity ID;
     /// `is_present == false` deletes it, independent of identity placement.
     /// The host must copy all row data before returning.
@@ -818,6 +842,7 @@ impl Default for PersistenceCallbacksExtension {
             on_persist_wallet_changeset_outpoint_locks_fn: None,
             on_load_wallet_locked_outpoints_fn: None,
             on_load_wallet_locked_outpoints_free_fn: None,
+            on_wipe_shielded_state_fn: None,
             on_persist_dashpay_profiles_fn: None,
         }
     }
@@ -857,6 +882,7 @@ pub struct PersistenceExtensionCallbacks {
     pub wallet_changeset_outpoint_locks: Option<PersistWalletChangesetOutpointLocksFn>,
     pub load_wallet_locked_outpoints: Option<LoadWalletLockedOutpointsFn>,
     pub load_wallet_locked_outpoints_free: Option<FreeWalletLockedOutpointsFn>,
+    pub wipe_shielded_state: Option<WipeShieldedStateFn>,
     pub persist_dashpay_profiles: Option<PersistDashpayProfilesFn>,
 }
 
@@ -2190,6 +2216,14 @@ impl FFIPersister {
         {
             capabilities = capabilities.union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS);
         }
+        #[cfg(feature = "shielded")]
+        if self
+            .tracked_masternodes_callbacks
+            .wipe_shielded_state
+            .is_some()
+        {
+            capabilities = capabilities.union(PersistenceCapabilities::SHIELDED_STATE_WIPE);
+        }
 
         // Deliberately absent: PersistenceCallbacks has no deferred contact
         // crypto add/clear callback pair, so FFI hosts cannot attest it.
@@ -2265,6 +2299,36 @@ impl PlatformWalletPersistence for FFIPersister {
     fn persistence_capabilities(&self) -> PersistenceCapabilities {
         self.declared_capabilities
             .intersection(self.callback_capabilities())
+    }
+
+    #[cfg(feature = "shielded")]
+    fn wipe_shielded_state(&self, network: Network) -> Result<(), PersistenceError> {
+        let Some(wipe) = self.tracked_masternodes_callbacks.wipe_shielded_state else {
+            return Err(PersistenceError::backend(
+                "the host wired no on_wipe_shielded_state_fn",
+            ));
+        };
+        // Serialized with store rounds: the host keeps one in-flight
+        // transaction state, which a round open on another thread would
+        // otherwise share with this deletion. A round left open by an
+        // unwound store still has rows staged there, which the wipe's
+        // commit would publish.
+        let round = self.round_lock.lock();
+        if round.in_round {
+            return Err(PersistenceError::backend(
+                "FFIPersister: cannot wipe shielded state inside an unclosed changeset round",
+            ));
+        }
+        // SAFETY: `wipe` and `context` came together from the host's vtable,
+        // which stays valid for the persister's lifetime.
+        let rc = unsafe { wipe(self.callbacks.context, FFINetwork::from(network)) };
+        if rc != 0 {
+            return Err(persist_callback_error(
+                rc,
+                format!("on_wipe_shielded_state_fn returned {rc}"),
+            ));
+        }
+        Ok(())
     }
 
     fn persist_tracked_masternodes(
@@ -12805,6 +12869,11 @@ mod tests {
                 PersistenceCallbacksExtension,
                 on_load_wallet_locked_outpoints_free_fn
             ) + std::mem::size_of::<Option<FreeWalletLockedOutpointsFn>>(),
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_wipe_shielded_state_fn)
+        );
+        assert_eq!(
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_wipe_shielded_state_fn)
+                + std::mem::size_of::<Option<WipeShieldedStateFn>>(),
             std::mem::offset_of!(
                 PersistenceCallbacksExtension,
                 on_persist_dashpay_profiles_fn
@@ -15272,6 +15341,31 @@ mod tests {
         let persister = FFIPersister::new(PersistenceCallbacks::default());
         persister.round_lock.lock().begin_round().unwrap();
         assert!(persister.load().is_err());
+    }
+
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_refuse_the_shielded_wipe_inside_an_unclosed_persistence_round() {
+        static WIPES: AtomicUsize = AtomicUsize::new(0);
+        unsafe extern "C" fn wipe(_: *mut c_void, _: FFINetwork) -> i32 {
+            WIPES.fetch_add(1, Ordering::SeqCst);
+            0
+        }
+        let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks::default(),
+            PersistenceCapabilities::SHIELDED_STATE_WIPE,
+            PersistenceExtensionCallbacks {
+                wipe_shielded_state: Some(wipe),
+                ..Default::default()
+            },
+        );
+        persister.round_lock.lock().begin_round().unwrap();
+        assert!(persister.wipe_shielded_state(Network::Testnet).is_err());
+        assert_eq!(WIPES.load(Ordering::SeqCst), 0, "the host is never called");
+
+        persister.round_lock.lock().end_round().unwrap();
+        persister.wipe_shielded_state(Network::Testnet).unwrap();
+        assert_eq!(WIPES.load(Ordering::SeqCst), 1);
     }
 
     use std::os::raw::c_void as TestCVoid;

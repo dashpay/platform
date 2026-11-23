@@ -5,6 +5,8 @@
 //! and `wallet::asset_lock::build`.
 
 use std::collections::BTreeMap;
+#[cfg(all(test, feature = "shielded"))]
+use std::sync::atomic::AtomicUsize;
 #[cfg(test)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -47,6 +49,10 @@ use crate::broadcaster::SpvBroadcaster;
 #[cfg(test)]
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
 use crate::changeset::changeset::fold_same_txid_records;
+#[cfg(all(test, feature = "shielded"))]
+use crate::changeset::{
+    ClientStartState, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
+};
 #[cfg(test)]
 use crate::changeset::{DurableCursors, PlatformWalletPersistence};
 #[cfg(test)]
@@ -1193,6 +1199,8 @@ pub(crate) async fn platform_wallet_in(
         Arc::new(SpvBroadcaster::new(spv)),
         Arc::new(AtomicBool::new(false)),
         DurableCursors::default(),
+        #[cfg(feature = "shielded")]
+        Default::default(),
     )
 }
 
@@ -1309,5 +1317,49 @@ pub(crate) mod tracing_capture {
         fn drop(&mut self) {
             ACTIVE_RECORDER.with(|slot| *slot.borrow_mut() = None);
         }
+    }
+}
+
+/// A host that stores nothing and attests
+/// [`PersistenceCapabilities::SHIELDED_STATE_WIPE`], counting the wipes a
+/// shielded Clear asks of it.
+#[cfg(all(test, feature = "shielded"))]
+#[derive(Default)]
+pub(crate) struct WipeCountingPersistence {
+    wipes: AtomicUsize,
+}
+
+#[cfg(all(test, feature = "shielded"))]
+impl WipeCountingPersistence {
+    pub(crate) fn wipe_count(&self) -> usize {
+        self.wipes.load(Ordering::SeqCst)
+    }
+}
+
+#[cfg(all(test, feature = "shielded"))]
+impl PlatformWalletPersistence for WipeCountingPersistence {
+    fn store(
+        &self,
+        _wallet_id: WalletId,
+        _changeset: PlatformWalletChangeSet,
+    ) -> Result<(), PersistenceError> {
+        Ok(())
+    }
+
+    fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+        Ok(())
+    }
+
+    fn load(&self) -> Result<ClientStartState, PersistenceError> {
+        Ok(ClientStartState::default())
+    }
+
+    fn persistence_capabilities(&self) -> PersistenceCapabilities {
+        PersistenceCapabilities::SHIELDED_STATE_WIPE
+    }
+
+    fn wipe_shielded_state(&self, _network: Network) -> Result<(), PersistenceError> {
+        self.wipes.fetch_add(1, Ordering::SeqCst);
+        Ok(())
     }
 }

@@ -354,7 +354,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
         Err(result) => return result,
     };
 
-    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+    let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
         Ok(p) => p,
         Err(result) => return result,
     };
@@ -377,15 +377,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
         let r = wallet
-            .shielded_transfer_to(
-                &coordinator,
-                seed.as_ref(),
-                account,
-                &recipient,
-                amount,
-                memo,
-                &prover,
-            )
+            .shielded_transfer_to(seed.as_ref(), account, &recipient, amount, memo, &prover)
             .await;
         poke_sync_on_unconfirmed(&r, handle);
         r
@@ -439,7 +431,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
         }
     };
 
-    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+    let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
         Ok(p) => p,
         Err(result) => return result,
     };
@@ -455,14 +447,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
         let r = wallet
-            .shielded_unshield_to(
-                &coordinator,
-                seed.as_ref(),
-                account,
-                &to_addr_str,
-                amount,
-                &prover,
-            )
+            .shielded_unshield_to(seed.as_ref(), account, &to_addr_str, amount, &prover)
             .await;
         poke_sync_on_unconfirmed(&r, handle);
         r
@@ -513,7 +498,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
         }
     };
 
-    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+    let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
         Ok(p) => p,
         Err(result) => return result,
     };
@@ -530,7 +515,6 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
         let prover = CachedOrchardProver::new();
         let r = wallet
             .shielded_withdraw_to(
-                &coordinator,
                 seed.as_ref(),
                 account,
                 &to_core,
@@ -1015,7 +999,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
         })
         .collect();
 
-    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+    let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
         Ok(p) => p,
         Err(result) => return result,
     };
@@ -1048,7 +1032,6 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
         let prover = CachedOrchardProver::new();
         let r = wallet
             .shielded_identity_create_from_pool(
-                &coordinator,
                 seed.as_ref(),
                 account,
                 identity_index,
@@ -1214,10 +1197,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
     let mut wallet_id = [0u8; 32];
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
 
-    // Shield writes its live activity entry to the coordinator's shared
-    // in-memory store, so resolve the coordinator alongside the wallet
-    // (same resolver the transfer / unshield / withdraw spends use).
-    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+    // The wallet resolves the manager's coordinator itself; this refuses an
+    // unconfigured manager before the mnemonic is resolved.
+    let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
         Ok(p) => p,
         Err(result) => return result,
     };
@@ -1247,7 +1229,6 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
         let prover = CachedOrchardProver::new();
         wallet
             .shielded_shield_from_account(
-                &coordinator,
                 shielded_account,
                 payment_account,
                 amount,
@@ -1306,7 +1287,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield_from_identity(
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
     let identity_id = unwrap_result_or_return!(read_identifier(identity_id));
 
-    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+    let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
         Ok(p) => p,
         Err(result) => return result,
     };
@@ -1322,7 +1303,6 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield_from_identity(
         let prover = CachedOrchardProver::new();
         wallet
             .shielded_shield_from_identity(
-                &coordinator,
                 shielded_account,
                 &identity_id,
                 amount,
@@ -1466,8 +1446,8 @@ unsafe fn shielded_shield_from_identity_to_recipient_inner(
         Err(result) => return result,
     };
 
-    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
-        Ok(p) => p,
+    let wallet = match resolve_wallet(handle, &wallet_id) {
+        Ok(w) => w,
         Err(result) => return result,
     };
 
@@ -1481,7 +1461,6 @@ unsafe fn shielded_shield_from_identity_to_recipient_inner(
         let prover = CachedOrchardProver::new();
         wallet
             .shielded_shield_from_identity_to_recipient(
-                &coordinator,
                 shielded_account,
                 &identity_id,
                 &recipient,
@@ -1564,7 +1543,7 @@ unsafe fn shielded_identity_top_up_from_pool_inner(
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
     let identity_id = unwrap_result_or_return!(read_identifier(identity_id));
 
-    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+    let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
         Ok(p) => p,
         Err(result) => return result,
     };
@@ -1581,7 +1560,6 @@ unsafe fn shielded_identity_top_up_from_pool_inner(
         let prover = CachedOrchardProver::new();
         let r = wallet
             .shielded_identity_top_up_from_pool(
-                &coordinator,
                 seed.as_ref(),
                 account,
                 &identity_id,
@@ -1710,10 +1688,9 @@ unsafe fn shielded_shield_to_recipient_inner(
         Err(result) => return result,
     };
 
-    // Shield writes its live activity entry to the coordinator's shared
-    // in-memory store, so resolve the coordinator alongside the wallet
-    // (same resolver the transfer / unshield / withdraw spends use).
-    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+    // The wallet resolves the manager's coordinator itself; this refuses an
+    // unconfigured manager before the mnemonic is resolved.
+    let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
         Ok(p) => p,
         Err(result) => return result,
     };
@@ -1735,7 +1712,6 @@ unsafe fn shielded_shield_to_recipient_inner(
         let prover = CachedOrchardProver::new();
         wallet
             .shielded_shield_from_account_to_recipient(
-                &coordinator,
                 shielded_account,
                 payment_account,
                 &recipient,
@@ -1839,10 +1815,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
         Err(result) => return result,
     };
 
-    // The Type 18 live activity recorder writes to the coordinator's
-    // shared in-memory store, so resolve the coordinator alongside the
-    // wallet.
-    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+    // The wallet resolves the manager's coordinator itself; this refuses an
+    // unconfigured manager before the mnemonic is resolved.
+    let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
         Ok(p) => p,
         Err(result) => return result,
     };
@@ -1873,7 +1848,6 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
         let on_built = built_callback.map(AssetLockBuiltCallback::into_observer);
         wallet
             .shielded_fund_from_asset_lock(
-                &coordinator,
                 AssetLockFunding::FromWalletBalance {
                     amount_duffs,
                     account_index,
@@ -1994,10 +1968,9 @@ unsafe fn shielded_fund_from_asset_lock_coinjoin_drain_inner(
         }
     };
 
-    // The Type 18 live activity recorder writes to the coordinator's
-    // shared in-memory store, so resolve the coordinator alongside the
-    // wallet (same as the BIP44-funded sibling).
-    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+    // The wallet resolves the manager's coordinator itself; this refuses an
+    // unconfigured manager before the mnemonic is resolved.
+    let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
         Ok(p) => p,
         Err(result) => return result,
     };
@@ -2025,7 +1998,6 @@ unsafe fn shielded_fund_from_asset_lock_coinjoin_drain_inner(
         let on_built = built_callback.map(AssetLockBuiltCallback::into_observer);
         wallet
             .shielded_fund_from_asset_lock(
-                &coordinator,
                 AssetLockFunding::DrainAccountBalance {
                     account:
                         key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount::CoinJoin {
@@ -2157,10 +2129,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
         vout: out_point_ffi.vout,
     };
 
-    // The Type 18 live activity recorder writes to the coordinator's
-    // shared in-memory store, so resolve the coordinator alongside the
-    // wallet.
-    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+    // The wallet resolves the manager's coordinator itself; this refuses an
+    // unconfigured manager before the mnemonic is resolved.
+    let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
         Ok(p) => p,
         Err(result) => return result,
     };
@@ -2181,7 +2152,6 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
         let prover = CachedOrchardProver::new();
         wallet
             .shielded_fund_from_asset_lock(
-                &coordinator,
                 AssetLockFunding::FromExistingAssetLock {
                     out_point: resume_outpoint,
                     consume_invitation_voucher: false,
@@ -2270,10 +2240,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_seed_pool_notes(
     let mut wallet_id = [0u8; 32];
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
 
-    // Each seeding batch's Type 18 live activity recorder writes to the
-    // coordinator's shared in-memory store, so resolve the coordinator
-    // alongside the wallet.
-    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+    // The wallet resolves the manager's coordinator itself; this refuses an
+    // unconfigured manager before the mnemonic is resolved.
+    let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
         Ok(p) => p,
         Err(result) => return result,
     };
@@ -2324,7 +2293,6 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_seed_pool_notes(
 
         wallet
             .shielded_seed_pool_notes(
-                &coordinator,
                 &wallet_id,
                 account,
                 target_total_notes,
@@ -2437,14 +2405,13 @@ pub unsafe extern "C" fn platform_wallet_manager_abandon_shielded_identity_debit
     let mut activity_id = [0u8; 32];
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
     std::ptr::copy_nonoverlapping(activity_id_bytes, activity_id.as_mut_ptr(), 32);
-    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+    let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
         Ok(value) => value,
         Err(error) => return error,
     };
     match block_on_worker(async move {
         wallet
             .abandon_shielded_identity_debit(
-                &coordinator,
                 account_index,
                 activity_id,
                 acknowledge_possible_execution,
@@ -2481,10 +2448,8 @@ fn resolve_wallet(
     }
 }
 
-/// Resolve both the wallet `Arc` and the network-scoped shielded
-/// coordinator `Arc` for the given manager handle. Shielded
-/// spend operations need the coordinator's shared store, so this
-/// is the right resolver for transfer/unshield/withdraw FFIs.
+/// Resolve the wallet and the manager's shielded coordinator for `handle`,
+/// failing if either is missing.
 pub(crate) fn resolve_wallet_and_coordinator(
     handle: Handle,
     wallet_id: &[u8; 32],
@@ -2524,6 +2489,17 @@ pub(crate) fn resolve_wallet_and_coordinator(
         )
     })?;
     Ok((wallet, coordinator))
+}
+
+/// The wallet half of [`resolve_wallet_and_coordinator`], with the same
+/// errors: the wallet's shielded operations resolve the manager's coordinator
+/// themselves, and this only refuses a manager without one before a caller
+/// resolves the mnemonic.
+pub(crate) fn resolve_shielded_wallet(
+    handle: Handle,
+    wallet_id: &[u8; 32],
+) -> Result<std::sync::Arc<platform_wallet::PlatformWallet>, PlatformWalletFFIResult> {
+    resolve_wallet_and_coordinator(handle, wallet_id).map(|(wallet, _)| wallet)
 }
 
 /// The coordinator half of [`resolve_wallet_and_coordinator`], with the same
@@ -2572,14 +2548,14 @@ pub unsafe extern "C" fn platform_wallet_manager_prepare_shielded_identity_addre
         Ok(id) => id,
         Err(e) => return e.into(),
     };
-    // Wallet, coordinator and seed resolution, the worker call and its result
+    // Wallet and seed resolution, the worker call and its result
     // mapping all sit inside the panic boundary (resolution blocks on the
     // runtime, which panics when the host calls from inside one); the raw
     // output write happens outside it, only on success, so a panic leaves the
     // zeroed buffer untouched.
     let mut address = [0u8; 43];
     let result = catch_query_panic("shielded identity address preparation", || {
-        let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
             Ok(value) => value,
             Err(e) => return e,
         };
@@ -2593,7 +2569,7 @@ pub unsafe extern "C" fn platform_wallet_manager_prepare_shielded_identity_addre
         match block_on_worker(async move {
             maybe_inject_tip_worker_panic();
             wallet
-                .prepare_shielded_identity_address(seed.as_ref(), &identity_id, &coordinator)
+                .prepare_shielded_identity_address(seed.as_ref(), &identity_id)
                 .await
         }) {
             Ok(bytes) => {
@@ -2745,7 +2721,7 @@ pub unsafe extern "C" fn platform_wallet_manager_send_shielded_tip(
     // itself takes the do-not-retry contract below.
     let mut resolved = None;
     let preflight = catch_query_panic("shielded tip preflight", || {
-        let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
             Ok(value) => value,
             Err(e) => return e,
         };
@@ -2756,10 +2732,10 @@ pub unsafe extern "C" fn platform_wallet_manager_send_shielded_tip(
             Ok(value) => value,
             Err(e) => return e,
         };
-        resolved = Some((wallet, coordinator, seed));
+        resolved = Some((wallet, seed));
         PlatformWalletFFIResult::ok()
     });
-    let Some((wallet, coordinator, seed)) = resolved else {
+    let Some((wallet, seed)) = resolved else {
         return preflight;
     };
     catch_spend_panic("shielded tip", || {
@@ -2772,7 +2748,6 @@ pub unsafe extern "C" fn platform_wallet_manager_send_shielded_tip(
             let prover = CachedOrchardProver::new();
             let result = wallet
                 .send_shielded_tip(
-                    &coordinator,
                     seed.as_ref(),
                     source,
                     &username,
@@ -4135,9 +4110,8 @@ mod tests {
                     .configure_shielded(&store_path)
                     .await
                     .expect("configure shielded");
-                let coordinator = manager.shielded_coordinator().await.expect("coordinator");
                 wallet
-                    .bind_shielded(&Self::SEED, &[0], &coordinator)
+                    .bind_shielded(&Self::SEED, &[0])
                     .await
                     .expect("bind shielded");
                 wallet

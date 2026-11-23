@@ -8,25 +8,19 @@
 //! reconstructs it even after publication was removed. Address rotation uses
 //! another diversifier in the same account, so all old addresses remain covered.
 
-use super::NetworkShieldedCoordinator;
 use crate::wallet::platform_wallet::PlatformWallet;
 use crate::{PlatformWalletError, ShieldedTipRecipient};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
 use grovedb_commitment_tree::PaymentAddress;
 use orchard::keys::Scope;
-use std::sync::{Arc, PoisonError, Weak};
+use std::sync::PoisonError;
 
 pub(crate) struct PreparedTipAccount {
     account: u32,
-    coordinator: Weak<NetworkShieldedCoordinator>,
-    clear_generation: u64,
-}
-
-impl PreparedTipAccount {
-    pub(crate) fn coordinator(&self) -> Option<Arc<NetworkShieldedCoordinator>> {
-        self.coordinator.upgrade()
-    }
+    /// The Clear epoch of the admission the preparation ran under. A Clear
+    /// since then drops what it bound, so the preparation no longer stands.
+    clear_epoch: u64,
 }
 
 pub const SHIELDED_IDENTITY_ACCOUNT_BASE: u32 = 0x4000_0000;
@@ -115,13 +109,23 @@ impl PlatformWallet {
     /// callers can publish the returned address. Repeated calls are idempotent.
     /// Requires an existing shielded bind so preparing a tip account cannot
     /// silently replace the host's ordinary account configuration.
+    ///
+    /// Runs on the manager's coordinator under the locks of a shield-class
+    /// operation and one admission, from the seed proof through the record
+    /// of the preparation: a Clear or a removal waits for it, and a
+    /// preparation the Clear epoch has since moved past no longer stands.
     pub async fn prepare_shielded_identity_address(
         &self,
         seed: &[u8],
         identity_id: &Identifier,
-        coordinator: &Arc<NetworkShieldedCoordinator>,
     ) -> Result<[u8; 43], PlatformWalletError> {
-        let coordinator = self.resolve_shielded_coordinator(coordinator).await?;
+        self.ensure_fvk_restart_capability()?;
+        // The account's keys are derived for this wallet's network. Bound to
+        // a coordinator of another network they would scan the wrong chain,
+        // while the address was handed out and recorded as prepared.
+        self.shielded_coordinator()
+            .await?
+            .ensure_network(self.sdk.network)?;
         // Do not publish a key from a mis-associated mnemonic. A first bind
         // has no persisted FVK against which to detect a wrong seed.
         let root = key_wallet::wallet::root_extended_keys::RootExtendedPrivKey::new_master(seed)
@@ -139,17 +143,9 @@ impl PlatformWallet {
                 "The supplied seed does not belong to this wallet".to_string(),
             ));
         }
-        let _lifecycle = self.core().generation_payment_guard().await;
-        if !self.core().is_current_generation().await {
-            return Err(PlatformWalletError::WalletNotFound(hex::encode(
-                self.wallet_id(),
-            )));
-        }
-        let clear_generation = coordinator.clear_generation();
-        let _operation = coordinator.operation_guard().await;
-        if coordinator.clear_generation() != clear_generation {
-            return Err(PlatformWalletError::ShieldedNotBound);
-        }
+        let locks = self.lock_for_shielded_operation(true).await?;
+        let coordinator = &locks.coordinator;
+        let admission = locks.admit(self).await?;
         // Held until the address is returned, so the identity cannot move to
         // another slot between the check below and the bind of the account
         // that slot selects. Publication rechecks it (see
@@ -169,7 +165,7 @@ impl PlatformWallet {
         test_hooks::after_snapshot(self).await;
         accounts.push(account);
         let flush_mark = self.persister().flush_mark();
-        self.bind_shielded_locked_unfenced(seed, &accounts, &coordinator)
+        self.bind_shielded_locked(seed, &accounts, coordinator, &admission)
             .await?;
         #[cfg(test)]
         test_hooks::after_bind(self).await;
@@ -183,9 +179,6 @@ impl PlatformWallet {
             .shielded_default_address(account)
             .await
             .ok_or(PlatformWalletError::ShieldedNotBound)?;
-        if coordinator.clear_generation() != clear_generation {
-            return Err(PlatformWalletError::ShieldedNotBound);
-        }
         self.prepared_tip_accounts
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -193,8 +186,7 @@ impl PlatformWallet {
                 *identity_id,
                 PreparedTipAccount {
                     account,
-                    coordinator: Arc::downgrade(&coordinator),
-                    clear_generation,
+                    clear_epoch: admission.epoch(),
                 },
             );
         Ok(address)
@@ -277,12 +269,14 @@ impl PlatformWallet {
     /// Ordinary accounts and internal-scope identity addresses cannot be published;
     /// this wallet scans external receiving addresses. Addresses of other wallets are
     /// the owner's choice. Only bound accounts are recognised; preparation binds the
-    /// account it hands out. Callers hold the placement lock through the
-    /// profile write.
+    /// account it hands out. Callers hold the admission granted at
+    /// `clear_epoch` (`None` without a coordinator, which nothing was prepared
+    /// on) and the placement lock through the profile write.
     pub(crate) async fn check_tip_address_publication(
         &self,
         identity_id: &Identifier,
         address: &[u8; 43],
+        clear_epoch: Option<u64>,
     ) -> Result<(), PlatformWalletError> {
         let Some(address) =
             Option::<PaymentAddress>::from(PaymentAddress::from_raw_address_bytes(address))
@@ -323,10 +317,7 @@ impl PlatformWallet {
             .unwrap_or_else(PoisonError::into_inner)
             .get(identity_id)
             .is_some_and(|prepared| {
-                prepared.account == owning_account
-                    && prepared.coordinator.upgrade().is_some_and(|coordinator| {
-                        coordinator.clear_generation() == prepared.clear_generation
-                    })
+                prepared.account == owning_account && Some(prepared.clear_epoch) == clear_epoch
             });
         let wm = self.wallet_manager.read().await;
         let current = wm
@@ -357,7 +348,6 @@ impl PlatformWallet {
     #[allow(clippy::too_many_arguments)]
     pub async fn send_shielded_tip<P: dpp::shielded::builder::OrchardProver>(
         &self,
-        coordinator: &Arc<NetworkShieldedCoordinator>,
         seed: &[u8],
         source: ShieldedTipSource,
         username: &str,
@@ -366,7 +356,7 @@ impl PlatformWallet {
         memo: [u8; 36],
         prover: P,
     ) -> Result<(), PlatformWalletError> {
-        let coordinator = self.resolve_shielded_coordinator(coordinator).await?;
+        self.shielded_coordinator().await?;
         {
             let _placement = self.identity.identity_placement.read().await;
             self.tip_source_account(seed, source).await?;
@@ -381,19 +371,20 @@ impl PlatformWallet {
                 "The tip recipient changed; review and confirm the payment again".to_string(),
             ));
         }
-        let _lifecycle = self.core().generation_payment_guard().await;
-        if !self.core().is_current_generation().await {
-            return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
-                self.wallet_id(),
-            )));
-        }
-        let _operation = coordinator.operation_guard().await;
+        let locks = self.lock_for_shielded_operation(false).await?;
+        let coordinator = &locks.coordinator;
+        let _admission = locks.admit(self).await.map_err(|error| match error {
+            PlatformWalletError::WalletNotFound(_) => {
+                PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id()))
+            }
+            error => error,
+        })?;
         let _placement = self.identity.identity_placement.read().await;
         let account = self.tip_source_account(seed, source).await?;
         #[cfg(test)]
         test_hooks::before_spend(self).await;
-        self.shielded_transfer_to(
-            &coordinator,
+        self.shielded_transfer_admitted(
+            coordinator,
             seed,
             account,
             &current.address,

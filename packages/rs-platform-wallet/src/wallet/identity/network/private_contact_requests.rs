@@ -3603,7 +3603,7 @@ mod tests {
             .await;
         fixture
             .wallet
-            .restore_private_contact_payments(&fixture.coordinator)
+            .restore_private_contact_payments()
             .await
             .expect("restored");
         let persister = fixture.wallet.persister();
@@ -3685,7 +3685,7 @@ mod tests {
             .await;
         fixture
             .wallet
-            .restore_private_contact_payments(&fixture.coordinator)
+            .restore_private_contact_payments()
             .await
             .expect("restored");
         let persister = fixture.wallet.persister();
@@ -3716,7 +3716,7 @@ mod tests {
         // request is tracked: in memory only, as its flush was lost.
         fixture
             .wallet
-            .restore_private_contact_payments(&fixture.coordinator)
+            .restore_private_contact_payments()
             .await
             .expect("restored");
         assert_eq!(fixture.journaled().await, 1, "kept for the next process");
@@ -3753,7 +3753,7 @@ mod tests {
             .await;
         fixture
             .wallet
-            .restore_private_contact_payments(&fixture.coordinator)
+            .restore_private_contact_payments()
             .await
             .expect("restored");
         publish(&fixture.wallet, 0, vec![entry.to_vec()]).await;
@@ -3842,7 +3842,7 @@ mod tests {
         .await;
         let coordinator = manager.shielded_coordinator().await.expect("configured");
         restarted
-            .restore_private_contact_payments(&coordinator)
+            .restore_private_contact_payments()
             .await
             .expect("restored again");
         assert!(
@@ -3960,7 +3960,7 @@ mod tests {
             .await;
         fixture
             .wallet
-            .restore_private_contact_payments(&fixture.coordinator)
+            .restore_private_contact_payments()
             .await
             .expect("restored");
         publish(&fixture.wallet, 0, vec![entry.to_vec()]).await;
@@ -4012,7 +4012,7 @@ mod tests {
             .await;
         fixture
             .wallet
-            .restore_private_contact_payments(&fixture.coordinator)
+            .restore_private_contact_payments()
             .await
             .expect("restored");
         let reference = fixture.journal_snapshot().await[0]
@@ -4042,7 +4042,7 @@ mod tests {
             Some(fixture.wallet.persister().clone());
         fixture
             .wallet
-            .restore_private_contact_payments(&fixture.coordinator)
+            .restore_private_contact_payments()
             .await
             .expect("restored");
         assert!(
@@ -4085,7 +4085,7 @@ mod tests {
             .await;
         fixture
             .wallet
-            .restore_private_contact_payments(&fixture.coordinator)
+            .restore_private_contact_payments()
             .await
             .expect("restored");
         let journal = fixture.journal_snapshot().await;
@@ -4115,7 +4115,7 @@ mod tests {
         }
         fixture
             .wallet
-            .restore_private_contact_payments(&fixture.coordinator)
+            .restore_private_contact_payments()
             .await
             .expect("restored");
         assert_eq!(
@@ -4129,7 +4129,7 @@ mod tests {
             .store(false, Ordering::SeqCst);
         fixture
             .wallet
-            .restore_private_contact_payments(&fixture.coordinator)
+            .restore_private_contact_payments()
             .await
             .expect("restored");
         assert_eq!(fixture.journaled().await, 0, "discharged once flushed");
@@ -4141,7 +4141,7 @@ mod tests {
             .await;
         fixture
             .wallet
-            .restore_private_contact_payments(&fixture.coordinator)
+            .restore_private_contact_payments()
             .await
             .expect("restored");
         publish(&fixture.wallet, 0, vec![entry.to_vec()]).await;
@@ -4158,7 +4158,7 @@ mod tests {
             .expect("the entry is read back");
         fixture
             .wallet
-            .restore_private_contact_payments(&fixture.coordinator)
+            .restore_private_contact_payments()
             .await
             .expect("restored");
         assert_eq!(
@@ -4172,7 +4172,7 @@ mod tests {
             .store(false, Ordering::SeqCst);
         fixture
             .wallet
-            .restore_private_contact_payments(&fixture.coordinator)
+            .restore_private_contact_payments()
             .await
             .expect("restored");
         assert_eq!(
@@ -4188,7 +4188,7 @@ mod tests {
             .await;
         fixture
             .wallet
-            .restore_private_contact_payments(&fixture.coordinator)
+            .restore_private_contact_payments()
             .await
             .expect("restored");
         publish(&fixture.wallet, 0, vec![entry.to_vec()]).await;
@@ -4209,7 +4209,7 @@ mod tests {
             .read_back_awaiting_flush(&journal_commitment(&fixture).await));
         fixture
             .wallet
-            .restore_private_contact_payments(&fixture.coordinator)
+            .restore_private_contact_payments()
             .await
             .expect("restored");
         assert_eq!(
@@ -4227,7 +4227,7 @@ mod tests {
             .store(true, Ordering::SeqCst);
         fixture
             .wallet
-            .restore_private_contact_payments(&fixture.coordinator)
+            .restore_private_contact_payments()
             .await
             .expect("restored");
         assert_eq!(fixture.journaled().await, 1, "the buffer was lost");
@@ -4273,7 +4273,7 @@ mod tests {
         assert_eq!(fixture.journaled().await, 1);
         fixture
             .wallet
-            .restore_private_contact_payments(&fixture.coordinator)
+            .restore_private_contact_payments()
             .await
             .expect("restored");
         assert_eq!(
@@ -5353,7 +5353,7 @@ mod tests {
                         // record, then a second restoration.
                         coordinator.sync(true, &CancellationToken::new()).await;
                         restarted
-                            .restore_private_contact_payments(&coordinator)
+                            .restore_private_contact_payments()
                             .await
                             .expect("restored again from the journal");
                     }
@@ -10867,15 +10867,13 @@ mod tests {
         let bob = identity(BOB_PHRASE, BOB);
         let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
         let alice_signer = signer(ALICE_PHRASE, &alice);
-        let (_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let (manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
         let dir = tempfile::tempdir().expect("temporary shielded store");
-        let db_path = dir.path().join("tree.sqlite");
-        let coordinator = Arc::new(NetworkShieldedCoordinator::new(
-            Arc::new(dash_sdk::Sdk::new_mock()),
-            Network::Testnet,
-            db_path.clone(),
-            FileBackedShieldedStore::open_path(&db_path, 100).expect("the store"),
-        ));
+        manager
+            .configure_shielded(dir.path().join("tree.sqlite"))
+            .await
+            .expect("the shielded store");
+        let coordinator = manager.shielded_coordinator().await.expect("configured");
         let subwallet = SubwalletId::new(alice_wallet.wallet_id(), 0);
         let paid = Arc::new(Mutex::new(Vec::new()));
         let pay = {
@@ -10936,7 +10934,7 @@ mod tests {
 
         let mut cx = Context::from_waker(Waker::noop());
         let held_store = coordinator.store().write().await;
-        let mut restore = Box::pin(alice_wallet.restore_private_contact_payments(&coordinator));
+        let mut restore = Box::pin(alice_wallet.restore_private_contact_payments());
         assert!(
             restore.as_mut().poll(&mut cx).is_pending(),
             "waits for the store"
@@ -11022,9 +11020,7 @@ mod tests {
 
         let mut cx = Context::from_waker(Waker::noop());
         let held_store = fixture.coordinator.store().write().await;
-        let mut restore = Box::pin(
-            wallet.restore_pending_private_contact_requests(&fixture.coordinator, &alice_crypto),
-        );
+        let mut restore = Box::pin(wallet.restore_pending_private_contact_requests(&alice_crypto));
         assert!(
             restore.as_mut().poll(&mut cx).is_pending(),
             "waits for the store"
@@ -11230,15 +11226,12 @@ mod tests {
             manager
                 .configure_shielded(&db_path)
                 .await
-                .expect("configured");
-            let coordinator = manager
-                .shielded_coordinator()
-                .await
-                .expect("the manager's coordinator");
+                .expect("the shielded store");
+            let coordinator = manager.shielded_coordinator().await.expect("configured");
             // Bound, the coordinator holds the wallet's persister, on which it
             // notes the discharge.
             wallet
-                .bind_shielded(&seed(ALICE_PHRASE), &[0], &coordinator)
+                .bind_shielded(&seed(ALICE_PHRASE), &[0])
                 .await
                 .expect("bound");
             let subwallet = SubwalletId::new(wallet.wallet_id(), 0);
@@ -11745,7 +11738,7 @@ mod tests {
         // Discharged from that read-back by a restoration.
         fixture
             .wallet
-            .restore_private_contact_payments(&fixture.coordinator)
+            .restore_private_contact_payments()
             .await
             .expect("restored");
         assert!(fixture
@@ -12336,7 +12329,7 @@ mod tests {
         // submission or a restoration notes it.
         fixture
             .wallet
-            .restore_private_contact_payments(&fixture.coordinator)
+            .restore_private_contact_payments()
             .await
             .expect("restored");
         let persister = fixture.wallet.persister();
@@ -13175,7 +13168,7 @@ mod tests {
         ));
         let scan = coordinator.store().write().await;
         let deferred = wallet
-            .restore_private_payments_or_defer(&coordinator)
+            .restore_private_payments_or_defer(&coordinator, None)
             .await
             .expect("deferred for the busy store");
         deferred.abort();
@@ -13225,7 +13218,7 @@ mod tests {
         let bob = identity(BOB_PHRASE, BOB);
         let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
         let alice_signer = signer(ALICE_PHRASE, &alice);
-        let (_manager, wallet) = wallet_on(
+        let (manager, wallet) = wallet_on(
             RecordingPersistence::attesting(
                 PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
             ),
@@ -13245,13 +13238,11 @@ mod tests {
                 [],
             )
             .expect("the record damaged");
-        let coordinator = Arc::new(NetworkShieldedCoordinator::new(
-            Arc::clone(&wallet.identity().sdk),
-            Network::Testnet,
-            path.clone(),
-            FileBackedShieldedStore::open_path(&path, 100).expect("the store"),
-        ));
-        let failed = wallet.restore_private_contact_payments(&coordinator).await;
+        manager
+            .configure_shielded(&path)
+            .await
+            .expect("the shielded store");
+        let failed = wallet.restore_private_contact_payments().await;
         assert!(failed.is_err(), "{failed:?}");
         let view = wallet.identity().dashpay();
         let readiness = view
@@ -13630,13 +13621,16 @@ mod tests {
         assert!(exited.is_err(), "the process exits during the wait");
         drop(before);
 
-        let after = coordinator_at(db_path);
-        let (_restarted_manager, restarted) =
+        let (restarted_manager, restarted) =
             wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
         assert_eq!(restarted.wallet_id(), alice_wallet.wallet_id());
         assert!(!pending_to(&restarted, ALICE, &bob).await);
+        restarted_manager
+            .configure_shielded(&db_path)
+            .await
+            .expect("the shielded store");
         let restored = restarted
-            .restore_pending_private_contact_requests(&after, &alice_crypto)
+            .restore_pending_private_contact_requests(&alice_crypto)
             .await
             .expect("restored from the saved record");
         assert_eq!(restored, vec![(alice.id(), bob.id())]);
@@ -14035,8 +14029,12 @@ mod tests {
         let db_path = dir.path().join("tree.sqlite");
         let coordinator_at = |db_path: std::path::PathBuf| {
             let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open the store");
+            let sdk = dash_sdk::SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .build()
+                .expect("mock sdk");
             Arc::new(NetworkShieldedCoordinator::new(
-                Arc::new(dash_sdk::Sdk::new_mock()),
+                Arc::new(sdk),
                 Network::Testnet,
                 db_path,
                 store,
@@ -14158,13 +14156,13 @@ mod tests {
         restarted_manager
             .configure_shielded(&db_path)
             .await
-            .expect("configured");
+            .expect("the shielded store");
         let after = restarted_manager
             .shielded_coordinator()
             .await
-            .expect("the manager's coordinator");
+            .expect("configured");
         restarted
-            .bind_shielded(&seed(BOB_PHRASE), &[0], &after)
+            .bind_shielded(&seed(BOB_PHRASE), &[0])
             .await
             .expect("bound");
         assert!(
@@ -14179,7 +14177,7 @@ mod tests {
             let scan = after.store().write().await;
             tokio::time::timeout(
                 Duration::from_secs(5),
-                restarted.bind_shielded(&seed(BOB_PHRASE), &[0], &after),
+                restarted.bind_shielded(&seed(BOB_PHRASE), &[0]),
             )
             .await
             .expect("the rebind does not wait for the store")
@@ -14251,7 +14249,7 @@ mod tests {
         // Read back and recorded durably, its journal record is discharged:
         // the next restoration finds none, and the pair stays free.
         restarted
-            .restore_private_contact_payments(&after)
+            .restore_private_contact_payments()
             .await
             .expect("restored");
         assert!(

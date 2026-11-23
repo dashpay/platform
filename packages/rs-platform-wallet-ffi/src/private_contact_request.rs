@@ -64,7 +64,7 @@ use std::ffi::CStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(feature = "shielded")]
-use platform_wallet::wallet::shielded::{CachedOrchardProver, NetworkShieldedCoordinator};
+use platform_wallet::wallet::shielded::CachedOrchardProver;
 #[cfg(feature = "shielded")]
 use platform_wallet::{AutoAcceptProofSource, PrivateReplyPayment};
 #[cfg(feature = "shielded")]
@@ -77,7 +77,7 @@ use crate::identity_keys_from_mnemonic::resolve_seed_from_resolver;
 #[cfg(feature = "shielded")]
 use crate::shielded_send::{
     catch_spend_panic, map_spend_result, poke_sync_on_unconfirmed, resolve_shielded_coordinator,
-    resolve_wallet_and_coordinator,
+    resolve_shielded_wallet,
 };
 
 /// The bytes of an Orchard payment address: an 11-byte diversifier and a
@@ -583,8 +583,8 @@ unsafe fn send_private_contact_request_inner(
     };
     let shielded_address = read_shielded_address(shielded_address);
 
-    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
-        Ok(pair) => pair,
+    let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
+        Ok(wallet) => wallet,
         Err(result) => return result,
     };
     let seed = match resolve_seed_from_resolver(mnemonic_resolver_handle, &wallet_id) {
@@ -609,7 +609,6 @@ unsafe fn send_private_contact_request_inner(
         let prover = CachedOrchardProver::new();
         let result = wallet
             .send_private_contact_request(
-                &coordinator,
                 seed.as_ref(),
                 account,
                 &sender,
@@ -713,8 +712,8 @@ unsafe fn accept_private_contact_request_inner(
     let request = unwrap_option_or_return!(request);
     let shielded_address = read_shielded_address(shielded_address);
 
-    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
-        Ok(pair) => pair,
+    let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
+        Ok(wallet) => wallet,
         Err(result) => return result,
     };
     let seed = match resolve_seed_from_resolver(mnemonic_resolver_handle, &wallet_id) {
@@ -734,7 +733,6 @@ unsafe fn accept_private_contact_request_inner(
         let prover = CachedOrchardProver::new();
         let result = wallet
             .accept_private_contact_request(
-                &coordinator,
                 seed.as_ref(),
                 account,
                 &request,
@@ -881,9 +879,10 @@ fn resolve_manager_wallet(
 }
 
 /// What a private reply is paid with, looked up only when the wallet asks:
-/// the shielded coordinator, then the seed read through the resolver at
-/// `resolver_addr`. Runs on a blocking thread (the coordinator lookup blocks
-/// on the runtime, and the resolver calls into the host).
+/// the seed read through the resolver at `resolver_addr`, once the manager
+/// is known to have shielded support (so an unconfigured manager never
+/// prompts for the mnemonic). Runs on a blocking thread (the configuration
+/// lookup blocks on the runtime, and the resolver calls into the host).
 ///
 /// # Safety
 /// `resolver_addr` must be the address of a valid `MnemonicResolverHandle`
@@ -893,11 +892,10 @@ unsafe fn private_reply_payment_parts(
     handle: Handle,
     wallet_id: [u8; 32],
     resolver_addr: usize,
-) -> Result<(Arc<NetworkShieldedCoordinator>, Zeroizing<[u8; 64]>), PaymentFailure> {
-    let coordinator = resolve_shielded_coordinator(handle).map_err(payment_failure)?;
-    let seed = resolve_seed_from_resolver(resolver_addr as *mut MnemonicResolverHandle, &wallet_id)
-        .map_err(payment_failure)?;
-    Ok((coordinator, seed))
+) -> Result<Zeroizing<[u8; 64]>, PaymentFailure> {
+    resolve_shielded_coordinator(handle).map_err(payment_failure)?;
+    resolve_seed_from_resolver(resolver_addr as *mut MnemonicResolverHandle, &wallet_id)
+        .map_err(payment_failure)
 }
 
 /// Body of [`platform_wallet_manager_accept_contact_request_replying_in_kind`],
@@ -976,8 +974,7 @@ unsafe fn accept_contact_request_replying_in_kind_inner(
                             ))
                         });
                         match parts {
-                            Ok((coordinator, seed)) => Ok(PrivateReplyPayment {
-                                coordinator,
+                            Ok(seed) => Ok(PrivateReplyPayment {
                                 seed,
                                 account,
                                 prover: &prover,

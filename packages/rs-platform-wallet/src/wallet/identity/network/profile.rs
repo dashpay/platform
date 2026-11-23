@@ -1002,6 +1002,7 @@ mod address_patch_tests {
             Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
             Arc::new(std::sync::atomic::AtomicBool::new(false)),
             crate::changeset::DurableCursors::default(),
+            Default::default(),
         );
         let remove = ProfileUpdate {
             display_name: Some("Alice II".into()),
@@ -1123,6 +1124,7 @@ mod address_patch_tests {
             Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
             Arc::new(std::sync::atomic::AtomicBool::new(false)),
             crate::changeset::DurableCursors::default(),
+            Default::default(),
         );
         assert_eq!(
             wallet.identity().dashpay().sync_profiles().await.unwrap(),
@@ -1332,6 +1334,7 @@ mod tip_resolution_tests {
                 Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
                 Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 crate::changeset::DurableCursors::default(),
+                Default::default(),
             );
             let path = dir.join("tree.sqlite");
             let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
@@ -1341,13 +1344,15 @@ mod tip_resolution_tests {
                 path,
                 store,
             ));
+            wallet
+                .attach_shielded_coordinator_for_test(&coordinator)
+                .await;
             let confirmed = crate::ShieldedTipRecipient {
                 identity_id: original_owner,
                 address: original_address,
             };
             let error = wallet
                 .send_shielded_tip(
-                    &coordinator,
                     &[42; 64],
                     crate::ShieldedTipSource::Account(0),
                     "Alice.dash",

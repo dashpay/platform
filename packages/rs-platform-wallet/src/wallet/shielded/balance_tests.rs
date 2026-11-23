@@ -169,7 +169,10 @@ async fn local_balance_distinguishes_availability_and_explicit_empty_scan() {
         scanned.accounts[&2].source,
         ShieldedBalanceSource::ScannedThisSession
     );
-    coordinator.clear().await.unwrap();
+    coordinator
+        .clear(&crate::test_support::WipeCountingPersistence::default())
+        .await
+        .unwrap();
     assert_eq!(
         coordinator.local_balance_snapshot(wallet).await.unwrap(),
         ShieldedLocalBalanceState::Unbound
@@ -291,7 +294,10 @@ async fn local_balance_recovers_after_failed_clear_and_completed_scan() {
     let conn = rusqlite::Connection::open(&path).unwrap();
     conn.execute_batch("ALTER TABLE shielded_pending_spends RENAME TO unavailable_pending_spends;")
         .unwrap();
-    assert!(coordinator.clear().await.is_err());
+    assert!(coordinator
+        .clear(&crate::test_support::WipeCountingPersistence::default())
+        .await
+        .is_err());
     conn.execute_batch("ALTER TABLE unavailable_pending_spends RENAME TO shielded_pending_spends;")
         .unwrap();
     drop(conn);
@@ -335,7 +341,10 @@ async fn local_balance_unhydrated_requires_scan_coverage_for_every_account() {
         .set_last_synced_note_index(SubwalletId::new(wallet, 1), 0)
         .unwrap();
     assert_eq!(ready(&coordinator, wallet).await.accounts.len(), 2);
-    coordinator.clear().await.unwrap();
+    coordinator
+        .clear(&crate::test_support::WipeCountingPersistence::default())
+        .await
+        .unwrap();
     register(&coordinator, wallet, &[0, 1]).await;
     assert_eq!(
         coordinator.local_balance_snapshot(wallet).await.unwrap(),
@@ -506,7 +515,8 @@ async fn local_balance_waits_for_atomic_store_and_lifecycle_updates() {
         ShieldedBalanceSource::ScannedThisSession
     );
 
-    let install = coordinator.begin_install(wallet).await;
+    let admission = coordinator.admit().await.unwrap();
+    let install = admission.begin_install(wallet).await;
     let mut read = Box::pin(coordinator.local_balance_snapshot(wallet));
     assert!(matches!(futures::poll!(&mut read), Poll::Pending));
     assert!(
