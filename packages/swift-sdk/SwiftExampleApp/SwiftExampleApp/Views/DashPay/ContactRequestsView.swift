@@ -140,6 +140,7 @@ struct ContactRequestsView: View {
                     )
                 }
                 .listStyle(.insetGrouped)
+                .accessibilityIdentifier("dashpay.requests.list")
             } else {
                 List {
                     privateRefreshNoticeSection
@@ -199,6 +200,7 @@ struct ContactRequestsView: View {
                     }
                 }
                 .listStyle(.insetGrouped)
+                .accessibilityIdentifier("dashpay.requests.list")
             }
         }
         .refreshable {
@@ -455,6 +457,7 @@ struct IncomingRequestRow: View {
                 HStack {
                     Spacer()
                     ProgressView()
+                        .accessibilityIdentifier("dashpay.request.busy")
                     Spacer()
                 }
             } else {
@@ -475,6 +478,7 @@ struct IncomingRequestRow: View {
                 Text(errorMessage)
                     .font(.caption)
                     .foregroundColor(.red)
+                    .accessibilityIdentifier("dashpay.request.message")
             }
         }
         .padding(.vertical, 4)
@@ -514,6 +518,7 @@ struct OutgoingRequestRow: View {
                 .padding(.vertical, 2)
                 .background(Color.orange.opacity(0.15))
                 .cornerRadius(4)
+                .accessibilityIdentifier("dashpay.request.outgoingPending")
         }
         .padding(.vertical, 4)
     }

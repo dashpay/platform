@@ -1,5 +1,6 @@
 package org.dashfoundation.example.ui.diagnostics
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,6 +13,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -33,6 +35,10 @@ import androidx.navigation.NavHostController
 import kotlinx.coroutines.launch
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
+import org.dashfoundation.example.navigation.AddressBranchStateQuery
+import org.dashfoundation.example.navigation.AddressCompactedBalanceChangesQuery
+import org.dashfoundation.example.navigation.AddressRecentBalanceChangesQuery
+import org.dashfoundation.example.navigation.AddressTrunkStateQuery
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
@@ -96,6 +102,20 @@ fun AddressQueriesScreen(navController: NavHostController) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            // The address-sync queries (ADDR-11), each on its own screen as in iOS's
+            // AddressQueriesView; identifiers are Swift's.
+            FormSection(title = "Address Sync") {
+                AddressSyncQueryLinks.forEach { (title, subtitle, tag, route) ->
+                    ListItem(
+                        headlineContent = { Text(title) },
+                        supportingContent = { Text(subtitle) },
+                        modifier = Modifier
+                            .clickable { navController.navigate(route) }
+                            .testTag(tag),
+                    )
+                }
+            }
+
             FormSection(title = "Get Address Info") {
                 Text(
                     "Fetch balance and nonce for a single Platform address " +
@@ -242,3 +262,38 @@ private fun decodeHexAddress(input: String): ByteArray? {
         trimmed.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
     }.getOrNull()
 }
+
+/** Title, subtitle, Swift identifier and route of each address-sync query (ADDR-11). */
+private val AddressSyncQueryLinks: List<AddressSyncQueryLink> = listOf(
+    AddressSyncQueryLink(
+        "Get Trunk State",
+        "Fetch address tree trunk state for privacy-preserving sync",
+        "addressQueries.getAddressesTrunkState",
+        AddressTrunkStateQuery,
+    ),
+    AddressSyncQueryLink(
+        "Get Branch State",
+        "Query a specific branch of the address tree",
+        "addressQueries.getAddressesBranchState",
+        AddressBranchStateQuery(),
+    ),
+    AddressSyncQueryLink(
+        "Get Recent Balance Changes",
+        "Fetch address balance changes since a block height",
+        "addressQueries.getRecentAddressBalanceChanges",
+        AddressRecentBalanceChangesQuery,
+    ),
+    AddressSyncQueryLink(
+        "Get Compacted Balance Changes",
+        "Fetch compacted (merged) address balance changes",
+        "addressQueries.getRecentCompactedAddressBalanceChanges",
+        AddressCompactedBalanceChangesQuery,
+    ),
+)
+
+private data class AddressSyncQueryLink(
+    val title: String,
+    val subtitle: String,
+    val tag: String,
+    val route: Any,
+)
