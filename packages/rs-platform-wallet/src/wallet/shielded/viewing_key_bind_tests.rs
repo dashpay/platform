@@ -2686,6 +2686,61 @@ async fn should_refuse_a_prepared_address_once_its_preparation_no_longer_stands(
         .unwrap();
 }
 
+/// A Clear ends an identity's preparation. One that ran between a profile
+/// write's publication check and its submission would let the write publish
+/// an address whose preparation no longer stands, so the Clear waits for the
+/// write: the write is paused right after its check and the Clear must not
+/// finish until it is released.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_hold_a_clear_until_a_profile_write_publishing_a_prepared_address_returns() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("profile_write_clear").await;
+    let address = wallet
+        .prepare_shielded_identity_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+
+    let (reached, resume) = super::tips::test_hooks::pause_after_publication_check(&wallet);
+    let writing = {
+        let wallet = wallet.clone();
+        tokio::spawn(async move {
+            wallet
+                .write_dashpay_profile(
+                    &id,
+                    crate::ProfileUpdate {
+                        shielded_address: crate::PaymentAddressUpdate::Set(address.to_vec()),
+                        ..Default::default()
+                    },
+                    &simple_signer::signer::SimpleSigner::default(),
+                    false,
+                )
+                .await
+        })
+    };
+    reached
+        .await
+        .expect("the write passed its publication check");
+
+    let mut clear = std::pin::pin!(coordinator.clear());
+    assert!(
+        futures::poll!(clear.as_mut()).is_pending(),
+        "the Clear must wait for the profile write in flight"
+    );
+    resume.send(()).expect("release the parked write");
+    // The mock SDK holds no DashPay contract, so the write itself fails
+    // after the check; only its ordering against the Clear is under test.
+    let written = writing.await.expect("write task");
+    assert!(
+        !matches!(
+            written,
+            Err(crate::PlatformWalletError::InvalidIdentityData(ref message))
+                if message.contains("was not prepared")
+        ),
+        "the publication check passed before the Clear: {written:?}"
+    );
+    clear.await.expect("clear succeeds");
+    assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
+}
+
 #[tokio::test]
 async fn should_refuse_a_profile_write_that_publishes_an_ordinary_account_address() {
     let (wallet, seed, id, coordinator) = tip_race_fixture("profile_write_refusal").await;
