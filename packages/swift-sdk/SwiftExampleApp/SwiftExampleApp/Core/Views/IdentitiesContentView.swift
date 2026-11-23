@@ -544,8 +544,9 @@ struct IdentitiesContentView: View {
     ///     (`deleteAllForIdentity`, `KeychainManager.deleteAllPrivateKeys(ofIdentityId:identityIdBase58:publicKeys:)`):
     ///     the `privkey_<identityHex>_*` and `specialkey_<identityHex>_*`
     ///     accounts, and the `identity_privkey.*` items whose metadata
-    ///     names this identity or one of its public keys (registration
-    ///     writes `pending` as the identity id). This also deletes keys
+    ///     names this identity, or is still tagged `pending` (as
+    ///     registration writes it) with one of its public keys; a key
+    ///     tagged with another identity is kept. This also deletes keys
     ///     the row no longer references, for example a key left by an
     ///     earlier removal the Keychain refused, which a reload can find
     ///     but does not overwrite (a reload stores a `privkey_*` account,

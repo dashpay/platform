@@ -380,7 +380,8 @@ enum WalletKeyHealthChecker {
     ///     the same sweep Remove from Device runs: the direct
     ///     `privkey_*` / `specialkey_*` accounts (an imported key) and
     ///     the `identity_privkey.*` items whose metadata names the
-    ///     identity or one of its public keys. The sweep reads only
+    ///     identity, or is still tagged `pending` with one of its public
+    ///     keys. The sweep reads only
     ///     values captured before step 1, not the row.
     ///
     /// Returns a per-side outcome so the caller can distinguish

@@ -1208,18 +1208,28 @@ extension KeychainManager {
     /// (`identity_privkey.<path>`) accounts uniformly. Idempotent;
     /// no-op when nothing matches.
     public nonisolated func deleteAllIdentityPrivateKeys(forIdentityIdBase58 identityIdBase58: String) throws {
-        try deleteAllIdentityPrivateKeys(forIdentityIdBase58: identityIdBase58, matchingPublicKeys: [])
+        try deleteIdentityPrivateKeys(owners: [identityIdBase58], pendingPublicKeys: [])
     }
 
-    /// Same as `deleteAllIdentityPrivateKeys(forIdentityIdBase58:)`, and
-    /// also deletes the `identity_privkey.*` items whose metadata public
-    /// key (or, for a HASH160 key, public key hash) is one of
-    /// `publicKeys`.
-    public nonisolated func deleteAllIdentityPrivateKeys(
-        forIdentityIdBase58 identityIdBase58: String,
-        matchingPublicKeys publicKeys: [Data]
+    /// Owner tag that registration writes into the metadata before the
+    /// identity id is known (`MnemonicResolverAndPersister`).
+    private nonisolated static let pendingIdentityOwner = "pending"
+
+    /// Deletes the `identity_privkey.*` items whose metadata owner is one
+    /// of `owners`, and the items still tagged `pending` whose metadata
+    /// public key is one of `pendingPublicKeys`. An item that names
+    /// another owner is never matched by its public key: Platform lets
+    /// identities share some keys (for example a HASH160 payout key), so
+    /// an explicit owner decides. Empty owners and public keys never
+    /// match.
+    private nonisolated func deleteIdentityPrivateKeys(
+        owners: Set<String>,
+        pendingPublicKeys: [Data]
     ) throws {
-        let publicKeyHexes = Set(publicKeys.map { $0.toHexString().lowercased() })
+        let owners = owners.filter { !$0.isEmpty }
+        let pendingPublicKeyHexes = Set(
+            pendingPublicKeys.filter { !$0.isEmpty }.map { $0.toHexString().lowercased() }
+        )
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
@@ -1272,12 +1282,11 @@ extension KeychainManager {
                 )
                 continue
             }
-            // A HASH160 key's public key data is the 20-byte hash, so
-            // match it against `publicKeyHash` too.
-            guard metadata.identityId == identityIdBase58
-                || publicKeyHexes.contains(metadata.publicKey.lowercased())
-                || publicKeyHexes.contains(metadata.publicKeyHash.lowercased())
-            else {
+            let ownedHere = owners.contains(metadata.identityId)
+            let pendingHere = metadata.identityId == Self.pendingIdentityOwner
+                && !metadata.publicKey.isEmpty
+                && pendingPublicKeyHexes.contains(metadata.publicKey.lowercased())
+            guard ownedHere || pendingHere else {
                 continue
             }
             try deleteGenericPassword(account: account)
@@ -1290,10 +1299,12 @@ extension KeychainManager {
     ///    (keys imported or loaded directly, and the voting / owner /
     ///    payout slots), via `deleteAllKeychainItems(forIdentityId:)`;
     ///  * `identity_privkey.*` items whose metadata names the identity,
-    ///    or whose metadata public key is one of `publicKeys`. The
-    ///    public-key match also covers keys written during registration,
-    ///    whose metadata identity id is still `pending` because
-    ///    confirmation links them without rewriting the metadata.
+    ///    by its Base58 id or its hex id (Add Key writes the hex id);
+    ///  * `identity_privkey.*` items still tagged `pending` whose metadata
+    ///    public key is one of `publicKeys`: registration writes `pending`
+    ///    and confirmation links the key without rewriting the metadata.
+    ///    An item naming another identity is left alone even when its
+    ///    public key matches, since identities can share some keys.
     ///
     /// Used when an identity is removed from the device. Idempotent;
     /// no-op when nothing matches.
@@ -1303,9 +1314,9 @@ extension KeychainManager {
         publicKeys: [Data]
     ) throws {
         try deleteAllKeychainItems(forIdentityId: identityId)
-        try deleteAllIdentityPrivateKeys(
-            forIdentityIdBase58: identityIdBase58,
-            matchingPublicKeys: publicKeys
+        try deleteIdentityPrivateKeys(
+            owners: [identityIdBase58, identityId.toHexString().lowercased()],
+            pendingPublicKeys: publicKeys
         )
     }
 

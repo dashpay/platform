@@ -169,8 +169,10 @@ final class IdentityLocalRemovalTests: XCTestCase {
     }
 
     /// The removal sweep deletes every format a key of the identity can be
-    /// stored in, including a registration key whose metadata identity id is
-    /// still `pending`, and leaves another identity's key alone.
+    /// stored in: direct and special accounts, derived keys tagged with the
+    /// Base58 id or the hex id (Add Key), and a registration key whose
+    /// metadata identity id is still `pending`. A key tagged with another
+    /// identity survives even when that identity shares the public key.
     func testDeleteAllPrivateKeysOfIdentitySweepsEveryFormat() throws {
         let manager = SwiftDashSDK.KeychainManager(serviceName: "org.dash.identity-removal-tests.\(UUID().uuidString)")
         let identityId = doomedId
@@ -178,24 +180,30 @@ final class IdentityLocalRemovalTests: XCTestCase {
         let registrationKey = Data(repeating: 0x31, count: 33)
         let taggedKey = Data(repeating: 0x32, count: 33)
         let otherKey = Data(repeating: 0x33, count: 33)
+        let hexTaggedKey = Data(repeating: 0x34, count: 33)
+        let sharedKey = Data(repeating: 0x35, count: 33)
 
         XCTAssertNotNil(manager.storePrivateKey(Data(repeating: 0x01, count: 32), identityId: identityId, keyIndex: 3))
         XCTAssertNotNil(manager.storeSpecialKey(Data(repeating: 0x02, count: 32), identityId: identityId, keyType: .voting))
         storeDerivedKey(in: manager, path: "m/9'/1'/5'/0'/0'/0'/0'", identityId: "pending", publicKey: registrationKey)
         storeDerivedKey(in: manager, path: "m/9'/1'/5'/0'/0'/0'/1'", identityId: identityIdBase58, publicKey: taggedKey)
         storeDerivedKey(in: manager, path: "m/9'/1'/5'/0'/0'/1'/0'", identityId: "someoneElse", publicKey: otherKey)
+        storeDerivedKey(in: manager, path: "m/9'/1'/5'/0'/0'/0'/2'", identityId: identityId.toHexString(), publicKey: hexTaggedKey)
+        storeDerivedKey(in: manager, path: "m/9'/1'/5'/0'/0'/1'/1'", identityId: "someoneElse", publicKey: sharedKey)
 
         try manager.deleteAllPrivateKeys(
             ofIdentityId: identityId,
             identityIdBase58: identityIdBase58,
-            publicKeys: [registrationKey]
+            publicKeys: [registrationKey, sharedKey, Data()]
         )
 
         XCTAssertNil(manager.retrievePrivateKey(identityId: identityId, keyIndex: 3))
         XCTAssertNil(manager.retrieveSpecialKey(identityId: identityId, keyType: .voting))
         XCTAssertNil(manager.retrieveIdentityPrivateKey(publicKeyHex: registrationKey.toHexString()))
         XCTAssertNil(manager.retrieveIdentityPrivateKey(publicKeyHex: taggedKey.toHexString()))
+        XCTAssertNil(manager.retrieveIdentityPrivateKey(publicKeyHex: hexTaggedKey.toHexString()))
         XCTAssertNotNil(manager.retrieveIdentityPrivateKey(publicKeyHex: otherKey.toHexString()))
+        XCTAssertNotNil(manager.retrieveIdentityPrivateKey(publicKeyHex: sharedKey.toHexString()))
 
         try manager.deleteAllIdentityPrivateKeys(forIdentityIdBase58: "someoneElse")
     }
