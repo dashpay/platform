@@ -1610,6 +1610,28 @@ impl PlatformWalletError {
         }
     }
 
+    /// This error with no held lock: a [`PaymentDelivery::LockHeld`] error
+    /// becomes [`Self::PaymentAlreadyDispatched`] with no held lock
+    /// (`MaybeSent`), keeping its diagnostic, FFI code and the outpoint in its
+    /// text; any other class is kept. For a lock that cannot finish this
+    /// payment: consumed or consumption-unknown, untracked, or a voucher
+    /// whose invitation row was not durably saved.
+    pub(crate) fn without_held_lock(self) -> Self {
+        match self {
+            Self::PaymentAlreadyDispatched { source, .. } => Self::PaymentAlreadyDispatched {
+                held_lock: None,
+                source,
+            },
+            error if matches!(error.payment_delivery(), PaymentDelivery::LockHeld(_)) => {
+                Self::PaymentAlreadyDispatched {
+                    held_lock: None,
+                    source: Box::new(error),
+                }
+            }
+            error => error,
+        }
+    }
+
     /// The error that decided this one's diagnostic and FFI code: the source
     /// of a [`Self::PaymentAlreadyDispatched`] or a
     /// [`Self::RefusedBeforeDispatch`], or this error itself.

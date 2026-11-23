@@ -1,13 +1,14 @@
 //! Flow-level tests of the funded-lock seam
 //! ([`AssetLockManager::with_funded_lock`]): once an asset-lock-funded
-//! operation holds its Core lock, every failure names the lock as held and is
-//! never `NotSent`.
+//! operation holds its Core lock, no failure is `NotSent`, and the lock is
+//! named as held only for a refusal that proves nothing reached Platform,
+//! while the lock is resumable.
 //!
 //! Each flow resumes a tracked, chain-locked lock (so no broadcast is needed)
 //! against a mock SDK with no expectations, so the Platform submit fails. A
-//! flow that bypassed the seam would report the submit's own class
-//! (`NotSent` for a signer refusal, `MaybeSent` for a transport error), and
-//! its test fails.
+//! signer refusal (`NotSent`) names the resumed lock as held; a submit that
+//! may have reached Platform (the mock's transport error, `MaybeSent`) names
+//! none, as the lock may already be spent.
 
 use std::collections::BTreeMap;
 
@@ -183,6 +184,18 @@ fn assert_holds(error: &PlatformWalletError, out_point: OutPoint) {
     assert!(!error.is_retryable(), "{error:?}");
 }
 
+/// The class of a funded failure whose lock is not the way on: it may have
+/// been sent, and it names no lock.
+fn assert_names_no_lock(error: &PlatformWalletError) {
+    assert_eq!(
+        error.payment_delivery(),
+        PaymentDelivery::MaybeSent,
+        "{error:?}"
+    );
+    assert_eq!(error.held_asset_lock(), None, "{error:?}");
+    assert!(!error.is_retryable(), "{error:?}");
+}
+
 #[tokio::test]
 async fn should_hold_the_lock_when_a_resumed_registration_fails_at_platform() {
     let (_manager, wallet, signer) = wallet().await;
@@ -211,7 +224,7 @@ async fn should_hold_the_lock_when_a_resumed_registration_fails_at_platform() {
 }
 
 #[tokio::test]
-async fn should_hold_the_lock_when_a_resumed_top_up_fails_at_platform() {
+async fn should_name_no_lock_when_a_resumed_top_up_may_have_reached_platform() {
     const INDEX: u32 = 3;
     let (_manager, wallet, signer) = wallet().await;
     let identity = Identity::V0(IdentityV0 {
@@ -237,11 +250,11 @@ async fn should_hold_the_lock_when_a_resumed_top_up_fails_at_platform() {
         .await
         .expect_err("the mock SDK answers nothing");
 
-    assert_holds(&error, out_point);
+    assert_names_no_lock(&error);
 }
 
 #[tokio::test]
-async fn should_hold_the_lock_when_a_resumed_address_funding_fails_at_platform() {
+async fn should_name_no_lock_when_a_resumed_address_funding_may_have_reached_platform() {
     let (_manager, wallet, signer) = wallet().await;
     let address = wallet
         .platform()
@@ -274,7 +287,7 @@ async fn should_hold_the_lock_when_a_resumed_address_funding_fails_at_platform()
         .await
         .expect_err("the mock SDK answers nothing");
 
-    assert_holds(&error, out_point);
+    assert_names_no_lock(&error);
 }
 
 /// The seam's own boundaries, on a real tracked row: a lock that is consumed,
@@ -302,9 +315,22 @@ async fn should_name_only_a_tracked_unconsumed_lock() {
         PlatformWalletError::Sdk(_)
     ));
 
+    // A failure that may have reached Platform names no lock, resumable or
+    // not: the lock may already be spent.
     let transport = PlatformWalletError::Sdk(dash_sdk::Error::Generic("transport".into()));
+    assert_names_no_lock(&locks.funded_lock_error(transport, Some(out_point)).await);
+    let unconfirmed = PlatformWalletError::Sdk(dash_sdk::Error::StateTransitionResultUnconfirmed(
+        Box::new(dash_sdk::Error::Generic("no proof".into())),
+    ));
+    assert_names_no_lock(&locks.funded_lock_error(unconfirmed, Some(out_point)).await);
+    // A held-lock error naming this resumable lock keeps it.
     assert_holds(
-        &locks.funded_lock_error(transport, Some(out_point)).await,
+        &locks
+            .funded_lock_error(
+                PlatformWalletError::FinalityTimeout(out_point),
+                Some(out_point),
+            )
+            .await,
         out_point,
     );
 
@@ -362,6 +388,17 @@ async fn should_name_only_a_tracked_unconsumed_lock() {
             PaymentDelivery::MaybeSent,
             "{status:?}"
         );
+        // A held-lock error names no lock once the row is not resumable
+        // (the proofless recovered row's finality timeout, for one), through
+        // the funded seam and the resume's.
+        let named = || PlatformWalletError::FinalityTimeout(out_point);
+        assert_names_no_lock(&locks.funded_lock_error(named(), Some(out_point)).await);
+        assert_names_no_lock(&locks.resume_error(named(), &out_point).await);
+        let wrapped = PlatformWalletError::PaymentAlreadyDispatched {
+            held_lock: Some(out_point),
+            source: Box::new(refused()),
+        };
+        assert_names_no_lock(&locks.resume_error(wrapped, &out_point).await);
     }
 }
 
@@ -398,11 +435,11 @@ impl crate::changeset::PlatformWalletPersistence for InvitationRecordRefused {
 }
 
 /// The invitation's steps after its voucher lock is broadcast go through the
-/// funded-lock seam: here the invitation record cannot be stored
-/// (`AssetLockTransaction`, `MaybeSent` on its own), and the error names the
-/// voucher lock as held, so the way on is its reclaim, not a new invitation.
+/// funded-lock seam, but a voucher is named as held only once its invitation
+/// row is durably saved: the reclaim reads that row. Here the record cannot
+/// be stored, so the failure is `MaybeSent` and names no lock.
 #[tokio::test]
-async fn should_hold_the_voucher_lock_when_an_invitation_fails_after_its_broadcast() {
+async fn should_name_no_voucher_lock_when_its_invitation_row_is_not_saved() {
     use crate::wallet::identity::network::SeedCryptoProvider;
 
     let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager_with(
@@ -441,16 +478,14 @@ async fn should_hold_the_voucher_lock_when_an_invitation_fails_after_its_broadca
         ),
         "{error:?}"
     );
-    assert_holds(&error, out_point);
+    assert_names_no_lock(&error);
 }
 
 /// A call that built or resumed a lock but could not hand its proof back
-/// names the lock while a resume can take it on; once the row is
-/// consumption-unknown (`RecoveredFromChain`, where Platform may already have
-/// consumed it) or consumed, the failure is `MaybeSent` and names none, as
-/// the seam's resumable-lock rule says.
+/// may have been answered by Platform's spend, so it names no lock whatever
+/// the row's status: the host finds it in the tracked asset-lock list.
 #[tokio::test]
-async fn should_name_a_handed_back_lock_only_while_it_is_resumable() {
+async fn should_name_no_lock_for_a_handed_back_failure() {
     let (_manager, wallet, signer) = wallet().await;
     let out_point = track_chain_locked_lock(
         &wallet,
@@ -459,10 +494,7 @@ async fn should_name_a_handed_back_lock_only_while_it_is_resumable() {
         0,
     )
     .await;
-    assert_holds(
-        &wallet.asset_locks.handoff_failure(out_point).await,
-        out_point,
-    );
+    assert_names_no_lock(&wallet.asset_locks.handoff_failure(out_point).await);
 
     for status in [
         AssetLockStatus::RecoveredFromChain,
@@ -487,13 +519,13 @@ async fn should_name_a_handed_back_lock_only_while_it_is_resumable() {
     }
 }
 
-/// Once a shielded funding holds its Core lock, a refusal before any Platform
-/// dispatch (here the lock is too small to pay the pool fee) names the lock as
-/// held: the funded-lock seam covers the sizing checks that follow the lock's
-/// resolution, not only the submit.
+/// A resumed shielded funding whose lock is too small to pay the pool fee
+/// offers no resume: resuming the same immutable outpoint repeats the
+/// refusal. The diagnostic and the tracked row stay; the failure is
+/// `MaybeSent` and names no lock.
 #[cfg(feature = "shielded")]
 #[tokio::test]
-async fn should_hold_the_lock_when_a_resumed_shielded_funding_cannot_cover_its_fee() {
+async fn should_offer_no_resume_when_a_resumed_shielded_funding_cannot_cover_its_fee() {
     use crate::wallet::shielded::{
         prover::CachedOrchardProver, FileBackedShieldedStore, NetworkShieldedCoordinator,
     };
@@ -555,5 +587,65 @@ async fn should_hold_the_lock_when_a_resumed_shielded_funding_cannot_cover_its_f
         ),
         "{error:?}"
     );
-    assert_holds(&error, out_point);
+    assert_names_no_lock(&error);
+}
+
+/// A fresh shielded funding too small to clear the pool fee is refused before
+/// anything is built: `NotSent`, a typed shortfall, and no lock is tracked.
+#[cfg(feature = "shielded")]
+#[tokio::test]
+async fn should_refuse_a_fresh_shielded_funding_below_the_pool_fee_as_not_sent() {
+    use crate::wallet::shielded::{
+        prover::CachedOrchardProver, FileBackedShieldedStore, NetworkShieldedCoordinator,
+    };
+    use dpp::balances::credits::CREDITS_PER_DUFF;
+
+    let (_manager, wallet, signer) = wallet().await;
+    let dir = std::env::temp_dir().join(format!("funded_lock_{}", rand::random::<u64>()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("shielded.sqlite");
+    let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+    let coordinator = std::sync::Arc::new(NetworkShieldedCoordinator::new(
+        wallet.sdk_arc(),
+        dashcore::Network::Testnet,
+        path,
+        store,
+    ));
+    let pool_fee = wallet.shield_from_asset_lock_pool_fee(2).unwrap();
+
+    let error = wallet
+        .shielded_fund_from_asset_lock(
+            &coordinator,
+            AssetLockFunding::FromWalletBalance {
+                amount_duffs: pool_fee / CREDITS_PER_DUFF,
+                account_index: 0,
+            },
+            vec![(crate::test_support::orchard_address_fixture(0x58), None)],
+            &signer,
+            &CachedOrchardProver::new(),
+            None,
+            0,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect_err("the lock could not pay the pool fee");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        matches!(
+            error,
+            PlatformWalletError::AssetLockInsufficientFunds { required, .. }
+                if required == pool_fee / CREDITS_PER_DUFF + 1
+        ),
+        "{error:?}"
+    );
+    assert_eq!(error.payment_delivery(), PaymentDelivery::NotSent);
+    let wm = wallet.wallet_manager().read().await;
+    assert!(wm
+        .get_wallet_info(&wallet.wallet_id())
+        .expect("wallet registered")
+        .tracked_asset_locks
+        .is_empty());
 }

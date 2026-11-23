@@ -14,6 +14,7 @@
 //! ([`send_contact_request_with_external_signer`](IdentityWallet::send_contact_request_with_external_signer)).
 
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
@@ -170,6 +171,8 @@ impl IdentityWallet {
         // the proof wait is deferred until AFTER the invitation record below is
         // durably persisted, so an interruption during the (potentially long)
         // proof wait cannot orphan the funded lock from the reclaim UI.
+        // No invitation row exists yet, so a failure here names no voucher
+        // lock as held: the reclaim needs that row.
         let (path, out_point) = self
             .asset_locks
             .broadcast_funded_asset_lock(
@@ -179,7 +182,8 @@ impl IdentityWallet {
                 0,
                 asset_lock_signer,
             )
-            .await?;
+            .await
+            .map_err(PlatformWalletError::without_held_lock)?;
 
         let uri = self
             .funded_invitation_uri(
@@ -221,8 +225,11 @@ impl IdentityWallet {
         CP: ContactCryptoProvider + Send + Sync,
     {
         // The voucher lock is broadcast and tracked from here on, so every
-        // later failure goes through the funded-lock seam: it names the lock
-        // as held (the reclaim resumes it), never `NotSent`.
+        // later failure goes through the funded-lock seam and is never
+        // `NotSent`. It names the lock as held (the reclaim resumes it) only
+        // once the invitation row is durably saved: the reclaim reads that
+        // row, so without it the failure is `MaybeSent` and names none.
+        let recorded = AtomicBool::new(false);
         self.asset_locks
             .with_funded_lock(Some(out_point), async {
                 // Persist the inviter-side invitation record NOW — immediately after the
@@ -268,6 +275,7 @@ impl IdentityWallet {
                                  unreclaimable): {e}"
                             ))
                         })?;
+                    recorded.store(true, Ordering::Release);
                 } else {
                     tracing::warn!(
                         "invitation funding path has no u32 index tail; \
@@ -288,8 +296,8 @@ impl IdentityWallet {
                 // propagate within its 300s preference window — reject emitting a link
                 // the invitee would silently reject (a dead voucher: funds locked, no
                 // signal). The funding lock was recorded before the wait, so it stays
-                // tracked and reclaimable, and the error names it as held: the way on
-                // is the reclaim, not a second funded invitation.
+                // tracked and reclaimable from Sent invitations: the way on is the
+                // reclaim, not a second funded invitation.
                 if !matches!(proof, AssetLockProof::Instant(_)) {
                     return Err(PlatformWalletError::AssetLockTransaction(
                         "InstantSend lock did not confirm in time (a ChainLock proof was \
@@ -318,6 +326,10 @@ impl IdentityWallet {
                 Ok(uri_result?)
             })
             .await
+            .map_err(|error| match recorded.load(Ordering::Acquire) {
+                true => error,
+                false => error.without_held_lock(),
+            })
     }
 
     /// The identity id this invitation WOULD create, without claiming it.

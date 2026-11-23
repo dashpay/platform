@@ -46,7 +46,7 @@ use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
-use crate::wallet::asset_lock::tracked::TrackedAssetLock;
+use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 use crate::wallet::asset_lock::AssetLockOperationState;
 
 use std::time::Duration;
@@ -114,7 +114,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // that is never `NotSent`, and the lock is not the way on.
                 self.complete_wallet_drain(*out_point, operation_id)
                     .await
-                    .map_err(PlatformWalletError::after_dispatch)?;
+                    .map_err(|e| e.after_dispatch().without_held_lock())?;
                 return Ok(None);
             }
         }
@@ -263,7 +263,8 @@ impl PlatformWallet {
                     Err(error)
                 }
                 // The operation stays Pending on its lock, so its error is
-                // never `NotSent`: the lock is named as held while it is
+                // never `NotSent`: the lock is named as held only for a
+                // refusal that proves nothing reached Platform while it is
                 // resumable, `MaybeSent` otherwise.
                 Err(error) => Err(self
                     .asset_locks
@@ -314,16 +315,19 @@ impl PlatformWallet {
         let recipient = match &funding {
             AssetLockFunding::FromExistingAssetLock { out_point, .. } => {
                 // Status and recipient from one snapshot: a consumed row is
-                // refused as consumed, never as a mismatch that names it as
-                // a lock to resume.
-                let (consumed, recorded) = self
+                // refused as consumed, and a mismatch names the lock as held
+                // only while the status says a resume can take it on.
+                let status = self
                     .asset_locks
                     .tracked_resume_metadata(out_point)
                     .await
-                    .map_or((false, None), |(_, _, status, recipient)| {
-                        (status.is_consumed(), recipient)
-                    });
-                resume_recipient(*out_point, consumed, recorded, requested_recipient)?
+                    .map(|(_, _, status, recipient)| (status, recipient));
+                match status {
+                    Some((status, recorded)) => {
+                        resume_recipient(*out_point, &status, recorded, requested_recipient)?
+                    }
+                    None => requested_recipient,
+                }
             }
             _ => requested_recipient,
         };
@@ -342,23 +346,19 @@ impl PlatformWallet {
         // resume path, where the lock is already on-chain and the
         // sizing decision was made by a prior caller. Here we only
         // protect the fresh-build path.
+        //
+        // Nothing is built yet, so the refusal is `NotSent`: the requested
+        // amount is below the smallest whole-duff lock whose value clears the
+        // pool fee (the floor the drain paths below use), compared in duffs so
+        // no credits conversion can overflow.
         if let AssetLockFunding::FromWalletBalance { amount_duffs, .. } = &funding {
-            let lock_credits = (*amount_duffs)
-                .checked_mul(CREDITS_PER_DUFF)
-                .ok_or_else(|| {
-                    PlatformWalletError::ShieldedBuildError(format!(
-                        "asset lock amount overflows credits conversion ({amount_duffs} duffs * \
-                     {CREDITS_PER_DUFF} credits/duff > u64::MAX)"
-                    ))
-                })?;
             let pool_fee_credits = self.shield_from_asset_lock_pool_fee(num_actions)?;
-            if lock_credits <= pool_fee_credits {
-                return Err(PlatformWalletError::ShieldedBuildError(format!(
-                    "asset lock ({lock_credits} credits, from {amount_duffs} duffs) is at or \
-                     below the ShieldFromAssetLock pool fee ({pool_fee_credits} credits = \
-                     shielded fee + asset_lock_base_cost) — refusing to broadcast a single-use \
-                     L1 outpoint that would be unrecoverable on resume"
-                )));
+            let required = pool_fee_credits / CREDITS_PER_DUFF + 1;
+            if *amount_duffs < required {
+                return Err(PlatformWalletError::AssetLockInsufficientFunds {
+                    available: *amount_duffs,
+                    required,
+                });
             }
         }
 
@@ -465,9 +465,10 @@ impl PlatformWallet {
 
         // Steps 3–4 run with the Core lock in hand (broadcast by the
         // resolution, or resumed), so every failure until Platform accepts
-        // goes through the funded-lock seam: the lock is named as held, never
-        // `NotSent`. That covers the sizing checks below too, which refuse
-        // after the lock exists.
+        // goes through the funded-lock seam: never `NotSent`. That covers the
+        // sizing checks below too, which refuse after the lock exists; a lock
+        // too small for the fee is `MaybeSent` and names no lock, as a resume
+        // of the same outpoint would refuse again.
         let funded = self
             .asset_locks
             .with_funded_lock(tracked_out_point, async {
@@ -693,7 +694,7 @@ impl PlatformWallet {
                 self.asset_locks
                     .complete_wallet_drain(proof_out_point, operation_id)
                     .await
-                    .map_err(PlatformWalletError::after_dispatch)?;
+                    .map_err(|e| e.after_dispatch().without_held_lock())?;
             }
             (None, Some(out_point)) => {
                 // Platform DID accept the shield ST — propagating an Err
@@ -1048,25 +1049,32 @@ where
 /// rather than paid to an address nobody holds.
 pub(super) fn resume_recipient(
     out_point: OutPoint,
-    consumed: bool,
+    status: &AssetLockStatus,
     recorded: Option<ShieldedRecipientRaw>,
     requested: OrchardAddress,
 ) -> Result<OrchardAddress, PlatformWalletError> {
     const _: () = assert!(SHIELDED_RECIPIENT_SIZE == ORCHARD_ADDRESS_SIZE);
     // A consumed lock is not resumable whatever recipient it recorded: a
     // mismatch would name it as the lock to resume (`LockHeld`).
-    if consumed {
+    if status.is_consumed() {
         return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
     }
-    match recorded {
-        None => Ok(requested),
-        Some(recorded) if recorded == requested.to_raw_bytes() => Ok(requested),
-        Some(recorded) => Err(PlatformWalletError::AssetLockRecipientMismatch {
+    let mismatch = match recorded {
+        None => return Ok(requested),
+        Some(recorded) if recorded == requested.to_raw_bytes() => return Ok(requested),
+        Some(recorded) => PlatformWalletError::AssetLockRecipientMismatch {
             out_point,
             recorded,
             requested: requested.to_raw_bytes(),
-        }),
-    }
+        },
+    };
+    // The mismatch names the lock as held only while a resume can take it on;
+    // a consumption-unknown row keeps the diagnostic and names none.
+    Err(if status.is_resumable() {
+        mismatch
+    } else {
+        mismatch.without_held_lock()
+    })
 }
 
 pub(super) fn validate_shielded_recipients<T>(
@@ -1181,15 +1189,21 @@ mod tests {
         let recorded = crate::test_support::orchard_address_fixture(0x61);
         let other = crate::test_support::orchard_address_fixture(0x62);
         assert_eq!(
-            resume_recipient(out_point, false, Some(recorded.to_raw_bytes()), recorded).unwrap(),
+            resume_recipient(
+                out_point,
+                &AssetLockStatus::ChainLocked,
+                Some(recorded.to_raw_bytes()),
+                recorded
+            )
+            .unwrap(),
             recorded
         );
         assert_eq!(
-            resume_recipient(out_point, false, None, other).unwrap(),
+            resume_recipient(out_point, &AssetLockStatus::ChainLocked, None, other).unwrap(),
             other
         );
         assert!(matches!(
-            resume_recipient(out_point, false, Some(recorded.to_raw_bytes()), other),
+            resume_recipient(out_point, &AssetLockStatus::ChainLocked, Some(recorded.to_raw_bytes()), other),
             Err(PlatformWalletError::AssetLockRecipientMismatch {
                 out_point: o,
                 recorded: r,
@@ -1200,7 +1214,7 @@ mod tests {
         assert!(matches!(
             resume_recipient(
                 out_point,
-                false,
+                &AssetLockStatus::ChainLocked,
                 Some([0xff; SHIELDED_RECIPIENT_SIZE]),
                 other
             ),
@@ -1216,13 +1230,56 @@ mod tests {
         let out_point = OutPoint::null();
         let recorded = crate::test_support::orchard_address_fixture(0x61);
         let other = crate::test_support::orchard_address_fixture(0x62);
-        let error = resume_recipient(out_point, true, Some(recorded.to_raw_bytes()), other)
-            .expect_err("a consumed lock is not resumable");
+        let error = resume_recipient(
+            out_point,
+            &AssetLockStatus::Consumed,
+            Some(recorded.to_raw_bytes()),
+            other,
+        )
+        .expect_err("a consumed lock is not resumable");
         assert!(
             matches!(error, PlatformWalletError::AssetLockAlreadyConsumed(o) if o == out_point),
             "{error:?}"
         );
         assert_eq!(error.held_asset_lock(), None);
+    }
+
+    /// A consumption-unknown row (`RecoveredFromChain`, where Platform may
+    /// already have consumed the lock) keeps the mismatch diagnostic but
+    /// names no lock to resume: only a resumable status offers one.
+    #[test]
+    fn resume_recipient_names_no_lock_for_a_mismatch_on_a_consumption_unknown_row() {
+        let out_point = OutPoint::null();
+        let recorded = crate::test_support::orchard_address_fixture(0x61);
+        let other = crate::test_support::orchard_address_fixture(0x62);
+        let unknown = resume_recipient(
+            out_point,
+            &AssetLockStatus::RecoveredFromChain,
+            Some(recorded.to_raw_bytes()),
+            other,
+        )
+        .expect_err("a mismatch is refused");
+        assert!(
+            matches!(
+                unknown.dispatched_source(),
+                PlatformWalletError::AssetLockRecipientMismatch { .. }
+            ),
+            "{unknown:?}"
+        );
+        assert_eq!(unknown.held_asset_lock(), None);
+        assert_eq!(
+            unknown.payment_delivery(),
+            crate::error::PaymentDelivery::MaybeSent
+        );
+
+        let resumable = resume_recipient(
+            out_point,
+            &AssetLockStatus::ChainLocked,
+            Some(recorded.to_raw_bytes()),
+            other,
+        )
+        .expect_err("a mismatch is refused");
+        assert_eq!(resumable.held_asset_lock(), Some(out_point));
     }
 
     #[test]

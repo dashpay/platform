@@ -201,7 +201,8 @@ unsafe fn asset_lock_manager_create_funded_proof_inner(
     let (proof, path, out_point) = unwrap_result_or_return!(result);
 
     // The lock is built, broadcast and tracked from here on: a failure to hand
-    // the result back names it as held. Both fallible steps run before any
+    // the result back is `MaybeSent` and names no lock (the tracked asset-lock
+    // list offers it). Both fallible steps run before any
     // out-parameter is written, so a failure leaves nothing for the host to free.
     let bytes = match dpp::bincode::encode_to_vec(&proof, dpp::bincode::config::standard()) {
         Ok(bytes) => bytes,

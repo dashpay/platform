@@ -231,8 +231,9 @@ impl IdentityWallet {
         //
         // The Core lock exists from here on (broadcast by the resolution, or
         // the resumed one), so every failure until Platform accepts goes
-        // through the funded-lock seam: the lock is named as held, never
-        // `NotSent`.
+        // through the funded-lock seam: never `NotSent`, and the lock is
+        // named as held only for a refusal that proves nothing reached
+        // Platform.
         let proof_out_point = out_point_from_proof(&proof);
         let identity = self
             .asset_locks

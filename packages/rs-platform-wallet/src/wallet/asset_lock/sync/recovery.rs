@@ -4050,9 +4050,10 @@ mod tests {
             ),
             "expected the unknown-outcome contract, got {outcome:?}"
         );
-        // The row survives, so the error names it as the way on.
+        // The row survives in the tracked list; an unknown outcome names no
+        // lock.
         let error = outcome.as_ref().expect_err("unknown outcome");
-        assert_eq!(error.held_asset_lock(), Some(fixture.out_point));
+        assert_eq!(error.held_asset_lock(), None);
         assert!(!error.is_retryable());
         let status = {
             let wm = fixture.wallet_manager.read().await;
@@ -5171,9 +5172,16 @@ mod tests {
         .await;
 
         assert!(
-            matches!(error, PlatformWalletError::FinalityTimeout(_)),
+            matches!(
+                error.dispatched_source(),
+                PlatformWalletError::FinalityTimeout(_)
+            ),
             "a proof-less RecoveredFromChain resume must terminate, got {error:?}"
         );
+        // Consumption-unknown: Platform may already have spent the lock, so
+        // the timeout names none to resume.
+        assert_eq!(error.held_asset_lock(), None, "{error:?}");
+        assert_eq!(error.payment_delivery(), crate::PaymentDelivery::MaybeSent);
         assert_eq!(
             status,
             Some(AssetLockStatus::RecoveredFromChain),
@@ -5851,9 +5859,14 @@ mod tests {
             "a proof-only arm must not broadcast"
         );
         assert!(
-            matches!(error, PlatformWalletError::FinalityTimeout(_)),
+            matches!(
+                error.dispatched_source(),
+                PlatformWalletError::FinalityTimeout(_)
+            ),
             "unchanged verdict for a record that never becomes final: {error:?}"
         );
+        // Consumption-unknown: no lock is named for resume.
+        assert_eq!(error.held_asset_lock(), None);
     }
 
     /// Resume a row at `status` whose funding record is ALREADY IS-locked,

@@ -408,13 +408,7 @@ where
 fn seed_batch_failure(error: PlatformWalletError, dispatched: bool) -> PlatformWalletError {
     use crate::PaymentDelivery;
     match error.payment_delivery() {
-        PaymentDelivery::LockHeld(_) => PlatformWalletError::PaymentAlreadyDispatched {
-            held_lock: None,
-            source: Box::new(match error {
-                PlatformWalletError::PaymentAlreadyDispatched { source, .. } => *source,
-                other => other,
-            }),
-        },
+        PaymentDelivery::LockHeld(_) => error.without_held_lock(),
         PaymentDelivery::NotSent if dispatched => error.after_dispatch(),
         PaymentDelivery::NotSent | PaymentDelivery::MaybeSent => error,
     }

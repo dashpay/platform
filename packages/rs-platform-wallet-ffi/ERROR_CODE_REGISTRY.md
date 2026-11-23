@@ -123,7 +123,15 @@ host never retries automatically.
 
 The held-lock errors are `FinalityTimeout` (folded into code 6 or 99),
 `AssetLockInputContested` (48) and `AssetLockRecipientMismatch` (61, resumed
-with the recorded recipient). The other asset-lock errors that leave a lock
+with the recorded recipient). A funded payment is `LockHeld` only where
+resuming the lock can finish it: the lock is tracked and resumable (not
+consumed, not consumption-unknown), an invitation voucher's row is durably
+saved, and the error proves nothing reached Platform (a `NotSent` refusal, or
+a held-lock error naming that lock). Any `MaybeSent` failure after a lock (an
+unconfirmed or failed Platform submission, a lock status that could not be
+written after Platform's answer, a Core broadcast whose outcome is unknown, a
+result that could not be handed back) is `MaybeSent` with no
+`held_asset_lock`; the host finds the lock in the tracked asset-lock list. The other asset-lock errors that leave a lock
 on the network but name none this payment can resume (`AssetLockAlreadyConsumed`,
 `AssetLockTooManyInputs`, `AssetLockProofWait`, `AssetLockExpired`,
 `AssetLockNotChainLocked`) are `MaybeSent`. Code 21 (`ErrorAddressNonceMismatch`)

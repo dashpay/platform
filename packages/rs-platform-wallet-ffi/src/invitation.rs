@@ -277,11 +277,10 @@ unsafe fn platform_wallet_create_invitation_inner(
 
 /// Stamp `failure`, an invitation whose voucher was funded and recorded but
 /// whose link could not be handed back, with the class the wallet gives that
-/// failure ([`AssetLockManager::handoff_failure`]): the voucher's lock named
-/// as held while a resume can take it on, so the host reclaims that voucher
-/// from its Sent invitations instead of funding a new one; `MaybeSent` once
-/// the lock is consumed, consumption-unknown or gone. Never retryable. Code
-/// and message stay `failure`'s.
+/// failure ([`AssetLockManager::handoff_failure`]): `MaybeSent`, naming no
+/// lock, never retryable, so the host reclaims that voucher from its Sent
+/// invitations instead of funding a new one. Code and message stay
+/// `failure`'s.
 fn voucher_handoff_failure(
     asset_locks: &AssetLockManager<SpvBroadcaster>,
     out_point: dashcore::OutPoint,
@@ -750,12 +749,11 @@ mod tests {
     // exercise the FFI's null/parameter guards and the wallet-lookup miss path.
 
     /// A created invitation whose link cannot be handed back carries the
-    /// wallet's class for its voucher lock: held (not retryable) while a
-    /// resume can take it on, so the host reclaims that voucher instead of
-    /// funding another invitation; `MaybeSent` when the wallet tracks no such
-    /// lock.
+    /// wallet's class for it: `MaybeSent`, naming no lock, not retryable,
+    /// whether or not the wallet tracks the voucher lock (the host reclaims
+    /// it from Sent invitations, never funds another invitation).
     #[test]
-    fn should_name_the_voucher_lock_when_the_link_cannot_be_handed_back() {
+    fn should_name_no_voucher_lock_when_the_link_cannot_be_handed_back() {
         use platform_wallet::test_support::test_platform_wallet_manager;
         use platform_wallet::{AssetLockFundingType, AssetLockStatus, TrackedAssetLock};
 
@@ -807,10 +805,9 @@ mod tests {
         let mut held = voucher_handoff_failure(wallet.asset_locks(), tracked, link_failure());
         assert_eq!(
             held.payment_delivery,
-            PlatformWalletFFIPaymentDelivery::LockHeld
+            PlatformWalletFFIPaymentDelivery::MaybeSent
         );
-        assert_eq!(held.held_asset_lock.txid, [5; 32]);
-        assert_eq!(held.held_asset_lock.vout, 2);
+        assert_eq!(held.held_asset_lock.txid, [0; 32]);
         assert!(!held.retryable);
 
         let mut gone = voucher_handoff_failure(wallet.asset_locks(), untracked, link_failure());

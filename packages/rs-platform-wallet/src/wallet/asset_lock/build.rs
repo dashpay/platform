@@ -1308,11 +1308,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 AssetLockBuildAmount::DrainAll {
                     minimum_lock_duffs: Some(minimum),
                 } if locked_amount_duffs < minimum => {
-                    Some(PlatformWalletError::AssetLockTransaction(format!(
-                        "drained asset lock of {locked_amount_duffs} duffs is below the required \
-                     minimum of {minimum} duffs (the balance cannot clear the shield pool fee); \
-                     nothing was broadcast"
-                    )))
+                    // Nothing was broadcast: `NotSent`, as a short selection.
+                    Some(PlatformWalletError::AssetLockInsufficientFunds {
+                        available: locked_amount_duffs,
+                        required: minimum,
+                    })
                 }
                 _ => None,
             });
@@ -1693,7 +1693,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                          reservation and reporting an unknown outcome rather than a \
                          definite rejection"
                     );
-                    // The row stays tracked: the error names it as held.
+                    // The row stays tracked; the outcome is unknown, so the
+                    // error is `MaybeSent` and names no lock.
                     let unconfirmed =
                         PlatformWalletError::TransactionBroadcastUnconfirmed(format!(
                             "asset lock {out_point} stays tracked and reserved: the \
@@ -1704,9 +1705,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     return Err(self.funded_lock_error(unconfirmed, Some(out_point)).await);
                 }
             } else {
-                // Ambiguous `MaybeSent`: the transaction may be on the network,
-                // and its row stays tracked and resumable, so the error names
-                // the lock as held.
+                // Ambiguous `MaybeSent`: the transaction may be on the network.
+                // Its row stays tracked and resumable (the tracked asset-lock
+                // list offers it); the error names no lock.
                 in_broadcast_pin.settle_pending_spend();
                 return Err(self.funded_lock_error(e.into(), Some(out_point)).await);
             }
@@ -2400,10 +2401,18 @@ mod tests {
             )
             .await;
         let err = result.expect_err("undersized drain must be refused");
+        // Nothing was broadcast: a typed shortfall, `NotSent`.
         assert!(
-            err.to_string().contains("below the required minimum"),
-            "unexpected error for undersized drain: {err}"
+            matches!(
+                err,
+                PlatformWalletError::AssetLockInsufficientFunds {
+                    required: u64::MAX,
+                    ..
+                }
+            ),
+            "unexpected error for undersized drain: {err:?}"
         );
+        assert_eq!(err.payment_delivery(), crate::PaymentDelivery::NotSent);
         assert_eq!(
             broadcaster.calls(),
             0,
@@ -2906,7 +2915,8 @@ mod tests {
             "ambiguous broadcast should surface as TransactionBroadcastUnconfirmed, got {result:?}"
         );
 
-        // The Built row survives for a later resume, and the error names it…
+        // The Built row survives for a later resume; the error, an unknown
+        // outcome, names no lock (the tracked list offers it)…
         {
             let wm = manager.wallet_manager.read().await;
             let (_, info) = wm
@@ -2916,7 +2926,8 @@ mod tests {
             let lock = info.tracked_asset_locks.values().next().expect("built row");
             assert_eq!(lock.status, AssetLockStatus::Built);
             let error = result.as_ref().expect_err("ambiguous broadcast");
-            assert_eq!(error.held_asset_lock(), Some(lock.out_point));
+            assert_eq!(error.held_asset_lock(), None);
+            assert_eq!(error.payment_delivery(), crate::PaymentDelivery::MaybeSent);
             assert!(!error.is_retryable());
         }
         // …no persisted-row deletion was queued…
@@ -3034,8 +3045,8 @@ mod tests {
              released reservation and a safe rebuild, got {result:?}"
         );
 
-        // The concurrently-advanced row survives the cleanup, and the error
-        // names it as held…
+        // The concurrently-advanced row survives the cleanup; the error, an
+        // unknown outcome, names no lock (the tracked list offers it)…
         {
             let wm = wallet_manager.read().await;
             let (_, info) = wm
@@ -3045,7 +3056,7 @@ mod tests {
             let lock = info.tracked_asset_locks.values().next().expect("row kept");
             assert_eq!(lock.status, AssetLockStatus::Broadcast);
             let error = result.as_ref().expect_err("kept row");
-            assert_eq!(error.held_asset_lock(), Some(lock.out_point));
+            assert_eq!(error.held_asset_lock(), None);
         }
         // …no persisted-row deletion was queued…
         assert!(
@@ -4049,9 +4060,11 @@ mod tests {
                 .as_ref()
                 .err()
                 .and_then(|e| e.held_asset_lock()),
-            Some(out_point),
-            "the kept row is named as held: {build_result:?}"
+            None,
+            "the kept row stays tracked, but an unknown outcome names no lock: \
+             {build_result:?}"
         );
+        let _ = out_point;
         let Err(PlatformWalletError::TransactionBroadcastUnconfirmed(reason)) = build_result
             .as_ref()
             .map_err(PlatformWalletError::dispatched_source)
@@ -6038,11 +6051,14 @@ mod tests {
             ),
             "{error:?}"
         );
+        // A `MaybeSent` failure after the broadcast names no lock: the
+        // tracked asset-lock list offers it.
         assert_eq!(
             error.payment_delivery(),
-            crate::PaymentDelivery::LockHeld(out_point),
+            crate::PaymentDelivery::MaybeSent,
             "{error:?}"
         );
+        assert_eq!(error.held_asset_lock(), None);
         assert!(!error.is_retryable());
     }
 

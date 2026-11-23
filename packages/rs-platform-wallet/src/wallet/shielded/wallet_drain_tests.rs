@@ -954,7 +954,7 @@ async fn should_refuse_a_generic_resume_to_a_recipient_other_than_the_recorded_o
         .unwrap_err();
     assert!(
         matches!(
-            &error,
+            error.dispatched_source(),
             PlatformWalletError::AssetLockRecipientMismatch {
                 out_point,
                 recorded: r,
@@ -963,6 +963,9 @@ async fn should_refuse_a_generic_resume_to_a_recipient_other_than_the_recorded_o
         ),
         "{error}"
     );
+    // The row is consumption-unknown (`RecoveredFromChain`): the mismatch
+    // names no lock to resume.
+    assert_eq!(error.held_asset_lock(), None);
     assert!(persistence.staged.lock().unwrap().is_empty());
     assert_eq!(
         persistence.committed_status(&lock.out_point),
@@ -1011,11 +1014,12 @@ async fn should_refuse_a_repeated_uuid_drain_to_a_recipient_other_than_the_recor
         .unwrap_err();
     assert!(
         matches!(
-            error,
+            error.dispatched_source(),
             PlatformWalletError::AssetLockRecipientMismatch { .. }
         ),
         "{error}"
     );
+    assert_eq!(error.held_asset_lock(), None);
     let snapshot = operation.snapshot();
     assert_eq!(snapshot.state, AssetLockOperationState::Pending);
     assert_eq!(snapshot.out_point, Some(lock.out_point));
