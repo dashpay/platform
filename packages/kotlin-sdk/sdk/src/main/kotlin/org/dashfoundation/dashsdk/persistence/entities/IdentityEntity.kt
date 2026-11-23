@@ -81,6 +81,22 @@ data class IdentityEntity(
      */
     val votingKeyCheckAddress: ByteArray? = null,
     /**
+     * The 32-byte pro_tx_hash, in wire order, of the masternode or evonode this row votes for,
+     * recorded when it is loaded for voting (`Voting.loadMasternodeForVoting`). Kept apart from
+     * [identityId]: a masternode without an owner identity (a shared masternode) is stored
+     * under its voter identity, whose id is not the pro_tx_hash. Null for a row stored before
+     * it was recorded; the vote picker resolves such a row through the load rule.
+     * Swift `PersistentIdentity.masternodeProTxHash`.
+     */
+    val masternodeProTxHash: ByteArray? = null,
+    /**
+     * Which of the masternode's identities Rust's load rule returned for this row: `"owner"` or
+     * `"voter"`; null for a row not loaded through it. A voter identity holds only a voting key.
+     * Read through `org.dashfoundation.dashsdk.voting.masternodeRole`. Swift
+     * `PersistentIdentity.masternodeRoleRaw`.
+     */
+    val masternodeRoleRaw: String? = null,
+    /**
      * How many checks were recorded on this row: each record write adds one, in the same
      * statement. A host that saved a check compares it with this to tell whether Room has
      * delivered that write or a later one. Null (none yet) reads as 0.

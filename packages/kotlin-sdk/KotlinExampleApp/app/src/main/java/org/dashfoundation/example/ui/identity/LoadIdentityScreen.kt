@@ -56,6 +56,8 @@ import org.dashfoundation.dashsdk.voting.MasternodeVotingKeyCheckOutcome
 import org.dashfoundation.dashsdk.voting.MasternodeVotingKeyRecords
 import org.dashfoundation.dashsdk.voting.MasternodeVotingKeyRules
 import org.dashfoundation.dashsdk.voting.MasternodeVotingKeySlot
+import org.dashfoundation.dashsdk.voting.MasternodeVotingLoad
+import org.dashfoundation.dashsdk.voting.MasternodeVotingLoadedIdentity
 import org.dashfoundation.dashsdk.voting.recordedVotingKey
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
@@ -93,9 +95,14 @@ import org.dashfoundation.example.util.toHex
  * the question showed. Owner and payout keys and identity private keys are not imported:
  * nothing in this app signs with them.
  *
- * Before anything is saved, an entered voting key is checked against Platform
- * (`Voting.checkMasternodeVotingKey`, one proof-verified fetch of the masternode's voter
- * identity), as `LoadIdentityView.swift` does since #6086. Rust decides from the check and what
+ * A masternode or evonode is loaded through Rust's rule (`Voting.loadMasternodeForVoting`,
+ * #6099): its owner identity, or, for a masternode without one (a shared masternode), its voter
+ * identity when Platform proves that one holds the voting key. The row is stored under the
+ * loaded identity's id with the wire-order pro_tx_hash kept beside it
+ * (`IdentityEntity.masternodeProTxHash`), which votes name.
+ *
+ * Before anything is saved, an entered voting key is checked against Platform with that load
+ * (the voter identity's proof-verified fetch), as `LoadIdentityView.swift` does since #6086. Rust decides from the check and what
  * the row's voting key slot holds whether the key is stored and what is recorded for it
  * ([checkEnteredVotingKey], `MasternodeVotingKeyRules.outcome`); a refused key stops the load
  * with Rust's reason, and a refusal of the key already stored is recorded on its row. Once the
@@ -304,9 +311,71 @@ fun LoadIdentityScreen(navController: NavHostController) {
                             }
                         }
 
-                        val json = activeSdk.identities.fetch(id) ?: run {
-                            error = "Identity not found on ${activeNetwork.displayName}"
-                            return@launch
+                        // A masternode or evonode is loaded through Rust's rule
+                        // (`Voting.loadMasternodeForVoting`): its owner identity, whose id is
+                        // the pro_tx_hash, or, for a masternode without an owner identity (a
+                        // shared masternode, #6099), its voter identity when Platform proves
+                        // that one holds the voting key; the voting key is checked with the
+                        // load. The row is stored under the loaded identity's id, with the
+                        // pro_tx_hash kept beside it. Any other identity is fetched at the
+                        // typed id.
+                        val rowId: ByteArray
+                        val json: String
+                        var masternodeProTxHash: ByteArray? = null
+                        var masternodeRole: MasternodeVotingLoadedIdentity.Role? = null
+                        var loadedVotingKeyCheck: MasternodeVotingKeyCheck? = null
+                        if (type.isMasternode) {
+                            // The typed id may be a stored shared masternode's voter identity
+                            // (shown on its detail screen): its recorded pro_tx_hash is used.
+                            val proTxHash = loadTargetProTxHash(
+                                container.database.identityDao(), idBytes, activeNetwork.ffiValue,
+                            )
+                            val address = votingKey?.let {
+                                MasternodeVotingKeyAddress.of(keys.votingAddress(it))
+                            }
+                            when (val load = activeSdk.voting.loadMasternodeForVoting(proTxHash, address)) {
+                                is MasternodeVotingLoad.Refused -> {
+                                    // A voting key refused for a voter identity is recorded on
+                                    // a row this device already stores for it holding the same
+                                    // key, as Rust's outcome says; nothing is created or
+                                    // replaced (Swift `applyVotingKeyCheck`).
+                                    val refusedFor = load.votingKeyRefusedFor
+                                    val key = votingKey
+                                    error = if (refusedFor != null && key != null &&
+                                        appState.sdk.value === activeSdk
+                                    ) {
+                                        val applied = checkEnteredVotingKey(
+                                            dao = container.database.identityDao(),
+                                            entries = StoredVotingKeyEntries(keys, container.database),
+                                            rules = MasternodeVotingKeyRules.Native,
+                                            identityId = refusedFor,
+                                            networkRaw = activeNetwork.ffiValue,
+                                            enteredIdentifier = MasternodeVotingKeyStore
+                                                .identifierFor(refusedFor, keys.votingAddress(key)),
+                                            check = MasternodeVotingKeyCheck.Invalid(load.message),
+                                            refusalText = load.message,
+                                            stillCurrent = { appState.sdk.value === activeSdk },
+                                        )
+                                        (applied as? EnteredVotingKeyCheck.Refused)?.message ?: load.message
+                                    } else {
+                                        load.message
+                                    }
+                                    return@launch
+                                }
+                                is MasternodeVotingLoad.Loaded -> {
+                                    rowId = load.identity.identityId
+                                    json = load.identity.identityJson
+                                    masternodeProTxHash = proTxHash
+                                    masternodeRole = load.identity.role
+                                    loadedVotingKeyCheck = load.identity.votingKeyCheck
+                                }
+                            }
+                        } else {
+                            rowId = idBytes
+                            json = activeSdk.identities.fetch(id) ?: run {
+                                error = "Identity not found on ${activeNetwork.displayName}"
+                                return@launch
+                            }
                         }
                         // The network was switched while the fetch was in flight: the
                         // answer is from the previous network, so nothing is written.
@@ -321,25 +390,18 @@ fun LoadIdentityScreen(navController: NavHostController) {
                         }.getOrDefault(0L)
 
                         val entries = StoredVotingKeyEntries(keys, container.database)
-                        // A masternode voting key is checked against Platform before anything
-                        // is stored; Rust decides from the check and the slot whether it is.
+                        // The voting key was checked against Platform with the load; Rust
+                        // decides from the check and the slot whether it is stored.
                         var votingKeyCheck: MasternodeVotingKeyCheck? = null
-                        votingKey?.let { key ->
-                            val entered = entries.identifierFor(idBytes, key)
-                            val check = activeSdk.voting.checkMasternodeVotingKey(
-                                wireOrderProTxHash(idBytes),
-                                MasternodeVotingKeyAddress.ofIdentifier(entered),
-                            )
-                            if (appState.sdk.value !== activeSdk) {
-                                error = "The network changed during the load, so the identity " +
-                                    "was not saved. Load it again."
-                                return@launch
-                            }
+                        val key = votingKey
+                        val check = loadedVotingKeyCheck
+                        if (key != null && check != null) {
+                            val entered = entries.identifierFor(rowId, key)
                             val preflight = checkEnteredVotingKey(
                                 dao = container.database.identityDao(),
                                 entries = entries,
                                 rules = MasternodeVotingKeyRules.Native,
-                                identityId = idBytes,
+                                identityId = rowId,
                                 networkRaw = activeNetwork.ffiValue,
                                 enteredIdentifier = entered,
                                 check = check,
@@ -362,25 +424,28 @@ fun LoadIdentityScreen(navController: NavHostController) {
                         val result = saveLoadedIdentity(
                             dao = container.database.identityDao(),
                             entries = entries,
-                            identityId = idBytes,
+                            identityId = rowId,
                             networkRaw = activeNetwork.ffiValue,
                             balance = balance,
                             alias = trimmedAlias,
                             pickedType = type,
                             typePicked = typePicked,
+                            newRowType = newRowTypeFor(type, rowId, idBytes),
                             votingKey = votingKey,
                             votingKeyCheck = votingKeyCheck,
+                            masternodeProTxHash = masternodeProTxHash,
+                            masternodeRole = masternodeRole,
                         )
                         when (result) {
-                            LoadSaveResult.Saved -> showIdentity(idBytes)
+                            LoadSaveResult.Saved -> showIdentity(rowId)
                             is LoadSaveResult.Failed -> error = result.message
                             is LoadSaveResult.SavedWithWarning -> {
-                                showAfterError = idBytes
+                                showAfterError = rowId
                                 error = result.message
                             }
                             is LoadSaveResult.ConfirmReplacement ->
                                 pendingReplacement = PendingVotingKeyReplacement(
-                                    identityId = idBytes,
+                                    identityId = rowId,
                                     networkRaw = activeNetwork.ffiValue,
                                     storedIdentifier = result.storedIdentifier,
                                     votingKeyCheck = votingKeyCheck,
@@ -694,6 +759,19 @@ internal interface VotingKeyEntries {
         identifier: String,
         check: MasternodeVotingKeyCheck,
     ): MasternodeVotingKeyCheckOutcome?
+
+    /**
+     * [MasternodeVotingKeyRecords.recordSiblings]: after the key [loadedIdentifier] names was
+     * stored for [loadedIdentityId] and checked, write on the other rows for the same
+     * masternode what Rust says for their keys.
+     */
+    suspend fun recordSiblings(
+        networkRaw: Int,
+        proTxHash: ByteArray,
+        loadedIdentityId: ByteArray,
+        loadedIdentifier: String,
+        check: MasternodeVotingKeyCheck,
+    )
 }
 
 /** [VotingKeyEntries] over [MasternodeVotingKeyStore] and the identities of [database]. */
@@ -725,7 +803,88 @@ internal class StoredVotingKeyEntries(
     ): MasternodeVotingKeyCheckOutcome? = MasternodeVotingKeyRecords.record(
         database, identityId, networkRaw, identifier, check,
     )
+
+    override suspend fun recordSiblings(
+        networkRaw: Int,
+        proTxHash: ByteArray,
+        loadedIdentityId: ByteArray,
+        loadedIdentifier: String,
+        check: MasternodeVotingKeyCheck,
+    ) {
+        MasternodeVotingKeyRecords.recordSiblings(
+            database, networkRaw, proTxHash, loadedIdentityId, loadedIdentifier, check,
+        )
+    }
 }
+
+/**
+ * Once the loaded key is in its slot, have Rust say what to record for the other voting keys
+ * this device stores for the same masternode (a rotation gives each voting address its own
+ * voter identity, so each has its own row), as Swift `LoadIdentityView.swift` does after #6145.
+ * Returns what the load must say when those rows could not be read or written, else null.
+ */
+private suspend fun recordSiblingVotingKeys(
+    entries: VotingKeyEntries,
+    networkRaw: Int,
+    proTxHash: ByteArray?,
+    loadedIdentityId: ByteArray,
+    loadedIdentifier: String,
+    check: MasternodeVotingKeyCheck?,
+): String? {
+    if (proTxHash == null || check == null) return null
+    return try {
+        entries.recordSiblings(networkRaw, proTxHash, loadedIdentityId, loadedIdentifier, check)
+        null
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        siblingVotingKeysNotMarkedMessage(e.message)
+    }
+}
+
+/** Shown when the other voting keys stored for the masternode could not be marked. */
+internal fun siblingVotingKeysNotMarkedMessage(reason: String?): String =
+    "Other voting keys stored for this masternode could not be read, so they were not marked " +
+        "to be checked again: ${reason ?: "unknown error"}. Load the identity again to retry."
+
+/** [result] with [note] about the masternode's other voting keys, when there is one. */
+private fun withSiblingNote(
+    result: LoadSaveResult,
+    note: String?,
+    lead: String = "The identity was loaded.",
+): LoadSaveResult {
+    note ?: return result
+    return when (result) {
+        LoadSaveResult.Saved -> LoadSaveResult.SavedWithWarning("$lead $note")
+        is LoadSaveResult.SavedWithWarning -> LoadSaveResult.SavedWithWarning("${result.message} $note")
+        else -> result
+    }
+}
+
+/**
+ * The wire-order pro_tx_hash a masternode load asks Rust about for the typed [typedId]: the
+ * pro_tx_hash recorded on the row stored under that id on [networkRaw] (a shared masternode is
+ * stored under its voter identity, whose id is not the pro_tx_hash, and the detail screen shows
+ * that id), else the typed id itself, read as the pro_tx_hash Core displays.
+ */
+internal suspend fun loadTargetProTxHash(dao: IdentityDao, typedId: ByteArray, networkRaw: Int): ByteArray =
+    dao.getByIdentityId(typedId)
+        ?.takeIf { it.networkRaw == networkRaw }
+        ?.masternodeProTxHash
+        ?: wireOrderProTxHash(typedId)
+
+/**
+ * The type a NEW row gets when the user picked none: when a masternode or evonode load stores a
+ * row other than the typed id's ([rowId] differs from [typedId], such as a shared masternode's
+ * new voter identity after a key rotation), the form's [type], which came from the typed id's
+ * stored row of the same masternode, so the new row is offered for voting, never saved as User.
+ * Null otherwise. An existing row's type changes only when the user picked one.
+ */
+internal fun newRowTypeFor(
+    type: LoadIdentityType,
+    rowId: ByteArray,
+    typedId: ByteArray,
+): LoadIdentityType? = type.takeIf { it.isMasternode && !rowId.contentEquals(typedId) }
 
 /** What [checkEnteredVotingKey] decided for an entered voting key. */
 internal sealed interface EnteredVotingKeyCheck {
@@ -742,7 +901,8 @@ internal sealed interface EnteredVotingKeyCheck {
  * the identity's row on [networkRaw]: empty, the same key (the row names [enteredIdentifier],
  * with the record it holds), or a different key. [rules] decide whether the key is stored.
  * When they refuse it and say to record the refusal on the same stored key, that record is
- * written on the row through [VotingKeyEntries.recordCheck].
+ * written on the row through [VotingKeyEntries.recordCheck]. [refusalText] replaces the
+ * default wording, for a refusal Rust already worded (a load refused for the voter identity).
  */
 internal suspend fun checkEnteredVotingKey(
     dao: IdentityDao,
@@ -752,6 +912,7 @@ internal suspend fun checkEnteredVotingKey(
     networkRaw: Int,
     enteredIdentifier: String,
     check: MasternodeVotingKeyCheck,
+    refusalText: String? = null,
     stillCurrent: () -> Boolean = { true },
 ): EnteredVotingKeyCheck {
     val row = dao.getByIdentityId(identityId)?.takeIf { it.networkRaw == networkRaw }
@@ -765,7 +926,7 @@ internal suspend fun checkEnteredVotingKey(
     val address = MasternodeVotingKeyAddress.ofIdentifier(enteredIdentifier)
     val outcome = rules.outcome(check, address, slot)
     if (outcome.storeKey) return EnteredVotingKeyCheck.Proceed
-    var text = votingKeyNotOfMasternodeMessage(identityId.toHex(), reasonOf(check))
+    var text = refusalText ?: votingKeyNotOfMasternodeMessage(identityId.toHex(), reasonOf(check))
     // The row read suspended: a refusal is recorded only while the network is the one the
     // check was made on.
     if (outcome.record != null && stored != null && slot is MasternodeVotingKeySlot.SameKey && stillCurrent()) {
@@ -874,6 +1035,10 @@ private fun withVotingKeyNote(result: LoadSaveResult, lead: String, note: String
  * [LoadSaveResult.SavedWithWarning] and the next load tries again. [votingKey] stays the
  * caller's to zero.
  *
+ * [masternodeProTxHash], the wire-order pro_tx_hash of a masternode or evonode loaded for
+ * voting, is recorded on the row with its own fields: the row's id is the voter identity's for
+ * a shared masternode, so votes read the pro_tx_hash from here (#6099).
+ *
  * Once the key is stored, what Rust says to record for [votingKeyCheck] (its check before the
  * save, see [checkEnteredVotingKey]) is written on the row, weighed by Rust against the record
  * the row holds when it is written. A key that could not be checked is reported in a warning
@@ -890,9 +1055,15 @@ internal suspend fun saveLoadedIdentity(
     typePicked: Boolean,
     votingKey: ByteArray?,
     votingKeyCheck: MasternodeVotingKeyCheck? = null,
+    masternodeProTxHash: ByteArray? = null,
+    masternodeRole: MasternodeVotingLoadedIdentity.Role? = null,
+    newRowType: LoadIdentityType? = null,
     nowMillis: Long = System.currentTimeMillis(),
 ): LoadSaveResult {
-    saveLoadedFields(dao, identityId, networkRaw, balance, alias, pickedType, typePicked, nowMillis)
+    saveLoadedFields(
+        dao, identityId, networkRaw, balance, alias, pickedType, typePicked, masternodeProTxHash,
+        masternodeRole, newRowType, nowMillis,
+    )
         ?.let { return it }
     if (votingKey == null) {
         return savedAfterCleanup(entries, identityId, STALE_VOTING_KEY_NOT_REMOVED_MESSAGE)
@@ -918,10 +1089,16 @@ internal suspend fun saveLoadedIdentity(
             val note = recordStoredVotingKeyCheck(
                 entries, identityId, networkRaw, assignment.identifier, votingKeyCheck,
             )
-            withVotingKeyNote(
-                savedAfterCleanup(entries, identityId, STALE_VOTING_KEY_NOT_REMOVED_MESSAGE),
-                lead = "The identity was loaded and its voting key was stored.",
-                note = note,
+            val siblingNote = recordSiblingVotingKeys(
+                entries, networkRaw, masternodeProTxHash, identityId, assignment.identifier, votingKeyCheck,
+            )
+            withSiblingNote(
+                withVotingKeyNote(
+                    savedAfterCleanup(entries, identityId, STALE_VOTING_KEY_NOT_REMOVED_MESSAGE),
+                    lead = "The identity was loaded and its voting key was stored.",
+                    note = note,
+                ),
+                siblingNote,
             )
         }
         is VotingKeyAssignment.Changed -> LoadSaveResult.Failed(IDENTITY_CHANGED_MESSAGE)
@@ -937,6 +1114,9 @@ private suspend fun saveLoadedFields(
     alias: String?,
     pickedType: LoadIdentityType,
     typePicked: Boolean,
+    masternodeProTxHash: ByteArray?,
+    masternodeRole: MasternodeVotingLoadedIdentity.Role?,
+    newRowType: LoadIdentityType?,
     nowMillis: Long,
 ): LoadSaveResult.Failed? {
     val existing = dao.getByIdentityId(identityId)
@@ -951,8 +1131,16 @@ private suspend fun saveLoadedFields(
             // LoadIdentityScreen header.
             isLocal = true,
             alias = alias,
-            identityType = identityTypeToSave(null, pickedType, typePicked),
+            // A type the user did not pick defaults to [newRowType] for a new row only.
+            identityType = if (!typePicked && newRowType != null) {
+                newRowType.rawValue
+            } else {
+                identityTypeToSave(null, pickedType, typePicked)
+            },
             networkRaw = networkRaw,
+            // Written with the row, so an interrupted load never leaves it without one.
+            masternodeProTxHash = masternodeProTxHash,
+            masternodeRoleRaw = masternodeRole?.raw,
         ),
     ) != -1L
     if (inserted) return null
@@ -971,7 +1159,11 @@ private suspend fun saveLoadedFields(
         // Null keeps the stored type: an unpicked type never overwrites a newer one written
         // since [current] was read.
         identityType = if (typePicked) pickedType.rawValue else null,
+        // Null keeps the recorded pro_tx_hash.
         nowMillis = nowMillis,
+        masternodeProTxHash = masternodeProTxHash,
+        // Null keeps the recorded role, as for the pro_tx_hash.
+        masternodeRoleRaw = masternodeRole?.raw,
     )
     return if (changed == 0) LoadSaveResult.Failed(IDENTITY_CHANGED_MESSAGE) else null
 }
@@ -1008,10 +1200,26 @@ internal suspend fun replaceVotingKey(
             val note = recordStoredVotingKeyCheck(
                 entries, identityId, networkRaw, assignment.identifier, votingKeyCheck,
             )
-            withVotingKeyNote(
-                savedAfterCleanup(entries, identityId, PREVIOUS_VOTING_KEY_NOT_REMOVED_MESSAGE),
+            // As a load does, Rust says what to record for the other voting keys this device
+            // stores for the same masternode (Swift `replaceStoredKeys`, after #6145).
+            val siblingNote = try {
+                recordSiblingVotingKeys(
+                    entries, networkRaw, dao.getByIdentityId(identityId)?.masternodeProTxHash,
+                    identityId, assignment.identifier, votingKeyCheck,
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                siblingVotingKeysNotMarkedMessage(e.message)
+            }
+            withSiblingNote(
+                withVotingKeyNote(
+                    savedAfterCleanup(entries, identityId, PREVIOUS_VOTING_KEY_NOT_REMOVED_MESSAGE),
+                    lead = "The voting key was replaced.",
+                    note = note,
+                ),
+                siblingNote,
                 lead = "The voting key was replaced.",
-                note = note,
             )
         }
         is VotingKeyAssignment.Changed -> LoadSaveResult.Failed(VOTING_KEY_CHANGED_MESSAGE)

@@ -172,6 +172,18 @@ interface MasternodeVotingKeyRules {
         storedVotingAddress: MasternodeVotingKeyAddress?,
     ): MasternodeRecordedVotingKeyUse
 
+    /**
+     * What to record for another key stored for the same masternode as the key [loaded] was
+     * made of, with [loadedAddress], given the record held for it ([sibling]); null leaves it
+     * unchanged (`dash_sdk_masternode_sibling_voting_key_record`; Swift
+     * `MasternodeVotingKeyCheck.siblingRecord(votingAddress:sibling:)`).
+     */
+    fun siblingRecord(
+        loaded: MasternodeVotingKeyCheck,
+        loadedAddress: MasternodeVotingKeyAddress,
+        sibling: MasternodeRecordedVotingKey?,
+    ): MasternodeRecordedVotingKey?
+
     /** The rules in Rust. Each call loads the native library first. */
     object Native : MasternodeVotingKeyRules {
         override fun outcome(
@@ -207,6 +219,84 @@ interface MasternodeVotingKeyRules {
             }
             return MasternodeVotingKeyCheckCodec.decodeUse(json)
         }
+
+        override fun siblingRecord(
+            loaded: MasternodeVotingKeyCheck,
+            loadedAddress: MasternodeVotingKeyAddress,
+            sibling: MasternodeRecordedVotingKey?,
+        ): MasternodeRecordedVotingKey? {
+            NativeLoader.ensureLoaded()
+            val json = mapNativeErrors {
+                MasternodeVotingKeyNative.siblingVotingKeyRecord(
+                    MasternodeVotingKeyCheckCodec.verdictOf(loaded),
+                    loadedAddress.bytes,
+                    MasternodeVotingKeyCheckCodec.recordedCheckOf(sibling?.check),
+                    sibling?.votingAddress?.bytes,
+                )
+            }
+            return MasternodeVotingKeyCheckCodec.decodeSiblingRecord(json)
+        }
+    }
+}
+
+/**
+ * An identity loaded to vote for a masternode (`Voting.loadMasternodeForVoting`). Swift
+ * `MasternodeVotingLoadedIdentity` (`SDK+MasternodeVotingLoad.swift`).
+ *
+ * @property role which identity Rust loaded.
+ * @property identityJson the identity as JSON, the shape `Identities.fetch` returns.
+ * @property votingKeyCheck the voting key's verdict when one was given; always
+ *   [MasternodeVotingKeyCheck.Valid] for [Role.VOTER].
+ */
+class MasternodeVotingLoadedIdentity(
+    val role: Role,
+    identityId: ByteArray,
+    val identityJson: String,
+    val votingKeyCheck: MasternodeVotingKeyCheck?,
+) {
+    private val id = identityId.copyOf()
+
+    /** A copy of the 32-byte id to store the identity's row under. */
+    val identityId: ByteArray get() = id.copyOf()
+
+    /** Which identity Rust loaded for the masternode; [raw] is the stored value (Swift's). */
+    enum class Role(val raw: String) {
+        /** The owner identity, whose id is the pro_tx_hash in the order Platform names it. */
+        OWNER("owner"),
+
+        /**
+         * The voter identity of a masternode without an owner identity (a shared masternode):
+         * its id is not the pro_tx_hash, so the host keeps the pro_tx_hash beside it.
+         */
+        VOTER("voter"),
+    }
+}
+
+/** What `Voting.loadMasternodeForVoting` decided. Swift `MasternodeVotingLoad`. */
+sealed interface MasternodeVotingLoad {
+    /** An identity to store for the masternode. */
+    data class Loaded(val identity: MasternodeVotingLoadedIdentity) : MasternodeVotingLoad
+
+    /**
+     * Nothing is loaded; [message] says why, worded in Rust. When the voting key was refused
+     * for a voter identity, [votingKeyRefusedFor] is that identity's id: the host records the
+     * refusal on a row it already stores for it holding the same key (Rust's
+     * `voting_key_check_outcome` with an invalid check), and creates or replaces nothing.
+     * Swift `MasternodeVotingLoad.refused(message:votingKeyRefusedFor:)`.
+     */
+    class Refused(val message: String, votingKeyRefusedFor: ByteArray? = null) : MasternodeVotingLoad {
+        private val refusedFor = votingKeyRefusedFor?.copyOf()
+
+        /** A copy of the voter identity id the voting key was refused for, if any. */
+        val votingKeyRefusedFor: ByteArray? get() = refusedFor?.copyOf()
+
+        override fun equals(other: Any?): Boolean =
+            other is Refused && message == other.message &&
+                (refusedFor?.contentEquals(other.refusedFor) ?: (other.refusedFor == null))
+
+        override fun hashCode(): Int = 31 * message.hashCode() + (refusedFor?.contentHashCode() ?: 0)
+
+        override fun toString(): String = "Refused($message)"
     }
 }
 
@@ -277,29 +367,107 @@ internal object MasternodeVotingKeyCheckCodec {
         val root = parse(function, text)
         val storeKey = root["storeKey"]?.jsonPrimitive?.booleanOrNull
             ?: throw DashSdkError.SerializationError("$function returned no storeKey")
-        val record = when (val element = root["record"]) {
-            null, JsonNull -> null
-            else -> {
-                val obj = element.jsonObject
-                val kind = when (val check = obj["check"]?.jsonPrimitive?.intOrNull) {
-                    RECORDED_VALID -> MasternodeVotingKeyCheck.Valid
-                    RECORDED_INVALID -> MasternodeVotingKeyCheck.Invalid("")
-                    RECORDED_UNDETERMINED -> MasternodeVotingKeyCheck.Undetermined("")
-                    else -> throw DashSdkError.SerializationError(
-                        "$function returned an unknown recorded check $check",
-                    )
-                }
-                val address = obj["votingAddress"]?.jsonPrimitive?.contentOrNull
-                    ?.let { runCatching { it.hexToByteArray() }.getOrNull() }
-                    ?.let { MasternodeVotingKeyAddress.of(it) }
-                    ?: throw DashSdkError.SerializationError("$function returned a record without a 20-byte address")
-                MasternodeRecordedVotingKey(
-                    check = if (verdictOf(kind) == verdictOf(preferring)) preferring else kind,
-                    votingAddress = address,
-                )
-            }
-        }
+        val record = decodeRecord(function, root["record"], preferring)
         return MasternodeVotingKeyCheckOutcome(storeKey, record)
+    }
+
+    // DashSDKMasternodeVotingLoadKind
+    const val LOAD_OWNER_IDENTITY = 0
+    const val LOAD_VOTER_IDENTITY = 1
+    const val LOAD_REFUSED = 2
+
+    /**
+     * `{"kind":0|1|2,"identityId":hex|null,"identityJson":string|null,
+     * "votingKeyVerdict":0|1|2|null,"message":string|null}` from `loadForVoting`.
+     */
+    fun decodeLoad(text: String?): MasternodeVotingLoad {
+        val function = "dash_sdk_masternode_load_for_voting"
+        val root = parse(function, text)
+        val message = root["message"]?.jsonPrimitive?.contentOrNull
+        val role = when (val kind = root["kind"]?.jsonPrimitive?.intOrNull) {
+            LOAD_OWNER_IDENTITY -> MasternodeVotingLoadedIdentity.Role.OWNER
+            LOAD_VOTER_IDENTITY -> MasternodeVotingLoadedIdentity.Role.VOTER
+            LOAD_REFUSED -> return decodeRefusal(function, root, message.orEmpty())
+            else -> throw DashSdkError.SerializationError("$function returned an unknown kind $kind")
+        }
+        val identityId = root["identityId"]?.jsonPrimitive?.contentOrNull
+            ?.let { runCatching { it.hexToByteArray() }.getOrNull() }
+            ?.takeIf { it.size == 32 }
+            ?: throw DashSdkError.SerializationError("$function returned no 32-byte identity id")
+        val identityJson = root["identityJson"]?.jsonPrimitive?.contentOrNull
+            ?: throw DashSdkError.SerializationError("$function returned no identity")
+        val check = when (val verdict = root["votingKeyVerdict"]?.jsonPrimitive?.intOrNull) {
+            null -> null
+            VERDICT_VALID -> MasternodeVotingKeyCheck.Valid
+            VERDICT_INVALID -> MasternodeVotingKeyCheck.Invalid(message.orEmpty())
+            VERDICT_UNDETERMINED -> MasternodeVotingKeyCheck.Undetermined(message.orEmpty())
+            else -> throw DashSdkError.SerializationError("$function returned an unknown verdict $verdict")
+        }
+        return MasternodeVotingLoad.Loaded(
+            MasternodeVotingLoadedIdentity(role, identityId, identityJson, check),
+        )
+    }
+
+    /** A refused load; with a verdict (always invalid) it names the refused voter identity. */
+    private fun decodeRefusal(function: String, root: JsonObject, message: String): MasternodeVotingLoad.Refused {
+        val verdict = root["votingKeyVerdict"]?.jsonPrimitive?.intOrNull
+            ?: return MasternodeVotingLoad.Refused(message)
+        if (verdict != VERDICT_INVALID) {
+            throw DashSdkError.SerializationError("$function refused with verdict $verdict, not invalid")
+        }
+        val refusedFor = root["identityId"]?.jsonPrimitive?.contentOrNull
+            ?.let { runCatching { it.hexToByteArray() }.getOrNull() }
+            ?.takeIf { it.size == 32 }
+            ?: throw DashSdkError.SerializationError("$function refused a voting key without its 32-byte voter identity")
+        return MasternodeVotingLoad.Refused(message, refusedFor)
+    }
+
+    /**
+     * A record in the JNI JSON: null (or absent) for none, else its check and 20-byte address.
+     * A record of [preferring]'s own kind carries [preferring], so its message is kept (Swift
+     * `MasternodeVotingKeyCheckFFI.recordedKey(_:preferring:)`).
+     */
+    private fun decodeRecord(
+        function: String,
+        element: kotlinx.serialization.json.JsonElement?,
+        preferring: MasternodeVotingKeyCheck,
+    ): MasternodeRecordedVotingKey? {
+        if (element == null || element == JsonNull) return null
+        val obj = element.jsonObject
+        val kind = when (val check = obj["check"]?.jsonPrimitive?.intOrNull) {
+            RECORDED_VALID -> MasternodeVotingKeyCheck.Valid
+            RECORDED_INVALID -> MasternodeVotingKeyCheck.Invalid("")
+            RECORDED_UNDETERMINED -> MasternodeVotingKeyCheck.Undetermined("")
+            else -> throw DashSdkError.SerializationError("$function returned an unknown recorded check $check")
+        }
+        val address = obj["votingAddress"]?.jsonPrimitive?.contentOrNull
+            ?.let { runCatching { it.hexToByteArray() }.getOrNull() }
+            ?.let { MasternodeVotingKeyAddress.of(it) }
+            ?: throw DashSdkError.SerializationError("$function returned a record without a 20-byte address")
+        return MasternodeRecordedVotingKey(
+            check = if (verdictOf(kind) == verdictOf(preferring)) preferring else kind,
+            votingAddress = address,
+        )
+    }
+
+    /**
+     * The message an undetermined record carries when another key was loaded for the same
+     * masternode. Swift `MasternodeVotingKeyCheck.checkAgainAfterAnotherKeyMessage`.
+     */
+    const val CHECK_AGAIN_AFTER_ANOTHER_KEY_MESSAGE =
+        "Another voting key was loaded for this masternode, so this one is checked again before it votes."
+
+    /**
+     * `{"record":null|{"check":1|2|3,"votingAddress":hex}}` from `siblingVotingKeyRecord`. An
+     * undetermined record carries [CHECK_AGAIN_AFTER_ANOTHER_KEY_MESSAGE].
+     */
+    fun decodeSiblingRecord(text: String?): MasternodeRecordedVotingKey? {
+        val function = "dash_sdk_masternode_sibling_voting_key_record"
+        return decodeRecord(
+            function,
+            parse(function, text)["record"],
+            preferring = MasternodeVotingKeyCheck.Undetermined(CHECK_AGAIN_AFTER_ANOTHER_KEY_MESSAGE),
+        )
     }
 
     /** `{"canVote":bool,"checkBeforeUse":bool}` from `recordedVotingKeyUse`. */
@@ -357,6 +525,22 @@ val IdentityEntity.recordedVotingKey: MasternodeRecordedVotingKey?
         val address = votingKeyCheckAddress?.let { MasternodeVotingKeyAddress.of(it) } ?: return null
         return MasternodeRecordedVotingKey(check, address)
     }
+
+/**
+ * Which of a masternode's identities this row is, as Rust's load rule returned it
+ * ([IdentityEntity.masternodeRoleRaw]); null for a row not loaded through it. Swift
+ * `PersistentIdentity.masternodeRole`.
+ */
+val IdentityEntity.masternodeRole: MasternodeVotingLoadedIdentity.Role?
+    get() = MasternodeVotingLoadedIdentity.Role.entries.firstOrNull { it.raw == masternodeRoleRaw }
+
+/**
+ * Whether this row is a masternode's voter identity, which holds only a voting key: credits or
+ * tokens sent to it could not be spent, so it is never offered or accepted as a recipient.
+ * Swift `PersistentIdentity.isVotingOnlyIdentity`.
+ */
+val IdentityEntity.isVotingOnlyIdentity: Boolean
+    get() = masternodeRole == MasternodeVotingLoadedIdentity.Role.VOTER
 
 /**
  * The voting address of the key the row names (`votingPrivateKeyIdentifier`), read from the
@@ -429,6 +613,11 @@ object MasternodeVotingKeyRecords {
      * [record], also returning the row's `votingKeyCheckRevision` as the same transaction left
      * it: a host holding the written record can tell from a later Room emission whether it
      * already shows this write or a later one (its revision is at least this one).
+     *
+     * With [resolvedProTxHash], the same transaction first records the pro_tx_hash and role
+     * ([resolvedRoleRaw]) Rust's load rule resolved for a row stored before they were recorded,
+     * and only while the row still records no pro_tx_hash: the binding and the record commit
+     * together or not at all, so the pro_tx_hash never sits beside an older record.
      */
     suspend fun recordWithRevision(
         database: DashDatabase,
@@ -437,6 +626,8 @@ object MasternodeVotingKeyRecords {
         storedIdentifier: String,
         check: MasternodeVotingKeyCheck,
         rules: MasternodeVotingKeyRules = MasternodeVotingKeyRules.Native,
+        resolvedProTxHash: ByteArray? = null,
+        resolvedRoleRaw: String? = null,
     ): Recorded? {
         val address = MasternodeVotingKeyAddress.ofIdentifier(storedIdentifier)
         return database.withTransaction {
@@ -447,6 +638,12 @@ object MasternodeVotingKeyRecords {
             val identifier = row.votingPrivateKeyIdentifier
                 ?.takeIf { it.equals(storedIdentifier, ignoreCase = true) }
                 ?: return@withTransaction null
+            if (resolvedProTxHash != null) {
+                val bound = dao.recordResolvedMasternode(
+                    identityId, networkRaw, resolvedProTxHash, resolvedRoleRaw ?: return@withTransaction null,
+                )
+                if (bound == 0) return@withTransaction null
+            }
             val outcome = rules.outcome(check, address, MasternodeVotingKeySlot.SameKey(row.recordedVotingKey))
             outcome.record?.let { record ->
                 val (raw, message) = rawOf(record.check)
@@ -461,6 +658,48 @@ object MasternodeVotingKeyRecords {
             }
             val after = dao.getByIdentityId(identityId)
             Recorded(outcome, after?.votingKeyCheckRevision ?: 0L, after?.recordedVotingKey)
+        }
+    }
+
+    /**
+     * After the key [loadedIdentifier] names was stored for [loadedIdentityId] and checked
+     * ([loaded]), record on every other row on [networkRaw] for the same masternode
+     * ([proTxHash]) what [rules] say for its key (a valid record of a different key becomes
+     * undetermined, so it is checked again before it votes). One Room transaction; each write is
+     * conditional on the row still naming the key it was read with. Port of the sibling loop in
+     * Swift `LoadIdentityView.swift`.
+     *
+     * @return how many rows were written.
+     * @throws Exception when the rows cannot be read or written; cancellation propagates.
+     */
+    suspend fun recordSiblings(
+        database: DashDatabase,
+        networkRaw: Int,
+        proTxHash: ByteArray,
+        loadedIdentityId: ByteArray,
+        loadedIdentifier: String,
+        loaded: MasternodeVotingKeyCheck,
+        rules: MasternodeVotingKeyRules = MasternodeVotingKeyRules.Native,
+    ): Int {
+        val loadedAddress = MasternodeVotingKeyAddress.ofIdentifier(loadedIdentifier)
+        return database.withTransaction {
+            val dao = database.identityDao()
+            var written = 0
+            for (sibling in dao.getByMasternodeProTxHash(networkRaw, proTxHash)) {
+                if (sibling.identityId.contentEquals(loadedIdentityId)) continue
+                val identifier = sibling.votingPrivateKeyIdentifier ?: continue
+                val record = rules.siblingRecord(loaded, loadedAddress, sibling.recordedVotingKey) ?: continue
+                val (raw, message) = rawOf(record.check)
+                written += dao.recordVotingKeyCheck(
+                    identityId = sibling.identityId,
+                    networkRaw = networkRaw,
+                    identifier = identifier,
+                    raw = raw,
+                    message = message,
+                    address = record.votingAddress.bytes,
+                )
+            }
+            written
         }
     }
 
