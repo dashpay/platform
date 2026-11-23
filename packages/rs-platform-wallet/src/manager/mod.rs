@@ -16,6 +16,7 @@ mod spv_quorums;
 #[cfg(feature = "spv-context")]
 pub use spv_quorums::claim_spv_quorum_lease;
 pub mod startup;
+mod sync_loop;
 pub mod txo_reconcile;
 mod wallet_lifecycle;
 

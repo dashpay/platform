@@ -37,20 +37,15 @@
 
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
-use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc,
-};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::Arc;
+use std::time::Duration;
 
 use arc_swap::ArcSwap;
-use dash_async::{ThreadRegistry, WorkerConfig};
+use dash_async::ThreadRegistry;
 
 use crate::events::PlatformEventManager;
-use crate::manager::{
-    coordinator_worker_config, drain_pass, QuiesceGate, QuiesceGuard, SyncSlotGuard, WalletWorker,
-    COORDINATOR_DRAIN_BUDGET, LATCHED_RETRY_INTERVAL,
-};
+use crate::manager::sync_loop::{start_sync_loop, Admission, SyncCoordinator, SyncLoop};
+use crate::manager::{QuiesceGuard, WalletWorker, COORDINATOR_DRAIN_BUDGET};
 use crate::wallet::identity::network::DpnsMarketplaceSyncSummary;
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
@@ -129,16 +124,11 @@ impl DpnsSyncPassSummary {
 /// verbatim.
 pub struct DpnsSyncManager {
     wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
-    registry: Arc<ThreadRegistry<WalletWorker>>,
     /// Dispatches `on_dpns_marketplace_sync_completed` after each pass.
     events: Arc<PlatformEventManager>,
-    interval_secs: AtomicU64,
-    is_syncing: AtomicBool,
-    /// Gates new passes while a [`quiesce`](Self::quiesce) drains an
-    /// in-flight one — same barrier contract as the sibling coordinators.
-    quiescing: QuiesceGate,
-    /// Unix seconds of the last completed pass. `0` = never.
-    last_sync_unix: AtomicU64,
+    /// Loop thread, `is_syncing` slot, admission gate and last-pass
+    /// timestamp — the lifecycle shared with the sibling coordinators.
+    sync: SyncLoop,
 }
 
 impl DpnsSyncManager {
@@ -149,44 +139,36 @@ impl DpnsSyncManager {
     ) -> Self {
         Self {
             wallets,
-            registry,
             events,
-            interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
-            is_syncing: AtomicBool::new(false),
-            quiescing: QuiesceGate::default(),
-            last_sync_unix: AtomicU64::new(0),
+            sync: SyncLoop::new(WalletWorker::DpnsSync, registry, DEFAULT_SYNC_INTERVAL_SECS),
         }
     }
 
     /// Set the polling interval. Clamped to a minimum of 1s. The running
     /// loop picks this up on its next sleep.
     pub fn set_interval(&self, interval: Duration) {
-        let secs = interval.as_secs().max(1);
-        self.interval_secs.store(secs, Ordering::Release);
+        self.sync.set_interval(interval);
     }
 
     /// Current polling interval.
     pub fn interval(&self) -> Duration {
-        Duration::from_secs(self.interval_secs.load(Ordering::Acquire))
+        self.sync.interval()
     }
 
     /// Whether the background loop is currently running.
     pub fn is_running(&self) -> bool {
-        self.registry.is_running(WalletWorker::DpnsSync)
+        self.sync.is_running()
     }
 
     /// Whether a sync pass is in flight right now.
     pub fn is_syncing(&self) -> bool {
-        self.is_syncing.load(Ordering::Acquire)
+        self.sync.is_syncing()
     }
 
     /// Unix seconds of the last completed pass, or `None` if no pass has
     /// ever completed.
     pub fn last_sync_unix_seconds(&self) -> Option<u64> {
-        match self.last_sync_unix.load(Ordering::Acquire) {
-            0 => None,
-            n => Some(n),
-        }
+        self.sync.last_sync_unix_seconds()
     }
 
     /// Start the background sync loop. Idempotent — calling while
@@ -195,55 +177,14 @@ impl DpnsSyncManager {
     /// `Handle::block_on` — same mechanism and rationale as
     /// `DashPaySyncManager::start`. The first pass runs immediately.
     pub fn start(self: Arc<Self>) {
-        let handle = tokio::runtime::Handle::current();
-        let registry = Arc::clone(&self.registry);
-        let this = self;
-        let cfg = WorkerConfig {
-            stack_size: NonZeroUsize::new(DPNS_SYNC_STACK_BYTES),
-            ..coordinator_worker_config()
-        };
-        // A timed-out `quiesce` latched the gate; reopen it once the wedged
-        // pass has drained (now, or before each pass below).
-        if !this.quiescing.reopen_if_drained(&this.is_syncing) {
-            tracing::debug!(
-                "dpns sync loop started behind a wedged pass; passes resume once it drains"
-            );
-        }
-        registry.start_thread(WalletWorker::DpnsSync, cfg, move |cancel| {
-            handle.block_on(async move {
-                loop {
-                    if cancel.is_cancelled() {
-                        break;
-                    }
-
-                    this.sync_now().await;
-
-                    // `sync_now` clears a drained latch itself before its slot CAS.
-                    // Sample the latch AFTER the pass, so a latch raised or cleared
-                    // while it ran is what picks the cadence: behind a still-wedged
-                    // pass the call above bailed, so poll the slot briskly instead of
-                    // sleeping a full interval and passes resume promptly once that
-                    // pass drains.
-                    let gate_open = this.quiescing.reopen_if_drained(&this.is_syncing);
-                    let interval = if gate_open {
-                        this.interval()
-                    } else {
-                        this.interval().min(LATCHED_RETRY_INTERVAL)
-                    };
-                    tokio::select! {
-                        _ = tokio::time::sleep(interval) => {}
-                        _ = cancel.cancelled() => break,
-                    }
-                }
-            });
-        });
+        start_sync_loop(self, NonZeroUsize::new(DPNS_SYNC_STACK_BYTES), "dpns");
     }
 
     /// Stop the background sync loop. Cancel-only — a pass already
     /// inside `sync_now` keeps running to completion; use
     /// [`quiesce`](Self::quiesce) for a real drain barrier.
     pub fn stop(&self) {
-        self.registry.cancel(WalletWorker::DpnsSync);
+        self.sync.cancel_loop();
     }
 
     /// Cancel the loop and wait for any in-flight pass to fully drain —
@@ -266,7 +207,7 @@ impl DpnsSyncManager {
     /// guard drops.
     #[must_use = "None means the pass did NOT drain; the caller must fail closed"]
     pub(crate) async fn quiesce_held_within(&self, budget: Duration) -> Option<QuiesceGuard<'_>> {
-        drain_pass(&self.quiescing, &self.is_syncing, || self.stop(), budget).await
+        self.sync.drain(|| self.stop(), budget).await
     }
 
     /// Drain variant that **seals** admission permanently — used by
@@ -274,12 +215,7 @@ impl DpnsSyncManager {
     /// start a fresh pass (and fire persister/event callbacks) after the
     /// host freed its context.
     pub(crate) async fn quiesce_sealed_within(&self, budget: Duration) -> bool {
-        let guard = self.quiesce_held_within(budget).await;
-        let drained = guard.is_some();
-        // Seal before the guard drops so its Drop cannot reopen.
-        self.quiescing.seal();
-        drop(guard);
-        drained
+        self.sync.drain_sealed(|| self.stop(), budget).await
     }
 
     /// Test-only: claim the `is_syncing` slot and never release it,
@@ -287,9 +223,7 @@ impl DpnsSyncManager {
     /// Returns `false` if the slot was already taken.
     #[cfg(test)]
     pub(crate) fn wedge_sync_slot_for_test(&self) -> bool {
-        self.is_syncing
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
+        self.sync.wedge_slot_for_test()
     }
 
     /// Test-only: release a slot taken by
@@ -297,14 +231,14 @@ impl DpnsSyncManager {
     /// wedged pass finally draining would.
     #[cfg(test)]
     pub(crate) fn release_sync_slot_for_test(&self) {
-        self.is_syncing.store(false, Ordering::Release);
+        self.sync.release_slot_for_test();
     }
 
     /// Test-only: whether new sync passes are currently barred — a drain in
     /// flight, a latched timeout, or the terminal seal `shutdown` applies.
     #[cfg(test)]
     pub(crate) fn sync_admission_closed(&self) -> bool {
-        self.quiescing.is_closed()
+        self.sync.admission_closed()
     }
 
     /// Run one marketplace sync pass across every registered wallet.
@@ -315,29 +249,13 @@ impl DpnsSyncManager {
     /// summary but never abort the sweep. Dispatches the completion
     /// event before returning.
     pub async fn sync_now(&self) -> DpnsSyncPassSummary {
-        // A drained timeout latch is cleared here as well as in `start()`:
-        // with no loop running, a one-shot pass after a timed-out drain
-        // would otherwise bail on the stale latch until something
-        // restarted the loop. Safe before the CAS — a false `is_syncing`
-        // means no pass is in flight — and the gate check after the CAS
-        // still honors a live hold or the seal.
-        self.quiescing.reopen_if_drained(&self.is_syncing);
-        if self
-            .is_syncing
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
+        // Bail when another pass holds the slot or a `quiesce()` has closed
+        // the gate, so the drain gets a true barrier. The permit holds
+        // `is_syncing` until it drops at the end of this function — after
+        // the completion event below, and on panic unwind too.
+        let Admission::Admitted(_permit) = self.sync.admit() else {
             return DpnsSyncPassSummary::default();
-        }
-        // Clears `is_syncing` on every exit path — including panic
-        // unwind — so a failed pass can never wedge `quiesce()`'s drain.
-        let _slot = SyncSlotGuard(&self.is_syncing);
-
-        // A `quiesce()` may have raised the gate between our CAS and
-        // here; bail so the drain gets a true barrier.
-        if self.quiescing.is_closed() {
-            return DpnsSyncPassSummary::default();
-        }
+        };
 
         let snapshot: Vec<(WalletId, Arc<PlatformWallet>)> = {
             let wallets = self.wallets.load();
@@ -360,16 +278,23 @@ impl DpnsSyncManager {
             summary.wallet_results.insert(wallet_id, outcome);
         }
 
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+        let now = SyncLoop::unix_now();
         summary.sync_unix_seconds = now;
-        self.last_sync_unix.store(now, Ordering::Release);
+        self.sync.record_completed(now);
 
         self.events.on_dpns_marketplace_sync_completed(&summary);
 
         summary
+    }
+}
+
+impl SyncCoordinator for DpnsSyncManager {
+    fn sync_loop(&self) -> &SyncLoop {
+        &self.sync
+    }
+
+    async fn background_pass(&self) {
+        self.sync_now().await;
     }
 }
 
