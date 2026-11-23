@@ -122,6 +122,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 identity_index: lock.identity_index,
                 status: lock.status.clone(),
                 identity_recipient: lock.identity_recipient,
+                platform_address_recipients: lock.platform_address_recipients.clone(),
             })
     }
 
@@ -904,4 +905,5 @@ pub(crate) struct TrackedResumeMetadata {
     pub identity_index: u32,
     pub status: AssetLockStatus,
     pub identity_recipient: Option<Identifier>,
+    pub platform_address_recipients: Option<PlatformAddressRecipients>,
 }

@@ -708,6 +708,23 @@ pub enum PlatformWalletError {
         requested: Identifier,
     },
 
+    /// An external Platform-address funding lock (it recorded the Platform
+    /// addresses it pays) is being resumed through a flow that would pay
+    /// something else: an owned top-up, or an external funding to other
+    /// recipients. Nothing was submitted or paid and the lock stays tracked.
+    /// Resume it with the recorded recipients (see
+    /// `PlatformAddressWallet::resume_platform_address_funding_to_recorded_recipients`).
+    /// The FFI reports it with the same code as
+    /// [`Self::AssetLockRecipientMismatch`].
+    #[error(
+        "Asset lock {out_point} was built to pay recorded Platform addresses and cannot be \
+         resumed to pay anything else"
+    )]
+    AssetLockPlatformAddressRecipientMismatch {
+        out_point: dashcore::OutPoint,
+        recorded: Box<crate::changeset::PlatformAddressRecipients>,
+    },
+
     /// An unbound identity top-up lock records no recipient (it was rebuilt
     /// from the chain, for example after a restore from the seed, and its
     /// credit output names no identity), so no resume pays it: it may have
