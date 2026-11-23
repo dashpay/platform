@@ -466,8 +466,8 @@ mod tests {
         SecretStore::file(secure_vault_path(dir), SecretString::new("pw-correct")).unwrap()
     }
 
-    /// Tighten the umask-0002 tempdir (0o775) to 0o700 so it passes the
-    /// parent-dir perm check, then return a vault path inside it.
+    /// Tighten the umask-0002 tempdir (0o775) to 0o700 so the open logs no
+    /// insecure-ancestor warning, then return a vault path inside it.
     fn secure_vault_path(dir: &std::path::Path) -> std::path::PathBuf {
         #[cfg(unix)]
         {

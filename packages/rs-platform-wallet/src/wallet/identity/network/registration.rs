@@ -436,7 +436,7 @@ impl IdentityWallet {
         // Step 4 (best-effort): persist the new balance. The tracked lock was
         // already consumed in step 3.
         new_balance = self
-            .record_top_up_balance(identity_id, new_balance, metadata)
+            .record_core_top_up_balance(identity_id, new_balance, metadata)
             .await;
         Ok(new_balance)
     }
@@ -503,7 +503,7 @@ impl IdentityWallet {
         // proved balance is what this route reports, not the local one: on
         // metadata no newer than the cached balance's, the local record keeps
         // the cached value, which can predate this top-up.
-        self.record_top_up_balance(identity_id, new_balance, metadata)
+        self.record_core_top_up_balance(identity_id, new_balance, metadata)
             .await;
         Ok(new_balance)
     }
@@ -663,7 +663,7 @@ impl IdentityWallet {
     /// propagate as `Err` (the caller would report failure for credits that
     /// exist on chain). The stale local balance self-heals on the next
     /// identity re-sync. Same posture as register's step 4.
-    async fn record_top_up_balance(
+    async fn record_core_top_up_balance(
         &self,
         identity_id: &Identifier,
         new_balance: u64,
@@ -1296,7 +1296,7 @@ mod tests {
 
         let reported = wallet
             .identity()
-            .record_top_up_balance(&own, 7_000_000, ResponseMetadata::default())
+            .record_core_top_up_balance(&own, 7_000_000, ResponseMetadata::default())
             .await;
         assert_eq!(reported, 7_000_000);
         let wm = wallet.identity().wallet_manager.read().await;
@@ -1314,7 +1314,7 @@ mod tests {
         assert_eq!(
             wallet
                 .identity()
-                .record_top_up_balance(&stranger, 5, ResponseMetadata::default())
+                .record_core_top_up_balance(&stranger, 5, ResponseMetadata::default())
                 .await,
             5
         );
