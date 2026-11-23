@@ -91,6 +91,9 @@ fun GiveUpNameScreen(identityIdHex: String, name: String, navController: NavHost
     var submitting by remember { mutableStateOf<DpnsNameGiveUpMethod?>(null) }
     var submitError by remember { mutableStateOf<String?>(null) }
     var confirming by remember { mutableStateOf<DpnsNameGiveUpMethod?>(null) }
+    // Set once a give-up was confirmed or may have been delivered: from then on no read
+    // may put the actions back, whatever it saw
+    var giveUpSent by remember { mutableStateOf(false) }
 
     val walletId = identity?.walletId
     val mainDpnsName = identity?.mainDpnsName
@@ -105,20 +108,22 @@ fun GiveUpNameScreen(identityIdHex: String, name: String, navController: NavHost
     val identityLoaded = identity != null
     LaunchedEffect(manager, identityLoaded, walletId, reload) {
         val activeManager = manager
-        if (!identityLoaded) return@LaunchedEffect
+        if (!identityLoaded || giveUpSent) return@LaunchedEffect
         val wallet = walletId?.let { activeManager?.wallet(forWalletId = it) }
         if (activeManager == null || wallet == null) {
             phase = GiveUpNamePhase.Failed("This identity's wallet is not loaded.")
             return@LaunchedEffect
         }
         phase = GiveUpNamePhase.Loading
-        phase = try {
+        val loaded = try {
             GiveUpNamePhase.Loaded(
                 activeManager.dpnsMarketplace.giveUpChoices(wallet.handle, idBytes, name),
             )
         } catch (t: Throwable) {
             GiveUpNameUi.loadFailure(t)
         }
+        // A give-up sent while this read ran wins over what the read saw
+        if (!giveUpSent) phase = loaded
     }
 
     fun submit(method: DpnsNameGiveUpMethod) {
@@ -145,6 +150,7 @@ fun GiveUpNameScreen(identityIdHex: String, name: String, navController: NavHost
             } catch (t: Throwable) {
                 when (val failure = GiveUpNameUi.submitFailure(t)) {
                     is GiveUpNameSubmitFailure.Unconfirmed -> {
+                        giveUpSent = true
                         submitError = null
                         phase = GiveUpNamePhase.Unconfirmed(failure.message)
                     }
@@ -155,6 +161,7 @@ fun GiveUpNameScreen(identityIdHex: String, name: String, navController: NavHost
             }
             // Platform confirmed it: from here nothing offers another give-up of the name.
             // The cleanup runs even if this screen's scope was cancelled meanwhile.
+            giveUpSent = true
             val cleanupError = clearMainNamePickIfGivenUp(container, activeManager, idBytes, name)
             submitting = null
             if (cleanupError == null) {
