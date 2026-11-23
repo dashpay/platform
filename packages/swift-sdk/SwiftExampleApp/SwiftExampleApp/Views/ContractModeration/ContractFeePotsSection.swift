@@ -100,6 +100,7 @@ struct ContractFeePotsSection: View {
             Text("Each pot's balance from the contract's document action fees. The last claim is the last explicit claim, at most one per epoch; a membership change of an elected team can also pay out the moderators pot without changing it. A claim button shows for each identity of a loaded wallet that may claim the pot; Platform refuses a pot already paid out this epoch or too small to pay everyone a credit.")
         }
         .task(id: contractId) {
+            clearClaim()
             await reloadAll()
         }
         // A replaced SDK: drop what was read through the old one and read
@@ -109,6 +110,7 @@ struct ContractFeePotsSection: View {
             claimants = []
             moderatorsPotTeam = nil
             eligibilityError = nil
+            clearClaim()
         }
     }
 
@@ -121,8 +123,8 @@ struct ContractFeePotsSection: View {
             if potClaimants.count > 1 {
                 Picker("Claim as", selection: claimantBinding(for: pot, among: potClaimants)) {
                     ForEach(potClaimants) { claimant in
-                        Text(label(forIdentity: claimant.identityIdBase58))
-                            .tag(claimant.identityIdBase58)
+                        Text(claimantLabel(claimant, among: potClaimants))
+                            .tag(claimant.id)
                     }
                 }
                 .accessibleFormPicker("contractModeration.feePots.claimant.\(pot.rawValue)")
@@ -157,7 +159,7 @@ struct ContractFeePotsSection: View {
         among potClaimants: [FeePotClaimant]
     ) -> Binding<String> {
         Binding(
-            get: { chosenClaimant(for: pot, among: potClaimants)?.identityIdBase58 ?? "" },
+            get: { chosenClaimant(for: pot, among: potClaimants)?.id ?? "" },
             set: { selectedClaimant[pot] = $0 }
         )
     }
@@ -168,10 +170,29 @@ struct ContractFeePotsSection: View {
         among potClaimants: [FeePotClaimant]
     ) -> FeePotClaimant? {
         if let picked = selectedClaimant[pot],
-           let claimant = potClaimants.first(where: { $0.identityIdBase58 == picked }) {
+           let claimant = potClaimants.first(where: { $0.id == picked }) {
             return claimant
         }
         return potClaimants.first
+    }
+
+    /// A claimant's label in the picker: the identity, and the wallet it is
+    /// claimed through when another wallet also holds that identity.
+    private func claimantLabel(_ claimant: FeePotClaimant, among potClaimants: [FeePotClaimant]) -> String {
+        let name = label(forIdentity: claimant.identityIdBase58)
+        let heldTwice = potClaimants.contains {
+            $0.identityIdBase58 == claimant.identityIdBase58 && $0.walletId != claimant.walletId
+        }
+        guard heldTwice else { return name }
+        return "\(name) (wallet \(claimant.walletId.prefix(4).map { String(format: "%02x", $0) }.joined()))"
+    }
+
+    /// Forget the claim shown, its error and the picked claimants: they
+    /// belong to the contract and connection they were made on.
+    private func clearClaim() {
+        claimResult = nil
+        claimError = nil
+        selectedClaimant = [:]
     }
 
     /// The alias of a local identity, or its base58 id.
@@ -206,7 +227,9 @@ struct ContractFeePotsSection: View {
     }
 
     /// Ask every loaded wallet on the current network which of its
-    /// identities may claim which pot, and keep the identities named.
+    /// identities may claim which pot, and keep the identities named. A
+    /// wallet whose answer fails is skipped and its error shown; the others'
+    /// answers stand. When every wallet fails nothing is offered.
     private func reloadEligibility() async {
         eligibilityError = nil
         guard appState.moderationConnection(in: scope) != nil,
@@ -223,9 +246,10 @@ struct ContractFeePotsSection: View {
         )
         var named: [FeePotClaimant] = []
         var team: ContractModeratorsPotTeam?
-        do {
-            for walletId in walletIds.sorted(by: { $0.lexicographicallyPrecedes($1) }) {
-                guard let wallet = walletManager.wallet(for: walletId) else { continue }
+        var failures: [String] = []
+        for walletId in walletIds.sorted(by: { $0.lexicographicallyPrecedes($1) }) {
+            guard let wallet = walletManager.wallet(for: walletId) else { continue }
+            do {
                 let eligibility = try await wallet.contractFeeClaimEligibility(contractId: contractIdBytes)
                 team = team ?? eligibility.moderatorsPotTeam
                 for pot in ContractFeePot.allCases {
@@ -233,13 +257,14 @@ struct ContractFeePotsSection: View {
                         FeePotClaimant(pot: pot, identityIdBase58: $0, walletId: walletId)
                     }
                 }
+            } catch {
+                failures.append(error.localizedDescription)
             }
-            claimants = named
-            moderatorsPotTeam = team
-        } catch {
-            claimants = []
-            moderatorsPotTeam = nil
-            eligibilityError = error.localizedDescription
+        }
+        claimants = named
+        moderatorsPotTeam = team
+        if !failures.isEmpty {
+            eligibilityError = Array(Set(failures)).sorted().joined(separator: "; ")
         }
     }
 
@@ -281,12 +306,15 @@ struct ContractFeePotsSection: View {
 }
 
 /// An identity some loaded wallet's Rust answer named for a pot, with that
-/// wallet, which signs the claim.
+/// wallet, which signs the claim. Two wallets can hold the same identity, so
+/// the wallet is part of the id.
 private struct FeePotClaimant: Identifiable, Hashable {
     let pot: ContractFeePot
     let identityIdBase58: String
     let walletId: Data
-    var id: String { "\(pot.rawValue).\(identityIdBase58)" }
+    var id: String {
+        "\(pot.rawValue).\(identityIdBase58).\(walletId.map { String(format: "%02x", $0) }.joined())"
+    }
 }
 
 private extension ContractFeePot {

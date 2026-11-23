@@ -78,9 +78,18 @@ impl IdentityWallet {
     /// every identity of this wallet the proof shows, the claimant's included, is kept as the
     /// proof's block confirms it. The signer is called with the wallet manager lock released.
     ///
+    /// The proof of a moderators pot claim by a member of an elected contract's seated team
+    /// shows the claimant's balance alone ([`ClaimedContractFees::balances`]): the contract
+    /// does not name that team, so the proof does not cover the others it paid. The other
+    /// team members this wallet holds keep the balances they had before the claim until
+    /// their balances are read again; this does not read them.
+    ///
     /// # Errors
     /// * [`PlatformWalletError::IdentityNotFound`] when this wallet holds no signing identity
     ///   `claimant_identity_id`;
+    /// * [`PlatformWalletError::Sdk`] when `signer` holds no CRITICAL authentication key
+    ///   without contract bounds of the claimant, which eligibility does not check (see
+    ///   [`contract_fee_claim_eligibility`]);
     /// * [`PlatformWalletError::Sdk`] for SDK and Platform failures. Platform's refusals keep
     ///   their consensus error: a claimant that is not a recipient of the pot
     ///   (`ContractFeeClaimNotAllowedError`), a pot already paid out in this epoch
@@ -143,7 +152,8 @@ impl IdentityWallet {
     /// Reads the contract and, when it declares elected moderation, the team of its seated
     /// charter (`Sdk::fetch_moderation_team`), then answers with
     /// [`contract_fee_claim_eligibility`]. A host offers a claim only to the identities named
-    /// here; Drive still checks the claim when it is sent.
+    /// here; Drive still checks the claim when it is sent. Like that function, it names
+    /// recipients, not keys.
     ///
     /// # Errors
     /// * [`PlatformWalletError::ContractNotFound`] when Platform holds no such contract;
@@ -198,6 +208,12 @@ fn declares_elected_moderation(contract: &DataContract) -> bool {
 /// member ([`ModerationTeam::contains`]); otherwise by the recipients the contract names
 /// ([`ContractFeePot::recipients`]), which is nobody for a contract that declares no
 /// moderation. This is the choice Drive's claim validation makes.
+///
+/// It is recipient-based, not key-based: a candidate is named for a pot when it is a recipient
+/// of the pot, whether or not the wallet's signer holds a key it can claim with. A claim needs
+/// a CRITICAL authentication key without contract bounds; a named identity without one fails
+/// at claim time ([`IdentityWallet::claim_contract_fees_with_signer`]), and a host shows that
+/// error where the claim was asked for.
 pub fn contract_fee_claim_eligibility(
     contract: &DataContract,
     seated_team: Option<&ModerationTeam>,
@@ -250,9 +266,12 @@ mod tests {
     use super::super::signing_key::tests::{lock_checking_signer, wallet_with_signing_keys_on};
     use super::*;
     use crate::wallet::persister::NoPlatformPersistence;
+    use dash_sdk::drive::query::{OrderClause, WhereClause, WhereOperator};
     use dash_sdk::error::StateTransitionBroadcastError;
+    use dash_sdk::platform::documents::page::MAX_DOCUMENTS_PAGE_SIZE;
     use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
-    use dash_sdk::query_types::IdentityContractNonceFetcher;
+    use dash_sdk::platform::DocumentQuery;
+    use dash_sdk::query_types::{Documents, IdentityContractNonceFetcher};
     use dpp::consensus::state::contract_moderation::ContractFeesAlreadyClaimedThisEpochError;
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
@@ -261,9 +280,17 @@ mod tests {
     use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
     use dpp::data_contract::config::DataContractConfig;
     use dpp::data_contract::document_type::action_fees::ContractFeePotLastClaim;
+    use dpp::document::{Document, DocumentV0, DocumentV0Getters};
     use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::moderation_charter::{
+        property_names, ElectedCharter, ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
+        ELECTED_CHARTER_DOCUMENT_TYPE_NAME, MODERATION_CHARTERS_CONTRACT_ID,
+        REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
+    };
+    use dpp::platform_value::Value;
     use dpp::state_transition::contract_fee_claim_transition::methods::ContractFeeClaimTransitionMethodsV0;
     use dpp::state_transition::contract_fee_claim_transition::ContractFeeClaimTransition;
+    use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
@@ -476,6 +503,158 @@ mod tests {
             BTreeSet::from([owner()])
         );
         assert_eq!(eligibility.moderators_pot_team, ModeratorsPotTeam::Declared);
+    }
+
+    fn charters_contract() -> DataContract {
+        load_system_data_contract(
+            SystemDataContract::ModerationCharters,
+            PlatformVersion::latest(),
+        )
+        .expect("the moderation charters contract loads")
+    }
+
+    /// An equality on `field` of `document_type_name`, as rs-sdk's charter readers build it.
+    fn charters_index_query(
+        charters: &DataContract,
+        document_type_name: &str,
+        field: &str,
+        value: Identifier,
+    ) -> DocumentQuery {
+        DocumentQuery::new(Arc::new(charters.clone()), document_type_name)
+            .expect("a charters document type")
+            .with_where(WhereClause {
+                field: field.to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(value.to_buffer()),
+            })
+    }
+
+    /// A mock SDK for the eligibility of the elected `contract`: it answers the contract read,
+    /// the moderation charters contract read and the seated charter read of the contract with
+    /// `seated` (an `electedCharter` document, or nothing), and for a seated charter its
+    /// additions and removals, of which there are none.
+    async fn elected_contract_sdk(
+        contract: &DataContract,
+        seated: Option<Document>,
+    ) -> dash_sdk::Sdk {
+        let charters = charters_contract();
+        let mut sdk = proposals_sdk();
+        sdk.mock()
+            .expect_fetch(contract.id(), Some(contract.clone()))
+            .await
+            .expect("expects the contract read")
+            .expect_fetch(MODERATION_CHARTERS_CONTRACT_ID, Some(charters.clone()))
+            .await
+            .expect("expects the charters contract read");
+        let seated_query = charters_index_query(
+            &charters,
+            ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+            property_names::TARGET_CONTRACT_ID,
+            contract.id(),
+        )
+        .with_limit(1);
+        let mut seated_documents = Documents::new();
+        if let Some(document) = &seated {
+            seated_documents.insert(document.id(), Some(document.clone()));
+        }
+        sdk.mock()
+            .expect_fetch_many::<Identifier, Document, _, Documents>(
+                seated_query,
+                Some(seated_documents),
+            )
+            .await
+            .expect("expects the seated charter read");
+        if let Some(document) = &seated {
+            for document_type_name in [
+                ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
+                REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
+            ] {
+                let changes_query = charters_index_query(
+                    &charters,
+                    document_type_name,
+                    property_names::ELECTED_CHARTER_ID,
+                    document.id(),
+                )
+                .with_limit(MAX_DOCUMENTS_PAGE_SIZE)
+                .with_order_by(OrderClause {
+                    field: property_names::MEMBER_ID.to_string(),
+                    ascending: true,
+                });
+                sdk.mock()
+                    .expect_fetch_many::<Identifier, Document, _, Documents>(
+                        changes_query,
+                        Some(Documents::new()),
+                    )
+                    .await
+                    .expect("expects the team changes read");
+            }
+        }
+        sdk
+    }
+
+    /// For an elected contract with a seated charter the wallet identity on the seated team
+    /// (an elected member here) is offered the moderators pot, read through
+    /// `fetch_moderation_team`; the interim team the contract declares is not consulted.
+    #[tokio::test]
+    async fn should_offer_the_moderators_pot_to_the_seated_team_member_the_wallet_holds() {
+        let contract = contract_with(Some(elected(InterimModerators::AppointedModerators(ids(
+            &[2],
+        )))));
+        let charter = ElectedCharter {
+            target_contract_id: contract.id(),
+            submitted_charter_id: id(0xC2),
+            members: vec![owner(), id(6)],
+        };
+        let seated: Document = DocumentV0 {
+            id: id(0xC1),
+            owner_id: id(5),
+            properties: charter.to_document_properties(),
+            ..Default::default()
+        }
+        .into();
+        let sdk = elected_contract_sdk(&contract, Some(seated)).await;
+        let wallet = wallet_with_signing_keys_on(sdk, Arc::new(NoPlatformPersistence)).await;
+
+        let eligibility = wallet
+            .identity()
+            .contract_fee_claim_eligibility(&contract.id())
+            .await
+            .expect("reads");
+        assert_eq!(
+            eligibility.moderators_pot_team,
+            ModeratorsPotTeam::ElectedSeated
+        );
+        assert_eq!(
+            eligibility.moderators_pot_claimants,
+            BTreeSet::from([owner()])
+        );
+        // The contract is `OWNER`'s, which the wallet does not hold
+        assert!(eligibility.owner_pot_claimants.is_empty());
+    }
+
+    /// For an elected contract with no seated charter the claimants are the interim team the
+    /// declaration names, among the wallet's identities.
+    #[tokio::test]
+    async fn should_offer_the_moderators_pot_to_the_interim_team_while_no_charter_is_seated() {
+        let contract = contract_with(Some(elected(InterimModerators::AppointedModerators(
+            BTreeSet::from([owner(), id(2)]),
+        ))));
+        let sdk = elected_contract_sdk(&contract, None).await;
+        let wallet = wallet_with_signing_keys_on(sdk, Arc::new(NoPlatformPersistence)).await;
+
+        let eligibility = wallet
+            .identity()
+            .contract_fee_claim_eligibility(&contract.id())
+            .await
+            .expect("reads");
+        assert_eq!(
+            eligibility.moderators_pot_team,
+            ModeratorsPotTeam::ElectedInterim
+        );
+        assert_eq!(
+            eligibility.moderators_pot_claimants,
+            BTreeSet::from([owner()])
+        );
     }
 
     /// A claimant the wallet does not hold is refused before anything is read or signed.

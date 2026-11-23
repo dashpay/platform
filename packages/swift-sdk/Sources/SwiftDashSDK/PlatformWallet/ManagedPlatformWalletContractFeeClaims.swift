@@ -24,6 +24,11 @@ extension ManagedPlatformWallet {
     /// a claim only to the identities this names; Platform still checks the
     /// claim when it is sent.
     ///
+    /// It names recipients, not keys: a named identity whose signer holds no
+    /// CRITICAL authentication key without contract bounds is still named,
+    /// and `claimContractFees` throws for it at claim time; show that error
+    /// where the claim was asked for.
+    ///
     /// Lifetime contract: the wallet is pinned with `withExtendedLifetime`
     /// across the synchronous FFI call, as its deinit destroys the handle the
     /// call uses.
@@ -79,6 +84,11 @@ extension ManagedPlatformWallet {
     /// balances; the wallet keeps the balance of each of its identities the
     /// proof shows, so they reach the persister like any proved balance.
     ///
+    /// The proof of a moderators pot claim by a member of an elected
+    /// contract's seated team shows the claimant's balance alone, so the
+    /// other team members this wallet holds keep the balances they had
+    /// before the claim until their balances are read again.
+    ///
     /// Lifetime contract: the wallet and the `signer` are pinned with
     /// `withExtendedLifetime` across the synchronous FFI call (Rust holds a
     /// `passUnretained` ctx pointer to the signer).
@@ -90,7 +100,8 @@ extension ManagedPlatformWallet {
     ///   - signer: Signs the claim.
     /// - Throws: `PlatformWalletError.invalidParameter` for an id that is not
     ///   32 bytes; `PlatformWalletError.identityNotFound` when this wallet
-    ///   holds no such signing identity; a refusal by Platform as
+    ///   holds no such signing identity; an SDK error when `signer` holds no
+    ///   CRITICAL authentication key of the claimant; a refusal by Platform as
     ///   `PlatformWalletError.consensusRejection`, with its consensus code: a
     ///   claimant that is not a recipient of the pot, a pot already paid out
     ///   this epoch (41111) or one too small to pay everyone a credit.

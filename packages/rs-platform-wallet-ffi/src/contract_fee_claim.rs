@@ -122,6 +122,14 @@ pub(crate) fn contract_fee_claim_eligibility_json(
     })
 }
 
+/// What a host should know after a claim panicked: the panic can strike after the claim was
+/// broadcast, so whether the pot was paid out is unknown until it is read again.
+const CLAIM_PANIC_GUIDANCE: &str = "The claim may or may not have been broadcast; read the fee \
+     pots again before claiming once more.";
+
+/// What a host should know after an eligibility read panicked: a read signs and sends nothing.
+const ELIGIBILITY_PANIC_GUIDANCE: &str = "Nothing was signed or broadcast; ask again.";
+
 /// Write `json` to `*out_json`, handing its ownership to the caller.
 ///
 /// # Safety
@@ -147,6 +155,12 @@ unsafe fn write_json(
 /// each of its identities the proof shows. `pot` is 0 for the owner pot and
 /// 1 for the moderators pot.
 ///
+/// The proof of a moderators pot claim by a member of an elected contract's
+/// seated team shows the claimant's balance alone (rs-sdk's
+/// `ClaimedContractFees::balances`), so the other team members this wallet
+/// holds keep the balances they had before the claim until they are read
+/// again.
+///
 /// On success writes to `*out_json` the claim as its proof shows it:
 /// `{"contractId", "pot": "owner" | "moderators", "potAfterClaim":
 /// {"credits", "lastClaimEpoch", "lastClaimTimeMs", "lastClaimantId"},
@@ -159,6 +173,11 @@ unsafe fn write_json(
 /// - `ErrorInvalidParameter` for a `pot` other than 0 or 1;
 /// - `ErrorIdentityNotFound` when the wallet holds no signing identity
 ///   `claimant_identity_id`;
+/// - an SDK error when the signer holds no CRITICAL authentication key
+///   without contract bounds of the claimant (eligibility names recipients,
+///   not keys, so this reaches the host only here, at claim time);
+/// - `ErrorTransactionBroadcastUnconfirmed` for a panic inside, where panics
+///   unwind: the claim may or may not have been broadcast;
 /// - a refusal by Platform carries its `consensus_code`: a claimant that is
 ///   not a recipient (`ContractFeeClaimNotAllowedError`), a pot already paid
 ///   out this epoch (`ContractFeesAlreadyClaimedThisEpochError`, 41111), a
@@ -179,9 +198,43 @@ pub unsafe extern "C" fn platform_wallet_contract_fee_claim(
     signer_handle: *mut SignerHandle,
     out_json: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
-    check_ptr!(signer_handle);
+    // `block_on_worker` re-raises a worker's panic here, inside the
+    // `extern "C"` frame, where it would abort the host.
+    catch_panic_to_code(
+        "platform_wallet_contract_fee_claim",
+        PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        CLAIM_PANIC_GUIDANCE,
+        || unsafe {
+            contract_fee_claim_inner(
+                wallet_handle,
+                claimant_identity_id,
+                contract_id,
+                pot,
+                signer_handle,
+                out_json,
+            )
+        },
+    )
+}
+
+/// The body of [`platform_wallet_contract_fee_claim`], run inside its panic
+/// guard.
+///
+/// # Safety
+/// As [`platform_wallet_contract_fee_claim`].
+unsafe fn contract_fee_claim_inner(
+    wallet_handle: Handle,
+    claimant_identity_id: *const u8,
+    contract_id: *const u8,
+    pot: u8,
+    signer_handle: *mut SignerHandle,
+    out_json: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    // The out slot is checked and nulled before anything else can return,
+    // so every error leaves it null.
     check_ptr!(out_json);
     *out_json = ptr::null_mut();
+    check_ptr!(signer_handle);
 
     let claimant_id = unwrap_result_or_return!(read_identifier(claimant_identity_id));
     let contract_id = unwrap_result_or_return!(read_identifier(contract_id));
@@ -216,6 +269,10 @@ pub unsafe extern "C" fn platform_wallet_contract_fee_claim(
 /// whether it was already paid out this epoch are Platform's to refuse at
 /// claim time.
 ///
+/// It names recipients, not keys: an identity named here whose signer holds
+/// no CRITICAL authentication key without contract bounds is still named,
+/// and its claim fails at claim time with that error, which the host shows.
+///
 /// On success writes to `*out_json` `{"contractId", "ownerPotClaimants":
 /// [base58], "moderatorsPotClaimants": [base58], "moderatorsPotTeam":
 /// "noModeration" | "declared" | "electedInterim" | "electedSeated"}`;
@@ -224,13 +281,34 @@ pub unsafe extern "C" fn platform_wallet_contract_fee_claim(
 ///
 /// # Errors
 /// - `NotFound` when Platform holds no contract `contract_id`;
-/// - a failed read carries the SDK's error.
+/// - a failed read carries the SDK's error;
+/// - `ErrorWalletOperation` for a panic inside, where panics unwind.
 ///
 /// # Safety
 /// - `contract_id` must point to 32 readable bytes.
 /// - `out_json` must be a valid, writable pointer.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_contract_fee_claim_eligibility(
+    wallet_handle: Handle,
+    contract_id: *const u8,
+    out_json: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    // `block_on_worker` re-raises a worker's panic here, inside the
+    // `extern "C"` frame, where it would abort the host.
+    catch_panic_to_code(
+        "platform_wallet_contract_fee_claim_eligibility",
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        ELIGIBILITY_PANIC_GUIDANCE,
+        || unsafe { contract_fee_claim_eligibility_inner(wallet_handle, contract_id, out_json) },
+    )
+}
+
+/// The body of [`platform_wallet_contract_fee_claim_eligibility`], run inside
+/// its panic guard.
+///
+/// # Safety
+/// As [`platform_wallet_contract_fee_claim_eligibility`].
+unsafe fn contract_fee_claim_eligibility_inner(
     wallet_handle: Handle,
     contract_id: *const u8,
     out_json: *mut *mut c_char,
@@ -428,6 +506,27 @@ mod tests {
             );
             assert!(out_json.is_null());
         }
+    }
+
+    /// The JSON out-param is nulled before the signer is checked, so a null
+    /// signer leaves it null as every other error does.
+    #[test]
+    fn should_null_the_json_out_param_before_refusing_a_null_signer() {
+        let id = [0u8; 32];
+        // A stale, non-null value the call must overwrite; never read.
+        let mut out_json: *mut c_char = ptr::NonNull::<c_char>::dangling().as_ptr();
+        let result = unsafe {
+            platform_wallet_contract_fee_claim(
+                0,
+                id.as_ptr(),
+                id.as_ptr(),
+                0,
+                ptr::null_mut(),
+                &mut out_json,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert!(out_json.is_null());
     }
 
     /// Platform refuses a pot already paid out this epoch; the host gets
