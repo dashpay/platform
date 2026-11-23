@@ -75,6 +75,9 @@ final class InvitationPersistenceTests: XCTestCase {
             // persist/load/free trio onto `PersistentPrivateContactRequestsPosition`
             // and `PersistentPrivateShieldedAddress`.
             | PlatformWalletPersistenceCapabilities.privateContactRequestScanState
+            // Identity recipients: the handler wires both recipient slots and
+            // lands the bytes on `PersistentAssetLock.identityRecipient`.
+            | PlatformWalletPersistenceCapabilities.assetLockIdentityRecipients
 
         XCTAssertEqual(
             capabilities.version,

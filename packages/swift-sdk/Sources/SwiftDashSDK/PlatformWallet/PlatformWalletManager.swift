@@ -126,6 +126,15 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// only honours the declaration when the extension carries the five
     /// scan-state callbacks.
     public static let privateContactRequestScanState: UInt64 = 1 << 15
+    /// The identity an unbound identity top-up was built or assigned to pay
+    /// survives store and load with its row, never changes once recorded, and
+    /// a row that cannot be read fails the load. Required before Rust builds
+    /// a top-up lock for an identity this wallet does not manage
+    /// (`ManagedPlatformWallet.topUpExternalIdentityWithFunding`) or assigns
+    /// a lock a recipient (`assignTopUpRecipient`). Mirrors
+    /// `PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS`; Rust only
+    /// honours the declaration when both recipient slots are wired.
+    public static let assetLockIdentityRecipients: UInt64 = 1 << 17
 
     public let version: UInt32
     public let bits: UInt64

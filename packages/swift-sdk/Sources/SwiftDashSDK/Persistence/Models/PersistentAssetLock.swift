@@ -34,6 +34,8 @@ import SwiftData
 ///   the destination identity. The identity row itself can be
 ///   resolved via `PersistentIdentity` joined on
 ///   `(walletId, identityIndex)`.
+///   An unbound top-up (`fundingTypeRaw == 2`) pays the identity in
+///   `identityRecipient` instead, which need not be one of this wallet's.
 ///
 /// - **Platform address** (`fundingTypeRaw == 4` —
 ///   AssetLockAddressTopUp):
@@ -219,6 +221,21 @@ public final class PersistentAssetLock {
     /// published, V4 schema (`schema-releases.json` registers 3.0.0 only).
     public var shieldedRecipientRaw43: Data?
 
+    /// 32-byte identity an unbound identity top-up (`fundingTypeRaw == 2`)
+    /// was built or assigned to pay, which may be an identity this wallet
+    /// does not manage. Written by Rust with the row before the lock is
+    /// dispatched (or when the user assigns one to a lock that records
+    /// none) and immutable afterwards: a resume pays this identity and
+    /// refuses another (`assetLockRecipientMismatch`). `nil` for other
+    /// funding types and for unbound locks that record no identity, such as
+    /// one rebuilt from the chain; a resume of those is refused
+    /// (`assetLockRecipientUnknown`) until one is assigned.
+    ///
+    /// Default `nil` on the column keeps SwiftData's lightweight migration
+    /// safe for rows that pre-date this field. Lands in the live, not yet
+    /// published, V5 schema.
+    public var identityRecipient: Data?
+
     /// Record timestamps.
     public var createdAt: Date
     public var updatedAt: Date
@@ -234,7 +251,8 @@ public final class PersistentAssetLock {
         statusRaw: Int,
         proofBytes: Data? = nil,
         operationId: Data? = nil,
-        shieldedRecipientRaw43: Data? = nil
+        shieldedRecipientRaw43: Data? = nil,
+        identityRecipient: Data? = nil
     ) {
         self.outPointHex = outPointHex
         self.walletId = walletId
@@ -247,6 +265,7 @@ public final class PersistentAssetLock {
         self.proofBytes = proofBytes
         self.operationId = operationId
         self.shieldedRecipientRaw43 = shieldedRecipientRaw43
+        self.identityRecipient = identityRecipient
         self.createdAt = Date()
         self.updatedAt = Date()
     }

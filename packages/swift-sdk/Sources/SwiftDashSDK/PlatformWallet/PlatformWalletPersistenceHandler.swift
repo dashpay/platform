@@ -22,6 +22,7 @@ private enum AssetLockPersistenceError: Error {
     case malformedRecord
     case duplicateOperationId
     case conflictingShieldedRecipient
+    case conflictingIdentityRecipient
     case missingRecord
     case requiresChangeset
 }
@@ -560,6 +561,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                             throw AssetLockPersistenceError.duplicateOperationId
                         }
                     }
+                    if let incoming = entry.identityRecipient {
+                        guard incoming.count == 32 else { throw AssetLockPersistenceError.malformedRecord }
+                        if let existing = existingRecord, let stored = existing.identityRecipient,
+                           stored != incoming, !Self.isTerminalAssetLockStatus(existing.statusRaw) {
+                            throw AssetLockPersistenceError.conflictingIdentityRecipient
+                        }
+                    }
                 } catch {
                     allPersisted = false
                     continue
@@ -590,6 +598,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     existing.operationId = entry.operationId ?? existing.operationId
                     existing.shieldedRecipientRaw43 =
                         entry.shieldedRecipientRaw43 ?? existing.shieldedRecipientRaw43
+                    // A recorded identity recipient is never replaced.
+                    existing.identityRecipient = existing.identityRecipient ?? entry.identityRecipient
                     existing.updatedAt = Date()
                 } else {
                     let record = PersistentAssetLock(
@@ -603,7 +613,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                         statusRaw: entry.statusRaw,
                         proofBytes: entry.proofBytes,
                         operationId: entry.operationId,
-                        shieldedRecipientRaw43: entry.shieldedRecipientRaw43
+                        shieldedRecipientRaw43: entry.shieldedRecipientRaw43,
+                        identityRecipient: entry.identityRecipient
                     )
                     backgroundContext.insert(record)
                 }
@@ -741,6 +752,57 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
             return record.shieldedRecipientRaw43
         }
+    }
+
+    /// Identity-recipient sidecar for the frozen legacy FFI row, saved with
+    /// the base upsert by endChangeset: the identity an unbound identity
+    /// top-up was built or assigned to pay. Storing the recorded identity
+    /// again succeeds (an assignment retries its store this way); another
+    /// identity is refused, except on a consumed row, where a stale value is
+    /// dropped and the recorded one kept, as the SQLite store does.
+    func persistAssetLockIdentityRecipient(walletId: Data, outPoint: Data, identityId: Data) throws {
+        try onQueue {
+            guard inChangeset else { throw AssetLockPersistenceError.requiresChangeset }
+            guard outPoint.count == 36, identityId.count == 32 else {
+                throw AssetLockPersistenceError.malformedRecord
+            }
+            let hex = PersistentAssetLock.encodeOutPoint(rawBytes: outPoint)
+            let descriptor = FetchDescriptor<PersistentAssetLock>(predicate: #Predicate {
+                $0.walletId == walletId && $0.outPointHex == hex
+            })
+            guard let record = try modelFetcher.fetch(descriptor, in: backgroundContext).first else {
+                throw AssetLockPersistenceError.missingRecord
+            }
+            if let previous = record.identityRecipient, previous != identityId {
+                if Self.isTerminalAssetLockStatus(record.statusRaw) { return }
+                throw AssetLockPersistenceError.conflictingIdentityRecipient
+            }
+            record.identityRecipient = identityId
+        }
+    }
+
+    /// A missing base row is a failed read, not evidence of a lock without a
+    /// recipient; a stored value of the wrong size is corruption, not absence.
+    func loadAssetLockIdentityRecipient(walletId: Data, outPoint: Data) throws -> Data? {
+        try onQueue {
+            guard outPoint.count == 36 else { throw AssetLockPersistenceError.malformedRecord }
+            let hex = PersistentAssetLock.encodeOutPoint(rawBytes: outPoint)
+            let descriptor = FetchDescriptor<PersistentAssetLock>(predicate: #Predicate {
+                $0.walletId == walletId && $0.outPointHex == hex
+            })
+            guard let record = try modelFetcher.fetch(descriptor, in: backgroundContext).first else {
+                throw AssetLockPersistenceError.missingRecord
+            }
+            if let recipient = record.identityRecipient, recipient.count != 32 {
+                throw AssetLockPersistenceError.malformedRecord
+            }
+            return record.identityRecipient
+        }
+    }
+
+    /// Consumed (4) and DrainCompleted (6) are the terminal lock statuses.
+    private static func isTerminalAssetLockStatus(_ statusRaw: Int) -> Bool {
+        statusRaw == 4 || statusRaw == 6
     }
 
     /// A missing base row is a failed read, not evidence of a legacy nil UUID.
@@ -1099,6 +1161,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             if let recipient = record.shieldedRecipientRaw43, recipient.count != 43 {
                 throw AssetLockPersistenceError.malformedRecord
             }
+            if let recipient = record.identityRecipient, recipient.count != 32 {
+                throw AssetLockPersistenceError.malformedRecord
+            }
             return AssetLockEntrySnapshot(
                 outPointHex: record.outPointHex,
                 transactionBytes: record.transactionBytes,
@@ -1109,7 +1174,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 statusRaw: record.statusRaw,
                 proofBytes: record.proofBytes,
                 operationId: record.operationId,
-                shieldedRecipientRaw43: record.shieldedRecipientRaw43
+                shieldedRecipientRaw43: record.shieldedRecipientRaw43,
+                identityRecipient: record.identityRecipient
             )
         }
     }
@@ -1132,6 +1198,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         /// Raw 43-byte Orchard recipient of a shielded funding; see
         /// `PersistentAssetLock.shieldedRecipientRaw43`.
         public var shieldedRecipientRaw43: Data? = nil
+        /// 32-byte identity an unbound identity top-up pays; see
+        /// `PersistentAssetLock.identityRecipient`.
+        public var identityRecipient: Data? = nil
     }
 
     /// Owned snapshot of an `InvitationEntryFFI` row. All-POD — the callback
@@ -3384,6 +3453,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 | PlatformWalletPersistenceCapabilities.assetLockOperationIds
                 | PlatformWalletPersistenceCapabilities.assetLockShieldedRecipients
                 | PlatformWalletPersistenceCapabilities.privateContactRequestScanState
+                | PlatformWalletPersistenceCapabilities.assetLockIdentityRecipients
         )
     }
 
@@ -3427,6 +3497,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             persistAssetLockShieldedRecipientCallback
         extensionCallbacks.on_load_asset_lock_shielded_recipient_fn =
             loadAssetLockShieldedRecipientCallback
+        extensionCallbacks.on_persist_asset_lock_identity_recipient_fn =
+            persistAssetLockIdentityRecipientCallback
+        extensionCallbacks.on_load_asset_lock_identity_recipient_fn =
+            loadAssetLockIdentityRecipientCallback
         extensionCallbacks.on_persist_private_contact_scan_state_fn = persistPrivateContactScanStateCallback
         extensionCallbacks.on_load_private_contact_scan_state_fn = loadPrivateContactScanStateCallback
         extensionCallbacks.on_load_private_contact_scan_state_free_fn =
@@ -12348,6 +12422,37 @@ private func loadAssetLockShieldedRecipientCallback(
         if let recipient = try handler.loadAssetLockShieldedRecipient(
             walletId: Data(bytes: walletId, count: 32), outPoint: Data(bytes: outPoint, count: 36)) {
             recipient.copyBytes(to: outRecipientRaw43, count: 43)
+            outFound.pointee = true
+        }
+        return 0
+    } catch { return -1 }
+}
+
+private func persistAssetLockIdentityRecipientCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    outPoint: UnsafePointer<UInt8>?, identityId: UnsafePointer<UInt8>?
+) -> Int32 {
+    guard let context, let walletId, let outPoint, let identityId else { return -1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        try handler.persistAssetLockIdentityRecipient(
+            walletId: Data(bytes: walletId, count: 32), outPoint: Data(bytes: outPoint, count: 36),
+            identityId: Data(bytes: identityId, count: 32))
+        return 0
+    } catch { return -1 }
+}
+
+private func loadAssetLockIdentityRecipientCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?, outPoint: UnsafePointer<UInt8>?,
+    outFound: UnsafeMutablePointer<Bool>?, outIdentityId: UnsafeMutablePointer<UInt8>?
+) -> Int32 {
+    guard let context, let walletId, let outPoint, let outFound, let outIdentityId else { return -1 }
+    outFound.pointee = false
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        if let identityId = try handler.loadAssetLockIdentityRecipient(
+            walletId: Data(bytes: walletId, count: 32), outPoint: Data(bytes: outPoint, count: 36)) {
+            identityId.copyBytes(to: outIdentityId, count: 32)
             outFound.pointee = true
         }
         return 0
