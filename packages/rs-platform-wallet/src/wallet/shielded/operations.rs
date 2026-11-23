@@ -1806,7 +1806,7 @@ pub async fn token_shielded_purchase_availability(
 /// [`PlatformWalletError::TokenConfigurationUnavailable`] when the configuration cannot be read.
 /// The fetched contract is registered with the SDK's context provider, as the identity-funded
 /// token paths do, so the result proof of a transition naming it can be verified.
-async fn ensure_token_has_shielded_pool(
+pub(super) async fn ensure_token_has_shielded_pool(
     sdk: &Arc<dash_sdk::Sdk>,
     data_contract_id: Identifier,
     token_contract_position: TokenContractPosition,
@@ -1871,9 +1871,8 @@ fn token_pool_paid_signing_version(
 ///
 /// The bought tokens are minted as one note to the account's own default
 /// Orchard address in the token's shielded pool, encrypted to the account's
-/// keys. The wallet syncs only the credit pool, so that note is neither
-/// tracked nor shown until a token pool note sync exists; spending it (a token
-/// shielded transfer or unshield) needs that sync too.
+/// keys. The scan of the token's pool finds it once the wallet watches that
+/// pool ([`super::token_pool`]), which the manager's purchaser arranges.
 ///
 /// Before any note is reserved it refuses: a token count basic structure
 /// refuses; a network or SDK that does not serve type 28 (protocol version

@@ -24,8 +24,9 @@ import SwiftDashSDK
 /// the identity's wallet's shielded notes (account 0) through
 /// `walletManager.shieldedTokenPurchaseFromPool` (type 28): Rust selects the
 /// notes, proves, broadcasts and mints the tokens as a note to the wallet's
-/// own address in the token's shielded pool. The wallet does not sync token
-/// pool notes yet, so those tokens are not shown anywhere in the app. The
+/// own address in the token's shielded pool. Rust watches that pool for the
+/// wallet, so a later shielded sync finds the tokens and Wallet > Shielded
+/// Tokens (`ShieldedTokenPoolsView`) shows them. The
 /// shielded choice is offered only when Rust reports the token can be bought
 /// that way (`shieldedTokenPurchaseAvailability`: the token has a shielded
 /// pool); identity funding stays available either way. A shielded purchase
@@ -274,7 +275,7 @@ struct TokenPurchaseActionView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            Text("The purchased tokens go to this wallet's shielded token pool. The app does not show shielded token balances yet, so they will not appear here or in the token list.")
+            Text("The purchased tokens go to this wallet's shielded token pool. They appear in Wallet > Shielded Tokens after a shielded sync, not in the token list.")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .accessibilityIdentifier("tokenPurchase.shieldedTokensNote")
@@ -548,7 +549,7 @@ struct TokenPurchaseActionView: View {
                 await MainActor.run {
                     guard self.submitGeneration == gen else { return }
                     self.isSubmitting = false
-                    self.shieldedOutcome = .init(message: "Purchase submitted. Platform accepted it; a shielded sync confirms it once it lands, and it shows as pending in Shielded Activity until then. Do not retry. The tokens go to this wallet's shielded token pool, which the app does not show yet.")
+                    self.shieldedOutcome = .init(message: "Purchase submitted. Platform accepted it; a shielded sync confirms it once it lands, and it shows as pending in Shielded Activity until then. Do not retry. The tokens go to this wallet's shielded token pool; Wallet > Shielded Tokens shows them after a shielded sync.")
                 }
             } catch let unconfirmed as PlatformWalletError
                 where SendViewModel.mayHaveGoneThrough(unconfirmed) {

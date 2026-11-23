@@ -1039,7 +1039,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_wallet(
 
 /// Recovery errors must remain typed when opening, binding or syncing durable state,
 /// just as they do when submitting or explicitly abandoning a payment.
-fn map_shielded_error(error: PlatformWalletError, operation: &str) -> PlatformWalletFFIResult {
+pub(crate) fn map_shielded_error(
+    error: PlatformWalletError,
+    operation: &str,
+) -> PlatformWalletFFIResult {
     match error {
         error @ PlatformWalletError::ShieldedRecoveryCorrupted { .. }
         | error @ PlatformWalletError::ShieldedRecoveryKeysRequired { .. } => error.into(),

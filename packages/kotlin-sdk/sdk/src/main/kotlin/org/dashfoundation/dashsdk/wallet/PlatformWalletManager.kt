@@ -24,6 +24,7 @@ import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.DpnsMarketplaceNative
+import org.dashfoundation.dashsdk.ffi.AddressPrivateKeyNative
 import org.dashfoundation.dashsdk.ffi.FundingNative
 import org.dashfoundation.dashsdk.ffi.IdentityRemovalNative
 import org.dashfoundation.dashsdk.ffi.ShieldedTokenPurchaseNative
@@ -1584,6 +1585,49 @@ class PlatformWalletManager(
         // exist, independent of whether the sweep service was started.
         if (restored.isNotEmpty()) startDashPayStatusPolling()
         restored
+    }
+
+    /**
+     * Reveal the private key of [address], one of the tracked core addresses
+     * of the wallet [walletId], as hex and WIF. Port of Swift's
+     * `ManagedPlatformWallet.coreAddressPrivateKey(address:)`
+     * (`ManagedPlatformWallet.swift`), bridging
+     * `platform_wallet_address_private_key`.
+     *
+     * Rust finds the address in the wallet's account pools, reads the mnemonic
+     * through this manager's resolver and derives the key; Kotlin only decodes
+     * the result. Which addresses have a key to reveal is Rust's answer: an
+     * empty or malformed address, one the wallet does not track, or a DashPay
+     * contact's external address whose key the wallet never held, throws the
+     * [org.dashfoundation.dashsdk.errors.DashSdkError] Rust reports.
+     *
+     * Swift builds a resolver per call; here the call borrows this manager's
+     * resolver under this manager's teardown gate, so the wallet and the
+     * resolver always come from the same live manager and no caller-supplied
+     * handle reaches native code.
+     *
+     * Gate this behind device authentication before calling it. The caller
+     * owns the result and should [CoreAddressPrivateKey.clear] it when the key
+     * leaves the screen. If the calling coroutine is cancelled after the native
+     * call returns, the key is cleared here instead of being handed back.
+     *
+     * @throws org.dashfoundation.dashsdk.errors.DashSdkError.NotFound when no
+     *   wallet with [walletId] is loaded in this manager.
+     */
+    suspend fun coreAddressPrivateKey(
+        walletId: ByteArray,
+        address: String,
+    ): CoreAddressPrivateKey = teardownGate.opWithCleanupOnCancellation(cleanup = { it.clear() }) {
+        val wallet = wallet(forWalletId = walletId)
+            ?: throw DashSdkError.NotFound("wallet ${walletId.toHex()} is not loaded")
+        val blob = mapNativeErrors {
+            AddressPrivateKeyNative.revealCoreAddressPrivateKey(
+                wallet.handle,
+                mnemonicResolverHandle,
+                address,
+            )
+        }
+        CoreAddressPrivateKey.decodeAndWipe(blob)
     }
 
     /** The managed wallet with the given 32-byte id, or null if not loaded. */

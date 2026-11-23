@@ -344,11 +344,11 @@ struct ShieldedActivityDetailView: View {
     private var tokenPurchaseNote: String {
         switch entry.status {
         case 1:
-            return "The tokens were minted to this wallet's shielded token pool, which the app does not show yet."
+            return "The tokens were minted to this wallet's shielded token pool. Wallet > Shielded Tokens shows them after a shielded sync."
         case 2:
             return "The purchase did not go through; no tokens were minted."
         default:
-            return "Not confirmed yet: a shielded sync confirms the purchase once it lands. The app does not show the shielded token pool yet."
+            return "Not confirmed yet: a shielded sync confirms the purchase once it lands. Wallet > Shielded Tokens shows the bought tokens after that sync."
         }
     }
 
@@ -407,7 +407,7 @@ struct ShieldedActivityDetailView: View {
                 } else if entry.kindTag == 10, entry.counterparty.count == 32 {
                     // TokenPurchase: the counterparty is the token's id, and
                     // the tokens are destined for the wallet's shielded token
-                    // pool, which the app does not show yet. The mint is
+                    // pool, which Wallet > Shielded Tokens shows. The mint is
                     // stated as done only once the row is Confirmed.
                     Section("Token") {
                         let tokenIdHex = entry.counterparty.map { String(format: "%02x", $0) }.joined()
