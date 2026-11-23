@@ -30,6 +30,52 @@ final class RemovalsPreviewFormatterTests: XCTestCase {
         XCTAssertNil(result["preview"])
     }
 
+    /// A whole page formatted again with its own size as the limit.
+    private func formatAtExactSize(cursor: String?) throws -> (text: String, whole: String, page: ContractDocumentRemovalsPage) {
+        let page = try page(records: 3, cursor: cursor)
+        let whole = try RemovalsPreviewFormatter.format(inputs: ["contractId": "c"], page: page)
+        let text = try RemovalsPreviewFormatter.format(
+            inputs: ["contractId": "c"], page: page, maxBytes: whole.utf8.count)
+        return (text, whole, page)
+    }
+
+    func testShouldShowAPageThatFitsExactlyWholeWithItsCursor() throws {
+        let (text, whole, _) = try formatAtExactSize(cursor: "doc2")
+        let result = try XCTUnwrap(try parse(text)["result"] as? [Swift.String: Any])
+
+        XCTAssertEqual(text, whole)
+        XCTAssertEqual((result["removals"] as? [Any])?.count, 3)
+        XCTAssertEqual(result["nextStartAfter"] as? Swift.String, "doc2")
+        XCTAssertNil(result["preview"])
+    }
+
+    func testShouldShowAPageWithoutACursorThatFitsExactlyWhole() throws {
+        let (text, whole, _) = try formatAtExactSize(cursor: nil)
+        let result = try XCTUnwrap(try parse(text)["result"] as? [Swift.String: Any])
+
+        XCTAssertEqual(text, whole)
+        XCTAssertEqual((result["removals"] as? [Any])?.count, 3)
+        XCTAssertNil(result["nextStartAfter"])
+        XCTAssertNil(result["preview"])
+    }
+
+    func testShouldCutAPageOneByteLargerThanTheLimit() throws {
+        for cursor in ["doc2", nil] {
+            let (_, whole, page) = try formatAtExactSize(cursor: cursor)
+            let limit = whole.utf8.count - 1
+            let text = try RemovalsPreviewFormatter.format(
+                inputs: ["contractId": "c"], page: page, maxBytes: limit)
+            let result = try XCTUnwrap(try parse(text)["result"] as? [Swift.String: Any])
+            let shown = try XCTUnwrap(result["removals"] as? [Any]).count
+
+            XCTAssertLessThanOrEqual(text.utf8.count, limit, "\(String(describing: cursor))")
+            XCTAssertLessThan(shown, 3)
+            XCTAssertNil(result["nextStartAfter"])
+            let note = try XCTUnwrap(result["preview"] as? Swift.String)
+            XCTAssertTrue(note.contains("\(shown) of 3 records shown"))
+        }
+    }
+
     func testShouldStopAtTheBudgetAndDropTheFullPagesCursor() throws {
         let text = try RemovalsPreviewFormatter.format(
             inputs: ["contractId": "c"],

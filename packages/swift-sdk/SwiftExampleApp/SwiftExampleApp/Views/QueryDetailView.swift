@@ -1544,11 +1544,14 @@ private struct ModerationCatalogResult<Answer: Encodable>: Encodable {
 /// It encodes record by record and stops once ``maxBytes`` would be passed, so
 /// a large page is never formatted whole just to be cut. The budget counts the
 /// text as emitted: each record with its indentation and separator, and the
-/// text around the records (the inputs and the cursor or the note), which is
-/// always shown even when it alone passes the limit. When records are left
-/// out, `nextStartAfter` is dropped (it is the full page's cursor: paging from
-/// it would skip the hidden records) and `preview` says so. Not isolated to the
-/// main actor: the catalog runs it in a detached task.
+/// text around the records, which is always shown even when it alone passes
+/// the limit. Records are counted first against a whole page's text (the
+/// inputs and the cursor, when there is one), so a page that fits exactly is
+/// shown whole with its cursor. When records are left out, `nextStartAfter` is
+/// dropped (it is the full page's cursor: paging from it would skip the hidden
+/// records) and `preview` says so; records already counted are dropped from
+/// the end until the text with the note fits. Not isolated
+/// to the main actor: the catalog runs it in a detached task.
 enum RemovalsPreviewFormatter {
     /// The most text a preview shows. It protects rendering only (one
     /// selectable `Text` lays out every character); the page read is whole,
@@ -1573,28 +1576,36 @@ enum RemovalsPreviewFormatter {
             return "\"preview\" : " + (try encode(note))
         }
 
-        // The text around the records, with the longer of the cursor and the
-        // note (counted at `total`, its most digits) and the brackets of a
-        // non-empty list, so it is never less than what is emitted.
-        let longerHeader = [cursorLine, try noteLine(shown: total)]
-            .compactMap { $0 }
-            .max { $0.utf8.count < $1.utf8.count }
-        var used = assemble(inputsText: inputsText, header: longerHeader, records: [""]).utf8.count
+        // The text around the records of a whole page: the inputs, the cursor
+        // when there is one, and the brackets of a non-empty list.
+        let wholeFrame = assemble(inputsText: inputsText, header: cursorLine, records: [""]).utf8.count
 
         var records: [String] = []
+        // Each record's bytes with the separator before it.
+        var costs: [Int] = []
+        var recordBytes = 0
         for removal in page.removals {
             let record = indent(try encode(removal), by: recordIndent)
             let cost = record.utf8.count + (records.isEmpty ? 0 : ",\n".utf8.count)
-            if used + cost > maxBytes {
+            if wholeFrame + recordBytes + cost > maxBytes {
                 break
             }
-            used += cost
+            recordBytes += cost
             records.append(record)
+            costs.append(cost)
         }
-        let truncated = records.count < total
+        if records.count == total {
+            return assemble(inputsText: inputsText, header: cursorLine, records: records)
+        }
 
-        let header = truncated ? try noteLine(shown: records.count) : cursorLine
-        return assemble(inputsText: inputsText, header: header, records: records)
+        // Cut: the note replaces the cursor. Its frame counts the note at
+        // `total`, its most digits, so it is never less than what is emitted.
+        let noteFrame = assemble(inputsText: inputsText, header: try noteLine(shown: total), records: [""]).utf8.count
+        while noteFrame + recordBytes > maxBytes, let cost = costs.popLast() {
+            records.removeLast()
+            recordBytes -= cost
+        }
+        return assemble(inputsText: inputsText, header: try noteLine(shown: records.count), records: records)
     }
 
     /// The preview text: `inputsText` under `inputs`, and under `result` the
