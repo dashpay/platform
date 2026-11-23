@@ -59,6 +59,7 @@ pub mod seed_pool;
 pub mod store;
 pub mod sync;
 pub mod tips;
+pub mod token_pool;
 pub mod wallet_drain_recovery;
 pub use tips::{
     is_shielded_identity_account, shielded_identity_account_index, SHIELDED_IDENTITY_ACCOUNT_BASE,
@@ -90,6 +91,7 @@ pub use store::{
     ShieldedOutgoingNote, ShieldedStore, SubwalletId,
 };
 pub use sync::{ShieldedSyncSummary, SyncNotesResult};
+pub use token_pool::{ShieldedTokenPoolBalance, ShieldedTokenPoolWatch};
 
 /// How long after a no-op sync the background loop should skip
 /// further passes. Tuned against the wallet's typical 60s sync
