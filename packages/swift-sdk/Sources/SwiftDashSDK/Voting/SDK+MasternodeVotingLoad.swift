@@ -101,6 +101,38 @@ extension SDK {
     }
 }
 
+extension MasternodeVotingKeyCheck {
+    /// The message a voting key carries once another key was proved valid
+    /// for its masternode.
+    public static let checkAgainAfterAnotherKeyMessage =
+        "Another voting key was loaded for this masternode, so this one is checked again before it votes."
+
+    /// What the host records for another voting key it stores for the same
+    /// masternode, once this check of the key with `votingAddress` was made
+    /// on a load (`dash_sdk_masternode_sibling_voting_key_record`, rs-sdk's
+    /// `sibling_voting_key_record`, which holds the rule).
+    ///
+    /// - Parameters:
+    ///   - votingAddress: The voting address of the key just loaded.
+    ///   - sibling: The record the host holds for the other key.
+    /// - Returns: The record to persist for the other key, `nil` to leave it
+    ///   unchanged.
+    public func siblingRecord(
+        votingAddress: MasternodeVotingKeyAddress,
+        sibling: MasternodeRecordedVotingKey?
+    ) -> MasternodeRecordedVotingKey? {
+        let record = dash_sdk_masternode_sibling_voting_key_record(
+            MasternodeVotingKeyCheckFFI.verdict(of: self),
+            MasternodeVotingKeyCheckFFI.address(votingAddress),
+            MasternodeVotingKeyCheckFFI.recorded(sibling)
+        )
+        return MasternodeVotingKeyCheckFFI.recordedKey(
+            record,
+            preferring: .undetermined(message: Self.checkAgainAfterAnotherKeyMessage)
+        )
+    }
+}
+
 /// Marshalling of `DashSDKMasternodeVotingLoad`.
 enum MasternodeVotingLoadFFI {
     /// The decision in `load`, with its two C strings freed on every path.

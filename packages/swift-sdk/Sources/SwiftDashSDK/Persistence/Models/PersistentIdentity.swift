@@ -75,9 +75,16 @@ public final class PersistentIdentity {
     /// is loaded for voting (``SDK/loadMasternodeForVoting(proTxHash:votingAddress:)``).
     /// Kept apart from ``identityId``: a masternode without an owner identity
     /// (a shared masternode) is stored under its voter identity, whose id is
-    /// not the pro_tx_hash. `nil` for a row stored before it was recorded;
-    /// read it through ``votingProTxHash``.
+    /// not the pro_tx_hash. `nil` when no load recorded it: an identity that
+    /// is not a masternode's, or a masternode row stored before it was
+    /// recorded, which is not known to be the masternode's owner identity
+    /// until Rust's rule says so again.
     public var masternodeProTxHash: Data? = nil
+    /// Which of the masternode's identities this row is, as Rust returned it
+    /// when the row was loaded for voting
+    /// (``MasternodeVotingLoadedIdentity/Role``): `"owner"` or `"voter"`.
+    /// `nil` when no load recorded it. Read it through ``masternodeRole``.
+    public var masternodeRoleRaw: String? = nil
 
     // MARK: - Public Keys
     @Relationship(deleteRule: .cascade) public var publicKeys: [PersistentPublicKey]
@@ -375,13 +382,19 @@ public final class PersistentIdentity {
         }
     }
 
-    /// The pro_tx_hash, in wire order, that votes cast with this row's
-    /// voting key name: ``masternodeProTxHash``. A row stored before that was
-    /// recorded could only have been loaded at its owner identity, whose id
-    /// is the pro_tx_hash in the order Platform names it, the reverse of the
-    /// wire order; such a row gets that reverse until it is loaded again.
-    public var votingProTxHash: Data {
-        masternodeProTxHash ?? Data(identityId.reversed())
+    /// Which of the masternode's identities this row is, as recorded when it
+    /// was loaded for voting; `nil` when none was recorded (or the stored
+    /// value is not one this build knows).
+    public var masternodeRole: MasternodeVotingLoadedIdentity.Role? {
+        get { masternodeRoleRaw.flatMap(MasternodeVotingLoadedIdentity.Role.init(rawValue:)) }
+        set { masternodeRoleRaw = newValue?.rawValue }
+    }
+
+    /// Whether this row is a masternode's voter identity, which holds only a
+    /// voting key: credits or tokens sent to it could not be spent, so it is
+    /// never offered as a recipient.
+    public var isVotingOnlyIdentity: Bool {
+        masternodeRole == .voter
     }
 
     /// The recorded check with the address of the key it was made of, as the

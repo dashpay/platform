@@ -10,6 +10,7 @@
 use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;
 use crate::voting::masternode_vote::{pro_tx_hash_from_wire_order, voting_key_problem_message};
+use crate::voting::voting_key_check::DashSDKRecordedVotingKey;
 use crate::voting::voting_key_check::{
     verdict_and_message, DashSDKVotingAddress, DashSDKVotingKeyVerdict,
 };
@@ -18,11 +19,12 @@ use dash_sdk::dpp::dashcore::ProTxHash;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::platform::transition::masternode_vote_keys::{
-    load_masternode_for_voting, MasternodeVotingIdentity, MasternodeVotingLoad,
-    MasternodeVotingLoadRefusal,
+    load_masternode_for_voting, sibling_voting_key_record, MasternodeVotingIdentity,
+    MasternodeVotingLoad, MasternodeVotingLoadRefusal,
 };
 use std::ffi::CString;
 use std::os::raw::c_char;
+use std::panic::AssertUnwindSafe;
 
 /// Which identity `dash_sdk_masternode_load_for_voting` loads for the masternode.
 ///
@@ -106,15 +108,24 @@ pub unsafe extern "C" fn dash_sdk_masternode_load_for_voting(
     voting_address: DashSDKVotingAddress,
     out_load: *mut DashSDKMasternodeVotingLoad,
 ) -> DashSDKResult {
-    match load_for_voting_inner(
-        sdk_handle,
-        voter_pro_tx_hash,
-        has_voting_address,
-        voting_address,
-        out_load,
-    ) {
-        Ok(()) => DashSDKResult::success(std::ptr::null_mut()),
-        Err(error) => DashSDKResult::error(error.into()),
+    // A panic on the worker resumes on this thread; it is caught here so it never unwinds
+    // across the C boundary (an unwinding build, such as the JNI's), and comes back as an
+    // error with `out_load` unwritten, since the write is the last step.
+    let loaded = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        load_for_voting_inner(
+            sdk_handle,
+            voter_pro_tx_hash,
+            has_voting_address,
+            voting_address,
+            out_load,
+        )
+    }));
+    match loaded {
+        Ok(Ok(())) => DashSDKResult::success(std::ptr::null_mut()),
+        Ok(Err(error)) => DashSDKResult::error(error.into()),
+        Err(_) => DashSDKResult::error(
+            FFIError::InternalError("The masternode load panicked".to_string()).into(),
+        ),
     }
 }
 
@@ -160,26 +171,34 @@ struct LoadDecision {
 impl LoadDecision {
     fn of(load: MasternodeVotingLoad) -> Result<Self, FFIError> {
         match load {
-            MasternodeVotingLoad::Load {
-                identity,
-                voting_key,
-            } => {
-                let kind = match identity {
-                    MasternodeVotingIdentity::Owner(_) => {
-                        DashSDKMasternodeVotingLoadKind::OwnerIdentity
+            MasternodeVotingLoad::Load(loaded) => {
+                let (kind, identity, verdict, message) = match loaded {
+                    MasternodeVotingIdentity::Owner {
+                        identity,
+                        voting_key,
+                    } => {
+                        let (verdict, message) = match voting_key.map(verdict_and_message) {
+                            Some((verdict, message)) => (Some(verdict), message),
+                            None => (None, None),
+                        };
+                        (
+                            DashSDKMasternodeVotingLoadKind::OwnerIdentity,
+                            identity,
+                            verdict,
+                            message,
+                        )
                     }
-                    MasternodeVotingIdentity::Voter(_) => {
-                        DashSDKMasternodeVotingLoadKind::VoterIdentity
-                    }
+                    // A voter identity is loaded only with its voting key proved valid.
+                    MasternodeVotingIdentity::Voter(identity) => (
+                        DashSDKMasternodeVotingLoadKind::VoterIdentity,
+                        identity,
+                        Some(DashSDKVotingKeyVerdict::Valid),
+                        None,
+                    ),
                 };
-                let identity = identity.identity();
-                let json = serde_json::to_string(identity).map_err(|e| {
+                let json = serde_json::to_string(&identity).map_err(|e| {
                     FFIError::InternalError(format!("Failed to serialize identity: {}", e))
                 })?;
-                let (verdict, message) = match voting_key.map(verdict_and_message) {
-                    Some((verdict, message)) => (Some(verdict), message),
-                    None => (None, None),
-                };
                 Ok(LoadDecision {
                     kind,
                     identity_id: identity.id().to_buffer(),
@@ -218,6 +237,29 @@ impl LoadDecision {
     }
 }
 
+/// What a host records for a voting key it stores for the same masternode as a key it just
+/// loaded and checked: rs-sdk's `sibling_voting_key_record`, which holds the rule (a valid
+/// record of a different key is recorded as undetermined, so it is checked again before it
+/// votes; nothing else changes).
+///
+/// # Parameters
+/// * `loaded_verdict` - The verdict of the key just loaded.
+/// * `loaded_address` - The voting address of the key just loaded.
+/// * `sibling` - The record the host holds for the other key, with its address; `{0}` for none.
+///
+/// Every argument is passed by value and must be fully initialized.
+///
+/// # Returns
+/// The record to persist for the other key; `check` `None` leaves its record unchanged.
+#[no_mangle]
+pub extern "C" fn dash_sdk_masternode_sibling_voting_key_record(
+    loaded_verdict: DashSDKVotingKeyVerdict,
+    loaded_address: DashSDKVotingAddress,
+    sibling: DashSDKRecordedVotingKey,
+) -> DashSDKRecordedVotingKey {
+    sibling_voting_key_record(loaded_verdict.into(), &loaded_address.bytes, sibling.into()).into()
+}
+
 fn c_string(text: String, named: &str) -> Result<CString, FFIError> {
     CString::new(text)
         .map_err(|_| FFIError::InternalError(format!("The masternode load {named} has a NUL byte")))
@@ -241,6 +283,11 @@ fn refusal_message(refusal: MasternodeVotingLoadRefusal) -> String {
             Identifier::new(pro_tx_hash.to_byte_array()),
             voting_key_problem_message(problem)
         ),
+        MasternodeVotingLoadRefusal::VoterIdentityGivenAsProTxHash { identity } => format!(
+            "Identity {} is a masternode's voter identity, not a masternode. Enter the \
+             masternode's ProTxHash as Core displays it.",
+            identity
+        ),
     }
 }
 
@@ -249,6 +296,7 @@ mod tests {
     use super::*;
     use crate::sdk::SDKWrapper;
     use crate::test_utils::test_utils::{create_mock_sdk_handle, destroy_mock_sdk_handle};
+    use crate::voting::voting_key_check::DashSDKRecordedVotingKeyCheck;
     use crate::{dash_sdk_error_free, DashSDKErrorCode};
     use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dash_sdk::dpp::identity::v0::IdentityV0;
@@ -283,18 +331,19 @@ mod tests {
         let address = DashSDKVotingAddress {
             bytes: VOTING_ADDRESS,
         };
-        let mut out = MaybeUninit::<DashSDKMasternodeVotingLoad>::uninit();
+        let mut out = sentinel();
+        let out_ptr: *mut DashSDKMasternodeVotingLoad = &mut out;
         for (sdk_handle, pro_tx_hash, out_load, named) in [
             (
                 std::ptr::null(),
                 pro_tx_hash.as_ptr(),
-                out.as_mut_ptr(),
+                out_ptr,
                 "sdk_handle",
             ),
             (
                 handle as *const SDKHandle,
                 std::ptr::null(),
-                out.as_mut_ptr(),
+                out_ptr,
                 "voter_pro_tx_hash",
             ),
             (
@@ -323,7 +372,32 @@ mod tests {
                 assert!(message.contains(named), "{message} names {named}");
             }
         }
+        assert_untouched(&out);
         destroy_mock_sdk_handle(handle);
+    }
+
+    /// An output no call writes, to show an error leaves the caller's value alone.
+    fn sentinel() -> DashSDKMasternodeVotingLoad {
+        DashSDKMasternodeVotingLoad {
+            kind: DashSDKMasternodeVotingLoadKind::VoterIdentity,
+            identity_id: [0xee; 32],
+            identity_json: std::ptr::null_mut(),
+            has_voting_key_verdict: true,
+            voting_key_verdict: DashSDKVotingKeyVerdict::Undetermined,
+            message: std::ptr::null_mut(),
+        }
+    }
+
+    fn assert_untouched(out: &DashSDKMasternodeVotingLoad) {
+        assert_eq!(out.kind, DashSDKMasternodeVotingLoadKind::VoterIdentity);
+        assert_eq!(out.identity_id, [0xee; 32]);
+        assert!(out.identity_json.is_null());
+        assert!(out.has_voting_key_verdict);
+        assert_eq!(
+            out.voting_key_verdict,
+            DashSDKVotingKeyVerdict::Undetermined
+        );
+        assert!(out.message.is_null());
     }
 
     /// The mock SDK holds no answer for the owner identity, so nothing is proved: an error,
@@ -332,30 +406,28 @@ mod tests {
     fn should_report_a_failed_owner_fetch_as_an_error() {
         let handle = create_mock_sdk_handle();
         let pro_tx_hash = [1u8; 32];
-        let mut out = MaybeUninit::<DashSDKMasternodeVotingLoad>::uninit();
+        let mut out = sentinel();
         unsafe {
             let result = dash_sdk_masternode_load_for_voting(
                 handle,
                 pro_tx_hash.as_ptr(),
                 false,
                 DashSDKVotingAddress { bytes: [0u8; 20] },
-                out.as_mut_ptr(),
+                &mut out,
             );
             assert!(!result.error.is_null(), "a failed fetch is an error");
             dash_sdk_error_free(result.error);
         }
+        assert_untouched(&out);
         destroy_mock_sdk_handle(handle);
     }
 
     #[test]
     fn should_marshal_a_voter_identity_load_with_a_valid_verdict() {
         let voter_id = voter_identity_id(pro_tx_hash(), &VOTING_ADDRESS);
-        let decision = LoadDecision::of(MasternodeVotingLoad::Load {
-            identity: MasternodeVotingIdentity::Voter(identity(voter_id)),
-            voting_key: Some(VotingKeyCheck::Valid {
-                voter_identity: voter_id,
-            }),
-        })
+        let decision = LoadDecision::of(MasternodeVotingLoad::Load(
+            MasternodeVotingIdentity::Voter(identity(voter_id)),
+        ))
         .expect("marshalled");
         assert_eq!(
             decision.kind,
@@ -381,10 +453,12 @@ mod tests {
         let problem = VotingKeyProblem::NoUsableVotingKey {
             voter_identity: voter_identity_id(pro_tx_hash(), &VOTING_ADDRESS),
         };
-        let decision = LoadDecision::of(MasternodeVotingLoad::Load {
-            identity: MasternodeVotingIdentity::Owner(identity(owner_id)),
-            voting_key: Some(VotingKeyCheck::Invalid(problem.clone())),
-        })
+        let decision = LoadDecision::of(MasternodeVotingLoad::Load(
+            MasternodeVotingIdentity::Owner {
+                identity: identity(owner_id),
+                voting_key: Some(VotingKeyCheck::Invalid(problem.clone())),
+            },
+        ))
         .expect("marshalled");
         assert_eq!(
             decision.kind,
@@ -400,12 +474,14 @@ mod tests {
             Some(CString::new(voting_key_problem_message(problem)).expect("no NUL"))
         );
 
-        let decision = LoadDecision::of(MasternodeVotingLoad::Load {
-            identity: MasternodeVotingIdentity::Owner(identity(owner_id)),
-            voting_key: Some(VotingKeyCheck::Undetermined(Box::new(Error::Generic(
-                "timeout".to_string(),
-            )))),
-        })
+        let decision = LoadDecision::of(MasternodeVotingLoad::Load(
+            MasternodeVotingIdentity::Owner {
+                identity: identity(owner_id),
+                voting_key: Some(VotingKeyCheck::Undetermined(Box::new(Error::Generic(
+                    "timeout".to_string(),
+                )))),
+            },
+        ))
         .expect("marshalled");
         assert_eq!(
             decision.voting_key_verdict,
@@ -413,10 +489,12 @@ mod tests {
         );
         assert!(decision.message.is_some());
 
-        let decision = LoadDecision::of(MasternodeVotingLoad::Load {
-            identity: MasternodeVotingIdentity::Owner(identity(owner_id)),
-            voting_key: None,
-        })
+        let decision = LoadDecision::of(MasternodeVotingLoad::Load(
+            MasternodeVotingIdentity::Owner {
+                identity: identity(owner_id),
+                voting_key: None,
+            },
+        ))
         .expect("marshalled");
         assert_eq!(decision.voting_key_verdict, None);
         assert_eq!(decision.message, None);
@@ -604,6 +682,84 @@ mod tests {
         assert_eq!(load.voting_key_verdict, DashSDKVotingKeyVerdict::Invalid);
         assert_eq!(json, None);
         assert!(message.is_some());
+    }
+
+    #[test]
+    fn should_tell_the_user_a_voter_identity_is_not_a_pro_tx_hash() {
+        let voter = voter_identity_id(pro_tx_hash(), &VOTING_ADDRESS);
+        let decision = LoadDecision::of(MasternodeVotingLoad::Refused(
+            MasternodeVotingLoadRefusal::VoterIdentityGivenAsProTxHash { identity: voter },
+        ))
+        .expect("marshalled");
+        assert_eq!(decision.kind, DashSDKMasternodeVotingLoadKind::Refused);
+        assert_eq!(
+            decision.identity_id, [0u8; 32],
+            "names no voter identity to record on"
+        );
+        assert_eq!(decision.voting_key_verdict, None);
+        let message = decision.message.expect("a reason");
+        let message = message.to_str().expect("utf-8");
+        assert!(
+            message.contains("voter identity, not a masternode"),
+            "{message}"
+        );
+        assert!(!message.contains("  "), "whitespace run: {message}");
+    }
+
+    /// The sibling rule is rs-sdk's; this shows it crosses the C ABI as rs-sdk returns it.
+    #[test]
+    fn should_return_rs_sdk_sibling_record_for_every_case() {
+        let other = [9u8; 20];
+        for verdict in [
+            DashSDKVotingKeyVerdict::Valid,
+            DashSDKVotingKeyVerdict::Invalid,
+            DashSDKVotingKeyVerdict::Undetermined,
+        ] {
+            for check in [
+                DashSDKRecordedVotingKeyCheck::None,
+                DashSDKRecordedVotingKeyCheck::Valid,
+                DashSDKRecordedVotingKeyCheck::Invalid,
+                DashSDKRecordedVotingKeyCheck::Undetermined,
+            ] {
+                for address in [VOTING_ADDRESS, other] {
+                    let sibling = DashSDKRecordedVotingKey {
+                        check,
+                        voting_address: DashSDKVotingAddress { bytes: address },
+                    };
+                    let expected: DashSDKRecordedVotingKey =
+                        sibling_voting_key_record(verdict.into(), &VOTING_ADDRESS, sibling.into())
+                            .into();
+                    assert_eq!(
+                        dash_sdk_masternode_sibling_voting_key_record(
+                            verdict,
+                            DashSDKVotingAddress {
+                                bytes: VOTING_ADDRESS
+                            },
+                            sibling,
+                        ),
+                        expected,
+                        "{verdict:?} {check:?}"
+                    );
+                }
+            }
+        }
+        // The case the rule exists for, spelled out.
+        assert_eq!(
+            dash_sdk_masternode_sibling_voting_key_record(
+                DashSDKVotingKeyVerdict::Valid,
+                DashSDKVotingAddress {
+                    bytes: VOTING_ADDRESS
+                },
+                DashSDKRecordedVotingKey {
+                    check: DashSDKRecordedVotingKeyCheck::Valid,
+                    voting_address: DashSDKVotingAddress { bytes: other },
+                },
+            ),
+            DashSDKRecordedVotingKey {
+                check: DashSDKRecordedVotingKeyCheck::Undetermined,
+                voting_address: DashSDKVotingAddress { bytes: other },
+            }
+        );
     }
 
     /// The decision crosses the C ABI with its strings owned by the caller, and no verdict as

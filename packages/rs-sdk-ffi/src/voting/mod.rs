@@ -7,8 +7,8 @@ mod voting_key_check;
 // Re-export all public functions
 pub use masternode_vote::dash_sdk_masternode_voting_address_from_private_key;
 pub use masternode_voting_load::{
-    dash_sdk_masternode_load_for_voting, DashSDKMasternodeVotingLoad,
-    DashSDKMasternodeVotingLoadKind,
+    dash_sdk_masternode_load_for_voting, dash_sdk_masternode_sibling_voting_key_record,
+    DashSDKMasternodeVotingLoad, DashSDKMasternodeVotingLoadKind,
 };
 pub use queries::*;
 pub use voting_key_check::{

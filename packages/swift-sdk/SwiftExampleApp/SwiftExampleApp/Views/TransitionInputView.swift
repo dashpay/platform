@@ -591,7 +591,11 @@ struct TransitionInputView: View {
         VStack(alignment: .leading, spacing: 12) {
             // Get the sender identity from the parent's selectedIdentityId
             let senderIdentityId = input.placeholder ?? ""
-            let identities = persistedIdentities.filter { $0.identityIdBase58 != senderIdentityId }
+            // A masternode's voter identity holds only a voting key, so
+            // credits or tokens sent to it could not be spent: never offered.
+            let identities = persistedIdentities.filter {
+                $0.identityIdBase58 != senderIdentityId && !$0.isVotingOnlyIdentity
+            }
 
             if !useManualEntry {
                 if identities.isEmpty {

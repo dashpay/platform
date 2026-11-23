@@ -12,7 +12,7 @@ import SwiftUI
 enum MasternodeVoter: Equatable {
     /// A masternode or evonode identity loaded on this device with its voting
     /// key (Identities, Load Identity), and the pro_tx_hash (wire order) its
-    /// row records for the masternode (`PersistentIdentity.votingProTxHash`).
+    /// row records for the masternode (`PersistentIdentity.masternodeProTxHash`).
     /// The two differ for a masternode stored under its voter identity. The
     /// key stays in the Keychain and signs through `KeychainSigner`.
     case storedKey(identityId: Data, proTxHash: Data)
@@ -268,6 +268,8 @@ struct MasternodeVoterSection: View {
         // A verdict recorded again for another key can keep its value and
         // change only its address.
         .onChange(of: selectedVotingKeyCheckAddress) { _, _ in publish() }
+        // A row resolved by Rust's load rule records its pro_tx_hash.
+        .onChange(of: votingIdentities.first { $0.identityId == selectedIdentityId }?.masternodeProTxHash) { _, _ in publish() }
         // Once per pick: the key is checked when Rust says to check it
         // before use.
         .task(id: selectedIdentityId) { await checkSelectedVotingKeyIfNeeded() }
@@ -406,6 +408,12 @@ struct MasternodeVoterSection: View {
     /// reads only the key's voting address
     /// (`KeychainSigner.storedMasternodeVotingAddress`, and once more before
     /// the record is written); the key is not made signable.
+    ///
+    /// A row with no recorded pro_tx_hash (stored before it was recorded) is
+    /// not published until Rust's load rule (`SDK.loadMasternodeForVoting`)
+    /// says, for the pro_tx_hash its id would be, that it is that
+    /// masternode's owner identity; its pro_tx_hash and role are then
+    /// recorded with the key's verdict.
     private func checkSelectedVotingKeyIfNeeded() async {
         guard let identityId = selectedIdentityId,
               let identity = votingIdentities.first(where: { $0.identityId == identityId }),
@@ -441,23 +449,48 @@ struct MasternodeVoterSection: View {
             recorded: identity.recordedVotingKey,
             storedVotingAddress: checkedAddress
         )
-        guard keyUse.checkBeforeUse else { return }
+        let knownProTxHash = identity.masternodeProTxHash
+        guard keyUse.checkBeforeUse || knownProTxHash == nil else { return }
         checkingIdentityId = identityId
         defer {
             if checkingIdentityId == identityId { checkingIdentityId = nil }
         }
         let check: MasternodeVotingKeyCheck
+        // Set when Rust's load rule resolved a row with no recorded
+        // pro_tx_hash as the owner identity of this pro_tx_hash.
+        var resolvedProTxHash: Data?
         do {
-            check = try await sdk.checkMasternodeVotingKey(
-                proTxHash: identity.votingProTxHash,
-                votingAddress: checkedAddress.data
-            )
+            if let knownProTxHash {
+                check = try await sdk.checkMasternodeVotingKey(
+                    proTxHash: knownProTxHash,
+                    votingAddress: checkedAddress.data
+                )
+            } else {
+                // The only pro_tx_hash this row can be the owner identity
+                // of is its id as Platform names it; Rust decides whether
+                // it is.
+                let candidate = MasternodeVoter.wireOrderProTxHash(displayOrder: identityId)
+                let load = try await sdk.loadMasternodeForVoting(
+                    proTxHash: candidate,
+                    votingAddress: checkedAddress
+                )
+                guard case .loaded(let loaded) = load, loaded.role == .owner,
+                      loaded.identityId == identityId, let loadedCheck = loaded.votingKeyCheck else {
+                    guard !Task.isCancelled else { return }
+                    var reason = "Platform does not hold this identity as the owner identity of a masternode with this voting key."
+                    if case .refused(let message, _) = load { reason = message }
+                    checkFailure = (identityId, .notResolved(reason))
+                    return
+                }
+                check = loadedCheck
+                resolvedProTxHash = candidate
+            }
         } catch {
             // Nothing was learned about the key; the row is left as it was.
             guard !Task.isCancelled else { return }
-            checkFailure = (identityId, .checkFailed(
-                "The voting key could not be checked: \(error.localizedDescription)"
-            ))
+            let message = "The voting key could not be checked: \(error.localizedDescription)"
+            // A row whose masternode is not known yet cannot vote either way.
+            checkFailure = (identityId, knownProTxHash == nil ? .notResolved(message) : .checkFailed(message))
             return
         }
         // A superseded check (the pick changed, then maybe changed back, so a
@@ -494,6 +527,10 @@ struct MasternodeVoterSection: View {
             return
         }
         guard storedAddress == checkedAddress else { return }
+        if let resolvedProTxHash {
+            row.masternodeProTxHash = resolvedProTxHash
+            row.masternodeRole = .owner
+        }
         // The stored key is the checked key, so the slot holds the same key
         // with what its row records now.
         let outcome = check.outcome(
@@ -536,14 +573,15 @@ struct MasternodeVoterSection: View {
             voter = Self.decode32(proTxHashHex).map { .typedProTxHash($0) }
             return
         }
-        // An identity whose voting key may not vote is not published.
-        if let selected = votingIdentities.first(where: { $0.identityId == selectedIdentityId }),
-           Self.isRefused(selected) {
+        // An identity whose voting key may not vote, or whose masternode is
+        // not known yet, is not published.
+        guard let selected = votingIdentities.first(where: { $0.identityId == selectedIdentityId }),
+              !Self.isRefused(selected),
+              let proTxHash = selected.masternodeProTxHash else {
             voter = nil
             return
         }
-        voter = votingIdentities.first { $0.identityId == selectedIdentityId }
-            .map { .storedKey(identityId: $0.identityId, proTxHash: $0.votingProTxHash) }
+        voter = .storedKey(identityId: selected.identityId, proTxHash: proTxHash)
     }
 }
 
@@ -557,6 +595,9 @@ private enum VotingKeyCheckFailure: Equatable {
     case checkFailed(String)
     /// The stored key could not be read, so it cannot sign either.
     case keyUnreadable(String)
+    /// The row records no pro_tx_hash, and Rust's load rule did not resolve
+    /// it as a masternode's owner identity, so it cannot vote.
+    case notResolved(String)
 }
 
 private struct VotingKeyCheckStatus: View {
@@ -573,6 +614,10 @@ private struct VotingKeyCheckStatus: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
+        } else if case .notResolved(let message) = failure {
+            Text(message + " Load the masternode again with its ProTxHash and voting key under Identities, Load Identity.")
+                .font(.caption)
+                .foregroundColor(.red)
         } else if case .keyUnreadable(let message) = failure {
             Text(message + " Unlock the device, or load the identity again with its voting key under Identities, Load Identity.")
                 .font(.caption)
