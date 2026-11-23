@@ -1796,10 +1796,10 @@
           "reason": "PrivateDocuments.swift wraps the read (ManagedPlatformWallet.readPrivateDocumentEntries: proved store pages scanned with keys derived inside the Keychain mnemonic resolver, each opened payload decoded and checked against the type's schema in Rust, the sender reported as an unverified claim) and PersistentDocumentType.isPrivate / privateEntrySize read the keyword off the stored schema. The example app badges a private type, leaves it out of the ordinary document create and query pickers, and reads its entries page budget by page budget from the type's detail screen (TEST_PLAN DOC-17), handing back the cursor Rust returned (the position, the largest store size proved and the key set read with, so a node behind does not end the reading early and changed keys restart it), holding the entries in view state: the read keeps nothing, so there is nothing to resume after a restart. The Rust read and the FFI marshalling are unit-tested; no gate records the Swift call or the screen against a protocol version 15 network holding a private type. Keys the wallet does not derive at their identity key slot, such as DashPay Connect application keys, are reported as not scanned rather than scanned. Appending an entry of an arbitrary private type has no wallet entry point yet: only DashPay private contact requests append entries."
         },
         "kotlin": {
-          "sdk": "partial",
+          "sdk": "supported",
           "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "ManagedPlatformWallet.privateDocuments (PrivateDocuments.kt) wraps the read through rs-unified-sdk-jni's PrivateDocumentsNative, which copies the FFI result into JSON and frees it before returning; Kotlin decodes it one to one and hands the cursor back as it came (JVM decoding tests). PrivateDocumentsFfiTest, which checks the symbol, descriptor and argument refusals on a device, has not been run yet. KotlinExampleApp badges a private type, shows a Private section with the Read Entries link in place of New Document and the document queries, leaves it out of the Settings builder's document type picker, and reads its entries page budget by page budget (TEST_PLAN DOC-17), holding them in screen state under a secure window and a cover off the foreground: the read keeps nothing, so there is nothing to resume after a restart. No gate has run it against a protocol version 15 network holding a private type."
+          "reason": "ManagedPlatformWallet.privateDocuments (PrivateDocuments.kt) wraps the read through rs-unified-sdk-jni's PrivateDocumentsNative, which copies the FFI result into JSON and frees it before returning; Kotlin decodes it one to one and hands the cursor back as it came (JVM decoding tests). PrivateDocumentsFfiTest checks the symbol, descriptor and argument refusals on a device and passed on an API 35 arm64 emulator on 2026-11-23. KotlinExampleApp badges a private type, shows a Private section with the Read Entries link in place of New Document and the document queries, leaves it out of the Settings builder's document type picker, and reads its entries page budget by page budget (TEST_PLAN DOC-17), holding them in screen state under a secure window and a cover off the foreground: the read keeps nothing, so there is nothing to resume after a restart. No gate has run it against a protocol version 15 network holding a private type."
         }
       },
       "verification": [
@@ -1904,6 +1904,14 @@
           "kind": "manual",
           "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "DOC-17",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/PrivateDocumentsFfiTest.kt",
+          "id": "shouldRefuseWhatTheJniLayerCannotMarshal",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=org.dashfoundation.dashsdk.PrivateDocumentsFfiTest",
           "covers_restart": false
         }
       ]
