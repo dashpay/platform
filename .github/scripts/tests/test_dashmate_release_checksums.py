@@ -457,8 +457,10 @@ class ReleaseChecksumsTests(unittest.TestCase):
         needs = re.search(r'\n    needs:((?:\n      - \S+)+|[^\n]+)', checksums).group(1)
         self.assertIn('build-dashmate-packages', needs)
         self.assertIn('release-dashmate-packages', needs)
-        self.assertIn("needs.build-dashmate-packages.result == 'success'", checksums)
-        self.assertIn("needs.release-dashmate-packages.result == 'success'", checksums)
+        condition = re.search(r'\n    if: >-\n((?:      .*\n)+)', checksums).group(1).split()
+        self.assertEqual(' '.join(condition), "!cancelled() && github.event_name == 'release'"
+                         " && needs.build-dashmate-packages.result == 'success'"
+                         " && needs.release-dashmate-packages.result == 'success'")
 
     def test_should_publish_checksums_from_a_job_that_runs_no_repository_code(self):
         checksums = job('release-dashmate-checksums')
