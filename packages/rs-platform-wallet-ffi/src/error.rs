@@ -1213,10 +1213,12 @@ impl PlatformWalletFFIResult {
     /// conversion; the caller stamps the error's payment-delivery class on
     /// whichever result this returns.
     fn from_wallet_error_parts(error: PlatformWalletError) -> Self {
-        // A refusal that followed a dispatch keeps its own code, message and
-        // verdict; only its payment class (stamped by the caller) differs.
+        // A refusal that followed a dispatch, or one proven before it, keeps
+        // its own code, message and verdict; only its payment class (stamped
+        // by the caller) differs.
         let error = match error {
-            PlatformWalletError::PaymentAlreadyDispatched { source, .. } => {
+            PlatformWalletError::PaymentAlreadyDispatched { source, .. }
+            | PlatformWalletError::RefusedBeforeDispatch { source } => {
                 return Self::from_wallet_error_parts(*source);
             }
             other => other,
@@ -3758,7 +3760,87 @@ mod payment_delivery_tests {
                     platform_wallet::error::SIGNER_KEY_UNAVAILABLE_PREFIX
                 ),
             ))),
+            PlatformWalletError::RefusedBeforeDispatch {
+                source: Box::new(PlatformWalletError::InsufficientIdentityCredits {
+                    identity_id: Identifier::from([3; 32]),
+                    required: 2,
+                    available: 1,
+                }),
+            },
+            PlatformWalletError::RefusedBeforeDispatch {
+                source: Box::new(PlatformWalletError::PublicContactRequestUnconfirmed(
+                    Identifier::from([4; 32]),
+                )),
+            },
         ]
+    }
+
+    /// A refusal the wallet proved came before the dispatch keeps its
+    /// source's code, through the blanket conversion and the spend mapping,
+    /// and is `NotSent` with its source's retry decision.
+    #[test]
+    fn should_keep_the_source_code_of_a_refusal_before_dispatch() {
+        let sources = || {
+            [
+                (
+                    PlatformWalletError::DocumentPriceChanged {
+                        document_id: Identifier::from([5; 32]),
+                        expected: 1,
+                        actual: 2,
+                    },
+                    PlatformWalletFFIResultCode::ErrorDocumentPriceChanged,
+                ),
+                (
+                    PlatformWalletError::InsufficientIdentityCredits {
+                        identity_id: Identifier::from([3; 32]),
+                        required: 2,
+                        available: 1,
+                    },
+                    PlatformWalletFFIResultCode::ErrorInsufficientIdentityCredits,
+                ),
+                (
+                    PlatformWalletError::PublicContactRequestUnconfirmed(Identifier::from([4; 32])),
+                    PlatformWalletFFIResultCode::ErrorPublicContactRequestUnconfirmed,
+                ),
+            ]
+        };
+        let refused = |index: usize| {
+            let (source, code) = sources().into_iter().nth(index).expect("a source at index");
+            let rendered = format!("{source:?}");
+            (
+                PlatformWalletError::RefusedBeforeDispatch {
+                    source: Box::new(source),
+                },
+                code,
+                rendered,
+            )
+        };
+        for index in 0..sources().len() {
+            let (error, code, rendered) = refused(index);
+            let mut result: PlatformWalletFFIResult = error.into();
+            assert_eq!(result.code, code, "{rendered}");
+            assert_eq!(
+                result.payment_delivery,
+                PlatformWalletFFIPaymentDelivery::NotSent,
+                "{rendered}"
+            );
+            assert!(!result.retryable, "{rendered}");
+            unsafe { platform_wallet_ffi_result_free(&mut result) };
+            // The spend mapping keeps the codes it maps typed (the marketplace
+            // codes are not among them, unwrapped or not).
+            #[cfg(feature = "shielded")]
+            if code != PlatformWalletFFIResultCode::ErrorDocumentPriceChanged {
+                let mut spent =
+                    map_spend_result(Err(refused(index).0), "shielded shield from identity");
+                assert_eq!(spent.code, code, "{rendered}");
+                assert_eq!(
+                    spent.payment_delivery,
+                    PlatformWalletFFIPaymentDelivery::NotSent,
+                    "{rendered}"
+                );
+                unsafe { platform_wallet_ffi_result_free(&mut spent) };
+            }
+        }
     }
 
     /// The `held_asset_lock` a result must carry for `error`: its outpoint

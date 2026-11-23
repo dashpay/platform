@@ -619,6 +619,12 @@ fn spend_result_code(
 ) -> PlatformWalletFFIResult {
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
+        // A refusal the wallet proved came before the dispatch keeps its
+        // source's code, as through the blanket conversion; its class
+        // (`NotSent`) is the wrapper's, stamped by `map_spend_result`.
+        Err(PlatformWalletError::RefusedBeforeDispatch { source }) => {
+            spend_result_code(Err(*source), operation)
+        }
         // Outcome not known: a dispatch may have reached a node and the
         // execution result couldn't be confirmed, so the host must NOT
         // re-submit. For the spend-based operations the notes stay reserved

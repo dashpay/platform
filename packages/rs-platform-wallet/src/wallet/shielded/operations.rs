@@ -1130,11 +1130,14 @@ pub(in crate::wallet) async fn shield_from_identity_to<
         })?
         .ok_or(PlatformWalletError::IdentityBalanceUnavailable(identity_id))?;
     if available < required {
+        // Refused before the guard is armed or anything is signed: `NotSent`,
+        // unlike the same verdict from Platform after a broadcast.
         return Err(PlatformWalletError::InsufficientIdentityCredits {
             identity_id,
             required,
             available,
-        });
+        }
+        .before_dispatch());
     }
 
     let nonce = sdk
@@ -4998,14 +5001,21 @@ mod redrive_tests {
         let (result, store, id) =
             identity_shield_with_proved_balance(amount + fee - 1, amount).await;
 
-        match result {
-            Err(PlatformWalletError::InsufficientIdentityCredits {
+        let error = result.expect_err("a short balance must be refused");
+        // Refused before anything was signed: `NotSent`, unlike the same
+        // verdict from Platform after a broadcast.
+        assert_eq!(
+            error.payment_delivery(),
+            crate::error::PaymentDelivery::NotSent
+        );
+        match error.dispatched_source() {
+            PlatformWalletError::InsufficientIdentityCredits {
                 required,
                 available,
                 ..
-            }) => {
-                assert_eq!(required, amount + fee);
-                assert_eq!(available, amount + fee - 1);
+            } => {
+                assert_eq!(*required, amount + fee);
+                assert_eq!(*available, amount + fee - 1);
             }
             other => panic!("expected InsufficientIdentityCredits, got {other:?}"),
         }

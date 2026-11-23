@@ -361,7 +361,7 @@ where
 {
     match delivery {
         BroadcastDelivery::Admitted => {}
-        BroadcastDelivery::NeverDelivered(e) => return Err(top_up_error(e)),
+        BroadcastDelivery::NeverDelivered(e) => return Err(top_up_error(e).before_dispatch()),
         BroadcastDelivery::MaybeDelivered(e) => {
             tracing::warn!(
                 error = %e,
@@ -731,12 +731,20 @@ mod nonce_binding_tests {
             },
         )
         .await;
+        let error = result.expect_err("a top-up never sent must fail");
+        // The SDK error alone would read as possibly sent; the emitter knows
+        // nothing left, so the host is told so instead of waiting.
+        assert_eq!(
+            error.payment_delivery(),
+            crate::error::PaymentDelivery::NotSent,
+            "{error:?}"
+        );
         assert!(
             matches!(
-                &result,
-                Err(PlatformWalletError::Sdk(e)) if !e.is_state_transition_result_unconfirmed()
+                error.dispatched_source(),
+                PlatformWalletError::Sdk(e) if !e.is_state_transition_result_unconfirmed()
             ),
-            "{result:?}"
+            "{error:?}"
         );
     }
 }

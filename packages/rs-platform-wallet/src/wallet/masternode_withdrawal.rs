@@ -544,7 +544,8 @@ where
         BroadcastDelivery::NeverDelivered(e) => {
             return Err(PlatformWalletError::InvalidIdentityData(format!(
                 "masternode withdrawal failed: {e}"
-            )));
+            ))
+            .before_dispatch());
         }
         BroadcastDelivery::MaybeDelivered(e) => {
             tracing::warn!(
@@ -911,7 +912,8 @@ mod tests {
     }
 
     /// Only a withdrawal whose transition never left the wallet is an
-    /// ordinary, retryable failure, and nothing waits for its result.
+    /// ordinary failure, reported `NotSent`, and nothing waits for its
+    /// result.
     #[tokio::test]
     async fn should_report_a_masternode_withdrawal_failed_only_when_nothing_was_sent() {
         let waited = Cell::new(false);
@@ -927,9 +929,18 @@ mod tests {
             },
         )
         .await;
+        let error = settled.expect_err("a withdrawal never sent must fail");
+        assert_eq!(
+            error.payment_delivery(),
+            crate::error::PaymentDelivery::NotSent,
+            "{error:?}"
+        );
         assert!(
-            matches!(settled, Err(PlatformWalletError::InvalidIdentityData(_))),
-            "{settled:?}"
+            matches!(
+                error.dispatched_source(),
+                PlatformWalletError::InvalidIdentityData(_)
+            ),
+            "{error:?}"
         );
         assert!(!waited.get(), "nothing was sent, so nothing is waited for");
     }
@@ -994,8 +1005,16 @@ mod tests {
             WITHDRAWN,
         )
         .await;
+        let never_sent = never_sent.expect_err("nothing was sent");
+        assert_eq!(
+            never_sent.payment_delivery(),
+            crate::error::PaymentDelivery::NotSent
+        );
         assert!(
-            matches!(never_sent, Err(PlatformWalletError::InvalidIdentityData(_))),
+            matches!(
+                never_sent.dispatched_source(),
+                PlatformWalletError::InvalidIdentityData(_)
+            ),
             "{never_sent:?}"
         );
     }

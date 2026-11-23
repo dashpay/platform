@@ -699,6 +699,16 @@ pub enum PlatformWalletError {
         source: Box<PlatformWalletError>,
     },
 
+    /// `source` refused this payment before its first dispatch: nothing was
+    /// broadcast for it, so it is `NotSent`. For the variants that also end
+    /// a payment after its dispatch (an SDK error, a marketplace or balance
+    /// verdict, a request blocked while another payment for the same pair
+    /// settles), where only the emitter knows nothing left. The diagnostic,
+    /// the FFI code and the retry decision stay `source`'s: only the payment
+    /// class changes. See [`Self::before_dispatch`].
+    #[error("{source}")]
+    RefusedBeforeDispatch { source: Box<PlatformWalletError> },
+
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
 
@@ -1561,6 +1571,25 @@ impl PlatformWalletError {
                 Some(out_point) => LockHeld(*out_point),
                 None => MaybeSent,
             },
+            // The emitter proved nothing was dispatched for this request.
+            Self::RefusedBeforeDispatch { .. } => NotSent,
+        }
+    }
+
+    /// This error as a refusal proven before the payment's first dispatch:
+    /// a variant classed as possibly sent becomes
+    /// [`Self::RefusedBeforeDispatch`] (`NotSent`), keeping its diagnostic,
+    /// FFI code and retry decision. A `NotSent` error is kept, and so is an
+    /// error that already records a dispatch ([`Self::PaymentAlreadyDispatched`]
+    /// or a held lock): this only adds evidence of non-dispatch, it never
+    /// erases evidence of one.
+    pub(crate) fn before_dispatch(self) -> Self {
+        match (&self, self.payment_delivery()) {
+            (Self::PaymentAlreadyDispatched { .. }, _)
+            | (_, PaymentDelivery::NotSent | PaymentDelivery::LockHeld(_)) => self,
+            (_, PaymentDelivery::MaybeSent) => Self::RefusedBeforeDispatch {
+                source: Box::new(self),
+            },
         }
     }
 
@@ -1582,10 +1611,12 @@ impl PlatformWalletError {
     }
 
     /// The error that decided this one's diagnostic and FFI code: the source
-    /// of a [`Self::PaymentAlreadyDispatched`], or this error itself.
+    /// of a [`Self::PaymentAlreadyDispatched`] or a
+    /// [`Self::RefusedBeforeDispatch`], or this error itself.
     pub fn dispatched_source(&self) -> &Self {
         match self {
-            Self::PaymentAlreadyDispatched { source, .. } => source.dispatched_source(),
+            Self::PaymentAlreadyDispatched { source, .. }
+            | Self::RefusedBeforeDispatch { source } => source.dispatched_source(),
             other => other,
         }
     }
@@ -1647,6 +1678,8 @@ impl PlatformWalletError {
                 // retry a transient flush allows is another flush, not the
                 // operation.
                 Self::PersisterFlush(_) => false,
+                // Only the class changed: the source's own decision stands.
+                Self::RefusedBeforeDispatch { source } => source.is_retryable(),
                 // Another payment blocks this request. Running it again only
                 // meets the same refusal until that payment settles; the host
                 // waits for it instead.
@@ -2666,7 +2699,7 @@ mod payment_delivery_tests {
     }
 
     /// Variants of [`PlatformWalletError`]: one past the highest ordinal.
-    const VARIANT_COUNT: usize = 106;
+    const VARIANT_COUNT: usize = 107;
 
     /// The ordinal of `error`'s variant. No wildcard arm: a new variant does
     /// not compile until it gets the next ordinal here (and
@@ -2781,6 +2814,7 @@ mod payment_delivery_tests {
             E::DocumentEraseBusy => 103,
             E::PaymentAlreadyDispatched { .. } => 104,
             E::IdentityLookupFailed { .. } => 105,
+            E::RefusedBeforeDispatch { .. } => 106,
         }
     }
 
@@ -2989,6 +3023,12 @@ mod payment_delivery_tests {
                     requested: [2; 43],
                 },
                 LockHeld(out_point()),
+            ),
+            (
+                E::RefusedBeforeDispatch {
+                    source: Box::new(E::Sdk(sdk_generic())),
+                },
+                NotSent,
             ),
             (E::Sdk(sdk_generic()), MaybeSent),
             (
@@ -3224,8 +3264,12 @@ mod payment_delivery_tests {
     }
 
     /// The failures nothing left the wallet for that the same call can get
-    /// past by running again.
+    /// past by running again. A refusal proven before dispatch keeps its
+    /// source's decision.
     fn retryable_when_not_sent(error: &PlatformWalletError) -> bool {
+        if let PlatformWalletError::RefusedBeforeDispatch { source } = error {
+            return source.is_retryable();
+        }
         matches!(
             error,
             PlatformWalletError::ShieldedNoRecordedAnchor(_)
@@ -3329,6 +3373,67 @@ mod payment_delivery_tests {
             maybe,
             PlatformWalletError::TransactionBroadcastUnconfirmed(_)
         ));
+    }
+
+    /// A refusal its emitter proved came before the payment's first dispatch
+    /// is `NotSent`, whatever its variant would say after a dispatch, and
+    /// keeps its diagnostic, its source (the FFI code) and its source's
+    /// retry decision. An error that already records a dispatch or holds a
+    /// lock is kept, and a refusal proven before dispatch that is then
+    /// carried past a dispatch is `MaybeSent` again.
+    #[test]
+    fn should_report_a_refusal_proven_before_dispatch_as_not_sent() {
+        use PlatformWalletError as E;
+        let verdicts = [
+            E::Sdk(sdk_generic()),
+            E::InvalidIdentityData("x".into()),
+            E::DocumentNotForSale { document_id: id() },
+            E::DocumentPriceChanged {
+                document_id: id(),
+                expected: 1,
+                actual: 2,
+            },
+            E::InsufficientIdentityCredits {
+                identity_id: id(),
+                required: 2,
+                available: 1,
+            },
+            E::PublicContactRequestUnconfirmed(id()),
+        ];
+        for verdict in verdicts {
+            let text = verdict.to_string();
+            let retryable = verdict.is_retryable();
+            let refused = verdict.before_dispatch();
+            assert_eq!(
+                refused.payment_delivery(),
+                PaymentDelivery::NotSent,
+                "{refused:?}"
+            );
+            assert_eq!(refused.is_retryable(), retryable, "{refused:?}");
+            assert_eq!(refused.held_asset_lock(), None, "{refused:?}");
+            assert_eq!(refused.to_string(), text);
+            assert!(
+                !matches!(refused.dispatched_source(), E::RefusedBeforeDispatch { .. }),
+                "{refused:?}"
+            );
+            let carried = refused.after_dispatch();
+            assert_eq!(
+                carried.payment_delivery(),
+                PaymentDelivery::MaybeSent,
+                "{carried:?}"
+            );
+        }
+
+        assert!(matches!(E::WalletLocked.before_dispatch(), E::WalletLocked));
+        assert!(matches!(
+            E::FinalityTimeout(out_point()).before_dispatch(),
+            E::FinalityTimeout(_)
+        ));
+        let dispatched = E::AssetLockNotTracked(out_point()).after_dispatch();
+        assert_eq!(
+            dispatched.before_dispatch().payment_delivery(),
+            PaymentDelivery::MaybeSent
+        );
     }
 
     /// A persister failure is retryable exactly when the store called it
