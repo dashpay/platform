@@ -146,7 +146,18 @@ fun ContractModerationScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             val current = sdk
-            if (!isOpen || current == null) {
+            if (current == null) {
+                // The SDK is still being built: the hub opens on it once it arrives
+                FormSection {
+                    ModerationMessageRow(
+                        ModerationMessageKind.LOADING,
+                        "Connecting…",
+                        "contractModeration.connecting",
+                    )
+                }
+                return@Column
+            }
+            if (!isOpen) {
                 // A replaced SDK: no row read through the old one stays on screen, and
                 // nothing reads this id through the new one
                 FormSection {

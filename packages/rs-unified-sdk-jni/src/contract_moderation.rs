@@ -395,12 +395,72 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_ContractModerationNat
 
 #[cfg(test)]
 mod tests {
+    use super::NO_LIMIT;
     use crate::decision_proposals::tests::kotlin_signature_in;
 
     const NATIVE_KT: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../kotlin-sdk/sdk/src/main/kotlin/org/dashfoundation/dashsdk/ffi/ContractModerationNative.kt"
     ));
+    const MODELS_KT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../kotlin-sdk/sdk/src/main/kotlin/org/dashfoundation/dashsdk/moderation/ContractModerationModels.kt"
+    ));
+    /// Where rs-sdk-ffi declares the list and status bytes (`pub(crate)`, so read as text).
+    const FFI_MODERATION_RS: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../rs-sdk-ffi/src/contract_moderation/mod.rs"
+    ));
+
+    /// The discriminant of `{variant} = N,` in rs-sdk-ffi's moderation enums.
+    fn ffi_discriminant(variant: &str) -> u8 {
+        FFI_MODERATION_RS
+            .lines()
+            .map(str::trim)
+            .find_map(|line| line.strip_prefix(&format!("{variant} = ")))
+            .and_then(|rest| rest.trim_end_matches(',').parse().ok())
+            .unwrap_or_else(|| panic!("rs-sdk-ffi declares {variant} with a discriminant"))
+    }
+
+    /// The `ffiTag` of the Kotlin enum entry `{entry}("{json}", N)`.
+    fn kotlin_ffi_tag(entry: &str, json: &str) -> u8 {
+        MODELS_KT
+            .lines()
+            .map(str::trim)
+            .find_map(|line| line.strip_prefix(&format!("{entry}(\"{json}\", ")))
+            .and_then(|rest| rest.trim_end_matches("),").parse().ok())
+            .unwrap_or_else(|| panic!("ContractModerationModels.kt declares {entry} with its byte"))
+    }
+
+    /// The list and status bytes Kotlin passes are the discriminants rs-sdk-ffi reads: a
+    /// permutation on either side would query another list or status without failing.
+    #[test]
+    fn should_pass_the_list_and_status_bytes_rs_sdk_ffi_reads() {
+        for (entry, json, variant) in [
+            ("BANLIST", "banlist", "Banlist"),
+            ("SUSPENSIONS", "suspensions", "Suspensions"),
+            ("WARNINGS", "warnings", "Warnings"),
+            ("ACTIVE", "active", "Active"),
+            ("CLOSED", "closed", "Closed"),
+        ] {
+            assert_eq!(
+                kotlin_ffi_tag(entry, json),
+                ffi_discriminant(variant),
+                "{entry}"
+            );
+        }
+    }
+
+    /// Kotlin's "no page bound" is the value this crate reads as no bound; another value
+    /// would reach `to_unsigned` and be refused.
+    #[test]
+    fn should_share_the_no_limit_sentinel_with_kotlin() {
+        let declaration = format!("const val NO_LIMIT: Long = {NO_LIMIT}");
+        assert!(
+            NATIVE_KT.lines().any(|line| line.trim() == declaration),
+            "ContractModerationNative.kt no longer declares `{declaration}`"
+        );
+    }
 
     fn signature(name: &str) -> (Vec<String>, String) {
         kotlin_signature_in(NATIVE_KT, name)
