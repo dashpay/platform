@@ -153,12 +153,18 @@ object KeyLimitsFormatting {
         }
 
     /**
-     * The last instant the expiry editor works with: 9999-12-31 23:59:59.999 UTC, the end of
-     * the date picker's last year. A key whose expiry is at or past it (Platform imposes no
-     * such bound) shows its expiry but offers no expiry edit here; any earlier expiry can be
-     * moved later. Also the last instant shown as a calendar date.
+     * The last instant the expiry editor can produce in [zone]: 9999-12-31 23:59:59.999 local
+     * time, the end of the date picker's last day. A key whose expiry is at or past it
+     * (Platform imposes no such bound) shows its expiry but offers no expiry edit here; any
+     * earlier expiry can be moved later.
      */
-    const val MAX_PICKABLE_MILLIS: Long = 253_402_300_799_999L
+    fun maxPickableMillis(zone: TimeZone = TimeZone.getDefault()): Long =
+        Calendar.getInstance(zone).apply {
+            clear()
+            set(9999, Calendar.DECEMBER, 31, 23, 59, 59)
+            set(Calendar.MILLISECOND, 999)
+        }.timeInMillis
+
 
     /** UTC midnight of 9999-12-31, the last day the date picker can select. */
     private const val LAST_PICKER_DAY_UTC_MILLIS: Long = 253_402_214_400_000L
@@ -175,15 +181,15 @@ object KeyLimitsFormatting {
         nowMillis >= 0 && nowMillis.toULong() >= expiresAt
 
     /**
-     * The expiry as an absolute local date and time, or for an expiry past year 9999 its
-     * milliseconds, which a calendar date cannot show.
+     * The expiry as an absolute local date and time, or for an expiry past year 9999 in
+     * [zone] its milliseconds, which a calendar date cannot show.
      */
     fun expiryDate(
         expiresAt: ULong,
         locale: Locale = Locale.getDefault(),
         zone: TimeZone = TimeZone.getDefault(),
     ): String {
-        if (expiresAt > MAX_PICKABLE_MILLIS.toULong()) return "$expiresAt ms after 1970"
+        if (expiresAt > maxPickableMillis(zone).toULong()) return "$expiresAt ms after 1970"
         val formatter = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, locale)
         formatter.timeZone = zone
         return formatter.format(Date(expiresAt.toLong()))

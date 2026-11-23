@@ -228,7 +228,7 @@ class UpdateKeyLimitsViewModel(private val saved: SavedStateHandle) : ViewModel(
     val expiryPickable: Boolean
         get() {
             val expiresAt = (gate as? Gate.Ready)?.opening?.currentExpiresAt ?: return false
-            return expiresAt < KeyLimitsFormatting.MAX_PICKABLE_MILLIS.toULong()
+            return expiresAt < KeyLimitsFormatting.maxPickableMillis().toULong()
         }
 
     init {
@@ -305,7 +305,7 @@ class UpdateKeyLimitsViewModel(private val saved: SavedStateHandle) : ViewModel(
             gate = try {
                 val opening = resolved.preview(null, null)
                 val expiresAt = opening.currentExpiresAt
-                val maxPickable = KeyLimitsFormatting.MAX_PICKABLE_MILLIS
+                val maxPickable = KeyLimitsFormatting.maxPickableMillis()
                 if (expiresAt != null && expiresAt < maxPickable.toULong() && pickedExpiryMillis == null) {
                     // A starting point for the picker only, kept within what it can show;
                     // Rust judges the pick.
@@ -618,7 +618,7 @@ private fun ChangeSection(opening: IdentityKeyLimitsUpdatePreview, state: Update
         }
         if (opening.currentExpiresAt != null && !state.expiryPickable) {
             Text(
-                "This key's expiry is at or past the end of year 9999, the date picker's last day, so only " +
+                "This key's expiry is at or past the end of year 9999 here, the date picker's last day, so only " +
                     "its budget can be changed here." +
                     if (state.restoredExpiryDropped) " The expiry change you had started was dropped." else "",
                 style = MaterialTheme.typography.bodySmall,

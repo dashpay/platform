@@ -125,13 +125,28 @@ class KeyLimitsFormattingTest {
 
     @Test
     fun shouldOpenThePickerOnADayInsideItsYearsInEveryTimeZone() {
-        val last = KeyLimitsFormatting.MAX_PICKABLE_MILLIS
+        val lastUtc = KeyLimitsFormatting.maxPickableMillis(TimeZone.getTimeZone("UTC"))
         for (zoneId in listOf("Pacific/Kiritimati", "UTC", "Etc/GMT+12")) { // UTC+14, UTC, UTC-12
-            val day = java.util.Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
-                timeInMillis = KeyLimitsFormatting.pickerDateUtcMillis(last, TimeZone.getTimeZone(zoneId))
+            val zone = TimeZone.getTimeZone(zoneId)
+            for (instant in listOf(lastUtc, KeyLimitsFormatting.maxPickableMillis(zone))) {
+                val day = java.util.Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+                    timeInMillis = KeyLimitsFormatting.pickerDateUtcMillis(instant, zone)
+                }
+                assertTrue(zoneId, day.get(java.util.Calendar.YEAR) in KeyLimitsFormatting.PICKABLE_YEARS)
             }
-            assertTrue(zoneId, day.get(java.util.Calendar.YEAR) in KeyLimitsFormatting.PICKABLE_YEARS)
         }
+    }
+
+    @Test
+    fun shouldEndTheEditableRangeAtTheLastLocalDayOfTheDevice() {
+        // 9999-12-31 20:00 UTC is noon on Dec 31 at UTC-8, so it can still be moved later there.
+        val dec31Evening = 253_402_286_400_000L
+        val pacific = TimeZone.getTimeZone("Etc/GMT+8")
+        assertTrue(dec31Evening < KeyLimitsFormatting.maxPickableMillis(pacific))
+        assertEquals(253_402_329_599_999L, KeyLimitsFormatting.maxPickableMillis(pacific)) // +8 h
+        assertTrue(KeyLimitsFormatting.withTime(dec31Evening, 23, 0, pacific) > dec31Evening)
+        // In UTC the same day ends earlier.
+        assertEquals(253_402_300_799_999L, KeyLimitsFormatting.maxPickableMillis(TimeZone.getTimeZone("UTC")))
     }
 
     @Test
@@ -140,7 +155,7 @@ class KeyLimitsFormattingTest {
         val dec30Noon = 253_402_171_200_000L // 9999-12-30 12:00 UTC
         val dec31 = KeyLimitsFormatting.withDate(dec30Noon, 253_402_214_400_000L, utc)
         assertEquals(253_402_257_600_000L, dec31) // 9999-12-31 12:00 UTC
-        assertTrue(dec31 <= KeyLimitsFormatting.MAX_PICKABLE_MILLIS)
+        assertTrue(dec31 <= KeyLimitsFormatting.maxPickableMillis(utc))
         assertEquals(253_402_214_400_000L, KeyLimitsFormatting.pickerDateUtcMillis(dec31, utc))
     }
 
