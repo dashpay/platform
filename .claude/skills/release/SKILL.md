@@ -331,8 +331,8 @@ Steps (skip whatever is already done — e.g. the next dev branch and default ma
      ```
      The PR has to be merged with a merge commit, not squashed: a squash leaves next dev without current dev in its history. Once it is merged, check that next dev contains the current dev commit, then go on with step 4:
      ```sh
-     git fetch origin v(X.Y+1)-dev
-     git merge-base --is-ancestor <current dev commit> origin/v(X.Y+1)-dev; echo "exit $?"   # must be 0
+     git fetch origin v(X.Y+1)-dev \
+       && git merge-base --is-ancestor <current dev commit> origin/v(X.Y+1)-dev; echo "exit $?"   # must be 0
      ```
 
 4. **Make next dev the default branch** if it isn't already (repo Settings → Branches, or `gh api`).
