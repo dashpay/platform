@@ -48,7 +48,7 @@ use super::record::{
     owner_payout_script, platform_http_port, ListMembership, MasternodeRecord, MasternodeSource,
     MasternodeStatus,
 };
-use super::update_service::require_requested_transaction;
+use super::update_service::{display_hex, require_requested_transaction};
 use crate::changeset::{PersistenceCapabilities, PlatformWalletPersistence};
 use crate::error::PlatformWalletError;
 use crate::manager::PlatformWalletManager;
@@ -457,11 +457,9 @@ fn now_unix() -> u64 {
 }
 
 fn not_tracked(pro_tx_hash: &[u8; 32]) -> PlatformWalletError {
-    let mut display = *pro_tx_hash;
-    display.reverse();
     PlatformWalletError::InvalidParameter(format!(
         "masternode {} is not tracked",
-        hex::encode(display)
+        display_hex(pro_tx_hash)
     ))
 }
 
