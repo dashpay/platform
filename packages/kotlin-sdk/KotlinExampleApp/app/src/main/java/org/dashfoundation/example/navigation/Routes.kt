@@ -137,6 +137,9 @@ import kotlinx.serialization.Serializable
 /** Withdraw credits identity → L1 address (← `WithdrawCreditsView.swift`). */
 @Serializable data class WithdrawCredits(val identityIdHex: String)
 
+/** Where an identity's withdrawals to Core stand (← `IdentityWithdrawalsView.swift`). */
+@Serializable data class IdentityWithdrawals(val identityIdHex: String)
+
 // ── State-transition catalog (← StateTransitions/PlatformStateTransitions) ──
 
 /** The transition catalog root (← `StateTransitionsView.swift`). */

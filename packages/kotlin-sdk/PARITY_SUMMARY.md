@@ -65,7 +65,7 @@ Capabilities tracked: **42**
 | `identity.load_masternode_voting_key` | supported / partial / not_applicable | partial / partial / not_applicable |
 | `addresses.balance_history` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `shielded.token_purchase_from_pool` | partial / partial / required | partial / partial / required |
-| `identity.withdrawal_status` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
+| `identity.withdrawal_status` | supported / partial / not_applicable | supported / partial / not_applicable |
 
 Source: [`docs/sdk/sdk-parity-manifest.json`](../../docs/sdk/sdk-parity-manifest.json).
 Detailed legacy view mapping remains in [`PARITY.md`](PARITY.md), but its manual totals are not authoritative.

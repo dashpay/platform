@@ -73,6 +73,7 @@ import org.dashfoundation.example.ui.credits.TransferCreditsScreen
 import org.dashfoundation.example.ui.credits.TransferIdentityToAddressScreen
 import org.dashfoundation.example.ui.credits.TransferPlatformAddressScreen
 import org.dashfoundation.example.ui.credits.WithdrawCreditsScreen
+import org.dashfoundation.example.ui.identity.IdentityWithdrawalsScreen
 import org.dashfoundation.example.ui.credits.WithdrawPlatformAddressScreen
 import org.dashfoundation.example.ui.transitions.StateTransitionsScreen
 import org.dashfoundation.example.ui.transitions.TransitionCategoryScreen
@@ -249,6 +250,10 @@ fun AppNavHost(
 
         composable<WithdrawCredits> { entry ->
             WithdrawCreditsScreen(entry.toRoute<WithdrawCredits>().identityIdHex, navController)
+        }
+
+        composable<IdentityWithdrawals> { entry ->
+            IdentityWithdrawalsScreen(entry.toRoute<IdentityWithdrawals>().identityIdHex, navController)
         }
 
         // ── State-transition catalog ───────────────────────────────────

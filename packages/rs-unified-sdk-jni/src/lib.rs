@@ -25,6 +25,7 @@ mod events;
 mod funding;
 mod identity;
 mod identity_removal;
+mod identity_withdrawals;
 mod masternode_voting_key;
 mod mnemonic;
 mod multiple_choice_proposals;

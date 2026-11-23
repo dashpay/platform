@@ -9,6 +9,7 @@ import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.DpnsGiveUpNative
 import org.dashfoundation.dashsdk.ffi.IdentityRemovalNative
+import org.dashfoundation.dashsdk.ffi.IdentityWithdrawalsNative
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
@@ -353,6 +354,26 @@ class FfiSmokeTest {
         } finally {
             SdkNative.destroy(sdk)
         }
+    }
+
+    /**
+     * `identityWithdrawals` binds with the descriptor `(J[B)[B` and its arguments arrive in
+     * order: an identity id that is not 32 bytes is refused in the JNI layer (code 1), and a
+     * 32-byte id on a wallet handle Rust does not know reaches
+     * `platform_wallet_identity_withdrawals`, which answers `NotFound` (98, thrown shifted
+     * by the platform-wallet offset). Nothing reaches the network.
+     */
+    @Test
+    fun identityWithdrawalsSymbolBindsAndRejectsInvalidInput() {
+        NativeLoader.ensureLoaded()
+        val shortId = assertThrows(DashSDKException::class.java) {
+            IdentityWithdrawalsNative.identityWithdrawals(1L, ByteArray(31))
+        }
+        assertEquals(1, shortId.code)
+        val unknownWallet = assertThrows(DashSDKException::class.java) {
+            IdentityWithdrawalsNative.identityWithdrawals(Long.MAX_VALUE, ByteArray(32) { 7 })
+        }
+        assertEquals(1000 + 98, unknownWallet.code)
     }
 
     /**
