@@ -14,6 +14,7 @@
     "admin": "node src/admin.mjs",
     "query": "node src/query.mjs",
     "parse": "node src/parse-test-plan.mjs",
+    "test": "node --test",
     "derive-key": "node src/derive-identity-key.mjs"
   },
   "dependencies": {

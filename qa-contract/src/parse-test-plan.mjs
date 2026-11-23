@@ -50,7 +50,9 @@ export function resolvePlanCommit(planPath = DEFAULT_TEST_PLAN) {
 }
 
 const TIERS = ['Essential', 'Common', 'Thorough', 'Uncommon', 'Manual'];
-const ID_RE = /^[A-Z][A-Z0-9]*-\d+$/;
+// A test id, with an optional lowercase letter for a row split into parts
+// (DC-11a to DC-11d).
+const ID_RE = /^[A-Z][A-Z0-9]*-\d+[a-z]?$/;
 
 function normalizeTier(raw) {
   const t = (raw || '').trim();
@@ -112,7 +114,13 @@ export function parseTestPlan(planPath = DEFAULT_TEST_PLAN, planCommit) {
     if (isSeparator(cells)) continue;
 
     const [testId, title, layer, tier, status, tagsCell, ...rest] = cells;
-    if (!ID_RE.test(testId)) continue; // header row or non-catalog row
+    if (testId === 'ID') continue; // header row
+    // A row left out here would never be seeded, and its runs would be refused
+    // with "No testCase", so an id of an unknown shape stops the parse.
+    if (!ID_RE.test(testId)) {
+      throw new Error(`Unrecognised test id '${testId}' in ${planPath}. `
+        + 'Expected a form like CORE-05 or DC-11a.');
+    }
 
     const tags = (tagsCell || '')
       .split(',')
