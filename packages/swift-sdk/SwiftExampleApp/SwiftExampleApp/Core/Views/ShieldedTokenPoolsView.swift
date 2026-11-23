@@ -360,10 +360,13 @@ struct ShieldedTokenSendTarget: Identifiable {
 /// the amount, the token and the network, picks the token notes and the
 /// credit pool notes that pay the fee, proves, broadcasts and records the
 /// activity. The form only reads the recipient (a pasted bech32m Orchard
-/// address, or this account's own one) and the amount, which it converts to
-/// the token's smallest unit with the token's decimals when the app has the
-/// token locally (the same decimals the list shows amounts with), and shows
-/// Rust's answer.
+/// address, or this account's own one) and the amount, and shows Rust's
+/// answer.
+///
+/// The amount is typed in the token's smallest unit, as a whole number, and
+/// passed to Rust unchanged. The app's cached token decimals can be stale or
+/// from another network, so they never convert the amount; when the app has
+/// them they only give a non-authoritative hint under the field.
 struct ShieldedTokenSendSheet: View {
     let walletId: Data
     let target: ShieldedTokenSendTarget
@@ -386,10 +389,6 @@ struct ShieldedTokenSendSheet: View {
 
     private var balance: ShieldedTokenPoolBalance { target.balance }
 
-    /// The token's decimals when the app has the token; otherwise amounts
-    /// are typed in the token's smallest unit.
-    private var decimals: Int { token?.decimals ?? 0 }
-
     /// The 43 raw bytes of the typed recipient when it is an Orchard address
     /// on the current network.
     private var recipientRaw: Data? {
@@ -400,7 +399,26 @@ struct ShieldedTokenSendSheet: View {
         return raw
     }
 
-    private var amount: UInt64? { parseTokenAmount(amountText, decimals: decimals) }
+    private var trimmedAmountText: String {
+        amountText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The amount in the token's smallest unit: the typed whole number,
+    /// exactly. `nil` for empty text and for anything else (a decimal point,
+    /// a sign, other characters, or a number past `UInt64`).
+    private var amount: UInt64? { Self.smallestUnitAmount(trimmedAmountText) }
+
+    /// The typed text is not a whole number of smallest units.
+    private var amountRefused: Bool { !trimmedAmountText.isEmpty && amount == nil }
+
+    /// Parse `text` as a whole number of the token's smallest unit: ASCII
+    /// digits only, nothing rounded or converted.
+    static func smallestUnitAmount(_ text: String) -> UInt64? {
+        guard !text.isEmpty, text.utf8.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }) else {
+            return nil
+        }
+        return UInt64(text)
+    }
 
     /// This account's own default Orchard address, when the wallet's
     /// shielded account is bound.
@@ -424,15 +442,10 @@ struct ShieldedTokenSendSheet: View {
                     if target.showsAccount {
                         LabeledContent("From account", value: "\(balance.accountIndex)")
                     }
-                    LabeledContent(
-                        "Available",
-                        value: ShieldedTokenPoolsView.amountText(balance.balance, token: token)
-                    )
+                    // In smallest units, the unit the amount is typed in.
+                    LabeledContent("Available", value: "\(balance.balance) (smallest units)")
                     if balance.reservedBalance > 0 {
-                        LabeledContent(
-                            "Pending",
-                            value: ShieldedTokenPoolsView.amountText(balance.reservedBalance, token: token)
-                        )
+                        LabeledContent("Pending", value: "\(balance.reservedBalance) (smallest units)")
                     }
                 }
 
@@ -475,17 +488,28 @@ struct ShieldedTokenSendSheet: View {
                 }
 
                 Section {
-                    TextField(decimals > 0 ? "0.0" : "0", text: $amountText)
-                        .keyboardType(decimals > 0 ? .decimalPad : .numberPad)
+                    TextField("0", text: $amountText)
+                        .keyboardType(.numberPad)
                         .font(.body.monospacedDigit())
                         .accessibilityIdentifier("shieldedTokenSend.amount")
+                    if amountRefused {
+                        Text("Enter a whole number of the token's smallest unit: no decimal point or other characters.")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                            .accessibilityIdentifier("shieldedTokenSend.precisionError")
+                    } else if let amount, let token {
+                        // Display only: the cached decimals may be stale or
+                        // from another network, so they never change what is
+                        // sent.
+                        Text("≈ \(formatTokenAmount(amount, decimals: token.decimals)) tokens if the token has \(token.decimals) decimals (from this app's token cache).")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .accessibilityIdentifier("shieldedTokenSend.decimalsHint")
+                    }
                 } header: {
-                    Text("Amount")
+                    Text("Amount (smallest unit)")
                 } footer: {
-                    Text(
-                        token.map { "In \($0.displayName) units (\(decimals) decimals)." }
-                            ?? "In the token's smallest unit: the app does not have this token's decimals."
-                    )
+                    Text("A whole number of the token's smallest unit, sent exactly as typed.")
                 }
 
                 Section {
