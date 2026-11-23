@@ -83,15 +83,20 @@ interface IdentityDao {
      * replaces the stored one only on a row no wallet owns: a wallet's own identity has its
      * balance kept current by wallet sync, which may have written a newer one than the fetch
      * saw. The alias and the type change only when one is given (a null [identityType] keeps
-     * the stored type, so a type the user did not pick never overwrites a newer one); every
-     * other column (wallet link, key identifiers, DPNS names) is left as the row has it.
-     * Returns the number of rows changed (0 when the row is gone or on another network).
+     * the stored type, so a type the user did not pick never overwrites a newer one), and
+     * so does the wire-order [masternodeProTxHash] of a masternode or evonode loaded for
+     * voting (null keeps the recorded one), in the same statement, so a load never leaves a
+     * row without it. Every other column (wallet link, key identifiers, DPNS names) is left as
+     * the row has it. Returns the number of rows changed (0 when the row is gone or on another
+     * network).
      */
     @Query(
         "UPDATE identities SET " +
             "balance = CASE WHEN walletId IS NULL THEN :balance ELSE balance END, " +
             "alias = COALESCE(:alias, alias), " +
             "isLocal = :isLocal, identityType = COALESCE(:identityType, identityType), " +
+            "masternodeProTxHash = COALESCE(:masternodeProTxHash, masternodeProTxHash), " +
+            "masternodeRoleRaw = COALESCE(:masternodeRoleRaw, masternodeRoleRaw), " +
             "lastUpdated = :nowMillis " +
             "WHERE identityId = :identityId AND networkRaw = :networkRaw"
     )
@@ -103,6 +108,8 @@ interface IdentityDao {
         isLocal: Boolean,
         identityType: String?,
         nowMillis: Long,
+        masternodeProTxHash: ByteArray? = null,
+        masternodeRoleRaw: String? = null,
     ): Int
 
     /**
@@ -152,6 +159,24 @@ interface IdentityDao {
         message: String?,
         address: ByteArray,
     ): Int
+
+    /**
+     * The rows on [networkRaw] that record [proTxHash] as the masternode they vote for: one per
+     * voting key a rotation left on this device (Swift's `masternodeProTxHash == target` fetch).
+     */
+    @Query("SELECT * FROM identities WHERE networkRaw = :networkRaw AND masternodeProTxHash = :proTxHash")
+    suspend fun getByMasternodeProTxHash(networkRaw: Int, proTxHash: ByteArray): List<IdentityEntity>
+
+    /**
+     * Record the pro_tx_hash and role Rust's load rule resolved for a row stored before they
+     * were recorded, only while the row is on [networkRaw] and still records no pro_tx_hash.
+     * Returns the number of rows changed.
+     */
+    @Query(
+        "UPDATE identities SET masternodeProTxHash = :proTxHash, masternodeRoleRaw = :roleRaw " +
+            "WHERE identityId = :identityId AND networkRaw = :networkRaw AND masternodeProTxHash IS NULL"
+    )
+    suspend fun recordResolvedMasternode(identityId: ByteArray, networkRaw: Int, proTxHash: ByteArray, roleRaw: String): Int
 
     /** Mirror of `PersistentIdentity.updateBalance(in:identityId:balance:)`. */
     @Query(

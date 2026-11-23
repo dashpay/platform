@@ -210,9 +210,19 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * `DashSchemaV5`), and a count of the checks recorded, which orders them. NULL for every
  * pre-existing row: a key stored before checks existed is never checked, so
  * it is checked when it is picked to vote.
+ *
+ * Version 19 (shared masternodes): adds the nullable
+ * `identities.masternodeProTxHash` column, the wire-order pro_tx_hash a
+ * masternode or evonode row votes for, kept apart from its identity id since
+ * a masternode without an owner identity is stored under its voter identity
+ * (Swift `PersistentIdentity.masternodeProTxHash`), and the nullable
+ * `identities.masternodeRoleRaw` column, which of the masternode's
+ * identities the load rule returned (`"owner"` or `"voter"`). Both NULL for
+ * every pre-existing row: such a row is resolved through the load rule when
+ * it is next picked to vote.
  */
 @Database(
-    version = 18,
+    version = 19,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -816,6 +826,17 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v18 -> v19: the nullable `identities.masternodeProTxHash` column, see
+         * the version-19 class doc above. NULL for every pre-existing row.
+         */
+        val MIGRATION_18_19: Migration = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `identities` ADD COLUMN `masternodeProTxHash` BLOB")
+                db.execSQL("ALTER TABLE `identities` ADD COLUMN `masternodeRoleRaw` TEXT")
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -848,6 +869,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_15_16,
                     MIGRATION_16_17,
                     MIGRATION_17_18,
+                    MIGRATION_18_19,
                 )
                 .build()
 
