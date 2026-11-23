@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **42**
+Capabilities tracked: **43**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 26 | 14 | 1 | 1 |
-| Swift | Example app | 6 | 26 | 1 | 9 |
-| Kotlin | SDK | 21 | 17 | 3 | 1 |
-| Kotlin | Example app | 7 | 22 | 3 | 10 |
+| Swift | SDK | 27 | 14 | 1 | 1 |
+| Swift | Example app | 6 | 27 | 1 | 9 |
+| Kotlin | SDK | 22 | 17 | 3 | 1 |
+| Kotlin | Example app | 7 | 23 | 3 | 10 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 13 | 27 |
-| Kotlin | 6 | 10 | 26 |
+| Swift | 2 | 13 | 28 |
+| Kotlin | 6 | 10 | 27 |
 
 ## Capability status
 
@@ -60,6 +60,7 @@ Capabilities tracked: **42**
 | `network.adaptive_quorum_source` | supported / supported / tested | supported / supported / tested |
 | `contracts.moderation_reads` | supported / supported / not_applicable | supported / supported / not_applicable |
 | `contracts.fee_claim` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
+| `contracts.moderation_writes` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
 | `system.block_and_transition_status_reads` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `voting.masternode_vote_stored_key` | supported / partial / not_applicable | partial / partial / not_applicable |
 | `identity.load_masternode_voting_key` | supported / partial / not_applicable | partial / partial / not_applicable |

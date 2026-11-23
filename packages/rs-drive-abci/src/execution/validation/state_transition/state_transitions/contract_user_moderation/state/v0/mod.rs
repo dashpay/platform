@@ -295,7 +295,7 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
         }
         // The lists are contract-wide: a seated team uses one when the declaration gives it
         // the ability on some moderated document type.
-        let ability = ability_of(list);
+        let ability = list.ability();
         if moderators.lacks(ability, None) {
             return refuse(
                 ContractModerationAbilityNotGrantedError::new(contract_id, ability, None).into(),
@@ -2069,15 +2069,6 @@ pub(super) fn transform_document_restore_v0<C: CoreRPCLike>(
         )
         .into(),
     ))
-}
-
-/// The ability a seated team needs to edit `list`, putting an identity on it or taking one off.
-fn ability_of(list: ContractModerationList) -> ModerationAbility {
-    match list {
-        ContractModerationList::Banlist => ModerationAbility::Ban,
-        ContractModerationList::Suspensions => ModerationAbility::Suspend,
-        ContractModerationList::Warnings => ModerationAbility::Warn,
-    }
 }
 
 /// The list the action edits, `None` for an action on a document, which edits none.

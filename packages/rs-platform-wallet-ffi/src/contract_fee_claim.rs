@@ -100,7 +100,7 @@ pub(crate) fn claimed_contract_fees_json(claimed: &ClaimedContractFees) -> JsonV
 }
 
 /// The name a moderators pot team is written with.
-fn moderators_pot_team_name(team: ModeratorsPotTeam) -> &'static str {
+pub(crate) fn moderators_pot_team_name(team: ModeratorsPotTeam) -> &'static str {
     match team {
         ModeratorsPotTeam::NoModeration => "noModeration",
         ModeratorsPotTeam::Declared => "declared",

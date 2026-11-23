@@ -81,12 +81,15 @@ pub use masternode::{
 };
 pub use wallet::core_address_key::{CoreAddressKeyError, CoreAddressPrivateKey};
 pub use wallet::identity::network::{
-    contract_fee_claim_eligibility, derive_identity_auth_keypair, fetch_identity_public_keys,
-    AutoAcceptProofSource, ContactCryptoProvider, ContactInfoOpened, ContactInfoPublishOutcome,
-    ContactInfoSealed, ContractFeeClaimEligibility, FetchedIdentityPublicKeys,
-    IdentityKeyLimitsUpdatePreview, ModeratorsPotTeam, OpenedPrivateDocument, PaymentStarted,
-    PreparedDashPayPayment, PrivateContactReadiness, PrivateContactSyncReport,
-    PrivateDocumentCursor, PrivateDocumentDirection, PrivateDocumentKeyPaths, PrivateDocumentRead,
+    contract_fee_claim_eligibility, contract_moderation_offer, derive_identity_auth_keypair,
+    fetch_identity_public_keys, AutoAcceptProofSource, ContactCryptoProvider, ContactInfoOpened,
+    ContactInfoPublishOutcome, ContactInfoSealed, ContractDocumentDeletion,
+    ContractDocumentRestore, ContractFeeClaimEligibility, ContractModerationOffer,
+    ContractModeratorRole, ContractUserModerationKind, DocumentTypeModerationOffer,
+    FetchedIdentityPublicKeys, IdentityKeyLimitsUpdatePreview, IdentityModerationOffer,
+    ModeratorsPotTeam, OpenedPrivateDocument, PaymentStarted, PreparedDashPayPayment,
+    PrivateContactReadiness, PrivateContactSyncReport, PrivateDocumentCursor,
+    PrivateDocumentDirection, PrivateDocumentKeyPaths, PrivateDocumentRead,
     SeedBindingVerification, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
 };
 pub use wallet::identity::network::{

@@ -1,11 +1,20 @@
 import SwiftUI
+import SwiftData
 import SwiftDashSDK
 
 /// The removal records one document type of a contract keeps: a page at a
 /// time, or the records of the document ids typed in. Whether the type
 /// keeps records is the node's to answer.
+///
+/// A record of a document this app deleted, which it kept as it was
+/// (``ModeratedDocumentArchive``), offers a restore (state transition type
+/// 24) to the identities Rust lets restore the type; whether the restore is
+/// still allowed (the week, a settled deletion) is Platform's to answer.
 struct ContractDocumentRemovalsView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var offers: ContractModerationOfferStore
+    @Environment(\.modelContext) private var modelContext
     /// The contract and the connection it was opened on: this screen reads
     /// only through that connection, and the hub hides it once replaced.
     let scope: ModerationScope
@@ -20,6 +29,11 @@ struct ContractDocumentRemovalsView: View {
     /// of the read last started for it.
     @State private var filter = RemovalsLookupFilter()
     @StateObject private var loader = ModerationPagedLoader<ContractDocumentRemovalEntry, String>()
+    /// The record a restore is being confirmed for.
+    @State private var restoreCandidate: ContractDocumentRemovalEntry?
+    @State private var restoringDocumentId: String?
+    @State private var restoreResult: ContractDocumentRestore?
+    @State private var restoreError: String?
 
     var body: some View {
         List {
@@ -47,6 +61,22 @@ struct ContractDocumentRemovalsView: View {
                 Text("Look Up")
             } footer: {
                 Text("A document with no record is left out of the answer.")
+            }
+
+            if let restoreError {
+                ModerationMessageRow(
+                    kind: .error,
+                    text: restoreError,
+                    identifier: "contractModeration.removals.restoreError"
+                )
+            }
+            if let restoreResult {
+                Section("Restored") {
+                    Label("Document restored", systemImage: "checkmark.seal.fill")
+                        .foregroundColor(.green)
+                    ContractDocumentRemovalRow(removal: restoreResult.removal)
+                }
+                .accessibilityIdentifier("contractModeration.removals.restoreResult")
             }
 
             Section(lookedUpIds == nil ? "Records" : "Records of the Documents Named") {
@@ -90,6 +120,7 @@ struct ContractDocumentRemovalsView: View {
                 ForEach(loader.items) { removal in
                     ContractDocumentRemovalRow(removal: removal)
                         .accessibilityIdentifier("contractModeration.removals.row.\(removal.documentId)")
+                    restoreButton(for: removal)
                 }
                 if loader.nextCursor != nil, !loader.items.isEmpty {
                     Button {
@@ -110,9 +141,106 @@ struct ContractDocumentRemovalsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await refresh() }
         .task { submit(ids: nil) }
+        .confirmationDialog(
+            "Restore as",
+            isPresented: Binding(
+                get: { restoreCandidate != nil },
+                set: { if !$0 { restoreCandidate = nil } }
+            ),
+            presenting: restoreCandidate
+        ) { removal in
+            ForEach(offers.restorers(of: documentTypeName)) { moderator in
+                Button("\(moderator.offer.role.title) \(moderator.identityIdBase58.prefix(8))…") {
+                    restore(removal, as: moderator)
+                }
+                .accessibilityIdentifier("contractModeration.removals.restoreAs.\(moderator.identityIdBase58)")
+            }
+        }
         // A replaced SDK: drop what was read through the old one and read
         // nothing through the new one; the hub's gate shows the notice instead
-        .onChange(of: appState.sdkGeneration) { _, _ in loader.clear() }
+        .onChange(of: appState.sdkGeneration) { _, _ in
+            loader.clear()
+            clearRestore()
+        }
+        .onChange(of: scope) { _, _ in clearRestore() }
+    }
+
+    /// Forget the restore shown and the one asked for: they belong to the
+    /// contract and connection they were made on.
+    private func clearRestore() {
+        restoreCandidate = nil
+        restoreResult = nil
+        restoreError = nil
+    }
+
+    /// A restore for a record that stands, of a document this app kept, when
+    /// Rust names an identity that may restore the type.
+    @ViewBuilder
+    private func restoreButton(for removal: ContractDocumentRemovalEntry) -> some View {
+        if removal.restoredBy == nil,
+           !offers.restorers(of: documentTypeName).isEmpty,
+           ModeratedDocumentArchive.standard.contains(
+               contractId: contractId,
+               documentTypeName: documentTypeName,
+               documentId: removal.documentId
+           ) {
+            Button {
+                restoreCandidate = removal
+            } label: {
+                HStack {
+                    if restoringDocumentId == removal.documentId { ProgressView().controlSize(.small) }
+                    Text("Restore…")
+                }
+            }
+            .font(.caption)
+            .disabled(restoringDocumentId != nil)
+            .accessibilityIdentifier("contractModeration.removals.restore.\(removal.documentId)")
+        }
+    }
+
+    private func restore(
+        _ removal: ContractDocumentRemovalEntry,
+        as moderator: ContractModerationOfferStore.Moderator
+    ) {
+        guard let wallet = walletManager.wallet(for: moderator.walletId),
+              let moderatorId = Data.identifier(fromBase58: moderator.identityIdBase58),
+              let contractIdBytes = Data.identifier(fromBase58: contractId),
+              let bytes = ModeratedDocumentArchive.standard.load(
+                  contractId: contractId,
+                  documentTypeName: documentTypeName,
+                  documentId: removal.documentId
+              ) else {
+            restoreError = DocumentActionError.noWallet.localizedDescription
+            return
+        }
+        // Fresh `KeychainSigner` per restore, as `CreateDocumentView` does.
+        let signer = KeychainSigner(modelContainer: modelContext.container)
+        let contractIdBase58 = contractId
+        let typeName = documentTypeName
+        restoringDocumentId = removal.documentId
+        restoreError = nil
+        restoreResult = nil
+        Task {
+            do {
+                let restored = try await wallet.restoreContractDocument(
+                    moderatorIdentityId: moderatorId,
+                    contractId: contractIdBytes,
+                    documentTypeName: typeName,
+                    documentBytes: bytes,
+                    signer: signer
+                )
+                ModeratedDocumentArchive.standard.remove(
+                    contractId: contractIdBase58,
+                    documentTypeName: typeName,
+                    documentId: restored.documentId
+                )
+                restoreResult = restored
+            } catch {
+                restoreError = moderationWriteErrorText(error)
+            }
+            restoringDocumentId = nil
+            await refresh()
+        }
     }
 
     private var parsedIds: [String] {
@@ -231,7 +359,7 @@ private struct KeptFieldRow: View {
 
 /// One removal record: who removed what, why and when, whether it was
 /// restored, and the values the record keeps.
-private struct ContractDocumentRemovalRow: View {
+struct ContractDocumentRemovalRow: View {
     let removal: ContractDocumentRemovalEntry
 
     var body: some View {

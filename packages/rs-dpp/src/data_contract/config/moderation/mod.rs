@@ -526,6 +526,17 @@ impl ContractModerationList {
             ContractModerationList::Warnings => false,
         }
     }
+
+    /// The ability a seated team needs to edit the list, putting an identity on it or taking
+    /// one off: [`ModerationAbility::Ban`] for the banlist, [`ModerationAbility::Suspend`]
+    /// for the suspension list, [`ModerationAbility::Warn`] for the warning list.
+    pub fn ability(&self) -> ModerationAbility {
+        match self {
+            ContractModerationList::Banlist => ModerationAbility::Ban,
+            ContractModerationList::Suspensions => ModerationAbility::Suspend,
+            ContractModerationList::Warnings => ModerationAbility::Warn,
+        }
+    }
 }
 
 impl fmt::Display for ContractModerationList {
@@ -928,6 +939,22 @@ impl ContractModerationListStatuses {
 mod tests {
     use super::*;
     use platform_value::platform_value;
+
+    #[test]
+    fn should_need_the_ability_of_each_list_to_edit_it() {
+        assert_eq!(
+            ContractModerationList::Banlist.ability(),
+            ModerationAbility::Ban
+        );
+        assert_eq!(
+            ContractModerationList::Suspensions.ability(),
+            ModerationAbility::Suspend
+        );
+        assert_eq!(
+            ContractModerationList::Warnings.ability(),
+            ModerationAbility::Warn
+        );
+    }
 
     fn set(ids: &[u8]) -> BTreeSet<Identifier> {
         ids.iter().map(|b| Identifier::from([*b; 32])).collect()
