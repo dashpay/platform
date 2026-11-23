@@ -286,9 +286,9 @@ pub(super) fn create_tables(conn: &Connection) -> rusqlite::Result<()> {
             ON shielded_token_pool_notes (token_id, nullifier);",
     )?;
     // The spend in flight holding a note ([`TokenNoteReservation`]), and
-    // whether that hold was moved to the spend's saved record (its activity
-    // id) before the spend was saved and sent; added to a table made before
-    // reservations were kept.
+    // whether the credit pool pruned the anchor of that spend's fee bundle
+    // after it was saved ([`mark_fee_anchor_pruned`]); added to a table made
+    // before reservations were kept.
     let columns = conn
         .prepare("PRAGMA table_info(shielded_token_pool_notes)")?
         .query_map([], |row| row.get::<_, String>(1))?
@@ -299,10 +299,10 @@ pub(super) fn create_tables(conn: &Connection) -> rusqlite::Result<()> {
             [],
         )?;
     }
-    if !columns.iter().any(|column| column == "reserved_for_record") {
+    if !columns.iter().any(|column| column == "fee_anchor_pruned") {
         conn.execute(
             "ALTER TABLE shielded_token_pool_notes \
-             ADD COLUMN reserved_for_record INTEGER NOT NULL DEFAULT 0",
+             ADD COLUMN fee_anchor_pruned INTEGER NOT NULL DEFAULT 0",
             [],
         )?;
     }
@@ -759,8 +759,7 @@ impl TokenNoteReservation {
     ) -> Result<(), PlatformWalletError> {
         store.with_token_pool_conn(|conn| {
             conn.execute(
-                "UPDATE shielded_token_pool_notes SET reserved_by = ?1, reserved_for_record = 1 \
-                 WHERE reserved_by = ?2",
+                "UPDATE shielded_token_pool_notes SET reserved_by = ?1 WHERE reserved_by = ?2",
                 params![activity_id.as_slice(), self.marker.as_slice()],
             )
             .map_err(storage("rekey reservation"))?;
@@ -778,7 +777,7 @@ impl TokenNoteReservation {
         let marker = self.marker;
         if let Err(e) = store.with_token_pool_conn(|conn| {
             conn.execute(
-                "UPDATE shielded_token_pool_notes SET reserved_by = NULL, reserved_for_record = 0 \
+                "UPDATE shielded_token_pool_notes SET reserved_by = NULL, fee_anchor_pruned = 0 \
                  WHERE reserved_by = ?1",
                 params![marker.as_slice()],
             )
@@ -861,7 +860,7 @@ pub(crate) fn reserve_token_notes<S: TokenPoolConnection>(
         let tx = conn.transaction().map_err(storage("reserve"))?;
         for note in &selected {
             tx.execute(
-                "UPDATE shielded_token_pool_notes SET reserved_by = ?1 \
+                "UPDATE shielded_token_pool_notes SET reserved_by = ?1, fee_anchor_pruned = 0 \
                  WHERE wallet_id = ?2 AND account_index = ?3 AND token_id = ?4 AND nullifier = ?5",
                 params![
                     marker.as_slice(),
@@ -887,8 +886,8 @@ pub(crate) fn reserve_token_notes<S: TokenPoolConnection>(
 }
 
 /// One reservation row as read: wallet id, account, token id, marker bytes,
-/// whether the hold was moved to a saved record, and the height the token
-/// pool's last scan read up to.
+/// whether its spend's fee anchor was pruned, and the height the token pool's
+/// last scan read up to.
 type HeldReservation = (Vec<u8>, u32, Vec<u8>, Vec<u8>, bool, Option<i64>);
 
 /// A reservation the sweep found orphaned ([`orphaned_reservations`]).
@@ -899,9 +898,11 @@ pub(crate) struct OrphanedReservation {
     /// The marker it holds them under: the spend's activity id once moved to
     /// its saved record.
     pub marker: [u8; 32],
-    /// Whether the hold was moved to the spend's saved record, so the spend
-    /// may have been sent; otherwise it was never saved nor sent.
-    pub for_record: bool,
+    /// Whether the spend's saved record was dropped because the credit pool
+    /// pruned its fee bundle's anchor ([`mark_fee_anchor_pruned`]), so the
+    /// spend may have been sent. Otherwise a spend with no record left either
+    /// settled from its fee notes or was never saved, so never sent.
+    pub fee_anchor_pruned: bool,
 }
 
 /// The reservations of `owners` in the pools of `scanned` (the pools this
@@ -930,7 +931,7 @@ pub(crate) fn orphaned_reservations(
     let mut statement = conn
         .prepare(
             "SELECT DISTINCT n.wallet_id, n.account_index, n.token_id, n.reserved_by, \
-             n.reserved_for_record, s.scanned_height FROM shielded_token_pool_notes n \
+             n.fee_anchor_pruned, s.scanned_height FROM shielded_token_pool_notes n \
              LEFT JOIN shielded_token_pool_scans s ON s.token_id = n.token_id \
              WHERE n.reserved_by IS NOT NULL",
         )
@@ -950,7 +951,7 @@ pub(crate) fn orphaned_reservations(
         .collect::<rusqlite::Result<_>>()
         .map_err(storage("read reservations"))?;
     let mut orphaned = BTreeSet::new();
-    for (wallet_id, account_index, token_id, marker, for_record, scanned_height) in held {
+    for (wallet_id, account_index, token_id, marker, fee_anchor_pruned, scanned_height) in held {
         let id = SubwalletId::new(bytes32(wallet_id, "wallet id")?, account_index);
         let token_id = Identifier::from(bytes32(token_id, "token id")?);
         let marker = bytes32(marker, "reservation")?;
@@ -968,10 +969,35 @@ pub(crate) fn orphaned_reservations(
         orphaned.insert(OrphanedReservation {
             id,
             marker,
-            for_record,
+            fee_anchor_pruned,
         });
     }
     Ok(orphaned)
+}
+
+/// Note that the credit pool pruned the anchor of the fee bundle of `id`'s
+/// spend saved as `activity_id`, before its saved record is dropped for it:
+/// the spend may have been sent, and below the protocol version that binds a
+/// token bundle to its fee bundle its token bundle can still land with
+/// another one, so the sweep keeps its notes held there
+/// ([`orphaned_reservations`]). Changes nothing for a spend holding no token
+/// notes.
+pub(crate) fn mark_fee_anchor_pruned(
+    conn: &Connection,
+    id: SubwalletId,
+    activity_id: &[u8; 32],
+) -> Result<(), PlatformWalletError> {
+    conn.execute(
+        "UPDATE shielded_token_pool_notes SET fee_anchor_pruned = 1 \
+         WHERE wallet_id = ?1 AND account_index = ?2 AND reserved_by = ?3",
+        params![
+            id.wallet_id.as_slice(),
+            id.account_index,
+            activity_id.as_slice()
+        ],
+    )
+    .map_err(storage("mark fee anchor pruned"))?;
+    Ok(())
 }
 
 /// Release the token notes `releases` hold, in one transaction: a failure
@@ -985,7 +1011,7 @@ pub(crate) fn release_reservations<'a>(
         .map_err(storage("begin release"))?;
     for release in releases {
         tx.execute(
-            "UPDATE shielded_token_pool_notes SET reserved_by = NULL, reserved_for_record = 0 \
+            "UPDATE shielded_token_pool_notes SET reserved_by = NULL, fee_anchor_pruned = 0 \
              WHERE wallet_id = ?1 AND account_index = ?2 AND reserved_by = ?3",
             params![
                 release.id.wallet_id.as_slice(),

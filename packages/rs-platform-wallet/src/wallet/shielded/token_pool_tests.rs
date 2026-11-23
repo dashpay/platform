@@ -738,6 +738,7 @@ async fn should_release_only_orphaned_token_reservations_in_scanned_pools() {
         .read()
         .await
         .with_token_pool_conn(|conn| {
+            mark_fee_anchor_pruned(conn, id, &record)?;
             orphaned_reservations(
                 conn,
                 &BTreeSet::from([id]),
@@ -751,8 +752,8 @@ async fn should_release_only_orphaned_token_reservations_in_scanned_pools() {
     assert!(
         found
             .iter()
-            .all(|orphan| orphan.for_record == (orphan.marker == [0xEC; 32])),
-        "a hold moved to its saved record says so; one never moved does not"
+            .all(|orphan| orphan.fee_anchor_pruned == (orphan.marker == record)),
+        "only the hold whose fee anchor was marked pruned says so; a rekey alone does not"
     );
     assert_eq!(
         sweep(BTreeSet::from([token().token_id]), BTreeSet::new())
