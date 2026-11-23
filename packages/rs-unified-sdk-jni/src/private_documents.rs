@@ -1,0 +1,349 @@
+//! JNI export for reading a private document type's entries (protocol version 15): bridges
+//! `platform_wallet_read_private_document_entries` and releases its result with
+//! `platform_wallet_private_document_read_free` before returning.
+//!
+//! The read (which identities, which keys, how a payload reads, where to read on from) is
+//! `rs-platform-wallet`'s. This export copies the C result into one JSON string, frees it,
+//! and hands the string to Kotlin, so no native memory outlives the call. The cursor crosses
+//! back as its typed fields; the key set and store fingerprints only cross back unchanged.
+//!
+//! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.PrivateDocumentsNative`.
+
+use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
+use jni::objects::{JByteArray, JClass, JString};
+use jni::sys::{jboolean, jint, jlong, jstring};
+use jni::JNIEnv;
+use platform_wallet_ffi::error::PlatformWalletFFIResultCode;
+use platform_wallet_ffi::handle::Handle;
+use platform_wallet_ffi::private_documents::{
+    platform_wallet_private_document_read_free, platform_wallet_read_private_document_entries,
+    PrivateDocumentCursorFFI, PrivateDocumentEntryFFI, PrivateDocumentReadFFI,
+};
+use rs_sdk_ffi::MnemonicResolverHandle;
+use serde_json::{json, Value};
+use std::ffi::{CStr, CString};
+use std::os::raw::c_char;
+use std::ptr;
+
+/// `bytes` as lowercase hex.
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// A required 32-byte array; throws `InvalidParameter` and returns `None` otherwise.
+fn read_32(env: &mut JNIEnv, array: &JByteArray, field: &str) -> Option<[u8; 32]> {
+    if array.is_null() {
+        throw_sdk_exception(env, 1, &format!("{field} was null"));
+        return None;
+    }
+    let bytes = match env.convert_byte_array(array) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, &format!("{field} byte[] was invalid"));
+            return None;
+        }
+    };
+    match <[u8; 32]>::try_from(bytes.as_slice()) {
+        Ok(bytes) => Some(bytes),
+        Err(_) => {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("{field} must be 32 bytes, got {}", bytes.len()),
+            );
+            None
+        }
+    }
+}
+
+/// The C string `ptr` points to, as an owned string; `None` for null.
+///
+/// # Safety
+/// `ptr` must be null or point to a NUL-terminated string.
+unsafe fn optional_string(ptr: *const c_char) -> Option<String> {
+    if ptr.is_null() {
+        None
+    } else {
+        Some(
+            unsafe { CStr::from_ptr(ptr) }
+                .to_string_lossy()
+                .into_owned(),
+        )
+    }
+}
+
+/// One entry as the JSON object Kotlin decodes. `direction` and `auth_mode` cross as the
+/// discriminants the FFI defines; Kotlin maps them and refuses one it does not know.
+///
+/// # Safety
+/// `entry`'s string pointers must be null or valid NUL-terminated strings.
+unsafe fn entry_json(entry: &PrivateDocumentEntryFFI) -> Value {
+    json!({
+        "position": entry.position,
+        "block_height": entry.block_height,
+        "block_time_ms": entry.block_time_ms,
+        "properties_json": unsafe { optional_string(entry.properties_json) },
+        "properties_refusal": unsafe { optional_string(entry.properties_refusal) },
+        "wallet_identity_id": hex(&entry.wallet_identity_id),
+        "wallet_key_id": entry.wallet_key_id,
+        "recipient_identity_id": hex(&entry.recipient_identity_id),
+        "claimed_sender_identity_id": entry
+            .has_claimed_sender
+            .then(|| hex(&entry.claimed_sender_identity_id)),
+        "claimed_sender_key_id": entry.has_claimed_sender.then_some(entry.claimed_sender_key_id),
+        "commitment": hex(&entry.commitment),
+        "direction": entry.direction,
+        "auth_mode": entry.auth_mode,
+    })
+}
+
+/// `read` as the JSON object Kotlin decodes.
+///
+/// # Safety
+/// `read` must be a result `platform_wallet_read_private_document_entries` filled and that
+/// has not been freed.
+unsafe fn read_json(read: &PrivateDocumentReadFFI) -> Value {
+    let entries: &[PrivateDocumentEntryFFI] = if read.entries.is_null() || read.entry_count == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(read.entries, read.entry_count) }
+    };
+    let cursor = &read.cursor;
+    json!({
+        "entries": entries
+            .iter()
+            .map(|entry| unsafe { entry_json(entry) })
+            .collect::<Vec<_>>(),
+        "cursor": {
+            "position": cursor.position,
+            "proved_total_count": cursor
+                .has_proved_total_count
+                .then_some(cursor.proved_total_count),
+            "key_set": hex(&cursor.key_set),
+            "store": hex(&cursor.store),
+        },
+        "pages_read": read.pages_read,
+        "rejected_count": read.rejected_count,
+        "identity_count": read.identity_count,
+        "unscanned_key_count": read.unscanned_key_count,
+        "complete": read.complete,
+        "restarted": read.restarted,
+    })
+}
+
+/// Read the store of the private document type `documentTypeName` of the contract
+/// `contractId` (32 bytes) for every identity of the wallet, at most `maxPages` proved pages
+/// (bridges `platform_wallet_read_private_document_entries`). The keys are derived inside
+/// `coreSignerHandle`, the manager's `MnemonicResolverHandle`.
+///
+/// The read starts at the store's start when `fromKeySet` is null; otherwise it reads on from
+/// the cursor a previous read returned, given back field by field as it came
+/// (`fromPosition`, `fromProvedTotalCount` with `fromHasProvedTotalCount`, `fromKeySet`,
+/// `fromStore`). Returns the result as JSON (see `read_json`), or null after throwing.
+/// Blocking (network).
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_PrivateDocumentsNative_readPrivateDocumentEntries(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    core_signer_handle: jlong,
+    contract_id: JByteArray,
+    document_type_name: JString,
+    from_position: jlong,
+    from_proved_total_count: jlong,
+    from_has_proved_total_count: jboolean,
+    from_key_set: JByteArray,
+    from_store: JByteArray,
+    max_pages: jint,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Ok(max_pages) = u32::try_from(max_pages) else {
+            throw_sdk_exception(env, 1, "maxPages must not be negative");
+            return ptr::null_mut();
+        };
+        let Some(contract_id) = read_32(env, &contract_id, "contractId") else {
+            return ptr::null_mut();
+        };
+        if document_type_name.is_null() {
+            throw_sdk_exception(env, 1, "documentTypeName was null");
+            return ptr::null_mut();
+        }
+        let name: String = match env.get_string(&document_type_name) {
+            Ok(name) => name.into(),
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "documentTypeName was not a readable string");
+                return ptr::null_mut();
+            }
+        };
+        let Ok(name) = CString::new(name) else {
+            throw_sdk_exception(env, 1, "documentTypeName holds a NUL character");
+            return ptr::null_mut();
+        };
+        let from = if from_key_set.is_null() && from_store.is_null() {
+            None
+        } else {
+            let Some(key_set) = read_32(env, &from_key_set, "fromKeySet") else {
+                return ptr::null_mut();
+            };
+            let Some(store) = read_32(env, &from_store, "fromStore") else {
+                return ptr::null_mut();
+            };
+            let (Ok(position), Ok(proved_total_count)) = (
+                u64::try_from(from_position),
+                u64::try_from(from_proved_total_count),
+            ) else {
+                throw_sdk_exception(
+                    env,
+                    1,
+                    "the cursor's position and count must not be negative",
+                );
+                return ptr::null_mut();
+            };
+            Some(PrivateDocumentCursorFFI {
+                position,
+                proved_total_count,
+                key_set,
+                store,
+                has_proved_total_count: from_has_proved_total_count != 0,
+            })
+        };
+        let from_ptr = from.as_ref().map_or(ptr::null(), |cursor| {
+            cursor as *const PrivateDocumentCursorFFI
+        });
+
+        let mut read = PrivateDocumentReadFFI::empty();
+        let result = unsafe {
+            platform_wallet_read_private_document_entries(
+                wallet_handle as Handle,
+                core_signer_handle as *mut MnemonicResolverHandle,
+                contract_id.as_ptr(),
+                name.as_ptr(),
+                from_ptr,
+                max_pages,
+                &mut read,
+            )
+        };
+        // The read leaves the empty value on every failure, so the JSON is built only on
+        // success and the result is freed on both paths.
+        let json = if result.code == PlatformWalletFFIResultCode::Success {
+            // SAFETY: `read` was filled by the call above and is freed only below.
+            Some(unsafe { read_json(&read) }.to_string())
+        } else {
+            None
+        };
+        unsafe { platform_wallet_private_document_read_free(&mut read) };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let Some(json) = json else {
+            return ptr::null_mut();
+        };
+        env.new_string(json)
+            .map(|string| string.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry() -> PrivateDocumentEntryFFI {
+        PrivateDocumentEntryFFI {
+            position: 7,
+            block_height: 120,
+            block_time_ms: 1_700_000_000_000,
+            properties_json: ptr::null_mut(),
+            properties_refusal: ptr::null_mut(),
+            wallet_identity_id: [0xA1; 32],
+            recipient_identity_id: [0xB2; 32],
+            claimed_sender_identity_id: [0; 32],
+            commitment: [0xC3; 32],
+            wallet_key_id: 3,
+            claimed_sender_key_id: 0,
+            direction: 0,
+            auth_mode: 0,
+            has_claimed_sender: false,
+        }
+    }
+
+    #[test]
+    fn should_write_an_anonymous_entry_without_a_sender() {
+        let properties = CString::new(r#"{"note":"hi"}"#).expect("no NUL");
+        let mut anonymous = entry();
+        anonymous.properties_json = properties.as_ptr() as *mut _;
+        let json = unsafe { entry_json(&anonymous) };
+        assert_eq!(json["position"], 7);
+        assert_eq!(json["block_height"], 120);
+        assert_eq!(json["block_time_ms"], 1_700_000_000_000u64);
+        assert_eq!(json["properties_json"], r#"{"note":"hi"}"#);
+        assert_eq!(json["properties_refusal"], Value::Null);
+        assert_eq!(json["wallet_identity_id"], "a1".repeat(32));
+        assert_eq!(json["recipient_identity_id"], "b2".repeat(32));
+        assert_eq!(json["commitment"], "c3".repeat(32));
+        assert_eq!(json["wallet_key_id"], 3);
+        assert_eq!(json["claimed_sender_identity_id"], Value::Null);
+        assert_eq!(json["claimed_sender_key_id"], Value::Null);
+        assert_eq!(json["direction"], 0);
+        assert_eq!(json["auth_mode"], 0);
+    }
+
+    #[test]
+    fn should_write_a_claimed_sender_and_a_refusal() {
+        let refusal = CString::new("missing note").expect("no NUL");
+        let mut signed = entry();
+        signed.properties_refusal = refusal.as_ptr() as *mut _;
+        signed.has_claimed_sender = true;
+        signed.claimed_sender_identity_id = [0xD4; 32];
+        signed.claimed_sender_key_id = 9;
+        signed.direction = 1;
+        signed.auth_mode = 2;
+        let json = unsafe { entry_json(&signed) };
+        assert_eq!(json["properties_json"], Value::Null);
+        assert_eq!(json["properties_refusal"], "missing note");
+        assert_eq!(json["claimed_sender_identity_id"], "d4".repeat(32));
+        assert_eq!(json["claimed_sender_key_id"], 9);
+        assert_eq!(json["direction"], 1);
+        assert_eq!(json["auth_mode"], 2);
+    }
+
+    #[test]
+    fn should_write_the_counts_and_a_cursor_with_an_unknown_store_size() {
+        let mut read = PrivateDocumentReadFFI::empty();
+        read.cursor = PrivateDocumentCursorFFI {
+            position: 40,
+            proved_total_count: 0,
+            key_set: [0x01; 32],
+            store: [0x02; 32],
+            has_proved_total_count: false,
+        };
+        read.pages_read = 2;
+        read.rejected_count = 1;
+        read.identity_count = 3;
+        read.unscanned_key_count = 4;
+        read.complete = true;
+        read.restarted = true;
+        let json = unsafe { read_json(&read) };
+        assert_eq!(json["entries"], json!([]));
+        assert_eq!(json["cursor"]["position"], 40);
+        assert_eq!(json["cursor"]["proved_total_count"], Value::Null);
+        assert_eq!(json["cursor"]["key_set"], "01".repeat(32));
+        assert_eq!(json["cursor"]["store"], "02".repeat(32));
+        assert_eq!(json["pages_read"], 2);
+        assert_eq!(json["rejected_count"], 1);
+        assert_eq!(json["identity_count"], 3);
+        assert_eq!(json["unscanned_key_count"], 4);
+        assert_eq!(json["complete"], true);
+        assert_eq!(json["restarted"], true);
+
+        read.cursor.has_proved_total_count = true;
+        read.cursor.proved_total_count = 55;
+        assert_eq!(
+            unsafe { read_json(&read) }["cursor"]["proved_total_count"],
+            55
+        );
+    }
+}

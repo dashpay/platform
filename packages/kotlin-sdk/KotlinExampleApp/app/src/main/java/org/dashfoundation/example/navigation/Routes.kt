@@ -454,6 +454,12 @@ import kotlinx.serialization.Serializable
  */
 @Serializable data class GroupDetail(val contractIdHex: String, val position: Int)
 
+/**
+ * The entries of a private document type the device's wallets can open (protocol version 15,
+ * ← `PrivateDocumentEntriesView.swift`). Reached from a private type's detail screen.
+ */
+@Serializable data class PrivateDocumentEntries(val contractIdHex: String, val typeName: String)
+
 /** Query test-runner + environment snapshot (← `DiagnosticsView.swift`). */
 @Serializable object Diagnostics
 
