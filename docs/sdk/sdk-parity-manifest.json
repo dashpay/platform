@@ -105,7 +105,11 @@
     "platform_wallet_tracked_asset_locks_list": "packages/rs-platform-wallet-ffi/src/manager_diagnostics.rs",
     "restore_provider_special_txs": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "platform_wallet_manager_shielded_token_purchase_from_pool": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
-    "platform_wallet_manager_shielded_token_purchase_availability": "packages/rs-platform-wallet-ffi/src/shielded_send.rs"
+    "platform_wallet_manager_shielded_token_purchase_availability": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+    "platform_wallet_manager_create_private_document_entry": "packages/rs-platform-wallet-ffi/src/private_document_create.rs",
+    "platform_wallet_manager_private_document_create_fee": "packages/rs-platform-wallet-ffi/src/private_document_create.rs",
+    "platform_wallet_manager_private_document_recipient_keys": "packages/rs-platform-wallet-ffi/src/private_document_create.rs",
+    "platform_wallet_private_document_recipient_keys_free": "packages/rs-platform-wallet-ffi/src/private_document_create.rs"
   },
   "capabilities": [
     {
@@ -1997,6 +2001,81 @@
       ]
     },
     {
+      "id": "documents.private_document_entry_create",
+      "title": "Create an entry of any private document type from a wallet identity, paid from the shielded pool (protocol version 15)",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_manager_create_private_document_entry",
+        "platform_wallet_manager_private_document_create_fee",
+        "platform_wallet_manager_private_document_recipient_keys",
+        "platform_wallet_private_document_recipient_keys_free"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PrivateDocuments.swift wraps the create (PlatformWalletManager.createPrivateDocumentEntry), the recipient key choices and the fee preview; Rust picks the sender's encryption key, checks the recipient key, the properties against the type's schema and the entry's capacity, seals inside the Keychain mnemonic resolver, and pays as a DashPay private contact request is paid (notes reserved, the transition saved for a redrive before the broadcast). The example app creates one entry from the private type's detail screen (TEST_PLAN DOC-19), anonymous or with a deniable MAC; a signed entry is not offered. The Rust preparation, sealing, refusals, fee preview and the seal-then-read round trip and the FFI marshalling are unit-tested; no gate records the Swift call, the screen, or the spend's recovery after a restart against a protocol version 15 network."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "Not ported: no JNI binding for platform_wallet_manager_create_private_document_entry or its key and fee helpers, and the example app has no create screen for a private document type."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk/src/platform/private_document_seal.rs",
+          "id": "should_seal_an_entry_the_recipient_opens_and_the_sender_recovers",
+          "command": "cargo test -p dash-sdk --lib should_seal_an_entry_the_recipient_opens_and_the_sender_recovers",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/private_document_create.rs",
+          "id": "should_seal_an_entry_the_recipient_opens_and_the_sender_s_read_recovers",
+          "command": "cargo test -p platform-wallet --lib should_seal_an_entry_the_recipient_opens_and_the_sender_s_read_recovers",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/private_document_create.rs",
+          "id": "should_refuse_what_cannot_be_sealed_before_the_signer",
+          "command": "cargo test -p platform-wallet --lib should_refuse_what_cannot_be_sealed_before_the_signer",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/private_document_create.rs",
+          "id": "should_preview_the_fee_a_create_reserves_at_two_actions",
+          "command": "cargo test -p platform-wallet --lib should_preview_the_fee_a_create_reserves_at_two_actions",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/private_document_create.rs",
+          "id": "should_marshal_and_free_the_recipient_keys",
+          "command": "cargo test -p platform-wallet-ffi --lib should_marshal_and_free_the_recipient_keys",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DOC-19",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
       "id": "tokens.max_supply_proposal_discovery",
       "title": "Pending max-supply group proposals are discoverable",
       "area": "example_app",
@@ -2816,10 +2895,10 @@
           "reason": "PlatformAddressBalanceHistoryView renders what Rust returns from one call (paging, the filter to every platform payment account's addresses, the reconciliation of the recent and compacted zones, the newest-first order and the bech32m addresses are in platform-wallet). The TEST_PLAN gate ADDR-10 is written but not yet run on a simulator or device."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
+          "sdk": "supported",
+          "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "No JNI binding in rs-unified-sdk-jni and no Kotlin wrapper or KotlinExampleApp screen for platform_address_wallet_balance_history yet."
+          "reason": "PlatformAddressBalanceHistoryScreen renders what Rust returns from one platform_address_wallet_balance_history call, which JNI copies into a BLOB that AddressHistoryDecodingTest pins against the Rust encoder; the screen keeps Rust's proved height and passes it into every later load, as Swift's does. The TEST_PLAN gate ADDR-10 is written but not yet run on an emulator."
         }
       },
       "verification": [
@@ -2907,6 +2986,45 @@
           "host": "swift",
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "ADDR-10",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/address_history.rs",
+          "id": "should_encode_both_history_sections_in_the_given_order",
+          "command": "cargo test -p rs-unified-sdk-jni --lib address_history",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/AddressHistoryDecodingTest.kt",
+          "id": "should decode both history sections in Rust's order",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*AddressHistoryDecodingTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/errors/DashSdkErrorTest.kt",
+          "id": "shouldReportInconsistentBalanceHistoryHeightsByTheirOwnRetryableCode",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*DashSdkErrorTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "addressHistorySymbolsBindAndRejectInvalidInput",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "ADDR-10",
           "covers_restart": false
         }

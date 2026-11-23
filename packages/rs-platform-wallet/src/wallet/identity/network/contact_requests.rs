@@ -38,6 +38,9 @@ use dash_sdk::drive::query::{WhereClause, WhereOperator};
 use dash_sdk::platform::dashpay::{PrivateContactRequest, SignedContactRequest};
 use dash_sdk::platform::private_document_entries::PrivateDocumentEntries;
 use dash_sdk::platform::private_document_scan::PrivateDocumentScan;
+#[cfg(test)]
+use dash_sdk::platform::private_document_seal::seal_private_document;
+use dash_sdk::platform::private_document_seal::PrivateDocumentEntryRequest;
 use dash_sdk::platform::transition::outcome::{OutcomeEvidence, TransitionOutcome};
 use dash_sdk::platform::transition::waitable::Waitable;
 use dash_sdk::platform::{DocumentQuery, FetchMany};
@@ -259,6 +262,26 @@ pub trait ContactCryptoProvider {
         _platform_version: &dpp::version::PlatformVersion,
     ) -> Result<BinaryData, PlatformWalletError> {
         Err(private_documents_unsupported())
+    }
+
+    /// Seals `request`, an entry of any private document type, with the sender's encryption key,
+    /// the one at `sender_encryption_key_path`
+    /// ([`dash_sdk::platform::private_document_seal::seal_private_document`]): the entry is
+    /// sealed with that key's outgoing viewing key, and a deniable MAC is keyed with it. Its
+    /// secret key stays in the signer; only the sealed entry returns. `esk_seed` is 32 fresh
+    /// random bytes, never reused.
+    ///
+    /// Defaulted to an "unsupported" error, as [`Self::scan_private_document_page`].
+    async fn seal_private_document_entry(
+        &self,
+        _sender_encryption_key_path: &key_wallet::bip32::DerivationPath,
+        _request: &PrivateDocumentEntryRequest<'_>,
+        _esk_seed: &[u8; 32],
+        _platform_version: &dpp::version::PlatformVersion,
+    ) -> Result<BinaryData, PlatformWalletError> {
+        Err(PlatformWalletError::InvalidIdentityData(
+            "sealing private document entries is not supported by this crypto provider".to_string(),
+        ))
     }
 }
 
@@ -531,6 +554,20 @@ impl ContactCryptoProvider for SeedCryptoProvider {
             esk_seed,
             platform_version,
         );
+        encryption_secret_key.non_secure_erase();
+        Ok(sealed?)
+    }
+
+    async fn seal_private_document_entry(
+        &self,
+        sender_encryption_key_path: &key_wallet::bip32::DerivationPath,
+        request: &PrivateDocumentEntryRequest<'_>,
+        esk_seed: &[u8; 32],
+        platform_version: &dpp::version::PlatformVersion,
+    ) -> Result<BinaryData, PlatformWalletError> {
+        let mut encryption_secret_key = self.secret_key_at(sender_encryption_key_path)?;
+        let sealed =
+            seal_private_document(request, &encryption_secret_key, esk_seed, platform_version);
         encryption_secret_key.non_secure_erase();
         Ok(sealed?)
     }
