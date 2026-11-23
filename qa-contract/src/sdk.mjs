@@ -159,9 +159,12 @@ export function resolveIdentityKey(identity, privateKey) {
 }
 
 // Load identity + signer + signing key together. Returns { identity, signer, identityKey, privateKey }.
+// Every script that signs goes through here, so this is also where a network
+// the SDK build cannot follow is refused, before anything is broadcast.
 export async function loadOwnerAuth(sdk, mod, network) {
   const ownerId = (process.env.QA_IDENTITY_ID || '').trim();
   if (!ownerId) throw new Error('Missing QA identity (set QA_IDENTITY_ID).');
+  await requireKnownProtocolVersion(sdk, mod, network);
   const { signer, privateKey } = buildSigner(mod, process.env.QA_PRIVATE_KEY, network);
   const identity = await sdk.identities.fetch(ownerId);
   if (!identity) throw new Error(`Identity ${ownerId} not found on ${network}.`);
@@ -253,8 +256,8 @@ export function requireCurrentSchema(cfg, network = getNetwork()) {
 
 // Refuse to write to a network that runs a protocol version this SDK build does
 // not know. The write itself can land while the SDK fails to read the proof that
-// confirms it, which for a registration means credits spent and no contract id
-// saved. Returns the network's protocol version.
+// confirms it: a registration then costs its credits and saves no contract id,
+// and a run sent again is recorded twice. Returns the network's protocol version.
 export async function requireKnownProtocolVersion(sdk, mod, network = getNetwork()) {
   const state = await sdk.protocol.versionUpgradeState();
   const current = Number((state?.toJSON?.() ?? state)?.currentProtocolVersion);

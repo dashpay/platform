@@ -11,7 +11,7 @@
 import { parseArgs } from 'node:util';
 import {
   loadDotEnv, connect, loadOwnerAuth, loadSchema, schemaSha,
-  readConfig, writeConfig, addAdmin, findAdmin, requireKnownProtocolVersion,
+  readConfig, writeConfig, addAdmin, findAdmin,
 } from './sdk.mjs';
 import { resolvePlanCommit } from './parse-test-plan.mjs';
 
@@ -60,11 +60,6 @@ async function main() {
     console.log(`Config has ${existing.contractId} but it no longer resolves on ${network} `
       + '(testnet reset?). Registering a fresh contract.');
   }
-
-  // Registering is paid for once and cannot be repeated for free, so make sure
-  // this SDK build can read the proof that confirms it before broadcasting.
-  const protocolVersion = await requireKnownProtocolVersion(sdk, mod, network);
-  console.log(`${network} runs protocol version ${protocolVersion}.`);
 
   const { ownerId, identity, signer, identityKey } = await loadOwnerAuth(sdk, mod, network);
   console.log(`Owner identity ${ownerId} (balance ${identity.balance} credits, `

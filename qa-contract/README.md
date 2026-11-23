@@ -218,9 +218,9 @@ npm install
 >
 > The published SDK knows the protocol versions of its release. On a network
 > that runs a later one (a devnet or a local network built from a development
-> branch), use Option B: `register.mjs` refuses to publish when the network is
-> ahead of the SDK, because the registration could land while the SDK fails to
-> read the proof that confirms it.
+> branch), use Option B: the scripts that sign refuse to run when the network
+> is ahead of the SDK, because a write could land while the SDK fails to read
+> the proof that confirms it.
 
 **Option B — in-repo (workspace build):** build the workspace SDK once and point
 the scripts at the bundle (no `yarn install` in this dir needed):
