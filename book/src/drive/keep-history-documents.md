@@ -253,7 +253,8 @@ is the separately named read for how much history is left.
 `historyWithProof()` and `erase()`; the WASM SDK exposes them as
 `getDocumentHistory`, `getDocumentHistoryWithProofInfo` and `documentErase`.
 Every history selector is an exact `u64`: a `number` is accepted only up to
-`Number.MAX_SAFE_INTEGER`, anything larger must be a `bigint`.
+`Number.MAX_SAFE_INTEGER`, anything larger must be a `bigint`. A query without
+a selector reads the whole history, as `startAtMs: 0` does.
 
 ```typescript
 // Delete, then erase in chunks until the history is gone. The first erase

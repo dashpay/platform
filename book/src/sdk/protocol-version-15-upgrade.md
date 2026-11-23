@@ -115,6 +115,20 @@ As long as its nodes are not banned by one of the failures above:
     configuration problem, before any request is sent; once the configuration is fixed, the
     same query succeeds (tracked in #6065). It also covers a node refusing the request as
     asked, for example a moderation list the contract does not keep.
+- **JavaScript document history.** `documents.history` and `documents.historyWithProof`
+  (wasm-sdk `getDocumentHistory` and `getDocumentHistoryWithProofInfo`) change shape on
+  every network, protocol version 14 included:
+  - They return a `DocumentHistoryResult`, `{ entries, lifecycle }`, instead of a `Map` from
+    block time to document. Each entry holds `timeMs`, `revision` and `document`, and
+    `lifecycle` is undefined below protocol version 15.
+  - `startAtMs` is inclusive: an entry at exactly that time is returned, which 5.0.x
+    skipped. An app that pages by passing the time of the last entry it read gets that
+    entry again.
+  - `offset` is gone. A query that still passes it is refused as an unknown field.
+  - A query takes at most one selector: `startAtMs`, `startAfter`, `startAtRevision` or
+    `revision`. Without one it reads the whole history, as `startAtMs: 0` does. The last
+    three need protocol version 15 and are refused before sending below it
+    (`ProtocolVersionNotActive`).
 - **wasm-sdk contract moderation status.** `getContractModerationStatus` and its
   `WithProofInfo` variant, called without `lists`, are refused below protocol version 14
   before the contract is looked up (a protocol version error), rather than reporting the
