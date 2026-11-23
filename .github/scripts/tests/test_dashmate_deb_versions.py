@@ -148,7 +148,7 @@ class RewriteDebVersionsTests(unittest.TestCase):
                                                               CONTROL.replace('Version: {version}',
                                                                               'Version:{version}'),
                                                               'Could not rewrite the Version field'),
-            # what oclif writes when the package has no author, as 5.1.0-dev.2 shipped
+            # what oclif writes when the package has no author
             'an undefined Maintainer': ('4.1.0.61be67f7bf-1', CONTROL.replace('{maintainer}', 'undefined'),
                                         'Expected a Maintainer'),
             'no Maintainer': ('4.1.0.61be67f7bf-1', CONTROL.replace('Maintainer: {maintainer}\n', ''),
