@@ -1,5 +1,6 @@
 package org.dashfoundation.example.ui.tokens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,6 +32,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.persistence.entities.DataContractEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
@@ -64,6 +66,37 @@ class TokenActionViewModel : ViewModel() {
     /** Flips once on success; the scaffold observes it and pops back. */
     var completed by mutableStateOf(false)
         private set
+
+    /**
+     * A message the form shows after its action returned and before it
+     * closes ([showNoticeUntilDismissed]). Held here, not in the
+     * composition, so it survives a configuration change.
+     */
+    var notice by mutableStateOf<String?>(null)
+        private set
+
+    private var noticeDismissed: CompletableDeferred<Unit>? = null
+
+    /**
+     * Show [message] and suspend until [dismissNotice]. Called at the end
+     * of a [submit] block whose result the user must read before the form
+     * pops: the action is over, so no retry is offered while it shows.
+     */
+    suspend fun showNoticeUntilDismissed(message: String) {
+        val dismissed = CompletableDeferred<Unit>()
+        noticeDismissed = dismissed
+        notice = message
+        try {
+            dismissed.await()
+        } finally {
+            notice = null
+        }
+    }
+
+    /** The user acknowledged [notice]. */
+    fun dismissNotice() {
+        noticeDismissed?.complete(Unit)
+    }
 
     /** Run [block] once; concurrent submits are ignored while in flight. */
     fun submit(block: suspend () -> Unit) {
@@ -187,8 +220,16 @@ fun TokenActionScaffold(
     navController: NavHostController,
     onSubmit: () -> Unit,
     tokenSummaryRows: @Composable () -> Unit = {},
+    submitTestTag: String = "tokenAction.submitButton",
+    backBlocked: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    // Leaving pops the entry and clears [viewModel] with it, so a form whose
+    // result must be read ([TokenActionViewModel.showNoticeUntilDismissed])
+    // blocks system Back while it runs; the toolbar Back is disabled for
+    // the same reason. Same pattern as `DecisionProposalsScreen`.
+    BackHandler(enabled = backBlocked) {}
+
     LaunchedEffect(viewModel.completed) {
         if (viewModel.completed) navController.popBackStack()
     }
@@ -198,7 +239,10 @@ fun TokenActionScaffold(
             TopAppBar(
                 title = { Text(title) },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(
+                        onClick = { navController.popBackStack() },
+                        enabled = !backBlocked,
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -231,7 +275,7 @@ fun TokenActionScaffold(
                 enabled = canSubmit && context.wallet != null,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("tokenAction.submitButton"),
+                    .testTag(submitTestTag),
                 onClick = onSubmit,
             )
 

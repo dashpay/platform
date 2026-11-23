@@ -107,14 +107,14 @@ private fun ActivityRow(row: ShieldedActivityEntity) {
     Card(modifier = Modifier.testTag("shieldedActivity.row")) {
         ListItem(
             headlineContent = { Text(kindLabel(row.kindTag)) },
-            supportingContent = { Text(statusLabel(row.status)) },
+            supportingContent = { Text(supportingText(row.kindTag, row.status)) },
             trailingContent = { Text(signedAmount(row)) },
         )
     }
 }
 
 /** Kind label — ← Swift `ShieldedActivityView` kind map. */
-private fun kindLabel(kindTag: Int): String = when (kindTag) {
+internal fun kindLabel(kindTag: Int): String = when (kindTag) {
     0 -> "Shielded"
     1 -> "Shielded from Asset Lock"
     2 -> "Received"
@@ -124,8 +124,33 @@ private fun kindLabel(kindTag: Int): String = when (kindTag) {
     6 -> "Identity Created"
     8 -> "Shielded from Identity"
     9 -> "Identity Top-Up from Pool"
+    KIND_TOKEN_PURCHASE -> "Token Purchase"
     else -> "Shielded Spend"
 }
+
+/** `ShieldedActivityKind::TokenPurchase`, a purchase from the shielded pool (type 28). */
+internal const val KIND_TOKEN_PURCHASE = 10
+
+/**
+ * What a token purchase row says about its tokens, by its stored status:
+ * minted only once Confirmed (1). The row is recorded before the purchase
+ * is broadcast, so its kind alone says what the buyer intended, not what
+ * executed. ← Swift `ShieldedActivityView.tokenPurchaseNote`.
+ */
+internal fun tokenPurchaseNote(status: Int): String = when (status) {
+    1 -> "The tokens were minted to this wallet's shielded token pool, which the app does not show yet."
+    2 -> "The purchase did not go through; no tokens were minted."
+    else -> "Not confirmed yet: a shielded sync confirms the purchase once it lands. " +
+        "The app does not show the shielded token pool yet."
+}
+
+/** A row's supporting line: its status, and for a token purchase what that status means. */
+internal fun supportingText(kindTag: Int, status: Int): String =
+    if (kindTag == KIND_TOKEN_PURCHASE) {
+        "${statusLabel(status)}. ${tokenPurchaseNote(status)}"
+    } else {
+        statusLabel(status)
+    }
 
 private fun statusLabel(status: Int): String = when (status) {
     0 -> "Pending"
