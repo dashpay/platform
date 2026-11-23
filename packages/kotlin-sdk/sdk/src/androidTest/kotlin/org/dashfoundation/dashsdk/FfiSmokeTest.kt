@@ -5,10 +5,13 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.Dispatchers
 import org.dashfoundation.dashsdk.ffi.AddressHistoryNative
 import org.dashfoundation.dashsdk.ffi.ContractModerationNative
+import org.dashfoundation.dashsdk.ffi.ContractUpdateNative
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.DpnsGiveUpNative
+import org.dashfoundation.dashsdk.ffi.IdentityNative
 import org.dashfoundation.dashsdk.ffi.IdentityRemovalNative
+import org.dashfoundation.dashsdk.ffi.IdentityWithdrawalsNative
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
@@ -285,6 +288,42 @@ class FfiSmokeTest {
     }
 
     /**
+     * The contract update review exports bind with the descriptors
+     * `ContractUpdateNative` declares, and `IdentityNative.updateDataContractAtReviewedVersion`
+     * with its `expectedCurrentVersion` slot. The split needs no wallet, so it
+     * runs for real: a contract JSON object splits into its sections in source
+     * order, and text that is not a JSON object is refused by Rust. The preview
+     * and the update refuse an unknown wallet handle; an expected version that
+     * does not fit a `u32` is refused with code 1 before any C call.
+     */
+    @Test
+    fun contractUpdateReviewSymbolsBindAndSplitASource() {
+        NativeLoader.ensureLoaded()
+        val documents = """{"note":{"type":"object","properties":{"b":{"type":"string","position":0}}}}"""
+        val sections = org.dashfoundation.dashsdk.identity.DataContractUpdateSource.split(
+            """{"documents":$documents,"description":"d"}""",
+        )
+        assertEquals(documents, sections.documents)
+        assertEquals("d", sections.description)
+        assertNull(sections.tokens)
+        assertFalse(sections.carriesSharedDefinitions)
+        assertThrows(DashSDKException::class.java) {
+            ContractUpdateNative.splitContractUpdateSource("[1,2]")
+        }
+        assertThrows(DashSDKException::class.java) {
+            ContractUpdateNative.previewDataContractUpdate(
+                0L, ByteArray(32), ByteArray(32), "{}", null, null, null, null, null,
+            )
+        }
+        val badVersion = assertThrows(DashSDKException::class.java) {
+            IdentityNative.updateDataContractAtReviewedVersion(
+                0L, ByteArray(32), ByteArray(32), "{}", null, null, null, null, null, -1L, 0L,
+            )
+        }
+        assertEquals(1, badVersion.code)
+    }
+
+    /**
      * The live-wallet identity removal binds, and an unknown manager handle
      * throws the mapped [DashSDKException] instead of crashing. The removal
      * itself is covered by the platform-wallet and platform-wallet-ffi tests.
@@ -353,6 +392,26 @@ class FfiSmokeTest {
         } finally {
             SdkNative.destroy(sdk)
         }
+    }
+
+    /**
+     * `identityWithdrawals` binds with the descriptor `(J[B)[B` and its arguments arrive in
+     * order: an identity id that is not 32 bytes is refused in the JNI layer (code 1), and a
+     * 32-byte id on a wallet handle Rust does not know reaches
+     * `platform_wallet_identity_withdrawals`, which answers `NotFound` (98, thrown shifted
+     * by the platform-wallet offset). Nothing reaches the network.
+     */
+    @Test
+    fun identityWithdrawalsSymbolBindsAndRejectsInvalidInput() {
+        NativeLoader.ensureLoaded()
+        val shortId = assertThrows(DashSDKException::class.java) {
+            IdentityWithdrawalsNative.identityWithdrawals(1L, ByteArray(31))
+        }
+        assertEquals(1, shortId.code)
+        val unknownWallet = assertThrows(DashSDKException::class.java) {
+            IdentityWithdrawalsNative.identityWithdrawals(Long.MAX_VALUE, ByteArray(32) { 7 })
+        }
+        assertEquals(1000 + 98, unknownWallet.code)
     }
 
     /**

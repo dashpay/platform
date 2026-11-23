@@ -1828,10 +1828,10 @@
           "reason": "UpdateContractView (Contracts -> contract -> Update Contract) calls previewDataContractUpdate and offers the update only when the preview reports a change, but the flow has not been driven on a device or simulator yet: TEST_PLAN DC-04 is the manual gate still to run."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
+          "sdk": "supported",
+          "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "Kotlin's UpdateContractScreen broadcasts without a preview, and the JNI bridge (rs-unified-sdk-jni) does not expose platform_wallet_preview_data_contract_update or platform_wallet_split_contract_update_source."
+          "reason": "DataContracts.previewUpdate and DataContractUpdateSource.split bridge platform_wallet_preview_data_contract_update and platform_wallet_split_contract_update_source through ContractUpdateNative, one JNI export each, and DataContracts.update passes the reviewed version as expectedCurrentVersion. KotlinExampleApp's UpdateContractScreen (Contracts -> contract -> Update Contract, contractDetails.updateContract) shows the preview Rust returns and offers the broadcast only when it reports a change, with Swift's updateContract.* identifiers as testTags. Partial until TEST_PLAN DC-04 is run on an emulator. Unlike Swift, a groups list whose entries carry an id is not re-keyed by position before it is sent."
         }
       },
       "verification": [
@@ -1848,6 +1848,30 @@
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
           "id": "DC-04",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/identity/DataContractUpdatePreviewTest.kt",
+          "id": "shouldDecodeAPreviewWithEveryField",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*DataContractUpdatePreviewTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/contracts/UpdateContractFieldsTest.kt",
+          "id": "shouldOfferTheUpdateOnlyForAReviewOfTheFieldsShownThatChangesSomething",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*UpdateContractFieldsTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "contractUpdateReviewSymbolsBindAndSplitASource",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
           "covers_restart": false
         }
       ]
@@ -3397,10 +3421,10 @@
           "reason": "IdentityWithdrawalsView (IdentityDetailView -> Withdrawals, and View withdrawals after a submit in WithdrawCreditsView) lists the withdrawals Rust reads from the withdrawals contract with their status, finality and asset unlock index. The TEST_PLAN gates ID-19 and ID-20 are written but not yet run on a simulator or device. Nothing is stored locally, so there is no restart state: the list is read from the chain each time."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
+          "sdk": "supported",
+          "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "No JNI binding in rs-unified-sdk-jni and no Kotlin wrapper or KotlinExampleApp screen for platform_wallet_identity_withdrawals; KotlinExampleApp's withdrawal screens show no status after a submit."
+          "reason": "IdentityWithdrawalsScreen (IdentityDetailScreen -> Withdrawals, and View withdrawals after a submit in WithdrawCreditsScreen) lists the withdrawals Rust reads with platform_wallet_identity_withdrawals, with Rust's status label, finality and asset unlock index; JNI copies the rows into a BLOB that IdentityWithdrawalsDecodingTest pins against the Rust encoder. The TEST_PLAN gates ID-19 and ID-20 are written but not yet run on an emulator. Nothing is stored locally, so there is no restart state: the list is read from the chain each time."
         }
       },
       "verification": [
@@ -3447,6 +3471,44 @@
           "host": "swift",
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "ID-20",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/identity_withdrawals.rs",
+          "id": "should_encode_rows_in_the_given_order_with_every_optional_gated_by_its_flag",
+          "command": "cargo test -p rs-unified-sdk-jni --lib identity_withdrawals",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/identity/IdentityWithdrawalsDecodingTest.kt",
+          "id": "should refuse a status code this build does not know",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*IdentityWithdrawalsDecodingTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "identityWithdrawalsSymbolBindsAndRejectsInvalidInput",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "ID-19",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "ID-20",
           "covers_restart": false
         }
