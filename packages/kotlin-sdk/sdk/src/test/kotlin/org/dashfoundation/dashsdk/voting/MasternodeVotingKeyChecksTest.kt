@@ -9,6 +9,8 @@ import org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Before
@@ -124,6 +126,139 @@ class MasternodeVotingKeyChecksTest {
         )
         assertThrows(DashSdkError.SerializationError::class.java) {
             MasternodeVotingKeyCheckCodec.decodeUse("""{"canVote":true}""")
+        }
+    }
+
+    /** The load JSON `rs-unified-sdk-jni`'s `should_write_the_load_json_the_kotlin_decoder_reads` pins. */
+    @Test
+    fun shouldDecodeEachLoadKind() {
+        val id = "cd".repeat(32)
+        val voter = MasternodeVotingKeyCheckCodec.decodeLoad(
+            """{"kind":1,"identityId":"$id","identityJson":"{\"id\":\"x\"}","votingKeyVerdict":0,"message":null}""",
+        ) as MasternodeVotingLoad.Loaded
+        assertEquals(MasternodeVotingLoadedIdentity.Role.VOTER, voter.identity.role)
+        assertArrayEquals(ByteArray(32) { 0xcd.toByte() }, voter.identity.identityId)
+        assertEquals("""{"id":"x"}""", voter.identity.identityJson)
+        assertEquals(MasternodeVotingKeyCheck.Valid, voter.identity.votingKeyCheck)
+
+        val owner = MasternodeVotingKeyCheckCodec.decodeLoad(
+            """{"kind":0,"identityId":"$id","identityJson":"{}","votingKeyVerdict":2,"message":"down"}""",
+        ) as MasternodeVotingLoad.Loaded
+        assertEquals(MasternodeVotingLoadedIdentity.Role.OWNER, owner.identity.role)
+        assertEquals(MasternodeVotingKeyCheck.Undetermined("down"), owner.identity.votingKeyCheck)
+
+        val noKey = MasternodeVotingKeyCheckCodec.decodeLoad(
+            """{"kind":0,"identityId":"$id","identityJson":"{}","votingKeyVerdict":null,"message":null}""",
+        ) as MasternodeVotingLoad.Loaded
+        assertNull(noKey.identity.votingKeyCheck)
+
+        assertEquals(
+            MasternodeVotingLoad.Refused("no owner"),
+            MasternodeVotingKeyCheckCodec.decodeLoad(
+                """{"kind":2,"identityId":null,"identityJson":null,"votingKeyVerdict":null,"message":"no owner"}""",
+            ),
+        )
+        assertThrows(DashSdkError.SerializationError::class.java) {
+            MasternodeVotingKeyCheckCodec.decodeLoad("""{"kind":1,"identityId":"ab","identityJson":"{}"}""")
+        }
+
+        // A voting key refused for a voter identity names it.
+        val refused = MasternodeVotingKeyCheckCodec.decodeLoad(
+            """{"kind":2,"identityId":"${"ef".repeat(32)}","identityJson":null,"votingKeyVerdict":1,"message":"rotated"}""",
+        ) as MasternodeVotingLoad.Refused
+        assertEquals("rotated", refused.message)
+        assertArrayEquals(ByteArray(32) { 0xef.toByte() }, refused.votingKeyRefusedFor)
+        assertThrows(DashSdkError.SerializationError::class.java) {
+            MasternodeVotingKeyCheckCodec.decodeLoad(
+                """{"kind":2,"identityId":null,"identityJson":null,"votingKeyVerdict":1,"message":"x"}""",
+            )
+        }
+    }
+
+    @Test
+    fun shouldReadTheRecordedRoleAndRefuseAVoterAsARecipient() {
+        assertEquals(null, row(identifierA).masternodeRole)
+        assertEquals(MasternodeVotingLoadedIdentity.Role.OWNER, row(identifierA).copy(masternodeRoleRaw = "owner").masternodeRole)
+        assertTrue(row(identifierA).copy(masternodeRoleRaw = "voter").isVotingOnlyIdentity)
+        assertFalse(row(identifierA).copy(masternodeRoleRaw = "owner").isVotingOnlyIdentity)
+        assertFalse(row(identifierA).copy(masternodeRoleRaw = "something newer").isVotingOnlyIdentity)
+    }
+
+    /** The JSON `siblingVotingKeyRecord` writes; an undetermined record carries the recheck note. */
+    @Test
+    fun shouldDecodeASiblingRecord() {
+        assertNull(MasternodeVotingKeyCheckCodec.decodeSiblingRecord("""{"record":null}"""))
+        assertEquals(
+            MasternodeRecordedVotingKey(
+                MasternodeVotingKeyCheck.Undetermined(MasternodeVotingKeyCheckCodec.CHECK_AGAIN_AFTER_ANOTHER_KEY_MESSAGE),
+                addressA,
+            ),
+            MasternodeVotingKeyCheckCodec.decodeSiblingRecord(
+                """{"record":{"check":3,"votingAddress":"${"0a".repeat(20)}"}}""",
+            ),
+        )
+    }
+
+    /**
+     * The sibling write: every other row on the network for the same pro_tx_hash is given to
+     * Rust with its own record, and what Rust returns is written; the loaded row and rows on
+     * another network or for another masternode are left alone.
+     */
+    @Test
+    fun shouldRecordWhatRustSaysForTheOtherKeysOfTheMasternode() = runBlocking {
+        val proTxHash = ByteArray(32) { (0x40 + it).toByte() }
+        val siblingId = ByteArray(32) { 6 }
+        val siblingIdentifier = MasternodeVotingKeyStore.identifierFor(siblingId, addressB.bytes)
+        db.identityDao().upsert(row(identifierA).copy(masternodeProTxHash = proTxHash))
+        db.identityDao().upsert(
+            row(siblingIdentifier).copy(
+                identityId = siblingId,
+                masternodeProTxHash = proTxHash,
+                votingKeyCheckRaw = "valid",
+                votingKeyCheckAddress = addressB.bytes,
+            ),
+        )
+        db.identityDao().upsert(
+            row(null).copy(identityId = ByteArray(32) { 7 }, masternodeProTxHash = ByteArray(32) { 1 }),
+        )
+        val recheck = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Undetermined("again"), addressB)
+        val rules = SiblingRules(recheck)
+
+        val written = MasternodeVotingKeyRecords.recordSiblings(
+            db, testnet, proTxHash, identityId, identifierA, MasternodeVotingKeyCheck.Valid, rules,
+        )
+
+        assertEquals(1, written)
+        assertEquals(
+            listOf(MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressB)),
+            rules.asked,
+        )
+        assertEquals(recheck, db.identityDao().getByIdentityId(siblingId)!!.recordedVotingKey)
+        assertNull(db.identityDao().getByIdentityId(identityId)!!.votingKeyCheckRaw)
+    }
+
+    /** Answers [answer] for every sibling and records what it was given. */
+    private class SiblingRules(val answer: MasternodeRecordedVotingKey?) : MasternodeVotingKeyRules {
+        val asked = mutableListOf<MasternodeRecordedVotingKey?>()
+
+        override fun outcome(
+            check: MasternodeVotingKeyCheck,
+            votingAddress: MasternodeVotingKeyAddress,
+            slot: MasternodeVotingKeySlot,
+        ): MasternodeVotingKeyCheckOutcome = error("unused")
+
+        override fun use(
+            recorded: MasternodeRecordedVotingKey?,
+            storedVotingAddress: MasternodeVotingKeyAddress?,
+        ): MasternodeRecordedVotingKeyUse = error("unused")
+
+        override fun siblingRecord(
+            loaded: MasternodeVotingKeyCheck,
+            loadedAddress: MasternodeVotingKeyAddress,
+            sibling: MasternodeRecordedVotingKey?,
+        ): MasternodeRecordedVotingKey? {
+            asked += sibling
+            return answer
         }
     }
 
@@ -306,5 +441,11 @@ class MasternodeVotingKeyChecksTest {
             usedWith += recorded to storedVotingAddress
             return MasternodeRecordedVotingKeyUse(canVote = true, checkBeforeUse = true)
         }
+
+        override fun siblingRecord(
+            loaded: MasternodeVotingKeyCheck,
+            loadedAddress: MasternodeVotingKeyAddress,
+            sibling: MasternodeRecordedVotingKey?,
+        ): MasternodeRecordedVotingKey? = error("unused")
     }
 }

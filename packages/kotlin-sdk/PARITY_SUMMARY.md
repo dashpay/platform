@@ -10,8 +10,8 @@ Capabilities tracked: **50**
 | --- | --- | ---: | ---: | ---: | ---: |
 | Swift | SDK | 31 | 17 | 1 | 1 |
 | Swift | Example app | 6 | 34 | 1 | 9 |
-| Kotlin | SDK | 25 | 17 | 7 | 1 |
-| Kotlin | Example app | 7 | 26 | 7 | 10 |
+| Kotlin | SDK | 26 | 17 | 6 | 1 |
+| Kotlin | Example app | 7 | 27 | 6 | 10 |
 
 ## Restart coverage
 
@@ -64,7 +64,7 @@ Capabilities tracked: **50**
 | `system.block_and_transition_status_reads` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `voting.masternode_vote_stored_key` | supported / partial / not_applicable | partial / partial / tested |
 | `identity.load_masternode_voting_key` | supported / partial / not_applicable | partial / partial / tested |
-| `identity.load_shared_masternode_for_voting` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
+| `identity.load_shared_masternode_for_voting` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `addresses.balance_history` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `shielded.shield_from_identity` | supported / partial / required | supported / partial / required |
 | `shielded.identity_top_up_from_pool` | supported / partial / required | supported / partial / required |
