@@ -24,7 +24,7 @@ CHECKSUMS_JOB = 501
 def checksums_log(*records):
     """The log of a Release Dashmate checksums job: its script, as GitHub shows it, then the records."""
     lines = ['\ufeff2026-11-23T10:00:00.0000000Z ##[group]Run set -euo pipefail',
-             '2026-11-23T10:00:00.0100000Z echo "SHA256SUMS attached: asset ${id} sha256 ${sum}"',
+             '2026-11-23T10:00:00.0100000Z \x1b[36;1mecho "SHA256SUMS attached: asset ${id} sha256 ${sum}"\x1b[0m',
              '2026-11-23T10:00:00.0200000Z ##[endgroup]',
              # output that quotes the record's wording is not a record
              '2026-11-23T10:00:00.0300000Z ##[error]dashmate.deb SHA256SUMS attached: asset 999 sha256 ' + 'e' * 64]
@@ -87,8 +87,23 @@ def asset(name, data, uploader):
         handle.write(data)
 
 if args[0] == 'api':
+    # GH_ESCAPE_GUARD: a gh that refuses a response with terminal escape sequences unless
+    # --allow-escape-sequences is given; any other gh does not know that option.
+    guard = bool(os.environ.get('GH_ESCAPE_GUARD'))
+    if '--help' in args:
+        # As long as gh's own help, so a reader that stops at the first match closes the pipe early.
+        print('Usage: gh api <endpoint> [flags]')
+        if guard:
+            print('      --allow-escape-sequences   Allow terminal escape sequences in the response')
+        for number in range(5000):
+            print(f'  --option-{number} string   Another option of gh api')
+        sys.exit(0)
+    allow = '--allow-escape-sequences' in args
+    if allow and not guard:
+        print('unknown flag: --allow-escape-sequences', file=sys.stderr)
+        sys.exit(1)
     jq = option('--jq')
-    path = [a for a in args[1:] if a not in ('--paginate', '--jq', jq)][0]
+    path = [a for a in args[1:] if a not in ('--paginate', '--allow-escape-sequences', '--jq', jq)][0]
     if path == repo + 'releases/tags/' + release['tag_name']:
         respond(release, jq)
     if path == repo + 'releases/%d/assets?per_page=100' % release['id']:
@@ -103,6 +118,9 @@ if args[0] == 'api':
         respond({'jobs': state['jobs'][match.group(1)]}, jq)
     match = re.fullmatch(repo + r'actions/jobs/(\\d+)/logs', path)
     if match and match.group(1) in state['logs'] and not os.environ.get('GH_NO_LOG'):
+        if guard and not allow and '\x1b' in state['logs'][match.group(1)]:
+            print('the response contains terminal escape sequences', file=sys.stderr)
+            sys.exit(1)
         sys.stdout.write(state['logs'][match.group(1)])
         sys.exit(0)
     not_found()
@@ -375,6 +393,18 @@ class ReleaseFixture(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which('jq'), 'needs jq')
 class SignDashmateChecksumsTests(ReleaseFixture):
+    def test_should_read_the_job_log_with_any_gh_version(self):
+        # gh 2.105 refuses a log with the runner's colour codes unless told to allow them; older
+        # versions do not know that option.
+        for guard in ['', '1']:
+            with self.subTest(refuses_escape_sequences=bool(guard)):
+                self.release(self.packages)
+
+                result = self.sign(f'--tag={TAG}', f'--key={KEY}', '--upload', GH_ESCAPE_GUARD=guard)
+
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(len(self.uploads()), 1)
+
     def test_should_check_and_sign_but_not_upload_without_the_flag(self):
         result = self.sign()
 

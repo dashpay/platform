@@ -143,6 +143,20 @@ finished_run() {
   echo "${runs}" | head -n 1 | cut -f1
 }
 
+# A job's log as GitHub stores it. The runner colours the commands it echoes there, and newer gh
+# versions refuse a response with terminal escape sequences unless told to allow them; older
+# versions do not know that option.
+job_log() {
+  local help
+  # Read whole: a reader that stopped at the first match would cut gh off, and pipefail would
+  # then report the check as failed.
+  help="$(gh api --help 2> /dev/null || true)"
+  case "${help}" in
+    *--allow-escape-sequences*) gh api --allow-escape-sequences "repos/${REPO}/actions/jobs/$1/logs" ;;
+    *) gh api "repos/${REPO}/actions/jobs/$1/logs" ;;
+  esac
+}
+
 # The id and conclusion of the Release Dashmate checksums job of a run, in its latest attempt.
 checksums_job() {
   gh api --paginate "repos/${REPO}/actions/runs/$1/jobs?per_page=100" \
@@ -218,7 +232,7 @@ mkdir "${DIR}"
 
 # The checksums job writes into its own log the id and sha256 of the SHA256SUMS it attached, and
 # nothing else writes to that log. Only that asset is signed.
-LOG="$(gh api "repos/${REPO}/actions/jobs/${JOB_ID}/logs")" \
+LOG="$(job_log "${JOB_ID}")" \
   || fail "could not read the log of the Release Dashmate checksums job (job ${JOB_ID} of run ${RUN_ID}). GitHub keeps job logs only as long as the repository's retention setting says, and re-runs a job only within 30 days of its run; past either, this release cannot be signed with this script"
 RECORD="$(echo "${LOG}" | sed -nE 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z SHA256SUMS attached: asset ([0-9]+) sha256 ([0-9a-f]{64})$/\1 \2/p')"
 if [ -z "${RECORD}" ] || [ "$(echo "${RECORD}" | wc -l | tr -d ' ')" != 1 ]; then
