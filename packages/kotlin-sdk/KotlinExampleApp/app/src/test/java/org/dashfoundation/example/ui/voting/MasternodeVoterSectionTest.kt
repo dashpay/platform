@@ -83,8 +83,24 @@ class MasternodeVoterSectionTest {
         val wire = wireOrderProTxHash(identityId)
 
         assertArrayEquals(ByteArray(32) { (31 - it).toByte() }, wire)
-        assertArrayEquals(wire, MasternodeVoter.StoredKey(identityId).wireOrderProTxHash)
+        assertArrayEquals(wire, MasternodeVoter.StoredKey(identityId, "mnvoting.x").wireOrderProTxHash)
         assertArrayEquals(identityId, ByteArray(32) { it.toByte() }) // input untouched
+    }
+
+    /**
+     * A dialog keys its answer and messages on the masternode shown, so a voter withdrawn for
+     * the same masternode (a refusal, a check it waits for) keeps what the dialog shows.
+     */
+    @Test
+    fun shouldShowTheSameMasternodeWhetherOrNotItsVoterIsPublished() {
+        val selected = identity(1)
+        val published = answerTargetOf(publish(selected = selected))
+
+        assertEquals(published, shownAnswerTarget(selected, usesTypedInput = false, typedVoter = null))
+        assertNull(shownAnswerTarget(null, usesTypedInput = false, typedVoter = null))
+        val typed = publish(selected = selected, allowsTyped = true, useTyped = true, proTxHash = proTxHashHex)
+        assertEquals(answerTargetOf(typed), shownAnswerTarget(selected, usesTypedInput = true, typedVoter = typed))
+        assertNull(shownAnswerTarget(selected, usesTypedInput = true, typedVoter = null))
     }
 
     @Test
@@ -123,7 +139,7 @@ class MasternodeVoterSectionTest {
 
         val voter = publish(selected = selected)
 
-        assertEquals(MasternodeVoter.StoredKey(selected.identityId), voter)
+        assertEquals(MasternodeVoter.StoredKey(selected.identityId, selected.votingPrivateKeyIdentifier!!), voter)
         assertNull(publish(selected = null))
     }
 
@@ -137,7 +153,7 @@ class MasternodeVoterSectionTest {
 
         assertTrue(typed is MasternodeVoter.TypedProTxHash)
         assertArrayEquals(decodeTyped32Bytes(proTxHashHex), typed!!.wireOrderProTxHash)
-        assertEquals(MasternodeVoter.StoredKey(selected.identityId), refused)
+        assertEquals(MasternodeVoter.StoredKey(selected.identityId, selected.votingPrivateKeyIdentifier!!), refused)
         assertNull(malformed)
     }
 
@@ -153,7 +169,7 @@ class MasternodeVoterSectionTest {
             key = keyHex,
         )
 
-        assertEquals(MasternodeVoter.StoredKey(selected.identityId), voter)
+        assertEquals(MasternodeVoter.StoredKey(selected.identityId, selected.votingPrivateKeyIdentifier!!), voter)
     }
 
     @Test
@@ -176,7 +192,7 @@ class MasternodeVoterSectionTest {
     fun shouldCastOnlyAsAStoredKeyOrTypedCredentialsWithAKey() {
         val hash = ByteArray(32)
 
-        assertTrue(MasternodeVoter.StoredKey(hash).canCast)
+        assertTrue(MasternodeVoter.StoredKey(hash, "mnvoting.x").canCast)
         assertFalse(MasternodeVoter.TypedProTxHash(hash).canCast)
         assertFalse(MasternodeVoter.TypedCredentials(hash, null).canCast)
         assertTrue(MasternodeVoter.TypedCredentials(hash, ByteArray(32)).canCast)
