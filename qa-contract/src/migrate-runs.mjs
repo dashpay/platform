@@ -10,8 +10,9 @@
 // preserved. They are written oldest first, so their order is.
 //
 // Run AFTER register.mjs + seed.mjs (the new testCases must already exist), once
-// per app (--app). Idempotent: a run already present for the same
-// (testId, result, buildRef) is skipped, so re-running won't duplicate.
+// per app (--app). Idempotent: a source run is skipped when the target already
+// holds a run with the same content that no other source run accounts for, so
+// re-running copies what is missing and nothing twice.
 //
 // Usage:
 //   node src/migrate-runs.mjs --dry-run            # reads only, no key needed
@@ -32,6 +33,18 @@ const DEFAULT_OLD_OWNER = '2YBjQKEP6APyu9JADk46yoELL2aKAcRW7yCLTCV2d4dD';
 const OLD_CATEGORY_CODES = Array.from({ length: 16 }, (_, i) => i);
 
 function entropy() { return Uint8Array.from(randomBytes(32)); }
+
+// Everything of a run that is copied. A copy has a new id, owner and
+// $createdAt, so its content is the only thing that says which source run it
+// came from, and two runs with the same content are told apart by count.
+const RUN_FIELDS = ['result', 'buildRef', 'network', 'device', 'evidence', 'notes', 'blockerReason'];
+const runKey = (run) => JSON.stringify(RUN_FIELDS.map((f) => run[f] ?? ''));
+
+function countByKey(runs) {
+  const counts = new Map();
+  for (const run of runs) counts.set(runKey(run), (counts.get(runKey(run)) ?? 0) + 1);
+  return counts;
+}
 
 const PAGE = 100;
 
@@ -139,19 +152,24 @@ async function main() {
     );
     if (!oldRuns.length) continue;
 
-    // Idempotency: skip a run already present for (newId, result, buildRef),
-    // whichever admin recorded it.
+    // Idempotency: pair each source run with one target run of the same
+    // content, whichever admin recorded it. `onTarget` counts the target's runs
+    // per content, `unpaired` those no source run has claimed yet. A source run
+    // with nothing left to claim is missing and is copied, so two source runs
+    // with the same content need two target runs.
     const existing = await queryAll(
       sdk, newContractId, 'testRun',
       [['app', '==', app], ['testId', '==', newId]],
       [['$createdAt', 'asc']],
     );
-    const present = new Set(existing.map((r) => `${r.result}|${r.buildRef}`));
+    const onTarget = countByKey(existing);
+    const unpaired = new Map(onTarget);
 
     for (const run of oldRuns) {
       runsSeen += 1;
       const label = oldId === newId ? newId : `${oldId}->${newId}`;
-      if (present.has(`${run.result}|${run.buildRef}`)) { skipped += 1; continue; }
+      const key = runKey(run);
+      if (unpaired.get(key) > 0) { unpaired.set(key, unpaired.get(key) - 1); skipped += 1; continue; }
 
       const props = { testId: newId, app, result: run.result, network: run.network, buildRef: run.buildRef };
       for (const f of ['device', 'evidence', 'notes', 'blockerReason']) {
@@ -168,6 +186,7 @@ async function main() {
             ownerId: newOwner, dataContractId: newContractId, documentTypeName: 'testRun', properties: props, entropy: entropy(),
           });
           await sdk.documents.create({ document: doc, identityKey, signer });
+          onTarget.set(key, (onTarget.get(key) ?? 0) + 1);
           migrated += 1;
           console.log(`  + ${label}  ${run.result}  ${run.buildRef}`);
           break;
@@ -181,14 +200,16 @@ async function main() {
             await reconnect();
             // A nonce error can be a false negative — the write may have landed
             // before the ack was lost. Re-check before retrying so we don't
-            // create a duplicate testRun for the same (testId, result, buildRef).
+            // create a duplicate: it landed if the target now holds one more run
+            // with this content than it did before this attempt.
             const after = await queryAll(
               sdk, newContractId, 'testRun',
               [['app', '==', app], ['testId', '==', newId]],
               [['$createdAt', 'asc']],
             );
-            if (after.some((r) => `${r.result}|${r.buildRef}` === `${run.result}|${run.buildRef}`)) {
+            if ((countByKey(after).get(key) ?? 0) > (onTarget.get(key) ?? 0)) {
               console.log(`  = ${label} (${run.result}/${run.buildRef}) already landed — skipping retry`);
+              onTarget.set(key, (onTarget.get(key) ?? 0) + 1);
               skipped += 1;
               break;
             }
