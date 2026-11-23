@@ -129,7 +129,8 @@
     "platform_wallet_manager_shielded_token_pool_watch": "packages/rs-platform-wallet-ffi/src/shielded_token_pools.rs",
     "platform_wallet_manager_shielded_token_pool_unwatch": "packages/rs-platform-wallet-ffi/src/shielded_token_pools.rs",
     "platform_wallet_manager_shielded_token_pool_balances": "packages/rs-platform-wallet-ffi/src/shielded_token_pools.rs",
-    "platform_wallet_manager_shielded_token_pool_balances_free": "packages/rs-platform-wallet-ffi/src/shielded_token_pools.rs"
+    "platform_wallet_manager_shielded_token_pool_balances_free": "packages/rs-platform-wallet-ffi/src/shielded_token_pools.rs",
+    "platform_wallet_manager_shielded_token_transfer": "packages/rs-platform-wallet-ffi/src/shielded_send.rs"
   },
   "capabilities": [
     {
@@ -3375,7 +3376,7 @@
           "sdk": "partial",
           "example_app": "partial",
           "restart": "required",
-          "reason": "PlatformWalletManager.shieldedTokenPurchaseFromPool and shieldedTokenPurchaseAvailability wrap the two FFI entry points; the platform-wallet manager checks the token count, the network's protocol version, the token's shielded pool and the note count, selects the credit pool notes for price plus fee, builds, broadcasts with the shielded spend recovery record, records a TokenPurchase activity row (kind tag 10) and requests a shielded sync. An accepted purchase stays pending until a shielded sync confirms it once it lands, as its result proof does not show it executed. The example app's Direct Purchase form offers a Shielded pool funding choice only on Rust's availability answer (TEST_PLAN SH-24). Partial because no device, simulator or network run has been recorded, and the bought tokens land in the token's shielded pool, which the wallet does not sync yet, so they are not shown and cannot be spent (SH-25 to SH-27). Restart recovery reuses the generic shielded spend record and redrive, with no test specific to this transition."
+          "reason": "PlatformWalletManager.shieldedTokenPurchaseFromPool and shieldedTokenPurchaseAvailability wrap the two FFI entry points; the platform-wallet manager checks the token count, the network's protocol version, the token's shielded pool and the note count, selects the credit pool notes for price plus fee, builds, broadcasts with the shielded spend recovery record, records a TokenPurchase activity row (kind tag 10) and requests a shielded sync. An accepted purchase stays pending until a shielded sync confirms it once it lands, as its result proof does not show it executed. The example app's Direct Purchase form offers a Shielded pool funding choice only on Rust's availability answer (TEST_PLAN SH-24). Partial because no device, simulator or network run has been recorded, The bought tokens land in the token's shielded pool, which the purchase watches for the wallet, so the Shielded Tokens screen shows them after a shielded sync (SH-25) and they can be sent on (SH-26). Restart recovery reuses the generic shielded spend record and redrive, with no test specific to this transition."
         },
         "kotlin": {
           "sdk": "partial",
@@ -3599,7 +3600,7 @@
           "sdk": "partial",
           "example_app": "partial",
           "restart": "required",
-          "reason": "PlatformWalletManager.shieldedTokenPoolWatch, shieldedTokenPoolUnwatch and shieldedTokenPoolBalances wrap the FFI entry points. The platform-wallet shielded coordinator keeps the watched pools, their commitment leaves, the wallet's token notes and each pool's scan state in the shielded store's SQLite file (not the host persister), scans the watched pools inside the ordinary shielded sync pass, and watches a type 28 purchase's token pool by itself. Watching reads the token's configuration with proofs and refuses a token without a shielded pool. The example app's Shielded Tokens screen (WalletDetailView > Shielded Tokens, TEST_PLAN SH-25) lists one row per watched pool and account with Rust's balance, unspent note count, scan progress and last scan error, refreshes with the manual shielded sync, watches one of the app's known tokens and unwatches by swipe. Partial because no device, simulator or network run has been recorded, and the token notes cannot be spent yet (SH-26, SH-27). Restart keeps the state in the store file, covered by a Rust unit test, with no host restart test."
+          "reason": "PlatformWalletManager.shieldedTokenPoolWatch, shieldedTokenPoolUnwatch and shieldedTokenPoolBalances wrap the FFI entry points. The platform-wallet shielded coordinator keeps the watched pools, their commitment leaves, the wallet's token notes and each pool's scan state in the shielded store's SQLite file (not the host persister), scans the watched pools inside the ordinary shielded sync pass, and watches a type 28 purchase's token pool by itself. Watching reads the token's configuration with proofs and refuses a token without a shielded pool. The example app's Shielded Tokens screen (WalletDetailView > Shielded Tokens, TEST_PLAN SH-25) lists one row per watched pool and account with Rust's balance, unspent note count, scan progress and last scan error, refreshes with the manual shielded sync, watches one of the app's known tokens and unwatches by swipe. Each row also carries the value of the notes a submitted token transfer still holds (reservedBalance, shown as Pending; the balance excludes it). Partial because no device, simulator or network run has been recorded, and unshielding a token to an identity is not wired yet (SH-27). Restart keeps the state in the store file, covered by a Rust unit test, with no host restart test."
         },
         "kotlin": {
           "sdk": "unsupported",
@@ -3662,6 +3663,118 @@
           "file": "packages/rs-platform-wallet-ffi/src/shielded_token_pools.rs",
           "id": "should_accept_null_and_empty_arrays_in_the_free_function",
           "command": "cargo test -p platform-wallet-ffi --features shielded --lib shielded_token_pools",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "shielded.token_shielded_transfer",
+      "title": "Send tokens from a token's shielded pool to an Orchard address in that pool, fee paid from the credit pool (type 26)",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_manager_shielded_token_transfer"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PlatformWalletManager.shieldedTokenTransfer wraps the FFI entry point; the platform-wallet manager (ShieldedTokenPurchaser::transfer) refuses a zero amount, a network or token that cannot take the transfer and an SDK whose version is not the network's, reserves the account's token notes for the amount and its credit pool notes for the fee (each bounded by what fits one transition), builds the token bundle against an anchor the token pool records, broadcasts with the shielded spend recovery record, records a TokenShieldedTransfer activity row (kind tag 11, amount in the token's smallest unit) and requests a shielded sync. An accepted transfer stays pending, its notes reserved and reported apart as the balance row's reservedBalance, until a shielded sync confirms it, as its result proof does not show it executed. The example app's Shielded Tokens screen opens a Send form per token row (TEST_PLAN SH-26). Partial because no device, simulator or network run has been recorded. Restart recovery reuses the generic shielded spend record and redrive, with no test specific to this transition."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI wrapper or KotlinExampleApp flow for the shielded token transfer yet."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "SH-26",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
+          "id": "should_refuse_a_zero_token_transfer_before_any_request",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::operations::token_shielded_transfer_tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
+          "id": "should_refuse_a_token_transfer_its_token_notes_cannot_cover_without_reserving",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::operations::token_shielded_transfer_tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
+          "id": "should_release_the_token_notes_when_the_fee_cannot_be_paid",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::operations::token_shielded_transfer_tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
+          "id": "should_release_both_reservations_of_a_transfer_that_fails_before_its_broadcast",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::operations::token_shielded_transfer_tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/token_pool_tests.rs",
+          "id": "should_reserve_the_largest_token_notes_and_leave_them_out_of_the_balance",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::token_pool::tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/token_pool_tests.rs",
+          "id": "should_refuse_a_token_spend_its_notes_cannot_cover_or_fit_without_reserving",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::token_pool::tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/token_pool_tests.rs",
+          "id": "should_release_only_orphaned_token_reservations_in_scanned_pools",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::token_pool::tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/token_pool_tests.rs",
+          "id": "should_give_token_notes_paths_to_the_root_of_the_kept_leaves",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::token_pool::tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+          "id": "should_map_a_submitted_token_transfer_to_success_and_its_refusals_apart",
+          "command": "cargo test -p platform-wallet-ffi --features shielded --lib token_transfer",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+          "id": "should_refuse_a_malformed_token_transfer_recipient_before_the_manager",
+          "command": "cargo test -p platform-wallet-ffi --features shielded --lib token_transfer",
           "covers_restart": false
         }
       ]

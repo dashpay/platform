@@ -19,13 +19,16 @@ struct ShieldedTokensRoute: Hashable {
 /// Rust keeps this state in its shielded store, not in SwiftData. The view
 /// only formats it: the token's name and decimals when the app has the token
 /// locally (matched by contract id and position, display only), otherwise
-/// the Base58 token id and the amount in the token's smallest unit.
+/// the Base58 token id and the amount in the token's smallest unit. Notes a
+/// submitted transfer still holds are not in the balance; Rust reports them
+/// apart and the row shows them as "Pending".
 ///
 /// The watched pools are scanned by the ordinary shielded sync, so Refresh
 /// (and pull to refresh) runs the app's manual shielded sync and then reads
 /// the balances again. A type 28 purchase watches the bought token's pool by
 /// itself; "Watch a Token Pool" adds one of the app's known tokens by hand,
-/// and swiping a row stops watching that token.
+/// and swiping a row stops watching that token. **Send** on a row opens
+/// `ShieldedTokenSendSheet` for that token and account (type 26, SH-26).
 struct ShieldedTokenPoolsView: View {
     let walletId: Data
     @EnvironmentObject private var walletManager: PlatformWalletManager
@@ -39,6 +42,8 @@ struct ShieldedTokenPoolsView: View {
     @State private var checkStatus: ShieldedCheckNowStatus = .idle
     @State private var showWatchSheet = false
     @State private var unwatchError: String?
+    /// The row whose Send form is open.
+    @State private var sendTarget: ShieldedTokenSendTarget?
     /// Only the newest read may apply its result.
     @State private var readGeneration: UInt64 = 0
 
@@ -169,6 +174,14 @@ struct ShieldedTokenPoolsView: View {
                 onWatched: { Task { await loadBalances() } }
             )
         }
+        .sheet(item: $sendTarget) { target in
+            ShieldedTokenSendSheet(
+                walletId: walletId,
+                target: target,
+                token: knownToken(target.balance),
+                onSubmitted: { Task { await loadBalances() } }
+            )
+        }
         .alert(
             "Could not stop watching",
             isPresented: Binding(
@@ -232,6 +245,12 @@ struct ShieldedTokenPoolsView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .accessibilityIdentifier("shieldedTokens.noteCount")
+            if balance.reservedBalance > 0 {
+                Text("Pending: \(Self.amountText(balance.reservedBalance, token: known))")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .accessibilityIdentifier("shieldedTokens.pendingBalance")
+            }
             Text(Self.scanText(balance))
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -242,6 +261,14 @@ struct ShieldedTokenPoolsView: View {
                     .foregroundColor(.red)
                     .accessibilityIdentifier("shieldedTokens.lastError")
             }
+            Button {
+                sendTarget = ShieldedTokenSendTarget(balance: balance, showsAccount: showsAccount)
+            } label: {
+                Label("Send", systemImage: "paperplane")
+            }
+            .buttonStyle(.borderless)
+            .disabled(balance.balance == 0)
+            .accessibilityIdentifier("shieldedTokens.sendButton")
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .contain)
@@ -309,6 +336,238 @@ struct ShieldedTokenPoolsView: View {
             unwatchError = error.localizedDescription
         }
         await loadBalances()
+    }
+}
+
+// MARK: - Send
+
+/// The row a Send form is open for: one token and one account.
+struct ShieldedTokenSendTarget: Identifiable {
+    let balance: ShieldedTokenPoolBalance
+    /// The token has more than one account row, so the form names the
+    /// account it sends from.
+    let showsAccount: Bool
+    var id: Data {
+        var id = balance.tokenId
+        withUnsafeBytes(of: balance.accountIndex.bigEndian) { id.append(contentsOf: $0) }
+        return id
+    }
+}
+
+/// Send tokens from one account's notes in a token's shielded pool to an
+/// Orchard address in that pool (type 26, SH-26) through
+/// `walletManager.shieldedTokenTransfer`. Rust decides everything: it checks
+/// the amount, the token and the network, picks the token notes and the
+/// credit pool notes that pay the fee, proves, broadcasts and records the
+/// activity. The form only reads the recipient (a pasted bech32m Orchard
+/// address, or this account's own one) and the amount, which it converts to
+/// the token's smallest unit with the token's decimals when the app has the
+/// token locally (the same decimals the list shows amounts with), and shows
+/// Rust's answer.
+struct ShieldedTokenSendSheet: View {
+    let walletId: Data
+    let target: ShieldedTokenSendTarget
+    /// The app's local record of the token, for its name and decimals only.
+    let token: PersistentToken?
+    let onSubmitted: () -> Void
+
+    @EnvironmentObject private var walletManager: PlatformWalletManager
+    @EnvironmentObject private var platformState: AppState
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var recipientText = ""
+    @State private var amountText = ""
+    @State private var isSubmitting = false
+    /// Rust accepted the transfer, or it may have gone through: either way
+    /// the form must not send it again.
+    @State private var resultMessage: String?
+    @State private var resultMayHaveGoneThrough = false
+    @State private var errorMessage: String?
+
+    private var balance: ShieldedTokenPoolBalance { target.balance }
+
+    /// The token's decimals when the app has the token; otherwise amounts
+    /// are typed in the token's smallest unit.
+    private var decimals: Int { token?.decimals ?? 0 }
+
+    /// The 43 raw bytes of the typed recipient when it is an Orchard address
+    /// on the current network.
+    private var recipientRaw: Data? {
+        let trimmed = recipientText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard case .orchard(let raw) = DashAddress.parse(trimmed, network: platformState.currentNetwork).type
+        else { return nil }
+        return raw
+    }
+
+    private var amount: UInt64? { parseTokenAmount(amountText, decimals: decimals) }
+
+    /// This account's own default Orchard address, when the wallet's
+    /// shielded account is bound.
+    private var ownAddress: String? {
+        walletManager.shieldedDisplayAddress(
+            walletId: walletId,
+            account: balance.accountIndex,
+            network: platformState.currentNetwork
+        )
+    }
+
+    private var canSubmit: Bool {
+        !isSubmitting && resultMessage == nil && recipientRaw != nil && amount != nil
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    LabeledContent("Token", value: token?.displayName ?? balance.tokenId.toBase58String())
+                    if target.showsAccount {
+                        LabeledContent("From account", value: "\(balance.accountIndex)")
+                    }
+                    LabeledContent(
+                        "Available",
+                        value: ShieldedTokenPoolsView.amountText(balance.balance, token: token)
+                    )
+                    if balance.reservedBalance > 0 {
+                        LabeledContent(
+                            "Pending",
+                            value: ShieldedTokenPoolsView.amountText(balance.reservedBalance, token: token)
+                        )
+                    }
+                }
+
+                Section {
+                    TextField("tdash1… or dash1…", text: $recipientText, axis: .vertical)
+                        .font(.caption.monospaced())
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier("shieldedTokenSend.recipient")
+                    HStack {
+                        Button {
+                            if let pasted = UIPasteboard.general.string {
+                                recipientText = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
+                            }
+                        } label: {
+                            Label("Paste", systemImage: "doc.on.clipboard")
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityIdentifier("shieldedTokenSend.pasteButton")
+                        Spacer()
+                        if let ownAddress {
+                            Button {
+                                recipientText = ownAddress
+                            } label: {
+                                Label("My Address", systemImage: "person.crop.circle")
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityIdentifier("shieldedTokenSend.ownAddressButton")
+                        }
+                    }
+                    if !recipientText.isEmpty, recipientRaw == nil {
+                        Text("Not a shielded (Orchard) address on this network.")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                } header: {
+                    Text("Recipient")
+                } footer: {
+                    Text("A shielded (Orchard) address. The tokens stay in the token's shielded pool.")
+                }
+
+                Section {
+                    TextField(decimals > 0 ? "0.0" : "0", text: $amountText)
+                        .keyboardType(decimals > 0 ? .decimalPad : .numberPad)
+                        .font(.body.monospacedDigit())
+                        .accessibilityIdentifier("shieldedTokenSend.amount")
+                } header: {
+                    Text("Amount")
+                } footer: {
+                    Text(
+                        token.map { "In \($0.displayName) units (\(decimals) decimals)." }
+                            ?? "In the token's smallest unit: the app does not have this token's decimals."
+                    )
+                }
+
+                Section {
+                    Button {
+                        Task { await submit() }
+                    } label: {
+                        HStack {
+                            Text(isSubmitting ? "Proving and broadcasting…" : "Send")
+                            if isSubmitting {
+                                Spacer()
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(!canSubmit)
+                    .accessibilityIdentifier("shieldedTokenSend.submit")
+                } footer: {
+                    Text("The fee is paid from this account's shielded credit balance.")
+                }
+
+                if let resultMessage {
+                    Section {
+                        Text(resultMessage)
+                            .font(.callout)
+                            .foregroundColor(resultMayHaveGoneThrough ? .orange : .green)
+                            .accessibilityIdentifier("shieldedTokenSend.result")
+                    }
+                }
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .font(.callout)
+                            .foregroundColor(.red)
+                            .accessibilityIdentifier("shieldedTokenSend.error")
+                    }
+                }
+            }
+            .accessibilityIdentifier("shieldedTokenSend.form")
+            .navigationTitle("Send Shielded Tokens")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(resultMessage == nil ? "Cancel" : "Done") { dismiss() }
+                        .disabled(isSubmitting)
+                        .accessibilityIdentifier("shieldedTokenSend.close")
+                }
+            }
+            .interactiveDismissDisabled(isSubmitting)
+        }
+    }
+
+    private func submit() async {
+        guard let recipient = recipientRaw, let amount else { return }
+        isSubmitting = true
+        errorMessage = nil
+        defer { isSubmitting = false }
+        do {
+            // Per-operation spend authority: the resolver fires for this
+            // spend only.
+            try await walletManager.shieldedTokenTransfer(
+                walletId: walletId,
+                resolver: MnemonicResolver(),
+                account: balance.accountIndex,
+                dataContractId: balance.dataContractId,
+                tokenContractPosition: balance.tokenContractPosition,
+                recipientRaw43: recipient,
+                amount: amount
+            )
+            resultMayHaveGoneThrough = false
+            resultMessage = "Submitted, pending until the next shielded sync. Do not send it again."
+            onSubmitted()
+        } catch let unconfirmed as PlatformWalletError
+            where SendViewModel.mayHaveGoneThrough(unconfirmed) {
+            // The transfer may already be on chain and Rust keeps its notes
+            // reserved: report it without inviting a retry, which would sign
+            // a second transfer.
+            resultMayHaveGoneThrough = true
+            resultMessage = "The transfer may have gone through; a shielded sync confirms it once it lands. Do not retry. (\(unconfirmed.localizedDescription))"
+            onSubmitted()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }
 
