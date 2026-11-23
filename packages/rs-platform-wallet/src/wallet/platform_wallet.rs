@@ -3337,7 +3337,10 @@ impl PlatformWallet {
     ///   could not tell whether it is its own.
     ///
     /// A removed or replaced wallet publishes nothing, and wallet removal
-    /// waits for a write in flight.
+    /// waits for a write in flight. So does a Clear of the coordinator the
+    /// identity's shielded account was prepared on, when the write sets a
+    /// shielded address. A caller must hold neither the wallet generation's
+    /// lifecycle gate nor that coordinator's operation admission.
     pub async fn write_dashpay_profile<S>(
         &self,
         identity_id: &Identifier,
@@ -3360,6 +3363,20 @@ impl PlatformWallet {
                 "Shielded address publication requires shielded support".to_string(),
             ));
         }
+        // A preparation stands only until its coordinator is cleared. The
+        // coordinator's admission is taken before the check that reads the
+        // preparation and held until the profile is written, so a Clear
+        // waits for the write instead of landing between the two.
+        #[cfg(feature = "shielded")]
+        let prepared_coordinator = match &input.shielded_address {
+            PaymentAddressUpdate::Set(_) => self.prepared_tip_coordinator(identity_id),
+            PaymentAddressUpdate::Keep | PaymentAddressUpdate::Remove => None,
+        };
+        #[cfg(feature = "shielded")]
+        let _coordinator_operation = match prepared_coordinator.as_ref() {
+            Some(coordinator) => Some(coordinator.operation_guard().await),
+            None => None,
+        };
         #[cfg(feature = "shielded")]
         if let PaymentAddressUpdate::Set(bytes) = &input.shielded_address {
             // Bytes that are not an address are refused by the write below.
@@ -3368,6 +3385,8 @@ impl PlatformWallet {
                     .await?;
             }
         }
+        #[cfg(all(test, feature = "shielded"))]
+        super::shielded::tips::test_hooks::after_publication_check(self).await;
         let dashpay = self.identity.dashpay();
         if create {
             dashpay

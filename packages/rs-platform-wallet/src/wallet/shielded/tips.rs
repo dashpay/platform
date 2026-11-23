@@ -29,6 +29,11 @@ pub(crate) struct PreparedTipAccount {
 }
 
 impl PreparedTipAccount {
+    /// The coordinator the account was prepared on, while it is alive.
+    pub(crate) fn coordinator(&self) -> Option<Arc<NetworkShieldedCoordinator>> {
+        self.coordinator.upgrade()
+    }
+
     /// The prepared account, while the preparation stands: its coordinator is alive
     /// and has not been cleared since.
     pub(crate) fn standing_account(&self) -> Option<u32> {
@@ -310,7 +315,15 @@ impl PlatformWallet {
     /// The wallet tells its own addresses by the viewing keys of its bound
     /// shielded accounts. Before the first bind it holds none and could not
     /// tell, so it refuses with [`PlatformWalletError::ShieldedNotBound`]
-    /// instead of letting one of its own through.
+    /// instead of letting one of its own through. An account of the same
+    /// seed that is not bound (never bound, or left out of the last bind)
+    /// is not recognised: the wallet holds no key of it, and its address
+    /// passes as another wallet's would.
+    ///
+    /// The caller holds the admission of the coordinator the identity's
+    /// account was prepared on ([`Self::prepared_tip_coordinator`]) from
+    /// before this check until the profile is written, so a Clear cannot
+    /// end the preparation in between.
     pub(crate) async fn check_shielded_address_publication(
         &self,
         identity_id: &Identifier,
@@ -361,6 +374,20 @@ impl PlatformWallet {
         }
     }
 
+    /// The coordinator `identity_id`'s shielded account was prepared on in
+    /// this session, while it is alive. `None` when the identity was never
+    /// prepared.
+    pub(crate) fn prepared_tip_coordinator(
+        &self,
+        identity_id: &Identifier,
+    ) -> Option<Arc<NetworkShieldedCoordinator>> {
+        self.prepared_tip_accounts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(identity_id)
+            .and_then(PreparedTipAccount::coordinator)
+    }
+
     /// The tip account of a wallet-owned identity's slot, proved with the
     /// seed. A restored index is metadata, and hosts that cannot represent
     /// "unknown" restore a placeholder 0 for wallet-attached identities, so
@@ -404,8 +431,9 @@ impl PlatformWallet {
     }
 }
 
-/// Test-only pause point between tip preparation's account snapshot and
-/// its bind, keyed by wallet instance (shared by its clones) so parallel
+/// Test-only pause points (between tip preparation's account snapshot and
+/// its bind, and between a profile write's publication check and its
+/// submission), keyed by wallet instance (shared by its clones) so parallel
 /// tests built from the same mnemonic do not interfere.
 #[cfg(test)]
 pub(crate) mod test_hooks {
@@ -418,6 +446,7 @@ pub(crate) mod test_hooks {
     #[derive(Clone, Copy, PartialEq, Eq, Hash)]
     enum Stage {
         Snapshot,
+        PublicationChecked,
     }
     static HOOKS: Mutex<Option<HashMap<(usize, Stage), Hook>>> = Mutex::new(None);
 
@@ -459,6 +488,18 @@ pub(crate) mod test_hooks {
 
     pub(crate) async fn after_snapshot(wallet: &PlatformWallet) {
         reach(wallet, Stage::Snapshot).await;
+    }
+
+    /// Pause a profile write right after its shielded publication check,
+    /// before the profile is submitted.
+    pub(crate) fn pause_after_publication_check(
+        wallet: &PlatformWallet,
+    ) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
+        pause(wallet, Stage::PublicationChecked)
+    }
+
+    pub(crate) async fn after_publication_check(wallet: &PlatformWallet) {
+        reach(wallet, Stage::PublicationChecked).await;
     }
 }
 
