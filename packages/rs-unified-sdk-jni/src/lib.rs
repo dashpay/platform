@@ -30,6 +30,7 @@ mod mnemonic;
 mod multiple_choice_proposals;
 mod parse_state_transition;
 mod persistence;
+mod platform_blocks;
 mod private_documents;
 mod pubkey_rows;
 mod queries;

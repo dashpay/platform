@@ -59,7 +59,7 @@ Capabilities tracked: **41**
 | `shielded.core_wallet_drain` | supported / partial / tested | supported / partial / tested |
 | `network.adaptive_quorum_source` | supported / supported / tested | supported / supported / tested |
 | `contracts.moderation_reads` | supported / supported / not_applicable | supported / supported / not_applicable |
-| `system.block_and_transition_status_reads` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
+| `system.block_and_transition_status_reads` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `voting.masternode_vote_stored_key` | supported / partial / not_applicable | partial / partial / not_applicable |
 | `identity.load_masternode_voting_key` | supported / partial / not_applicable | partial / partial / not_applicable |
 | `addresses.balance_history` | supported / partial / not_applicable | supported / partial / not_applicable |
