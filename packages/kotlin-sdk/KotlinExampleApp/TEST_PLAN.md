@@ -138,6 +138,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | ID-15 | Same identity restored into two wallets (duplicate seed) | Platform | Uncommon | ✅ | multiwallet | Importing the same mnemonic as a second wallet derives the **same** identity; verify consistency. |
 | ID-16 | Resume identity top-up from a tracked asset lock | Cross | Manual | 🚧 | | Source UI selects the Rust-tracked exact outpoint, excludes locks bound to another identity, and reaches the compiled tracked-lock list/free and existing-lock registration/top-up JNI bridges. Device gate: interrupt after Core broadcast, restart, resume the same Built transaction/outpoint, and verify foreign/untracked/consumed locks return typed failures without creating a replacement funding transaction. |
 | ID-17 | Signing after biometric re-enrollment | Platform | Manual | ✅ | | Physical device with auth-gated Keystore keys. Re-enroll biometrics (add or remove a fingerprint or face), then sign any identity transition: expect `SigningKeyUnavailable` (code 31). Repair the key from the wallet's key-health sheet (`WalletKeyHealthSheet` → `PlatformWalletManager.repairIdentityKey`); the next sign succeeds. The CI emulator cannot re-enroll biometrics, so the invalidation recovery is pinned only through the fake Keystore at the unit tier. |
+| ID-18 | Remove identity from device | Platform | Thorough | ✅ | regression | Mirrors iOS `ID-18` (Kotlin's `ID-17` is a different test). Identities tab → swipe the identity's row (`identities.row.<idHex>`) from the end, or use its "Remove" accessibility action → confirm **Remove from Device** (`identities.remove.confirm`; **Keep on Device** is `identities.remove.cancel`) → `PlatformWalletManager.removeIdentityFromDevice`. Local only: nothing is broadcast and the identity stays on Platform. Use an identity that has a DPNS name and private keys stored on the device (for example one created with `ID-01` that registered a name with `DPNS-01`, or a masternode loaded with its voting key as in `VOTE-01`). Order: one Room transaction deletes the identity's token balances, its private contact scan state (except a position marked as having unresolved private payments) and the identity row, whose delete cascades its public keys, DPNS names, documents and DashPay rows; then its private keys are deleted from secure storage (except a key another identity references or another wallet's owner index claims); then its masternode voting key. Pass: the row disappears; after a relaunch the identity is still gone; loading it again (`ID-02`, or Load Identity with its keys) brings it back with usable keys, and a voting key typed again is stored without a replace prompt. If the row delete fails nothing is deleted and the alert says so; if secure storage refuses a delete after the rows are gone, the identity is still removed and the alert names what was left. Known gap, shared with iOS (#6098): the identity stays in the running Rust wallet, so a DashPay sync before the next relaunch can store its row again without its keys. Kept on purpose: the once-per-identity token claim memory (`OncePerIdentityClaimStore`), since a second claim is a paid rejection. *Order, failure part way and sibling safety are covered by the Robolectric `IdentityDeviceRemovalTest`. Emulator: not run yet.* |
 
 ### 4.3 Platform Addresses (DIP-17 credit addresses) — `Domain=Address`
 
@@ -341,7 +342,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 Membership of each feature category across **all** sections (primary section members + cross-cutting tests that live elsewhere).
 
 - **Core / Wallet** — `CORE-01..23`
-- **Identity** — `ID-01..15`, `SH-11`
+- **Identity** — `ID-01..18`, `SH-11`
 - **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06..09`, `ID-06`, `ID-08`, `ID-11`
 - **DPNS** — `DPNS-01..08`
 - **Voting** — `VOTE-01..20`, `DPNS-05`, `DPNS-08`
@@ -360,7 +361,7 @@ Tags are cross-cutting modalities. A test may appear under multiple tags.
 - **group** — `TOK-15`, `TOK-16`, `TOK-18`, `TOK-19`
 - **contested** — `DPNS-05`, `DPNS-08`, `VOTE-01..06`
 - **withdrawal** — `ID-10`, `ADDR-04`, `SH-08`, `SH-16`
-- **regression** — `TOK-17`, `DP-10`
+- **regression** — `ID-18`, `TOK-17`, `DP-10`
 - **read-only** — `SH-13`, `SYS-05`, `SYS-06`, `VOTE-02..06`, `VOTE-08`, `VOTE-10`, `VOTE-13`, `VOTE-14`, `VOTE-16`, `VOTE-20`, `TOK-18`, `TOK-19`
 - **masternode** — `VOTE-01`, `VOTE-12`, `VOTE-13`, `VOTE-19`, `VOTE-20`
 - **proposal** (decision proposals, yes/no and multiple choice, protocol version 15): `VOTE-08..20`

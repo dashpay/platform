@@ -49,6 +49,21 @@ interface PrivateContactScanStateDao {
     suspend fun deleteUnmarkedPositionsByWallet(walletId: ByteArray)
 
     /** The ids of every wallet with a stored position record, a removed wallet's kept ones included. */
+    /**
+     * The identity's position records in any wallet, except those marked
+     * unresolved (see [deleteUnmarkedPositionsByWallet]), and the shielded
+     * addresses of requests to it: what removing an identity from the device
+     * deletes.
+     */
+    @Query(
+        "DELETE FROM private_contact_requests_positions " +
+            "WHERE identityId = :identityId AND privatePaymentsUnresolved = 0",
+    )
+    suspend fun deleteUnmarkedPositionsOfIdentity(identityId: ByteArray)
+
+    @Query("DELETE FROM private_shielded_addresses WHERE ownerId = :identityId")
+    suspend fun deleteAddressesOwnedBy(identityId: ByteArray)
+
     @Query("SELECT DISTINCT walletId FROM private_contact_requests_positions")
     suspend fun walletIdsWithPositions(): List<ByteArray>
 

@@ -3754,6 +3754,32 @@ class PlatformWalletPersistenceHandler(
         _pendingIdentityKeys.update(clearPendingKeyByWalletDelta(walletId.toHex()))
     }
 
+    /**
+     * Delete one identity's Room footprint for
+     * `org.dashfoundation.dashsdk.wallet.removeIdentityFromDevice`, in one
+     * transaction: its token balances (SET_NULL children), its private
+     * contact scan state except a position marked unresolved, then the
+     * identity row, whose delete cascades its public keys, DPNS names,
+     * documents and DashPay rows. SQLite cascades in the same transaction,
+     * so there is no SwiftData-style partial delete to order around. After
+     * the commit, the identity's pending-repair entries are dropped. A failed
+     * transaction deletes nothing and propagates.
+     *
+     * The caller must hold [callbackExclusion] (via [withCallbackExclusion]).
+     * An open changeset round is not discarded: it belongs to the whole
+     * wallet, and the identity's rows it may still write are the same
+     * re-persist dashpay/platform#6098 describes.
+     */
+    internal suspend fun deleteIdentityDataLocked(identityId: ByteArray) = runBlockingCatching {
+        database.withTransaction {
+            database.tokenDao().deleteBalancesByIdentity(identityId)
+            database.privateContactScanStateDao().deleteUnmarkedPositionsOfIdentity(identityId)
+            database.privateContactScanStateDao().deleteAddressesOwnedBy(identityId)
+            database.identityDao().deleteByIdentityId(identityId)
+        }
+        _pendingIdentityKeys.update(clearPendingKeyByIdentityDelta(identityId.toBase58String()))
+    }
+
     // ── Pending identity-key bookkeeping (#4053) ──────────────────────
 
     // Every publish to the map goes through `MutableStateFlow.update`

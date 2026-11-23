@@ -1399,6 +1399,29 @@ class PlatformWalletManager(
         walletStorage.deleteMnemonic(walletId)
     }
 
+    /**
+     * Remove one identity from this device: its Room rows first, its stored
+     * private keys and masternode voting key after. Port of SwiftExampleApp's
+     * `IdentitiesContentView.removeIdentityLocally` (#6084). Nothing is
+     * broadcast and the identity stays on Platform; it can be loaded again.
+     *
+     * A failed row delete throws and deletes nothing. Once the rows are
+     * gone, a secret the secure storage refuses to delete is reported in
+     * [IdentityDeviceRemovalResult.keysLeft] instead of thrown. A key another
+     * identity row references, or another wallet's owner index claims, is
+     * kept. See [deleteIdentityFromDevice] for the order.
+     *
+     * The identity stays in this manager's running Rust wallet: a later
+     * DashPay sync can store its row again (dashpay/platform#6098, shared
+     * with iOS).
+     *
+     * @param identityId the 32-byte identity id.
+     */
+    suspend fun removeIdentityFromDevice(identityId: ByteArray): IdentityDeviceRemovalResult =
+        withContext(Dispatchers.IO) {
+            deleteIdentityFromDevice(identityId, persistenceHandler, database, walletStorage)
+        }
+
     // ── Watch-only restore ────────────────────────────────────────────
 
     /**
