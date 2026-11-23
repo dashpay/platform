@@ -71,6 +71,9 @@ use dash_sdk::platform::dashpay::{
 };
 use dash_sdk::platform::private_document_entries::PrivateDocumentEntries;
 use dash_sdk::platform::private_document_scan::{PrivateDocumentScan, PrivateDocumentScanKeys};
+use dash_sdk::platform::private_document_seal::{
+    seal_private_document, PrivateDocumentEntryRequest, PrivateDocumentSealError,
+};
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use key_wallet::dashcore::ecdsa::{EcdsaError, EcdsaPublicKey, EcdsaSecretKey, EcdsaSignature};
 use key_wallet::dip9::{
@@ -184,6 +187,13 @@ pub enum MnemonicResolverSignerError {
     /// private type.
     #[error("private contact request: {0}")]
     PrivateContactRequest(dash_sdk::Error),
+
+    /// The SDK refused to seal an entry of a private document type with the
+    /// derived key: a key the identity does not hold or may not use,
+    /// properties the type's schema refuses, a type that is not private, or
+    /// a derived key that is not the sender key's.
+    #[error("private document: {0}")]
+    PrivateDocument(PrivateDocumentSealError),
 }
 
 /// `key_wallet::signer::Signer` implementation that derives ECDSA
@@ -747,6 +757,25 @@ impl MnemonicResolverCoreSigner {
             platform_version,
         )
         .map_err(MnemonicResolverSignerError::PrivateContactRequest)
+    }
+
+    /// Seal `request`, an entry of any private document type, with the
+    /// sender's encryption key, the one at `sender_encryption_key_path`
+    /// ([`seal_private_document`]): the entry is sealed with that key's
+    /// outgoing viewing key, and a deniable MAC is keyed with it. `esk_seed`
+    /// is 32 fresh random bytes, never reused. The encryption key stays here;
+    /// only the sealed entry returns.
+    pub fn seal_private_document_entry(
+        &self,
+        sender_encryption_key_path: &DerivationPath,
+        request: &PrivateDocumentEntryRequest<'_>,
+        esk_seed: &[u8; 32],
+        platform_version: &PlatformVersion,
+    ) -> Result<BinaryData, MnemonicResolverSignerError> {
+        let secret =
+            self.resolve_master(|master| secret_key_at(master, sender_encryption_key_path))?;
+        seal_private_document(request, &secret.0, esk_seed, platform_version)
+            .map_err(MnemonicResolverSignerError::PrivateDocument)
     }
 }
 
@@ -1409,12 +1438,15 @@ mod tests {
     mod private_contact_requests {
         use super::*;
         use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dash_sdk::dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
         use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
         use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
         use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
         use dash_sdk::dpp::identity::{
             IdentityPublicKey, IdentityV0, KeyType, Purpose, SecurityLevel,
         };
+        use dash_sdk::dpp::platform_value::string_encoding::Encoding;
+        use dash_sdk::dpp::platform_value::{platform_value, Value};
         use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dash_sdk::dpp::version::PlatformVersion;
         use dash_sdk::platform::dashpay::{
@@ -1424,6 +1456,7 @@ mod tests {
             PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
         };
         use dash_sdk::platform::private_document_entries::PrivateDocumentEntry;
+        use dash_sdk::platform::private_document_seal::PrivateDocumentSenderAuth;
         use key_wallet::mnemonic::Mnemonic;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
         use key_wallet::wallet::Wallet;
@@ -1991,6 +2024,103 @@ mod tests {
         /// The signer seals only what the identity signer signed: a
         /// signature by a key other than the signing key it names is the
         /// SDK's refusal, not an entry.
+        /// A contract with the private type `note`, holding a required `text`.
+        fn note_contract() -> DataContract {
+            DataContract::from_value(
+                platform_value!({
+                    "$formatVersion": "1",
+                    "id": Identifier::from([7; 32]).to_string(Encoding::Base58),
+                    "ownerId": Identifier::from([8; 32]).to_string(Encoding::Base58),
+                    "version": 1,
+                    "documentSchemas": {
+                        "note": {
+                            "type": "object",
+                            "private": { "entrySize": 640u32 },
+                            "documentsMutable": false,
+                            "canBeDeleted": false,
+                            "properties": {
+                                "text": {
+                                    "type": "string", "minLength": 1, "maxLength": 80,
+                                    "position": 0
+                                }
+                            },
+                            "required": ["text"],
+                            "additionalProperties": false
+                        }
+                    }
+                }),
+                true,
+                PlatformVersion::latest(),
+            )
+            .expect("the contract registers")
+        }
+
+        /// An entry of any private type sealed through the signer is the one
+        /// the sender's encryption key, derived from the seed, seals; a path
+        /// that is not that key's is refused with the SDK's reason, typed.
+        #[test]
+        fn should_seal_a_private_document_entry_as_the_seed_derived_sender_key_does() {
+            let contract = note_contract();
+            let sender = sender();
+            let recipient = recipient();
+            let properties =
+                BTreeMap::from([("text".to_string(), Value::Text("hello".to_string()))]);
+            let request = PrivateDocumentEntryRequest {
+                contract: &contract,
+                document_type_name: "note",
+                sender: &sender,
+                sender_encryption_key_id: SENDER_KEY_ID,
+                auth: PrivateDocumentSenderAuth::DeniableMac,
+                recipient: &recipient,
+                recipient_key_id: RECIPIENT_KEY_ID,
+                properties: &properties,
+            };
+            let resolver = make_resolver(english_resolve);
+            let signer =
+                unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
+
+            let sealed = signer
+                .seal_private_document_entry(
+                    &sender_key_path(),
+                    &request,
+                    &[7; 32],
+                    PlatformVersion::latest(),
+                )
+                .expect("the signer seals the entry");
+            assert_eq!(
+                sealed,
+                seal_private_document(
+                    &request,
+                    &seed_secret_key(&sender_key_path()),
+                    &[7; 32],
+                    PlatformVersion::latest(),
+                )
+                .expect("the seed-derived key seals the entry")
+            );
+
+            let err = signer
+                .seal_private_document_entry(
+                    &recipient_key_path(),
+                    &request,
+                    &[7; 32],
+                    PlatformVersion::latest(),
+                )
+                .expect_err("the key at that path is not the sender's");
+            assert!(
+                matches!(
+                    err,
+                    MnemonicResolverSignerError::PrivateDocument(
+                        PrivateDocumentSealError::SecretKeyMismatch {
+                            key_id: SENDER_KEY_ID
+                        }
+                    )
+                ),
+                "expected the SDK's refusal, got: {err:?}"
+            );
+
+            unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+        }
+
         #[tokio::test]
         async fn should_refuse_to_seal_a_signature_by_another_key() {
             let contract = dashpay();

@@ -44,6 +44,7 @@ import org.dashfoundation.dashsdk.persistence.entities.DashpayIgnoredSenderEntit
 import org.dashfoundation.dashsdk.persistence.entities.DashpayProfileEntity
 import org.dashfoundation.dashsdk.persistence.entities.DpnsNameEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.dashfoundation.dashsdk.security.PendingIdentityKeyDelete
 import org.dashfoundation.dashsdk.persistence.entities.InvitationEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressesSyncStateEntity
@@ -142,6 +143,25 @@ class PlatformWalletPersistenceHandler(
      */
     private val storedTransactionInputs: StoredTransactionInputs =
         NativeStoredTransactionInputs(network),
+    /**
+     * Durably records the key aliases of an identity whose rows a persisted
+     * identity removal deletes, before the round commits, so their stored
+     * private keys are deleted once nothing needs them (see
+     * `org.dashfoundation.dashsdk.wallet.settlePendingIdentityKeyDeletes`).
+     * The manager wires `WalletStorage`; null (tests) records nothing.
+     */
+    private val recordRemovedIdentityKeys: (suspend (List<PendingIdentityKeyDelete>) -> Unit)? = null,
+    /**
+     * Settles pending identity-key deletes, leaving alone the aliases passed
+     * in (still staged by another open round). Called when a round that
+     * staged identity-key rows ends, committed or rolled back, so a delete a
+     * settle deferred while that round was open is retried then rather than
+     * at the next removal. The manager wires
+     * `org.dashfoundation.dashsdk.wallet.settlePendingIdentityKeyDeletes`;
+     * null (tests) retries nothing. A failure is logged and left for a later
+     * settle; it never fails the round.
+     */
+    private val settlePendingKeyDeletesAfterRound: (suspend (inFlight: Set<String>) -> Unit)? = null,
 ) : NativePersistenceBridge(), AutoCloseable {
 
     override fun persistenceCapabilitiesVersion(): Int = PERSISTENCE_CAPABILITIES_VERSION
@@ -233,7 +253,25 @@ class PlatformWalletPersistenceHandler(
          * [collectFinalizedSweptTombstones] once, last.
          */
         var finalityAdvanced: Boolean = false
+
+        /**
+         * Hex of every identity-key alias this round upserts. Its row is only
+         * buffered until [onChangesetEnd], so a pending identity-key delete
+         * for it must not be settled meanwhile ([aliasesStagedInOpenRounds]).
+         */
+        val stagedKeyAliases: MutableSet<String> = mutableSetOf()
     }
+
+    /**
+     * Identity-key aliases an open round has staged a row for but not yet
+     * committed. Settling a pending identity-key delete leaves these alone:
+     * their wallet's claim and stored key belong to a row about to commit
+     * (or to a round about to roll back). The caller holds
+     * [callbackExclusion] (via [withCallbackExclusion]), which guards
+     * [buffers].
+     */
+    internal fun aliasesStagedInOpenRounds(): Set<String> =
+        buffers.values.flatMapTo(mutableSetOf()) { it.stagedKeyAliases }
 
     /** Open rounds keyed by walletId hex (a round is per-walletId). */
     private val buffers = HashMap<String, ChangesetBuffer>()
@@ -437,6 +475,9 @@ class PlatformWalletPersistenceHandler(
         // replaced buffer). Then retry any earlier failed cleanup.
         scrubPendingAliases(key)
         retryOrphanedAliases(key)
+        // The abandoned round's staged identity-key rows never commit either:
+        // settle the pending deletes a settle deferred for them.
+        buffers.remove(key)?.let(::retryDeferredKeyDeletes)
         buffers[key] = ChangesetBuffer()
         0
     }
@@ -444,6 +485,16 @@ class PlatformWalletPersistenceHandler(
     override fun onChangesetEnd(walletId: ByteArray, success: Boolean): Int = guarded {
         val key = walletId.toHex()
         val buffer = buffers.remove(key) ?: return@guarded 0
+        try {
+            endRound(walletId, key, buffer, success)
+        } finally {
+            retryDeferredKeyDeletes(buffer)
+        }
+        0
+    }
+
+    /** [onChangesetEnd] body for [buffer], already detached from [buffers]. */
+    private fun endRound(walletId: ByteArray, key: String, buffer: ChangesetBuffer, success: Boolean) {
         if (!success) {
             // Rollback: discard every staged write, mirroring
             // `backgroundContext.rollback()` — and delete the aliases the
@@ -453,7 +504,7 @@ class PlatformWalletPersistenceHandler(
             // staged pending-key deltas are discarded with the buffer, so
             // the pre-round [pendingIdentityKeys] map survives untouched.
             scrubPendingAliases(key)
-            return@guarded 0
+            return
         }
         try {
             runBlockingCatching {
@@ -485,7 +536,32 @@ class PlatformWalletPersistenceHandler(
             scrubPendingAliases(key)
             throw t
         }
-        0
+    }
+
+    /**
+     * After a round that staged identity-key rows ends, settle the pending
+     * identity-key deletes a settle may have deferred for those aliases
+     * meanwhile. Caller holds [callbackExclusion] (every callback does).
+     */
+    private fun retryDeferredKeyDeletes(buffer: ChangesetBuffer) {
+        val settle = settlePendingKeyDeletesAfterRound ?: return
+        if (buffer.stagedKeyAliases.isEmpty()) return
+        try {
+            runBlockingCatching { settle(aliasesStagedInOpenRounds()) }
+        } catch (t: Throwable) {
+            Log.w(TAG, "pending identity-key deletes left for a later settle", t)
+        }
+    }
+
+    /**
+     * Settle every pending identity-key delete once, as on a fresh launch
+     * where no round is open: the recovery for a round-end settle that failed
+     * or a process that died before one. Runs under [callbackExclusion].
+     * Throws what the settle throws; the caller decides whether that is fatal.
+     */
+    internal suspend fun settlePendingIdentityKeyDeletesNow() {
+        val settle = settlePendingKeyDeletesAfterRound ?: return
+        withCallbackExclusion { settle(aliasesStagedInOpenRounds()) }
     }
 
 
@@ -1851,7 +1927,18 @@ class PlatformWalletPersistenceHandler(
 
     override fun onPersistIdentityRemoval(walletId: ByteArray, identityId: ByteArray): Int = guarded {
         val identityBase58 = identityId.toBase58String()
-        stage(walletId) { db -> db.identityDao().deleteByIdentityId(identityId) }
+        stage(walletId) { db ->
+            // Record the aliases the rows hold right now, inside the round,
+            // before the delete below cascades them away.
+            recordRemovedIdentityKeys?.let { record ->
+                val owner = db.identityDao().getByIdentityId(identityId)?.walletId
+                record(
+                    db.publicKeyDao().getByIdentityId(identityBase58)
+                        .map { PendingIdentityKeyDelete(it.publicKeyData.toHex(), owner) },
+                )
+            }
+            deleteIdentityFootprint(db, identityId)
+        }
         // The identity delete cascades away all of its public-key rows, so
         // every pending-repair entry for this identity is now a phantom —
         // the key can never be re-derived/repaired into an identity that no
@@ -1960,6 +2047,7 @@ class PlatformWalletPersistenceHandler(
         expiresAtIsSome: Boolean,
         expiresAt: Long,
     ): Int = guarded {
+        openRound(walletId)?.stagedKeyAliases?.add(publicKeyData.toHex())
         // Item 1 — private-key persistence (the CLAUDE.md "one allowed
         // exception" shape). The `IdentityKeyEntryFFI` payload carries only
         // a derivation breadcrumb (`wallet_id` + `identity_index` +
@@ -3754,6 +3842,44 @@ class PlatformWalletPersistenceHandler(
         _pendingIdentityKeys.update(clearPendingKeyByWalletDelta(walletId.toHex()))
     }
 
+    /**
+     * Delete one identity's Room footprint for
+     * `org.dashfoundation.dashsdk.wallet.deleteIdentityFromDevice`, in one
+     * transaction: its token balances (SET_NULL children), its private
+     * contact scan state (a position marked unresolved is kept but rewound to
+     * the start, since the history its position covered goes), then the
+     * identity row, whose delete cascades its public keys, DPNS names,
+     * documents and DashPay rows. SQLite cascades in the same transaction,
+     * so there is no SwiftData-style partial delete to order around. After
+     * the commit, the identity's pending-repair entries are dropped. A failed
+     * transaction deletes nothing and propagates.
+     *
+     * The caller must hold [callbackExclusion] (via [withCallbackExclusion]).
+     * Idempotent: it also runs after the live wallet already removed the
+     * identity through [onPersistIdentityRemoval]. An open changeset round is
+     * not discarded: it belongs to the whole wallet.
+     */
+    internal suspend fun deleteIdentityDataLocked(identityId: ByteArray) = runBlockingCatching {
+        database.withTransaction { deleteIdentityFootprint(database, identityId) }
+        _pendingIdentityKeys.update(clearPendingKeyByIdentityDelta(identityId.toBase58String()))
+    }
+
+    /**
+     * An identity's Room footprint, in the caller's transaction: its token
+     * balances (SET_NULL children), its private contact scan state (a position
+     * marked unresolved kept but rewound to the start), then the identity row,
+     * whose delete cascades its public keys, DPNS names, documents and DashPay
+     * rows. Shared by [deleteIdentityDataLocked] and [onPersistIdentityRemoval],
+     * so a removal Rust persisted leaves no dependent row behind either.
+     */
+    private suspend fun deleteIdentityFootprint(db: DashDatabase, identityId: ByteArray) {
+        db.tokenDao().deleteBalancesByIdentity(identityId)
+        db.privateContactScanStateDao().deleteUnmarkedPositionsOfIdentity(identityId)
+        db.privateContactScanStateDao().rewindMarkedPositionsOfIdentity(identityId)
+        db.privateContactScanStateDao().deleteAddressesOwnedBy(identityId)
+        db.identityDao().deleteByIdentityId(identityId)
+    }
+
     // ── Pending identity-key bookkeeping (#4053) ──────────────────────
 
     // Every publish to the map goes through `MutableStateFlow.update`
@@ -3935,6 +4061,9 @@ class PlatformWalletPersistenceHandler(
         walletId: ByteArray,
         publicKeyData: ByteArray,
         verifyRecoverable: suspend (pubkeyHex: String) -> Boolean,
+        abandonStoredKey: suspend (pubkeyHex: String) -> Unit = { pubkeyHex ->
+            privateKeyDeriver?.deleteUnownedStored(listOf(pubkeyHex), walletId)
+        },
         persistDurableIdentifier: suspend (storageIdentifier: String) -> Unit = { storageIdentifier ->
             database.publicKeyDao().getByPublicKeyData(publicKeyData).forEach { row ->
                 if (row.privateKeyKeychainIdentifier != storageIdentifier) {
@@ -3987,6 +4116,21 @@ class PlatformWalletPersistenceHandler(
             keyType = keyType,
             force = true,
         )?.identifier ?: return null
+
+        // Fence against an identity removal that ran while the key was being
+        // derived: the slot was read from a row of this wallet that removal
+        // has since deleted, so this store, and the claim it wrote for this
+        // wallet, must not outlive it. Checked AFTER the store; a removal
+        // still to come records and settles the key itself, as it does so
+        // only after the rows are gone. [abandonStoredKey] records the key for
+        // cleanup before deleting anything, so a failure there is retried.
+        if (database.publicKeyDao().countReferencesForWallet(publicKeyData, walletId) == 0) {
+            abandonStoredKey(pubkeyHex)
+            throw DashSdkError.PlatformWallet.SigningKeyUnavailable(
+                "identity-key repair for $pubkeyHex finished after its identity was " +
+                    "removed from the device; the repaired key was deleted again",
+            )
+        }
 
         // Independent confirmation the stored blob actually decrypts.
         if (!verifyRecoverable(pubkeyHex)) {

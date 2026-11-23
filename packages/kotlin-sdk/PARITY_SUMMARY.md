@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **40**
+Capabilities tracked: **41**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 25 | 13 | 1 | 1 |
-| Swift | Example app | 6 | 24 | 1 | 9 |
-| Kotlin | SDK | 17 | 17 | 5 | 1 |
-| Kotlin | Example app | 6 | 19 | 5 | 10 |
+| Swift | SDK | 25 | 14 | 1 | 1 |
+| Swift | Example app | 6 | 25 | 1 | 9 |
+| Kotlin | SDK | 17 | 17 | 6 | 1 |
+| Kotlin | Example app | 6 | 19 | 6 | 10 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 12 | 26 |
-| Kotlin | 5 | 10 | 25 |
+| Swift | 2 | 13 | 26 |
+| Kotlin | 5 | 10 | 26 |
 
 ## Capability status
 
@@ -49,6 +49,7 @@ Capabilities tracked: **40**
 | `documents.create_catalog` | supported / supported / not_applicable | supported / supported / not_applicable |
 | `contracts.update_preview` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
 | `documents.private_document_entries_read` | partial / partial / not_applicable | supported / partial / not_applicable |
+| `documents.private_document_entry_create` | partial / partial / required | unsupported / unsupported / not_applicable |
 | `tokens.max_supply_proposal_discovery` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `core.immature_balance_display` | supported / supported / not_applicable | supported / supported / not_applicable |
 | `security.key_security_policy_alias_split` | not-applicable / not-applicable / not_applicable | supported / supported / tested |
