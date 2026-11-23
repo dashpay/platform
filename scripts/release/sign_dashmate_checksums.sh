@@ -1,0 +1,246 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+cmd_usage="Usage: scripts/release/sign_dashmate_checksums.sh --tag=<tag> --key=<fingerprint> [--upload]
+
+Signs the SHA256SUMS of a published release with a maintainer's OpenPGP key. It first checks
+that the release workflow made the file, that its runs are over, and that the file is exactly
+the list of the dashmate packages the release serves, downloaded into a new empty directory.
+
+Without --upload the signature is made and verified, then discarded, and the command that
+attaches it is printed. With --upload every check runs again, the release is checked once
+more right before the upload, and SHA256SUMS.asc is attached and read back.
+
+  Options:
+  --tag=TAG                  - release tag, e.g. v5.1.0
+  --key=FINGERPRINT          - full fingerprint of the primary key to sign with; spaces are
+                               allowed. gpg signs with its newest signing subkey.
+  --upload                   - attach SHA256SUMS.asc to the release
+  --repo=OWNER/NAME          - repository, default dashpay/platform
+  -h          --help         - show help
+"
+
+fail() {
+  echo "Error: $*" >&2
+  exit 1
+}
+
+usage_error() {
+  echo "Error: $*" >&2
+  echo "$cmd_usage" >&2
+  exit 2
+}
+
+TAG=""
+KEY=""
+UPLOAD=false
+REPO="dashpay/platform"
+
+for i in "$@"
+do
+case ${i} in
+    -h|--help)
+        echo "$cmd_usage"
+        exit 0
+    ;;
+    --tag=*)
+      TAG="${i#*=}"
+    ;;
+    --key=*)
+      KEY="${i#*=}"
+    ;;
+    --upload)
+      UPLOAD=true
+    ;;
+    --repo=*)
+      REPO="${i#*=}"
+    ;;
+    *)
+      usage_error "unknown option ${i}"
+    ;;
+esac
+done
+
+# Matched as one string, so a value spanning lines cannot pass on one of them.
+tag_pattern='^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
+if ! [[ "${TAG}" =~ ${tag_pattern} ]]; then
+  usage_error "--tag must be a release tag such as v5.1.0, got '${TAG}'"
+fi
+
+# A short key id can match more than one key, so only a full fingerprint is accepted.
+KEY="$(echo "${KEY}" | tr -d ' ' | tr 'a-f' 'A-F')"
+key_pattern='^([0-9A-F]{40}|[0-9A-F]{64})$'
+if ! [[ "${KEY}" =~ ${key_pattern} ]]; then
+  usage_error "--key must be the key's full fingerprint, got '${KEY}'"
+fi
+
+for tool in gh gpg; do
+  command -v "${tool}" > /dev/null 2>&1 || fail "${tool} is not installed"
+done
+
+# GNU sha256sum, or shasum where it is missing. The sha256sum macOS ships is another tool,
+# which passes checks GNU's refuses.
+if sha256sum --version 2> /dev/null | grep -q 'GNU coreutils'; then
+  sha256=(sha256sum)
+elif command -v shasum > /dev/null 2>&1; then
+  sha256=(shasum -a 256)
+else
+  fail "neither GNU sha256sum nor shasum is installed"
+fi
+
+# pinentry asks for the passphrase in this terminal when there is one.
+if [ -t 0 ]; then
+  GPG_TTY="$(tty)"
+  export GPG_TTY
+fi
+
+hash_of() {
+  "${sha256[@]}" "$1" | cut -d' ' -f1
+}
+
+# One line per asset: name, state, uploader, digest.
+release_assets() {
+  gh api --paginate "repos/${REPO}/releases/${RELEASE_ID}/assets?per_page=100" \
+    --jq '.[] | [.name, .state, .uploader.login, (.digest // "")] | @tsv'
+}
+
+# A signature already on the release means another maintainer signed it, or the release was
+# rebuilt without removing the old one. Either way a person has to look.
+refuse_if_signed() {
+  local signatures
+  signatures="$(echo "$1" | awk -F'\t' '$1 ~ /^SHA256SUMS\./ {print $1}' | paste -sd ' ' -)"
+  if [ -n "${signatures}" ]; then
+    fail "${TAG} already carries ${signatures}. To sign it again, delete that asset first: gh release delete-asset ${TAG} <name> --repo ${REPO}"
+  fi
+}
+
+# The fields of SHA256SUMS in a release_assets listing: state, uploader, digest.
+sums_asset() {
+  echo "$1" | awk -F'\t' '$1 == "SHA256SUMS" {print $2 "\t" $3 "\t" $4}'
+}
+
+# Every release.yml run of the tag must be over: a running attempt can still replace packages
+# or SHA256SUMS. Prints the newest run's id.
+finished_run() {
+  local runs unfinished
+  runs="$(gh api --paginate "repos/${REPO}/actions/workflows/release.yml/runs?event=release&branch=${TAG}&per_page=100" \
+    --jq '.workflow_runs[] | [.id, .status] | @tsv')" || fail "could not list the release.yml runs of ${TAG}"
+  [ -n "${runs}" ] || fail "found no release.yml run for ${TAG}"
+  unfinished="$(echo "${runs}" | awk -F'\t' '$2 != "completed" {print $1 " (" $2 ")"}' | paste -sd ' ' -)"
+  [ -z "${unfinished}" ] || fail "release.yml for ${TAG} is still running: ${unfinished}; sign once no attempt is in progress"
+  echo "${runs}" | head -n 1 | cut -f1
+}
+
+# The digests GitHub reports for the release's dashmate assets must be exactly SHA256SUMS.
+check_published_packages() {
+  local published
+  published="$(echo "$1" | awk -F'\t' '$1 ~ /^dashmate/ {
+      print ($2 == "uploaded" && $4 ~ /^sha256:/ ? substr($4, 8) : "missing") "  " $1
+    }' | LC_ALL=C sort -k2,2)"
+  if [ "${published}" != "$(cat "$2")" ]; then
+    diff <(echo "${published}") "$2" >&2 || true
+    fail "the dashmate packages ${TAG} serves are not the ones its SHA256SUMS lists (< served, > listed)"
+  fi
+}
+
+verify_signature() {
+  local dir="$1" status
+  if ! status="$(gpg --status-fd 1 --verify "${dir}/SHA256SUMS.asc" "${dir}/SHA256SUMS")"; then
+    fail "gpg did not verify ${dir}/SHA256SUMS.asc against ${dir}/SHA256SUMS"
+  fi
+  # More than one, for instance from a local-user line in gpg.conf, would put other keys' names
+  # on the release.
+  [ "$(echo "${status}" | grep -c '^\[GNUPG:\] NEWSIG')" = 1 ] \
+    || fail "expected exactly one signature on SHA256SUMS; check gpg.conf for local-user or default-key lines"
+  # GOODSIG only for a good signature by a key that is neither expired nor revoked.
+  echo "${status}" | grep -q '^\[GNUPG:\] GOODSIG ' || fail "gpg reported no good signature on SHA256SUMS"
+  # VALIDSIG names the signing key third and its primary key twelfth.
+  if ! echo "${status}" | awk -v key="${KEY}" '$2 == "VALIDSIG" && ($3 == key || $12 == key) {found = 1} END {exit !found}'; then
+    fail "the signature on SHA256SUMS was not made by ${KEY} but by $(echo "${status}" | awk '$2 == "VALIDSIG" {print $3 " (primary key " $12 ")"}' | paste -sd ' ' -); pass the primary key's fingerprint"
+  fi
+}
+
+RELEASE_ID="$(gh api "repos/${REPO}/releases/tags/${TAG}" --jq '.id')" || fail "no release ${TAG} in ${REPO}"
+ASSETS="$(release_assets)" || fail "could not list the assets of ${TAG}"
+
+refuse_if_signed "${ASSETS}"
+
+SUMS="$(sums_asset "${ASSETS}")"
+[ -n "${SUMS}" ] || fail "${TAG} has no SHA256SUMS; wait for the Release Dashmate checksums job of its release.yml run"
+SUMS_STATE="$(echo "${SUMS}" | cut -f1)"
+SUMS_UPLOADER="$(echo "${SUMS}" | cut -f2)"
+SUMS_DIGEST="$(echo "${SUMS}" | cut -f3)"
+[ "${SUMS_STATE}" = uploaded ] || fail "SHA256SUMS on ${TAG} is not fully uploaded (state ${SUMS_STATE})"
+[ "${SUMS_UPLOADER}" = 'github-actions[bot]' ] || fail "SHA256SUMS on ${TAG} was uploaded by ${SUMS_UPLOADER}, not by the release workflow"
+
+RUN_ID="$(finished_run)" || exit 1
+CHECKSUMS_JOB="$(gh api --paginate "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" \
+  --jq '.jobs[] | select(.name == "Release Dashmate checksums") | (.conclusion // "none")')" \
+  || fail "could not list the jobs of release.yml run ${RUN_ID}"
+[ "${CHECKSUMS_JOB}" = success ] || fail "the Release Dashmate checksums job of run ${RUN_ID} did not succeed (${CHECKSUMS_JOB:-not found})"
+
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dashmate-sign.XXXXXX")"
+trap 'rm -rf "${WORK_DIR}"' EXIT
+DIR="${WORK_DIR}/release"
+mkdir "${DIR}"
+
+echo "Downloading the dashmate packages and SHA256SUMS of ${TAG} into ${DIR}"
+gh release download "${TAG}" --repo "${REPO}" --pattern 'dashmate*' --pattern SHA256SUMS --dir "${DIR}" \
+  || fail "could not download the packages of ${TAG}"
+
+SIGNED_DIGEST="sha256:$(hash_of "${DIR}/SHA256SUMS")"
+[ "${SIGNED_DIGEST}" = "${SUMS_DIGEST}" ] || fail "the downloaded SHA256SUMS is not the file the release lists (${SIGNED_DIGEST}, release ${SUMS_DIGEST:-none})"
+
+# Every line, strictly: a malformed line, a missing package or other bytes all fail.
+( cd "${DIR}" && "${sha256[@]}" --check --strict SHA256SUMS ) || fail "the packages of ${TAG} do not match its SHA256SUMS"
+
+# The check reads only the lines there are, and shasum takes any digest length, a SHA-1 line
+# included. So the file must also be exactly what the release workflow writes for these
+# packages: one sha256 line per package, sorted by name.
+( cd "${DIR}" && for file in dashmate*; do
+    [ ! -e "${file}" ] || echo "$(hash_of "${file}")  ${file}"
+  done ) | LC_ALL=C sort -k2,2 > "${WORK_DIR}/expected"
+if ! cmp -s "${WORK_DIR}/expected" "${DIR}/SHA256SUMS"; then
+  diff "${WORK_DIR}/expected" "${DIR}/SHA256SUMS" >&2 || true
+  fail "SHA256SUMS of ${TAG} is not one line per dashmate package it serves (< packages, > SHA256SUMS)"
+fi
+
+echo "Signing SHA256SUMS with ${KEY}"
+gpg --armor --detach-sign --local-user "${KEY}" --output "${DIR}/SHA256SUMS.asc" "${DIR}/SHA256SUMS" \
+  || fail "gpg could not sign SHA256SUMS with ${KEY}"
+verify_signature "${DIR}"
+
+echo "SHA256SUMS of ${TAG} matches its packages and is signed by ${KEY}."
+
+if [ "${UPLOAD}" != true ]; then
+  repo_option=""
+  [ "${REPO}" = dashpay/platform ] || repo_option=" --repo=${REPO}"
+  echo "Not uploaded. To attach the signature, run:"
+  echo "  scripts/release/sign_dashmate_checksums.sh --tag=${TAG} --key=${KEY}${repo_option} --upload"
+  exit 0
+fi
+
+# Checked again right before the upload, since the passphrase prompt can take a while: no run
+# started meanwhile, nobody signed, and SHA256SUMS and the packages are still the signed ones.
+finished_run > /dev/null
+ASSETS="$(release_assets)" || fail "could not list the assets of ${TAG}"
+refuse_if_signed "${ASSETS}"
+[ "$(sums_asset "${ASSETS}" | cut -f3)" = "${SIGNED_DIGEST}" ] \
+  || fail "SHA256SUMS on ${TAG} changed while it was being signed; run this again"
+check_published_packages "${ASSETS}" "${DIR}/SHA256SUMS"
+
+gh release upload "${TAG}" "${DIR}/SHA256SUMS.asc" --repo "${REPO}" || fail "could not attach SHA256SUMS.asc to ${TAG}"
+
+# Read back: the release serves the files that were signed and verified.
+READ_BACK="${WORK_DIR}/read-back"
+mkdir "${READ_BACK}"
+gh release download "${TAG}" --repo "${REPO}" --pattern SHA256SUMS --pattern SHA256SUMS.asc --dir "${READ_BACK}" \
+  || fail "could not download SHA256SUMS and SHA256SUMS.asc back from ${TAG}"
+for file in SHA256SUMS SHA256SUMS.asc; do
+  cmp -s "${DIR}/${file}" "${READ_BACK}/${file}" || fail "${TAG} serves another ${file} than the one signed here"
+done
+ASSETS="$(release_assets)" || fail "could not list the assets of ${TAG}"
+check_published_packages "${ASSETS}" "${DIR}/SHA256SUMS"
+
+echo "Attached SHA256SUMS.asc to ${TAG}; the release serves the signed SHA256SUMS and the packages it lists."
