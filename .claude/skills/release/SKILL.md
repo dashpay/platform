@@ -87,7 +87,7 @@ One signature per release is enough. The keys that may sign are listed, by prima
 scripts/release/sign_dashmate_checksums.sh --tag=v<version> --key=<full fingerprint, quoted if it has spaces>
 ```
 
-Ask the user, then attach the signature. With `--upload` the script checks the release again right before the upload and reads the signature back:
+Ask the user, then attach the signature. With `--upload` the script checks the release again right before the upload and reads the signature back. If a check fails after the upload, the signature is still attached: the script names it and the command that deletes it, which has to run before any retry.
 
 ```sh
 scripts/release/sign_dashmate_checksums.sh --tag=v<version> --key=<full fingerprint> --upload

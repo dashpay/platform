@@ -26,7 +26,7 @@ PACKAGES = ['dashmate-v5.1.0-3a5da22021-arm64.pkg', 'dashmate-v5.1.0-3a5da22021-
 # The release lives in STATE (JSON) and its files in RELEASE_FILES. --jq goes through real jq,
 # as gh's own filter would. An API path containing GH_PARTIAL is answered and then fails, as a
 # paginated listing does when a later page cannot be read. GH_AFTER_UPLOAD changes the release
-# right after the upload. GH_AFTER_DOWNLOAD changes the release once the packages are
+# right after the upload; GH_READ_BACK_FAILS fails downloading the signature back. GH_AFTER_DOWNLOAD changes the release once the packages are
 # downloaded, as a re-run or another maintainer could while this one signs.
 GH_STUB = '''#!/usr/bin/env python3
 import fnmatch, hashlib, json, os, re, shutil, subprocess, sys
@@ -104,6 +104,9 @@ if args[:2] == ['release', 'download']:
     if args[2] != release['tag_name'] or option('--repo') != 'dashpay/platform':
         not_found()
     patterns = [args[i + 1] for i, a in enumerate(args) if a == '--pattern']
+    if os.environ.get('GH_READ_BACK_FAILS') and 'SHA256SUMS.asc' in patterns:
+        print('gh: Server Error (HTTP 502)', file=sys.stderr)
+        sys.exit(1)
     names = [a['name'] for a in release['assets'] if any(fnmatch.fnmatchcase(a['name'], p) for p in patterns)]
     if not names:
         print('no assets match the file pattern', file=sys.stderr)
@@ -608,19 +611,27 @@ class SignDashmateChecksumsTests(ReleaseFixture):
 
                 self.assertRefused(result, message)
 
-    def test_should_fail_when_a_package_changes_right_after_the_upload(self):
-        result = self.sign(f'--tag={TAG}', f'--key={KEY}', '--upload', GH_AFTER_UPLOAD='package-replaced')
+    def test_should_name_the_attached_signature_when_a_check_after_the_upload_fails(self):
+        # The signature stays attached; the message says so and how to remove it before a retry.
+        cases = {
+            'a package changed right after the upload': (
+                {'GH_AFTER_UPLOAD': 'package-replaced'}, 'are not the ones its SHA256SUMS lists'),
+            'the release serves another signature': (
+                {'GH_UPLOAD_TAMPERED': '1'}, 'serves another SHA256SUMS.asc than the one signed here'),
+            'the signature cannot be read back': (
+                {'GH_READ_BACK_FAILS': '1'}, 'could not download SHA256SUMS and SHA256SUMS.asc back'),
+        }
+        for case, (env, reason) in cases.items():
+            with self.subTest(case):
+                self.release(self.packages)
 
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn('are not the ones its SHA256SUMS lists', result.stderr)
-        self.assertEqual(len(self.uploads()), 1)
+                result = self.sign(f'--tag={TAG}', f'--key={KEY}', '--upload', **env)
 
-    def test_should_fail_when_the_attached_signature_does_not_verify(self):
-        result = self.sign(f'--tag={TAG}', f'--key={KEY}', '--upload', GH_UPLOAD_TAMPERED='1')
-
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn(f'{TAG} serves another SHA256SUMS.asc than the one signed here', result.stderr)
-        self.assertEqual(len(self.uploads()), 1)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertEqual(len(self.uploads()), 1)
+                self.assertIn(reason, result.stderr)
+                self.assertIn(f'SHA256SUMS.asc is attached to {TAG}', result.stderr)
+                self.assertIn(f'gh release delete-asset {TAG} SHA256SUMS.asc --repo dashpay/platform', result.stderr)
 
     def test_should_check_with_shasum_where_sha256sum_is_not_gnu(self):
         result = self.sign(HASH_TOOL='shasum')

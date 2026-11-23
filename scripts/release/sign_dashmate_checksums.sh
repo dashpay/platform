@@ -139,7 +139,8 @@ finished_run() {
   echo "${runs}" | head -n 1 | cut -f1,3
 }
 
-# The digests GitHub reports for the release's dashmate assets must be exactly SHA256SUMS.
+# The digests GitHub reports for the release's dashmate assets must be exactly SHA256SUMS. Prints
+# the difference and returns 1 when they are not.
 check_published_packages() {
   local published
   published="$(echo "$1" | awk -F'\t' '$1 ~ /^dashmate/ {
@@ -147,8 +148,14 @@ check_published_packages() {
     }' | LC_ALL=C sort -k2,2)"
   if [ "${published}" != "$(cat "$2")" ]; then
     diff <(echo "${published}") "$2" >&2 || true
-    fail "the dashmate packages ${TAG} serves are not the ones its SHA256SUMS lists (< served, > listed)"
+    return 1
   fi
+}
+
+# After the upload the signature stays on the release whatever fails, so the message names it and
+# how to remove it before trying again.
+fail_attached() {
+  fail "SHA256SUMS.asc is attached to ${TAG}, but $*. Delete it before trying again: gh release delete-asset ${TAG} SHA256SUMS.asc --repo ${REPO}"
 }
 
 verify_signature() {
@@ -261,7 +268,8 @@ SUMS="$(sums_asset "${ASSETS}")"
 if [ "$(echo "${SUMS}" | cut -f3)" != "${SIGNED_DIGEST}" ] || [ "$(echo "${SUMS}" | cut -f4)" != "${RECEIPT_ID}" ]; then
   fail "SHA256SUMS on ${TAG} changed while it was being signed; run this again"
 fi
-check_published_packages "${ASSETS}" "${DIR}/SHA256SUMS"
+check_published_packages "${ASSETS}" "${DIR}/SHA256SUMS" \
+  || fail "the dashmate packages ${TAG} serves are not the ones its SHA256SUMS lists (< served, > listed)"
 
 gh release upload "${TAG}" "${DIR}/SHA256SUMS.asc" --repo "${REPO}" || fail "could not attach SHA256SUMS.asc to ${TAG}"
 
@@ -269,11 +277,12 @@ gh release upload "${TAG}" "${DIR}/SHA256SUMS.asc" --repo "${REPO}" || fail "cou
 READ_BACK="${WORK_DIR}/read-back"
 mkdir "${READ_BACK}"
 gh release download "${TAG}" --repo "${REPO}" --pattern SHA256SUMS --pattern SHA256SUMS.asc --dir "${READ_BACK}" \
-  || fail "could not download SHA256SUMS and SHA256SUMS.asc back from ${TAG}"
+  || fail_attached "could not download SHA256SUMS and SHA256SUMS.asc back from it"
 for file in SHA256SUMS SHA256SUMS.asc; do
-  cmp -s "${DIR}/${file}" "${READ_BACK}/${file}" || fail "${TAG} serves another ${file} than the one signed here"
+  cmp -s "${DIR}/${file}" "${READ_BACK}/${file}" || fail_attached "${TAG} serves another ${file} than the one signed here"
 done
-ASSETS="$(release_assets)" || fail "could not list the assets of ${TAG}"
-check_published_packages "${ASSETS}" "${DIR}/SHA256SUMS"
+ASSETS="$(release_assets)" || fail_attached "could not list its assets"
+check_published_packages "${ASSETS}" "${DIR}/SHA256SUMS" \
+  || fail_attached "the dashmate packages it serves are not the ones its SHA256SUMS lists (< served, > listed)"
 
 echo "Attached SHA256SUMS.asc to ${TAG}; the release serves the signed SHA256SUMS and the packages it lists."
