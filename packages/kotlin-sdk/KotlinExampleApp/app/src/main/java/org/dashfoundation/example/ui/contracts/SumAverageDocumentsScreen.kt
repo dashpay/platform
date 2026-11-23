@@ -215,20 +215,22 @@ fun SumAverageDocumentsScreen(
             }
 
             sumResult?.let { sums ->
-                FormSection(title = "Total") {
-                    LabeledContent(
-                        "Sum",
-                        sums.total ?: "—",
-                        modifier = Modifier.testTag("sumAverageDocuments.total"),
-                    )
+                if (sums.groups.isEmpty() || sums.total != null) {
+                    FormSection(title = "Total") {
+                        LabeledContent(
+                            "Sum",
+                            sums.total ?: "—",
+                            modifier = Modifier.testTag("sumAverageDocuments.total"),
+                        )
+                    }
                 }
                 if (sums.groups.isNotEmpty()) {
                     FormSection(title = "Per-group sums") {
                         sums.groups.entries.sortedBy { it.key }.forEach { (key, value) ->
                             LabeledContent(
-                                key,
+                                groupLabel(key),
                                 value,
-                                modifier = Modifier.testTag("sumAverageDocuments.groupRow.$key"),
+                                modifier = Modifier.testTag(groupRowTag(key)),
                             )
                         }
                     }
@@ -236,24 +238,26 @@ fun SumAverageDocumentsScreen(
             }
 
             averageResult?.let { averages ->
-                FormSection(title = "Total") {
-                    LabeledContent(
-                        "Average",
-                        averages.total?.displayAverage() ?: "—",
-                        modifier = Modifier.testTag("sumAverageDocuments.average"),
-                    )
-                    averages.total?.let { entry ->
-                        LabeledContent("Count", "${entry.count}")
-                        LabeledContent("Sum", "${entry.sum}")
+                if (averages.groups.isEmpty() || averages.total != null) {
+                    FormSection(title = "Total") {
+                        LabeledContent(
+                            "Average",
+                            averages.total?.displayAverage() ?: "—",
+                            modifier = Modifier.testTag("sumAverageDocuments.average"),
+                        )
+                        averages.total?.let { entry ->
+                            LabeledContent("Count", "${entry.count}")
+                            LabeledContent("Sum", "${entry.sum}")
+                        }
                     }
                 }
                 if (averages.groups.isNotEmpty()) {
                     FormSection(title = "Per-group averages") {
                         averages.groups.entries.sortedBy { it.key }.forEach { (key, entry) ->
                             LabeledContent(
-                                key,
+                                groupLabel(key),
                                 "${entry.displayAverage()} (n=${entry.count}, Σ=${entry.sum})",
-                                modifier = Modifier.testTag("sumAverageDocuments.groupRow.$key"),
+                                modifier = Modifier.testTag(groupRowTag(key)),
                             )
                         }
                     }
@@ -262,6 +266,13 @@ fun SumAverageDocumentsScreen(
         }
     }
 }
+
+/** A group's row label: the empty key groups documents missing the value. */
+private fun groupLabel(key: String): String = key.ifEmpty { "(no value)" }
+
+/** A group's row tag, as the iOS view names it (`groupRow.empty` for `""`). */
+private fun groupRowTag(key: String): String =
+    "sumAverageDocuments.groupRow.${key.ifEmpty { "empty" }}"
 
 private enum class Operation(val label: String) {
     SUM("Sum"),
@@ -296,9 +307,13 @@ internal fun parseAverageResult(response: String?): AverageResult? {
     if (response.isNullOrBlank()) return null
     var root = LenientJson.parseToJsonElement(response) as? JsonObject
         ?: throw IllegalArgumentException("Expected a JSON object in the average result")
-    if (root.size == 1) (root["averages"] as? JsonObject)?.let { root = it }
+    var grouped = false
+    (root["averages"] as? JsonObject)?.let { averages ->
+        grouped = groupedFlagOf(root)
+        root = averages
+    }
 
-    if (root.containsKey("count")) {
+    if (!grouped && root.containsKey("count")) {
         return AverageResult(total = averageEntryOf("total", root), groups = emptyMap())
     }
     val entries = root.mapValues { (key, value) ->
@@ -309,6 +324,9 @@ internal fun parseAverageResult(response: String?): AverageResult? {
         )
     }
     if (entries.isEmpty()) return null
+    // In a grouped result `""` is a real group (documents missing an
+    // optional range value), not the total.
+    if (grouped) return AverageResult(total = null, groups = entries)
     return AverageResult(
         total = entries[""] ?: entries["total"],
         groups = entries.filterKeys { it.isNotEmpty() && it != "total" },

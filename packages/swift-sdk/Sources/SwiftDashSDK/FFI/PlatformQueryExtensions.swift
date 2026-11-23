@@ -29,25 +29,34 @@ public struct DocumentCountResult: Sendable {
 
 /// Result of ``SDK/documentSum(dataContractId:documentType:sumProperty:whereJSON:orderByJSON:groupByJSON:limit:)``.
 ///
-/// Mirrors the FFI's `{"sums": {"<hexKey>": "<decimal>"}}` payload. Keys are
-/// the hex-encoded group keys; for an ungrouped (aggregate) sum there is a
-/// single entry under the empty-string key, exposed via ``total``. Each sum
-/// arrives as a base-10 string and is held as an `Int128`: from protocol
-/// version 15 a document type can keep its sums in 128-bit trees, so a sum can
-/// pass `Int64`.
+/// Mirrors the FFI's `{"grouped": <bool>, "sums": {"<hexKey>": "<decimal>"}}`
+/// payload. `grouped` is the FFI's statement of whether `group_by` was
+/// requested; it is the only thing that tells the total from the groups. For
+/// an ungrouped (aggregate) sum there is a single entry under the empty-string
+/// key, exposed via ``total``. For a grouped sum every key, including the
+/// empty one, is a group: the empty key holds the documents missing an
+/// optional range property. Each sum arrives as a base-10 string and is held
+/// as an `Int128`: from protocol version 15 a document type can keep its sums
+/// in 128-bit trees, so a sum can pass `Int64`.
 public struct DocumentSumResult: Sendable {
-    /// Hex-encoded group key → sum. The empty-string key holds the aggregate
-    /// total for an ungrouped sum.
+    /// Whether the request was grouped, as reported by the FFI.
+    public let isGrouped: Bool
+    /// Hex-encoded group key → sum. Ungrouped: one entry under the empty key,
+    /// the aggregate total. Grouped: one entry per group, where the empty key
+    /// is a group like any other.
     public let sums: [String: Int128]
 
-    public init(sums: [String: Int128]) {
+    public init(isGrouped: Bool, sums: [String: Int128]) {
+        self.isGrouped = isGrouped
         self.sums = sums
     }
 
     /// Parse the FFI's decoded JSON object. Throws
-    /// ``SDKError/serializationError(_:)`` when `sums` is missing or any value
-    /// is not a base-10 integer string, rather than dropping or narrowing it.
+    /// ``SDKError/serializationError(_:)`` when `grouped` is missing or not a
+    /// boolean, `sums` is missing, or any value is not a base-10 integer
+    /// string, rather than dropping or narrowing it.
     init(json: [String: Any]) throws {
+        let isGrouped = try parseGroupedFlag(json, response: "document sum")
         guard let sumsObject = json["sums"] as? [String: Any] else {
             throw SDKError.serializationError("Expected 'sums' object in document sum response")
         }
@@ -55,18 +64,13 @@ public struct DocumentSumResult: Sendable {
         for (key, value) in sumsObject {
             sums[key] = try parseDecimalInt128(value, field: "sums[\"\(key)\"]")
         }
-        self.sums = sums
+        self.init(isGrouped: isGrouped, sums: sums)
     }
 
     /// The aggregate total for an ungrouped sum: `sums[""]`. `nil` when the
-    /// request was grouped (no empty-string entry).
+    /// request was grouped, where the empty key is a group, not a total.
     public var total: Int128? {
-        sums[""]
-    }
-
-    /// `true` when the result carries per-group sums (any non-empty key).
-    public var isGrouped: Bool {
-        sums.keys.contains { !$0.isEmpty }
+        isGrouped ? nil : sums[""]
     }
 }
 
@@ -122,23 +126,32 @@ public struct DocumentAverageEntry: Sendable {
 /// Result of ``SDK/documentAverage(dataContractId:documentType:sumProperty:whereJSON:orderByJSON:groupByJSON:limit:)``.
 ///
 /// Mirrors the FFI's
-/// `{"averages": {"<hexKey>": {"count": <u64>, "sum": "<decimal>", "average": "<decimal>" | null}}}`
-/// payload. Keys are the hex-encoded group keys; for an ungrouped (aggregate)
-/// average there is a single entry under the empty-string key, exposed via
-/// ``total``.
+/// `{"grouped": <bool>, "averages": {"<hexKey>": {"count": <u64>, "sum": "<decimal>", "average": "<decimal>" | null}}}`
+/// payload. `grouped` is the FFI's statement of whether `group_by` was
+/// requested; it is the only thing that tells the total from the groups. For
+/// an ungrouped (aggregate) average there is a single entry under the
+/// empty-string key, exposed via ``total``. For a grouped average every key,
+/// including the empty one, is a group: the empty key holds the documents
+/// missing an optional range property.
 public struct DocumentAverageResult: Sendable {
-    /// Hex-encoded group key → `(count, sum, average)` entry. The empty-string
-    /// key holds the aggregate total for an ungrouped average.
+    /// Whether the request was grouped, as reported by the FFI.
+    public let isGrouped: Bool
+    /// Hex-encoded group key → `(count, sum, average)` entry. Ungrouped: one
+    /// entry under the empty key, the aggregate total. Grouped: one entry per
+    /// group, where the empty key is a group like any other.
     public let averages: [String: DocumentAverageEntry]
 
-    public init(averages: [String: DocumentAverageEntry]) {
+    public init(isGrouped: Bool, averages: [String: DocumentAverageEntry]) {
+        self.isGrouped = isGrouped
         self.averages = averages
     }
 
     /// Parse the FFI's decoded JSON object. Throws
-    /// ``SDKError/serializationError(_:)`` when `averages` is missing or any
-    /// entry is malformed (see ``DocumentAverageEntry``).
+    /// ``SDKError/serializationError(_:)`` when `grouped` is missing or not a
+    /// boolean, `averages` is missing, or any entry is malformed (see
+    /// ``DocumentAverageEntry``).
     init(json: [String: Any]) throws {
+        let isGrouped = try parseGroupedFlag(json, response: "document average")
         guard let averagesObject = json["averages"] as? [String: Any] else {
             throw SDKError.serializationError("Expected 'averages' object in document average response")
         }
@@ -146,19 +159,28 @@ public struct DocumentAverageResult: Sendable {
         for (key, value) in averagesObject {
             averages[key] = try DocumentAverageEntry(json: value, key: key)
         }
-        self.averages = averages
+        self.init(isGrouped: isGrouped, averages: averages)
     }
 
     /// The aggregate entry for an ungrouped average: `averages[""]`. `nil`
-    /// when the request was grouped (no empty-string entry).
+    /// when the request was grouped, where the empty key is a group, not a
+    /// total.
     public var total: DocumentAverageEntry? {
-        averages[""]
+        isGrouped ? nil : averages[""]
     }
+}
 
-    /// `true` when the result carries per-group averages (any non-empty key).
-    public var isGrouped: Bool {
-        averages.keys.contains { !$0.isEmpty }
+/// Read the `grouped` flag the sum and average FFIs write. Throws
+/// ``SDKError/serializationError(_:)`` when it is missing or not a JSON
+/// boolean. `JSONSerialization` decodes both booleans and numbers to
+/// `NSNumber`, so the value is checked against the boolean type itself; a
+/// number such as `1` is refused rather than read as `true`.
+private func parseGroupedFlag(_ json: [String: Any], response: String) throws -> Bool {
+    guard let number = json["grouped"] as? NSNumber,
+          CFGetTypeID(number) == CFBooleanGetTypeID() else {
+        throw SDKError.serializationError("Expected a boolean 'grouped' in \(response) response")
     }
+    return number.boolValue
 }
 
 /// Read an aggregate the FFI wrote as a base-10 string (`"-5"`,
@@ -1150,9 +1172,9 @@ extension SDK {
     /// (same precedent as `documentCount`), marshals the document type + the
     /// required `sumProperty` + optional `where`/`order_by`/`group_by` JSON +
     /// the `limit` sentinel in, calls the FFI, and marshals the
-    /// `{"sums": {"<hexKey>": "<decimal>"}}` payload out, parsing each decimal
-    /// string into an `Int128`. All aggregation is done on the Rust side;
-    /// nothing is decided here.
+    /// `{"grouped": <bool>, "sums": {"<hexKey>": "<decimal>"}}` payload out,
+    /// parsing each decimal string into an `Int128`. All aggregation is done on
+    /// the Rust side; nothing is decided here.
     ///
     /// - Parameters:
     ///   - dataContractId: Base58 id of the data contract holding the type.
@@ -1169,11 +1191,13 @@ extension SDK {
     ///   - limit: Sentinel-encoded `int64`. `-1` = server default (the
     ///     default). `> 0` = explicit cap. `0` is rejected at the FFI boundary,
     ///     so the wrapper rejects it before calling.
-    /// - Returns: A ``DocumentSumResult`` mapping hex-encoded group key → sum.
-    ///   For an ungrouped sum the total lives under the empty-string key and is
-    ///   surfaced via ``DocumentSumResult/total``.
-    /// - Throws: ``SDKError/serializationError(_:)`` when a sum in the payload
-    ///   is not a base-10 integer string.
+    /// - Returns: A ``DocumentSumResult`` mapping hex-encoded group key → sum,
+    ///   with ``DocumentSumResult/isGrouped`` as the FFI reported it. For an
+    ///   ungrouped sum the total lives under the empty-string key and is
+    ///   surfaced via ``DocumentSumResult/total``; for a grouped sum the empty
+    ///   key is a group (documents missing an optional range property).
+    /// - Throws: ``SDKError/serializationError(_:)`` when `grouped` is not a
+    ///   boolean or a sum in the payload is not a base-10 integer string.
     @MainActor
     public func documentSum(
         dataContractId: String,
@@ -1235,7 +1259,7 @@ extension SDK {
             }
         }
 
-        // Payload shape: {"sums": {"<hexKey>": "<decimal>"}}.
+        // Payload shape: {"grouped": <bool>, "sums": {"<hexKey>": "<decimal>"}}.
         return try DocumentSumResult(json: processJSONResult(result))
     }
 
@@ -1246,7 +1270,7 @@ extension SDK {
     /// handle, marshals the document type + the required `sumProperty` +
     /// optional `where`/`order_by`/`group_by` JSON + the `limit` sentinel in,
     /// calls the FFI, and marshals the
-    /// `{"averages": {"<hexKey>": {"count": <u64>, "sum": "<decimal>", "average": "<decimal>" | null}}}`
+    /// `{"grouped": <bool>, "averages": {"<hexKey>": {"count": <u64>, "sum": "<decimal>", "average": "<decimal>" | null}}}`
     /// payload out. Rust computes the average exactly to 4 decimal places; the
     /// wrapper passes that string through verbatim and parses `sum` into an
     /// `Int128`. All aggregation and division is done on the Rust side;
@@ -1268,11 +1292,13 @@ extension SDK {
     ///     default). `> 0` = explicit cap. `0` is rejected at the FFI boundary,
     ///     so the wrapper rejects it before calling.
     /// - Returns: A ``DocumentAverageResult`` mapping hex-encoded group key →
-    ///   `(count, sum, average)`. For an ungrouped average the total lives
-    ///   under the empty-string key and is surfaced via
-    ///   ``DocumentAverageResult/total``.
-    /// - Throws: ``SDKError/serializationError(_:)`` when an entry in the
-    ///   payload is malformed.
+    ///   `(count, sum, average)`, with ``DocumentAverageResult/isGrouped`` as
+    ///   the FFI reported it. For an ungrouped average the total lives under
+    ///   the empty-string key and is surfaced via
+    ///   ``DocumentAverageResult/total``; for a grouped average the empty key
+    ///   is a group (documents missing an optional range property).
+    /// - Throws: ``SDKError/serializationError(_:)`` when `grouped` is not a
+    ///   boolean or an entry in the payload is malformed.
     @MainActor
     public func documentAverage(
         dataContractId: String,
@@ -1335,7 +1361,7 @@ extension SDK {
         }
 
         // Payload shape:
-        // {"averages": {"<hexKey>": {"count": <u64>, "sum": "<decimal>", "average": "<decimal>" | null}}}.
+        // {"grouped": <bool>, "averages": {"<hexKey>": {"count": <u64>, "sum": "<decimal>", "average": "<decimal>" | null}}}.
         return try DocumentAverageResult(json: processJSONResult(result))
     }
 

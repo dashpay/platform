@@ -26,6 +26,11 @@
 //!   [`drive_proof_verifier::DocumentSplitAverages`] view — one
 //!   hex-keyed entry per matched group, flattened by `try_into_flat_map`.
 //!
+//! As on the sum surface, the result carries a `grouped` flag saying
+//! which route answered, because a grouped result can hold a real group
+//! under the empty key (documents missing an optional range property),
+//! which looks exactly like the ungrouped total's key.
+//!
 //! Wraps those rs-sdk `Fetch` flows. The where / order_by / group_by /
 //! limit parameter handling is shared verbatim with the count and sum
 //! surfaces (see [`super::count`]); the only average-specific piece is
@@ -82,27 +87,39 @@ impl AverageEntryJson {
 
 #[derive(Debug, Serialize)]
 struct DocumentAverageResult {
+    /// Whether `group_by` was requested, which decides how to read
+    /// `averages`. Callers read this flag rather than inferring grouping
+    /// from the keys, because a grouped result can hold a real group under
+    /// the empty key.
+    grouped: bool,
     /// Average `(count, sum, average)` results keyed by group.
     ///
-    /// - **Ungrouped** (empty / null `group_by_json`): exactly one
-    ///   entry under the empty (`""`) key — the aggregate
-    ///   `(count, sum)` folded across every matched branch. An absent /
-    ///   `None` aggregate yields
+    /// - **Ungrouped** (`grouped: false`): exactly one entry under the
+    ///   empty (`""`) key: the aggregate `(count, sum)` folded across
+    ///   every matched branch. An absent / `None` aggregate yields
     ///   `{"": {"count": 0, "sum": "0", "average": null}}` so the
     ///   "single empty-key total" contract always holds.
-    /// - **Grouped** (non-empty `group_by_json`): one entry per matched
-    ///   group, hex-encoded so iOS callers can match them against the
-    ///   corresponding platform-value-encoded property bytes.
+    /// - **Grouped** (`grouped: true`): one entry per matched group,
+    ///   keyed by the verified group key hex-encoded so iOS callers can
+    ///   match them against the corresponding platform-value-encoded
+    ///   property bytes. A group whose key is empty (documents missing an
+    ///   optional range property) is keyed `""`; it is a group, not a
+    ///   total.
     averages: BTreeMap<String, AverageEntryJson>,
 }
 
 /// `SELECT AVG(<sum_property>)` over a where clause + optional group_by.
 ///
 /// Returns a JSON string of shape
-/// `{"averages": {"<key>": {"count": <u64>, "sum": "<signed decimal>",
-/// "average": "<decimal>" | null}, ...}}`, for example
-/// `{"averages": {"": {"count": 2, "sum": "18446744073709551614",
-/// "average": "9223372036854775807.0000"}}}`.
+/// `{"grouped": <bool>, "averages": {"<key>": {"count": <u64>, "sum":
+/// "<signed decimal>", "average": "<decimal>" | null}, ...}}`, for example
+/// `{"grouped": false, "averages": {"": {"count": 2, "sum":
+/// "18446744073709551614", "average": "9223372036854775807.0000"}}}`.
+///
+/// - `grouped` is `true` exactly when `group_by_json` is non-empty.
+///   Callers read it to tell the total from the groups instead of looking
+///   at the keys: in a grouped result the empty key `""` is a real group
+///   (the documents missing an optional range property), not a total.
 ///
 /// - `count` is a JSON number.
 /// - `sum` is the `i128` sum written as a base-10 string, so a sum past
@@ -115,18 +132,19 @@ struct DocumentAverageResult {
 ///
 /// The map's shape depends on whether `group_by_json` is requested:
 ///
-/// - **Ungrouped** (empty/null `group_by_json`): exactly one entry under
-///   the empty (`""`) key — `averages[""]` is the aggregate total
-///   `(count, sum)`. This routes to the aggregate
+/// - **Ungrouped** (`grouped: false`, empty/null `group_by_json`):
+///   exactly one entry under the empty (`""`) key; `averages[""]` is the
+///   aggregate total `(count, sum)`. This routes to the aggregate
 ///   [`drive_proof_verifier::DocumentAverage`], which folds every
 ///   verified branch (including any `in` / range fork in the `where`
 ///   clause) into one `(count, sum)`. An absent / `None` aggregate is
 ///   reported as `{"count": 0, "sum": "0", "average": null}` so the
 ///   single empty-key total contract always holds.
-/// - **Grouped** (non-empty `group_by_json`): one entry per matched
-///   group, keyed by the hex-encoded platform-value-encoded property
-///   value from the underlying count+sum tree path. This routes to the
-///   per-group [`drive_proof_verifier::DocumentSplitAverages`] view.
+/// - **Grouped** (`grouped: true`, non-empty `group_by_json`): one entry
+///   per matched group, keyed by the hex-encoded platform-value-encoded
+///   property value from the underlying count+sum tree path (an empty
+///   group key stays `""`). This routes to the per-group
+///   [`drive_proof_verifier::DocumentSplitAverages`] view.
 ///   Compound `(in_key, key)` entries are collapsed into a flat map by
 ///   summing each In-fork's `count` and `sum` at the same terminator
 ///   key; both axes use checked arithmetic (`u64` for count, `i128` for
@@ -196,6 +214,7 @@ pub unsafe extern "C" fn dash_sdk_document_average(
         // projection carries the field directly — `SelectProjection::avg`
         // is the average-side analog of count's `count_star`.
         let group_by = parse_group_by_json(group_by_json)?;
+        let grouped = !group_by.is_empty();
 
         // Route on whether grouping was requested. The per-group
         // `DocumentSplitAverages` view yields one entry *per matched
@@ -204,7 +223,7 @@ pub unsafe extern "C" fn dash_sdk_document_average(
         // instead of one folded `(count, sum)`). The aggregate
         // `DocumentAverage` folds every verified branch into a single
         // `(count, sum)`.
-        let averages: BTreeMap<String, AverageEntryJson> = if group_by.is_empty() {
+        let averages: BTreeMap<String, AverageEntryJson> = if !grouped {
             // Ungrouped: aggregate `(count, sum)` under the empty (`""`)
             // key. `DocumentAverage` carries named `count: u64` / `sum:
             // i128` fields; a `None` fetch (queried-but-absent) reports
@@ -248,7 +267,7 @@ pub unsafe extern "C" fn dash_sdk_document_average(
                 .collect()
         };
 
-        serde_json::to_string(&DocumentAverageResult { averages })
+        serde_json::to_string(&DocumentAverageResult { grouped, averages })
             .map_err(|e| FFIError::InternalError(format!("Failed to serialize result: {}", e)))
     });
 
@@ -304,6 +323,7 @@ mod tests {
         assert_eq!(
             json,
             serde_json::json!({
+                "grouped": false,
                 "averages": {
                     "": {
                         "count": 3,
@@ -367,42 +387,97 @@ mod tests {
             hex::encode(GROUP_B),
             serde_json::json!({ "count": 2, "sum": "70005", "average": "35002.5000" }),
         );
-        assert_eq!(json, serde_json::json!({ "averages": expected }));
+        assert_eq!(
+            json,
+            serde_json::json!({ "grouped": true, "averages": expected })
+        );
+    }
+
+    /// A grouped result can hold a real group under the empty key: the
+    /// documents missing an optional range property are indexed under it.
+    /// That group is keyed `""` next to the named groups, and `grouped`
+    /// stays `true` so a caller never reads it as the ungrouped total.
+    #[test]
+    fn should_keep_an_empty_key_group_next_to_named_groups_when_grouped() {
+        let contract = document_history_contract();
+        let where_json = grouped_where_json();
+        let query = ffi_query(
+            &contract,
+            &where_json,
+            SelectProjection::avg(PRICE),
+            &[GROUP_BY_FIELD],
+        );
+        let sdk = mock_sdk_answering(
+            query,
+            DocumentSplitAverages(vec![
+                SplitAverageEntry {
+                    in_key: Some(GROUP_A.to_vec()),
+                    key: vec![],
+                    count: Some(2),
+                    sum: Some(10),
+                },
+                SplitAverageEntry {
+                    in_key: Some(GROUP_A.to_vec()),
+                    key: b"a".to_vec(),
+                    count: Some(3),
+                    sum: Some(30),
+                },
+            ]),
+        );
+
+        let json = call_aggregate(
+            dash_sdk_document_average,
+            sdk,
+            contract,
+            &where_json,
+            Some(GROUP_BY_JSON),
+        );
+
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "grouped": true,
+                "averages": {
+                    "": { "count": 2, "sum": "10", "average": "5.0000" },
+                    "61": { "count": 3, "sum": "30", "average": "10.0000" },
+                }
+            })
+        );
     }
 
     /// Serialize averages through the real [`DocumentAverageResult`] type.
-    fn averages_json(entries: Vec<(&str, u64, i128)>) -> String {
+    fn averages_json(grouped: bool, entries: Vec<(&str, u64, i128)>) -> String {
         let averages = entries
             .into_iter()
             .map(|(key, count, sum)| (key.to_string(), AverageEntryJson::new(count, sum)))
             .collect();
-        serde_json::to_string(&DocumentAverageResult { averages })
+        serde_json::to_string(&DocumentAverageResult { grouped, averages })
             .expect("DocumentAverageResult must serialize")
     }
 
-    /// The `DocumentAverageResult` wire shape iOS decodes is exactly
-    /// `{"averages": {"<hex-key>": {"count": <u64>, "sum": "<decimal>",
-    /// "average": "<decimal>"}, ...}}`. Field order (`count`, `sum`,
-    /// `average`) must stay stable so the contract callers decode against
-    /// doesn't drift.
+    /// The grouped `DocumentAverageResult` wire shape iOS decodes is
+    /// exactly `{"grouped":true,"averages":{"<hex-key>":{"count":<u64>,
+    /// "sum":"<decimal>","average":"<decimal>"},...}}`. Field order
+    /// (`count`, `sum`, `average`) must stay stable so the contract callers
+    /// decode against doesn't drift.
     #[test]
     fn document_average_result_serializes_to_expected_shape() {
         assert_eq!(
-            averages_json(vec![("61", 3, 30)]),
-            r#"{"averages":{"61":{"count":3,"sum":"30","average":"10.0000"}}}"#
+            averages_json(true, vec![("61", 3, 30)]),
+            r#"{"grouped":true,"averages":{"61":{"count":3,"sum":"30","average":"10.0000"}}}"#
         );
     }
 
     /// The ungrouped (aggregate) branch always emits a single
-    /// empty-string-keyed entry. This pins the exact wire shape the
-    /// `group_by.is_empty()` path produces so a regression that
+    /// empty-string-keyed entry with `grouped: false`. This pins the exact
+    /// wire shape the ungrouped path produces so a regression that
     /// reintroduced per-key entries for an ungrouped `in` / range query
     /// would change the serialized bytes iOS decodes against.
     #[test]
     fn document_average_result_ungrouped_is_single_empty_key_total() {
         assert_eq!(
-            averages_json(vec![("", 3, 30)]),
-            r#"{"averages":{"":{"count":3,"sum":"30","average":"10.0000"}}}"#
+            averages_json(false, vec![("", 3, 30)]),
+            r#"{"grouped":false,"averages":{"":{"count":3,"sum":"30","average":"10.0000"}}}"#
         );
     }
 
@@ -413,8 +488,8 @@ mod tests {
     #[test]
     fn document_average_result_ungrouped_absent_is_zero_pair() {
         assert_eq!(
-            averages_json(vec![("", 0, 0)]),
-            r#"{"averages":{"":{"count":0,"sum":"0","average":null}}}"#
+            averages_json(false, vec![("", 0, 0)]),
+            r#"{"grouped":false,"averages":{"":{"count":0,"sum":"0","average":null}}}"#
         );
     }
 
@@ -425,8 +500,8 @@ mod tests {
     fn document_average_result_carries_a_sum_past_i64_whole() {
         let wide = 3 * i128::from(i64::MAX);
         assert_eq!(
-            averages_json(vec![("", 3, wide)]),
-            r#"{"averages":{"":{"count":3,"sum":"27670116110564327421","average":"9223372036854775807.0000"}}}"#
+            averages_json(false, vec![("", 3, wide)]),
+            r#"{"grouped":false,"averages":{"":{"count":3,"sum":"27670116110564327421","average":"9223372036854775807.0000"}}}"#
         );
     }
 
@@ -435,8 +510,8 @@ mod tests {
     #[test]
     fn document_average_result_carries_a_negative_sum() {
         assert_eq!(
-            averages_json(vec![("61", 3, -5)]),
-            r#"{"averages":{"61":{"count":3,"sum":"-5","average":"-1.6667"}}}"#
+            averages_json(true, vec![("61", 3, -5)]),
+            r#"{"grouped":true,"averages":{"61":{"count":3,"sum":"-5","average":"-1.6667"}}}"#
         );
     }
 }

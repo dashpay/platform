@@ -15,7 +15,7 @@ class AverageResultParsingTest {
     @Test
     fun shouldShowAnUngroupedAverageWhoseSumPasses64Bits() {
         val result = parseAverageResult(
-            """{"averages":{"":{"count":2,"sum":"18446744073709551614","average":"9223372036854775807.0000"}}}""",
+            """{"grouped":false,"averages":{"":{"count":2,"sum":"18446744073709551614","average":"9223372036854775807.0000"}}}""",
         )!!
         val total = result.total!!
         assertEquals("2", total.count)
@@ -27,7 +27,7 @@ class AverageResultParsingTest {
     @Test
     fun shouldKeepEveryGroupWhenOneSumPasses64Bits() {
         val result = parseAverageResult(
-            """{"averages":{
+            """{"grouped":true,"averages":{
                 "61":{"count":3,"sum":"30","average":"10.0000"},
                 "62":{"count":3,"sum":"27670116110564327421","average":"9223372036854775807.0000"}
             }}""",
@@ -37,6 +37,49 @@ class AverageResultParsingTest {
         assertEquals("10.0000", result.groups.getValue("61").displayAverage())
         assertEquals("27670116110564327421", result.groups.getValue("62").sum)
         assertEquals("9223372036854775807.0000", result.groups.getValue("62").displayAverage())
+    }
+
+    /**
+     * Grouped by an optional range field, documents missing the value form
+     * the `""` group. It is a group like any other, never the total.
+     */
+    @Test
+    fun shouldKeepAnEmptyKeyGroupOfAGroupedAverageAmongTheGroups() {
+        val result = parseAverageResult(
+            """{"grouped":true,"averages":{
+                "":{"count":1,"sum":"10","average":"10.0000"},
+                "61":{"count":2,"sum":"18446744073709551614","average":"9223372036854775807.0000"}
+            }}""",
+        )!!
+        assertNull(result.total)
+        assertEquals(setOf("", "61"), result.groups.keys)
+        assertEquals("10.0000", result.groups.getValue("").displayAverage())
+    }
+
+    @Test
+    fun shouldKeepAnEmptyKeyGroupOfAGroupedSumAmongTheGroups() {
+        val grouped = parseAggregateResult("""{"grouped":true,"sums":{"":"10","61":"18446744073709551614"}}""")!!
+        assertNull(grouped.total)
+        assertEquals(mapOf("" to "10", "61" to "18446744073709551614"), grouped.groups)
+
+        val total = parseAggregateResult("""{"grouped":false,"sums":{"":"27670116110564327421"}}""")!!
+        assertEquals("27670116110564327421", total.total)
+        assertEquals(emptyMap<String, String>(), total.groups)
+    }
+
+    @Test
+    fun shouldRefuseAGroupedFlagThatIsNotABoolean() {
+        for (response in listOf(
+            """{"grouped":"yes","sums":{"":"10"}}""",
+            """{"grouped":1,"averages":{"":{"count":1,"sum":"10","average":"10.0000"}}}""",
+        )) {
+            try {
+                if (response.contains("\"sums\"")) parseAggregateResult(response) else parseAverageResult(response)
+                fail("expected $response to be refused")
+            } catch (expected: IllegalArgumentException) {
+                // Reported by the screen.
+            }
+        }
     }
 
     @Test

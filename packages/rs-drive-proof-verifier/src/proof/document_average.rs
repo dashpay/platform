@@ -301,8 +301,8 @@ pub fn verify_primary_key_count_sum_tree_proof(
 ///
 /// Each total is keyed by the `In` value it belongs to (`in_key =
 /// None`, `key = <serialized In value>`): the request groups by the `In`
-/// field, so that value is its group, and this is the shape a node's
-/// unproven answer and a point lookup grouped by the `In` field give.
+/// field, so that value is its group, and this is the shape a point
+/// lookup grouped by the `In` field gives.
 /// A terminator `key` can itself be empty (a document missing an
 /// optional range property is indexed under the empty key), so the
 /// group is never inferred from an empty `key`.

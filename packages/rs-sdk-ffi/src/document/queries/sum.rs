@@ -25,6 +25,12 @@
 //! `sum_property` field naming the integer property to aggregate and
 //! the signed result values.
 //!
+//! The result carries a `grouped` flag saying which of the two routes
+//! answered, so a caller never infers it from the keys: in a grouped
+//! result a real group can have the empty key (a document missing an
+//! optional range property is indexed under it), which looks exactly
+//! like the ungrouped total's key.
+//!
 //! Every sum is written as a base-10 JSON string, not a JSON number. From
 //! protocol version 15 a document type can keep its sums in 128-bit
 //! trees, so a sum can pass `i64`; a JSON number that large is rounded by
@@ -87,16 +93,23 @@ fn serialize_i128_map_as_decimal<S: Serializer>(
 
 #[derive(Debug, Serialize)]
 struct DocumentSumResult {
+    /// Whether `group_by` was requested, which decides how to read
+    /// `sums`. Callers read this flag rather than inferring grouping from
+    /// the keys, because a grouped result can hold a real group under the
+    /// empty key.
+    grouped: bool,
     /// Sum results keyed by group.
     ///
-    /// - **Ungrouped** (empty / null `group_by_json`): exactly one
-    ///   entry under the empty (`""`) key — the aggregate total folded
-    ///   across every matched branch. An absent / `None` aggregate
-    ///   yields `{"": "0"}` so the "single empty-key total" contract
-    ///   always holds.
-    /// - **Grouped** (non-empty `group_by_json`): one entry per matched
-    ///   group, hex-encoded so iOS callers can match them against the
-    ///   corresponding platform-value-encoded property bytes.
+    /// - **Ungrouped** (`grouped: false`): exactly one entry under the
+    ///   empty (`""`) key: the aggregate total folded across every
+    ///   matched branch. An absent / `None` aggregate yields `{"": "0"}`
+    ///   so the "single empty-key total" contract always holds.
+    /// - **Grouped** (`grouped: true`): one entry per matched group,
+    ///   keyed by the verified group key hex-encoded so iOS callers can
+    ///   match them against the corresponding platform-value-encoded
+    ///   property bytes. A group whose key is empty (documents missing an
+    ///   optional range property) is keyed `""`; it is a group, not a
+    ///   total.
     ///
     /// Values are signed `i128` (a 128-bit sum tree can hold more than
     /// `i64`) and serialize as base-10 strings.
@@ -107,25 +120,31 @@ struct DocumentSumResult {
 /// `SELECT SUM(<sum_property>)` over a where clause + optional group_by.
 ///
 /// Returns a JSON string of shape
-/// `{"sums": {"<key>": "<signed decimal>", ...}}`, for example
-/// `{"sums": {"": "18446744073709551614"}}` or `{"sums": {"61": "-5"}}`.
+/// `{"grouped": <bool>, "sums": {"<key>": "<signed decimal>", ...}}`, for
+/// example `{"grouped": false, "sums": {"": "18446744073709551614"}}` or
+/// `{"grouped": true, "sums": {"": "10", "61": "-5"}}`.
 /// Each sum is an `i128` written as a base-10 string, not a JSON number,
 /// so a sum past `i64` (possible from protocol version 15) reaches the
 /// caller exactly; callers parse it with an `i128`-capable integer type.
-/// The map's shape depends on whether `group_by_json` is requested:
 ///
-/// - **Ungrouped** (empty/null `group_by_json`): exactly one entry under
-///   the empty (`""`) key — `sums[""]` is the aggregate total. This
-///   routes to the aggregate [`drive_proof_verifier::DocumentSum`],
-///   which folds every verified branch (including any `in` / range fork
+/// `grouped` is `true` exactly when `group_by_json` is non-empty. Callers
+/// read it to tell the total from the groups instead of looking at the
+/// keys: in a grouped result the empty key `""` is a real group (the
+/// documents missing an optional range property), not a total. The map's
+/// shape depends on it:
+///
+/// - **Ungrouped** (`grouped: false`, empty/null `group_by_json`):
+///   exactly one entry under the empty (`""`) key; `sums[""]` is the
+///   aggregate total. This routes to the aggregate
+///   [`drive_proof_verifier::DocumentSum`], which folds every verified branch (including any `in` / range fork
 ///   in the `where` clause) into one `i128`. An absent / `None`
 ///   aggregate is reported as `{"": "0"}` so the single empty-key total
 ///   contract always holds.
-/// - **Grouped** (non-empty `group_by_json`): one entry per matched
-///   group, keyed by the hex-encoded platform-value-encoded property
-///   value from the underlying sum-tree path; iOS callers should
-///   hex-decode them and decode against the contract's index-property
-///   type if they need a typed key. This routes to the per-group
+/// - **Grouped** (`grouped: true`, non-empty `group_by_json`): one entry
+///   per matched group, keyed by the hex-encoded platform-value-encoded
+///   property value from the underlying sum-tree path (an empty group key
+///   stays `""`); iOS callers should hex-decode them and decode against
+///   the contract's index-property type if they need a typed key. This routes to the per-group
 ///   [`drive_proof_verifier::DocumentSplitSums`] view. Compound
 ///   `(in_key, key)` entries are collapsed into a flat map by summing
 ///   each In-fork's contribution at the same terminator key; the fold
@@ -199,6 +218,7 @@ pub unsafe extern "C" fn dash_sdk_document_sum(
         // projection carries the field directly — `SelectProjection::sum`
         // is the sum-side analog of count's `count_star`.
         let group_by = parse_group_by_json(group_by_json)?;
+        let grouped = !group_by.is_empty();
 
         // Route on whether grouping was requested. The per-group
         // `DocumentSplitSums` view yields one entry *per matched
@@ -206,7 +226,7 @@ pub unsafe extern "C" fn dash_sdk_document_sum(
         // (it would surface per-key entries for an `in` / range `where`
         // clause instead of one folded total). The aggregate
         // `DocumentSum` folds every verified branch into a single `i128`.
-        let sums: BTreeMap<String, i128> = if group_by.is_empty() {
+        let sums: BTreeMap<String, i128> = if !grouped {
             // Ungrouped: aggregate total under the empty (`""`) key.
             // `DocumentSum` is a tuple struct over a single folded `i128`;
             // a `None` fetch (queried-but-absent) reports the zero total
@@ -249,7 +269,7 @@ pub unsafe extern "C" fn dash_sdk_document_sum(
                 .collect()
         };
 
-        serde_json::to_string(&DocumentSumResult { sums })
+        serde_json::to_string(&DocumentSumResult { grouped, sums })
             .map_err(|e| FFIError::InternalError(format!("Failed to serialize result: {}", e)))
     });
 
@@ -472,7 +492,7 @@ pub(super) mod tests {
 
         assert_eq!(
             json,
-            serde_json::json!({ "sums": { "": "27670116110564327421" } })
+            serde_json::json!({ "grouped": false, "sums": { "": "27670116110564327421" } })
         );
     }
 
@@ -516,7 +536,54 @@ pub(super) mod tests {
         let mut expected = serde_json::Map::new();
         expected.insert(hex::encode(GROUP_A), "27670116110564327421".into());
         expected.insert(hex::encode(GROUP_B), "70005".into());
-        assert_eq!(json, serde_json::json!({ "sums": expected }));
+        assert_eq!(
+            json,
+            serde_json::json!({ "grouped": true, "sums": expected })
+        );
+    }
+
+    /// A grouped result can hold a real group under the empty key: the
+    /// documents missing an optional range property are indexed under it.
+    /// That group is keyed `""` next to the named groups, and `grouped`
+    /// stays `true` so a caller never reads it as the ungrouped total.
+    #[test]
+    fn should_keep_an_empty_key_group_next_to_named_groups_when_grouped() {
+        let contract = document_history_contract();
+        let where_json = grouped_where_json();
+        let query = ffi_query(
+            &contract,
+            &where_json,
+            SelectProjection::sum(PRICE),
+            &[GROUP_BY_FIELD],
+        );
+        let sdk = mock_sdk_answering(
+            query,
+            DocumentSplitSums(vec![
+                SplitSumEntry {
+                    in_key: Some(GROUP_A.to_vec()),
+                    key: vec![],
+                    sum: Some(10),
+                },
+                SplitSumEntry {
+                    in_key: Some(GROUP_A.to_vec()),
+                    key: b"a".to_vec(),
+                    sum: Some(30),
+                },
+            ]),
+        );
+
+        let json = call_aggregate(
+            dash_sdk_document_sum,
+            sdk,
+            contract,
+            &where_json,
+            Some(GROUP_BY_JSON),
+        );
+
+        assert_eq!(
+            json,
+            serde_json::json!({ "grouped": true, "sums": { "": "10", "61": "30" } })
+        );
     }
 
     /// An empty aggregation property is malformed input and must be
@@ -539,31 +606,37 @@ pub(super) mod tests {
     }
 
     /// Serialize a sum map through the real [`DocumentSumResult`] type.
-    fn sums_json(sums: BTreeMap<String, i128>) -> String {
-        serde_json::to_string(&DocumentSumResult { sums })
+    fn sums_json(grouped: bool, sums: BTreeMap<String, i128>) -> String {
+        serde_json::to_string(&DocumentSumResult { grouped, sums })
             .expect("DocumentSumResult must serialize")
     }
 
-    /// The `DocumentSumResult` wire shape iOS decodes is exactly
-    /// `{"sums": {"<hex-key>": "<signed decimal>", ...}}`. The empty key
-    /// (aggregate total) and a negative value must round-trip verbatim;
+    /// The grouped `DocumentSumResult` wire shape iOS decodes is exactly
+    /// `{"grouped":true,"sums":{"<hex-key>":"<signed decimal>",...}}`. An
+    /// empty group key and a negative value must round-trip verbatim;
     /// `BTreeMap` ordering keeps the key order deterministic.
     #[test]
     fn document_sum_result_serializes_to_expected_shape() {
         let sums = BTreeMap::from([("".to_string(), 42i128), ("61".to_string(), -5i128)]);
-        assert_eq!(sums_json(sums), r#"{"sums":{"":"42","61":"-5"}}"#);
+        assert_eq!(
+            sums_json(true, sums),
+            r#"{"grouped":true,"sums":{"":"42","61":"-5"}}"#
+        );
     }
 
     /// The ungrouped (aggregate) branch always emits a single
-    /// empty-string-keyed total. This pins the exact wire shape the
-    /// `group_by.is_empty()` path produces (`{"sums":{"":"<total>"}}`)
-    /// so a regression that reintroduced per-key entries for an
-    /// ungrouped `in` / range query would change the serialized bytes
-    /// iOS decodes against.
+    /// empty-string-keyed total with `grouped: false`. This pins the
+    /// exact wire shape the ungrouped path produces
+    /// (`{"grouped":false,"sums":{"":"<total>"}}`) so a regression that
+    /// reintroduced per-key entries for an ungrouped `in` / range query
+    /// would change the serialized bytes iOS decodes against.
     #[test]
     fn document_sum_result_ungrouped_is_single_empty_key_total() {
         let sums = BTreeMap::from([(String::new(), 42i128)]);
-        assert_eq!(sums_json(sums), r#"{"sums":{"":"42"}}"#);
+        assert_eq!(
+            sums_json(false, sums),
+            r#"{"grouped":false,"sums":{"":"42"}}"#
+        );
     }
 
     /// An absent / `None` aggregate (queried-but-empty) is reported as
@@ -572,7 +645,10 @@ pub(super) mod tests {
     #[test]
     fn document_sum_result_ungrouped_absent_is_zero_total() {
         let sums = BTreeMap::from([(String::new(), 0i128)]);
-        assert_eq!(sums_json(sums), r#"{"sums":{"":"0"}}"#);
+        assert_eq!(
+            sums_json(false, sums),
+            r#"{"grouped":false,"sums":{"":"0"}}"#
+        );
     }
 
     /// A sum past `i64` (a 128-bit sum tree, protocol version 15) is
@@ -582,7 +658,10 @@ pub(super) mod tests {
     fn document_sum_result_carries_a_sum_past_i64_whole() {
         let wide = 3 * i128::from(i64::MAX);
         let sums = BTreeMap::from([(String::new(), wide)]);
-        assert_eq!(sums_json(sums), r#"{"sums":{"":"27670116110564327421"}}"#);
+        assert_eq!(
+            sums_json(false, sums),
+            r#"{"grouped":false,"sums":{"":"27670116110564327421"}}"#
+        );
     }
 
     /// A negative sum past `i64::MIN` keeps its sign and every digit.
@@ -591,8 +670,8 @@ pub(super) mod tests {
         let wide = 3 * i128::from(i64::MIN);
         let sums = BTreeMap::from([("61".to_string(), wide)]);
         assert_eq!(
-            sums_json(sums),
-            r#"{"sums":{"61":"-27670116110564327424"}}"#
+            sums_json(true, sums),
+            r#"{"grouped":true,"sums":{"61":"-27670116110564327424"}}"#
         );
     }
 }

@@ -19,6 +19,19 @@
 /// A single verified `(in_key?, key, count, sum)` entry from an
 /// average query with `group_by`. Mirrors sum's `SplitSumEntry`
 /// shape with both metrics carried alongside.
+///
+/// Layouts, by the grouping the request asked for:
+/// - grouped by the `In` field (with or without a range on another
+///   field): `in_key = None`, `key = <serialized In value>`;
+/// - grouped by a range field with an `In` on a prefix property:
+///   `in_key = <serialized In value>`, `key = <serialized range value>`,
+///   one entry per `(In value, range value)`; `key` is empty for
+///   documents missing an optional range property;
+/// - grouped by a range field alone: `in_key = None`,
+///   `key = <serialized range value>`.
+///
+/// Before 5.1 a proved `In` plus range query grouped by the `In` field
+/// carried the `In` value in `in_key` with an empty `key`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SplitAverageEntry {
     /// Outer In-prefix value for compound `(In, range)` queries;

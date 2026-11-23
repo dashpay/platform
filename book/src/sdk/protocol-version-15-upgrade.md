@@ -74,13 +74,17 @@ As long as its nodes are not banned by one of the failures above:
    The result types widen, so code that stored a sum in a 64-bit integer has to change:
    - Rust: `DocumentSum(i128)`, `DocumentAverage { count: u64, sum: i128 }`, and `i128` sums
      in `DocumentSplitSums` and `DocumentSplitAverages`. `DocumentAverage::to_decimal_string`
-     gives the exact average; `as_f64` loses digits past 2^53.
+     gives the exact average; `as_f64` loses digits past 2^53. A proved `In` plus range query
+     grouped by the `In` field now returns each group with the `In` value in `key` and
+     `in_key: None`, as a point lookup grouped by the `In` field does; code that matched
+     those groups by `in_key` reads `key` instead.
    - Swift: `DocumentSumResult.sums` is `[String: Int128]`, `DocumentAverageEntry.sum` is
      `Int128`, and `DocumentAverageEntry.average` is the exact average as a `String?`
      (`nil` when nothing matched) instead of a `Double`.
    - Native bindings over `rs-sdk-ffi` (`dash_sdk_document_sum`, `dash_sdk_document_average`):
-     every sum is a base-10 JSON string, and each average entry also carries `average`, a
-     decimal string or `null`; see [Document Sum Trees](../drive/document-sum-trees.md#rs-sdk-ffi-ios--native-bindings).
+     every sum is a base-10 JSON string, each average entry also carries `average`, a
+     decimal string or `null`, and the result carries `grouped` (in a grouped result the
+     empty key is a group of documents missing the value, not the total); see [Document Sum Trees](../drive/document-sum-trees.md#rs-sdk-ffi-ios--native-bindings).
      Use `DashSDKFFI.xcframework` with the Swift SDK sources of the same release: a wrapper
      from another release does not read this shape.
    - JavaScript (`wasm-sdk`): sums were `bigint` already and stay so.
