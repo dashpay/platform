@@ -46,20 +46,15 @@
 
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
-use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc,
-};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::Arc;
+use std::time::Duration;
 
 use arc_swap::ArcSwap;
-use dash_async::{ThreadRegistry, WorkerConfig};
+use dash_async::ThreadRegistry;
 
 use crate::error::PlatformWalletError;
-use crate::manager::{
-    coordinator_worker_config, drain_pass, QuiesceGate, QuiesceGuard, SyncSlotGuard, WalletWorker,
-    COORDINATOR_DRAIN_BUDGET, LATCHED_RETRY_INTERVAL,
-};
+use crate::manager::sync_loop::{start_sync_loop, Admission, SyncCoordinator, SyncLoop};
+use crate::manager::{QuiesceGuard, WalletWorker, COORDINATOR_DRAIN_BUDGET};
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
 
@@ -132,23 +127,17 @@ impl DashPaySyncSummary {
 /// token registry, so DashPay-only identities are never skipped.
 pub struct DashPaySyncManager {
     wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
-    /// Shared registry that owns this loop's lifecycle: it spawns the
-    /// OS thread (with the deep-stack config below), owns its cancellation
-    /// token, and joins it at shutdown. A generation-guarded slot handles a
-    /// `stop()` + quick `start()` without a stale loop clobbering the new one.
-    registry: Arc<ThreadRegistry<WalletWorker>>,
-    interval_secs: AtomicU64,
-    is_syncing: AtomicBool,
-    /// Gates new passes while a [`quiesce`](Self::quiesce) drains an
-    /// in-flight one, while a [`QuiesceGuard`] holder mutates state, and
-    /// terminally once shutdown seals it. `sync_now` bails (after taking the
-    /// `is_syncing` slot) when it is closed, so once a drain observes
-    /// `is_syncing == false` no further pass can start — giving shutdown
-    /// a real "no more host-visible persister stores" barrier that
+    /// The lifecycle shared with the sibling coordinators: the
+    /// registry-owned loop thread (spawned with the deep-stack config
+    /// below), the `is_syncing` slot, the last-pass timestamp, and the
+    /// admission gate. `sync_now` bails (after taking the slot) when the
+    /// gate is closed — by a [`quiesce`](Self::quiesce) draining an
+    /// in-flight pass, by a [`QuiesceGuard`] holder mutating state, or
+    /// terminally once shutdown seals it — so once a drain observes
+    /// `is_syncing == false` no further pass can start, giving shutdown a
+    /// real "no more host-visible persister stores" barrier that
     /// cancel-only [`stop`](Self::stop) does not provide.
-    quiescing: QuiesceGate,
-    /// Unix seconds of the last completed pass. `0` = never.
-    last_sync_unix: AtomicU64,
+    sync: SyncLoop,
 }
 
 impl DashPaySyncManager {
@@ -158,11 +147,11 @@ impl DashPaySyncManager {
     ) -> Self {
         Self {
             wallets,
-            registry,
-            interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
-            is_syncing: AtomicBool::new(false),
-            quiescing: QuiesceGate::default(),
-            last_sync_unix: AtomicU64::new(0),
+            sync: SyncLoop::new(
+                WalletWorker::DashPaySync,
+                registry,
+                DEFAULT_SYNC_INTERVAL_SECS,
+            ),
         }
     }
 
@@ -170,32 +159,28 @@ impl DashPaySyncManager {
     ///
     /// The running loop picks this up on its next sleep.
     pub fn set_interval(&self, interval: Duration) {
-        let secs = interval.as_secs().max(1);
-        self.interval_secs.store(secs, Ordering::Release);
+        self.sync.set_interval(interval);
     }
 
     /// Current polling interval.
     pub fn interval(&self) -> Duration {
-        Duration::from_secs(self.interval_secs.load(Ordering::Acquire))
+        self.sync.interval()
     }
 
     /// Whether the background loop is currently running.
     pub fn is_running(&self) -> bool {
-        self.registry.is_running(WalletWorker::DashPaySync)
+        self.sync.is_running()
     }
 
     /// Whether a sync pass is in flight right now.
     pub fn is_syncing(&self) -> bool {
-        self.is_syncing.load(Ordering::Acquire)
+        self.sync.is_syncing()
     }
 
     /// Unix seconds of the last completed pass, or `None` if no pass
     /// has ever completed.
     pub fn last_sync_unix_seconds(&self) -> Option<u64> {
-        match self.last_sync_unix.load(Ordering::Acquire) {
-            0 => None,
-            n => Some(n),
-        }
+        self.sync.last_sync_unix_seconds()
     }
 
     /// Start the background sync loop. Idempotent — calling while
@@ -218,53 +203,12 @@ impl DashPaySyncManager {
     /// registry reap backstop (default 1 s) before returning. Call it from
     /// the FFI host thread, not an async task.
     pub fn start(self: Arc<Self>) {
-        let handle = tokio::runtime::Handle::current();
-        let registry = Arc::clone(&self.registry);
-        let this = self;
         // Deep stack for the GroveDB proof descent — see
         // [`DASHPAY_SYNC_STACK_BYTES`]. The registry spawns the OS thread
-        // with this size and owns the whole lifecycle (see
-        // `IdentitySyncManager::start`): teardown latch, cancellation token,
-        // thread spawn, and prior-generation reap under one slot lock.
-        let cfg = WorkerConfig {
-            stack_size: NonZeroUsize::new(DASHPAY_SYNC_STACK_BYTES),
-            ..coordinator_worker_config()
-        };
-        // A timed-out `quiesce` latched the gate; reopen it once the wedged
-        // pass has drained (now, or before each pass below).
-        if !this.quiescing.reopen_if_drained(&this.is_syncing) {
-            tracing::debug!(
-                "dashpay sync loop started behind a wedged pass; passes resume once it drains"
-            );
-        }
-        registry.start_thread(WalletWorker::DashPaySync, cfg, move |cancel| {
-            handle.block_on(async move {
-                loop {
-                    if cancel.is_cancelled() {
-                        break;
-                    }
-
-                    this.sync_now().await;
-
-                    // `sync_now` clears a drained latch itself before its slot CAS.
-                    // Sample the latch AFTER the pass, so a latch raised or cleared
-                    // while it ran is what picks the cadence: behind a still-wedged
-                    // pass the call above bailed, so poll the slot briskly instead of
-                    // sleeping a full interval and passes resume promptly once that
-                    // pass drains.
-                    let gate_open = this.quiescing.reopen_if_drained(&this.is_syncing);
-                    let interval = if gate_open {
-                        this.interval()
-                    } else {
-                        this.interval().min(LATCHED_RETRY_INTERVAL)
-                    };
-                    tokio::select! {
-                        _ = tokio::time::sleep(interval) => {}
-                        _ = cancel.cancelled() => break,
-                    }
-                }
-            });
-        });
+        // with this size and owns the whole lifecycle: teardown latch,
+        // cancellation token, thread spawn, and prior-generation reap under
+        // one slot lock.
+        start_sync_loop(self, NonZeroUsize::new(DASHPAY_SYNC_STACK_BYTES), "dashpay");
     }
 
     /// Stop the background sync loop. No-op if not running.
@@ -276,7 +220,7 @@ impl DashPaySyncManager {
     /// by manager shutdown so the host can free the persister context —
     /// use [`quiesce`](Self::quiesce).
     pub fn stop(&self) {
-        self.registry.cancel(WalletWorker::DashPaySync);
+        self.sync.cancel_loop();
     }
 
     /// Cancel the background loop **and wait for any in-flight sync pass
@@ -333,7 +277,7 @@ impl DashPaySyncManager {
     /// gate is left closed and the caller must fail closed.
     #[must_use = "None means the pass did NOT drain; the caller must fail closed"]
     pub(crate) async fn quiesce_held_within(&self, budget: Duration) -> Option<QuiesceGuard<'_>> {
-        drain_pass(&self.quiescing, &self.is_syncing, || self.stop(), budget).await
+        self.sync.drain(|| self.stop(), budget).await
     }
 
     /// [`quiesce_within`](Self::quiesce_within) that **seals** the gate:
@@ -346,12 +290,8 @@ impl DashPaySyncManager {
     /// drain concluded and fire persister / completion callbacks through
     /// a context the host has since freed.
     pub(crate) async fn quiesce_sealed_within(&self, budget: Duration) -> bool {
-        let guard = self.quiesce_held_within(budget).await;
-        let drained = guard.is_some();
-        // Seal before the guard drops so its Drop cannot reopen.
-        self.quiescing.seal();
-        drop(guard);
-        drained
+        // Seals before the drain's guard drops, so its Drop cannot reopen.
+        self.sync.drain_sealed(|| self.stop(), budget).await
     }
 
     /// Test-only: claim the `is_syncing` slot and never release it,
@@ -359,9 +299,7 @@ impl DashPaySyncManager {
     /// Returns `false` if the slot was already taken.
     #[cfg(test)]
     pub(crate) fn wedge_sync_slot_for_test(&self) -> bool {
-        self.is_syncing
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
+        self.sync.wedge_slot_for_test()
     }
 
     /// Test-only: release a slot taken by
@@ -369,14 +307,14 @@ impl DashPaySyncManager {
     /// wedged pass finally draining would.
     #[cfg(test)]
     pub(crate) fn release_sync_slot_for_test(&self) {
-        self.is_syncing.store(false, Ordering::Release);
+        self.sync.release_slot_for_test();
     }
 
     /// Test-only: whether new sync passes are currently barred — a drain in
     /// flight, a latched timeout, or the terminal seal `shutdown` applies.
     #[cfg(test)]
     pub(crate) fn sync_admission_closed(&self) -> bool {
-        self.quiescing.is_closed()
+        self.sync.admission_closed()
     }
 
     /// Run one DashPay sync pass across every registered wallet.
@@ -388,31 +326,15 @@ impl DashPaySyncManager {
     /// consulted), calling `dashpay_sync()` per wallet. Errors are
     /// logged and recorded in the summary but never abort the sweep.
     pub async fn sync_now(&self) -> DashPaySyncSummary {
-        // A drained timeout latch is cleared here as well as in `start()`:
-        // with no loop running, a one-shot pass after a timed-out drain
-        // would otherwise bail on the stale latch until something
-        // restarted the loop. Safe before the CAS — a false `is_syncing`
-        // means no pass is in flight — and the gate check after the CAS
-        // still honors a live hold or the seal.
-        self.quiescing.reopen_if_drained(&self.is_syncing);
-        if self
-            .is_syncing
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
+        // Bail without running a pass when another one holds the slot, or
+        // when a `quiesce()` has closed the gate — so the drain can complete
+        // and shutdown gets a true barrier (no further `persister.store(...)`
+        // after quiesce returns). The permit holds `is_syncing` until it
+        // drops at the end of this function, on panic unwind too, so a
+        // failed pass can never wedge `quiesce()`'s drain.
+        let Admission::Admitted(_permit) = self.sync.admit() else {
             return DashPaySyncSummary::default();
-        }
-        // Clears `is_syncing` on every exit path — including panic unwind —
-        // so a failed pass can never wedge `quiesce()`'s drain.
-        let _slot = SyncSlotGuard(&self.is_syncing);
-
-        // A `quiesce()` may have raised the gate between our CAS and
-        // here; if so, release the slot and bail without running a pass
-        // so the drain can complete and shutdown gets a true barrier
-        // (no further `persister.store(...)` after quiesce returns).
-        if self.quiescing.is_closed() {
-            return DashPaySyncSummary::default();
-        }
+        };
 
         let snapshot: Vec<(WalletId, Arc<PlatformWallet>)> = {
             let wallets = self.wallets.load();
@@ -437,12 +359,9 @@ impl DashPaySyncManager {
             summary.wallet_results.insert(wallet_id, outcome);
         }
 
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+        let now = SyncLoop::unix_now();
         summary.sync_unix_seconds = now;
-        self.last_sync_unix.store(now, Ordering::Release);
+        self.sync.record_completed(now);
 
         summary
     }
@@ -569,12 +488,22 @@ impl DashPaySyncManager {
     }
 }
 
+impl SyncCoordinator for DashPaySyncManager {
+    fn sync_loop(&self) -> &SyncLoop {
+        &self.sync
+    }
+
+    async fn background_pass(&self) {
+        self.sync_now().await;
+    }
+}
+
 impl std::fmt::Debug for DashPaySyncManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DashPaySyncManager")
             .field("is_running", &self.is_running())
             .field("is_syncing", &self.is_syncing())
-            .field("interval_secs", &self.interval_secs.load(Ordering::Acquire))
+            .field("interval_secs", &self.interval().as_secs())
             .field("last_sync_unix", &self.last_sync_unix_seconds())
             .finish()
     }
