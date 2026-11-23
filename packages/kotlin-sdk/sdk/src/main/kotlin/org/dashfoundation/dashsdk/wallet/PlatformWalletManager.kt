@@ -26,6 +26,7 @@ import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.DpnsMarketplaceNative
 import org.dashfoundation.dashsdk.ffi.FundingNative
 import org.dashfoundation.dashsdk.ffi.IdentityRemovalNative
+import org.dashfoundation.dashsdk.ffi.ShieldedTokenPurchaseNative
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.NativeWalletEventBridge
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
@@ -2372,6 +2373,109 @@ class PlatformWalletManager(
                 amount,
             )
         }
+    }
+
+    /**
+     * Buy [tokenCount] tokens at their direct purchase price from this
+     * wallet's shielded notes: the Type 28 `TokenPurchaseFromShieldedPool`
+     * transition. Port of Swift's
+     * `PlatformWalletManager.shieldedTokenPurchaseFromPool`
+     * (`PlatformWalletManagerShieldedSync.swift`).
+     *
+     * The notes of [account] pay [totalAgreedPrice] plus the pool-paid fee
+     * ([ShieldedProver.FeeKind.TokenPurchaseFromPool]), and the tokens are
+     * minted as a note to the account's own address in the token's shielded
+     * pool. No identity is involved. Rust checks the token count, the
+     * network's protocol version, the token's shielded pool and the note
+     * count, selects the notes, builds, broadcasts, records the activity
+     * and requests the shielded sync that looks for it.
+     *
+     * Returning means SUBMITTED, not confirmed: Platform accepted the
+     * purchase, but its result proof does not show that it executed. It
+     * stays pending, with its notes reserved, until a shielded sync finds
+     * it. Do not show it as complete and do not retry it.
+     *
+     * Throws [DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed] once the
+     * purchase may have reached a node and its result is not known: it may
+     * already be on chain or may still execute, so the caller must NOT
+     * retry. That is the error Rust reports this case with. A caller should
+     * read [DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed] and
+     * [DashSdkError.StateTransitionResultUnconfirmed] the same way, as the
+     * example app does for every shielded operation: they also say a result
+     * is not known. Any other error means nothing was sent.
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param contractId the 32-byte id of the token's data contract.
+     * @param tokenPosition the token's position in that contract.
+     * @param tokenCount tokens to buy, in the token's base units.
+     * @param totalAgreedPrice credits the buyer agrees to pay; Platform
+     *   refuses the purchase unless it covers the token's configured price
+     *   for [tokenCount].
+     * @param account the ZIP-32 shielded account to spend from (usually 0).
+     */
+    suspend fun shieldedTokenPurchaseFromPool(
+        walletId: ByteArray,
+        contractId: ByteArray,
+        tokenPosition: Int,
+        tokenCount: ULong,
+        totalAgreedPrice: ULong,
+        account: Int = 0,
+    ): Unit = teardownGate.op {
+        require(account >= 0) { "account must be non-negative, got $account" }
+        require(walletId.size == 32) { "walletId must be exactly 32 bytes, got ${walletId.size}" }
+        require(contractId.size == 32) {
+            "contractId must be exactly 32 bytes, got ${contractId.size}"
+        }
+        requireTokenPosition(tokenPosition)
+        mapNativeErrors {
+            ShieldedTokenPurchaseNative.purchaseFromPool(
+                managerHandle,
+                walletId,
+                mnemonicResolver.nativeHandle,
+                account,
+                contractId,
+                tokenPosition,
+                tokenCount.toLong(),
+                totalAgreedPrice.toLong(),
+            )
+        }
+    }
+
+    /**
+     * A token position is a u16 on the Rust side: refuse one that does not
+     * fit before the native call, with the same error `Tokens` raises.
+     */
+    private fun requireTokenPosition(tokenPosition: Int) {
+        require(tokenPosition in 0..0xFFFF) {
+            "tokenPosition must be in 0..65535, got $tokenPosition"
+        }
+    }
+
+    /**
+     * Whether the token at [tokenPosition] of [contractId] can be bought
+     * with [shieldedTokenPurchaseFromPool], from the same verified read of
+     * its configuration that purchase refuses on. Port of Swift's
+     * `PlatformWalletManager.shieldedTokenPurchaseAvailability` (same file).
+     * A purchase form offers the shielded payment on
+     * [ShieldedTokenPurchaseAvailability.Available] only.
+     *
+     * Throws when the question itself could not be asked (a closed
+     * manager); a configuration that could not be read is the
+     * [ShieldedTokenPurchaseAvailability.ConfigurationUnreadable] answer.
+     */
+    suspend fun shieldedTokenPurchaseAvailability(
+        contractId: ByteArray,
+        tokenPosition: Int,
+    ): ShieldedTokenPurchaseAvailability = teardownGate.op {
+        require(contractId.size == 32) {
+            "contractId must be exactly 32 bytes, got ${contractId.size}"
+        }
+        requireTokenPosition(tokenPosition)
+        ShieldedTokenPurchaseAvailability.fromNative(
+            mapNativeErrors {
+                ShieldedTokenPurchaseNative.availability(managerHandle, contractId, tokenPosition)
+            },
+        )
     }
 
     /**

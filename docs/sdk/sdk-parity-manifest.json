@@ -3131,10 +3131,10 @@
           "reason": "PlatformWalletManager.shieldedTokenPurchaseFromPool and shieldedTokenPurchaseAvailability wrap the two FFI entry points; the platform-wallet manager checks the token count, the network's protocol version, the token's shielded pool and the note count, selects the credit pool notes for price plus fee, builds, broadcasts with the shielded spend recovery record, records a TokenPurchase activity row (kind tag 10) and requests a shielded sync. An accepted purchase stays pending until a shielded sync confirms it once it lands, as its result proof does not show it executed. The example app's Direct Purchase form offers a Shielded pool funding choice only on Rust's availability answer (TEST_PLAN SH-24). Partial because no device, simulator or network run has been recorded, and the bought tokens land in the token's shielded pool, which the wallet does not sync yet, so they are not shown and cannot be spent (SH-25 to SH-27). Restart recovery reuses the generic shielded spend record and redrive, with no test specific to this transition."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
-          "restart": "not_applicable",
-          "reason": "No JNI wrapper or KotlinExampleApp flow for the shielded token purchase yet."
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PlatformWalletManager.shieldedTokenPurchaseFromPool and shieldedTokenPurchaseAvailability wrap the two FFI entry points through JNI, and the fee estimate accepts kind 5. KotlinExampleApp's Direct Purchase form offers a Shielded pool funding choice only on Rust's availability answer and reports an accepted purchase as submitted, never complete (TEST_PLAN SH-24); Shielded Activity lists the TokenPurchase row (kind tag 10) and says the tokens were minted only once it is Confirmed. Partial because no emulator or network run has been recorded, and the bought tokens land in the token's shielded pool, which the wallet does not sync yet, so they are not shown and cannot be spent (SH-25). Restart recovery reuses the generic shielded spend record and redrive in Rust; the Kotlin side is covered only by a unit test that a pending purchase row is restored after a restart, with no process-death run of this transition."
         }
       },
       "verification": [
@@ -3183,6 +3183,45 @@
           "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
           "id": "should_refuse_a_token_purchase_for_a_token_without_a_shielded_pool",
           "command": "cargo test -p platform-wallet --features shielded --lib token_purchase_from_pool_tests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SH-24",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/ShieldedTokenPurchaseFfiTest.kt",
+          "id": "shouldEstimateTheFeeAndRefuseAPurchaseOfZeroTokensAsNothingSent",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/ShieldedTokenPurchaseAvailabilityTest.kt",
+          "id": "shouldNeverReadAnUnknownByteAsAvailable",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/ShieldedTokenPurchaseActivityPersistenceTest.kt",
+          "id": "shouldRestoreAPendingTokenPurchaseAfterARestart",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": true
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/tokens/ShieldedTokenPurchaseTest.kt",
+          "id": "reports an accepted purchase as submitted, never as complete",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
           "covers_restart": false
         }
       ]

@@ -10,15 +10,15 @@ Capabilities tracked: **41**
 | --- | --- | ---: | ---: | ---: | ---: |
 | Swift | SDK | 25 | 14 | 1 | 1 |
 | Swift | Example app | 6 | 25 | 1 | 9 |
-| Kotlin | SDK | 18 | 16 | 6 | 1 |
-| Kotlin | Example app | 6 | 19 | 6 | 10 |
+| Kotlin | SDK | 18 | 17 | 5 | 1 |
+| Kotlin | Example app | 6 | 20 | 5 | 10 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
 | Swift | 2 | 13 | 26 |
-| Kotlin | 6 | 9 | 26 |
+| Kotlin | 6 | 10 | 25 |
 
 ## Capability status
 
@@ -63,7 +63,7 @@ Capabilities tracked: **41**
 | `voting.masternode_vote_stored_key` | supported / partial / not_applicable | partial / partial / not_applicable |
 | `identity.load_masternode_voting_key` | supported / partial / not_applicable | partial / partial / not_applicable |
 | `addresses.balance_history` | supported / partial / not_applicable | supported / partial / not_applicable |
-| `shielded.token_purchase_from_pool` | partial / partial / required | unsupported / unsupported / not_applicable |
+| `shielded.token_purchase_from_pool` | partial / partial / required | partial / partial / required |
 | `identity.withdrawal_status` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
 
 Source: [`docs/sdk/sdk-parity-manifest.json`](../../docs/sdk/sdk-parity-manifest.json).
