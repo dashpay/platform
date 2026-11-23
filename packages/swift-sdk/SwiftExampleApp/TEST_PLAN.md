@@ -343,6 +343,10 @@ does not claim a funded testnet or cross-wallet end-to-end automation result.
 | SYS-06 | Path elements (raw GroveDB) | Platform | Uncommon | 🧪 | read-only | **Get GroveDB Path Elements** read view (Platform Queries → System & Utility) → Swift wrapper over FFI `dash_sdk_system_get_path_elements` (proof-verified `Element::fetch_many` over `KeysInPath`). Enter a `path` + `keys` JSON array (hex bytes); returns `[{key, element, type}]`. Use a **bounded** path — root-level queries (`path=[]`) fail GroveDB proof verification ("Cannot verify lower bound"). The "DPNS contract example" preset fills `path=["40"]` (DataContractDocuments root) + the DPNS contract id → its subtree `tree` element. |
 | SYS-07 | Platform balance sync covers every registered wallet | Platform | — | ➖ | | Retired — the row verified a per-active-wallet staleness caveat that no longer exists: the Rust `PlatformAddressSyncManager` sweeps EVERY registered wallet each pass (platform twin of `CORE-20`; only the `configure(...walletId:)` UI mirror is per-wallet), and the cross-wallet receives (`SH-15`, `DOC-15`) already exercise it. |
 | SYS-08 | Per-wallet Platform isolation (identities / usernames / tokens / contacts) | Platform | Thorough | ✅ | multiwallet | Extends `CORE-18` to Platform reads: wallet A's identities, DPNS names, token balances, and DashPay contacts must never surface under wallet B. |
+| SYS-09 | Block explorer: read blocks and their state transitions | Platform | Uncommon | ✅ | read-only | **Block Explorer** (Platform Queries → Epoch & Block, `epochQueries.browseBlocksLink`) → `SDK.getBlocks` → FFI `dash_sdk_system_get_blocks` (`Sdk::fetch_blocks`, Tenderdash block proofs). Needs a protocol version 15 network; below it the SDK's protocol version refusal shows in `blocks.errorText` as is. Enter a start height (`blocks.startHeightField`) and a count 1..10 (`blocks.countField`, 1 for a single block), tap `blocks.runButton`. Pass: `blocks.provedBadge` reads "Proved by the block's quorum signature", one `blocks.row.<height>` per block with time and transition count; tapping one opens the block (`blockDetail.provedBadge`, fields, one `blockDetail.txRow.<hash>` per transition with type, result: Executed or Failed with code, owner, gas). A count of 0 or 11 is refused by the node (error text, no crash). A start height past the chain tip is answered `NOT_FOUND` by the node: `blocks.errorText` and no `blocks.provedBadge`. (A successful empty reply would show `blocks.emptyText` "No blocks returned", also without a badge; a healthy node does not send one.) After a network switch, an error shown for the old network is cleared. With blocks loaded in the explorer, edit `blocks.startHeightField` without tapping `blocks.runButton`: the old `blocks.row.<height>` rows and `blocks.provedBadge` disappear. Reload and repeat with `blocks.countField`. After a failed read, editing either field clears `blocks.errorText`. After switching network (Settings) with blocks shown, the list shows `blocks.networkChangedText` "Network changed, reload the blocks"; an opened block shows `blockDetail.networkChangedText`. The generic **Get Blocks** catalog entry returns the same JSON, each transaction with `executed`, and clears its result when an input is edited. |
+| SYS-10 | An identity's state transitions in one block | Platform | Uncommon | ✅ | read-only | From an opened block (`SYS-09`), enter a base58 identity id in `blockDetail.ownerIdField`, tap `blockDetail.findOwnerButton` → `SDK.getOwnerTransactionsInBlock` → FFI `dash_sdk_system_get_owner_transactions_in_block`. Pass: `blockDetail.ownerProvedBadge` reads "Each transition proved; the list is not proved complete", and the `blockDetail.ownerTxRow.<hash>` rows are a subset of the block's own rows with the same results (an owner with no transitions there shows `blockDetail.ownerEmptyText` and no `blockDetail.ownerProvedBadge`). A malformed id shows `blockDetail.ownerErrorText`. Editing `blockDetail.ownerIdField` after a lookup clears its result. After switching network with the block open, `blockDetail.findOwnerButton` is disabled and `blockDetail.ownerNetworkChangedText` reads "Network changed, reload the blocks": the lookup never runs on the new network's SDK. Also the generic **Get Owner Transactions In Block** catalog entry (result cleared when an input is edited). |
+| SYS-11 | Recent state transition status (unproved, one node) | Platform | Uncommon | ✅ | read-only | Generic catalog entry **Get Recent State Transition Status (unproved)** (Platform Queries → System & Utility) → `SDK.getRecentStateTransitionStatus` → FFI `dash_sdk_system_get_recent_state_transition_status`. Before submitting, `queryDetail.privacyNote` says the read is for public transitions only and the hash goes to the app's nodes (not for shielded or private document transitions). Paste a 64-hex transition hash. Pass: JSON with `"proved": false`, `status` `committed` (with `height`, and `error` when it failed), `pending` or `unknown`, and `node_height`. A random hash answers `unknown`; a non-hex or short hash is refused before any request. Editing the hash after a result clears it. |
+| SYS-12 | Check a transition's status by hash (proved by its block) | Platform | Thorough | ✅ | read-only | **Transition Status Checker** (Platform Queries → System & Utility, `systemQueries.checkTransitionStatusLink`) → `SDK.getStateTransitionStatusByHash` → FFI `dash_sdk_system_get_state_transition_status_by_hash` (`Sdk::state_transition_status_by_hash`). Before submitting, `txStatus.privacyNote` says the checker is for public transitions only and the hash goes to the app's nodes, not to the node the transition was broadcast to (do not use it for shielded or private document transitions). Paste the hash of a transition that landed (find one in a block via `SYS-09`) into `txStatus.hashField`, tap `txStatus.checkButton`. Pass: `txStatus.provedBadge` reads "Proved: a block the validator quorum signed holds it", `txStatus.outcomeText` "In block H", block hash and time, and `txStatus.resultText` "Executed (code 0)" or "Failed, paid for error code N" matching the block's row, and `txStatus.checkedHashText` the hash checked. A random hash: unproved badge, "Unknown to the node", and `txStatus.nodeHeightText`. Editing the hash after a check clears the outcome; switching network clears it too, and a check still running then shows nothing when it completes. Also the generic **Check State Transition Status** catalog entry, with the same note as `queryDetail.privacyNote`. No write result screen links here yet: none has the transition hash at hand. |
 
 ---
 
@@ -356,8 +360,8 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 |---|---|---|
 | Essential | 22 | yes |
 | Common | 43 | yes |
-| Thorough | 46 | yes |
-| Uncommon | 39 | yes |
+| Thorough | 47 | yes |
+| Uncommon | 42 | yes |
 | Manual | 2 (`CORE-08`, `DP-10`) | no — physical device |
 
 **By layer (automatable only):**
@@ -365,7 +369,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Layer | Count (approx.) |
 |---|---|
 | Core | 18 |
-| Platform | 96 |
+| Platform | 100 |
 | Cross | 19 |
 | Shielded | 16 |
 
@@ -389,7 +393,7 @@ Each row's **primary home** is its §4 section, but a few rows are cross-cutting
 - **Token** — `TOK-01..20`
 - **Shielded** — `SH-01..23`, `CORE-21`
 - **DashPay** — `DP-01..19` (`DP-12..19` = shipped invitation create, claim, persistence, and reclaim UI; funded testnet acceptance is not automated)
-- **System / Diagnostics** — `SYS-01..08`
+- **System / Diagnostics** — `SYS-01..12`
 
 **By tag (cross-cutting, the Tags column):**
 
@@ -490,6 +494,8 @@ The complete Platform read surface, mapped to where each RPC is exercised in the
 | getProtocolVersionUpgradeState | Uncommon | ✅ | catalog (`SYS-03`) |
 | getProtocolVersionUpgradeVoteStatus | Uncommon | ✅ | catalog |
 | getCurrentQuorumsInfo | Thorough | ✅ | catalog (unproved) |
+| getBlocks | Uncommon | ✅ | "Block Explorer" view + catalog (`SYS-09`, proved by Tenderdash block proofs) |
+| getOwnerTransactionsInBlock | Uncommon | ✅ | "Block Explorer" block view + catalog (`SYS-10`, each proved, list not proved complete) |
 
 ### System / Status / Broadcast
 | RPC | Tier | Status | Where |
@@ -499,6 +505,7 @@ The complete Platform read surface, mapped to where each RPC is exercised in the
 | getPrefundedSpecializedBalance | Thorough | ✅ | catalog |
 | waitForStateTransitionResult | Essential | ✅ | implicit in every write round-trip |
 | broadcastStateTransition | Essential | ✅ | implicit in every write (`@sdk-ignore` RPC) |
+| getRecentStateTransitionStatus | Uncommon | ✅ | catalog (`SYS-11`, unproved) and behind "Transition Status Checker" (`SYS-12`, proved by `getBlocks` when committed) |
 | getPathElements | Uncommon | 🧪 | "Get GroveDB Path Elements" read view (`SYS-06`) |
 | getConsensusParams | Uncommon | 🚫 | `@sdk-ignore` (served via Tenderdash RPC) |
 

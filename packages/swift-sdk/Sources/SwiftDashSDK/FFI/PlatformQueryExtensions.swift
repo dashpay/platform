@@ -2264,6 +2264,77 @@ extension SDK {
         return try processJSONArrayResult(result)
     }
 
+    /// Up to `count` consecutive blocks from `startHeight`, each with every state transition
+    /// it holds and its result (`dash_sdk_system_get_blocks`, protocol version 15). The node
+    /// accepts a count from 1 to 10 and refuses any other.
+    public func getBlocks(startHeight: UInt64, count: UInt32) async throws -> PlatformBlocks {
+        let json = try await performBlockingQuery { handle in
+            try Self.consumeStringResult(dash_sdk_system_get_blocks(handle, startHeight, count))
+        }
+        return try JSONDecoder.platformBlocks.decode(PlatformBlocks.self, from: Data(json.utf8))
+    }
+
+    /// The state transitions the identity `ownerId` (base58) owns in the block at `height`
+    /// (`dash_sdk_system_get_owner_transactions_in_block`, protocol version 15). Proved per
+    /// transition, not proved complete. An `ownerId` holding a NUL is refused with
+    /// ``SDKError/invalidParameter(_:)`` before the FFI call.
+    public func getOwnerTransactionsInBlock(height: UInt64, ownerId: String) async throws -> OwnerTransactionsInBlock {
+        let json = try await performBlockingQuery { handle in
+            try withDecisionProposalCString(
+                ownerId, field: "ownerId", invalid: SDKError.invalidParameter
+            ) { ownerIdPtr in
+                try Self.consumeStringResult(
+                    dash_sdk_system_get_owner_transactions_in_block(handle, height, ownerIdPtr)
+                )
+            }
+        }
+        return try JSONDecoder.platformBlocks.decode(OwnerTransactionsInBlock.self, from: Data(json.utf8))
+    }
+
+    /// What one node says of the transition with this hash (64 hex characters), without
+    /// waiting (`dash_sdk_system_get_recent_state_transition_status`, protocol version 15).
+    /// Unproved.
+    ///
+    /// Privacy: the hash goes to this SDK's nodes, not to the node the transition was
+    /// broadcast to, so asking links the caller to that transition in front of them. Use it
+    /// for public transitions only, not for shielded or private document transitions. A
+    /// `transitionHash` holding a NUL is refused with ``SDKError/invalidParameter(_:)`` before
+    /// the FFI call.
+    public func getRecentStateTransitionStatus(transitionHash: String) async throws -> NodeTransitionStatus {
+        let json = try await performBlockingQuery { handle in
+            try withDecisionProposalCString(
+                transitionHash, field: "transitionHash", invalid: SDKError.invalidParameter
+            ) { hashPtr in
+                try Self.consumeStringResult(
+                    dash_sdk_system_get_recent_state_transition_status(handle, hashPtr)
+                )
+            }
+        }
+        return try JSONDecoder.platformBlocks.decode(NodeTransitionStatus.self, from: Data(json.utf8))
+    }
+
+    /// The status of the transition with this hash (64 hex characters), proved by its block
+    /// when the node says it is committed and that block holds it
+    /// (`dash_sdk_system_get_state_transition_status_by_hash`, protocol version 15).
+    ///
+    /// Privacy: the hash goes to this SDK's nodes, not to the node the transition was
+    /// broadcast to, so asking links the caller to that transition in front of them. Use it
+    /// for public transitions only, not for shielded or private document transitions. A
+    /// `transitionHash` holding a NUL is refused with ``SDKError/invalidParameter(_:)`` before
+    /// the FFI call.
+    public func getStateTransitionStatusByHash(transitionHash: String) async throws -> TransitionStatusByHash {
+        let json = try await performBlockingQuery { handle in
+            try withDecisionProposalCString(
+                transitionHash, field: "transitionHash", invalid: SDKError.invalidParameter
+            ) { hashPtr in
+                try Self.consumeStringResult(
+                    dash_sdk_system_get_state_transition_status_by_hash(handle, hashPtr)
+                )
+            }
+        }
+        return try JSONDecoder.platformBlocks.decode(TransitionStatusByHash.self, from: Data(json.utf8))
+    }
+
     // MARK: - Token Queries
 
     /// Get identity token balances - get balances for multiple tokens for a single identity

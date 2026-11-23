@@ -246,6 +246,18 @@ impl Error {
         }
     }
 
+    /// Whether the node answered gRPC `NOT_FOUND`: it does not hold what was asked for, as
+    /// opposed to a transport or proof failure. Looks through retry-exhaustion wrappers.
+    pub(crate) fn is_not_found(&self) -> bool {
+        match self {
+            Self::DapiClientError(DapiClientError::Transport(TransportError::Grpc(status))) => {
+                status.code() == Code::NotFound
+            }
+            Self::NoAvailableAddressesToRetry(inner) => inner.is_not_found(),
+            _ => false,
+        }
+    }
+
     /// Whether this is an [`Error::ProtocolVersionNotActive`] refusal that may lift soon: the
     /// SDK could not learn the network's version for a reason that can pass, such as nodes
     /// or a quorum source not answering, so the network may serve the request already.

@@ -15,9 +15,7 @@ use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProo
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::prelude::AssetLockProof;
 
-use dapi_grpc::tonic::Code;
-use rs_dapi_client::transport::TransportError;
-use rs_dapi_client::{DapiClientError, DapiRequestExecutor, IntoInner, RequestSettings};
+use rs_dapi_client::{DapiRequestExecutor, IntoInner, RequestSettings};
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
 
@@ -57,19 +55,6 @@ pub struct CoreTransactionPlacement {
     pub is_chain_locked: bool,
     /// Whether the transaction is InstantSend-locked.
     pub is_instant_locked: bool,
-}
-
-/// Whether an SDK error is a gRPC `NOT_FOUND` (the requested tx is unknown to
-/// the node), as opposed to a transient/transport failure. Used to distinguish
-/// "retry with a reversed txid" from "surface the error".
-fn error_is_not_found(err: &Error) -> bool {
-    match err {
-        Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(status))) => {
-            status.code() == Code::NotFound
-        }
-        Error::NoAvailableAddressesToRetry(inner) => error_is_not_found(inner),
-        _ => false,
-    }
 }
 
 /// DAPI fills `GetTransactionResponse.block_hash` by hex-decoding Core's
@@ -170,7 +155,7 @@ impl Sdk {
             Ok(response) => response,
             Err(e) => {
                 let err: Error = e.into();
-                return if error_is_not_found(&err) {
+                return if err.is_not_found() {
                     Ok(None)
                 } else {
                     Err(err)
@@ -204,7 +189,7 @@ impl Sdk {
             Ok(response) => response,
             Err(e) => {
                 let err: Error = e.into();
-                return if error_is_not_found(&err) {
+                return if err.is_not_found() {
                     Ok(None)
                 } else {
                     Err(err)
