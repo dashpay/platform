@@ -24,6 +24,7 @@ use dpp::state_transition::token_purchase_from_shielded_pool_transition::TokenPu
 use dpp::state_transition::{validate_state_transition_size, StateTransition};
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
+use grovedb_commitment_tree::Proof;
 
 /// Orchard actions in a `TokenPurchaseFromShieldedPool`'s token bundle: its one output (the
 /// bought tokens' note) with spends disabled, which Orchard pads to its two-action minimum.
@@ -43,15 +44,6 @@ pub fn compute_token_purchase_from_pool_fee(
     )
 }
 
-/// Bytes of an Orchard Halo 2 proof before its per-action part: ZIP 225's
-/// `sizeProofsOrchard = 2720 + 2272 * nActionsOrchard`. The measured `ShieldFromAssetLock`
-/// sizes in `seed_pool.rs` (8,294 bytes at 2 actions, 19,018 at 6, 21,699 at 7) grow by this
-/// proof share plus one serialized action per action.
-const ORCHARD_PROOF_BASE_BYTES: usize = 2720;
-
-/// Bytes an Orchard Halo 2 proof grows by per action ([`ORCHARD_PROOF_BASE_BYTES`]).
-const ORCHARD_PROOF_BYTES_PER_ACTION: usize = 2272;
-
 /// Refuse a `TokenPurchaseFromShieldedPool` token count its basic structure validation refuses
 /// (DPP's `is_valid_token_count`: zero, or above [`MAX_DISTRIBUTION_PARAM`]). Store- and
 /// network-free, so a purchase is refused with it before anything is reserved or asked.
@@ -68,8 +60,9 @@ pub(crate) fn ensure_token_purchase_count(
 }
 
 /// The serialized size of a `TokenPurchaseFromShieldedPool` whose fee bundle has `fee_actions`
-/// actions, with every variable field at its largest: the two bundles' actions and proofs
-/// ([`ORCHARD_PROOF_BASE_BYTES`]) and the amounts at `u64::MAX`.
+/// actions, with every variable field at its largest: the two bundles' actions and proofs (each
+/// of the canonical length Orchard gives a proof over its actions, [`Proof::expected_proof_size`])
+/// and the amounts at `u64::MAX`.
 fn token_purchase_wire_size(fee_actions: usize) -> Result<u64, ProtocolError> {
     let action = SerializedAction {
         nullifier: [0; 32],
@@ -79,9 +72,7 @@ fn token_purchase_wire_size(fee_actions: usize) -> Result<u64, ProtocolError> {
         cv_net: [0; 32],
         spend_auth_sig: [0; 64],
     };
-    let proof = |actions: usize| {
-        vec![0u8; ORCHARD_PROOF_BASE_BYTES + ORCHARD_PROOF_BYTES_PER_ACTION * actions]
-    };
+    let proof = |actions: usize| vec![0u8; Proof::expected_proof_size(actions)];
     let transition = StateTransition::TokenPurchaseFromShieldedPool(
         TokenPurchaseFromShieldedPoolTransition::V0(TokenPurchaseFromShieldedPoolTransitionV0 {
             data_contract_id: Identifier::from([0xFF; 32]),
@@ -551,7 +542,7 @@ mod tests {
         }
         // The proof share the bound rests on: a two-action and a four-action proof alone.
         assert_eq!(
-            2 * ORCHARD_PROOF_BASE_BYTES + 6 * ORCHARD_PROOF_BYTES_PER_ACTION,
+            Proof::expected_proof_size(2) + Proof::expected_proof_size(4),
             19_072
         );
     }
