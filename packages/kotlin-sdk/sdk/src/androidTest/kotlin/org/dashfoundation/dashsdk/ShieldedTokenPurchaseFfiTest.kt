@@ -123,6 +123,29 @@ class ShieldedTokenPurchaseFfiTest {
                 val fee = manager.estimateShieldedFee(ShieldedProver.FeeKind.TokenPurchaseFromPool)
                 assertTrue("the purchase fee is a positive number of credits: $fee", fee > 0)
 
+                // A token position that does not fit a u16 is refused by the
+                // wrappers themselves, with the error `Tokens` raises for it.
+                for (position in listOf(-1, 65_536)) {
+                    try {
+                        manager.shieldedTokenPurchaseAvailability(contractId, position)
+                        fail("availability must refuse token position $position")
+                    } catch (e: IllegalArgumentException) {
+                        assertTrue(e.message, e.message!!.contains("tokenPosition must be in 0..65535"))
+                    }
+                    try {
+                        manager.shieldedTokenPurchaseFromPool(
+                            walletId = id,
+                            contractId = contractId,
+                            tokenPosition = position,
+                            tokenCount = 1uL,
+                            totalAgreedPrice = 1_000uL,
+                        )
+                        fail("a purchase must refuse token position $position")
+                    } catch (e: IllegalArgumentException) {
+                        assertTrue(e.message, e.message!!.contains("tokenPosition must be in 0..65535"))
+                    }
+                }
+
                 try {
                     manager.shieldedTokenPurchaseFromPool(
                         walletId = id,

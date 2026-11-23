@@ -2334,6 +2334,7 @@ class PlatformWalletManager(
         require(contractId.size == 32) {
             "contractId must be exactly 32 bytes, got ${contractId.size}"
         }
+        requireTokenPosition(tokenPosition)
         mapNativeErrors {
             ShieldedTokenPurchaseNative.purchaseFromPool(
                 managerHandle,
@@ -2345,6 +2346,16 @@ class PlatformWalletManager(
                 tokenCount.toLong(),
                 totalAgreedPrice.toLong(),
             )
+        }
+    }
+
+    /**
+     * A token position is a u16 on the Rust side: refuse one that does not
+     * fit before the native call, with the same error `Tokens` raises.
+     */
+    private fun requireTokenPosition(tokenPosition: Int) {
+        require(tokenPosition in 0..0xFFFF) {
+            "tokenPosition must be in 0..65535, got $tokenPosition"
         }
     }
 
@@ -2367,6 +2378,7 @@ class PlatformWalletManager(
         require(contractId.size == 32) {
             "contractId must be exactly 32 bytes, got ${contractId.size}"
         }
+        requireTokenPosition(tokenPosition)
         ShieldedTokenPurchaseAvailability.fromNative(
             mapNativeErrors {
                 ShieldedTokenPurchaseNative.availability(managerHandle, contractId, tokenPosition)

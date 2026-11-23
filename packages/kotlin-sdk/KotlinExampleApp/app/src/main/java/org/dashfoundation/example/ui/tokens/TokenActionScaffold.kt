@@ -1,5 +1,6 @@
 package org.dashfoundation.example.ui.tokens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -220,8 +221,15 @@ fun TokenActionScaffold(
     onSubmit: () -> Unit,
     tokenSummaryRows: @Composable () -> Unit = {},
     submitTestTag: String = "tokenAction.submitButton",
+    backBlocked: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    // Leaving pops the entry and clears [viewModel] with it, so a form whose
+    // result must be read ([TokenActionViewModel.showNoticeUntilDismissed])
+    // blocks system Back while it runs; the toolbar Back is disabled for
+    // the same reason. Same pattern as `DecisionProposalsScreen`.
+    BackHandler(enabled = backBlocked) {}
+
     LaunchedEffect(viewModel.completed) {
         if (viewModel.completed) navController.popBackStack()
     }
@@ -231,7 +239,10 @@ fun TokenActionScaffold(
             TopAppBar(
                 title = { Text(title) },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(
+                        onClick = { navController.popBackStack() },
+                        enabled = !backBlocked,
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },

@@ -722,7 +722,9 @@ private fun PurchaseForm(
     // Where the purchase is paid from. The shielded pool is offered only on
     // Rust's answer that this token can be bought that way; identity credits
     // stay available either way.
-    var fundingOrdinal by rememberSaveable { mutableIntStateOf(PurchaseFundingSource.IdentityCredits.ordinal) }
+    // Saved as the enum value itself (by name), so a restored form cannot
+    // pick a different source if the entries are ever reordered.
+    var savedFundingSource by rememberSaveable { mutableStateOf(PurchaseFundingSource.IdentityCredits) }
     var availabilityAttempt by remember { mutableIntStateOf(0) }
     var shieldedAvailability by remember {
         mutableStateOf<ShieldedPurchaseAvailabilityState>(ShieldedPurchaseAvailabilityState.Loading)
@@ -748,10 +750,10 @@ private fun PurchaseForm(
         // A funding choice the answer no longer allows falls back to
         // identity credits.
         if (!shieldedAvailability.offersShieldedPayment) {
-            fundingOrdinal = PurchaseFundingSource.IdentityCredits.ordinal
+            savedFundingSource = PurchaseFundingSource.IdentityCredits
         }
     }
-    val fundingSource = PurchaseFundingSource.entries[fundingOrdinal]
+    val fundingSource = savedFundingSource
         .takeIf { it == PurchaseFundingSource.IdentityCredits || shieldedAvailability.offersShieldedPayment }
         ?: PurchaseFundingSource.IdentityCredits
     val isShielded = fundingSource == PurchaseFundingSource.ShieldedPool
@@ -818,6 +820,12 @@ private fun PurchaseForm(
         viewModel = viewModel,
         navController = navController,
         submitTestTag = "tokenPurchase.buyButton",
+        // The shielded purchase proves for a minute or more, and what it
+        // returns (submitted, do not buy again) is shown by this entry's
+        // view model: leaving would discard it. Blocked for either funding
+        // source, so it does not depend on a choice that can be reset while
+        // the purchase runs.
+        backBlocked = viewModel.isSubmitting,
         onSubmit = {
             val wallet = context.wallet ?: return@TokenActionScaffold
             val amount = amountRaw ?: return@TokenActionScaffold
@@ -863,7 +871,7 @@ private fun PurchaseForm(
             selected = fundingSource,
             // Switching mid-proof would only relabel a purchase under way.
             enabled = !viewModel.isSubmitting,
-            onSelect = { fundingOrdinal = it.ordinal },
+            onSelect = { savedFundingSource = it },
             onRetry = { availabilityAttempt++ },
         )
         AmountSection(
