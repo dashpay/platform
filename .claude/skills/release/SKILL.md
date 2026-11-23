@@ -163,17 +163,17 @@ Once a release carries `SHA256SUMS.asc` (or any `SHA256SUMS.*`), release jobs st
 The dashmate deb's Debian version comes from the tag: `5.1.0-1`, `5.1.0~rc.1-1`, `5.1.0~~dev.1-1` (`packages/dashmate/scripts/deb-version.mjs`). A rebuild from the same tag produces the same version, which apt reports as already installed, so operators never receive it. A rebuild re-runs the release run's deb build, which needs the run's `js-build-<sha>` artifact, so it only works within 7 days of the release. To ship a rebuilt deb:
 
 1. Set the repository variable `DASHMATE_DEB_REVISION` to the next revision (`2`, then `3`, ...). If the release carries `SHA256SUMS.asc`, delete it now: the release jobs refuse to replace a signed release's packages.
-2. In the release's `release.yml` run, re-run the `Build Dashmate packages (deb, ubuntu-24.04)` job (`gh run rerun --job <job-id> --repo dashpay/platform`), then check that `Release Dashmate packages (deb, ubuntu-24.04)` ran after it and attached debs whose names carry the new revision (`dashmate_5.1.0-2_amd64.deb`); re-run that job too if it did not. `Release Dashmate checksums` runs after it and fails while the earlier debs are still attached.
-3. Delete every other `dashmate_*_amd64.deb` and `dashmate_*_arm64.deb` asset of the release, keeping only the two that carry the new revision. Earlier builds have different names, so they stay attached, and the install docs and deploy tooling take the first matching asset.
-4. Re-run the `Release Dashmate checksums` job by its id, not with `--failed`, which also re-runs unrelated jobs, so `SHA256SUMS` lists the new debs; then sign it as above. The id is not the number in the job's URL:
+2. In the release's `release.yml` run, re-run the `Build Dashmate packages (deb, ubuntu-24.04)` job (`gh run rerun --job <job-id> --repo dashpay/platform`) and wait for that job to finish.
+3. Delete `DASHMATE_DEB_REVISION` as soon as the build job has finished, whether it succeeded or failed. It is a repository variable, so any other release built while it is set gets that revision too. Only the build job reads it: the later steps don't need it, and it has to be set again only to re-run the build.
+4. Check that `Release Dashmate packages (deb, ubuntu-24.04)` ran after the build and attached debs whose names carry the new revision (`dashmate_5.1.0-2_amd64.deb`); re-run that job if it did not. `Release Dashmate checksums` runs after it and fails while the earlier debs are still attached.
+5. Delete every other `dashmate_*_amd64.deb` and `dashmate_*_arm64.deb` asset of the release, keeping only the two that carry the new revision. Earlier builds have different names, so they stay attached, and the install docs and deploy tooling take the first matching asset.
+6. Re-run the `Release Dashmate checksums` job by its id, not with `--failed`, which also re-runs unrelated jobs, so `SHA256SUMS` lists the new debs; then sign it as above. The id is not the number in the job's URL:
 
 ```sh
 gh run view <run-id> --repo dashpay/platform --json jobs \
   --jq '.jobs[] | select(.name == "Release Dashmate checksums") | .databaseId'
 gh run rerun --job <job-id> --repo dashpay/platform
 ```
-
-5. Delete `DASHMATE_DEB_REVISION` again, so the next release starts at revision 1.
 
 Never set `DASHMATE_DEB_EPOCH` except to re-release a version that was published under oclif's old `<version>.<git sha>-1` scheme: once a package carries an epoch, every later package needs it too. Re-releasing that way also leaves the old `<version>.<git sha>-1` debs attached, so delete them the same way.
 
