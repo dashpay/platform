@@ -2,7 +2,10 @@ use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::composite_document_query::{PresentTrio, ProvedTrio};
 use crate::query::{CompositeDocumentsResult, DriveDocumentQuery};
-use crate::verify::RootHash;
+use crate::verify::{with_proved_root_on_budget_exceeded, RootHash};
+use dpp::data_contract::document_type::{
+    DecodedValueBudget, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
+};
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
@@ -50,9 +53,17 @@ impl DriveDocumentQuery<'_> {
         // limit would truncate an ordered page's index level differently.
         let page_path_query = self.page_path_query(platform_version)?;
         let direction = page_path_query.query.query.left_to_right;
-        let (_, page_trios) = GroveDb::verify_subset_query(proof, &page_path_query, grove_version)?;
-        let bootstrap_page =
-            Self::decode_document_trios(self, present(page_trios), platform_version)?;
+        let (bootstrap_root, page_trios) =
+            GroveDb::verify_subset_query(proof, &page_path_query, grove_version)?;
+        let mut bootstrap_budget =
+            DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
+        let bootstrap_page = Self::decode_document_trios(
+            self,
+            present(page_trios),
+            Some(&mut bootstrap_budget),
+            platform_version,
+        )
+        .map_err(|error| with_proved_root_on_budget_exceeded(bootstrap_root, error))?;
 
         // Derive every sub-query in order. A sub-query that feeds a later
         // binding is itself bootstrapped by a subset pass, so the later
@@ -76,15 +87,24 @@ impl DriveDocumentQuery<'_> {
                         direction,
                         platform_version,
                     )?;
-                    let (_, trios) =
+                    let (sub_root, trios) =
                         GroveDb::verify_subset_query(proof, &path_query, grove_version)?;
+                    if sub_root != bootstrap_root {
+                        return Err(Error::Proof(ProofError::CorruptedProof(
+                            "the composite proof's sub-query subset reconstructed a different \
+                             root hash than the page subset"
+                                .to_string(),
+                        )));
+                    }
                     self.decode_sub_query_document_trios(
                         sub_query,
                         &values,
                         direction,
                         present(trios),
+                        Some(&mut bootstrap_budget),
                         platform_version,
-                    )?
+                    )
+                    .map_err(|error| with_proved_root_on_budget_exceeded(sub_root, error))?
                 };
                 bootstrap_sub_documents[index] = Some(documents);
             }
@@ -105,15 +125,20 @@ impl DriveDocumentQuery<'_> {
         )?;
         let (root_hash, proved_trios) = GroveDb::verify_query(proof, &merged_query, grove_version)?;
 
-        let result = self.assemble_from_trios(
-            &derived,
-            &page_path_query,
-            &sub_path_queries,
-            &removal_path_queries,
-            proved_trios,
-            sum_bearing_items_are_documents,
-            platform_version,
-        )?;
+        let mut authoritative_budget =
+            DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
+        let result = self
+            .assemble_from_trios(
+                &derived,
+                &page_path_query,
+                &sub_path_queries,
+                &removal_path_queries,
+                proved_trios,
+                sum_bearing_items_are_documents,
+                Some(&mut authoritative_budget),
+                platform_version,
+            )
+            .map_err(|error| with_proved_root_on_budget_exceeded(root_hash, error))?;
 
         // The PROVEN results are authoritative. The bootstrap read the
         // same proof through each component's own query, so what it

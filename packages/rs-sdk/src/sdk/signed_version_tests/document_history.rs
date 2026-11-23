@@ -457,7 +457,7 @@ fn should_reject_history_protocol_version_tampering(cursor: bool) {
                     matches!(
                         &error,
                         drive_proof_verifier::Error::DriveError { error }
-                            if error == "drive: drive unknown version on verify_document_history, received: 0"
+                            if error == "drive: drive unknown version on verify_document_history_serialized, received: 0"
                     ),
                     "{kind}: {error}"
                 );

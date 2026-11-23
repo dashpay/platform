@@ -11,6 +11,7 @@ use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
+use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::contract_moderation::{
@@ -27,6 +28,7 @@ use dash_sdk::platform::{Fetch, Identifier};
 use dash_sdk::Error as SdkError;
 use js_sys::Array;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::data_contract::{moderation_reason_to_js, moderation_warnings_to_js};
@@ -789,6 +791,16 @@ pub(crate) fn set_removal_fields(
     document_type: DocumentTypeRef,
     id_to_js: impl Fn(Identifier) -> JsValue,
 ) -> Result<(), WasmSdkError> {
+    let kept_values = removal.kept_values_with_default_budget(document_type)?;
+    set_removal_fields_from_decoded(target, removal, &kept_values, id_to_js)
+}
+
+pub(crate) fn set_removal_fields_from_decoded(
+    target: &js_sys::Object,
+    removal: &ContractDocumentRemoval,
+    kept_values: &BTreeMap<String, Value>,
+    id_to_js: impl Fn(Identifier) -> JsValue,
+) -> Result<(), WasmSdkError> {
     let set = |key: &str, value: JsValue| {
         js_sys::Reflect::set(target, &key.into(), &value)
             .map(|_| ())
@@ -809,20 +821,17 @@ pub(crate) fn set_removal_fields(
             js_sys::BigInt::from(restoration.restored_at).into(),
         )?;
     }
-    // Read under the document's type, as its documents are
-    set(
-        "keptFields",
-        kept_fields_to_js(&removal.kept_values(document_type)?)?,
-    )?;
+    set("keptFields", kept_fields_to_js(kept_values)?)?;
     Ok(())
 }
 
-/// One removal record with its document id, identifiers written by `id_to_js`: base58 strings
-/// for the removals query ([`ContractDocumentRemovalEntry`]), `Identifier`s for a join through a
-/// `moderatedDocument` reference (`JoinedDocumentRemoval`), as the join's other ids are.
+/// One removal record with its document id and already-decoded kept values, identifiers written
+/// by `id_to_js`: base58 strings for the removals query ([`ContractDocumentRemovalEntry`]),
+/// `Identifier`s for a join through a `moderatedDocument` reference (`JoinedDocumentRemoval`),
+/// as the join's other ids are.
 pub(crate) fn removal_entry_to_js(
     entry: &ContractDocumentRemovalEntry,
-    document_type: DocumentTypeRef,
+    kept_values: &BTreeMap<String, Value>,
     id_to_js: impl Fn(Identifier) -> JsValue,
 ) -> Result<JsValue, WasmSdkError> {
     let js_entry = js_sys::Object::new();
@@ -832,7 +841,7 @@ pub(crate) fn removal_entry_to_js(
         &id_to_js(entry.document_id),
     )
     .map_err(|_| WasmSdkError::generic("failed to set `documentId` on the removal"))?;
-    set_removal_fields(&js_entry, &entry.removal, document_type, id_to_js)?;
+    set_removal_fields_from_decoded(&js_entry, &entry.removal, kept_values, id_to_js)?;
     Ok(js_entry.into())
 }
 
@@ -841,6 +850,7 @@ fn removals_to_js(
     query: &ContractDocumentRemovalsPageQuery,
     document_type: DocumentTypeRef,
 ) -> Result<JsValue, WasmSdkError> {
+    let kept_values_list = page.decode_kept_values(document_type)?;
     let result = js_sys::Object::new();
     let set = |target: &js_sys::Object, key: &str, value: JsValue| {
         js_sys::Reflect::set(target, &key.into(), &value)
@@ -848,10 +858,8 @@ fn removals_to_js(
     };
     let id_to_js = |id: Identifier| JsValue::from_str(&IdentifierWasm::from(id).to_base58());
     let removals = Array::new();
-    for entry in page.removals() {
-        removals.push(&removal_entry_to_js(entry, document_type, |id| {
-            JsValue::from_str(&IdentifierWasm::from(id).to_base58())
-        })?);
+    for (entry, kept_values) in page.removals().iter().zip(kept_values_list.iter()) {
+        removals.push(&removal_entry_to_js(entry, kept_values, id_to_js)?);
     }
     set(&result, "removals", removals.into())?;
     // A page shorter than the limit is the last one, and a read by ids has no page after it:

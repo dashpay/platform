@@ -6,9 +6,10 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 
 /// Introduced in protocol version 15. Differs from v6 in:
 /// - `try_from_schema`, 4 rather than 3: parses `canBeErased` and admits deletable
-///   keep-history types, and under full validation holds an object's member positions to
-///   integers that follow one another from its lowest; otherwise it preserves generation 3's
-///   parsing, an object's members stored in the schema's map order as before;
+///   keep-history types, holds an object's member positions to integers that follow one another
+///   from its lowest under full validation, and refuses typed-array properties whose element is
+///   a zero-width fixed byte array (`minItems: 0, maxItems: 0`); otherwise it preserves
+///   generation 3's parsing, an object's members stored in the schema's map order as before;
 /// - `parse_property_constraints`, 1 rather than 0: a `countOf` or `sumOf` of a
 ///   `propertyConstraints` or `deleteConstraints` rule may match its documents by a byte array
 ///   key, bound to a byte array property of the document written (or deleted), as it matches
