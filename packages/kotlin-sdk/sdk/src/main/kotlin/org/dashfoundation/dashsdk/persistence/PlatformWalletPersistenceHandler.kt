@@ -177,6 +177,7 @@ class PlatformWalletPersistenceHandler(
             CAPABILITY_DPNS_NAME_STATES or
             CAPABILITY_TRACKED_ASSET_LOCKS or
             CAPABILITY_CORE_SWEEP_REMOVAL or
+            CAPABILITY_ASSET_LOCK_OPERATION_IDS or
             CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
 
     /**
@@ -2505,10 +2506,14 @@ class PlatformWalletPersistenceHandler(
             // (PlatformWalletPersistenceHandler.swift:270). All other
             // transitions stay last-write-wins because non-terminal
             // statuses legitimately move both ways.
+            //
+            // DrainCompleted (6) is terminal too, and outranks Consumed: it
+            // is the receipt that reports a wallet drain as finished, so a
+            // Consumed row may still become DrainCompleted, and nothing
+            // replaces a DrainCompleted one.
             val incomingStatus = status.toInt() and 0xFF
             if (existing != null &&
-                existing.statusRaw == ASSET_LOCK_STATUS_CONSUMED &&
-                incomingStatus != ASSET_LOCK_STATUS_CONSUMED
+                assetLockUpsertRegressesTerminal(existing.statusRaw, incomingStatus)
             ) {
                 return@stage
             }
@@ -2523,6 +2528,9 @@ class PlatformWalletPersistenceHandler(
                     amountDuffs = amountDuffs,
                     statusRaw = incomingStatus,
                     proofBytes = proofBytes,
+                    // The id arrives through its own callback, after this
+                    // one; a later status upsert must not erase it.
+                    operationId = existing?.operationId,
                     createdAt = existing?.createdAt ?: java.util.Date(),
                     updatedAt = now(),
                 ),
@@ -2546,11 +2554,79 @@ class PlatformWalletPersistenceHandler(
         0
     }
 
+    /**
+     * Port of `persistAssetLockOperationId` in
+     * `packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PlatformWalletPersistenceHandler.swift`.
+     * Staged into the round, behind the lock's own upsert, and checked when
+     * the round commits: the row must be there, must not carry a different
+     * id, and no other lock of the wallet may carry this one. Any of those
+     * fails the commit, so the row and its id land together or not at all.
+     * Refused outside a round, where there would be no upsert to ride with.
+     */
+    override fun onPersistAssetLockOperationId(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        operationId: ByteArray,
+    ): Int = guarded {
+        require(outPoint.size == RAW_OUT_POINT_SIZE) {
+            "asset-lock outpoint must be $RAW_OUT_POINT_SIZE bytes, got ${outPoint.size}"
+        }
+        require(operationId.size == NativePersistenceBridge.ASSET_LOCK_OPERATION_ID_SIZE) {
+            "asset-lock operation id must be " +
+                "${NativePersistenceBridge.ASSET_LOCK_OPERATION_ID_SIZE} bytes, got ${operationId.size}"
+        }
+        val round = checkNotNull(openRound(walletId)) {
+            "an asset-lock operation id is stored only inside a changeset round"
+        }
+        val outPointHex = encodeOutPointHex(outPoint)
+        val id = operationId.copyOf()
+        round.ops.add { db ->
+            val dao = db.assetLockDao()
+            val row = dao.getByOutPointHex(outPointHex)
+                ?.takeIf { it.walletId.contentEquals(walletId) }
+                ?: error("asset lock $outPointHex is not stored; its operation id has no row")
+            val previous = row.operationId
+            check(previous == null || previous.contentEquals(id)) {
+                "asset lock $outPointHex already carries a different operation id"
+            }
+            check(dao.countOtherLocksWithOperationId(walletId, id, outPointHex) == 0) {
+                "another asset lock of this wallet already carries this operation id"
+            }
+            if (previous == null) {
+                check(dao.setOperationId(outPointHex, id) == 1) {
+                    "asset lock $outPointHex vanished before its operation id was stored"
+                }
+            }
+        }
+        0
+    }
+
+    /**
+     * Port of `loadAssetLockOperationId` in the same Swift file. A lock that
+     * is not stored and an id of the wrong size both throw, failing the
+     * native load: neither is evidence that the lock has no operation id.
+     */
+    override fun onLoadAssetLockOperationId(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+        loadOrThrow {
+            require(outPoint.size == RAW_OUT_POINT_SIZE) {
+                "asset-lock outpoint must be $RAW_OUT_POINT_SIZE bytes, got ${outPoint.size}"
+            }
+            val outPointHex = encodeOutPointHex(outPoint)
+            val row = runBlockingResult { database.assetLockDao().getByOutPointHex(outPointHex) }
+                ?.takeIf { it.walletId.contentEquals(walletId) }
+                ?: error("asset lock $outPointHex is not stored; cannot read its operation id")
+            row.operationId?.also { id ->
+                check(id.size == NativePersistenceBridge.ASSET_LOCK_OPERATION_ID_SIZE) {
+                    "asset lock $outPointHex stores an operation id of ${id.size} bytes"
+                }
+            }
+        }
+
     override fun onPersistAssetLockRemoval(walletId: ByteArray, outPoint: ByteArray): Int = guarded {
         stage(walletId) { db ->
-            // The terminal rule — a Consumed row is retained for historical
-            // lookup, so a removal reaching one is a stale write — lives in
-            // the DAO's `statusRaw != 4` clause (see
+            // The terminal rule (a Consumed or DrainCompleted row is
+            // retained, so a removal reaching one is a stale write) lives in
+            // the DAO's `statusRaw NOT IN (4, 6)` clause (see
             // `AssetLockDao.deleteByOutPointHex`), the same predicate the
             // SQLite store's DELETE carries; mirrors Swift `persistAssetLocks`
             // (PlatformWalletPersistenceHandler.swift).
@@ -3558,12 +3634,14 @@ class PlatformWalletPersistenceHandler(
      *
      * The persisted primary key `outPointHex` is display-order; [decodeOutPointHex]
      * flips it back to the 36-byte wire form the Rust trampoline reads via a
-     * fixed-length field, so a malformed key drops the row rather than
-     * aborting the whole load. A row with empty `transactionBytes` is broken
-     * (the Rust loader rejects it) and is dropped here. `fundingTypeRaw` /
-     * `statusRaw` outside `0..255` are dropped-and-logged — the same
-     * altered-state hazard the Swift `UInt8(exactly:)` guard rejects (a
-     * clamping cast would silently rewrite the lock's effective enum value).
+     * fixed-length field. A row that cannot be handed to Rust as it was
+     * stored (a malformed key, empty `transactionBytes`, a `fundingTypeRaw` /
+     * `statusRaw` outside `0..255`) FAILS the load, as Swift's
+     * `loadCachedAssetLocksOnQueue` throws `malformedRecord`. Dropping it
+     * instead would hand Rust a wallet without that lock, and a wallet drain
+     * reads "no lock carries this operation id" as "not sent": the dropped
+     * row could be the very lock a drain dispatched. This is what the
+     * `ASSET_LOCK_OPERATION_IDS` capability attests.
      *
      * Without this, an interrupted identity registration re-derives a fresh
      * asset lock on relaunch instead of resuming the persisted one. Mirror
@@ -3576,22 +3654,17 @@ class PlatformWalletPersistenceHandler(
         if (rows.isEmpty()) return emptyArray()
         val out = ArrayList<TrackedAssetLockRestoreData>(rows.size)
         for (row in rows) {
-            val outPoint = decodeOutPointHex(row.outPointHex)
-            if (outPoint == null) {
-                Log.w(TAG, "load: dropping asset-lock row with malformed outPointHex=${row.outPointHex}")
-                continue
+            val outPoint = checkNotNull(decodeOutPointHex(row.outPointHex)) {
+                "asset-lock row has a malformed outPointHex: ${row.outPointHex}"
             }
-            if (row.transactionBytes.isEmpty()) {
-                Log.w(TAG, "load: dropping asset-lock row with empty transactionBytes: ${row.outPointHex}")
-                continue
+            check(row.transactionBytes.isNotEmpty()) {
+                "asset-lock row ${row.outPointHex} has empty transactionBytes"
             }
-            if (row.fundingTypeRaw !in 0..255) {
-                Log.w(TAG, "load: dropping asset-lock row ${row.outPointHex} — fundingTypeRaw out of u8 range: ${row.fundingTypeRaw}")
-                continue
+            check(row.fundingTypeRaw in 0..255) {
+                "asset-lock row ${row.outPointHex} has fundingTypeRaw out of u8 range: ${row.fundingTypeRaw}"
             }
-            if (row.statusRaw !in 0..255) {
-                Log.w(TAG, "load: dropping asset-lock row ${row.outPointHex} — statusRaw out of u8 range: ${row.statusRaw}")
-                continue
+            check(row.statusRaw in 0..255) {
+                "asset-lock row ${row.outPointHex} has statusRaw out of u8 range: ${row.statusRaw}"
             }
             out.add(
                 TrackedAssetLockRestoreData(
@@ -3798,6 +3871,10 @@ class PlatformWalletPersistenceHandler(
             database.txoDao().deleteByWallet(walletId)
             database.documentDao().deletePendingInputsByWallet(walletId)
             database.assetLockDao().deleteByWallet(walletId)
+            // A re-imported wallet with the same id must not inherit the ids
+            // of Max transfers the user chose to forget with the wallet
+            // (← Swift `WalletDrainCoordinator.forgetWallet`).
+            database.walletDrainOperationDao().deleteByWallet(walletId)
             database.invitationDao().deleteByWallet(walletId)
             database.platformAddressDao().deleteByWallet(walletId)
             database.shieldedDao().deleteNotesByWallet(walletId)
@@ -4355,6 +4432,12 @@ class PlatformWalletPersistenceHandler(
         internal const val CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long =
             NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
 
+        internal const val CAPABILITY_ASSET_LOCK_OPERATION_IDS: Long =
+            NativePersistenceBridge.CAPABILITY_ASSET_LOCK_OPERATION_IDS
+
+        /** Bytes of a raw outpoint: the txid in wire order, then the vout. */
+        private const val RAW_OUT_POINT_SIZE = 36
+
         private const val TAG = "DashPersistence"
 
         /**
@@ -4394,6 +4477,29 @@ class PlatformWalletPersistenceHandler(
 
         /** `AssetLockStatus::Consumed` — the terminal lifecycle state. */
         private const val ASSET_LOCK_STATUS_CONSUMED = 4
+
+        /**
+         * `AssetLockStatus::DrainCompleted`: the receipt of a finished
+         * wallet drain. Terminal, and the only status a Consumed row may
+         * still move to.
+         */
+        private const val ASSET_LOCK_STATUS_DRAIN_COMPLETED = 6
+
+        /**
+         * Whether upserting [incoming] over a stored [existing] status would
+         * regress a terminal row, in which case the upsert is skipped. The
+         * rule of Swift `persistAssetLocks` and `AssetLockChangeSet::merge`:
+         * nothing replaces DrainCompleted, and only Consumed or
+         * DrainCompleted replaces Consumed.
+         */
+        internal fun assetLockUpsertRegressesTerminal(existing: Int, incoming: Int): Boolean =
+            when (existing) {
+                ASSET_LOCK_STATUS_DRAIN_COMPLETED -> incoming != ASSET_LOCK_STATUS_DRAIN_COMPLETED
+                ASSET_LOCK_STATUS_CONSUMED ->
+                    incoming != ASSET_LOCK_STATUS_CONSUMED &&
+                        incoming != ASSET_LOCK_STATUS_DRAIN_COMPLETED
+                else -> false
+            }
 
         private val HEX = "0123456789abcdef".toCharArray()
     }

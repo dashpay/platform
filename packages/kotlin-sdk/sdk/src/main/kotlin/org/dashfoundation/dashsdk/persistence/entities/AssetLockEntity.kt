@@ -18,7 +18,12 @@ import java.util.Date
  */
 @Entity(
     tableName = "asset_locks",
-    indices = [Index(value = ["walletId"])],
+    indices = [
+        Index(value = ["walletId"]),
+        // One lock per operation id within a wallet. SQLite treats NULLs as
+        // distinct in a unique index, so locks without an id are unaffected.
+        Index(value = ["walletId", "operationId"], unique = true),
+    ],
 )
 data class AssetLockEntity(
     @PrimaryKey val outPointHex: String,
@@ -41,9 +46,11 @@ data class AssetLockEntity(
     /**
      * `AssetLockStatus` discriminant: 0 Built, 1 Broadcast,
      * 2 InstantSendLocked, 3 ChainLocked, 4 Consumed,
-     * 5 RecoveredFromChain.
+     * 5 RecoveredFromChain, 6 DrainCompleted.
      *
-     * `4` is terminal; `5` is NOT, its higher discriminant
+     * `4` and `6` are terminal (`6` is the receipt of a finished wallet
+     * drain, and the only status that reports its operation as completed);
+     * `5` is NOT, its higher discriminant
      * notwithstanding. `5` means Core finality is proven while
      * Platform-side consumption is unknown — what the restore scan and the
      * chainlock-promotion path write — so it belongs in every "still
@@ -60,6 +67,15 @@ data class AssetLockEntity(
     val recipientPlatformAddressHash: ByteArray? = null,
     /** 0 = P2PKH, 1 = P2SH; Swift `UInt8?` → [Int]?. Null iff hash is null. */
     val recipientPlatformAddressType: Int? = null,
+    /**
+     * The 16-byte operation id of the wallet drain this lock was built for
+     * (Swift `PersistentAssetLock.operationId`), or null for every other
+     * lock. Written by `onPersistAssetLockOperationId` in the same round as
+     * the row, never changed afterwards, and kept through later status
+     * upserts and on the terminal row: Rust finds a drain's lock by it
+     * after a restart, and reads its absence as "not sent".
+     */
+    val operationId: ByteArray? = null,
     val createdAt: Date = Date(),
     /** Swift names this `updatedAt` (not `lastUpdated`). */
     val updatedAt: Date = Date(),

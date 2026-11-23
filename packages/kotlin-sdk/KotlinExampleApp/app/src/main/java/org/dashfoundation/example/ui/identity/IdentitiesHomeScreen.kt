@@ -102,7 +102,8 @@ fun IdentitiesHomeScreen(navController: NavHostController) {
     val resumableLocks by remember(walletIdHexes) {
         resumableTopUpsAcrossWallets(
             walletIdHexes = walletIdHexes,
-            observe = container.database.assetLockDao()::observeResumableTopUpsByFundingType,
+            observe = container.database.assetLockDao()::observeByWalletAndFundingType,
+            markedOperationIds = container.walletDrainCoordinator.markedOperationIds,
         )
     }.collectAsStateWithLifecycle(initialValue = emptyList())
 

@@ -41,6 +41,7 @@ mod support;
 mod tokens;
 mod transactions;
 mod tx_decode;
+mod wallet_drain;
 mod wallet_manager;
 
 use jni::sys::{jint, JNI_VERSION_1_6};

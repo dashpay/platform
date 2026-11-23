@@ -314,12 +314,13 @@ struct ShieldedFundFromAssetLockView: View {
         fundingCoreAccountIndex ?? 0
     }
 
-    /// Whether a NEW Max may start on `network`. Not on mainnet until
-    /// #5580 is fixed: Rust can record a drain as completed on an
-    /// unauthenticated "already consumed" report. Recovery of existing
-    /// Max transfers (`UnfinishedWalletDrainsList`) stays on every network.
+    /// Whether a NEW Max may start on `network`, asked of Rust
+    /// (`WalletDrainRules.startOffered`). Not on mainnet until #5580 is
+    /// fixed: Rust can record a drain as completed on an unauthenticated
+    /// "already consumed" report. Recovery of existing Max transfers
+    /// (`UnfinishedWalletDrainsList`) stays on every network.
     nonisolated static func isNewMaxAllowed(on network: Network) -> Bool {
-        network != .mainnet
+        WalletDrainRules.startOffered(on: network)
     }
 
     private var isNewMaxAllowed: Bool {
@@ -942,7 +943,7 @@ struct ShieldedFundFromAssetLockView: View {
         }
         guard let quote = drainQuote,
               quote.matches(walletId: wallet.walletId, fundingAccountIndex: drainFundingAccountIndex),
-              quote.preview.status != .insufficientFunds
+              WalletDrainRules.previewAllowsStart(quote.preview.status)
         else { return }
         let ownAddress: Data?
         do {
@@ -1106,7 +1107,7 @@ struct ShieldedFundFromAssetLockView: View {
             guard let quote = drainQuote,
                   quote.matches(walletId: wallet.walletId, fundingAccountIndex: drainFundingAccountIndex)
             else { return false }
-            return quote.preview.status != .insufficientFunds
+            return WalletDrainRules.previewAllowsStart(quote.preview.status)
                 && activeController == nil
         }
         let amount = parsedDuffs ?? 0
