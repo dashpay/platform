@@ -8,11 +8,8 @@
 //! wallets are registered and the SPV runtime is up.
 
 use std::collections::BTreeMap;
-use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc,
-};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::Arc;
+use std::time::Duration;
 
 use arc_swap::{ArcSwap, ArcSwapOption};
 use dash_sdk::platform::address_sync::{AddressSyncConfig, AddressSyncResult};
@@ -24,10 +21,8 @@ use dash_async::ThreadRegistry;
 
 use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
-use crate::manager::{
-    coordinator_worker_config, drain_pass, QuiesceGate, QuiesceGuard, SyncSlotGuard, WalletWorker,
-    COORDINATOR_DRAIN_BUDGET, LATCHED_RETRY_INTERVAL,
-};
+use crate::manager::sync_loop::{start_sync_loop, Admission, SyncCoordinator, SyncLoop};
+use crate::manager::{QuiesceGuard, WalletWorker, COORDINATOR_DRAIN_BUDGET};
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
 
@@ -98,23 +93,17 @@ impl PlatformAddressSyncSummary {
 pub struct PlatformAddressSyncManager {
     wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     event_manager: Arc<PlatformEventManager>,
-    /// Shared registry that owns this loop's lifecycle: it spawns the
-    /// OS thread, owns its cancellation token, and joins it at shutdown.
-    /// A generation-guarded slot handles a `stop()` + quick `start()`
-    /// without a stale loop clobbering the new one.
-    registry: Arc<ThreadRegistry<WalletWorker>>,
-    interval_secs: AtomicU64,
-    is_syncing: AtomicBool,
-    /// Gates new passes while a [`quiesce`](Self::quiesce) drains an
-    /// in-flight one, while a [`QuiesceGuard`] holder mutates state, and
-    /// terminally once shutdown seals it. `sync_now` bails (after taking the
-    /// `is_syncing` slot) when it is closed, so once a drain observes
-    /// `is_syncing == false` no further pass can start — giving shutdown
-    /// a real "no more host-visible sync-completed callbacks" barrier
-    /// that cancel-only [`stop`](Self::stop) does not provide.
-    quiescing: QuiesceGate,
-    /// Unix seconds of the last completed pass. `0` = never.
-    last_sync_unix: AtomicU64,
+    /// The lifecycle shared with the sibling coordinators: the
+    /// registry-owned loop thread, the `is_syncing` slot, the last-pass
+    /// timestamp, and the admission gate. `sync_now` / `sync_wallet` bail
+    /// (after taking the slot) when the gate is closed — by a
+    /// [`quiesce`](Self::quiesce) draining an in-flight pass, by a
+    /// [`QuiesceGuard`] holder mutating state, or terminally once shutdown
+    /// seals it — so once a drain observes `is_syncing == false` no
+    /// further pass can start, giving shutdown a real "no more
+    /// host-visible sync-completed callbacks" barrier that cancel-only
+    /// [`stop`](Self::stop) does not provide.
+    sync: SyncLoop,
     /// Shared config applied uniformly across wallets and accounts.
     ///
     /// `ArcSwapOption` instead of a mutex because writes are rare
@@ -132,11 +121,11 @@ impl PlatformAddressSyncManager {
         Self {
             wallets,
             event_manager,
-            registry,
-            interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
-            is_syncing: AtomicBool::new(false),
-            quiescing: QuiesceGate::default(),
-            last_sync_unix: AtomicU64::new(0),
+            sync: SyncLoop::new(
+                WalletWorker::PlatformAddressSync,
+                registry,
+                DEFAULT_SYNC_INTERVAL_SECS,
+            ),
             config: ArcSwapOption::empty(),
         }
     }
@@ -145,13 +134,12 @@ impl PlatformAddressSyncManager {
     ///
     /// The running loop picks this up on its next sleep.
     pub fn set_interval(&self, interval: Duration) {
-        let secs = interval.as_secs().max(1);
-        self.interval_secs.store(secs, Ordering::Release);
+        self.sync.set_interval(interval);
     }
 
     /// Current polling interval.
     pub fn interval(&self) -> Duration {
-        Duration::from_secs(self.interval_secs.load(Ordering::Acquire))
+        self.sync.interval()
     }
 
     /// Replace the shared [`AddressSyncConfig`] used on every pass.
@@ -168,21 +156,18 @@ impl PlatformAddressSyncManager {
 
     /// Whether the background loop is currently running.
     pub fn is_running(&self) -> bool {
-        self.registry.is_running(WalletWorker::PlatformAddressSync)
+        self.sync.is_running()
     }
 
     /// Whether a sync pass is in flight right now.
     pub fn is_syncing(&self) -> bool {
-        self.is_syncing.load(Ordering::Acquire)
+        self.sync.is_syncing()
     }
 
     /// Unix seconds of the last completed pass, or `None` if no pass
     /// has ever completed.
     pub fn last_sync_unix_seconds(&self) -> Option<u64> {
-        match self.last_sync_unix.load(Ordering::Acquire) {
-            0 => None,
-            n => Some(n),
-        }
+        self.sync.last_sync_unix_seconds()
     }
 
     /// Start the background sync loop. Idempotent — calling while
@@ -205,52 +190,10 @@ impl PlatformAddressSyncManager {
     /// registry reap backstop (default 1 s) before returning. Call it from
     /// the FFI host thread, not an async task.
     pub fn start(self: Arc<Self>) {
-        let handle = tokio::runtime::Handle::current();
-        let registry = Arc::clone(&self.registry);
-        let this = self;
-        // The registry owns the whole lifecycle (see `IdentitySyncManager::start`):
-        // it takes the teardown latch, installs the cancellation token, spawns
+        // The registry owns the whole lifecycle (see `start_sync_loop`): it
+        // takes the teardown latch, installs the cancellation token, spawns
         // the thread, and reaps any prior generation under one slot lock.
-        //
-        // A timed-out `quiesce` latched the gate; reopen it once the wedged
-        // pass has drained (now, or before each pass below).
-        if !this.quiescing.reopen_if_drained(&this.is_syncing) {
-            tracing::debug!(
-                "platform-address sync loop started behind a wedged pass; passes resume once it drains"
-            );
-        }
-        registry.start_thread(
-            WalletWorker::PlatformAddressSync,
-            coordinator_worker_config(),
-            move |cancel| {
-                handle.block_on(async move {
-                    loop {
-                        if cancel.is_cancelled() {
-                            break;
-                        }
-
-                        this.sync_now().await;
-
-                        // `sync_now` clears a drained latch itself before its slot CAS.
-                        // Sample the latch AFTER the pass, so a latch raised or cleared
-                        // while it ran is what picks the cadence: behind a still-wedged
-                        // pass the call above bailed, so poll the slot briskly instead of
-                        // sleeping a full interval and passes resume promptly once that
-                        // pass drains.
-                        let gate_open = this.quiescing.reopen_if_drained(&this.is_syncing);
-                        let interval = if gate_open {
-                            this.interval()
-                        } else {
-                            this.interval().min(LATCHED_RETRY_INTERVAL)
-                        };
-                        tokio::select! {
-                            _ = tokio::time::sleep(interval) => {}
-                            _ = cancel.cancelled() => break,
-                        }
-                    }
-                });
-            },
-        );
+        start_sync_loop(self, None, "platform-address");
     }
 
     /// Stop the background sync loop. No-op if not running.
@@ -263,7 +206,7 @@ impl PlatformAddressSyncManager {
     /// the host can free the event-handler context — use
     /// [`quiesce`](Self::quiesce).
     pub fn stop(&self) {
-        self.registry.cancel(WalletWorker::PlatformAddressSync);
+        self.sync.cancel_loop();
     }
 
     /// Cancel the background loop **and wait for any in-flight sync pass
@@ -329,7 +272,7 @@ impl PlatformAddressSyncManager {
 
     /// [`quiesce_held`](Self::quiesce_held) with an explicit drain budget.
     pub(crate) async fn quiesce_held_within(&self, budget: Duration) -> Option<QuiesceGuard<'_>> {
-        drain_pass(&self.quiescing, &self.is_syncing, || self.stop(), budget).await
+        self.sync.drain(|| self.stop(), budget).await
     }
 
     /// [`quiesce_within`](Self::quiesce_within) that **seals** the gate:
@@ -342,12 +285,8 @@ impl PlatformAddressSyncManager {
     /// drain concluded and fire persister / completion callbacks through
     /// a context the host has since freed.
     pub(crate) async fn quiesce_sealed_within(&self, budget: Duration) -> bool {
-        let guard = self.quiesce_held_within(budget).await;
-        let drained = guard.is_some();
-        // Seal before the guard drops so its Drop cannot reopen.
-        self.quiescing.seal();
-        drop(guard);
-        drained
+        // Seals before the drain's guard drops, so its Drop cannot reopen.
+        self.sync.drain_sealed(|| self.stop(), budget).await
     }
 
     /// Run one sync pass across every registered wallet.
@@ -355,32 +294,16 @@ impl PlatformAddressSyncManager {
     /// If a pass is already in flight, returns an empty summary and
     /// skips — the caller can inspect [`is_syncing`] to distinguish.
     pub async fn sync_now(&self) -> PlatformAddressSyncSummary {
-        // A drained timeout latch is cleared here as well as in `start()`:
-        // with no loop running, a one-shot pass after a timed-out drain
-        // would otherwise bail on the stale latch until something
-        // restarted the loop. Safe before the CAS — a false `is_syncing`
-        // means no pass is in flight — and the gate check after the CAS
-        // still honors a live hold or the seal.
-        self.quiescing.reopen_if_drained(&self.is_syncing);
-        if self
-            .is_syncing
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
+        // Bail without running a pass when another one holds the slot, or
+        // when a `quiesce()` has closed the gate — so the drain can complete
+        // and shutdown gets a true barrier (no further
+        // `on_platform_address_sync_completed` host callback after quiesce
+        // returns). The permit holds `is_syncing` until it drops at the end
+        // of this function, on panic unwind too, so a failed pass can never
+        // wedge `quiesce()`'s drain.
+        let Admission::Admitted(_permit) = self.sync.admit() else {
             return PlatformAddressSyncSummary::default();
-        }
-        // Clears `is_syncing` on every exit path — including panic unwind —
-        // so a failed pass can never wedge `quiesce()`'s drain.
-        let _slot = SyncSlotGuard(&self.is_syncing);
-
-        // A `quiesce()` may have raised the gate between our CAS and
-        // here; if so, release the slot and bail without running a pass
-        // so the drain can complete and shutdown gets a true barrier
-        // (no further `on_platform_address_sync_completed` host callback
-        // after quiesce returns).
-        if self.quiescing.is_closed() {
-            return PlatformAddressSyncSummary::default();
-        }
+        };
 
         let snapshot: Vec<(WalletId, Arc<PlatformWallet>)> = {
             let wallets = self.wallets.load();
@@ -405,12 +328,9 @@ impl PlatformAddressSyncManager {
             summary.wallet_results.insert(wallet_id, outcome);
         }
 
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+        let now = SyncLoop::unix_now();
         summary.sync_unix_seconds = now;
-        self.last_sync_unix.store(now, Ordering::Release);
+        self.sync.record_completed(now);
 
         // Dispatch the completion event BEFORE clearing `is_syncing`.
         // `quiesce()` drains on the falling edge of `is_syncing`, so if
@@ -418,7 +338,7 @@ impl PlatformAddressSyncManager {
         // free the host event-handler context while this completion
         // event (FFI callback → host handler) is still pending — a
         // use-after-free. Holding the flag across the dispatch makes
-        // quiesce's barrier cover the host callback too (`_slot` drops —
+        // quiesce's barrier cover the host callback too (`_permit` drops —
         // and clears the flag — only after this dispatch returns).
         // Mirrors the ordering in `ShieldedSyncManager::sync_now`.
         self.event_manager
@@ -432,9 +352,7 @@ impl PlatformAddressSyncManager {
     /// Returns `false` if the slot was already taken.
     #[cfg(test)]
     pub(crate) fn wedge_sync_slot_for_test(&self) -> bool {
-        self.is_syncing
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
+        self.sync.wedge_slot_for_test()
     }
 
     /// Test-only: release a slot taken by
@@ -442,14 +360,14 @@ impl PlatformAddressSyncManager {
     /// wedged pass finally draining would.
     #[cfg(test)]
     pub(crate) fn release_sync_slot_for_test(&self) {
-        self.is_syncing.store(false, Ordering::Release);
+        self.sync.release_slot_for_test();
     }
 
     /// Test-only: whether new sync passes are currently barred — a drain in
     /// flight, a latched timeout, or the terminal seal `shutdown` applies.
     #[cfg(test)]
     pub(crate) fn sync_admission_closed(&self) -> bool {
-        self.quiescing.is_closed()
+        self.sync.admission_closed()
     }
 
     /// Sync a single wallet on demand.
@@ -471,35 +389,25 @@ impl PlatformAddressSyncManager {
         wallet_id: &WalletId,
     ) -> Result<AddressSyncResult<PlatformAddressTag, PlatformP2PKHAddress>, PlatformWalletError>
     {
-        // A drained timeout latch is cleared here as well as in `start()`:
-        // with no loop running, a one-shot pass after a timed-out drain
-        // would otherwise bail on the stale latch until something
-        // restarted the loop. Safe before the CAS — a false `is_syncing`
-        // means no pass is in flight — and the gate check after the CAS
-        // still honors a live hold or the seal.
-        self.quiescing.reopen_if_drained(&self.is_syncing);
-        if self
-            .is_syncing
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
-            return Err(PlatformWalletError::AddressSync(
-                "a platform-address sync pass is already in flight; retry once it completes"
-                    .to_string(),
-            ));
-        }
-        // Clears `is_syncing` on every exit path — including panic unwind.
-        let _slot = SyncSlotGuard(&self.is_syncing);
-
-        // A drain may have closed the gate between our CAS and here (see
-        // `sync_now`); bail so the drain can complete and its caller gets
-        // a true barrier.
-        if self.quiescing.is_closed() {
-            return Err(PlatformWalletError::AddressSync(
-                "platform-address sync is quiescing; retry once the reset / teardown completes"
-                    .to_string(),
-            ));
-        }
+        // Same admission as `sync_now`. The permit holds `is_syncing` until
+        // it drops at the end of this function, on panic unwind too.
+        let _permit = match self.sync.admit() {
+            Admission::Admitted(permit) => permit,
+            Admission::Busy => {
+                return Err(PlatformWalletError::AddressSync(
+                    "a platform-address sync pass is already in flight; retry once it completes"
+                        .to_string(),
+                ));
+            }
+            // A drain closed the gate; bail so it can complete and its
+            // caller gets a true barrier.
+            Admission::Closed => {
+                return Err(PlatformWalletError::AddressSync(
+                    "platform-address sync is quiescing; retry once the reset / teardown completes"
+                        .to_string(),
+                ));
+            }
+        };
 
         let wallet = {
             let wallets = self.wallets.load();
@@ -513,12 +421,22 @@ impl PlatformAddressSyncManager {
     }
 }
 
+impl SyncCoordinator for PlatformAddressSyncManager {
+    fn sync_loop(&self) -> &SyncLoop {
+        &self.sync
+    }
+
+    async fn background_pass(&self) {
+        self.sync_now().await;
+    }
+}
+
 impl std::fmt::Debug for PlatformAddressSyncManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PlatformAddressSyncManager")
             .field("is_running", &self.is_running())
             .field("is_syncing", &self.is_syncing())
-            .field("interval_secs", &self.interval_secs.load(Ordering::Acquire))
+            .field("interval_secs", &self.interval().as_secs())
             .field("last_sync_unix", &self.last_sync_unix_seconds())
             .finish()
     }
