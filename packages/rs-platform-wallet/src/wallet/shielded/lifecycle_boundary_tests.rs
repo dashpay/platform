@@ -1185,3 +1185,53 @@ async fn should_remove_a_wallet_while_a_host_wipe_is_pending() {
         .expect("the removal is not refused");
     assert!(manager.get_wallet(&wallet.wallet_id()).await.is_none());
 }
+
+/// A handle kept past its wallet's removal spends nothing: every shielded
+/// spend checks the wallet is still attached under the generation gate the
+/// removal takes exclusively, and is refused before it derives a key or
+/// selects a note.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_refuse_every_shielded_spend_on_a_handle_kept_past_its_removal() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = BoundaryHost::new();
+    let (manager, wallet, _coordinator) = configured(&host, &dir).await;
+    wallet.bind_shielded(&SEED, &[0]).await.unwrap();
+    manager
+        .remove_wallet(&wallet.wallet_id())
+        .await
+        .expect("the removal completes");
+
+    let prover = super::prover::CachedOrchardProver::new();
+    let removed = |result: Result<(), PlatformWalletError>| {
+        assert!(
+            matches!(result, Err(PlatformWalletError::WalletNotFound(_))),
+            "{result:?}"
+        );
+    };
+    removed(
+        wallet
+            .shielded_transfer_to(&SEED, 0, &[0; 43], 1, [0; 36], &prover)
+            .await,
+    );
+    removed(
+        wallet
+            .shielded_unshield_to(&SEED, 0, "tdash1invalid", 1, &prover)
+            .await,
+    );
+    removed(
+        wallet
+            .shielded_withdraw_to(&SEED, 0, "yinvalid", 1, 1, &prover)
+            .await,
+    );
+    removed(
+        wallet
+            .shielded_identity_top_up_from_pool(&SEED, 0, &[7; 32].into(), 1, &prover)
+            .await
+            .map(drop),
+    );
+    removed(
+        wallet
+            .abandon_shielded_identity_debit(0, [0; 32], true)
+            .await,
+    );
+}

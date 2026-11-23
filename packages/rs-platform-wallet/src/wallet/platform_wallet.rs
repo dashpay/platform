@@ -514,14 +514,33 @@ fn ensure_ordinary_shielded_accounts(accounts: &[u32]) -> Result<(), PlatformWal
     }
 }
 
-/// What [`PlatformWallet::lock_for_shielded_bind`] holds for a bind: the
-/// manager's coordinator, and the wallet locks taken before its admission.
-/// Fields drop in declaration order, the reverse of the lock order.
+/// What a durable shielded operation holds before its admission
+/// ([`PlatformWallet::lock_for_shielded_operation`]): the manager's
+/// coordinator, the generation's lifecycle gate and, for a shield-class
+/// operation, `shield_guard`. Fields drop in declaration order, the reverse
+/// of the lock order.
 #[cfg(feature = "shielded")]
-struct ShieldedBindLocks<'a> {
+struct ShieldedOperationLocks<'a> {
     coordinator: Arc<NetworkShieldedCoordinator>,
-    _shield_guard: tokio::sync::MutexGuard<'a, ()>,
+    _shield_guard: Option<tokio::sync::MutexGuard<'a, ()>>,
     _lifecycle: tokio::sync::RwLockReadGuard<'a, ()>,
+}
+
+#[cfg(feature = "shielded")]
+impl ShieldedOperationLocks<'_> {
+    /// Admit on the coordinator, then refuse a wallet removed from the
+    /// manager. The removal marks the wallet detached under the lifecycle
+    /// gate's exclusive side, so an operation admitted here runs to its end
+    /// before the removal does, and one that starts after it is refused
+    /// before it derives a key, selects a note or reaches the network.
+    async fn admit(
+        &self,
+        wallet: &PlatformWallet,
+    ) -> Result<ShieldedAdmission<'_>, PlatformWalletError> {
+        let admission = self.coordinator.admit().await?;
+        wallet.ensure_shielded_attached()?;
+        Ok(admission)
+    }
 }
 
 impl PlatformWallet {
@@ -1163,23 +1182,21 @@ impl PlatformWallet {
         accounts: &[u32],
     ) -> Result<(), PlatformWalletError> {
         let locks = self.lock_for_shielded_bind(accounts).await?;
-        let admission = locks.coordinator.admit().await?;
+        let admission = locks.admit(self).await?;
         let _config = self.shielded_config_lock.lock().await;
         self.bind_shielded_locked(seed, accounts, &locks.coordinator, &admission)
             .await
     }
 
-    /// The locks every bind entry point takes before its admission, in the
-    /// lock order: the generation's lifecycle gate, then `shield_guard`.
-    /// Registration is serialized with identity-shield proof construction,
-    /// and a bind queued behind a long shield holds no admission that would
-    /// stall a Clear. Checks the request and resolves the manager's
-    /// coordinator first, so a refused bind waits for nothing.
+    /// The locks every bind entry point takes before its admission: those of
+    /// a shield-class operation, so registration is serialized with
+    /// identity-shield proof construction. Checks the request and the
+    /// coordinator's network first, so a refused bind waits for nothing.
     #[cfg(feature = "shielded")]
     async fn lock_for_shielded_bind(
         &self,
         accounts: &[u32],
-    ) -> Result<ShieldedBindLocks<'_>, PlatformWalletError> {
+    ) -> Result<ShieldedOperationLocks<'_>, PlatformWalletError> {
         self.ensure_fvk_restart_capability()?;
         if accounts.is_empty() {
             return Err(PlatformWalletError::ShieldedKeyDerivation(
@@ -1187,11 +1204,30 @@ impl PlatformWallet {
             ));
         }
         ensure_ordinary_shielded_accounts(accounts)?;
+        self.shielded_coordinator()
+            .await?
+            .ensure_network(self.sdk.network)?;
+        self.lock_for_shielded_operation(true).await
+    }
+
+    /// The locks every durable shielded operation takes before its
+    /// admission ([`ShieldedOperationLocks::admit`]), in the lock order: the
+    /// generation's lifecycle gate, then `shield_guard` when `shield_class`.
+    /// An operation queued behind a long shield holds no admission that
+    /// would stall a Clear. Resolves the manager's coordinator first, so an
+    /// unconfigured manager refuses without waiting.
+    #[cfg(feature = "shielded")]
+    async fn lock_for_shielded_operation(
+        &self,
+        shield_class: bool,
+    ) -> Result<ShieldedOperationLocks<'_>, PlatformWalletError> {
         let coordinator = self.shielded_coordinator().await?;
-        coordinator.ensure_network(self.sdk.network)?;
         let lifecycle = self.core().generation_payment_guard().await;
-        let shield_guard = self.shield_guard.lock().await;
-        Ok(ShieldedBindLocks {
+        let shield_guard = match shield_class {
+            true => Some(self.shield_guard.lock().await),
+            false => None,
+        };
+        Ok(ShieldedOperationLocks {
             coordinator,
             _shield_guard: shield_guard,
             _lifecycle: lifecycle,
@@ -1346,9 +1382,8 @@ impl PlatformWallet {
         use super::shielded::{AccountViewingKeys, SubwalletId};
         let locks = self.lock_for_shielded_bind(accounts).await?;
         let coordinator = &locks.coordinator;
-        let admission = coordinator.admit().await?;
+        let admission = locks.admit(self).await?;
         let _config = self.shielded_config_lock.lock().await;
-        self.ensure_shielded_attached()?;
         let start = self
             .persister
             .load()
@@ -1642,12 +1677,9 @@ impl PlatformWallet {
         // completes with this key's row still to be written, and no bind or
         // tip preparation replaces the account set between this add's check
         // and its insert.
-        let _lifecycle = self.core().generation_payment_guard().await;
-        let _shield_guard = self.shield_guard.lock().await;
-        let coordinator = self.shielded_coordinator().await?;
-        let _admission = coordinator.admit().await?;
+        let locks = self.lock_for_shielded_operation(true).await?;
+        let _admission = locks.admit(self).await?;
         let _config = self.shielded_config_lock.lock().await;
-        self.ensure_shielded_attached()?;
         // Everything that calls into the host — the snapshot read below
         // and the viewing-key write further down — stays OUTSIDE the key
         // slot's lock. A host callback invoked while this write guard is
@@ -1753,7 +1785,7 @@ impl PlatformWallet {
             .load(std::sync::atomic::Ordering::Acquire)
         {
             return Err(PlatformWalletError::WalletNotFound(format!(
-                "{} was removed from the manager; shielded bind refused",
+                "{} was removed from the manager; shielded operation refused",
                 hex::encode(self.wallet_id)
             )));
         }
@@ -1998,8 +2030,9 @@ impl PlatformWallet {
         memo: [u8; 36],
         prover: P,
     ) -> Result<(), PlatformWalletError> {
-        let coordinator = self.shielded_coordinator().await?;
-        let _admission = coordinator.admit().await?;
+        let locks = self.lock_for_shielded_operation(false).await?;
+        let coordinator = &locks.coordinator;
+        let _admission = locks.admit(self).await?;
         let keyset = self.derive_spend_keyset(seed, account).await?;
         let recipient = Option::<grovedb_commitment_tree::PaymentAddress>::from(
             grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(recipient_raw_43),
@@ -2040,8 +2073,9 @@ impl PlatformWallet {
         amount: u64,
         prover: P,
     ) -> Result<(), PlatformWalletError> {
-        let coordinator = self.shielded_coordinator().await?;
-        let _admission = coordinator.admit().await?;
+        let locks = self.lock_for_shielded_operation(false).await?;
+        let coordinator = &locks.coordinator;
+        let _admission = locks.admit(self).await?;
         let keyset = self.derive_spend_keyset(seed, account).await?;
         // The decoder is network-agnostic, so guard the recipient's HRP class
         // against the wallet's network before decoding.
@@ -2088,9 +2122,9 @@ impl PlatformWallet {
         // waits completed out of execution order would let the older balance
         // overwrite the newer one. Held across build -> broadcast -> wait ->
         // reconcile, and taken before admission (the lock order).
-        let _shield_guard = self.shield_guard.lock().await;
-        let coordinator = self.shielded_coordinator().await?;
-        let _admission = coordinator.admit().await?;
+        let locks = self.lock_for_shielded_operation(true).await?;
+        let coordinator = &locks.coordinator;
+        let _admission = locks.admit(self).await?;
 
         let keyset = self.derive_spend_keyset(seed, account).await?;
         let (mut proven_balance, metadata) =
@@ -2314,10 +2348,11 @@ impl PlatformWallet {
     where
         C: ContactCryptoProvider + Sync,
     {
-        let coordinator = self.shielded_coordinator().await?;
-        let _admission = coordinator.admit().await?;
+        let locks = self.lock_for_shielded_operation(false).await?;
+        let coordinator = &locks.coordinator;
+        let _admission = locks.admit(self).await?;
         let entries = self
-            .unconfirmed_private_contact_requests(&coordinator)
+            .unconfirmed_private_contact_requests(coordinator)
             .await?;
         self.identity
             .dashpay()
@@ -2602,8 +2637,9 @@ impl PlatformWallet {
         core_fee_per_byte: u32,
         prover: P,
     ) -> Result<(), PlatformWalletError> {
-        let coordinator = self.shielded_coordinator().await?;
-        let _admission = coordinator.admit().await?;
+        let locks = self.lock_for_shielded_operation(false).await?;
+        let coordinator = &locks.coordinator;
+        let _admission = locks.admit(self).await?;
         let keyset = self.derive_spend_keyset(seed, account).await?;
         let network = self.sdk.network;
         let parsed = to_core_address
@@ -2670,8 +2706,9 @@ impl PlatformWallet {
         P: dpp::shielded::builder::OrchardProver,
         IS: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> + Send + Sync,
     {
-        let coordinator = self.shielded_coordinator().await?;
-        let _admission = coordinator.admit().await?;
+        let locks = self.lock_for_shielded_operation(false).await?;
+        let coordinator = &locks.coordinator;
+        let _admission = locks.admit(self).await?;
         let (identity_id, identity) = {
             // Scope the transient keyset so its spend authority is dropped before we take the
             // wallet-manager write lock below — it's only needed for the spend, not for the
@@ -2951,9 +2988,9 @@ impl PlatformWallet {
         // address nonce (the second would be rejected as a replay after
         // a ~30 s proof). Held across selection → build → broadcast, and
         // taken before admission (the lock order).
-        let _shield_guard = self.shield_guard.lock().await;
-        let coordinator = self.shielded_coordinator().await?;
-        let _admission = coordinator.admit().await?;
+        let locks = self.lock_for_shielded_operation(true).await?;
+        let coordinator = &locks.coordinator;
+        let _admission = locks.admit(self).await?;
 
         // Planning and amount selection are shared with the cached preflight.
         // The helper drops the wallet-manager read lock before the expensive
@@ -3012,9 +3049,9 @@ impl PlatformWallet {
         activity_id: [u8; 32],
         acknowledge_possible_execution: bool,
     ) -> Result<(), PlatformWalletError> {
-        let _shield_guard = self.shield_guard.lock().await;
-        let coordinator = self.shielded_coordinator().await?;
-        let admission = coordinator.admit().await?;
+        let locks = self.lock_for_shielded_operation(true).await?;
+        let coordinator = &locks.coordinator;
+        let admission = locks.admit(self).await?;
         coordinator
             .abandon_identity_debit_admitted(
                 &admission,
@@ -3135,9 +3172,9 @@ impl PlatformWallet {
         // Single-flight with the address-funded shields: the identity nonce is
         // fetched inside the operation, and two concurrent builds would race it.
         // Taken before admission (the lock order).
-        let _shield_guard = self.shield_guard.lock().await;
-        let coordinator = self.shielded_coordinator().await?;
-        let _admission = coordinator.admit().await?;
+        let locks = self.lock_for_shielded_operation(true).await?;
+        let coordinator = &locks.coordinator;
+        let _admission = locks.admit(self).await?;
 
         let identity = {
             let wm = self.wallet_manager.read().await;

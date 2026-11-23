@@ -274,9 +274,12 @@ impl PlatformWallet {
         // funding, or while a Clear's host wipe is pending, which refuses the
         // activity write a funding ends with. Not held: the broadcast and
         // ChainLock wait below must not hold a Clear back. Its epoch fences
-        // that write against a Clear completing in between.
+        // that write against a Clear completing in between. A removed
+        // wallet is refused before anything is built: the removal marks it
+        // under `shield_guard`, which this funding holds to its end.
         let coordinator = self.shielded_coordinator().await?;
         let funding_epoch = coordinator.admit().await?.epoch();
+        self.ensure_shielded_attached()?;
         let (requested_recipient, _) = *recipients.first().expect("preflight enforces len() == 1");
 
         // A resume pays the recipient its lock was built for. The row recorded
