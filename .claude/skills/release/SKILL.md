@@ -116,26 +116,36 @@ scripts/release/sign_dashmate_checksums.sh --tag=v<version> --key=<full fingerpr
 
 `master` tracks the newest stable release. Skip this step for a prerelease, and for a stable release that is not the newest stable version (step 1): a patch on an older line must not move `master` back.
 
-First run the tag check from step 3: `v<version>` must still name the merge commit; if not, stop and ask the user. Merge the release **tag**, not the moving dev-branch tip, and push the merge commit straight to `master`. `master` has only ever moved by merge commits, never by a reset (`git log --first-parent origin/master`), and it cannot be force-pushed (`allow_force_pushes: false`; `required_linear_history: false` allows the merge commit), so a wrong merge stays. Run it in a temporary worktree:
+Merge the release **tag**, not the moving dev-branch tip, and push the merge commit straight to `master`. `master` is never reset and cannot be force-pushed (`allow_force_pushes: false`; `required_linear_history: false` allows the merge commit), so a wrong merge stays.
 
-The preflight, all before asking for the go:
+First the checks, before anything is merged:
 
 ```sh
 git fetch --no-tags origin master "+refs/tags/v<version>:refs/tags/v<version>"
-# the newest stable check from step 1: must print v<version>
-gh api --paginate 'repos/dashpay/platform/releases?per_page=100' \
-  --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
-  | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1.2,1n -k2,2n -k3,3n | tail -n 1
 git rev-parse "v<version>^{commit}"   # must print the merge commit
+# the newest stable check from step 1: must print v<version>
+releases="$(gh api --paginate 'repos/dashpay/platform/releases?per_page=100' \
+  --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name')" \
+  && echo "${releases}" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1.2,1n -k2,2n -k3,3n | tail -n 1 \
+  || echo "could not list the releases"
 git merge-base --is-ancestor v<version> origin/master && echo "v<version> is already in master"
 gh api repos/dashpay/platform/rulesets/501248 --jq .current_user_can_bypass   # must print "always"
+```
+
+Skip the rest of this step if the release is not the newest stable version or the tag is already in `master`. Stop and ask the user if a command failed or the tag names another commit than the merge commit.
+
+Then merge in a temporary worktree:
+
+```sh
 worktree="$(mktemp -d)" && echo "${worktree}"
 git worktree add --detach "${worktree:?}" origin/master
 git -C "${worktree:?}" merge --no-ff -m "Merge tag 'v<version>' into master" v<version>
 git -C "${worktree:?}" diff --quiet v<version> HEAD && echo "the merge has exactly the tree of v<version>"
 ```
 
-Stop, and skip the rest of this step, if the newest stable check prints another version or the tag is already in `master`; stop and ask the user if the tag names another commit. Don't push when the merge went wrong; ask the user. If the merge conflicted, run `git -C <worktree> merge --abort`, then `git worktree remove <worktree>`. If it merged but the tree differs from the tag's, there is nothing to abort: run `git worktree remove --force <worktree>`. The merge commit is on no branch and goes with the worktree. Otherwise, after the user's go, run the newest stable check once more, since another stable release may have come out while the user decided; push only if it still prints `v<version>`. Then remove the worktree. Use the path printed above: a shell variable does not survive into a later command.
+If the merge conflicted or its tree differs from the tag's, don't push: remove the worktree and ask the user. After a conflict run `git -C <worktree> merge --abort` first; then, either way, `git worktree remove --force <worktree>`. A merge commit made there is on no branch and goes with the worktree.
+
+Otherwise ask the user for the go. After it, run the newest stable check once more, since another stable release may have come out meanwhile, and push only if it still prints `v<version>`. Remove the worktree either way. Use the path printed above: a shell variable does not survive into a later command.
 
 ```sh
 git -C <worktree> push origin HEAD:master
