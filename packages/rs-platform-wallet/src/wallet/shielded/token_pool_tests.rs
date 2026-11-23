@@ -604,7 +604,10 @@ fn sweep_all(
 ) -> Result<BTreeSet<(SubwalletId, [u8; 32])>, PlatformWalletError> {
     let orphaned = orphaned_reservations(conn, owners, scanned, scanned_from, live)?;
     release_reservations(conn, &orphaned)?;
-    Ok(orphaned)
+    Ok(orphaned
+        .into_iter()
+        .map(|orphan| (orphan.id, orphan.marker))
+        .collect())
 }
 
 async fn tables_with(notes: &[TokenPoolNote]) -> RwLock<TestTables> {
@@ -731,12 +734,67 @@ async fn should_release_only_orphaned_token_reservations_in_scanned_pools() {
     assert_eq!((row.balance, row.reserved_balance), (5, 16));
 
     drop(in_flight_reservation);
+    let found = tables
+        .read()
+        .await
+        .with_token_pool_conn(|conn| {
+            orphaned_reservations(
+                conn,
+                &BTreeSet::from([id]),
+                &BTreeSet::from([token().token_id]),
+                50,
+                &BTreeSet::new(),
+            )
+        })
+        .expect("read");
+    assert_eq!(found.len(), 2);
+    assert!(
+        found
+            .iter()
+            .all(|orphan| orphan.for_record == (orphan.marker == [0xEC; 32])),
+        "a hold moved to its saved record says so; one never moved does not"
+    );
     assert_eq!(
         sweep(BTreeSet::from([token().token_id]), BTreeSet::new())
             .await
             .len(),
         2,
         "with its spend gone and no record, every reservation comes back"
+    );
+}
+
+/// A reservation whose notes the scan has seen spent is still judged: at
+/// protocol 15 a competing spend of those notes means its own spend can
+/// never execute, so its record must still be settled.
+#[tokio::test]
+async fn should_report_a_reservation_whose_notes_were_spent() {
+    let id = SubwalletId::new(WALLET, 0);
+    let spent = TokenPoolNote {
+        reserved_by: Some([0xD4; 32]),
+        is_spent: true,
+        ..owned(id, 0, 5)
+    };
+    let tables = tables_with(&[spent]).await;
+    let found = tables
+        .read()
+        .await
+        .with_token_pool_conn(|conn| {
+            record_scan(conn, token().token_id, 50);
+            orphaned_reservations(
+                conn,
+                &BTreeSet::from([id]),
+                &BTreeSet::from([token().token_id]),
+                50,
+                &BTreeSet::new(),
+            )
+        })
+        .expect("read");
+    assert_eq!(
+        found
+            .into_iter()
+            .map(|orphan| orphan.marker)
+            .collect::<Vec<_>>(),
+        vec![[0xD4; 32]]
     );
 }
 

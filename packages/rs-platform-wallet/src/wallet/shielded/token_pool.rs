@@ -285,17 +285,24 @@ pub(super) fn create_tables(conn: &Connection) -> rusqlite::Result<()> {
         CREATE INDEX IF NOT EXISTS shielded_token_pool_notes_by_nullifier
             ON shielded_token_pool_notes (token_id, nullifier);",
     )?;
-    // The spend in flight holding a note ([`TokenNoteReservation`]); added to
-    // a table made before reservations were kept.
-    let has_reserved_by = conn
+    // The spend in flight holding a note ([`TokenNoteReservation`]), and
+    // whether that hold was moved to the spend's saved record (its activity
+    // id) before the spend was saved and sent; added to a table made before
+    // reservations were kept.
+    let columns = conn
         .prepare("PRAGMA table_info(shielded_token_pool_notes)")?
         .query_map([], |row| row.get::<_, String>(1))?
-        .collect::<rusqlite::Result<Vec<_>>>()?
-        .iter()
-        .any(|column| column == "reserved_by");
-    if !has_reserved_by {
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if !columns.iter().any(|column| column == "reserved_by") {
         conn.execute(
             "ALTER TABLE shielded_token_pool_notes ADD COLUMN reserved_by BLOB",
+            [],
+        )?;
+    }
+    if !columns.iter().any(|column| column == "reserved_for_record") {
+        conn.execute(
+            "ALTER TABLE shielded_token_pool_notes \
+             ADD COLUMN reserved_for_record INTEGER NOT NULL DEFAULT 0",
             [],
         )?;
     }
@@ -752,7 +759,8 @@ impl TokenNoteReservation {
     ) -> Result<(), PlatformWalletError> {
         store.with_token_pool_conn(|conn| {
             conn.execute(
-                "UPDATE shielded_token_pool_notes SET reserved_by = ?1 WHERE reserved_by = ?2",
+                "UPDATE shielded_token_pool_notes SET reserved_by = ?1, reserved_for_record = 1 \
+                 WHERE reserved_by = ?2",
                 params![activity_id.as_slice(), self.marker.as_slice()],
             )
             .map_err(storage("rekey reservation"))?;
@@ -770,7 +778,8 @@ impl TokenNoteReservation {
         let marker = self.marker;
         if let Err(e) = store.with_token_pool_conn(|conn| {
             conn.execute(
-                "UPDATE shielded_token_pool_notes SET reserved_by = NULL WHERE reserved_by = ?1",
+                "UPDATE shielded_token_pool_notes SET reserved_by = NULL, reserved_for_record = 0 \
+                 WHERE reserved_by = ?1",
                 params![marker.as_slice()],
             )
             .map_err(storage("release reservation"))
@@ -877,39 +886,53 @@ pub(crate) fn reserve_token_notes<S: TokenPoolConnection>(
     })
 }
 
-/// One reservation row as read: wallet id, account, token id, marker bytes
-/// and the height the token pool's last scan read up to.
-type HeldReservation = (Vec<u8>, u32, Vec<u8>, Vec<u8>, Option<i64>);
+/// One reservation row as read: wallet id, account, token id, marker bytes,
+/// whether the hold was moved to a saved record, and the height the token
+/// pool's last scan read up to.
+type HeldReservation = (Vec<u8>, u32, Vec<u8>, Vec<u8>, bool, Option<i64>);
+
+/// A reservation the sweep found orphaned ([`orphaned_reservations`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct OrphanedReservation {
+    /// The account whose notes it holds.
+    pub id: SubwalletId,
+    /// The marker it holds them under: the spend's activity id once moved to
+    /// its saved record.
+    pub marker: [u8; 32],
+    /// Whether the hold was moved to the spend's saved record, so the spend
+    /// may have been sent; otherwise it was never saved nor sent.
+    pub for_record: bool,
+}
 
 /// The reservations of `owners` in the pools of `scanned` (the pools this
 /// pass scanned to their end) that neither a spend in flight here nor a saved
-/// record in `live_records` holds: their spend is not being built or settled
-/// in this process and has no record left, so its fee bundle can no longer
-/// land or it never left the wallet. Only a pool whose scan reached
-/// `scanned_from` counts: the credit pool scan that drops a landed spend's
-/// record read up to that height, so a token pool scan answered from below it
-/// may not show that spend's token notes spent yet. Only the reservations of
-/// `owners`, the accounts whose saved records `live_records` holds, are
-/// judged: an account not registered now has records nobody read.
+/// record in `live_records` holds, whether or not the scan has seen their
+/// notes spent: their spend is not being built or settled in this process
+/// and has no record left, so its fee bundle can no longer land or it never
+/// left the wallet. Only a pool whose scan reached `scanned_from` counts: the
+/// credit pool scan that drops a landed spend's record read up to that
+/// height, so a token pool scan answered from below it may not show that
+/// spend's token notes spent yet. Only the reservations of `owners`, the
+/// accounts whose saved records `live_records` holds, are judged: an account
+/// not registered now has records nobody read.
 ///
-/// Reads only; [`release_reservations`] releases. Returns each account and
-/// marker found: the marker is the spend's activity id once its record was
-/// saved. The spends in flight are read once, up front: a reservation or a
-/// rekey takes the same connection, so none lands during the read.
+/// Reads only; [`release_reservations`] releases. The spends in flight are
+/// read once, up front: a reservation or a rekey takes the same connection,
+/// so none lands during the read.
 pub(crate) fn orphaned_reservations(
     conn: &Connection,
     owners: &BTreeSet<SubwalletId>,
     scanned: &BTreeSet<Identifier>,
     scanned_from: u64,
     live_records: &BTreeSet<[u8; 32]>,
-) -> Result<BTreeSet<(SubwalletId, [u8; 32])>, PlatformWalletError> {
+) -> Result<BTreeSet<OrphanedReservation>, PlatformWalletError> {
     let in_flight: BTreeSet<[u8; 32]> = in_flight().clone();
     let mut statement = conn
         .prepare(
             "SELECT DISTINCT n.wallet_id, n.account_index, n.token_id, n.reserved_by, \
-             s.scanned_height FROM shielded_token_pool_notes n \
+             n.reserved_for_record, s.scanned_height FROM shielded_token_pool_notes n \
              LEFT JOIN shielded_token_pool_scans s ON s.token_id = n.token_id \
-             WHERE n.reserved_by IS NOT NULL AND n.spent = 0",
+             WHERE n.reserved_by IS NOT NULL",
         )
         .map_err(storage("read reservations"))?;
     let held: Vec<HeldReservation> = statement
@@ -919,14 +942,15 @@ pub(crate) fn orphaned_reservations(
                 row.get(1)?,
                 row.get(2)?,
                 row.get(3)?,
-                row.get(4)?,
+                row.get::<_, i64>(4)? != 0,
+                row.get(5)?,
             ))
         })
         .map_err(storage("read reservations"))?
         .collect::<rusqlite::Result<_>>()
         .map_err(storage("read reservations"))?;
     let mut orphaned = BTreeSet::new();
-    for (wallet_id, account_index, token_id, marker, scanned_height) in held {
+    for (wallet_id, account_index, token_id, marker, for_record, scanned_height) in held {
         let id = SubwalletId::new(bytes32(wallet_id, "wallet id")?, account_index);
         let token_id = Identifier::from(bytes32(token_id, "token id")?);
         let marker = bytes32(marker, "reservation")?;
@@ -941,26 +965,33 @@ pub(crate) fn orphaned_reservations(
         {
             continue;
         }
-        orphaned.insert((id, marker));
+        orphaned.insert(OrphanedReservation {
+            id,
+            marker,
+            for_record,
+        });
     }
     Ok(orphaned)
 }
 
-/// Release the token notes `releases` hold (each an account and the marker it
-/// holds them under), in one transaction: a failure part way leaves every
-/// reservation as it was, for a later pass.
-pub(crate) fn release_reservations(
+/// Release the token notes `releases` hold, in one transaction: a failure
+/// part way leaves every reservation as it was, for a later pass.
+pub(crate) fn release_reservations<'a>(
     conn: &Connection,
-    releases: &BTreeSet<(SubwalletId, [u8; 32])>,
+    releases: impl IntoIterator<Item = &'a OrphanedReservation>,
 ) -> Result<(), PlatformWalletError> {
     let tx = conn
         .unchecked_transaction()
         .map_err(storage("begin release"))?;
-    for (id, marker) in releases {
+    for release in releases {
         tx.execute(
-            "UPDATE shielded_token_pool_notes SET reserved_by = NULL \
+            "UPDATE shielded_token_pool_notes SET reserved_by = NULL, reserved_for_record = 0 \
              WHERE wallet_id = ?1 AND account_index = ?2 AND reserved_by = ?3",
-            params![id.wallet_id.as_slice(), id.account_index, marker.as_slice()],
+            params![
+                release.id.wallet_id.as_slice(),
+                release.id.account_index,
+                release.marker.as_slice()
+            ],
         )
         .map_err(storage("release reservation"))?;
     }

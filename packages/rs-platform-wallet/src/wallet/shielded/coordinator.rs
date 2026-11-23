@@ -1115,17 +1115,22 @@ impl NetworkShieldedCoordinator {
     /// read, or the store retained a damaged record of a wallet it could not
     /// load, nothing of that wallet is judged.
     ///
-    /// A spend whose activity row is a pending token pool spend is settled
-    /// only when the network's verified protocol version binds a token bundle
-    /// to its fee bundle (from protocol version 15): then its token notes,
-    /// unspent after a complete scan, can never be spent by it, as its fee
-    /// bundle can no longer land, so its row is marked failed and only then
-    /// are its notes released. An interruption in between leaves a failed row
-    /// with its notes still held, which the next pass releases. Below that
-    /// version the same token bundle can still land with another fee bundle:
-    /// its notes stay held and its row pending, its outcome unknown. A
-    /// reservation with no pending row (a spend that never left the wallet,
-    /// or one already settled) is released.
+    /// Where the network's verified protocol version binds a token bundle to
+    /// its fee bundle (from protocol version 15), such a spend can never
+    /// execute: its fee bundle can no longer land, and its token bundle
+    /// cannot land without it. Its activity row, if still pending, is marked
+    /// failed, and only then are its notes released; an interruption in
+    /// between leaves a failed row with its notes still held, which the next
+    /// pass releases. This holds whether or not its token notes were spent
+    /// meanwhile by another spend: a spend of this one would have spent its
+    /// fee notes too, and the credit pool scan would have confirmed its row
+    /// from its change.
+    ///
+    /// Below that version its token bundle can still land with another fee
+    /// bundle, so a hold moved to a saved record stays, whatever the activity
+    /// row says (a row the host failed to store is no evidence), and nothing
+    /// is marked failed: its outcome is unknown. Only a hold never moved to a
+    /// record is released: its spend was never saved, so never sent.
     async fn release_orphaned_token_reservations(
         &self,
         subwallets: &[(SubwalletId, AccountViewingKeys)],
@@ -1173,11 +1178,11 @@ impl NetworkShieldedCoordinator {
                     return;
                 }
             };
-            let pending_rows: BTreeSet<(SubwalletId, [u8; 32])> = orphaned
+            let pending_rows: Vec<(SubwalletId, [u8; 32])> = orphaned
                 .iter()
-                .filter(|(id, marker)| {
+                .filter(|orphan| {
                     store
-                        .get_activity_by_entry_id(*id, marker)
+                        .get_activity_by_entry_id(orphan.id, &orphan.marker)
                         .ok()
                         .flatten()
                         .is_some_and(|entry| {
@@ -1185,7 +1190,7 @@ impl NetworkShieldedCoordinator {
                                 && entry.status == ShieldedActivityStatus::Pending
                         })
                 })
-                .copied()
+                .map(|orphan| (orphan.id, orphan.marker))
                 .collect();
             (orphaned, pending_rows)
         };
@@ -1207,22 +1212,19 @@ impl NetworkShieldedCoordinator {
                 .await;
             }
         }
-        let releases: BTreeSet<(SubwalletId, [u8; 32])> = if binds {
-            orphaned
-        } else {
-            orphaned.difference(&pending_rows).copied().collect()
-        };
+        let releases: Vec<&super::token_pool::OrphanedReservation> = orphaned
+            .iter()
+            .filter(|orphan| binds || !orphan.for_record)
+            .collect();
         if releases.is_empty() {
             return;
         }
-        match self
-            .store
-            .read()
-            .await
-            .with_token_pool_conn(|conn| super::token_pool::release_reservations(conn, &releases))
-        {
+        let released = releases.len();
+        match self.store.read().await.with_token_pool_conn(|conn| {
+            super::token_pool::release_reservations(conn, releases.iter().copied())
+        }) {
             Ok(()) => tracing::info!(
-                spends = releases.len(),
+                spends = released,
                 "released the token notes of token pool spends that cannot execute"
             ),
             Err(e) => {
@@ -4105,7 +4107,14 @@ mod tests {
                                 is_spent: false,
                                 reserved_by: Some(row.id),
                             },
+                        )?;
+                        // Moved to the saved record, as a sent spend's hold is.
+                        conn.execute(
+                            "UPDATE shielded_token_pool_notes SET reserved_for_record = 1",
+                            [],
                         )
+                        .expect("record the hold");
+                        Ok(())
                     })
                     .unwrap();
             }
