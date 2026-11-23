@@ -2210,12 +2210,10 @@ impl PlatformWallet {
         }
         // Held through settlement, so a Clear waits for the unshield.
         let _operation = coordinator.operation_guard().await;
-        // Bound on this coordinator, with no Clear since, as the transfer
-        // checks it.
-        {
-            let _config = self.shielded_config_lock.lock().await;
-            self.ensure_shielded_bound_on(coordinator)?;
-        }
+        // Bound on this coordinator, with no Clear since, and the config lock
+        // held through settlement, as the transfer does.
+        let _config = self.shielded_config_lock.lock().await;
+        self.ensure_shielded_bound_on(coordinator)?;
         let keyset = self.derive_spend_keyset(seed, account).await?;
         token_unshield(
             &self.sdk,
