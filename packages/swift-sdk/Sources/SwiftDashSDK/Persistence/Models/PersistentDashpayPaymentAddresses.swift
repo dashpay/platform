@@ -69,10 +69,19 @@ public final class PersistentDashpayPaymentAddresses {
 
     /// Delete every address row an identity owns (its own profile's and its
     /// cached contacts'). Rows are keyed by id, not by relationship, so any
-    /// path that deletes an identity outside the persistence handler must call this.
+    /// path that deletes an identity must call this.
+    ///
+    /// The rows are fetched and marked for deletion one by one, so the deletes
+    /// land with the caller's next `save()` and `rollback()` undoes them. A
+    /// batch `context.delete(model:where:)` would write to the store at once
+    /// and survive a rollback, leaving the identity without its addresses
+    /// when the save that should delete the identity fails.
     public static func removeOwned(in context: ModelContext, networkRaw: UInt32, ownerIdentityId: Data) throws {
-        try context.delete(model: PersistentDashpayPaymentAddresses.self, where: #Predicate {
+        let owned = try context.fetch(FetchDescriptor<PersistentDashpayPaymentAddresses>(predicate: #Predicate {
             $0.networkRaw == networkRaw && $0.ownerIdentityId == ownerIdentityId
-        })
+        }))
+        for row in owned {
+            context.delete(row)
+        }
     }
 }

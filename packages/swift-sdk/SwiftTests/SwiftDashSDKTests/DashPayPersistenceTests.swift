@@ -1274,6 +1274,87 @@ final class DashPayPaymentPersistenceTests: XCTestCase {
     }
 }
 
+// MARK: - Payment-address rows on identity deletion
+
+/// `PersistentDashpayPaymentAddresses` rows are keyed by owner identity id,
+/// not by a relationship, so deleting an identity reaches them only through
+/// `removeOwned`. These tests pin the deletion paths outside the persistence
+/// handler.
+final class DashPayPaymentAddressIdentityDeletionTests: XCTestCase {
+
+    private var container: ModelContainer!
+
+    private let ownerId = Data(repeating: 0x01, count: 32)
+    private let contactId = Data(repeating: 0x02, count: 32)
+    private let otherOwnerId = Data(repeating: 0x04, count: 32)
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        for id in [ownerId, otherOwnerId] {
+            let identity = PersistentIdentity(identityId: id, isLocal: false, network: .testnet)
+            context.insert(identity)
+            // The identity's own profile addresses and one cached contact's.
+            for profileId in [id, contactId] {
+                context.insert(PersistentDashpayPaymentAddresses(
+                    networkRaw: identity.networkRaw, ownerIdentityId: id, profileIdentityId: profileId,
+                    shieldedAddress: Data(repeating: 3, count: 43)))
+            }
+        }
+        try context.save()
+    }
+
+    override func tearDown() {
+        container = nil
+        super.tearDown()
+    }
+
+    /// The owner id of every committed address row, read through a fresh context.
+    private func addressOwners() throws -> [Data] {
+        try ModelContext(container)
+            .fetch(FetchDescriptor<PersistentDashpayPaymentAddresses>())
+            .map(\.ownerIdentityId)
+    }
+
+    private func identity(_ id: Data, in context: ModelContext) throws -> PersistentIdentity {
+        try XCTUnwrap(context.fetch(FetchDescriptor<PersistentIdentity>(
+            predicate: #Predicate { $0.identityId == id })).first)
+    }
+
+    func testDeleteChildrenFirstRemovesOwnedAddressRowsAndKeepsOtherOwners() throws {
+        let context = ModelContext(container)
+        try PersistentIdentity.deleteChildrenFirst(try identity(ownerId, in: context), in: context)
+
+        XCTAssertEqual(try addressOwners(), [otherOwnerId, otherOwnerId])
+        let identities = try ModelContext(container).fetch(FetchDescriptor<PersistentIdentity>())
+        XCTAssertEqual(identities.map(\.identityId), [otherOwnerId])
+    }
+
+    func testRemoveDeletesIdentityWithItsAddressRowsOnSave() throws {
+        let context = ModelContext(container)
+        XCTAssertTrue(try PersistentIdentity.remove(in: context, identityId: ownerId))
+        try context.save()
+
+        XCTAssertEqual(try addressOwners(), [otherOwnerId, otherOwnerId])
+        XCTAssertFalse(try PersistentIdentity.remove(in: ModelContext(container), identityId: ownerId))
+    }
+
+    /// A batch `delete(model:where:)` would write through at once; the
+    /// staged deletes must wait for the save and be undone by a rollback.
+    func testRemoveOwnedIsUndoneByRollback() throws {
+        let context = ModelContext(container)
+        let networkRaw = try identity(ownerId, in: context).networkRaw
+        try PersistentDashpayPaymentAddresses.removeOwned(
+            in: context, networkRaw: networkRaw, ownerIdentityId: ownerId)
+        XCTAssertEqual(try addressOwners().filter { $0 == ownerId }.count, 2)
+        context.rollback()
+        try context.save()
+
+        XCTAssertEqual(try addressOwners().filter { $0 == ownerId }.count, 2)
+    }
+}
+
 // MARK: - DashPayPayment FFI value-struct marshalling
 
 final class DashPayPaymentFFIMarshallingTests: XCTestCase {
