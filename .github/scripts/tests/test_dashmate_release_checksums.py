@@ -374,10 +374,10 @@ class ReleaseChecksumsTests(unittest.TestCase):
                                                    'api repos/dashpay/platform/releases/assets/4242'])
                 self.assertEqual((self.tmp / 'uploaded/SHA256SUMS').read_bytes(),
                                  (self.tmp / 'SHA256SUMS').read_bytes())
-                # the signing script reads the step's output, as the job's log shows it, as one record
-                # of this asset and sum
+                # the signing script reads the step's output, as the job's log shows it with both
+                # streams, as one record of this asset and sum
                 log = ''.join(f'2026-11-23T10:00:01.{n:07d}Z {line}\n'
-                              for n, line in enumerate(result.stdout.splitlines()))
+                              for n, line in enumerate((result.stdout + result.stderr).splitlines()))
                 script = (ROOT / 'scripts/release/sign_dashmate_checksums.sh').read_text()
                 expression = re.search(r"sed -nE '([^']+)'", script).group(1)
                 read = subprocess.run(['sed', '-nE', expression], capture_output=True, text=True, input=log)
