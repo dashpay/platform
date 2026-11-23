@@ -799,6 +799,23 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorBalanceHistoryInconsistentHeights` (native code 83). The
+         * Platform address balance history kept getting one page of
+         * Platform's address balance changes proved below a height it had
+         * already read, within Rust's per-page retry bound, so it returned
+         * no history rather than a partial one. Every attempt got a
+         * successfully fetched, proof-verified reply below that height;
+         * errors from the SDK itself (its own stale-node rejection,
+         * transport or proof failures) keep their own mapping. Nothing
+         * changed: load the history again.
+         * ← Swift `PlatformWalletError.balanceHistoryInconsistentHeights`.
+         */
+        class BalanceHistoryInconsistentHeights(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -1007,6 +1024,7 @@ sealed class DashSdkError(
             74 -> PlatformWallet.PrivateContactStoreNotRead(message, cause) // ErrorPrivateContactStoreNotRead
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
+            83 -> PlatformWallet.BalanceHistoryInconsistentHeights(message, cause) // ErrorBalanceHistoryInconsistentHeights
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

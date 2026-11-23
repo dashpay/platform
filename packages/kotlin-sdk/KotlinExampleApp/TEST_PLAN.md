@@ -153,6 +153,8 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | ADDR-07 | Platform address balance sync (BLAST) — start / progress; address balances populate to tip | Platform | Essential | ✅ | | Sync tab → **PLATFORM SYNC STATUS** (`SyncStatusScreen`, `container.platformBalanceSyncService`): State reaches `Synced`, Sync Height advances to tip, Active Addresses populate, "Sync Now" forces a pass. Precondition for the other address rows. |
 | ADDR-08 | Clear & resync platform address balances | Platform | Common | ✅ | | Sync tab → Platform section **Clear** (`SyncStatusScreen`, `testTag("sync.platformClear")`) → `container.platformBalanceSyncService.clearLocalState` (fail-closed): wipes local platform-address balance state; the next sync repopulates from scratch to tip. |
 | ADDR-09 | Top up Platform balance from Core | Cross | Essential | ✅ | | `WalletDetailScreen` → Platform Balance row **⋯ menu → Top Up from Core** (`FundFromAssetLockScreen`) → builds a **new** asset lock from the wallet's Core balance and credits a DIP-17 Platform address once the lock proves (IS→CL) → `dash_sdk_address_top_up_from_asset_lock`. Needs a Core (SPV) balance to build the lock. |
+| ADDR-10 | Platform address balance change history (mirrors Swift `ADDR-10`) | Platform | Common | ✅ | read-only | `WalletDetailScreen` → Platform Balance row **⋯ menu → Balance History**, or on a wallet whose balances are all zero (*Empty Wallet*) the card's **Balance History** button (`balanceCard.platform.history` for both) → `PlatformAddressBalanceHistoryScreen` (`balanceHistory.list`). Both sections come from one call, `ManagedPlatformWallet.platformAddressBalanceHistory(includeCompacted, minProvedHeight)` → JNI `AddressHistoryNative.balanceHistory` → `platform_address_wallet_balance_history`. On open it reads the recent zone only: **Recent** lists the wallet's changes newest block first, with block height, the bech32m address Rust encoded on the wallet's network, and **+X DASH** for an addition or **set to X DASH** for a set (`balanceHistory.recent.row.<n>`). **Load older history** (`balanceHistory.loadOlder`) reads both zones and replaces both sections from that one result: Recent again, and the compacted ranges below, newest first: **Blocks A to B**, address, **set to X DASH** or **+X DASH** (the range total) with each addition and its block (`balanceHistory.compacted.row.<n>`). Every block shows once (Rust leaves out of Recent any block a compacted range covers). The screen keeps the `provedHeight` Rust returned and passes it into Load older and every pull to refresh (the first load passes 0). A read that cannot get a page at that height shows an error instead of a partial history (`balanceHistory.compacted.error`, or `balanceHistory.recent.error` on a Recent-only refresh; `DashSdkError.PlatformWallet.BalanceHistoryInconsistentHeights`, code 83, retryable). A failed refresh after a successful load keeps the last good rows with the error below them. Amounts are exact at full credit precision: 400 credits shows **0.000000004 DASH**. Checks: a wallet that never had Platform credits shows `balanceHistory.recent.empty`, then `balanceHistory.compacted.empty` after Load older; after `ADDR-09` (top up) the funded address shows a **+** row at the top-up block within a minute; after `ADDR-02` (transfer) the source shows **set to** its remaining balance and an own-wallet destination **+** the amount; with the network off the section shows its error and Load older stays available. Nothing is persisted, so after a process restart the screen reads the history again. Decoding is pinned by `AddressHistoryDecodingTest` and the Rust goldens in `rs-unified-sdk-jni`; the symbol by `FfiSmokeTest.addressHistorySymbolsBindAndRejectInvalidInput`. *(Implemented; not yet run on an emulator.)* |
+| ADDR-11 | Address-sync queries in the catalog: recent / compacted changes, trunk / branch state (mirrors Swift `ADDR-11`) | Platform | Uncommon | ✅ | read-only | *Settings → Platform Queries → Addresses* (`AddressQueriesScreen`, section **Address Sync**): **Get Recent Balance Changes** (`addressQueries.getRecentAddressBalanceChanges`, start height) → `sdk.addressSync.recentBalanceChanges` → `dash_sdk_address_fetch_recent_balance_changes`; **Get Compacted Balance Changes** (`addressQueries.getRecentCompactedAddressBalanceChanges`, start block height) → `compactedBalanceChanges` → `dash_sdk_address_fetch_compacted_balance_changes`; **Get Trunk State** (`addressQueries.getAddressesTrunkState`) → `trunkState` → `dash_sdk_address_fetch_trunk_state`; **Get Branch State** (`addressQueries.getAddressesBranchState`, key / depth / expected hash / checkpoint height) → `branchState` → `dash_sdk_address_fetch_branch_state`. Results are raw and network-wide (`addressQueries.result`, errors `addressQueries.error`). Recent from 0 returns at most one server page; compacted at most one page of ranges. For branch state, fetch the trunk and tap **Query this branch** on a leaf boundary (`addressQueries.trunk.queryBranch.<n>`): it opens Get Branch State with the key, hash and checkpoint height filled in and the depth Rust recommends for the boundary's estimated count (`sdk.addressSync.branchQueryDepth` → `dash_sdk_address_branch_query_depth`); every field stays editable. The depth field takes any whole number: the allowed range comes from the platform version and is enforced by the server and the Rust proof verification, so a depth outside it (e.g. 5 or 10) shows their error. A mistyped hash or a stale checkpoint fails with a proof error. *(Implemented; not yet run on an emulator.)* |
 
 ### 4.4 DPNS (usernames) — `Domain=DPNS`
 
@@ -331,9 +333,9 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Tier | Count (approx.) | Automatable? |
 |---|---|---|
 | Essential | 21 | yes |
-| Common | 30 | yes |
+| Common | 31 | yes |
 | Thorough | 53 | yes |
-| Uncommon | 28 | yes |
+| Uncommon | 29 | yes |
 | Manual | 1 (`CORE-08`) | no — physical device |
 
 **By layer (automatable only):**
@@ -341,7 +343,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Layer | Count (approx.) |
 |---|---|
 | Core | 17 |
-| Platform | ~92 |
+| Platform | ~94 |
 | Cross | 10 |
 | Shielded | 16 |
 
@@ -353,7 +355,7 @@ Membership of each feature category across **all** sections (primary section mem
 
 - **Core / Wallet** — `CORE-01..23`
 - **Identity** — `ID-01..15`, `SH-11`
-- **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06..09`, `ID-06`, `ID-08`, `ID-11`
+- **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06..11`, `ID-06`, `ID-08`, `ID-11`
 - **DPNS** — `DPNS-01..13`
 - **Voting** — `VOTE-01..20`, `DPNS-05`, `DPNS-08`
 - **Contract** — `DC-01..04`
@@ -372,7 +374,7 @@ Tags are cross-cutting modalities. A test may appear under multiple tags.
 - **contested** — `DPNS-05`, `DPNS-08`, `DPNS-11`, `VOTE-01..06`
 - **withdrawal** — `ID-10`, `ADDR-04`, `SH-08`, `SH-16`
 - **regression** — `TOK-17`, `DP-10`
-- **read-only** — `DOC-17`, `SH-13`, `SYS-05`, `SYS-06`, `VOTE-02..06`, `VOTE-08`, `VOTE-10`, `VOTE-13`, `VOTE-14`, `VOTE-16`, `VOTE-20`, `TOK-18`, `TOK-19`
+- **read-only** — `ADDR-10`, `ADDR-11`, `DOC-17`, `SH-13`, `SYS-05`, `SYS-06`, `VOTE-02..06`, `VOTE-08`, `VOTE-10`, `VOTE-13`, `VOTE-14`, `VOTE-16`, `VOTE-20`, `TOK-18`, `TOK-19`
 - **masternode** — `VOTE-01`, `VOTE-12`, `VOTE-13`, `VOTE-19`, `VOTE-20`
 - **proposal** (decision proposals, yes/no and multiple choice, protocol version 15): `VOTE-08..20`
 - **restart** (the flow is killed mid-way and must recover after relaunch): `SH-19`, `SH-20`

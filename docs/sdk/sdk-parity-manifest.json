@@ -2900,10 +2900,10 @@
           "reason": "PlatformAddressBalanceHistoryView renders what Rust returns from one call (paging, the filter to every platform payment account's addresses, the reconciliation of the recent and compacted zones, the newest-first order and the bech32m addresses are in platform-wallet). The TEST_PLAN gate ADDR-10 is written but not yet run on a simulator or device."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
+          "sdk": "supported",
+          "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "No JNI binding in rs-unified-sdk-jni and no Kotlin wrapper or KotlinExampleApp screen for platform_address_wallet_balance_history yet."
+          "reason": "PlatformAddressBalanceHistoryScreen renders what Rust returns from one platform_address_wallet_balance_history call, which JNI copies into a BLOB that AddressHistoryDecodingTest pins against the Rust encoder; the screen keeps Rust's proved height and passes it into every later load, as Swift's does. The TEST_PLAN gate ADDR-10 is written but not yet run on an emulator."
         }
       },
       "verification": [
@@ -2991,6 +2991,45 @@
           "host": "swift",
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "ADDR-10",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/address_history.rs",
+          "id": "should_encode_both_history_sections_in_the_given_order",
+          "command": "cargo test -p rs-unified-sdk-jni --lib address_history",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/AddressHistoryDecodingTest.kt",
+          "id": "should decode both history sections in Rust's order",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*AddressHistoryDecodingTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/errors/DashSdkErrorTest.kt",
+          "id": "shouldReportInconsistentBalanceHistoryHeightsByTheirOwnRetryableCode",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*DashSdkErrorTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "addressHistorySymbolsBindAndRejectInvalidInput",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "ADDR-10",
           "covers_restart": false
         }
