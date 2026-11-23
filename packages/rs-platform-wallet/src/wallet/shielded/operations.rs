@@ -4026,10 +4026,16 @@ async fn reserve_notes_matching<S: ShieldedStore>(
     platform_version: &PlatformVersion,
 ) -> Result<(Vec<ShieldedNote>, u64, u64, NoteReservation<S>), PlatformWalletError> {
     let mut guard = store.write().await;
-    // A verified response can record a network version this SDK has no tables for while the
-    // spend waits for the store: refuse it before selecting at the old tables or marking notes.
+    // A verified response can record another network version while the spend waits for the
+    // store: refuse it before selecting at the old tables or marking notes. A plan-checked
+    // spend refuses any move, as a changed plan with no fresh selection, so it never quotes a
+    // selection made at a version the network no longer applies; a spend without a plan only
+    // a version this SDK has no tables for.
     if let Some(sdk) = network_version_gate {
-        ensure_verified_network_version_supported(sdk)?;
+        match expected_plan {
+            Some((_, expected)) => ensure_version_unchanged(sdk, platform_version, Some(expected))?,
+            None => ensure_verified_network_version_supported(sdk)?,
+        }
     }
     let unspent = guard
         .get_unspent_notes(id)
@@ -9722,9 +9728,11 @@ mod spend_plan_tests {
         assert_eq!(unspent(&store).await, 4, "nothing reserved");
     }
 
-    /// The spend selects and checks its plan at the protocol version it captured once, not at
-    /// whatever version the SDK reports by then: a plan made at a version whose fee differs
-    /// from the SDK's current one holds when the spend runs at that version.
+    /// The spend selects and checks its plan at the protocol version it captured once: a plan
+    /// made at a version whose fee differs from the newest one holds while the network still
+    /// applies that version. Once the SDK reports another version, the plan-checked
+    /// reservation is a changed plan with no fresh selection, refused under the store lock
+    /// before any note is reserved, never a selection quoted at the captured version.
     #[tokio::test]
     async fn should_check_the_plan_at_the_spends_captured_protocol_version() {
         let captured = PlatformVersion::get(13).expect("v13");
@@ -9744,8 +9752,36 @@ mod spend_plan_tests {
         )
         .expect("plans");
 
-        let (_, _, fee, reservation) = reserve_unspent_notes(
+        let moved = reserve_unspent_notes(
             &sdk(),
+            &store,
+            ID,
+            amount,
+            ShieldedSpendKind::Transfer,
+            Some(&plan.digest),
+            captured,
+        )
+        .await;
+        assert!(
+            matches!(
+                moved,
+                Err(PlatformWalletError::ShieldedPlanChanged {
+                    fresh_selection: None
+                })
+            ),
+            "the SDK moved past the captured version, got {:?}",
+            moved.map(|(selected, ..)| selected.len())
+        );
+        assert_eq!(unspent(&store).await, 6, "nothing reserved");
+
+        let pinned = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_version(captured)
+                .build()
+                .expect("a mock SDK"),
+        );
+        let (_, _, fee, reservation) = reserve_unspent_notes(
+            &pinned,
             &store,
             ID,
             amount,
@@ -9804,6 +9840,63 @@ mod spend_plan_tests {
             refused.map(|(selected, ..)| selected.len())
         );
         assert_eq!(unspent(&store).await, 3, "nothing reserved");
+    }
+
+    /// A pinned SDK that verified a newer network version while the plan's notes also moved
+    /// quotes no replacement selection: the selection it would quote is priced at the pinned
+    /// version, which a new plan on the same SDK refuses. The spend is a changed plan with no
+    /// fresh selection, and nothing is reserved.
+    #[tokio::test]
+    async fn should_quote_no_fresh_selection_when_notes_and_network_version_both_moved() {
+        let kind = ShieldedSpendKind::Transfer;
+        let case = VersionMovesDuringAnchorFetch::serving_pinned(kind, start_version(kind)).await;
+        case.sdk
+            .mock_verified_protocol_version(PlatformVersion::latest().protocol_version)
+            .expect("a mock SDK");
+        assert_ne!(
+            start_version(kind),
+            PlatformVersion::latest().protocol_version
+        );
+        {
+            let mut guard = case.store.write().await;
+            guard
+                .mark_spent(ID, &case.plan.nullifiers[0])
+                .expect("spent");
+            guard.save_note(ID, &note(9, 10 * NOTE)).expect("a note");
+        }
+
+        let refused = reserve_unspent_notes(
+            &case.sdk,
+            &case.store,
+            ID,
+            NOTE,
+            kind,
+            Some(&case.plan.digest),
+            PlatformVersion::get(start_version(kind)).expect("the pinned version"),
+        )
+        .await;
+
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::ShieldedPlanChanged {
+                    fresh_selection: None
+                })
+            ),
+            "got {:?}",
+            refused.map(|(selected, ..)| selected.len())
+        );
+        assert_eq!(
+            case.store
+                .read()
+                .await
+                .get_unspent_notes(ID)
+                .expect("notes")
+                .len(),
+            1,
+            "nothing reserved"
+        );
+        let _ = std::fs::remove_file(&case.path);
     }
 
     /// A built transition whose fee is not the planned one is refused before broadcast as a
