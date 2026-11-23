@@ -462,11 +462,15 @@ internal fun nextPickedState(
 
 /**
  * The check failure to show under the picker, only while the key is still held for a check
- * ([StoredVoterDecision.AWAITING_CHECK]): once a record saved since (another check, a load) lets
- * the key vote or refuses it, the failure no longer describes it.
+ * ([StoredVoterDecision.AWAITING_CHECK]), or while a row with no recorded pro_tx_hash stays
+ * [StoredVoterDecision.UNRESOLVED] because the check that resolved it could not be saved: once
+ * a record saved since (another check, a load) lets the key vote or refuses it, the failure no
+ * longer describes it.
  */
 internal fun shownCheckFailure(failure: String?, decision: StoredVoterDecision): String? =
-    failure?.takeIf { decision == StoredVoterDecision.AWAITING_CHECK }
+    failure?.takeIf {
+        decision == StoredVoterDecision.AWAITING_CHECK || decision == StoredVoterDecision.UNRESOLVED
+    }
 
 /**
  * Whether the stored voting key is known not to vote: refused by Rust, or unreadable. Used for
@@ -1017,7 +1021,12 @@ fun MasternodeVoterSection(
             if (checkingIdentityHex == hex) checkingIdentityHex = null
         }
         when (result) {
-            is PickedVotingKeyCheck.Failed -> checkFailure = hex to result.message
+            is PickedVotingKeyCheck.Failed -> {
+                checkFailure = hex to result.message
+                // The latest pick resolved the row (or never needed to): an earlier "not
+                // resolved" no longer describes it.
+                if (notResolved?.first == hex) notResolved = null
+            }
             is PickedVotingKeyCheck.Recorded, is PickedVotingKeyCheck.NotNeeded ->
                 if (checkFailure?.first == hex) checkFailure = null
             is PickedVotingKeyCheck.NotResolved -> notResolved = hex to result.message

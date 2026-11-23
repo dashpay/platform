@@ -613,6 +613,31 @@ class MasternodeVoterKeyCheckTest {
         assertNull(shownCheckFailure("timeout", released))
     }
 
+    /**
+     * A legacy row resolved by its first pick, whose write then failed (so the pro_tx_hash
+     * binding rolled back), stays unresolved; the save error and the retry instruction show
+     * instead of an undetermined verdict's "you can still vote".
+     */
+    @Test
+    fun shouldShowTheSaveErrorWhenAResolvedLegacyRowCouldNotBeSaved() {
+        val undetermined = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Undetermined("Down."), addressA)
+        val unsaved = nextPickedState(
+            null, identifierA, PickedVotingKeyCheck.Failed("Not saved.", undetermined), revisionAtStart = 0,
+        )!!
+        val legacy = stateAt(0).copy(proTxHashHex = null)
+        rules.use = awaitingCheck
+
+        val decision = storedVoterDecision(legacy, unsaved, rules)
+        assertEquals(StoredVoterDecision.UNRESOLVED, decision)
+        val failure = shownCheckFailure("Not saved.", decision)
+        assertEquals(
+            "Not saved. It cannot vote until a check of it finishes: pick this identity again." to true,
+            votingKeyCheckStatusText(
+                legacy.copy(recorded = effectiveRecord(legacy, unsaved)), awaitingCheck, false, failure,
+            ),
+        )
+    }
+
     /** An unsaved refusal still refuses (Rust: may not vote) and is not checked again. */
     @Test
     fun shouldKeepAnUnsavedRefusalWithoutRetrying() = runBlocking {
