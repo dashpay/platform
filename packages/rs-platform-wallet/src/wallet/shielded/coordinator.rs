@@ -4319,6 +4319,173 @@ mod tests {
         }
     }
 
+    /// The height a credit scan marked a fee note spent at is kept before the
+    /// mark drops the spend's saved record, and survives a reopen: a later
+    /// pass whose scans are answered one block below cannot settle the
+    /// spend from token evidence that does not reach that height.
+    #[tokio::test]
+    async fn should_keep_the_height_a_fee_note_was_seen_spent_at_before_dropping_its_record() {
+        use super::super::store::PendingRedrive;
+        use super::super::token_pool::{
+            insert_note_for_test, insert_watch, raise_sweep_height, TokenPoolNote,
+        };
+
+        let dir = temp_dir("token_spend_floor_before_record_drop");
+        let sdk = dash_sdk::Sdk::new_mock();
+        sdk.mock_verified_protocol_version(15).expect("a mock SDK");
+        let coordinator = coordinator_with_one_wallet_on(&dir, sdk).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let subwallets: Vec<(SubwalletId, AccountViewingKeys)> = coordinator
+            .accounts
+            .read()
+            .await
+            .iter()
+            .map(|(id, views)| (*id, views.clone()))
+            .collect();
+        let token = ShieldedTokenPoolWatch {
+            token_id: Identifier::from([0x77; 32]),
+            data_contract_id: Identifier::from([0x66; 32]),
+            token_contract_position: 0,
+        };
+        let fee_nf = [0xF1u8; 32];
+        let row = ShieldedActivityEntry {
+            kind: ShieldedActivityKind::TokenShieldedTransfer,
+            ..pending_purchase_row(fee_nf, [0xF3; 32])
+        };
+        let scan_token_pool = |height: i64, spent: bool| {
+            move |conn: &mut rusqlite::Connection| {
+                conn.execute(
+                    "INSERT INTO shielded_token_pool_scans \
+                     (token_id, pool_note_count, scanned_height, scanned_protocol_version) \
+                     VALUES (?1, 1, ?2, 15) ON CONFLICT(token_id) DO UPDATE SET \
+                     scanned_height = excluded.scanned_height",
+                    rusqlite::params![token.token_id.as_slice(), height],
+                )
+                .expect("scan row");
+                conn.execute(
+                    "UPDATE shielded_token_pool_notes SET spent = ?1",
+                    rusqlite::params![spent],
+                )
+                .expect("spent");
+                Ok(())
+            }
+        };
+        {
+            let mut store = coordinator.store().write().await;
+            store.save_note(id, &test_note(fee_nf, 0, false)).unwrap();
+            store.save_activity(id, &row).unwrap();
+            store
+                .with_token_pool_conn(|conn| {
+                    insert_watch(conn, id.wallet_id, &token)?;
+                    insert_note_for_test(
+                        conn,
+                        &TokenPoolNote {
+                            id,
+                            token_id: token.token_id,
+                            position: 0,
+                            cmx: [1; 32],
+                            nullifier: [2; 32],
+                            value: 5,
+                            note_data: vec![0; 115],
+                            block_height: 1,
+                            is_spent: false,
+                            reserved_by: Some(row.id),
+                        },
+                    )?;
+                    conn.execute("UPDATE shielded_token_pool_notes SET signed_bound = 1", [])
+                        .expect("signing era");
+                    scan_token_pool(10, false)(conn)
+                })
+                .unwrap();
+            store.mark_pending(id, &fee_nf).unwrap();
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: row.id,
+                        anchor: [0xF2; 32],
+                        nullifiers: vec![fee_nf],
+                        st_bytes: vec![0],
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                        anchor_height: Some(10),
+                    },
+                )
+                .unwrap();
+            // The credit scan at 11 sees the transfer's fee note spent: the
+            // height is kept first, then the mark drops the record.
+            store.note_spend_scan_height(11).unwrap();
+            store.mark_spent(id, &fee_nf).unwrap();
+            assert!(store.pending_redrives(id).unwrap().is_empty());
+        }
+        let holds = || async {
+            coordinator
+                .store()
+                .read()
+                .await
+                .with_token_pool_conn(|conn| {
+                    Ok(conn
+                        .query_row(
+                            "SELECT COUNT(*) FROM shielded_token_pool_notes \
+                             WHERE reserved_by IS NOT NULL",
+                            [],
+                            |row| row.get::<_, i64>(0),
+                        )
+                        .expect("count holds"))
+                })
+                .unwrap()
+        };
+
+        // A pass answered one block below: the token scan has not reached the
+        // height the fee note was seen spent at, so nothing is concluded.
+        coordinator
+            .release_orphaned_token_reservations(
+                &subwallets,
+                &BTreeSet::from([token.token_id]),
+                Some(10),
+            )
+            .await;
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Pending
+        );
+        assert_eq!(holds().await, 1);
+
+        // The kept height is on disk: a store reopened on the same file reads it.
+        let reopened =
+            FileBackedShieldedStore::open_path(dir.join("tree.sqlite"), 100).expect("reopen");
+        assert_eq!(
+            reopened
+                .with_token_pool_conn(|conn| raise_sweep_height(conn, 0))
+                .unwrap(),
+            11
+        );
+        drop(reopened);
+
+        // The token scan catches up and sees the transfer's note spent: it
+        // landed, so its hold goes and its row waits for its confirmation.
+        coordinator
+            .store()
+            .read()
+            .await
+            .with_token_pool_conn(scan_token_pool(11, true))
+            .unwrap();
+        coordinator
+            .release_orphaned_token_reservations(
+                &subwallets,
+                &BTreeSet::from([token.token_id]),
+                Some(10),
+            )
+            .await;
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Pending
+        );
+        assert_eq!(holds().await, 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// A transfer signed at a binding version whose held token note another
     /// spend used keeps the pool watched while its record lives, and once its
     /// fee anchor is pruned the sweep settles it failed and releases the

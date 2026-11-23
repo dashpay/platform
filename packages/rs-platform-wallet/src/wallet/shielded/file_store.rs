@@ -1075,6 +1075,16 @@ impl ShieldedStore for FileBackedShieldedStore {
             .unwrap_or_default())
     }
 
+    fn note_spend_scan_height(&mut self, height: u64) -> Result<(), Self::Error> {
+        let conn = self
+            .pending_conn
+            .lock()
+            .map_err(|e| FileShieldedStoreError::Storage(format!("pending_conn mutex: {e}")))?;
+        super::token_pool::raise_sweep_height(&conn, height)
+            .map(|_| ())
+            .map_err(|e| FileShieldedStoreError::Storage(e.to_string()))
+    }
+
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
         let Some(sw) = self.subwallets.get_mut(&id) else {
             return Ok(false);
