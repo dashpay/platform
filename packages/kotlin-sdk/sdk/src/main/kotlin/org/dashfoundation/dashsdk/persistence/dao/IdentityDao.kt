@@ -83,15 +83,19 @@ interface IdentityDao {
      * replaces the stored one only on a row no wallet owns: a wallet's own identity has its
      * balance kept current by wallet sync, which may have written a newer one than the fetch
      * saw. The alias and the type change only when one is given (a null [identityType] keeps
-     * the stored type, so a type the user did not pick never overwrites a newer one); every
-     * other column (wallet link, key identifiers, DPNS names) is left as the row has it.
-     * Returns the number of rows changed (0 when the row is gone or on another network).
+     * the stored type, so a type the user did not pick never overwrites a newer one), and
+     * so does the wire-order [masternodeProTxHash] of a masternode or evonode loaded for
+     * voting (null keeps the recorded one), in the same statement, so a load never leaves a
+     * row without it. Every other column (wallet link, key identifiers, DPNS names) is left as
+     * the row has it. Returns the number of rows changed (0 when the row is gone or on another
+     * network).
      */
     @Query(
         "UPDATE identities SET " +
             "balance = CASE WHEN walletId IS NULL THEN :balance ELSE balance END, " +
             "alias = COALESCE(:alias, alias), " +
             "isLocal = :isLocal, identityType = COALESCE(:identityType, identityType), " +
+            "masternodeProTxHash = COALESCE(:masternodeProTxHash, masternodeProTxHash), " +
             "lastUpdated = :nowMillis " +
             "WHERE identityId = :identityId AND networkRaw = :networkRaw"
     )
@@ -102,6 +106,7 @@ interface IdentityDao {
         alias: String?,
         isLocal: Boolean,
         identityType: String?,
+        masternodeProTxHash: ByteArray?,
         nowMillis: Long,
     ): Int
 
@@ -151,17 +156,6 @@ interface IdentityDao {
         message: String?,
         address: ByteArray,
     ): Int
-
-    /**
-     * Record the wire-order pro_tx_hash of the masternode the row votes for, only while the
-     * row is on [networkRaw]. Returns the number of rows changed. Load Identity writes it for
-     * a masternode or evonode loaded for voting (Swift `PersistentIdentity.masternodeProTxHash`).
-     */
-    @Query(
-        "UPDATE identities SET masternodeProTxHash = :proTxHash " +
-            "WHERE identityId = :identityId AND networkRaw = :networkRaw"
-    )
-    suspend fun setMasternodeProTxHash(identityId: ByteArray, networkRaw: Int, proTxHash: ByteArray): Int
 
     /** Mirror of `PersistentIdentity.updateBalance(in:identityId:balance:)`. */
     @Query(

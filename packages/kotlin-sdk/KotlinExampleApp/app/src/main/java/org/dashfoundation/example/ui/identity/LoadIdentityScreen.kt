@@ -323,7 +323,11 @@ fun LoadIdentityScreen(navController: NavHostController) {
                         var masternodeProTxHash: ByteArray? = null
                         var loadedVotingKeyCheck: MasternodeVotingKeyCheck? = null
                         if (type.isMasternode) {
-                            val proTxHash = wireOrderProTxHash(idBytes)
+                            // The typed id may be a stored shared masternode's voter identity
+                            // (shown on its detail screen): its recorded pro_tx_hash is used.
+                            val proTxHash = loadTargetProTxHash(
+                                container.database.identityDao(), idBytes, activeNetwork.ffiValue,
+                            )
                             val address = votingKey?.let {
                                 MasternodeVotingKeyAddress.of(keys.votingAddress(it))
                             }
@@ -774,6 +778,18 @@ internal class StoredVotingKeyEntries(
     )
 }
 
+/**
+ * The wire-order pro_tx_hash a masternode load asks Rust about for the typed [typedId]: the
+ * pro_tx_hash recorded on the row stored under that id on [networkRaw] (a shared masternode is
+ * stored under its voter identity, whose id is not the pro_tx_hash, and the detail screen shows
+ * that id), else the typed id itself, read as the pro_tx_hash Core displays.
+ */
+internal suspend fun loadTargetProTxHash(dao: IdentityDao, typedId: ByteArray, networkRaw: Int): ByteArray =
+    dao.getByIdentityId(typedId)
+        ?.takeIf { it.networkRaw == networkRaw }
+        ?.masternodeProTxHash
+        ?: wireOrderProTxHash(typedId)
+
 /** What [checkEnteredVotingKey] decided for an entered voting key. */
 internal sealed interface EnteredVotingKeyCheck {
     /** Rust says to store the key: go on with the load. */
@@ -937,14 +953,10 @@ internal suspend fun saveLoadedIdentity(
     masternodeProTxHash: ByteArray? = null,
     nowMillis: Long = System.currentTimeMillis(),
 ): LoadSaveResult {
-    saveLoadedFields(dao, identityId, networkRaw, balance, alias, pickedType, typePicked, nowMillis)
+    saveLoadedFields(
+        dao, identityId, networkRaw, balance, alias, pickedType, typePicked, masternodeProTxHash, nowMillis,
+    )
         ?.let { return it }
-    // A masternode or evonode row records the pro_tx_hash its votes name, apart from its id.
-    if (masternodeProTxHash != null &&
-        dao.setMasternodeProTxHash(identityId, networkRaw, masternodeProTxHash) == 0
-    ) {
-        return LoadSaveResult.Failed(IDENTITY_CHANGED_MESSAGE)
-    }
     if (votingKey == null) {
         return savedAfterCleanup(entries, identityId, STALE_VOTING_KEY_NOT_REMOVED_MESSAGE)
     }
@@ -988,6 +1000,7 @@ private suspend fun saveLoadedFields(
     alias: String?,
     pickedType: LoadIdentityType,
     typePicked: Boolean,
+    masternodeProTxHash: ByteArray?,
     nowMillis: Long,
 ): LoadSaveResult.Failed? {
     val existing = dao.getByIdentityId(identityId)
@@ -1004,6 +1017,8 @@ private suspend fun saveLoadedFields(
             alias = alias,
             identityType = identityTypeToSave(null, pickedType, typePicked),
             networkRaw = networkRaw,
+            // Written with the row, so an interrupted load never leaves it without one.
+            masternodeProTxHash = masternodeProTxHash,
         ),
     ) != -1L
     if (inserted) return null
@@ -1022,6 +1037,8 @@ private suspend fun saveLoadedFields(
         // Null keeps the stored type: an unpicked type never overwrites a newer one written
         // since [current] was read.
         identityType = if (typePicked) pickedType.rawValue else null,
+        // Null keeps the recorded pro_tx_hash.
+        masternodeProTxHash = masternodeProTxHash,
         nowMillis = nowMillis,
     )
     return if (changed == 0) LoadSaveResult.Failed(IDENTITY_CHANGED_MESSAGE) else null

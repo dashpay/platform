@@ -497,10 +497,10 @@ class LoadIdentityVotingKeyTest {
     fun shouldKeepTheStoredTypeUnlessOneIsGiven() = runBlocking<Unit> {
         dao.upsert(row(type = "Evonode"))
 
-        assertEquals(1, dao.updateLoadedFields(identityId, testnet, 1L, null, true, identityType = null, nowMillis = 0))
+        assertEquals(1, dao.updateLoadedFields(identityId, testnet, 1L, null, true, identityType = null, masternodeProTxHash = null, nowMillis = 0))
         assertEquals("Evonode", dao.getByIdentityId(identityId)!!.identityType)
 
-        assertEquals(1, dao.updateLoadedFields(identityId, testnet, 1L, null, true, identityType = "Masternode", nowMillis = 0))
+        assertEquals(1, dao.updateLoadedFields(identityId, testnet, 1L, null, true, identityType = "Masternode", masternodeProTxHash = null, nowMillis = 0))
         assertEquals("Masternode", dao.getByIdentityId(identityId)!!.identityType)
 
         // Through the load: an unpicked type leaves the stored one.
@@ -518,6 +518,7 @@ class LoadIdentityVotingKeyTest {
         typePicked: Boolean,
         votingKey: ByteArray? = null,
         votingKeyCheck: MasternodeVotingKeyCheck? = null,
+        masternodeProTxHash: ByteArray? = null,
     ): LoadSaveResult = saveLoadedIdentity(
         dao = dao,
         entries = entries,
@@ -529,6 +530,7 @@ class LoadIdentityVotingKeyTest {
         typePicked = typePicked,
         votingKey = votingKey,
         votingKeyCheck = votingKeyCheck,
+        masternodeProTxHash = masternodeProTxHash,
     )
 
     private fun row(
@@ -896,6 +898,35 @@ class LoadIdentityVotingKeyTest {
 
         assertEquals(LoadSaveResult.Saved, result)
         assertTrue(proTxHash.contentEquals(dao.getByIdentityId(identityId)!!.masternodeProTxHash))
+    }
+
+    /**
+     * #6099 review: the pro_tx_hash goes in with the row's own fields, so an interrupted
+     * first load never leaves the row without it, and a reload without one keeps it.
+     */
+    @Test
+    fun shouldWriteTheProTxHashWithTheRowAndKeepItOnAReload() = runBlocking {
+        val proTxHash = ByteArray(32) { 0x5a }
+        save(pickedType = LoadIdentityType.MASTERNODE, typePicked = true, masternodeProTxHash = proTxHash)
+        assertTrue(proTxHash.contentEquals(dao.getByIdentityId(identityId)!!.masternodeProTxHash))
+
+        save(pickedType = LoadIdentityType.MASTERNODE, typePicked = true, masternodeProTxHash = null)
+        assertTrue(proTxHash.contentEquals(dao.getByIdentityId(identityId)!!.masternodeProTxHash))
+    }
+
+    /**
+     * #6099 review: typing the id a shared masternode is stored under (its voter identity, as
+     * the detail screen shows it) loads its recorded pro_tx_hash, not that id reversed.
+     */
+    @Test
+    fun shouldLoadAStoredVoterRowByItsRecordedProTxHash() = runBlocking {
+        val proTxHash = ByteArray(32) { 0x5a }
+        assertTrue(identityId.reversedArray().contentEquals(loadTargetProTxHash(dao, identityId, testnet)))
+
+        dao.upsert(row(type = "Masternode").copy(masternodeProTxHash = proTxHash))
+        assertTrue(proTxHash.contentEquals(loadTargetProTxHash(dao, identityId, testnet)))
+        // A row on another network says nothing about this one.
+        assertTrue(identityId.reversedArray().contentEquals(loadTargetProTxHash(dao, identityId, mainnet)))
     }
 
     @Test
