@@ -292,7 +292,7 @@ class MasternodeVoterKeyCheckTest {
         assertEquals(StoredVoterDecision.REFUSED, storedVoterDecision(stateAt(2, refusal), saved, rules))
 
         // A refusal that could not be saved is never retired by Room's record.
-        val unsaved = PickedKeyCheckState(identifierA, refusal, savedRevision = null)
+        val unsaved = PickedKeyCheckState(identifierA, refusal, savedRevision = null, knownRefuses = true)
         assertEquals(refusal, effectiveRecord(stateAt(5, undetermined), unsaved))
     }
 
@@ -553,12 +553,60 @@ class MasternodeVoterKeyCheckTest {
         assertEquals(StoredVoterDecision.AWAITING_CHECK, storedVoterDecision(stateAt(1), threw, rules))
     }
 
+    /**
+     * A confirmation that could not be saved gives way once the row records something newer: a
+     * refusal saved since by another check is shown, and picking again asks Platform nothing.
+     */
+    @Test
+    fun shouldLetARefusalSavedSinceSupersedeAnUnsavedConfirmation() = runBlocking {
+        val valid = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressA)
+        val refusal = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Invalid("rotated"), addressA)
+        val unsaved = nextPickedState(
+            null, identifierA, PickedVotingKeyCheck.Failed("disk full", valid), revisionAtStart = 1,
+        )!!
+        // Until the row moves, the unsaved confirmation stands in for it.
+        assertEquals(valid, effectiveRecord(stateAt(1), unsaved))
+
+        // Another check saves a refusal of the same key.
+        db.identityDao().upsert(row(identifierA, refusal).copy(votingKeyCheckRevision = 2))
+        rules.use = refusedUse
+        assertEquals(refusal, effectiveRecord(stateAt(2, refusal), unsaved))
+        assertEquals(StoredVoterDecision.REFUSED, storedVoterDecision(stateAt(2, refusal), unsaved, rules))
+        val repicked = checkPicked(picked = unsaved.copy(finished = false))
+        assertEquals(PickedVotingKeyCheck.NotNeeded(refusal, 2), repicked)
+        assertTrue(checkedWith.isEmpty())
+        // The picker takes the row's refusal, not the unsaved confirmation.
+        val next = nextPickedState(unsaved, identifierA, repicked, revisionAtStart = 2)!!
+        assertEquals(refusal, next.known)
+        assertFalse(next.saveFailed)
+    }
+
+    /**
+     * A failure is shown only while it holds the key: once a confirmation saved since (another
+     * check) lets the key vote, the failed check's warning is gone without a new pick.
+     */
+    @Test
+    fun shouldDropAFailureWarningOnceARecordSavedSinceLetsTheKeyVote() {
+        val threw = nextPickedState(
+            null, identifierA, PickedVotingKeyCheck.Failed("timeout"), revisionAtStart = 1,
+        )!!
+        rules.use = awaitingCheck
+        val held = storedVoterDecision(stateAt(1), threw, rules)
+        assertEquals("timeout", shownCheckFailure("timeout", held))
+
+        val valid = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressA)
+        rules.use = proven
+        val released = storedVoterDecision(stateAt(2, valid), threw, rules)
+        assertEquals(StoredVoterDecision.CASTABLE, released)
+        assertNull(shownCheckFailure("timeout", released))
+    }
+
     /** An unsaved refusal still refuses (Rust: may not vote) and is not checked again. */
     @Test
     fun shouldKeepAnUnsavedRefusalWithoutRetrying() = runBlocking {
         val refusal = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Invalid("rotated"), addressA)
         val unsaved = nextPickedState(
-            null, identifierA, PickedVotingKeyCheck.Failed("disk full", refusal), revisionAtStart = 0,
+            null, identifierA, PickedVotingKeyCheck.Failed("disk full", refusal, unsavedRefuses = true), revisionAtStart = 0,
         )!!
         rules.use = refusedUse
         db.identityDao().upsert(row(identifierA))

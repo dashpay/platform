@@ -298,6 +298,12 @@ internal data class PickedKeyCheckState(
      */
     val saveFailed: Boolean = false,
     /**
+     * Rust said [known], an answer that could not be saved, refuses the key (may not vote). Such
+     * a refusal stands over any later record of the row; a permissive one only until the row
+     * moves past [checkedRevision], after which the row's record speaks.
+     */
+    val knownRefuses: Boolean = false,
+    /**
      * The row's revision the finished check was made against (or wrote). A finished check
      * counts only while the row is at that revision or earlier: a record written since (by
      * another check or a load) needs a check of its own (Swift, after #6145).
@@ -307,9 +313,12 @@ internal data class PickedKeyCheckState(
 
 /**
  * The record this dialog learned that the row at [revision] does not show yet, else null. A
- * record that could not be saved stands for the dialog's life (Room will never show it); a saved
- * one stands until the row's revision reaches the one its write left, after which Room, holding
- * that write or a later one, decides. A record learned for another key never counts.
+ * refusal that could not be saved stands for the dialog's life (Room will never show it); any
+ * other unsaved answer only until the row moves past the revision it was made against, so a
+ * record saved since (a refusal included) speaks (Rust's word on which is which:
+ * [PickedKeyCheckState.knownRefuses]). A saved one stands until the row's revision reaches the
+ * one its write left, after which Room, holding that write or a later one, decides. A record
+ * learned for another key never counts.
  */
 internal fun knownOverride(
     identifier: String?,
@@ -318,7 +327,8 @@ internal fun knownOverride(
 ): MasternodeRecordedVotingKey? {
     val sameKey = picked?.takeIf { it.checkedIdentifier == identifier } ?: return null
     val known = sameKey.known ?: return null
-    val saved = sameKey.savedRevision ?: return known
+    val saved = sameKey.savedRevision
+        ?: return known.takeIf { revision <= sameKey.checkedRevision || sameKey.knownRefuses }
     return if (revision < saved) known else null
 }
 
@@ -424,16 +434,23 @@ internal fun nextPickedState(
         // (Swift, after #6145).
         PickedKeyCheckState(
             identifier, result.unsaved, finished = false, savedRevision = null, saveFailed = true,
-            checkedRevision = revisionAtStart,
+            knownRefuses = result.unsavedRefuses, checkedRevision = revisionAtStart,
         )
     } else {
-        // The call threw: no verdict, so the pick stays unchecked until it is picked again.
-        (previous ?: PickedKeyCheckState(identifier)).copy(finished = false, checkedRevision = revisionAtStart)
+        // The call threw: no verdict, so the pick stays unchecked until it is picked again. The
+        // revision an earlier unsaved answer was made against is kept, so it does not stand over
+        // a record written since.
+        (previous ?: PickedKeyCheckState(identifier)).copy(finished = false)
     }
     is PickedVotingKeyCheck.Recorded -> PickedKeyCheckState(
         identifier, result.record, savedRevision = result.revision, checkedRevision = result.revision,
     )
-    is PickedVotingKeyCheck.NotNeeded -> if (previous?.known != null && previous.savedRevision == null) {
+    // An unsaved answer that still stands (a refusal, or the row has not moved) is kept; one the
+    // row's newer record replaced gives way to what the helper read.
+    is PickedVotingKeyCheck.NotNeeded -> if (
+        previous?.known != null && previous.savedRevision == null &&
+        knownOverride(identifier, result.revision, previous) != null
+    ) {
         previous.copy(finished = true, checkedRevision = maxOf(revisionAtStart, result.revision))
     } else {
         PickedKeyCheckState(
@@ -442,6 +459,14 @@ internal fun nextPickedState(
     }
     else -> null
 }
+
+/**
+ * The check failure to show under the picker, only while the key is still held for a check
+ * ([StoredVoterDecision.AWAITING_CHECK]): once a record saved since (another check, a load) lets
+ * the key vote or refuses it, the failure no longer describes it.
+ */
+internal fun shownCheckFailure(failure: String?, decision: StoredVoterDecision): String? =
+    failure?.takeIf { decision == StoredVoterDecision.AWAITING_CHECK }
 
 /**
  * Whether the stored voting key is known not to vote: refused by Rust, or unreadable. Used for
@@ -490,6 +515,8 @@ internal sealed interface PickedVotingKeyCheck {
     data class Failed(
         val message: String,
         val unsaved: MasternodeRecordedVotingKey? = null,
+        /** Rust says [unsaved] refuses the key (may not vote). */
+        val unsavedRefuses: Boolean = false,
     ) : PickedVotingKeyCheck
 
     /**
@@ -604,7 +631,11 @@ internal suspend fun checkPickedVotingKeyIfNeeded(
         // The answer stands even though it was not saved: what Rust says to record for it,
         // against the record read before the check, is held by the section instead.
         val unsaved = rules.outcome(answer, address, MasternodeVotingKeySlot.SameKey(recorded)).record
-        return PickedVotingKeyCheck.Failed("The voting key check could not be saved: ${e.message}", unsaved)
+        return PickedVotingKeyCheck.Failed(
+            "The voting key check could not be saved: ${e.message}",
+            unsaved,
+            unsavedRefuses = unsaved != null && !rules.use(unsaved, address).canVote,
+        )
     }
     return if (written == null) {
         PickedVotingKeyCheck.Dropped
@@ -909,20 +940,22 @@ fun MasternodeVoterSection(
         votingKeyText = votingKeyText,
     )
     }
-    fun currentAnswerTarget(): String? {
+    // Takes the voter already built, so a typed key is never decoded again for a public hash.
+    fun currentAnswerTarget(voter: MasternodeVoter?): String? {
         val typed = (BuildConfig.DEBUG && useTypedCredentials) || (allowsTypedProTxHash && useTypedProTxHash)
         return shownAnswerTarget(
-            effectiveVoterSelection(selectedIdentityHex, candidates, ::isRefused),
+            if (typed) null else effectiveVoterSelection(selectedIdentityHex, candidates, ::isRefused),
             typed,
-            if (typed) currentVoter() else null,
+            voter,
         )
     }
     fun publish() {
-        onVoterChange(currentVoter())
-        onAnswerTargetChange(currentAnswerTarget())
+        val voter = currentVoter()
+        onVoterChange(voter)
+        onAnswerTargetChange(currentAnswerTarget(voter))
     }
     val voter = currentVoter()
-    val answerTarget = currentAnswerTarget()
+    val answerTarget = currentAnswerTarget(voter)
     // Changes no handler makes (the identity list, the first composition) are published by
     // SideEffect, which runs when the composition that shows them is applied, in that same
     // frame and before any further input is handled, so a tap can never cast with a voter
@@ -1043,7 +1076,10 @@ fun MasternodeVoterSection(
                     state = shownState,
                     keyUse = shownState?.storedAddress?.let { rules.use(shownState.recorded, it) },
                     isChecking = checkingIdentityHex == selectedHex,
-                    failure = checkFailure?.takeIf { it.first == selectedHex }?.second,
+                    failure = shownCheckFailure(
+                        checkFailure?.takeIf { it.first == selectedHex }?.second,
+                        storedVoterDecision(selectedState, selectedPicked, rules),
+                    ),
                     notResolved = notResolved?.takeIf { it.first == selectedHex }?.second,
                     modifier = Modifier.testTag("$testTagPrefix.voterKeyCheck"),
                 )
