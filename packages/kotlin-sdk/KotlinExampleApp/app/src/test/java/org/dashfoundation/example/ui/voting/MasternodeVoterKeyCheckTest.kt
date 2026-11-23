@@ -516,24 +516,72 @@ class MasternodeVoterKeyCheckTest {
 
     /**
      * A pick counts as checked only when its result was saved (or no check was needed, or
-     * Platform could not answer): an answer that could not be saved keeps the key unpublished,
-     * whatever it said.
+     * Platform could not answer). A confirmation that could not be saved grants nothing even
+     * when Rust says such a record may vote without a check; the next pick checks it again.
      */
     @Test
-    fun shouldKeepAKeyUnpublishedWhenItsCheckCouldNotBeSaved() {
+    fun shouldKeepAKeyUnpublishedWhenItsConfirmationCouldNotBeSaved() = runBlocking {
         val valid = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressA)
         val unsaved = nextPickedState(
             null, identifierA, PickedVotingKeyCheck.Failed("disk full", valid), revisionAtStart = 1,
         )!!
-        rules.use = awaitingCheck
+        // Rust's flags for a valid record: may vote, no check needed.
+        rules.use = proven
 
-        assertFalse(unsaved.finished)
+        assertTrue(unsaved.saveFailed)
         assertEquals(StoredVoterDecision.AWAITING_CHECK, storedVoterDecision(stateAt(1), unsaved, rules))
+
+        // The next pick retries the check and, once it is saved, releases the key.
+        db.identityDao().upsert(row(identifierA))
+        rules.outcome = MasternodeVotingKeyCheckOutcome(storeKey = true, record = valid)
+        val retried = checkPicked(picked = unsaved.copy(finished = false))
+        assertTrue(retried is PickedVotingKeyCheck.Recorded)
+        assertEquals(addressA, checkedWith.single().second)
+        val saved = nextPickedState(unsaved, identifierA, retried, revisionAtStart = 0)!!
+        assertEquals(
+            StoredVoterDecision.CASTABLE,
+            storedVoterDecision(voterKeyState(db.identityDao().getByIdentityId(identityId)!!), saved, rules),
+        )
+
         // Platform could not answer: the pick counts as checked, as Swift lets it vote.
         val unanswered = nextPickedState(
             null, identifierA, PickedVotingKeyCheck.Failed("timeout"), revisionAtStart = 1,
         )!!
+        rules.use = awaitingCheck
         assertEquals(StoredVoterDecision.CASTABLE, storedVoterDecision(stateAt(1), unanswered, rules))
+    }
+
+    /** An unsaved refusal still refuses (Rust: may not vote) and is not checked again. */
+    @Test
+    fun shouldKeepAnUnsavedRefusalWithoutRetrying() = runBlocking {
+        val refusal = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Invalid("rotated"), addressA)
+        val unsaved = nextPickedState(
+            null, identifierA, PickedVotingKeyCheck.Failed("disk full", refusal), revisionAtStart = 0,
+        )!!
+        rules.use = refusedUse
+        db.identityDao().upsert(row(identifierA))
+
+        assertEquals(StoredVoterDecision.REFUSED, storedVoterDecision(stateAt(0), unsaved, rules))
+        assertTrue(checkPicked(picked = unsaved) is PickedVotingKeyCheck.NotNeeded)
+        assertTrue(checkedWith.isEmpty())
+    }
+
+    /**
+     * The proposal dialogs key their answer on the masternode: a voter republished with a newer
+     * clearance keeps it, another masternode does not.
+     */
+    @Test
+    fun shouldKeepTheAnswerTargetAcrossAClearanceOnlyUpdate() {
+        val valid = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressA)
+        val proTxHash = identityId.reversedArray()
+        val before = MasternodeVoter.StoredKey(identityId, proTxHash, identifierA, clearedRevision = 1, clearedRecord = valid)
+        val after = MasternodeVoter.StoredKey(identityId, proTxHash, identifierA, clearedRevision = 2, clearedRecord = valid)
+        val other = MasternodeVoter.StoredKey(ByteArray(32) { 9 }, ByteArray(32) { 9 }, identifierA)
+
+        assertFalse(before == after)
+        assertEquals(answerTargetOf(before), answerTargetOf(after))
+        assertFalse(answerTargetOf(before) == answerTargetOf(other))
+        assertNull(answerTargetOf(null))
     }
 
     /** A check started again for a re-picked key holds it until that check finishes. */

@@ -164,6 +164,13 @@ sealed interface MasternodeVoter {
  */
 fun wireOrderProTxHash(displayOrderProTxHash: ByteArray): ByteArray = displayOrderProTxHash.reversedArray()
 
+/**
+ * The masternode a voter's answer reads name, as hex of its wire-order pro_tx_hash; null for no
+ * voter. The dialogs key their answer on this, not the whole voter, so a voter republished with a
+ * newer clearance (same masternode) keeps its answer.
+ */
+internal fun answerTargetOf(voter: MasternodeVoter?): String? = voter?.wireOrderProTxHash?.toHex()
+
 /** The identity types that carry a masternode voting key (`IdentityType.rawValue`). */
 internal val VOTING_IDENTITY_TYPES = setOf("Masternode", "Evonode")
 
@@ -274,6 +281,11 @@ internal data class PickedKeyCheckState(
     val finished: Boolean = true,
     val savedRevision: Long? = null,
     /**
+     * The pick's check got an answer that could not be saved: the answer counts only if Rust
+     * says it refuses the key; otherwise the key is held, and the next pick checks it again.
+     */
+    val saveFailed: Boolean = false,
+    /**
      * The row's revision the finished check was made against (or wrote). A finished check
      * counts only while the row is at that revision or earlier: a record written since (by
      * another check or a load) needs a check of its own (Swift, after #6145).
@@ -344,6 +356,8 @@ internal fun storedVoterDecision(
         !keyUse.canVote -> StoredVoterDecision.REFUSED
         // Never derived from the row's id: Rust's load rule resolves it when picked.
         state.proTxHashHex == null -> StoredVoterDecision.UNRESOLVED
+        // A confirmation that could not be saved grants nothing: the key waits for a saved check.
+        sameKey?.saveFailed == true -> StoredVoterDecision.AWAITING_CHECK
         keyUse.checkBeforeUse && !checkFinishedFor(state, sameKey) -> StoredVoterDecision.AWAITING_CHECK
         else -> StoredVoterDecision.CASTABLE
     }
@@ -395,7 +409,8 @@ internal fun nextPickedState(
         // as a finished check: the key stays unpublished until a pick's check is saved
         // (Swift, after #6145).
         PickedKeyCheckState(
-            identifier, result.unsaved, finished = false, savedRevision = null, checkedRevision = revisionAtStart,
+            identifier, result.unsaved, finished = false, savedRevision = null, saveFailed = true,
+            checkedRevision = revisionAtStart,
         )
     } else {
         (previous ?: PickedKeyCheckState(identifier)).copy(finished = true, checkedRevision = revisionAtStart)
@@ -515,7 +530,11 @@ internal suspend fun checkPickedVotingKeyIfNeeded(
         ?: row.recordedVotingKey
     val rowRevision = row.votingKeyCheckRevision ?: 0
     val knownProTxHash = row.masternodeProTxHash
-    if (knownProTxHash != null && !rules.use(recorded, address).checkBeforeUse) {
+    val recordedUse = rules.use(recorded, address)
+    // A pick whose last answer could not be saved is checked again, unless that answer refuses
+    // the key (Rust: may not vote), which stands.
+    val retrySave = picked?.saveFailed == true && picked.checkedIdentifier == identifier && recordedUse.canVote
+    if (knownProTxHash != null && !recordedUse.checkBeforeUse && !retrySave) {
         return PickedVotingKeyCheck.NotNeeded(recorded, rowRevision)
     }
     // Set when Rust's load rule resolved a row with no recorded pro_tx_hash as the owner

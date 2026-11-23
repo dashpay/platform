@@ -57,6 +57,7 @@ import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
 import org.dashfoundation.example.ui.tokens.displayLabel
+import org.dashfoundation.example.ui.voting.answerTargetOf
 import org.dashfoundation.example.ui.voting.MasternodeVoteCall
 import org.dashfoundation.example.ui.voting.MasternodeVoter
 import org.dashfoundation.example.ui.voting.MasternodeVoterSection
@@ -526,7 +527,10 @@ private fun MultipleChoiceVoteDialog(
 
     // A message names the previous voter's answer, or one read on the previous SDK (a
     // network switch or new options); drop it.
-    LaunchedEffect(voter, sdk) { message = null }
+    // Keyed on the masternode the answer names (its wire-order pro_tx_hash), not the whole
+    // voter: a voter republished with a newer clearance is the same masternode, so its answer
+    // stays shown.
+    LaunchedEffect(answerTargetOf(voter), sdk) { message = null }
 
     AlertDialog(
         onDismissRequest = { if (!isBusy) onDismiss() },
@@ -566,7 +570,7 @@ private fun MultipleChoiceVoteDialog(
                                 // The voter or the SDK changed while the read was in flight:
                                 // this answer is not the picked masternode's on the network
                                 // now shown.
-                                if (voter != requested || appState.sdk.value !== currentSdk) {
+                                if (answerTargetOf(voter) != answerTargetOf(requested) || appState.sdk.value !== currentSdk) {
                                     return@launch
                                 }
                                 message = answer?.let {
@@ -576,7 +580,7 @@ private fun MultipleChoiceVoteDialog(
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {
-                                if (voter != requested || appState.sdk.value !== currentSdk) {
+                                if (answerTargetOf(voter) != answerTargetOf(requested) || appState.sdk.value !== currentSdk) {
                                     return@launch
                                 }
                                 message = "Reading the answer failed: ${e.message}"
