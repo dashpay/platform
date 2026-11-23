@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.CreateIdentity
@@ -44,6 +47,7 @@ import org.dashfoundation.example.navigation.LoadIdentity
 import org.dashfoundation.example.navigation.SearchWalletsForIdentities
 import org.dashfoundation.example.navigation.StateTransitions
 import org.dashfoundation.example.ui.components.EntityRow
+import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.SectionHeader
 import org.dashfoundation.example.ui.funding.PendingAssetLocksList
 import org.dashfoundation.example.ui.funding.resumableTopUpsAcrossWallets
@@ -74,6 +78,10 @@ fun IdentitiesHomeScreen(navController: NavHostController) {
     val addressFundControllers by container.addressFundCoordinator.controllers
         .collectAsStateWithLifecycle()
     var menuExpanded by remember { mutableStateOf(false) }
+    // Remove from Device (← `identityPendingRemoval` in IdentitiesContentView.swift).
+    val scope = rememberCoroutineScope()
+    var pendingRemoval by remember { mutableStateOf<IdentityEntity?>(null) }
+    var removalMessage by remember { mutableStateOf<String?>(null) }
 
     // DB-backed resumable orphan asset locks (ADDR-03), merged into the
     // "Pending Platform Top Ups" surface below alongside the in-flight
@@ -97,6 +105,20 @@ fun IdentitiesHomeScreen(navController: NavHostController) {
             observe = container.database.assetLockDao()::observeResumableTopUpsByFundingType,
         )
     }.collectAsStateWithLifecycle(initialValue = emptyList())
+
+    pendingRemoval?.let { identity ->
+        RemoveIdentityDialog(
+            displayName = identity.displayName(),
+            onConfirm = {
+                pendingRemoval = null
+                scope.launch {
+                    removalMessage = removeIdentityFromDeviceMessage(manager, identity.identityId)
+                }
+            },
+            onDismiss = { pendingRemoval = null },
+        )
+    }
+    ErrorAlertDialog(message = removalMessage, title = "Remove from Device") { removalMessage = null }
 
     Scaffold(
         topBar = {
@@ -218,25 +240,29 @@ fun IdentitiesHomeScreen(navController: NavHostController) {
                     item { SectionHeader("Identities") }
                 }
                 items(identities, key = { it.identityId.toHexString() }) { identity ->
-                    EntityRow(
-                        icon = Icons.Filled.Person,
-                        title = identity.mainDpnsName
-                            ?: identity.alias
-                            ?: identity.identityId.toHexString().take(16),
-                        subtitle = if (identity.isLocal) {
-                            "${identity.balance} credits"
-                        } else {
-                            "${identity.balance} credits · loaded"
-                        },
-                        onClick = {
-                            navController.navigate(IdentityDetail(identity.identityId.toHexString()))
-                        },
-                        modifier = Modifier.testTag(
-                            "identities.row.${identity.identityId.toHexString()}",
-                        ),
-                    )
+                    RemovableIdentityRow(onRemoveRequested = { pendingRemoval = identity }) {
+                        EntityRow(
+                            icon = Icons.Filled.Person,
+                            title = identity.displayName(),
+                            subtitle = if (identity.isLocal) {
+                                "${identity.balance} credits"
+                            } else {
+                                "${identity.balance} credits · loaded"
+                            },
+                            onClick = {
+                                navController.navigate(IdentityDetail(identity.identityId.toHexString()))
+                            },
+                            modifier = Modifier.testTag(
+                                "identities.row.${identity.identityId.toHexString()}",
+                            ),
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+/** The name a row and the removal dialog show for [this] identity. */
+private fun IdentityEntity.displayName(): String =
+    mainDpnsName ?: alias ?: identityId.toHexString().take(16)

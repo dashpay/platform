@@ -8,7 +8,11 @@ import org.dashfoundation.dashsdk.ffi.ContractUpdateNative
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.DpnsGiveUpNative
+<<<<<<< HEAD
 import org.dashfoundation.dashsdk.ffi.IdentityNative
+=======
+import org.dashfoundation.dashsdk.ffi.IdentityRemovalNative
+>>>>>>> origin/v5.1-dev
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
@@ -229,6 +233,7 @@ class FfiSmokeTest {
     }
 
     /**
+<<<<<<< HEAD
      * The contract update review exports bind with the descriptors
      * `ContractUpdateNative` declares, and `IdentityNative.updateDataContractAtReviewedVersion`
      * with its `expectedCurrentVersion` slot. The split needs no wallet, so it
@@ -262,6 +267,18 @@ class FfiSmokeTest {
             )
         }
         assertEquals(1, badVersion.code)
+=======
+     * The live-wallet identity removal binds, and an unknown manager handle
+     * throws the mapped [DashSDKException] instead of crashing. The removal
+     * itself is covered by the platform-wallet and platform-wallet-ffi tests.
+     */
+    @Test
+    fun removeIdentityFromDeviceSymbolBindsAndRejectsInvalidHandle() {
+        NativeLoader.ensureLoaded()
+        assertThrows(DashSDKException::class.java) {
+            IdentityRemovalNative.removeIdentityFromDevice(0L, ByteArray(32))
+        }
+>>>>>>> origin/v5.1-dev
     }
 
     /**
