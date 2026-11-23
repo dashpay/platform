@@ -478,18 +478,41 @@ pub(super) fn watermark(
 }
 
 /// Every note `id` holds in `token_id`'s pool, spent or not, by position.
+#[cfg(test)]
 pub(crate) fn notes(
     conn: &Connection,
     id: SubwalletId,
     token_id: Identifier,
 ) -> Result<Vec<TokenPoolNote>, PlatformWalletError> {
+    notes_where(conn, id, token_id, "")
+}
+
+/// The notes `id` holds in `token_id`'s pool that a spend can take: unspent
+/// and held by no spend in flight, by position. Filtered in the query, so a
+/// long history of spent notes is never read.
+fn spendable_notes(
+    conn: &Connection,
+    id: SubwalletId,
+    token_id: Identifier,
+) -> Result<Vec<TokenPoolNote>, PlatformWalletError> {
+    notes_where(conn, id, token_id, " AND spent = 0 AND reserved_by IS NULL")
+}
+
+/// `id`'s notes in `token_id`'s pool matching `filter`, a fixed SQL condition
+/// appended to the account and token match, by position.
+fn notes_where(
+    conn: &Connection,
+    id: SubwalletId,
+    token_id: Identifier,
+    filter: &'static str,
+) -> Result<Vec<TokenPoolNote>, PlatformWalletError> {
     let mut statement = conn
-        .prepare(
+        .prepare(&format!(
             "SELECT position, cmx, nullifier, value, note_data, block_height, spent, \
              reserved_by FROM shielded_token_pool_notes \
-             WHERE wallet_id = ?1 AND account_index = ?2 AND token_id = ?3 \
-             ORDER BY position",
-        )
+             WHERE wallet_id = ?1 AND account_index = ?2 AND token_id = ?3{filter} \
+             ORDER BY position"
+        ))
         .map_err(storage("read notes"))?;
     let rows = statement
         .query_map(
@@ -828,10 +851,7 @@ pub(crate) fn select_token_notes(
     amount: u64,
     max_notes: usize,
 ) -> Result<Vec<TokenPoolNote>, PlatformWalletError> {
-    let mut free: Vec<TokenPoolNote> = notes(conn, id, token_id)?
-        .into_iter()
-        .filter(|note| !note.is_spent && note.reserved_by.is_none())
-        .collect();
+    let mut free = spendable_notes(conn, id, token_id)?;
     free.sort_by(|a, b| b.value.cmp(&a.value).then(a.position.cmp(&b.position)));
     let available = free
         .iter()
@@ -862,31 +882,39 @@ pub(crate) fn select_token_notes(
     Ok(selected)
 }
 
+/// One reservation row as read: wallet id, account, token id and marker bytes.
+type HeldReservation = (Vec<u8>, u32, Vec<u8>, Vec<u8>);
+
 /// Release the reservations in the pools of `scanned` (the pools this pass
 /// scanned to their end) held by neither a spend in flight here nor a saved
 /// record in `live_records`. Their spend can no longer execute (the scan
 /// found its fee notes spent or pruned its anchor, which drops the record) or
 /// its process is gone; a note it did spend is marked spent by the scan, which
-/// ran first. Returns how many notes came back.
+/// ran first. Returns each account and marker released: the marker is the
+/// spend's activity id once its record was saved, so the caller can settle
+/// its activity row.
 pub(crate) fn release_orphaned_reservations(
     conn: &Connection,
     scanned: &BTreeSet<Identifier>,
     live_records: &BTreeSet<[u8; 32]>,
-) -> Result<usize, PlatformWalletError> {
+) -> Result<BTreeSet<(SubwalletId, [u8; 32])>, PlatformWalletError> {
     let mut statement = conn
         .prepare(
-            "SELECT DISTINCT token_id, reserved_by FROM shielded_token_pool_notes \
-             WHERE reserved_by IS NOT NULL AND spent = 0",
+            "SELECT DISTINCT wallet_id, account_index, token_id, reserved_by \
+             FROM shielded_token_pool_notes WHERE reserved_by IS NOT NULL AND spent = 0",
         )
         .map_err(storage("read reservations"))?;
-    let held: Vec<(Vec<u8>, Vec<u8>)> = statement
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+    let held: Vec<HeldReservation> = statement
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })
         .map_err(storage("read reservations"))?
         .collect::<rusqlite::Result<_>>()
         .map_err(storage("read reservations"))?;
     let in_flight = in_flight();
-    let mut released = 0;
-    for (token_id, marker) in held {
+    let mut released = BTreeSet::new();
+    for (wallet_id, account_index, token_id, marker) in held {
+        let id = SubwalletId::new(bytes32(wallet_id, "wallet id")?, account_index);
         let token_id = Identifier::from(bytes32(token_id, "token id")?);
         let marker = bytes32(marker, "reservation")?;
         if !scanned.contains(&token_id)
@@ -895,13 +923,19 @@ pub(crate) fn release_orphaned_reservations(
         {
             continue;
         }
-        released += conn
-            .execute(
-                "UPDATE shielded_token_pool_notes SET reserved_by = NULL \
-                 WHERE token_id = ?1 AND reserved_by = ?2",
-                params![token_id.as_slice(), marker.as_slice()],
-            )
-            .map_err(storage("release reservation"))?;
+        conn.execute(
+            "UPDATE shielded_token_pool_notes SET reserved_by = NULL \
+             WHERE wallet_id = ?1 AND account_index = ?2 AND token_id = ?3 \
+             AND reserved_by = ?4",
+            params![
+                id.wallet_id.as_slice(),
+                id.account_index,
+                token_id.as_slice(),
+                marker.as_slice()
+            ],
+        )
+        .map_err(storage("release reservation"))?;
+        released.insert((id, marker));
     }
     Ok(released)
 }

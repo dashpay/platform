@@ -162,7 +162,9 @@ pub struct ShieldedActivityFFI {
     /// Created identity id (only meaningful when `kind_tag == 6` /
     /// IdentityCreate); all-zero and ignored otherwise.
     pub identity_id: [u8; 32],
-    /// `1` when `identity_id` is meaningful (IdentityCreate), else `0`.
+    /// `1` when `identity_id` is meaningful (an identity create, shield from
+    /// identity, identity top-up or token unshield), else `0`. A token
+    /// unshield (tag 12) restored with `0` is an opaque spend.
     pub has_identity_id: u8,
     /// Counterparty bytes pointer (43B Orchard / 21B PlatformAddress /
     /// Core script) or null. Valid for the callback window only.

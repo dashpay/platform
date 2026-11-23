@@ -23,9 +23,9 @@ use dpp::shielded::{
 use dpp::state_transition::state_transitions::shielded::common_validation::ENCRYPTED_NOTE_SIZE;
 use dpp::state_transition::token_purchase_from_shielded_pool_transition::v0::TokenPurchaseFromShieldedPoolTransitionV0;
 use dpp::state_transition::token_purchase_from_shielded_pool_transition::TokenPurchaseFromShieldedPoolTransition;
-use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::v0::TokenShieldedTransferWithShieldedFeeTransitionV0;
+use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::methods::TokenShieldedTransferWithShieldedFeeTransitionMethodsV0;
 use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::TokenShieldedTransferWithShieldedFeeTransition;
-use dpp::state_transition::token_unshield_with_shielded_fee_transition::v0::TokenUnshieldWithShieldedFeeTransitionV0;
+use dpp::state_transition::token_unshield_with_shielded_fee_transition::methods::TokenUnshieldWithShieldedFeeTransitionMethodsV0;
 use dpp::state_transition::token_unshield_with_shielded_fee_transition::TokenUnshieldWithShieldedFeeTransition;
 use dpp::state_transition::{validate_state_transition_size, StateTransition};
 use dpp::version::PlatformVersion;
@@ -60,6 +60,19 @@ pub(crate) fn ensure_token_purchase_count(
         return Err(PlatformWalletError::InvalidParameter(format!(
             "a shielded token purchase buys from 1 to {MAX_DISTRIBUTION_PARAM} tokens, not \
              {token_count}"
+        )));
+    }
+    Ok(())
+}
+
+/// Refuse a `TokenUnshieldWithShieldedFee` amount its basic structure validation refuses: zero,
+/// or above [`MAX_DISTRIBUTION_PARAM`], the most one transition moves out of a token pool. A
+/// token shielded transfer moves nothing out of the pool and has no such bound. Store- and
+/// network-free, so an unshield is refused with it before anything is reserved or proved.
+pub(crate) fn ensure_token_unshield_amount(amount: TokenAmount) -> Result<(), PlatformWalletError> {
+    if amount == 0 || amount > MAX_DISTRIBUTION_PARAM {
+        return Err(PlatformWalletError::InvalidParameter(format!(
+            "a token unshield moves from 1 to {MAX_DISTRIBUTION_PARAM} tokens, not {amount}"
         )));
     }
     Ok(())
@@ -167,50 +180,53 @@ impl TokenPoolSpendKind {
         }
     }
 
-    /// The serialized size of this kind with `token_actions` and `fee_actions` actions, every
-    /// variable field at its largest: the actions, the proofs at the canonical length Orchard
-    /// gives a proof over them ([`Proof::expected_proof_size`]) and the amounts at `u64::MAX`.
-    fn wire_size(self, token_actions: usize, fee_actions: usize) -> Result<u64, ProtocolError> {
+    /// The serialized size of this kind with `token_actions` and `fee_actions` actions at
+    /// `platform_version`, every variable field at its largest: the actions, the proofs at the
+    /// canonical length Orchard gives a proof over them ([`Proof::expected_proof_size`]) and the
+    /// amounts at `u64::MAX`. The sample is built by DPP's own constructor, which picks the wire
+    /// generation from `platform_version` as it does for the real transition.
+    fn wire_size(
+        self,
+        token_actions: usize,
+        fee_actions: usize,
+        platform_version: &PlatformVersion,
+    ) -> Result<u64, ProtocolError> {
         let proof = |actions: usize| vec![0u8; Proof::expected_proof_size(actions)];
         let transition = match self {
-            Self::ShieldedTransfer => StateTransition::TokenShieldedTransferWithShieldedFee(
-                TokenShieldedTransferWithShieldedFeeTransition::V0(
-                    TokenShieldedTransferWithShieldedFeeTransitionV0 {
-                        data_contract_id: Identifier::from([0xFF; 32]),
-                        token_contract_position: u16::MAX,
-                        token_id: Identifier::from([0xFF; 32]),
-                        token_actions: vec![largest_action(); token_actions],
-                        token_anchor: [0xFF; 32],
-                        token_proof: proof(token_actions),
-                        token_binding_signature: [0xFF; 64],
-                        fee_actions: vec![largest_action(); fee_actions],
-                        fee_anchor: [0xFF; 32],
-                        fee_proof: proof(fee_actions),
-                        fee_binding_signature: [0xFF; 64],
-                        credit_amount: u64::MAX,
-                    },
-                ),
-            ),
-            Self::Unshield => StateTransition::TokenUnshieldWithShieldedFee(
-                TokenUnshieldWithShieldedFeeTransition::V0(
-                    TokenUnshieldWithShieldedFeeTransitionV0 {
-                        data_contract_id: Identifier::from([0xFF; 32]),
-                        token_contract_position: u16::MAX,
-                        token_id: Identifier::from([0xFF; 32]),
-                        recipient_id: Identifier::from([0xFF; 32]),
-                        amount: u64::MAX,
-                        token_actions: vec![largest_action(); token_actions],
-                        token_anchor: [0xFF; 32],
-                        token_proof: proof(token_actions),
-                        token_binding_signature: [0xFF; 64],
-                        fee_actions: vec![largest_action(); fee_actions],
-                        fee_anchor: [0xFF; 32],
-                        fee_proof: proof(fee_actions),
-                        fee_binding_signature: [0xFF; 64],
-                        credit_amount: u64::MAX,
-                    },
-                ),
-            ),
+            Self::ShieldedTransfer => {
+                TokenShieldedTransferWithShieldedFeeTransition::try_from_bundles(
+                    Identifier::from([0xFF; 32]),
+                    u16::MAX,
+                    Identifier::from([0xFF; 32]),
+                    vec![largest_action(); token_actions],
+                    [0xFF; 32],
+                    proof(token_actions),
+                    [0xFF; 64],
+                    vec![largest_action(); fee_actions],
+                    [0xFF; 32],
+                    proof(fee_actions),
+                    [0xFF; 64],
+                    u64::MAX,
+                    platform_version,
+                )?
+            }
+            Self::Unshield => TokenUnshieldWithShieldedFeeTransition::try_from_bundles(
+                Identifier::from([0xFF; 32]),
+                u16::MAX,
+                Identifier::from([0xFF; 32]),
+                Identifier::from([0xFF; 32]),
+                u64::MAX,
+                vec![largest_action(); token_actions],
+                [0xFF; 32],
+                proof(token_actions),
+                [0xFF; 64],
+                vec![largest_action(); fee_actions],
+                [0xFF; 32],
+                proof(fee_actions),
+                [0xFF; 64],
+                u64::MAX,
+                platform_version,
+            )?,
         };
         Ok(transition.serialize_to_bytes()?.len() as u64)
     }
@@ -225,7 +241,8 @@ impl TokenPoolSpendKind {
     ) -> Result<usize, ProtocolError> {
         let mut fitting = 0;
         for notes in 1..=max_bundle_actions(platform_version) {
-            let size = self.wire_size(token_pool_spend_token_actions(notes), 2)?;
+            let size =
+                self.wire_size(token_pool_spend_token_actions(notes), 2, platform_version)?;
             if validate_state_transition_size(size, platform_version).is_err() {
                 break;
             }
@@ -243,7 +260,7 @@ impl TokenPoolSpendKind {
     ) -> Result<usize, ProtocolError> {
         let mut fitting = 0;
         for notes in 1..=max_bundle_actions(platform_version) {
-            let size = self.wire_size(token_actions, notes.max(2))?;
+            let size = self.wire_size(token_actions, notes.max(2), platform_version)?;
             if validate_state_transition_size(size, platform_version).is_err() {
                 break;
             }

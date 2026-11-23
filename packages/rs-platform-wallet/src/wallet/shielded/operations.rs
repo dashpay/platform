@@ -32,8 +32,8 @@ use super::activity_recorder::{
 use super::keys::{AccountViewingKeys, OrchardKeySet};
 use super::note_selection::{
     ensure_allowed_denomination, ensure_positive_amount, ensure_token_purchase_count,
-    max_token_purchase_fee_notes, select_notes_for_denomination, select_notes_with_fee,
-    token_pool_spend_token_actions, ShieldedFeeKind, TokenPoolSpendKind,
+    ensure_token_unshield_amount, max_token_purchase_fee_notes, select_notes_for_denomination,
+    select_notes_with_fee, token_pool_spend_token_actions, ShieldedFeeKind, TokenPoolSpendKind,
 };
 use super::store::{
     PendingRedrive, PrivateContactPayment, PrivatePaymentEntry, ShieldedNote, ShieldedStore,
@@ -2278,7 +2278,8 @@ pub struct ShieldedTokenSpendPreview {
 /// from `id`'s notes, chosen as the spend chooses them, at
 /// `platform_version`: for a form to show the fee before sending. Reads the
 /// store only, reserves nothing, and refuses as the spend would refuse on
-/// these notes: a zero amount, too few tokens
+/// these notes: a zero amount, an unshield above the most one transition
+/// moves (`MAX_DISTRIBUTION_PARAM`), too few tokens
 /// ([`PlatformWalletError::TokenShieldedInsufficientBalance`]), too few
 /// credits for the fee ([`PlatformWalletError::ShieldedInsufficientBalance`]),
 /// or more notes than fit ([`PlatformWalletError::ShieldedTooManyNotes`]).
@@ -2296,6 +2297,9 @@ where
     S: ShieldedStore + TokenPoolConnection,
 {
     ensure_positive_amount(amount)?;
+    if kind == TokenPoolSpendKind::Unshield {
+        ensure_token_unshield_amount(amount)?;
+    }
     let build = |e: ProtocolError| PlatformWalletError::ShieldedBuildError(e.to_string());
     let max_token_notes = kind.max_token_notes(platform_version).map_err(build)?;
     let store = store.read().await;
@@ -2441,7 +2445,10 @@ where
 ///
 /// Refuses, reserves, proves and settles as [`token_shielded_transfer`] does,
 /// at type 27's activation (protocol version 14) and with its fee, which also
-/// prices the recipient's token balance write. Its proof is the recipient's
+/// prices the recipient's token balance write. It also refuses, before
+/// anything is reserved, an amount above the most one transition moves out of
+/// a token pool (`MAX_DISTRIBUTION_PARAM`), which the unshield's structure
+/// validation refuses. Its proof is the recipient's
 /// token balance at the proof's block, which binds nothing of this unshield,
 /// so an accepted unshield stays pending
 /// ([`ShieldedTokenSpendOutcome::Submitted`]).
@@ -2502,6 +2509,9 @@ where
     let kind = target.kind();
     let operation = target.operation();
     ensure_positive_amount(amount)?;
+    if kind == TokenPoolSpendKind::Unshield {
+        ensure_token_unshield_amount(amount)?;
+    }
     sdk.ensure_protocol_requirement(target.requirement())
         .await?;
     ensure_token_has_shielded_pool(sdk, data_contract_id, token_contract_position).await?;
@@ -10567,6 +10577,73 @@ mod token_shielded_transfer_tests {
                 .await
                 .expect("a preview");
         assert_eq!(preview.fee, kind.fee(2, 2, latest).expect("fee"));
+        assert_nothing_held(&store, 1).await;
+    }
+
+    /// An unshield moves at most `MAX_DISTRIBUTION_PARAM` tokens: one more is
+    /// refused before anything is read or held, the limit itself passes that
+    /// check, and a shielded transfer, which moves nothing out of the pool,
+    /// has no such bound.
+    #[tokio::test]
+    async fn should_bound_a_token_unshield_amount_and_not_a_transfer() {
+        use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::MAX_DISTRIBUTION_PARAM;
+
+        let platform_version = PlatformVersion::latest();
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = store_with(
+            &dir,
+            &[credit_note(1_000_000_000_000, 0)],
+            &[token_note(10, 0)],
+        )
+        .await;
+        let preview = |kind, amount| {
+            let store = &store;
+            async move {
+                token_pool_spend_preview(
+                    store,
+                    subwallet(),
+                    token_id(),
+                    kind,
+                    amount,
+                    platform_version,
+                )
+                .await
+            }
+        };
+        let over = preview(TokenPoolSpendKind::Unshield, MAX_DISTRIBUTION_PARAM + 1)
+            .await
+            .expect_err("past the limit");
+        assert!(
+            matches!(over, PlatformWalletError::InvalidParameter(_)),
+            "got {over:?}"
+        );
+        for (kind, amount) in [
+            (TokenPoolSpendKind::Unshield, MAX_DISTRIBUTION_PARAM),
+            (
+                TokenPoolSpendKind::ShieldedTransfer,
+                MAX_DISTRIBUTION_PARAM + 1,
+            ),
+        ] {
+            let err = preview(kind, amount)
+                .await
+                .expect_err("ten tokens do not cover it");
+            assert!(
+                matches!(
+                    err,
+                    PlatformWalletError::TokenShieldedInsufficientBalance { .. }
+                ),
+                "{kind:?} {amount}: got {err:?}"
+            );
+        }
+
+        let sdk = pool_sdk().await;
+        let err = unshield(&sdk, &store, MAX_DISTRIBUTION_PARAM + 1)
+            .await
+            .expect_err("past the limit");
+        assert!(
+            matches!(err, PlatformWalletError::InvalidParameter(_)),
+            "got {err:?}"
+        );
         assert_nothing_held(&store, 1).await;
     }
 

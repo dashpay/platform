@@ -3969,8 +3969,8 @@ impl PlatformWalletPersistence for FFIPersister {
             use crate::shielded_persistence::*;
             use platform_wallet::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
             use platform_wallet::wallet::shielded::{
-                ShieldedActivityEntry, ShieldedActivityKind, ShieldedDirection, ShieldedNote,
-                ShieldedOutgoingNote, SubwalletId,
+                ShieldedActivityEntry, ShieldedDirection, ShieldedNote, ShieldedOutgoingNote,
+                SubwalletId,
             };
 
             let mut shielded_state = ShieldedSyncStartState::default();
@@ -4241,33 +4241,11 @@ impl PlatformWalletPersistence for FFIPersister {
                 if !act_ptr.is_null() && act_count > 0 {
                     let slice = unsafe { slice::from_raw_parts(act_ptr, act_count) };
                     for ffi in slice {
-                        let kind = match ffi.kind_tag {
-                            0 => ShieldedActivityKind::Shield,
-                            1 => ShieldedActivityKind::ShieldFromAssetLock,
-                            2 => ShieldedActivityKind::Received,
-                            3 => ShieldedActivityKind::Sent,
-                            4 => ShieldedActivityKind::Unshield,
-                            5 => ShieldedActivityKind::Withdrawal,
-                            6 => ShieldedActivityKind::IdentityCreate {
-                                identity_id: ffi.identity_id,
-                            },
-                            8 => ShieldedActivityKind::ShieldFromIdentity {
-                                identity_id: ffi.identity_id,
-                            },
-                            9 => ShieldedActivityKind::IdentityTopUp {
-                                identity_id: ffi.identity_id,
-                            },
-                            10 => ShieldedActivityKind::TokenPurchase,
-                            11 => ShieldedActivityKind::TokenShieldedTransfer,
-                            12 => ShieldedActivityKind::TokenUnshield {
-                                identity_id: ffi.identity_id,
-                            },
-                            // 7 and any unknown tag fall back to the
-                            // residual — a forward-compat tag we don't yet
-                            // model still loads as an opaque spend rather
-                            // than getting dropped.
-                            _ => ShieldedActivityKind::ShieldedSpend,
-                        };
+                        let kind = restored_activity_kind(
+                            ffi.kind_tag,
+                            ffi.identity_id,
+                            ffi.has_identity_id != 0,
+                        );
                         let direction = match ffi.direction {
                             0 => ShieldedDirection::In,
                             1 => ShieldedDirection::Out,
@@ -4831,6 +4809,29 @@ fn activity_status_from_tag(tag: u8) -> ShieldedActivityStatus {
 mod activity_status_tests {
     use super::{activity_status_from_tag, activity_status_tag};
     use platform_wallet::wallet::shielded::ShieldedActivityStatus;
+
+    /// A restored token unshield takes its credited identity only when the
+    /// row carries one; without it the row is an opaque spend, not an
+    /// unshield to an all-zero identity.
+    #[test]
+    fn should_restore_a_token_unshield_only_with_its_identity() {
+        use platform_wallet::wallet::shielded::ShieldedActivityKind;
+        let identity = [7u8; 32];
+        assert_eq!(
+            super::restored_activity_kind(12, identity, true),
+            ShieldedActivityKind::TokenUnshield {
+                identity_id: identity
+            }
+        );
+        assert_eq!(
+            super::restored_activity_kind(12, [0u8; 32], false),
+            ShieldedActivityKind::ShieldedSpend
+        );
+        assert_eq!(
+            super::restored_activity_kind(11, [0u8; 32], false),
+            ShieldedActivityKind::TokenShieldedTransfer
+        );
+    }
 
     #[test]
     fn should_roundtrip_abandoned_activity_as_unknown_and_preserve_existing_status_bytes() {
@@ -8143,6 +8144,43 @@ fn restore_provider_special_txs(
         }
     }
     Ok(stats)
+}
+
+/// The activity kind a restored row's `kind_tag` stands for. A token unshield
+/// (tag 12) takes its credited identity only when the row says it carries one
+/// (`has_identity`): without it the row is inconsistent, and is restored as
+/// the residual [`ShieldedActivityKind::ShieldedSpend`] rather than as an
+/// unshield to an all-zero identity that would read as a real one. Tag 7 and
+/// any unknown tag are the residual too: a forward-compatible tag this build
+/// does not model still loads as an opaque spend rather than being dropped.
+fn restored_activity_kind(
+    kind_tag: u8,
+    identity_id: [u8; 32],
+    has_identity: bool,
+) -> platform_wallet::wallet::shielded::ShieldedActivityKind {
+    use platform_wallet::wallet::shielded::ShieldedActivityKind;
+    match kind_tag {
+        0 => ShieldedActivityKind::Shield,
+        1 => ShieldedActivityKind::ShieldFromAssetLock,
+        2 => ShieldedActivityKind::Received,
+        3 => ShieldedActivityKind::Sent,
+        4 => ShieldedActivityKind::Unshield,
+        5 => ShieldedActivityKind::Withdrawal,
+        6 => ShieldedActivityKind::IdentityCreate { identity_id },
+        8 => ShieldedActivityKind::ShieldFromIdentity { identity_id },
+        9 => ShieldedActivityKind::IdentityTopUp { identity_id },
+        10 => ShieldedActivityKind::TokenPurchase,
+        11 => ShieldedActivityKind::TokenShieldedTransfer,
+        12 if has_identity => ShieldedActivityKind::TokenUnshield { identity_id },
+        12 => {
+            tracing::warn!(
+                "restored token unshield names no credited identity; restoring it as an \
+                 opaque spend"
+            );
+            ShieldedActivityKind::ShieldedSpend
+        }
+        _ => ShieldedActivityKind::ShieldedSpend,
+    }
 }
 
 #[cfg(test)]

@@ -305,11 +305,13 @@ pub struct NetworkShieldedCoordinator {
 }
 
 /// Whether `kind` is a token pool spend paid from the credit pool whose token
-/// bundle carries tokens out of the wallet (a shielded token transfer).
+/// bundle carries tokens out of the wallet (a shielded token transfer or a
+/// token unshield).
 fn is_token_pool_spend(kind: &super::activity::ShieldedActivityKind) -> bool {
     matches!(
         kind,
         super::activity::ShieldedActivityKind::TokenShieldedTransfer
+            | super::activity::ShieldedActivityKind::TokenUnshield { .. }
     )
 }
 
@@ -4034,23 +4036,32 @@ mod tests {
         coordinator
     }
 
-    /// A token shielded transfer whose fee bundle's anchor was pruned is not
-    /// shown failed by that alone: below the protocol version that binds the
-    /// two bundles its token bundle can still land with another fee bundle.
-    /// Once a complete token pool scan finds its token notes unspent, it is
-    /// shown failed and its notes released only where the network binds the
-    /// bundles; at protocol version 14 it stays pending with its notes held,
-    /// its outcome unknown.
+    /// A token pool spend (a shielded token transfer or a token unshield)
+    /// whose fee bundle's anchor was pruned is not shown failed by that
+    /// alone: below the protocol version that binds the two bundles its token
+    /// bundle can still land with another fee bundle. Once a complete token
+    /// pool scan finds its token notes unspent, it is shown failed and its
+    /// notes released only where the network binds the bundles; at protocol
+    /// version 14 it stays pending with its notes held, its outcome unknown.
     #[tokio::test]
-    async fn should_settle_a_token_transfer_from_its_token_notes_only_where_the_bundles_are_bound()
+    async fn should_settle_a_token_pool_spend_from_its_token_notes_only_where_the_bundles_are_bound()
     {
         use super::super::token_pool::{insert_note_for_test, insert_watch, TokenPoolNote};
 
-        for (network, settled) in [
+        let kinds = [
+            ShieldedActivityKind::TokenShieldedTransfer,
+            ShieldedActivityKind::TokenUnshield {
+                identity_id: [0x5E; 32],
+            },
+        ];
+        for ((network, settled), kind) in [
             (14, ShieldedActivityStatus::Pending),
             (15, ShieldedActivityStatus::Failed),
-        ] {
-            let dir = temp_dir(&format!("token_transfer_settle_{network}"));
+        ]
+        .into_iter()
+        .flat_map(|case| kinds.clone().map(move |kind| (case, kind)))
+        {
+            let dir = temp_dir(&format!("token_spend_settle_{network}_{}", kind.tag()));
             let sdk = dash_sdk::Sdk::new_mock();
             sdk.mock_verified_protocol_version(network)
                 .expect("a mock SDK");
@@ -4071,7 +4082,7 @@ mod tests {
             let fee_nf = [0xF1u8; 32];
             let pruned_anchor = [0xF2u8; 32];
             let row = ShieldedActivityEntry {
-                kind: ShieldedActivityKind::TokenShieldedTransfer,
+                kind: kind.clone(),
                 ..pending_purchase_row(fee_nf, [0xF3; 32])
             };
             {
