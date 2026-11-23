@@ -32,8 +32,10 @@ class UpdateContractFieldsTest {
             moderatorsRemoved = emptyList(),
         )
 
+    private val target = UpdateContractTarget(contractIdHex = "aa".repeat(32), ownerIdHex = "bb".repeat(32))
+
     private fun review(fields: UpdateContractFields, preview: DataContractUpdatePreview) =
-        UpdateContractViewModel.Review(fields, fields.walletArguments(), preview)
+        UpdateContractViewModel.Review(fields, target, fields.walletArguments(), preview)
 
     @Test
     fun shouldTurnEmptyFieldsIntoKeepTheLiveValues() {
@@ -88,21 +90,32 @@ class UpdateContractFieldsTest {
     @Test
     fun shouldOfferTheUpdateOnlyForAReviewOfTheFieldsShownThatChangesSomething() {
         val fields = UpdateContractFields(documents = "{\"a\":{}}")
-        assertFalse(canSubmitUpdate(null, fields, false, false, false))
-        assertTrue(canSubmitUpdate(review(fields, preview()), fields, false, false, false))
+        assertFalse(canSubmitUpdate(null, fields, target, false, false, false))
+        assertTrue(canSubmitUpdate(review(fields, preview()), fields, target, false, false, false))
         // An edit after the review
-        assertFalse(canSubmitUpdate(review(fields, preview()), fields.copy(tokens = "{}"), false, false, false))
+        assertFalse(canSubmitUpdate(review(fields, preview()), fields.copy(tokens = "{}"), target, false, false, false))
         // Rust says nothing changes
-        assertFalse(canSubmitUpdate(review(fields, preview(hasChanges = false)), fields, false, false, false))
+        assertFalse(canSubmitUpdate(review(fields, preview(hasChanges = false)), fields, target, false, false, false))
+    }
+
+    /** A review stands only for the contract and owner it was made for. */
+    @Test
+    fun shouldNotOfferTheUpdateOnceTheContractOrOwnerChanged() {
+        val fields = UpdateContractFields(documents = "{\"a\":{}}")
+        val reviewed = review(fields, preview())
+        assertTrue(canSubmitUpdate(reviewed, fields, target, false, false, false))
+        assertFalse(canSubmitUpdate(reviewed, fields, target.copy(contractIdHex = "cc".repeat(32)), false, false, false))
+        assertFalse(canSubmitUpdate(reviewed, fields, target.copy(ownerIdHex = "dd".repeat(32)), false, false, false))
+        assertFalse(canSubmitUpdate(reviewed, fields, null, false, false, false))
     }
 
     @Test
     fun shouldAskForTheConfigurationAcknowledgmentAndHoldAfterAnUnconfirmedUpdate() {
         val fields = UpdateContractFields(config = "{\"readonly\":true}")
         val configReview = review(fields, preview(configChanged = true))
-        assertFalse(canSubmitUpdate(configReview, fields, false, false, false))
-        assertTrue(canSubmitUpdate(configReview, fields, true, false, false))
-        assertFalse(canSubmitUpdate(configReview, fields, true, true, false))
-        assertFalse(canSubmitUpdate(configReview, fields, true, false, true))
+        assertFalse(canSubmitUpdate(configReview, fields, target, false, false, false))
+        assertTrue(canSubmitUpdate(configReview, fields, target, true, false, false))
+        assertFalse(canSubmitUpdate(configReview, fields, target, true, true, false))
+        assertFalse(canSubmitUpdate(configReview, fields, target, true, false, true))
     }
 }

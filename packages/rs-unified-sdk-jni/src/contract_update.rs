@@ -30,7 +30,7 @@ use platform_wallet_ffi::{
 use std::os::raw::c_char;
 use std::ptr;
 
-/// What `IdentityNative.updateDataContract` with the same arguments would change in the
+/// What `IdentityNative.updateDataContractAtReviewedVersion` with the same arguments would change in the
 /// contract `contractId` (`platform_wallet_preview_data_contract_update`), as the preview
 /// JSON object; null after throwing. Nothing is signed or broadcast and no nonce is used.
 ///
@@ -197,7 +197,7 @@ mod tests {
             (types(&["String"]), "String".to_string())
         );
         assert_eq!(
-            kotlin_signature_in(IDENTITY_NATIVE_KT, "updateDataContract"),
+            kotlin_signature_in(IDENTITY_NATIVE_KT, "updateDataContractAtReviewedVersion"),
             (
                 types(&[
                     "Long",

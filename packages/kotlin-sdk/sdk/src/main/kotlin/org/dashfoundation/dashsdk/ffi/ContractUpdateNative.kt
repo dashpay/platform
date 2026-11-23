@@ -13,7 +13,7 @@ package org.dashfoundation.dashsdk.ffi
 internal object ContractUpdateNative {
 
     /**
-     * What `IdentityNative.updateDataContract` with the same arguments would change
+     * What `IdentityNative.updateDataContractAtReviewedVersion` with the same arguments would change
      * (`platform_wallet_preview_data_contract_update`). Signs and broadcasts nothing.
      *
      * @param ownerIdentityId 32 bytes.

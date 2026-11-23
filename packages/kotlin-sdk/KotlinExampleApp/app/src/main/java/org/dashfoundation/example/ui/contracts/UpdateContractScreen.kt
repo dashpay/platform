@@ -36,6 +36,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -67,6 +68,7 @@ import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.toHex
+import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.truncateMiddle
 
 /**
@@ -130,6 +132,12 @@ data class UpdateContractFields(
     }
 }
 
+/**
+ * The contract an update targets and the identity that owns it, as hex: what a review was
+ * made for. A review stands only while the screen still targets the same pair.
+ */
+data class UpdateContractTarget(val contractIdHex: String, val ownerIdHex: String)
+
 /** The wallet's update arguments for one set of [UpdateContractFields]. */
 data class UpdateContractArguments(
     val documents: String,
@@ -142,19 +150,22 @@ data class UpdateContractArguments(
 
 /**
  * Whether Update Contract may be tapped (← `UpdateContractView.canSubmit`): only for a review
- * of the fields on screen that Rust says changes something, with the owner's acknowledgment
+ * of the fields and the contract and owner on screen that Rust says changes something, with
+ * the owner's acknowledgment
  * when Rust says the configuration changes, and never after an update whose outcome is
  * unknown or while a sent update's refresh is pending.
  */
 fun canSubmitUpdate(
     review: UpdateContractViewModel.Review?,
     fields: UpdateContractFields,
+    target: UpdateContractTarget?,
     configChangeAcknowledged: Boolean,
     unconfirmedUpdateSent: Boolean,
     refreshPending: Boolean,
 ): Boolean {
     if (review == null || unconfirmedUpdateSent || refreshPending) return false
     return review.fields == fields &&
+        review.target == target &&
         review.preview.hasChanges &&
         (!review.preview.configChanged || configChangeAcknowledged)
 }
@@ -169,6 +180,7 @@ class UpdateContractViewModel : ViewModel() {
     /** A review on screen and the fields it was made with; the update sends exactly these. */
     data class Review(
         val fields: UpdateContractFields,
+        val target: UpdateContractTarget,
         val arguments: UpdateContractArguments,
         val preview: DataContractUpdatePreview,
     )
@@ -221,8 +233,9 @@ class UpdateContractViewModel : ViewModel() {
      */
     fun review(
         fields: UpdateContractFields,
-        currentFields: () -> UpdateContractFields,
-        previewUpdate: suspend (UpdateContractArguments) -> DataContractUpdatePreview,
+        target: UpdateContractTarget,
+        current: () -> Pair<UpdateContractFields, UpdateContractTarget?>,
+        previewUpdate: suspend (UpdateContractArguments, UpdateContractTarget) -> DataContractUpdatePreview,
     ) {
         if (isBusy) return
         val arguments = fields.walletArguments()
@@ -231,8 +244,10 @@ class UpdateContractViewModel : ViewModel() {
         isReviewing = true
         viewModelScope.launch {
             try {
-                val preview = previewUpdate(arguments)
-                if (currentFields() == fields) replaceReview(Review(fields, arguments, preview))
+                val preview = previewUpdate(arguments, target)
+                // An edit, or another contract or owner, chosen while the review ran is not
+                // what was reviewed
+                if (current() == fields to target) replaceReview(Review(fields, target, arguments, preview))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -251,19 +266,28 @@ class UpdateContractViewModel : ViewModel() {
      */
     fun submit(
         fields: UpdateContractFields,
-        update: suspend (UpdateContractArguments, Long) -> ByteArray,
+        target: UpdateContractTarget?,
+        update: suspend (UpdateContractArguments, Long, UpdateContractTarget) -> ByteArray,
         refresh: suspend (Long) -> String?,
     ) {
         val review = review ?: return
         if (isBusy ||
-            !canSubmitUpdate(review, fields, configChangeAcknowledged, unconfirmedUpdateSent, pendingRefreshFloor != null)
+            !canSubmitUpdate(
+                review,
+                fields,
+                target,
+                configChangeAcknowledged,
+                unconfirmedUpdateSent,
+                pendingRefreshFloor != null,
+            )
         ) {
             return
         }
         isSubmitting = true
         viewModelScope.launch {
             try {
-                val contractId = update(review.arguments, review.preview.currentVersion)
+                // Sent to the reviewed contract and owner, with the reviewed arguments
+                val contractId = update(review.arguments, review.preview.currentVersion, review.target)
                 // Platform holds at least the reviewed new version now, so an older copy from
                 // a lagging node is not stored
                 val newVersion = review.preview.newVersion
@@ -409,9 +433,18 @@ fun UpdateContractScreen(
 
     val fields = UpdateContractFields(documents, tokens, groups, keywords, descriptionText, config)
     // Any change of the inputs clears the review on screen
-    LaunchedEffect(fields, contractIdBytes?.toHex(), owner?.identityId?.toHex()) {
+    val target = if (contractIdBytes != null && owner != null) {
+        UpdateContractTarget(contractIdBytes.toHex(), owner.identityId.toHex())
+    } else {
+        null
+    }
+    // The target as composed last, for a review returning later to compare against
+    val latestTarget by rememberUpdatedState(target)
+    val currentTarget = { latestTarget }
+    // Any change of the inputs, the contract or the owner clears the review on screen
+    LaunchedEffect(fields, target) {
         val review = state.review
-        if (review != null && review.fields != fields) state.replaceReview(null)
+        if (review != null && (review.fields != fields || review.target != target)) state.replaceReview(null)
     }
 
     val wallet = owner?.walletId?.toHex()?.let { manager?.wallets?.value?.get(it) }
@@ -656,15 +689,19 @@ fun UpdateContractScreen(
                         .fillMaxWidth()
                         .testTag("updateContract.reviewButton"),
                 ) {
-                    val reviewOwner = owner ?: return@SubmitButton
                     val reviewWallet = wallet ?: return@SubmitButton
-                    val contractId = contractIdBytes ?: return@SubmitButton
-                    state.review(fields, {
-                        UpdateContractFields(documents, tokens, groups, keywords, descriptionText, config)
-                    }) { arguments ->
+                    val reviewTarget = target ?: return@SubmitButton
+                    state.review(
+                        fields,
+                        reviewTarget,
+                        {
+                            UpdateContractFields(documents, tokens, groups, keywords, descriptionText, config) to
+                                currentTarget()
+                        },
+                    ) { arguments, reviewed ->
                         reviewWallet.dataContracts.previewUpdate(
-                            ownerIdentityId = reviewOwner.identityId,
-                            contractId = contractId,
+                            ownerIdentityId = reviewed.ownerIdHex.hexToBytes(),
+                            contractId = reviewed.contractIdHex.hexToBytes(),
                             documentsSchemaJson = arguments.documents,
                             tokensSchemaJson = arguments.tokens,
                             groupsSchemaJson = arguments.groups,
@@ -706,6 +743,7 @@ fun UpdateContractScreen(
                 val canSubmit = !busy && wallet != null && canSubmitUpdate(
                     review,
                     fields,
+                    target,
                     state.configChangeAcknowledged,
                     state.unconfirmedUpdateSent,
                     state.pendingRefreshFloor != null,
@@ -718,14 +756,12 @@ fun UpdateContractScreen(
                         .fillMaxWidth()
                         .testTag("updateContract.submitButton"),
                 ) {
-                    val submitOwner = owner ?: return@SubmitButton
                     val submitWallet = wallet ?: return@SubmitButton
                     val mgr = manager ?: return@SubmitButton
-                    val contractId = contractIdBytes ?: return@SubmitButton
-                    state.submit(fields, update = { arguments, expectedVersion ->
+                    state.submit(fields, target, update = { arguments, expectedVersion, reviewed ->
                         submitWallet.dataContracts.update(
-                            ownerIdentityId = submitOwner.identityId,
-                            contractId = contractId,
+                            ownerIdentityId = reviewed.ownerIdHex.hexToBytes(),
+                            contractId = reviewed.contractIdHex.hexToBytes(),
                             documentsSchemaJson = arguments.documents,
                             tokensSchemaJson = arguments.tokens,
                             groupsSchemaJson = arguments.groups,

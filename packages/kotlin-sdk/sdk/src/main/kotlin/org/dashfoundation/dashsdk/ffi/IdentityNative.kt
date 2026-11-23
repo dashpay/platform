@@ -319,7 +319,7 @@ internal object IdentityNative {
      * when Platform holds another version; 0 means no check. Returns the
      * 32-byte updated contract id.
      */
-    external fun updateDataContract(
+    external fun updateDataContractAtReviewedVersion(
         walletHandle: Long,
         ownerIdentityId: ByteArray,
         contractId: ByteArray,

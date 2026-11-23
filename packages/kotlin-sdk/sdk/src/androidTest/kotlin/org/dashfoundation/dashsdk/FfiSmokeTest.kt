@@ -199,7 +199,7 @@ class FfiSmokeTest {
 
     /**
      * The contract update review exports bind with the descriptors
-     * `ContractUpdateNative` declares, and `IdentityNative.updateDataContract`
+     * `ContractUpdateNative` declares, and `IdentityNative.updateDataContractAtReviewedVersion`
      * with its `expectedCurrentVersion` slot. The split needs no wallet, so it
      * runs for real: a contract JSON object splits into its sections in source
      * order, and text that is not a JSON object is refused by Rust. The preview
@@ -226,7 +226,7 @@ class FfiSmokeTest {
             )
         }
         val badVersion = assertThrows(DashSDKException::class.java) {
-            IdentityNative.updateDataContract(
+            IdentityNative.updateDataContractAtReviewedVersion(
                 0L, ByteArray(32), ByteArray(32), "{}", null, null, null, null, null, -1L, 0L,
             )
         }

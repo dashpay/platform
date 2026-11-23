@@ -31,6 +31,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
+use crate::decision_proposals::to_unsigned;
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
 use crate::support::{guard, net_from_ord, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString, JValue};
@@ -1220,7 +1221,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_create
 /// 32-byte updated contract id.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_updateDataContract(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_updateDataContractAtReviewedVersion(
     mut env: JNIEnv,
     _class: JClass,
     wallet_handle: jlong,
@@ -1242,12 +1243,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_update
         let Some(contract) = read_id32(env, &contract_id, "contractId") else {
             return ptr::null_mut();
         };
-        let Ok(expected_current_version) = u32::try_from(expected_current_version) else {
-            throw_sdk_exception(
-                env,
-                1,
-                &format!("expectedCurrentVersion is out of range: {expected_current_version}"),
-            );
+        let Some(expected_current_version) =
+            to_unsigned::<u32>(env, expected_current_version, "expectedCurrentVersion")
+        else {
             return ptr::null_mut();
         };
 
