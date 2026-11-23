@@ -240,6 +240,28 @@ struct WalletDetailView: View {
                 .padding(.horizontal)
                 .padding(.top, 8)
                 .accessibilityIdentifier("walletDetail.shieldedActivityLink")
+
+                // Shielded Tokens row: the tokens this wallet holds in the
+                // token shielded pools it watches, as Rust's local scan
+                // reports them (not SwiftData).
+                NavigationLink(value: ShieldedTokensRoute(walletId: wallet.walletId)) {
+                    HStack {
+                        Label("Shielded Tokens", systemImage: "lock.square.stack")
+                            .font(.subheadline)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 12)
+                    .background(Color(UIColor.secondarySystemBackground))
+                    .cornerRadius(10)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .accessibilityIdentifier("walletDetail.shieldedTokensLink")
             }
 
             Divider()

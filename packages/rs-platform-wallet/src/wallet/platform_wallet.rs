@@ -2071,8 +2071,8 @@ impl PlatformWallet {
     /// shielded notes (`TokenPurchaseFromShieldedPool`, type 28): the notes pay
     /// `total_agreed_price` plus the pool-paid fee, and the tokens are minted as
     /// a note to the account's own default address in the token's shielded
-    /// pool. The wallet does not sync token pool notes yet, so that note is not
-    /// tracked or shown. `seed` supplies the transient spend authority (see
+    /// pool. The manager's purchaser then watches that pool, so a shielded
+    /// sync finds the note ([`super::shielded::token_pool`]). `seed` supplies the transient spend authority (see
     /// [`shielded_transfer_to`](Self::shielded_transfer_to)).
     ///
     /// An accepted purchase stays pending until a shielded sync confirms it

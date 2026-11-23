@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **43**
+Capabilities tracked: **44**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 27 | 14 | 1 | 1 |
-| Swift | Example app | 6 | 27 | 1 | 9 |
-| Kotlin | SDK | 22 | 17 | 3 | 1 |
-| Kotlin | Example app | 7 | 23 | 3 | 10 |
+| Swift | SDK | 27 | 15 | 1 | 1 |
+| Swift | Example app | 6 | 28 | 1 | 9 |
+| Kotlin | SDK | 22 | 17 | 4 | 1 |
+| Kotlin | Example app | 7 | 23 | 4 | 10 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 13 | 28 |
-| Kotlin | 6 | 10 | 27 |
+| Swift | 2 | 14 | 28 |
+| Kotlin | 6 | 10 | 28 |
 
 ## Capability status
 
@@ -67,6 +67,7 @@ Capabilities tracked: **43**
 | `addresses.balance_history` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `shielded.token_purchase_from_pool` | partial / partial / required | partial / partial / required |
 | `identity.withdrawal_status` | supported / partial / not_applicable | supported / partial / not_applicable |
+| `shielded.token_pool_balances` | partial / partial / required | unsupported / unsupported / not_applicable |
 
 Source: [`docs/sdk/sdk-parity-manifest.json`](../../docs/sdk/sdk-parity-manifest.json).
 Detailed legacy view mapping remains in [`PARITY.md`](PARITY.md), but its manual totals are not authoritative.
