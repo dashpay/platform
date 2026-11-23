@@ -38,7 +38,8 @@ PACKAGES = ['dashmate-v5.1.0-3a5da22021-arm64.pkg', 'dashmate-v5.1.0-3a5da22021-
 # The release lives in STATE (JSON) and its files in RELEASE_FILES. --jq goes through real jq,
 # as gh's own filter would. An API path containing GH_PARTIAL is answered and then fails, as a
 # paginated listing does when a later page cannot be read. GH_AFTER_UPLOAD changes the release
-# right after the upload; GH_READ_BACK_FAILS fails downloading the signature back. GH_AFTER_DOWNLOAD changes the release once the packages are
+# right after the upload; GH_READ_BACK_FAILS fails downloading the signature back, and
+# GH_UPLOAD_FAILS the upload itself. GH_AFTER_DOWNLOAD changes the release once the packages are
 # downloaded, as a re-run or another maintainer could while this one signs.
 GH_STUB = '''#!/usr/bin/env python3
 import fnmatch, hashlib, json, os, re, shutil, subprocess, sys
@@ -146,6 +147,9 @@ if args[:2] == ['release', 'upload']:
     if args[2] != release['tag_name'] or option('--repo') != 'dashpay/platform':
         not_found()
     name = os.path.basename(args[3])
+    if os.environ.get('GH_UPLOAD_FAILS'):
+        print('gh: connection reset by peer', file=sys.stderr)
+        sys.exit(1)
     if any(a['name'] == name for a in release['assets']) and '--clobber' not in args:
         print('HTTP 422: Validation Failed (already_exists)', file=sys.stderr)
         sys.exit(1)
@@ -646,6 +650,15 @@ class SignDashmateChecksumsTests(ReleaseFixture):
                 self.assertIn(reason, result.stderr)
                 self.assertIn(f'SHA256SUMS.asc is attached to {TAG}', result.stderr)
                 self.assertIn(f'gh release delete-asset {TAG} SHA256SUMS.asc --repo dashpay/platform', result.stderr)
+
+    def test_should_say_the_signature_may_be_attached_when_its_upload_fails(self):
+        # The upload can fail after GitHub has created the asset.
+        result = self.sign(f'--tag={TAG}', f'--key={KEY}', '--upload', GH_UPLOAD_FAILS='1')
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(f'SHA256SUMS.asc may be attached to {TAG}', result.stderr)
+        self.assertIn(f'gh release view {TAG} --repo dashpay/platform', result.stderr)
+        self.assertIn(f'gh release delete-asset {TAG} SHA256SUMS.asc --repo dashpay/platform', result.stderr)
 
     def test_should_check_with_shasum_where_sha256sum_is_not_gnu(self):
         result = self.sign(HASH_TOOL='shasum')

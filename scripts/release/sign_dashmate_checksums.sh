@@ -277,11 +277,14 @@ fi
 check_published_packages "${ASSETS}" "${DIR}/SHA256SUMS" \
   || fail "the dashmate packages ${TAG} serves are not the ones its SHA256SUMS lists (< served, > listed)"
 
-gh release upload "${TAG}" "${DIR}/SHA256SUMS.asc" --repo "${REPO}" || fail "could not attach SHA256SUMS.asc to ${TAG}"
-
-# Read back: the release serves the files that were signed and verified.
 READ_BACK="${WORK_DIR}/read-back"
 mkdir "${READ_BACK}"
+
+# A failed upload can still have created the asset.
+gh release upload "${TAG}" "${DIR}/SHA256SUMS.asc" --repo "${REPO}" \
+  || fail "the upload of SHA256SUMS.asc to ${TAG} failed, but SHA256SUMS.asc may be attached to ${TAG} anyway. Check with gh release view ${TAG} --repo ${REPO}, and delete it before trying again: gh release delete-asset ${TAG} SHA256SUMS.asc --repo ${REPO}"
+
+# Read back: the release serves the files that were signed and verified.
 gh release download "${TAG}" --repo "${REPO}" --pattern SHA256SUMS --pattern SHA256SUMS.asc --dir "${READ_BACK}" \
   || fail_attached "could not download SHA256SUMS and SHA256SUMS.asc back from it"
 for file in SHA256SUMS SHA256SUMS.asc; do
