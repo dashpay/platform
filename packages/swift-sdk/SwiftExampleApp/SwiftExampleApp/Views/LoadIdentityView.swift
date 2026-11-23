@@ -55,6 +55,14 @@ struct LoadIdentityView: View {
         /// by role. Success requires each slot to still hold its key, so a
         /// key changed elsewhere while the dialog was open is reported.
         let enteredKeyDigests: [SpecialKeyType: Data]
+        /// What Rust's outcome for the entered voting key says to record,
+        /// with that key's address, written on the identity only when that
+        /// key replaces the stored one; `nil` keeps what is recorded.
+        let votingKeyRecord: MasternodeRecordedVotingKey?
+        /// What the report says when the entered voting key could not be
+        /// checked, shown only when that key is in the voting slot after the
+        /// replacement.
+        let uncheckedVotingKeyNote: String?
     }
 
     /// Held only until the replacement dialog is answered, then cleared.
@@ -435,6 +443,65 @@ struct LoadIdentityView: View {
                     return
                 }
 
+                // A masternode voting key is checked against Platform before
+                // anything is stored. Rust decides from the check and what
+                // this device stores for the voting key whether the key is
+                // stored and what is recorded for it
+                // (`MasternodeVotingKeyCheck.outcome(votingAddress:slot:)`).
+                // Every record is written with the address of the key it was
+                // made of.
+                var votingKeyCheck: MasternodeVotingKeyCheck?
+                var votingKeyAddress: MasternodeVotingKeyAddress?
+                if let votingKeyData {
+                    let votingAddress = try SDK.masternodeVotingAddress(privateKey: votingKeyData)
+                    let check = try await sdk.checkMasternodeVotingKey(
+                        proTxHash: MasternodeVoter.wireOrderProTxHash(identityId: validIdData),
+                        votingAddress: votingAddress.data
+                    )
+                    guard appState.sdk === sdk else {
+                        await MainActor.run {
+                            errorMessage = "The network changed during the load, so the identity was not saved. Load it again."
+                            isLoading = false
+                            loadStartTime = nil
+                        }
+                        return
+                    }
+                    let refusal = "The voting key does not belong to masternode \(validIdData.toHexString()), so the identity was not saved: \(Self.reason(of: check))"
+                    let outcome = await MainActor.run { () -> MasternodeVotingKeyCheckOutcome in
+                        let read = Self.votingKeySlot(
+                            holding: votingKeyData,
+                            identityId: validIdData,
+                            network: network,
+                            in: modelContext
+                        )
+                        let outcome = check.outcome(votingAddress: votingAddress, slot: read.slot)
+                        if !outcome.storeKey {
+                            // Nothing entered is stored. What Rust says to
+                            // record is for the key already stored.
+                            var text = refusal
+                            if let record = outcome.record,
+                               let row = Self.identityRow(validIdData, on: network, in: modelContext) {
+                                row.recordedVotingKey = record
+                                do {
+                                    try modelContext.save()
+                                } catch {
+                                    text += " The verdict on the stored voting key could not be saved: \(error.localizedDescription). Load the identity again to retry."
+                                }
+                            }
+                            if read.storedKeyUnreadable {
+                                text += " The stored voting key could not be read, so what is recorded for it was not updated. Unlock the device and load the identity again."
+                            }
+                            errorMessage = text
+                            isLoading = false
+                            loadStartTime = nil
+                        }
+                        return outcome
+                    }
+                    guard outcome.storeKey else { return }
+                    votingKeyCheck = check
+                    votingKeyAddress = votingAddress
+                }
+
                 // Debug: Print the entire identity data to see its structure
                 print("🔵 Fetched identity data: \(identityData)")
 
@@ -558,6 +625,8 @@ struct LoadIdentityView: View {
                 let capturedVotingKey = votingKeyData
                 let capturedOwnerKey = ownerKeyData
                 let capturedPayoutKey = payoutKeyData
+                let capturedVotingKeyCheck = votingKeyCheck
+                let capturedVotingKeyAddress = votingKeyAddress
 
                 await MainActor.run {
                     // Upsert the PersistentIdentity row.
@@ -662,8 +731,32 @@ struct LoadIdentityView: View {
                             return nil
                         }
                     }
+                    var enteredVotingKeyStored = false
+                    // Rust's outcome for the entered key, from what the
+                    // store found in the slot (the read before the check
+                    // only decided whether to store): an empty slot it
+                    // filled, the same key already there, or a different
+                    // key it kept.
+                    var storedVotingKeyOutcome: MasternodeVotingKeyCheckOutcome?
                     if let identifier = storeSlot(capturedVotingKey, .voting, named: "voting") {
+                        enteredVotingKeyStored = true
                         row.votingPrivateKeyIdentifier = identifier
+                        if let check = capturedVotingKeyCheck, let address = capturedVotingKeyAddress {
+                            storedVotingKeyOutcome = check.outcome(
+                                votingAddress: address,
+                                slot: storedKeys.contains("voting")
+                                    ? .empty
+                                    : .sameKey(recorded: row.recordedVotingKey)
+                            )
+                            // The slot holds the entered key: record what
+                            // Rust says for it, or keep what is recorded.
+                            if let record = storedVotingKeyOutcome?.record {
+                                row.recordedVotingKey = record
+                            }
+                        }
+                    } else if conflictingKeys.contains("voting"),
+                              let check = capturedVotingKeyCheck, let address = capturedVotingKeyAddress {
+                        storedVotingKeyOutcome = check.outcome(votingAddress: address, slot: .differentKey)
                     }
                     if let identifier = storeSlot(capturedOwnerKey, .owner, named: "owner") {
                         row.ownerPrivateKeyIdentifier = identifier
@@ -691,8 +784,19 @@ struct LoadIdentityView: View {
                         return
                     }
 
-                    if unstoredKeys.isEmpty && conflictingKeys.isEmpty {
+                    // The entered voting key was stored but Platform could not
+                    // be asked about it: said in place of the plain success.
+                    let uncheckedNoteIfStored = Self.uncheckedVotingKeyNote(
+                        capturedVotingKeyCheck,
+                        outcome: storedVotingKeyOutcome
+                    )
+                    let uncheckedNote = enteredVotingKeyStored ? uncheckedNoteIfStored : nil
+                    if unstoredKeys.isEmpty && conflictingKeys.isEmpty && uncheckedNote == nil {
                         showSuccess = true
+                    } else if unstoredKeys.isEmpty && conflictingKeys.isEmpty, let uncheckedNote {
+                        errorMessage = "The identity was loaded and its voting key was stored. " + uncheckedNote
+                        isLoading = false
+                        loadStartTime = nil
                     } else {
                         var parts: [String] = []
                         // Kept apart so the report after a replacement can
@@ -720,6 +824,9 @@ struct LoadIdentityView: View {
                         if unstoredKeys.contains("voting") && row.votingPrivateKeyIdentifier == nil {
                             text += " The identity cannot vote until it is loaded again."
                         }
+                        if let uncheckedNote {
+                            text += " The voting key was stored. " + uncheckedNote
+                        }
                         errorMessage = text
                         isLoading = false
                         loadStartTime = nil
@@ -738,7 +845,9 @@ struct LoadIdentityView: View {
                                 identityId: validIdData,
                                 keys: conflictingReplacements,
                                 unstoredNote: unstoredNote,
-                                enteredKeyDigests: enteredKeyDigests
+                                enteredKeyDigests: enteredKeyDigests,
+                                votingKeyRecord: storedVotingKeyOutcome?.record,
+                                uncheckedVotingKeyNote: uncheckedNoteIfStored
                             )
                         }
                     }
@@ -823,7 +932,9 @@ struct LoadIdentityView: View {
                 case .success(nil):
                     removed.append(name)
                     switch key.keyType {
-                    case .voting: row.votingPrivateKeyIdentifier = nil
+                    case .voting:
+                        row.votingPrivateKeyIdentifier = nil
+                        row.votingKeyCheck = nil
                     case .owner: row.ownerPrivateKeyIdentifier = nil
                     case .payout: row.payoutPrivateKeyIdentifier = nil
                     }
@@ -836,7 +947,14 @@ struct LoadIdentityView: View {
             }
             if let identifier {
                 switch key.keyType {
-                case .voting: row.votingPrivateKeyIdentifier = identifier
+                case .voting:
+                    row.votingPrivateKeyIdentifier = identifier
+                    // The slot now holds the entered key: record what Rust's
+                    // outcome at the load says for it, or keep what is
+                    // recorded.
+                    if let record = pending.votingKeyRecord {
+                        row.recordedVotingKey = record
+                    }
                 case .owner: row.ownerPrivateKeyIdentifier = identifier
                 case .payout: row.payoutPrivateKeyIdentifier = identifier
                 }
@@ -900,6 +1018,9 @@ struct LoadIdentityView: View {
         // including roles stored by the load itself, so a key changed in
         // another window while the dialog was open is not reported as done.
         var notInPlace: [String] = []
+        // Whether the entered voting key is in its slot now, stored by the
+        // load itself or by this replacement.
+        var enteredVotingKeyInPlace = false
         for (keyType, digest) in pending.enteredKeyDigests.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
             let inPlace: Bool
             if case .success(let stored?) = keychain.readSpecialKey(identityId: pending.identityId, keyType: keyType) {
@@ -907,6 +1028,7 @@ struct LoadIdentityView: View {
             } else {
                 inPlace = false
             }
+            if keyType == .voting { enteredVotingKeyInPlace = inPlace }
             let handled = changed.contains(keyType.rawValue) || kept.contains(keyType.rawValue)
                 || removed.contains(keyType.rawValue) || unknown.contains(keyType.rawValue)
                 || notChosen.contains(keyType.rawValue)
@@ -919,7 +1041,12 @@ struct LoadIdentityView: View {
             let noun = notInPlace.count == 1 ? "key is" : "keys are"
             parts.append("The \(names) \(noun) no longer the one you entered; it was changed on this device since the load. Load the identity again.")
         }
-        if saved && replaced.count == pending.keys.count && pending.unstoredNote == nil && notInPlace.isEmpty {
+        let uncheckedNote = enteredVotingKeyInPlace ? pending.uncheckedVotingKeyNote : nil
+        if let uncheckedNote {
+            parts.append(uncheckedNote)
+        }
+        if saved && replaced.count == pending.keys.count && pending.unstoredNote == nil && notInPlace.isEmpty
+            && uncheckedNote == nil {
             errorMessage = nil
             showSuccess = true
         } else {
@@ -927,6 +1054,73 @@ struct LoadIdentityView: View {
             isLoading = false
             loadStartTime = nil
         }
+    }
+
+    /// What the load reports when the entered voting key could not be
+    /// checked against Platform, worded from Rust's `outcome` for it: whether
+    /// what was recorded is kept. `nil` when the key was checked. Shown only
+    /// when the entered key is in the voting slot.
+    private static func uncheckedVotingKeyNote(
+        _ check: MasternodeVotingKeyCheck?,
+        outcome: MasternodeVotingKeyCheckOutcome?
+    ) -> String? {
+        guard case .undetermined(let reason) = check, let outcome else { return nil }
+        if outcome.record == nil {
+            return reason + " The result of its earlier check is kept."
+        }
+        return reason + " It is checked again when you pick this identity to vote."
+    }
+
+    /// The message a voting key check carries, empty for a valid one.
+    private static func reason(of check: MasternodeVotingKeyCheck) -> String {
+        switch check {
+        case .valid: return ""
+        case .invalid(let message), .undetermined(let message): return message
+        }
+    }
+
+    /// The identity's row, when it is stored for `network`.
+    @MainActor
+    private static func identityRow(_ identityId: Data, on network: Network, in modelContext: ModelContext) -> PersistentIdentity? {
+        guard let row = PersistentIdentity.fetch(in: modelContext, identityId: identityId),
+              row.network == network else {
+            return nil
+        }
+        return row
+    }
+
+    /// What this device's voting key slot for the identity holds compared
+    /// with `enteredKey`, the fact Rust's rules take
+    /// (`MasternodeVotingKeyCheck.outcome(votingAddress:slot:)`), and whether
+    /// the stored key could not be read. The keys are compared by SHA-256
+    /// digest, so no copy of the stored key outlives the read; the recorded
+    /// check, with its key's address, comes from the identity's row on
+    /// `network`, if any.
+    @MainActor
+    private static func votingKeySlot(
+        holding enteredKey: Data,
+        identityId: Data,
+        network: Network,
+        in modelContext: ModelContext
+    ) -> (slot: MasternodeVotingKeySlot, storedKeyUnreadable: Bool) {
+        let storedDigest: Data
+        switch KeychainManager.shared.readSpecialKey(identityId: identityId, keyType: .voting) {
+        case .success(nil):
+            return (.empty, false)
+        case .success(let stored?):
+            storedDigest = Data(SHA256.hash(data: stored))
+        case .failure:
+            // The stored key could not be read, so it is not known to be
+            // the entered one: reported as a different key, the
+            // conservative fact (Rust records nothing on a different key),
+            // and the caller tells the user.
+            return (.differentKey, true)
+        }
+        guard storedDigest == Data(SHA256.hash(data: enteredKey)) else {
+            return (.differentKey, false)
+        }
+        let recorded = identityRow(identityId, on: network, in: modelContext)?.recordedVotingKey
+        return (.sameKey(recorded: recorded), false)
     }
 
     /// Bring `identity`'s public-key rows in line with the keys fetched from
