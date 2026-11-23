@@ -1160,14 +1160,16 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///       (`InvalidContractStructure`). A `$ref` the contract keeps is judged through the schema
 ///       it points at, as an object the contract has. A schema the contract gains reached
 ///       deeper than the parse admits, or a `$ref` it gains reaching the schema it is written
-///       in, that the document type parser can not follow, or that is not text, is refused
+///       in, that the document type parser can not follow or follows to no property schema (a
+///       map with a `type`), or that is not text, is refused
 ///       (`InvalidContractStructure`): the parse refuses each in a document type, and no
 ///       document type could read what it reaches in a token-only contract. What a contract
 ///       keeps is never refused for its depth: a pair a kept `$ref` points at is walked once,
 ///       on its own from a queue, so a cycle or a chain of any length a token-only contract
 ///       stored earlier in `$defs` no parse reads neither deepens the walk nor depends on the
 ///       path that reaches it, and a schema it stored deeper than the parse admits stays only
-///       as it was.
+///       as it was. A kept `$ref` stored pointing at nothing reaches a schema the contract
+///       gains once an update writes one there, held to the same rules.
 ///     - An object a contract has keeps the order of its members, and a member it gains comes
 ///       after them at its next free position. The first check that finds a breach reports it:
 ///       the walk of each document type (`DocumentTypeUpdateError`, or

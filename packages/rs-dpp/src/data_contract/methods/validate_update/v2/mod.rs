@@ -1703,38 +1703,159 @@ mod tests {
     }
 
     /// A `$ref` an update adds in a token-only contract's `$defs`, which no parse reads, is
-    /// refused when it points at nothing: no document type could later reach the definition.
+    /// refused when the document type parser can not read what it reaches as a property schema:
+    /// it points at nothing, at a keyword's value, or at a map of members. One that reaches a
+    /// scalar property's schema is accepted.
     #[test]
-    fn should_refuse_a_ref_a_token_only_contract_gains_that_points_at_nothing() {
+    fn should_refuse_a_ref_a_token_only_contract_gains_unless_it_reaches_a_property_schema() {
         let platform_version = PlatformVersion::latest();
         let kept = BTreeMap::from([("kept".to_string(), object_of(vec![("a", string_at(0))]))]);
         let stored = token_only_contract(kept.clone(), platform_version);
-        let mut with_dangling = kept;
-        with_dangling.insert(
-            "added".to_string(),
-            object_of(vec![(
-                "x",
-                platform_value!({ "$ref": "#/$defs/missing", "position": 0 }),
-            )]),
-        );
-        let mut updated = stored.clone();
-        updated
-            .set_schema_defs(Some(with_dangling), true, &mut Vec::new(), platform_version)
-            .expect("expected the parse to store a token-only contract's dangling $ref");
-        updated.set_version(stored.version() + 1);
-        let result = stored
-            .validate_update(&updated, &BlockInfo::default(), platform_version)
-            .expect("expected the update to be judged");
-        assert!(
-            matches!(
-                result.errors.as_slice(),
-                [ConsensusError::BasicError(BasicError::ContractError(
-                    DataContractError::InvalidContractStructure(details)
-                ))] if details.contains("#/$defs/missing")
+        for (case, reference, refused) in [
+            ("nothing", "#/$defs/missing", Some("follows it to nothing")),
+            (
+                "a keyword's value",
+                "#/$defs/kept/properties/a/type",
+                Some("no property schema"),
             ),
-            "{:?}",
-            result.errors
-        );
+            (
+                "a map of members",
+                "#/$defs/kept/properties",
+                Some("no property schema"),
+            ),
+            (
+                "a scalar property's schema",
+                "#/$defs/kept/properties/a",
+                None,
+            ),
+        ] {
+            let mut with_reference = kept.clone();
+            with_reference.insert(
+                "added".to_string(),
+                object_of(vec![(
+                    "x",
+                    platform_value!({ "$ref": reference, "position": 0 }),
+                )]),
+            );
+            let mut updated = stored.clone();
+            updated
+                .set_schema_defs(
+                    Some(with_reference),
+                    true,
+                    &mut Vec::new(),
+                    platform_version,
+                )
+                .expect("expected the parse to store a token-only contract's $ref");
+            updated.set_version(stored.version() + 1);
+            let result = stored
+                .validate_update(&updated, &BlockInfo::default(), platform_version)
+                .expect("expected the update to be judged");
+            match refused {
+                None => assert!(result.is_valid(), "{case}: {:?}", result.errors),
+                Some(fragment) => assert!(
+                    matches!(
+                        result.errors.as_slice(),
+                        [ConsensusError::BasicError(BasicError::ContractError(
+                            DataContractError::InvalidContractStructure(details)
+                        ))] if details.contains(reference) && details.contains(fragment)
+                    ),
+                    "{case}: {:?}",
+                    result.errors
+                ),
+            }
+        }
+    }
+
+    /// A `$ref` a token-only contract stored pointing at nothing, which an update keeps, reaches
+    /// a schema the contract gains once the update writes one there: through `validate_update`,
+    /// an object there listed at consecutive positions is accepted, one listed otherwise, or a
+    /// value that is no property schema, is refused. The walk of the definitions does not read
+    /// the `properties` of the scalar holding the target, so only the `$ref` reaches it.
+    #[test]
+    fn should_judge_what_a_kept_token_only_ref_stored_pointing_at_nothing_comes_to_reach() {
+        let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+        let latest = PlatformVersion::latest();
+        let definitions = |new_members: Vec<(&str, Value)>| {
+            let members = new_members
+                .into_iter()
+                .map(|(name, member)| (text(name), member))
+                .collect();
+            BTreeMap::from([
+                (
+                    // A scalar, whose `properties` the walk of the definitions does not read:
+                    // only the `$ref` reaches what an update writes there
+                    "holder".to_string(),
+                    platform_value!({
+                        "type": "string",
+                        "maxLength": 1,
+                        "properties": Value::Map(members),
+                    }),
+                ),
+                (
+                    "user".to_string(),
+                    object_of(vec![(
+                        "x",
+                        platform_value!({
+                            "$ref": "#/$defs/holder/properties/new",
+                            "position": 0,
+                        }),
+                    )]),
+                ),
+            ])
+        };
+        let stored = token_only_contract(definitions(vec![]), protocol_version_14);
+        let boolean_at =
+            |position: u64| platform_value!({ "type": "boolean", "position": position });
+        for (case, new, refused) in [
+            (
+                "an object listed at consecutive positions",
+                with_position(
+                    object_of(vec![("a", boolean_at(0)), ("b", boolean_at(1))]),
+                    0,
+                ),
+                None,
+            ),
+            (
+                "an object listed out of position order",
+                with_position(
+                    object_of(vec![("b", boolean_at(1)), ("a", boolean_at(0))]),
+                    0,
+                ),
+                Some("'#/$defs/holder/properties/new'"),
+            ),
+            (
+                "a value that is no property schema",
+                platform_value!({ "description": "x" }),
+                Some("no property schema"),
+            ),
+        ] {
+            let mut updated = stored.clone();
+            updated
+                .set_schema_defs(
+                    Some(definitions(vec![("new", new)])),
+                    true,
+                    &mut Vec::new(),
+                    latest,
+                )
+                .expect("expected the parse to store a token-only contract's $defs");
+            updated.set_version(stored.version() + 1);
+            let result = stored
+                .validate_update(&updated, &BlockInfo::default(), latest)
+                .expect("expected the update to be judged");
+            match refused {
+                None => assert!(result.is_valid(), "{case}: {:?}", result.errors),
+                Some(fragment) => assert!(
+                    matches!(
+                        result.errors.as_slice(),
+                        [ConsensusError::BasicError(BasicError::ContractError(
+                            DataContractError::InvalidContractStructure(details)
+                        ))] if details.contains(fragment)
+                    ),
+                    "{case}: {:?}",
+                    result.errors
+                ),
+            }
+        }
     }
 
     /// A position a contract stored before protocol version 15 that no integer reads (a float

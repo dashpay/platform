@@ -819,14 +819,16 @@ impl GainedObjects<'_> {
     /// refuses; the lists of the others are still read.
     fn schemas_read<'s>(&'s self, schemas: Vec<&'s Value>) -> Vec<&'s Value> {
         let mut read: Vec<&Value> = Vec::with_capacity(schemas.len() * 2);
+        let mut seen: BTreeSet<*const Value> = BTreeSet::new();
         for schema in schemas {
             let mut current = schema;
             read.push(current);
+            seen.insert(std::ptr::from_ref(current));
             while let Some(target) = reference_of(current).and_then(|reference| {
                 self.definitions
                     .resolve_as_validated(reference, Some(self.type_schema))
             }) {
-                if read.iter().any(|seen| std::ptr::eq(*seen, target)) {
+                if !seen.insert(std::ptr::from_ref(target)) {
                     break;
                 }
                 read.push(target);

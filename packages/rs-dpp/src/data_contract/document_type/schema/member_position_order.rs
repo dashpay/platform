@@ -5,7 +5,9 @@
 //! version 15 an object a contract gains (at registration, or in an update that adds it) lists
 //! its members at consecutive positions in map order, so for every such object the two orders
 //! agree and its members are stored as a document type's own properties are; a `$ref` it gains
-//! points into its `$defs`, at a schema whose objects are listed the same way. An object a
+//! points into its `$defs`, at a property schema the document type parser can read, whose
+//! objects are listed the same way, and so does a `$ref` it keeps that pointed at nothing as
+//! stored but reaches a schema as the update writes it. An object a
 //! contract already has keeps the order it was registered with, which before protocol version 15
 //! could differ from its positions, or leave gaps in them: its members keep their order, and a
 //! member an update adds to it comes after its existing ones, at its next free positions, so
@@ -25,7 +27,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MemberPositionOrderError {
     /// An object the contract gains does not list its members at consecutive positions in map
-    /// order, or a `$ref` it gains does not point at a schema of `$defs` whose objects do.
+    /// order, or a `$ref` it gains (or keeps, pointing at nothing as stored) does not point at a
+    /// property schema of `$defs` the document type parser can read, whose objects do.
     ListedOutOfPositionOrder(String),
     /// An object the contract has changes the order of its members, or a member an update adds
     /// to it is not listed after them at its next free position.
@@ -42,9 +45,10 @@ pub struct MemberPositionOrder<'a> {
     /// admits, which counts a schema at least as deep, so no document type the parse admits
     /// reaches it. A schema the contract gains nested deeper, reached through any `$ref`, is
     /// refused, as is a `$ref` it gains that reaches itself, that the document type parser can
-    /// not follow, or whose value is not text: a walk that stopped there could not tell what
-    /// lies below, and no document type could read what it reaches (the parse refuses each in
-    /// a document type, and no parse reads the `$defs` of a contract with only tokens).
+    /// not follow or follows to no property schema (no map with a `type`), or whose value is
+    /// not text: a walk that stopped there could not tell what lies below, and no document type
+    /// could read what it reaches (the parse refuses each in a document type, and no parse reads
+    /// the `$defs` of a contract with only tokens).
     ///
     /// What a contract keeps was stored with it, and is never refused for its depth: the parse
     /// bounded it in a contract with a document type, but no parse reads the `$defs` of a
@@ -52,9 +56,14 @@ pub struct MemberPositionOrder<'a> {
     /// schemas a `$ref` the contract keeps points at is walked on its own, from a queue of the
     /// call, not inside the walk that reached it: each is walked once a call, from depth 0,
     /// whatever reaches it, so its answer is the same for every path, and no chain of `$ref`s
-    /// deepens the walk. Inside it, a schema the contract keeps past this depth is left as it
-    /// is when the update leaves it as it was, and refused when the update changes it, so the
-    /// walk never goes deeper; what the contract gains is refused past it.
+    /// deepens the walk. A `$ref` the contract keeps that pointed at nothing as stored, and
+    /// reaches a schema as the update writes it, reaches a schema the contract gains, judged
+    /// where the walk meets it as one a gained `$ref` reaches. Inside a pair, a schema the
+    /// contract keeps past this depth is left as it is when the update leaves it as it was, and
+    /// refused when the update changes it, so the walk never goes deeper; what the contract
+    /// gains is refused past it. No transition decodes that deep (protocol version 15 decodes
+    /// a value nested at most 256 levels), so only a schema an in-memory caller builds reaches
+    /// that.
     max_depth: usize,
     /// The deepest point the walk has reached, which the walk of a `$ref` the contract gains
     /// reads as how deep the schema it points at goes.
@@ -252,7 +261,7 @@ impl<'a> MemberPositionOrder<'a> {
                 .and_then(|old| old.get_optional_key(REF))
                 .and_then(Value::as_text);
             return if old_reference == Some(reference) {
-                self.queue_kept_reference(reference, path, call)
+                self.queue_kept_reference(reference, path, call, depth)
             } else {
                 self.gained_reference_error(reference, path, call, depth)
             };
@@ -285,10 +294,8 @@ impl<'a> MemberPositionOrder<'a> {
     }
 
     /// Why a `$ref` the contract gains at `path` is refused: it does not point into `$defs`, the
-    /// document type parser can not follow it there (so no document type could read what it
-    /// reaches: the parse refuses it in a document type, and no parse reads the `$defs` of a
-    /// contract with only tokens), or the schema it points at, or one reached from it, holds an
-    /// object not listed at consecutive positions.
+    /// document type parser can not follow it there, or the schema it reaches is refused
+    /// ([`Self::gained_target_error`]).
     fn gained_reference_error<'v>(
         &'v self,
         reference: &str,
@@ -296,23 +303,50 @@ impl<'a> MemberPositionOrder<'a> {
         call: &Call<'v>,
         depth: usize,
     ) -> Option<MemberPositionOrderError> {
-        let refused = |detail: String| {
-            Some(MemberPositionOrderError::ListedOutOfPositionOrder(format!(
-                "'{path}' takes its schema from '{reference}': {detail}"
-            )))
-        };
         if !reference.starts_with("#/$defs/") {
-            return refused(
-                "from protocol version 15 a `$ref` a contract gains points into its `$defs`"
-                    .to_string(),
-            );
+            return Some(reference_refusal(
+                path,
+                reference,
+                "from protocol version 15 a `$ref` a contract gains points into its `$defs`",
+            ));
         }
         let Some(target) = self.new_definitions.resolve_as_parsed(reference, None) else {
-            return refused(
-                "the document type parser follows it to nothing in the contract's `$defs`"
-                    .to_string(),
-            );
+            return Some(reference_refusal(
+                path,
+                reference,
+                "the document type parser follows it to nothing in the contract's `$defs`",
+            ));
         };
+        self.gained_target_error(target, reference, path, call, depth)
+    }
+
+    /// Why the schema `target`, which the `$ref` at `path` reaches and the contract gains, is
+    /// refused: it is no property schema the document type parser can read, a map with a
+    /// `type` (a keyword's value, or a map of members, is none), so no document type could read
+    /// it (the parse refuses it in a document type, and no parse reads the `$defs` of a
+    /// contract with only tokens); or it, or a schema reached from it, holds an object not
+    /// listed at consecutive positions.
+    fn gained_target_error<'v>(
+        &'v self,
+        target: &'v Value,
+        reference: &str,
+        path: &str,
+        call: &Call<'v>,
+        depth: usize,
+    ) -> Option<MemberPositionOrderError> {
+        let is_property_schema = target
+            .as_map()
+            .and_then(|target| last_value(target, TYPE))
+            .and_then(Value::as_text)
+            .is_some();
+        if !is_property_schema {
+            return Some(reference_refusal(
+                path,
+                reference,
+                "it reaches no property schema (a map with a `type`), which the document type \
+                 parser could read",
+            ));
+        }
         let error = self.judged_gained_reference(target, reference, call, depth);
         if self.reference_nesting.get() > 0 {
             error
@@ -324,19 +358,26 @@ impl<'a> MemberPositionOrder<'a> {
     /// Queues the pair of schemas the `$ref` the contract keeps at `path` points at, to be walked
     /// on its own, unless the call reached it before. A pointer into `$defs` is resolved in each
     /// side's `$defs`, any other in each side's document type schema, as the parse resolves it.
-    /// One that points at nothing on either side is left as it is.
+    /// One that points at nothing on the new side is left as it is. One that points at nothing
+    /// as stored but at a schema as the update writes it reaches a schema the contract gains,
+    /// judged as one a gained `$ref` reaches, whatever the pointer's spelling, which was stored
+    /// with the contract.
     fn queue_kept_reference<'v>(
         &'v self,
         reference: &str,
         path: &str,
         call: &Call<'v>,
+        depth: usize,
     ) -> Option<MemberPositionOrderError> {
-        let old = self
-            .old_definitions
-            .resolve_as_parsed(reference, call.old_type)?;
         let new = self
             .new_definitions
             .resolve_as_parsed(reference, call.new_type)?;
+        let Some(old) = self
+            .old_definitions
+            .resolve_as_parsed(reference, call.old_type)
+        else {
+            return self.gained_target_error(new, reference, path, call, depth);
+        };
         if !call
             .reached_kept
             .borrow_mut()
@@ -439,6 +480,13 @@ impl<'a> MemberPositionOrder<'a> {
             judged_gained_references.remove(&target);
         }
     }
+}
+
+/// The refusal of the `$ref` at `path`, which reads `reference`, for `detail`.
+fn reference_refusal(path: &str, reference: &str, detail: &str) -> MemberPositionOrderError {
+    MemberPositionOrderError::ListedOutOfPositionOrder(format!(
+        "'{path}' takes its schema from '{reference}': {detail}"
+    ))
 }
 
 /// `error`, found in the schema `reference` points at, as the refusal of the `$ref` at `path`.
@@ -1490,5 +1538,69 @@ mod tests {
                 "{case}"
             );
         }
+    }
+
+    /// A `$ref` a contract stored pointing at nothing, which an update leaves as it is, reaches a
+    /// schema the contract gains once the update writes one there: that schema is judged as one
+    /// a gained `$ref` reaches. One that still points at nothing is left as it is.
+    #[test]
+    fn should_judge_what_a_kept_ref_stored_pointing_at_nothing_comes_to_reach() {
+        // Stored with the contract, a pointer may be spelled with `.`, as the parse reads it
+        for reference in [
+            "#/$defs/holder/properties/new",
+            "#/$defs.holder.properties.new",
+        ] {
+            judge_what_a_kept_ref_stored_pointing_at_nothing_comes_to_reach(reference);
+        }
+    }
+
+    fn judge_what_a_kept_ref_stored_pointing_at_nothing_comes_to_reach(reference: &str) {
+        let definitions = |holder: Value| {
+            BTreeMap::from([
+                ("holder".to_string(), holder),
+                (
+                    "user".to_string(),
+                    object(vec![(
+                        "x",
+                        platform_value!({ "$ref": reference, "position": 0 }),
+                    )]),
+                ),
+            ])
+        };
+        let scalar = platform_value!({ "type": "string", "maxLength": 1 });
+        let holding = |new: Value| {
+            platform_value!({
+                "type": "string",
+                "maxLength": 1,
+                "properties": { "new": new },
+            })
+        };
+        let stored = definitions(scalar.clone());
+        let latest = PlatformVersion::latest();
+        let judged = |updated: &BTreeMap<String, Value>| {
+            MemberPositionOrder::new(Some(&stored), Some(updated), latest)
+                .first_error_of_definitions()
+                .map(|(_, error)| error)
+        };
+        assert_eq!(
+            judged(&stored),
+            None,
+            "{reference}: still pointing at nothing"
+        );
+        assert_eq!(
+            judged(&definitions(holding(object(vec![
+                ("a", member(0)),
+                ("b", member(1))
+            ])))),
+            None,
+            "{reference}: an object listed at consecutive positions"
+        );
+        listed_out_of_position_order(
+            judged(&definitions(holding(object(vec![
+                ("b", member(1)),
+                ("a", member(0)),
+            ])))),
+            reference,
+        );
     }
 }
