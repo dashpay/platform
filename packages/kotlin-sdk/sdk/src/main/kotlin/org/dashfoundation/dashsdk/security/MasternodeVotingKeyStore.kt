@@ -108,6 +108,10 @@ class MasternodeVotingKeyStore private constructor(
      *   conditional update after the write checks again, and if that finds a change the
      *   entry just written is deleted unless the row names it.
      *
+     * The new entry is recorded as pending (see [pendingIdentifiers]): [removeStaleEntries]
+     * keeps it until it sees a row name it, so a cleanup that runs before an enclosing
+     * transaction commits cannot delete it.
+     *
      * Nothing else is deleted, the entry the row named before included: call
      * [removeStaleEntries] once the change has committed. So if the row update joins a Room
      * transaction the caller later rolls back, the row names its old key again and that key
@@ -159,6 +163,9 @@ class MasternodeVotingKeyStore private constructor(
             return VotingKeyAssignment.Changed(before?.votingPrivateKeyIdentifier)
         }
         val identifier = store(identityId, privateKey)
+        // Pending until a cleanup sees a row naming it: the row update below may belong to a
+        // transaction that has not committed yet (see [pendingIdentifiers]).
+        pendingIdentifiers += identifier
         val changed = identityDao.replaceVotingPrivateKeyIdentifier(
             identityId, networkRaw, expectedIdentifier, identifier, nowMillis,
         )
@@ -166,7 +173,10 @@ class MasternodeVotingKeyStore private constructor(
             val current = identityDao.getByIdentityId(identityId)
                 ?.takeIf { it.networkRaw == networkRaw }
                 ?.votingPrivateKeyIdentifier
-            if (current != identifier) storage.deletePrivateKey(identifier)
+            if (current != identifier) {
+                storage.deletePrivateKey(identifier)
+                pendingIdentifiers -= identifier
+            }
             return VotingKeyAssignment.Changed(current)
         }
         return VotingKeyAssignment.Assigned(identifier)
@@ -178,6 +188,13 @@ class MasternodeVotingKeyStore private constructor(
      * interrupted assignment left. When the row is gone, all of the identity's entries go.
      * Returns false when the row could not be read or the entries could not be deleted
      * (nothing is deleted when the read fails); a later call retries.
+     *
+     * Entries [assignToIdentity] wrote that no row has been seen to name yet are kept (see
+     * [pendingIdentifiers]): an assignment whose row update sits in a caller's transaction
+     * that has not committed is invisible to this read, and deleting its entry would leave
+     * the committed row naming a key that is gone. Once the row names a pending entry, it is
+     * no longer pending. A pending entry whose transaction rolled back stays on disk for
+     * the life of the process; the next process's first cleanup removes it.
      *
      * Call it after the write that changed the row's identifier has committed, never inside
      * a Room transaction: run against an uncommitted row, it could delete the key a rollback
@@ -191,7 +208,9 @@ class MasternodeVotingKeyStore private constructor(
         return withVotingKeyLock {
             try {
                 val keep = database.identityDao().getByIdentityId(identityId)?.votingPrivateKeyIdentifier
-                deleteOtherEntriesOf(identityId, keep)
+                // A row naming a pending entry shows its write is committed and visible.
+                if (keep != null) pendingIdentifiers -= keep.lowercase()
+                deleteOtherEntriesOf(identityId, keep, alsoKeep = pendingIdentifiers.toSet())
                 true
             } catch (e: CancellationException) {
                 throw e
@@ -231,14 +250,20 @@ class MasternodeVotingKeyStore private constructor(
     }
 
     /**
-     * Delete every voting entry of [identityId] except [keep], in one atomic write. Internal:
-     * callers use [removeStaleEntries], which reads [keep] from the row under the lock.
+     * Delete every voting entry of [identityId] except [keep] and [alsoKeep], in one atomic
+     * write. Internal: callers use [removeStaleEntries], which reads [keep] from the row
+     * under the lock.
      *
      * @param keep the identifier the identity's row names now, or null to delete them all.
+     * @param alsoKeep identifiers that must survive too (pending assignments).
      * @throws IllegalArgumentException when [keep] is not one of [identityId]'s identifiers.
      */
     @JvmSynthetic
-    internal suspend fun deleteOtherEntriesOf(identityId: ByteArray, keep: String?) {
+    internal suspend fun deleteOtherEntriesOf(
+        identityId: ByteArray,
+        keep: String?,
+        alsoKeep: Set<String> = emptySet(),
+    ) {
         require(identityId.size == 32) { "identityId must be 32 bytes, got ${identityId.size}" }
         val keepName = keep?.lowercase()?.also {
             require(parse(it).first.contentEquals(identityId)) {
@@ -249,7 +274,7 @@ class MasternodeVotingKeyStore private constructor(
         val names = storage.listEntryNames()
             .filter { it.startsWith(prefix) }
             .map { it.removePrefix(STORAGE_ENTRY_PREFIX) }
-            .filter { it != keepName }
+            .filter { it != keepName && it !in alsoKeep }
         storage.deletePrivateKeys(names)
     }
 
@@ -282,6 +307,30 @@ class MasternodeVotingKeyStore private constructor(
     companion object {
         /** Serializes every voting key change that spans an entry and an identity row. */
         private val votingKeyLock = Mutex()
+
+        /**
+         * Identifiers [assignToIdentity] wrote and recorded that no [removeStaleEntries] has
+         * yet seen a row name, which that cleanup never deletes. Read and written only while
+         * holding [votingKeyLock].
+         *
+         * Why: an assignment's row update can join a caller's Room transaction that commits
+         * later, and an independent cleanup reading the committed row in between would delete
+         * the new entry the commit then names. Neither guard can see such a transaction: the
+         * thread-bound `RoomDatabase.inTransaction()` misses a coroutine transaction after a
+         * dispatcher switch, and Room 2.7.1's `useWriterConnection { it.inTransaction() }`
+         * reports false even directly inside the legacy `withTransaction` this app uses
+         * (measured under Robolectric). In-process only: an entry left pending by a
+         * transaction that rolled back stays on disk until the next process, whose first
+         * cleanup removes it.
+         */
+        private val pendingIdentifiers = HashSet<String>()
+
+        /** Test hook: forget every pending identifier, as a new process starts. */
+        @VisibleForTesting
+        @JvmSynthetic
+        internal suspend fun resetPendingForTesting() {
+            withVotingKeyLock { pendingIdentifiers.clear() }
+        }
 
         /**
          * TEST ONLY; production code never sets it. Called just before a caller of

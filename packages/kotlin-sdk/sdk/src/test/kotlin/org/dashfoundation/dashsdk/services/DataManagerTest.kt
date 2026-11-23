@@ -45,6 +45,8 @@ class DataManagerTest {
         storage = WalletStorage(ApplicationProvider.getApplicationContext(), keystore)
         storage.deleteAll()
         manager = DataManager(db, storage)
+        // The pending set is process-wide; every test starts as a fresh process would.
+        MasternodeVotingKeyStore.resetPendingForTesting()
         db.identityDao().upsert(
             IdentityEntity(
                 identityId = identityId,

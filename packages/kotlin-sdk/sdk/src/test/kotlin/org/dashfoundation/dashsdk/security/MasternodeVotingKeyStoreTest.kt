@@ -1,11 +1,16 @@
 package org.dashfoundation.dashsdk.security
 
 import androidx.test.core.app.ApplicationProvider
+import androidx.room.Room
+import androidx.room.RoomDatabase
 import androidx.room.withTransaction
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.junit.After
@@ -55,6 +60,8 @@ class MasternodeVotingKeyStoreTest {
         store = MasternodeVotingKeyStore(storage)
         assigning = MasternodeVotingKeyStore.forTesting(storage) { key -> key.copyOf(20) }
         db = DashDatabase.createInMemory(ApplicationProvider.getApplicationContext())
+        // The pending set is process-wide; every test starts as a fresh process would.
+        MasternodeVotingKeyStore.resetPendingForTesting()
     }
 
     @After
@@ -157,8 +164,9 @@ class MasternodeVotingKeyStoreTest {
      * The rollback the thread check cannot see: a caller hops to an IO worker inside
      * `withTransaction`, so `inTransaction()` is false there while Room still routes the row
      * update into the outer transaction. The rollback restores the row's reference to key 1,
-     * and key 1 is still stored because the assignment deletes nothing; key 2 is left as a
-     * stale entry, which the next cleanup removes.
+     * and key 1 is still stored because the assignment deletes nothing. Key 2 stays pending,
+     * so this process's cleanups keep it; the next process (simulated by resetting the
+     * pending set) removes it.
      */
     @Test
     fun shouldKeepTheOldKeyWhenAnEnclosingTransactionRollsBack() = runBlocking<Unit> {
@@ -185,9 +193,78 @@ class MasternodeVotingKeyStoreTest {
         assertTrue(storage.hasPrivateKey(identifierOfKey(1)))
         assertTrue(storage.hasPrivateKey(identifierOfKey(2)))
 
+        // Still pending in this process: kept.
+        assertTrue(assigning.removeStaleEntries(db, identityId))
+        assertTrue(storage.hasPrivateKey(identifierOfKey(1)))
+        assertTrue(storage.hasPrivateKey(identifierOfKey(2)))
+
+        // A new process forgets it; its first cleanup removes the leftover.
+        MasternodeVotingKeyStore.resetPendingForTesting()
         assertTrue(assigning.removeStaleEntries(db, identityId))
         assertTrue(storage.hasPrivateKey(identifierOfKey(1)))
         assertFalse(storage.hasPrivateKey(identifierOfKey(2)))
+    }
+
+    /**
+     * The commit case: an assignment inside a caller's transaction that has not committed
+     * yet, and a cleanup from an independent coroutine meanwhile. On a WAL database the
+     * cleanup reads the committed row (key 1) while the transaction is open; the new key 2
+     * is pending, so it survives, and the commit's row names a key that is still stored. The
+     * next cleanup sees the row name key 2, unpends it and removes key 1.
+     */
+    @Test
+    fun shouldNotSweepAnAssignmentWhoseTransactionHasNotCommitted() = runBlocking<Unit> {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val name = "voting-key-commit-${System.nanoTime()}.db"
+        val walDb = Room.databaseBuilder(context, DashDatabase::class.java, name)
+            .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
+            .build()
+        try {
+            walDb.identityDao().upsert(
+                IdentityEntity(
+                    identityId = identityId,
+                    identityType = "Masternode",
+                    votingPrivateKeyIdentifier = identifierOfKey(1),
+                    networkRaw = testnet,
+                ),
+            )
+            storage.storePrivateKey(identifierOfKey(1), keyWithAddress(1))
+            val assigned = CompletableDeferred<Unit>()
+            val cleanedUp = CompletableDeferred<Boolean>()
+            var cleanupFinishedInsideTransaction = false
+
+            val writer = async(Dispatchers.Default) {
+                walDb.withTransaction {
+                    withContext(Dispatchers.IO) {
+                        assigning.assignToIdentity(walDb, identityId, testnet, keyWithAddress(2), identifierOfKey(1))
+                    }
+                    assigned.complete(Unit)
+                    // Hold the transaction open while the independent cleanup runs.
+                    cleanupFinishedInsideTransaction =
+                        withTimeoutOrNull(5_000) { cleanedUp.await() } != null
+                }
+            }
+            withTimeout(10_000) { assigned.await() }
+            val cleanup = async(Dispatchers.IO) {
+                assigning.removeStaleEntries(walDb, identityId).also { cleanedUp.complete(it) }
+            }
+            withTimeout(20_000) { writer.await() }
+            assertTrue(withTimeout(10_000) { cleanup.await() })
+            // The cleanup ran against the committed row, before the commit.
+            assertTrue("the cleanup did not run inside the open transaction", cleanupFinishedInsideTransaction)
+
+            assertEquals(identifierOfKey(2), walDb.identityDao().getByIdentityId(identityId)?.votingPrivateKeyIdentifier)
+            assertTrue("the committed row names a key the cleanup deleted", storage.hasPrivateKey(identifierOfKey(2)))
+            assertTrue(storage.hasPrivateKey(identifierOfKey(1)))
+
+            // After the commit: the row names key 2, so it is unpended and key 1 goes.
+            assertTrue(assigning.removeStaleEntries(walDb, identityId))
+            assertTrue(storage.hasPrivateKey(identifierOfKey(2)))
+            assertFalse(storage.hasPrivateKey(identifierOfKey(1)))
+        } finally {
+            walDb.close()
+            context.deleteDatabase(name)
+        }
     }
 
     /** A row recreated on another network is not this load's: nothing is written. */
