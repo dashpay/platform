@@ -18,9 +18,9 @@ import org.dashfoundation.dashsdk.wallet.TeardownGate
  * Holds no key bytes and exposes no native handle. A vote cast with it after its call ended
  * fails with [IllegalStateException].
  */
-class MasternodeVotingSigner internal constructor(
+class MasternodeVotingSigner private constructor(
     votingAddress: ByteArray,
-    internal val signer: KeystoreSigner,
+    private val dedicatedSigner: KeystoreSigner,
 ) {
     private val address = votingAddress.copyOf()
 
@@ -34,15 +34,23 @@ class MasternodeVotingSigner internal constructor(
     val votingAddress: ByteArray get() = address.copyOf()
 
     /**
+     * The dedicated signer, for the SDK's own tests. Synthetic, so Java source cannot reach
+     * it and close it during a vote.
+     */
+    @get:JvmSynthetic
+    internal val signer: KeystoreSigner get() = dedicatedSigner
+
+    /**
      * Runs [block] with the dedicated signer's native handle, counted against [end] so the
-     * signer outlives the call.
+     * signer outlives the call. Synthetic, so Java source cannot reach the raw handle.
      *
      * @throws IllegalStateException once the voter's call has ended.
      */
+    @JvmSynthetic
     internal suspend fun <T> withSignerHandle(block: suspend (signerHandle: Long) -> T): T {
         check(!ended) { ENDED_MESSAGE }
         return try {
-            gate.withOp { block(signer.nativeHandle) }
+            gate.withOp { block(dedicatedSigner.nativeHandle) }
         } catch (e: IllegalStateException) {
             // The gate closed between the check above and the op: report it as the voter's.
             if (ended && e.message == TeardownGate.CLOSED_MESSAGE) {
@@ -52,15 +60,21 @@ class MasternodeVotingSigner internal constructor(
         }
     }
 
-    /** Refuse new votes and wait for those in flight; the owner then frees [signer]. */
+    /** Refuse new votes and wait for those in flight; the owner then frees the signer. */
+    @JvmSynthetic
     internal suspend fun end() {
         ended = true
         gate.closeAndAwait()
     }
 
-    private companion object {
-        const val ENDED_MESSAGE =
+    internal companion object {
+        private const val ENDED_MESSAGE =
             "This masternode voting signer was used after its withStoredMasternodeVotingKey " +
                 "call ended."
+
+        /** The voter over [signer] for [votingAddress]; the caller owns and frees [signer]. */
+        @JvmSynthetic
+        internal fun create(votingAddress: ByteArray, signer: KeystoreSigner): MasternodeVotingSigner =
+            MasternodeVotingSigner(votingAddress, signer)
     }
 }

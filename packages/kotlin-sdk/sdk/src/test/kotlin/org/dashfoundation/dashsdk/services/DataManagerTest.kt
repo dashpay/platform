@@ -1,7 +1,12 @@
 package org.dashfoundation.dashsdk.services
 
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore
@@ -96,6 +101,40 @@ class DataManagerTest {
 
         // The retry finishes the job.
         manager.clear(DataManager.Category.IDENTITIES)
+        assertNull(db.identityDao().getByIdentityId(identityId))
+        assertFalse(storage.hasPrivateKey(votingIdentifier))
+    }
+
+    /**
+     * B1: a clear started while an import has stored its key but not yet recorded it waits
+     * for the import, then deletes both the key and the row.
+     */
+    @Test
+    fun shouldNotMissAKeyAnImportStoresDuringAClear() = runBlocking<Unit> {
+        val importedId = ByteArray(32) { 6 }
+        val importedIdentifier = MasternodeVotingKeyStore.identifierFor(importedId, ByteArray(20) { 8 })
+        db.identityDao().upsert(IdentityEntity(identityId = importedId, identityType = "Masternode", networkRaw = 1))
+        val storing = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val import = launch(Dispatchers.IO) {
+            MasternodeVotingKeyStore.withVotingKeyLock {
+                storage.storePrivateKey(importedIdentifier, ByteArray(32) { 1 })
+                storing.complete(Unit)
+                release.await()
+                db.identityDao().replaceVotingPrivateKeyIdentifier(importedId, null, importedIdentifier, 0)
+            }
+        }
+        storing.await()
+
+        val clear = launch(Dispatchers.IO) { manager.clear(DataManager.Category.IDENTITIES) }
+        // The clear waits on the voting key lock while the import holds it.
+        assertNull(withTimeoutOrNull(300) { clear.join() })
+        assertTrue(storage.hasPrivateKey(votingIdentifier))
+
+        release.complete(Unit)
+        joinAll(import, clear)
+        assertNull(db.identityDao().getByIdentityId(importedId))
+        assertFalse(storage.hasPrivateKey(importedIdentifier))
         assertNull(db.identityDao().getByIdentityId(identityId))
         assertFalse(storage.hasPrivateKey(votingIdentifier))
     }

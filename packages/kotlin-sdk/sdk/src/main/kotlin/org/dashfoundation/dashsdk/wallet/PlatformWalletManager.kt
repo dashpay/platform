@@ -633,10 +633,11 @@ class PlatformWalletManager(
      * A masternode vote is signed with the voting key Rust builds from the voting address
      * (ECDSA_HASH160, data = the address), so the signer is asked for exactly those 20
      * bytes. This creates a [KeystoreSigner] for this call only, on this manager's
-     * [walletStorage], whose one alias maps the voting address to the identity's own voting
-     * entry ([MasternodeVotingKeyStore]); this manager's own signer never resolves the
-     * address to the voting key, so a vote cannot change what a concurrent wallet operation
-     * signs with. Pass the [MasternodeVotingSigner] to a signer vote, for example
+     * [walletStorage], bound to exactly that request: the voting address with key type
+     * ECDSA_HASH160 reads the identity's own voting entry ([MasternodeVotingKeyStore]), and
+     * every other key, wallet keys and platform addresses included, is refused. This
+     * manager's own signer never resolves the address to the voting key, so a vote cannot
+     * change what a concurrent wallet operation signs with. Pass the [MasternodeVotingSigner] to a signer vote, for example
      * `sdk.decisionProposals.castVote(proposalId, choice, proTxHash, voter)`. When [block]
      * returns or throws, votes still in flight are awaited and the dedicated signer is
      * freed; the voter cannot be used afterwards.
@@ -660,14 +661,16 @@ class PlatformWalletManager(
             throw MasternodeVotingKeyNotStoredException()
         }
         if (!keys.isStored(identifier)) throw MasternodeVotingKeyNotStoredException()
-        // No invalidation hook: that bookkeeping is for wallet identity keys, and this
-        // signer holds none.
+        // Bound to the one voting key: no fallback to wallet keys, no platform address
+        // derivation, and no invalidation hook (that bookkeeping is for wallet keys).
         val dedicated = KeystoreSigner(
             walletStorage, network, biometricGate, database.platformAddressDao(),
+            onlyKey = KeystoreSigner.BoundKey(
+                votingAddress, KeystoreSigner.KEY_TYPE_ECDSA_HASH160, identifier,
+            ),
         )
         try {
-            dedicated.registerAlias(votingAddress.toHex(), identifier)
-            val voter = MasternodeVotingSigner(votingAddress, dedicated)
+            val voter = MasternodeVotingSigner.create(votingAddress, dedicated)
             try {
                 block(voter)
             } finally {

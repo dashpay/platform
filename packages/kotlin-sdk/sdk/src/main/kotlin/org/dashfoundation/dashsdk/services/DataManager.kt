@@ -20,7 +20,8 @@ import org.dashfoundation.dashsdk.security.WalletStorage
  * given, BEFORE the rows: an interrupted or failed clear then leaves rows whose voting keys
  * are gone (a vote says the key is not stored), the category still counts rows, and clearing
  * again finishes the job. The reverse order could leave keys no row names and no count
- * shows. Each clear runs to the end once started, even if its caller is cancelled.
+ * shows. Both steps run under [MasternodeVotingKeyStore.withVotingKeyLock], so an import
+ * cannot store and record a key between them. Each clear runs to the end once started, even if its caller is cancelled.
  * Identity keys of wallets and mnemonics stay in secure storage.
  */
 class DataManager internal constructor(
@@ -63,8 +64,16 @@ class DataManager internal constructor(
     }
 
     suspend fun clear(category: Category) = withContext(NonCancellable) {
-        if (category == Category.IDENTITIES) deleteImportedVotingKeys()
-        clearRows(category)
+        if (category == Category.IDENTITIES) {
+            // One voting key critical section: no import can store and record a key between
+            // the key sweep and the row delete.
+            MasternodeVotingKeyStore.withVotingKeyLock {
+                deleteImportedVotingKeys()
+                clearRows(category)
+            }
+        } else {
+            clearRows(category)
+        }
     }
 
     private suspend fun clearRows(category: Category) = db.withTransaction {

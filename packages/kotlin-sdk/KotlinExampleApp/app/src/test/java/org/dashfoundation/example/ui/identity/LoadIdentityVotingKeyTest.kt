@@ -1,7 +1,11 @@
 package org.dashfoundation.example.ui.identity
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.dao.IdentityDao
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
@@ -341,6 +345,64 @@ class LoadIdentityVotingKeyTest {
         assertEquals(LoadSaveResult.Failed(VOTING_KEY_CHANGED_MESSAGE), result)
         assertEquals(current, dao.getByIdentityId(identityId)!!.votingPrivateKeyIdentifier)
         assertEquals(listOf(identifierOf(keyB)), entries.deletedIdentifiers)
+    }
+
+    /** S2: every reload warns while an earlier entry cannot be removed, then sweeps it. */
+    @Test
+    fun shouldWarnOnEachReloadUntilAStaleKeyIsRemoved() = runBlocking<Unit> {
+        val stale = identifierOf(ByteArray(32) { 0x0d })
+        dao.upsert(row(type = "Masternode", votingIdentifier = identifierOf(keyA)))
+        entries.live += setOf(identifierOf(keyA), stale)
+        entries.sweepFailure = IllegalStateException("secure storage unavailable")
+
+        repeat(2) {
+            assertEquals(
+                LoadSaveResult.SavedWithWarning(STALE_VOTING_KEY_NOT_REMOVED_MESSAGE),
+                save(alias = "again", pickedType = LoadIdentityType.USER, typePicked = false),
+            )
+            assertEquals(setOf(identifierOf(keyA), stale), entries.live)
+        }
+
+        entries.sweepFailure = null
+        assertEquals(
+            LoadSaveResult.Saved,
+            save(alias = "again", pickedType = LoadIdentityType.USER, typePicked = false),
+        )
+        assertEquals(setOf(identifierOf(keyA)), entries.live)
+        assertEquals(identifierOf(keyA), dao.getByIdentityId(identityId)!!.votingPrivateKeyIdentifier)
+    }
+
+    /**
+     * B1: a reload started while a confirmed replacement has stored its new key but not yet
+     * recorded it waits for the replacement, so its sweep cannot delete the new key.
+     */
+    @Test
+    fun shouldRunAReloadAfterAReplacementThatIsStoringItsKey() = runBlocking<Unit> {
+        dao.upsert(row(type = "Masternode", votingIdentifier = identifierOf(keyA)))
+        entries.live += identifierOf(keyA)
+        val storing = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        entries.onStore = {
+            storing.complete(Unit)
+            release.await()
+        }
+
+        val replacement = async(Dispatchers.IO) {
+            replaceVotingKey(dao, entries, identityId, identifierOf(keyA), keyB)
+        }
+        storing.await()
+        val reload = async(Dispatchers.IO) {
+            save(alias = "again", pickedType = LoadIdentityType.USER, typePicked = false)
+        }
+        // The reload waits on the voting key lock while the replacement holds it.
+        assertNull(withTimeoutOrNull(300) { reload.await() })
+        assertTrue(identifierOf(keyB) in entries.live)
+
+        release.complete(Unit)
+        assertEquals(LoadSaveResult.Saved, replacement.await())
+        assertEquals(LoadSaveResult.Saved, reload.await())
+        assertEquals(identifierOf(keyB), dao.getByIdentityId(identityId)!!.votingPrivateKeyIdentifier)
+        assertEquals(setOf(identifierOf(keyB)), entries.live)
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────

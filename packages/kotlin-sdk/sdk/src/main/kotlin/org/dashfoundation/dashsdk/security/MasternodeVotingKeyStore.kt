@@ -1,5 +1,7 @@
 package org.dashfoundation.dashsdk.security
 
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.MasternodeVotingKeyNative
 import org.dashfoundation.dashsdk.ffi.NativeLoader
@@ -150,6 +152,25 @@ class MasternodeVotingKeyStore(private val storage: WalletStorage) {
     fun identityIdOf(identifier: String): ByteArray = parse(identifier).first
 
     companion object {
+        /** Serializes every voting key change that spans an entry and an identity row. */
+        private val votingKeyLock = Mutex()
+
+        /**
+         * Run [block] as the only voting key change in this process. Hold it around every
+         * sequence that writes an entry and the identity row naming it, or that reads one to
+         * act on the other: storing a key then recording it on the row, sweeping an
+         * identity's other entries against the identifier its row names, and clearing all
+         * entries together with the rows. Without it, a reload's sweep could delete a key a
+         * replacement just stored but has not yet recorded, and a clear could miss a key
+         * an import stores between its listing and its row delete.
+         *
+         * Not reentrant: [block] must not call it again. [store], [delete], [deleteAll] and
+         * [deleteOtherEntriesOf] do not take it themselves; their callers compose them under
+         * it. Signing does not take it.
+         */
+        suspend fun <T> withVotingKeyLock(block: suspend () -> T): T =
+            votingKeyLock.withLock { block() }
+
         /** The start of every voting key identifier. */
         const val IDENTIFIER_PREFIX = "mnvoting."
 
