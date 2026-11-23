@@ -43,7 +43,10 @@ PACKAGES = ['dashmate-v5.1.0-3a5da22021-arm64.pkg', 'dashmate-v5.1.0-3a5da22021-
 # paginated listing does when a later page cannot be read. GH_AFTER_UPLOAD changes the release
 # right after the upload; GH_READ_BACK_FAILS fails downloading the signature back, and
 # GH_UPLOAD_FAILS the upload itself. GH_AFTER_DOWNLOAD changes the release once the packages are
-# downloaded, as a re-run or another maintainer could while this one signs.
+# downloaded, as a re-run or another maintainer could while this one signs. GH_UPLOAD_FAILS fails
+# the upload: with 1 nothing is attached, with `created` or `partial` the asset is created with
+# the uploaded bytes, completely or not, with `signed-first` another signature is attached just
+# before it, and with `unlisted` the assets cannot be listed afterwards.
 GH_STUB = '''#!/usr/bin/env python3
 import fnmatch, hashlib, json, os, re, shutil, subprocess, sys
 args = sys.argv[1:]
@@ -110,6 +113,9 @@ if args[0] == 'api':
     if path == repo + 'releases/tags/' + release['tag_name']:
         respond(release, jq)
     if path == repo + 'releases/%d/assets?per_page=100' % release['id']:
+        if state.get('unlisted'):
+            print('gh: Server Error (HTTP 502)', file=sys.stderr)
+            sys.exit(1)
         respond(release['assets'], jq)
     if path == repo + 'commits/refs/tags/' + release['tag_name']:
         if state['tag_commit'] is None:
@@ -175,7 +181,18 @@ if args[:2] == ['release', 'upload']:
     if args[2] != release['tag_name'] or option('--repo') != 'dashpay/platform':
         not_found()
     name = os.path.basename(args[3])
-    if os.environ.get('GH_UPLOAD_FAILS'):
+    failure = os.environ.get('GH_UPLOAD_FAILS')
+    if failure == 'signed-first':
+        asset(name, b'another signature', 'maintainer')
+        save()
+    if failure in ('1', 'unlisted', 'created', 'partial'):
+        if failure in ('created', 'partial'):
+            with open(args[3], 'rb') as handle:
+                asset(name, handle.read(), 'maintainer')
+            if failure == 'partial':
+                release['assets'][-1]['state'] = 'starter'
+        state['unlisted'] = failure == 'unlisted'
+        save()
         print('gh: connection reset by peer', file=sys.stderr)
         sys.exit(1)
     if any(a['name'] == name for a in release['assets']) and '--clobber' not in args:
@@ -755,14 +772,45 @@ class SignDashmateChecksumsTests(ReleaseFixture):
                 self.assertIn(f'SHA256SUMS.asc is attached to {TAG}', result.stderr)
                 self.assertIn(f'gh release delete-asset {TAG} SHA256SUMS.asc --repo dashpay/platform', result.stderr)
 
-    def test_should_say_the_signature_may_be_attached_when_its_upload_fails(self):
-        # The upload can fail after GitHub has created the asset.
-        result = self.sign(f'--tag={TAG}', f'--key={KEY}', COMMIT, '--upload', GH_UPLOAD_FAILS='1')
+    def test_should_say_what_is_attached_when_the_upload_of_the_signature_fails(self):
+        with self.subTest('nothing attached'):
+            self.release(self.packages)
 
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn(f'SHA256SUMS.asc may be attached to {TAG}', result.stderr)
-        self.assertIn(f'gh release view {TAG} --repo dashpay/platform', result.stderr)
-        self.assertIn(f'gh release delete-asset {TAG} SHA256SUMS.asc --repo dashpay/platform', result.stderr)
+            result = self.sign(f'--tag={TAG}', f'--key={KEY}', COMMIT, '--upload', GH_UPLOAD_FAILS='1')
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn(f'the upload of SHA256SUMS.asc to {TAG} failed and nothing is attached; run this again',
+                          result.stderr)
+        # A signature nobody has checked yet, or what is attached when that is unknown: the
+        # maintainer looks before changing anything, and is not told to delete it.
+        for case, env, message in [
+                ('another signature attached first', {'GH_UPLOAD_FAILS': 'signed-first'},
+                 f'{TAG} carries a SHA256SUMS.asc that is not the one signed here'),
+                ('an upload that did not finish', {'GH_UPLOAD_FAILS': 'partial'},
+                 f'{TAG} now carries SHA256SUMS.asc (starter) instead of a complete SHA256SUMS.asc'),
+                ('assets that cannot be listed afterwards', {'GH_UPLOAD_FAILS': 'unlisted'}, 'could not be listed'),
+                ('a signature that cannot be downloaded to compare it',
+                 {'GH_UPLOAD_FAILS': 'created', 'GH_READ_BACK_FAILS': '1'},
+                 'the SHA256SUMS.asc now attached could not be downloaded')]:
+            with self.subTest(case):
+                self.release(self.packages)
+
+                result = self.sign(f'--tag={TAG}', f'--key={KEY}', COMMIT, '--upload', **env)
+
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn(message, result.stderr)
+                self.assertIn(f'gh release view {TAG} --repo dashpay/platform', result.stderr)
+                self.assertNotIn('delete-asset', result.stderr)
+                if case == 'another signature attached first':
+                    self.assertEqual((self.files / 'SHA256SUMS.asc').read_bytes(), b'another signature')
+        with self.subTest('the signature made here attached all the same'):
+            self.release(self.packages)
+
+            result = self.sign(f'--tag={TAG}', f'--key={KEY}', COMMIT, '--upload', GH_UPLOAD_FAILS='created')
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn(f'{TAG} serves the SHA256SUMS.asc signed here', result.stdout)
+            self.assertIn(f'Attached SHA256SUMS.asc to {TAG}', result.stdout)
 
     def test_should_check_with_shasum_where_sha256sum_is_not_gnu(self):
         result = self.sign(HASH_TOOL='shasum')

@@ -328,9 +328,24 @@ check_published_packages "${ASSETS}" "${DIR}/SHA256SUMS" \
 READ_BACK="${WORK_DIR}/read-back"
 mkdir "${READ_BACK}"
 
-# A failed upload can still have created the asset.
-gh release upload "${TAG}" "${DIR}/SHA256SUMS.asc" --repo "${REPO}" \
-  || fail "the upload of SHA256SUMS.asc to ${TAG} failed, but SHA256SUMS.asc may be attached to ${TAG} anyway. Check with gh release view ${TAG} --repo ${REPO}, and delete it before trying again: gh release delete-asset ${TAG} SHA256SUMS.asc --repo ${REPO}"
+# The upload fails when the release already carries a SHA256SUMS.asc, and a failed request can
+# still have created the asset. It goes on only when the release serves the signature made here;
+# anything else attached is left for the maintainer to inspect.
+if ! gh release upload "${TAG}" "${DIR}/SHA256SUMS.asc" --repo "${REPO}"; then
+  ASSETS="$(release_assets)" \
+    || fail "the upload of SHA256SUMS.asc to ${TAG} failed, and its assets could not be listed. Check what is attached with gh release view ${TAG} --repo ${REPO} before running this again"
+  ATTACHED="$(echo "${ASSETS}" | awk -F'\t' '$1 ~ /^SHA256SUMS\./ {print $1 " (" $2 ")"}' | paste -sd ' ' -)"
+  [ -n "${ATTACHED}" ] || fail "the upload of SHA256SUMS.asc to ${TAG} failed and nothing is attached; run this again"
+  INSPECT="Check what is attached with gh release view ${TAG} --repo ${REPO} and gpg --verify before changing anything"
+  [ "${ATTACHED}" = 'SHA256SUMS.asc (uploaded)' ] \
+    || fail "the upload of SHA256SUMS.asc to ${TAG} failed, and ${TAG} now carries ${ATTACHED} instead of a complete SHA256SUMS.asc. ${INSPECT}"
+  mkdir "${WORK_DIR}/attached"
+  gh release download "${TAG}" --repo "${REPO}" --pattern SHA256SUMS.asc --dir "${WORK_DIR}/attached" \
+    || fail "the upload of SHA256SUMS.asc to ${TAG} failed, and the SHA256SUMS.asc now attached could not be downloaded to compare it with the one signed here. ${INSPECT}"
+  cmp -s "${DIR}/SHA256SUMS.asc" "${WORK_DIR}/attached/SHA256SUMS.asc" \
+    || fail "the upload of SHA256SUMS.asc to ${TAG} failed, and ${TAG} carries a SHA256SUMS.asc that is not the one signed here. ${INSPECT}"
+  echo "The upload reported a failure, but ${TAG} serves the SHA256SUMS.asc signed here."
+fi
 
 # Read back: the release serves the files that were signed and verified.
 gh release download "${TAG}" --repo "${REPO}" --pattern SHA256SUMS --pattern SHA256SUMS.asc --dir "${READ_BACK}" \

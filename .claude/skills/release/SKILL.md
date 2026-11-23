@@ -104,7 +104,7 @@ Before signing, run the tag check from step 3 once more: `v<version>` must still
 scripts/release/sign_dashmate_checksums.sh --tag=v<version> --key=<full fingerprint, quoted if it has spaces> --commit=<merge commit>
 ```
 
-Ask the user, then attach the signature. With `--upload` the script checks the release again right before the upload and reads the signature back. If a check fails after the upload, the signature is still attached: the script names it and the command that deletes it, which has to run before any retry.
+Ask the user, then attach the signature. With `--upload` the script checks the release again right before the upload and reads the signature back. If a check fails after the upload, the signature is still attached: the script names it and the command that deletes it, which has to run before any retry. If the upload itself fails, the script goes on only when the release serves the signature it made; otherwise it says what is attached, which the maintainer inspects before deleting anything.
 
 ```sh
 scripts/release/sign_dashmate_checksums.sh --tag=v<version> --key=<full fingerprint> --commit=<merge commit> --upload
