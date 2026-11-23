@@ -2,11 +2,12 @@
 
 set -euo pipefail
 
-cmd_usage="Usage: scripts/release/sign_dashmate_checksums.sh --tag=<tag> --key=<fingerprint> [--upload]
+cmd_usage="Usage: scripts/release/sign_dashmate_checksums.sh --tag=<tag> --key=<fingerprint> --commit=<sha> [--upload]
 
 Signs the SHA256SUMS of a published release with a maintainer's OpenPGP key. It first checks
-that the release workflow made the file, that its runs are over, and that the file is exactly
-the list of the dashmate packages the release serves, downloaded into a new empty directory.
+that the release workflow made the file from the given commit, that its runs are over, and that
+the file is exactly the list of the dashmate packages the release serves, downloaded into a new
+empty directory.
 
 Without --upload the signature is made and verified, then discarded, and the command that
 attaches it is printed. With --upload every check runs again, the release is checked once
@@ -16,6 +17,8 @@ more right before the upload, and SHA256SUMS.asc is attached and read back.
   --tag=TAG                  - release tag, e.g. v5.1.0
   --key=FINGERPRINT          - full fingerprint of the primary key to sign with; spaces are
                                allowed. gpg signs with its newest signing subkey.
+  --commit=SHA               - full sha of the release PR's merge commit; the tag and the newest
+                               release.yml run of the tag must both name it
   --upload                   - attach SHA256SUMS.asc to the release
   --repo=OWNER/NAME          - repository, default dashpay/platform
   -h          --help         - show help
@@ -41,6 +44,7 @@ usage_error() {
 
 TAG=""
 KEY=""
+COMMIT=""
 UPLOAD=false
 REPO="dashpay/platform"
 
@@ -56,6 +60,9 @@ do
       ;;
     --key=*)
       KEY="${i#*=}"
+      ;;
+    --commit=*)
+      COMMIT="${i#*=}"
       ;;
     --upload)
       UPLOAD=true
@@ -80,6 +87,12 @@ KEY="$(echo "${KEY}" | tr -d ' ' | tr 'a-f' 'A-F')"
 key_pattern='^([0-9A-F]{40}|[0-9A-F]{64})$'
 if ! [[ "${KEY}" =~ ${key_pattern} ]]; then
   usage_error "--key must be the key's full fingerprint, got '${KEY}'"
+fi
+
+COMMIT="$(echo "${COMMIT}" | tr 'A-F' 'a-f')"
+commit_pattern='^[0-9a-f]{40}$'
+if ! [[ "${COMMIT}" =~ ${commit_pattern} ]]; then
+  usage_error "--commit must be the full sha of the release PR's merge commit, got '${COMMIT}'"
 fi
 
 # Checked first: with no accepted signer nothing can be signed, and an empty array also cannot be
@@ -132,15 +145,24 @@ sums_asset() {
 }
 
 # Every release.yml run of the tag must be over: a running attempt can still replace packages
-# or SHA256SUMS. Prints the newest run's id.
+# or SHA256SUMS. Prints the newest run's id and the commit it built.
 finished_run() {
   local runs unfinished
   runs="$(gh api --paginate "repos/${REPO}/actions/workflows/release.yml/runs?event=release&branch=${TAG}&per_page=100" \
-    --jq '.workflow_runs[] | [.id, .status] | @tsv')" || fail "could not list the release.yml runs of ${TAG}"
+    --jq '.workflow_runs[] | [.id, .status, .head_sha] | @tsv')" || fail "could not list the release.yml runs of ${TAG}"
   [ -n "${runs}" ] || fail "found no release.yml run for ${TAG}"
   unfinished="$(echo "${runs}" | awk -F'\t' '$2 != "completed" {print $1 " (" $2 ")"}' | paste -sd ' ' -)"
   [ -z "${unfinished}" ] || fail "release.yml for ${TAG} is still running: ${unfinished}; sign once no attempt is in progress"
-  echo "${runs}" | head -n 1 | cut -f1
+  echo "${runs}" | head -n 1 | cut -f1,3
+}
+
+# The newest run (id, commit) and the tag must both name the commit the release was approved at.
+check_commit() {
+  local tagged
+  [ "$(echo "$1" | cut -f2)" = "${COMMIT}" ] \
+    || fail "release.yml run $(echo "$1" | cut -f1) built $(echo "$1" | cut -f2), not ${COMMIT}"
+  tagged="$(gh api "repos/${REPO}/commits/refs/tags/${TAG}" --jq '.sha')" || fail "could not resolve ${TAG} to a commit"
+  [ "${tagged}" = "${COMMIT}" ] || fail "${TAG} names ${tagged}, not ${COMMIT}"
 }
 
 # A job's log as GitHub stores it. The runner colours the commands it echoes there, and newer gh
@@ -219,7 +241,9 @@ SUMS_ID="$(echo "${SUMS}" | cut -f4)"
 [ "${SUMS_STATE}" = uploaded ] || fail "SHA256SUMS on ${TAG} is not fully uploaded (state ${SUMS_STATE})"
 [ "${SUMS_UPLOADER}" = 'github-actions[bot]' ] || fail "SHA256SUMS on ${TAG} was uploaded by ${SUMS_UPLOADER}, not by the release workflow"
 
-RUN_ID="$(finished_run)" || exit 1
+RUN="$(finished_run)" || exit 1
+RUN_ID="$(echo "${RUN}" | cut -f1)"
+check_commit "${RUN}"
 JOB="$(checksums_job "${RUN_ID}")" || fail "could not list the jobs of release.yml run ${RUN_ID}"
 JOB_ID="$(echo "${JOB}" | cut -f1)"
 [ "$(echo "${JOB}" | cut -f2)" = success ] \
@@ -276,15 +300,16 @@ if [ "${UPLOAD}" != true ]; then
   repo_option=""
   [ "${REPO}" = dashpay/platform ] || repo_option=" --repo=${REPO}"
   echo "Not uploaded. To attach the signature, run:"
-  echo "  scripts/release/sign_dashmate_checksums.sh --tag=${TAG} --key=${KEY}${repo_option} --upload"
+  echo "  scripts/release/sign_dashmate_checksums.sh --tag=${TAG} --key=${KEY} --commit=${COMMIT}${repo_option} --upload"
   exit 0
 fi
 
 # Checked again right before the upload, since the passphrase prompt can take a while: the same
 # run and checksums job, nobody signed, and SHA256SUMS and the packages are still the signed ones.
 LATEST_RUN="$(finished_run)" || exit 1
-LATEST_JOB="$(checksums_job "${LATEST_RUN}")" || fail "could not list the jobs of release.yml run ${LATEST_RUN}"
-if [ "${LATEST_RUN}" != "${RUN_ID}" ] || [ "${LATEST_JOB}" != "${JOB}" ]; then
+check_commit "${LATEST_RUN}"
+LATEST_JOB="$(checksums_job "${RUN_ID}")" || fail "could not list the jobs of release.yml run ${RUN_ID}"
+if [ "${LATEST_RUN}" != "${RUN}" ] || [ "${LATEST_JOB}" != "${JOB}" ]; then
   fail "the release.yml run or its Release Dashmate checksums job changed while SHA256SUMS was being signed; run this again"
 fi
 ASSETS="$(release_assets)" || fail "could not list the assets of ${TAG}"

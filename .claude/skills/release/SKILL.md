@@ -98,16 +98,16 @@ The Kotlin and Swift SDK jobs fill the release page in as they finish. The Maven
 
 One signature per release is enough. The keys that may sign are listed, by primary key fingerprint, in `ALLOWED_SIGNERS` at the top of `scripts/release/sign_dashmate_checksums.sh`, and the script refuses any other: today Ivan Shumkov's, with QuantumExplorer's added once his key exists. The apt publisher accepts signatures from these keys only.
 
-Before signing, run the tag check from step 3 once more: `v<version>` must still name the merge commit; if not, stop and ask the user. `scripts/release/sign_dashmate_checksums.sh` runs where the maintainer's key is, and gpg asks the maintainer for the passphrase. Run it there, or hand the maintainer the command. It refuses until every `release.yml` run of the tag has finished, so sign after step 4. Don't re-run any job of that run until the signature is attached: a release job checks for a signature before it uploads, so one that is already running can still replace packages. It checks that `SHA256SUMS` is the asset the run's `Release Dashmate checksums` job attached, by the record that job writes into its own log (so sign while GitHub keeps the run's logs; a job can be re-run only within 30 days of its run), downloads the packages and the file into a new empty directory, checks every line, signs the downloaded file and verifies the signature. Without `--upload` it stops there and prints the upload command:
+Before signing, run the tag check from step 3 once more: `v<version>` must still name the merge commit; if not, stop and ask the user. `scripts/release/sign_dashmate_checksums.sh` runs where the maintainer's key is, and gpg asks the maintainer for the passphrase. Run it there, or hand the maintainer the command. It refuses until every `release.yml` run of the tag has finished, so sign after step 4, and unless the tag and the newest run both name the commit given as `--commit`, the merge commit from step 2. Don't re-run any job of that run until the signature is attached: a release job checks for a signature before it uploads, so one that is already running can still replace packages. It checks that `SHA256SUMS` is the asset the run's `Release Dashmate checksums` job attached, by the record that job writes into its own log (so sign while GitHub keeps the run's logs; a job can be re-run only within 30 days of its run), downloads the packages and the file into a new empty directory, checks every line, signs the downloaded file and verifies the signature. Without `--upload` it stops there and prints the upload command:
 
 ```sh
-scripts/release/sign_dashmate_checksums.sh --tag=v<version> --key=<full fingerprint, quoted if it has spaces>
+scripts/release/sign_dashmate_checksums.sh --tag=v<version> --key=<full fingerprint, quoted if it has spaces> --commit=<merge commit>
 ```
 
 Ask the user, then attach the signature. With `--upload` the script checks the release again right before the upload and reads the signature back. If a check fails after the upload, the signature is still attached: the script names it and the command that deletes it, which has to run before any retry.
 
 ```sh
-scripts/release/sign_dashmate_checksums.sh --tag=v<version> --key=<full fingerprint> --upload
+scripts/release/sign_dashmate_checksums.sh --tag=v<version> --key=<full fingerprint> --commit=<merge commit> --upload
 ```
 
 **To rebuild a signed release:** once a release carries `SHA256SUMS.asc` (or any `SHA256SUMS.*`), release jobs started afterwards refuse to replace its packages or its `SHA256SUMS` and fail instead. To change either, delete each `SHA256SUMS.*` asset first (`gh release delete-asset v<version> <name> --repo dashpay/platform`), re-run the jobs, and sign the new file.

@@ -18,6 +18,9 @@ STRANGER = 'C0FFEE0123456789ABCDEF0123456789ABCDEF01'
 SUBKEY = '0123456789ABCDEF0123456789ABCDEF01234567'
 RUN_ID = 77
 HEAD_SHA = 'bb78fa2220ae0d58f5a9b5c0f6b0027a292cc3d0'
+OTHER_SHA = '3d8365918935a2cad03b04fa70d8bb9d07f9a849'
+# The release PR's merge commit, which the tag names and the release run built.
+COMMIT = f'--commit={HEAD_SHA}'
 CHECKSUMS_JOB = 501
 
 
@@ -108,6 +111,11 @@ if args[0] == 'api':
         respond(release, jq)
     if path == repo + 'releases/%d/assets?per_page=100' % release['id']:
         respond(release['assets'], jq)
+    if path == repo + 'commits/refs/tags/' + release['tag_name']:
+        if state['tag_commit'] is None:
+            print('gh: No commit found for SHA: refs/tags/%s (HTTP 422)' % release['tag_name'], file=sys.stderr)
+            sys.exit(1)
+        respond({'sha': state['tag_commit']}, jq)
     if path.startswith(repo + 'actions/workflows/release.yml/runs?'):
         query = dict(part.split('=', 1) for part in path.split('?', 1)[1].split('&'))
         runs = [run for run in state['runs'] if query.get('event', run['event']) == run['event']
@@ -158,6 +166,8 @@ if args[:2] == ['release', 'download']:
             checksums['id'] += 100
         if change == 'run-restarted':
             state['runs'][0]['status'] = 'in_progress'
+        if change == 'tag-moved':
+            state['tag_commit'] = '3d8365918935a2cad03b04fa70d8bb9d07f9a849'
         save()
     sys.exit(0)
 
@@ -299,7 +309,7 @@ class ReleaseFixture(unittest.TestCase):
         self.release({name: data for name, data in self.packages.items()})
 
     def release(self, files, sums=None, sums_uploader='github-actions[bot]', extra_assets=(), runs=None, jobs=None,
-                receipt=None):
+                receipt=None, tag_commit=HEAD_SHA):
         """A published release: its files, a SHA256SUMS of `sums` (default: the files), the run behind it.
 
         `receipt` is what the checksums job's log records it attached, as `(asset id, sha256)`: by
@@ -336,6 +346,8 @@ class ReleaseFixture(unittest.TestCase):
                 {'id': CHECKSUMS_JOB, 'name': 'Release Dashmate checksums', 'status': 'completed',
                  'conclusion': 'success'}]},
             'logs': {str(CHECKSUMS_JOB): checksums_log(*records)},
+            # the commit the tag names, None for a tag GitHub cannot resolve
+            'tag_commit': tag_commit,
         }
         (self.tmp / 'state.json').write_text(json.dumps(state))
 
@@ -369,7 +381,7 @@ class ReleaseFixture(unittest.TestCase):
                    TMPDIR=str(self.tmp / 'temp'), STATE=str(self.tmp / 'state.json'),
                    RELEASE_FILES=str(self.files), CALLS=str(self.tmp / 'calls'), **env)
         if not options:
-            options = (f'--tag={TAG}', f'--key={KEY}')
+            options = (f'--tag={TAG}', f'--key={KEY}', COMMIT)
         return subprocess.run(['/bin/bash', str(self.script), *options], capture_output=True, text=True, env=env)
 
     def calls(self, tool=None):
@@ -400,7 +412,7 @@ class SignDashmateChecksumsTests(ReleaseFixture):
             with self.subTest(refuses_escape_sequences=bool(guard)):
                 self.release(self.packages)
 
-                result = self.sign(f'--tag={TAG}', f'--key={KEY}', '--upload', GH_ESCAPE_GUARD=guard)
+                result = self.sign(f'--tag={TAG}', f'--key={KEY}', COMMIT, '--upload', GH_ESCAPE_GUARD=guard)
 
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(len(self.uploads()), 1)
@@ -410,7 +422,8 @@ class SignDashmateChecksumsTests(ReleaseFixture):
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.uploads(), [])
-        self.assertIn(f'scripts/release/sign_dashmate_checksums.sh --tag={TAG} --key={KEY} --upload', result.stdout)
+        self.assertIn(f'scripts/release/sign_dashmate_checksums.sh --tag={TAG} --key={KEY} --commit={HEAD_SHA} --upload',
+                      result.stdout)
         # every line checked strictly, nothing missing skipped, and the downloaded file signed
         self.assertEqual([c for c in self.calls('sha256sum') if '--check' in c], ['sha256sum --check --strict SHA256SUMS'])
         [signing] = self.signings()
@@ -426,13 +439,13 @@ class SignDashmateChecksumsTests(ReleaseFixture):
     def test_should_take_the_fingerprint_with_spaces_and_in_lower_case(self):
         spaced = ' '.join(KEY[i:i + 4] for i in range(0, 40, 4)).lower()
 
-        result = self.sign(f'--tag={TAG}', f'--key={spaced}')
+        result = self.sign(f'--tag={TAG}', f'--key={spaced}', COMMIT)
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(f'--local-user {KEY} ', self.signings()[0])
 
     def test_should_attach_the_signature_and_read_it_back_with_the_flag(self):
-        result = self.sign(f'--tag={TAG}', f'--key={KEY}', '--upload')
+        result = self.sign(f'--tag={TAG}', f'--key={KEY}', COMMIT, '--upload')
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         [upload] = self.uploads()
@@ -449,14 +462,18 @@ class SignDashmateChecksumsTests(ReleaseFixture):
 
     def test_should_refuse_wrong_options_before_reaching_github(self):
         cases = {
-            'no tag': (f'--key={KEY}',),
-            'not a release tag': ('--tag=5.1.0', f'--key={KEY}'),
-            'a tag with more after it': (f'--tag={TAG}/other', f'--key={KEY}'),
-            'a tag with a second line': (f'--tag={TAG}\n../other', f'--key={KEY}'),
-            'a key with a second line': (f'--tag={TAG}', f'--key={KEY}\n{SUBKEY}'),
-            'no key': (f'--tag={TAG}',),
-            'a short key id, which can match another key': (f'--tag={TAG}', '--key=EDBC0AA6BC1AA13C'),
-            'an unknown option': (f'--tag={TAG}', f'--key={KEY}', '--force'),
+            'no tag': (f'--key={KEY}', COMMIT),
+            'not a release tag': ('--tag=5.1.0', f'--key={KEY}', COMMIT),
+            'a tag with more after it': (f'--tag={TAG}/other', f'--key={KEY}', COMMIT),
+            'a tag with a second line': (f'--tag={TAG}\n../other', f'--key={KEY}', COMMIT),
+            'a key with a second line': (f'--tag={TAG}', f'--key={KEY}\n{SUBKEY}', COMMIT),
+            'no key': (f'--tag={TAG}', COMMIT),
+            'a short key id, which can match another key': (f'--tag={TAG}', '--key=EDBC0AA6BC1AA13C', COMMIT),
+            'an unknown option': (f'--tag={TAG}', f'--key={KEY}', COMMIT, '--force'),
+            'no commit': (f'--tag={TAG}', f'--key={KEY}'),
+            'a short commit, which can match another one': (f'--tag={TAG}', f'--key={KEY}', f'--commit={HEAD_SHA[:12]}'),
+            'a commit with a second line': (f'--tag={TAG}', f'--key={KEY}', f'{COMMIT}\n{OTHER_SHA}'),
+            'a branch instead of a commit': (f'--tag={TAG}', f'--key={KEY}', '--commit=v5.1-dev'),
         }
         for case, options in cases.items():
             with self.subTest(case):
@@ -471,7 +488,7 @@ class SignDashmateChecksumsTests(ReleaseFixture):
                 self.release(self.packages, extra_assets=[
                     {'name': signature, 'state': 'uploaded', 'uploader': {'login': 'maintainer'}, 'digest': None}])
 
-                result = self.sign(f'--tag={TAG}', f'--key={KEY}', '--upload')
+                result = self.sign(f'--tag={TAG}', f'--key={KEY}', COMMIT, '--upload')
 
                 self.assertRefused(result, f'{TAG} already carries {signature}')
                 self.assertEqual(self.signings(), [])
@@ -520,7 +537,7 @@ class SignDashmateChecksumsTests(ReleaseFixture):
                     leftover.unlink()
                 self.release(files, receipt=receipt)
 
-                result = self.sign(f'--tag={TAG}', f'--key={KEY}', '--upload', **env)
+                result = self.sign(f'--tag={TAG}', f'--key={KEY}', COMMIT, '--upload', **env)
 
                 self.assertRefused(result, message)
                 self.assertEqual(self.signings(), [])
@@ -559,6 +576,32 @@ class SignDashmateChecksumsTests(ReleaseFixture):
                 self.assertRefused(result, message)
                 self.assertEqual(self.signings(), [])
 
+    def test_should_refuse_a_release_not_built_from_the_commit_given(self):
+        newest = {'id': RUN_ID, 'head_branch': TAG, 'event': 'release', 'status': 'completed'}
+        cases = {
+            # the tag was moved after the run that built the packages
+            'a tag that names another commit': ({'tag_commit': OTHER_SHA}, f'{TAG} names {OTHER_SHA}, not {HEAD_SHA}'),
+            'a tag GitHub cannot resolve': ({'tag_commit': None}, f'could not resolve {TAG} to a commit'),
+            'a run of another commit': ({'runs': [dict(newest, head_sha=OTHER_SHA)], 'tag_commit': OTHER_SHA},
+                                        f'release.yml run {RUN_ID} built {OTHER_SHA}, not {HEAD_SHA}'),
+            # an older run of the commit given does not count when the newest is another
+            'an older run of the commit, a newer of another': ({'runs': [
+                dict(newest, head_sha=OTHER_SHA), dict(newest, id=RUN_ID - 1, head_sha=HEAD_SHA)]},
+                f'release.yml run {RUN_ID} built {OTHER_SHA}, not {HEAD_SHA}'),
+        }
+        for case, (fields, message) in cases.items():
+            with self.subTest(case):
+                self.release(self.packages, **fields)
+
+                result = self.sign()
+
+                self.assertRefused(result, message)
+                self.assertEqual(self.signings(), [])
+        with self.subTest('given in upper case'):
+            self.release(self.packages)
+            result = self.sign(f'--tag={TAG}', f'--key={KEY}', f'--commit={HEAD_SHA.upper()}')
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_should_refuse_a_listing_that_failed_part_way(self):
         for listing, message in [('/assets?', f'could not list the assets of {TAG}'),
                                  ('/runs?', f'could not list the release.yml runs of {TAG}'),
@@ -566,7 +609,7 @@ class SignDashmateChecksumsTests(ReleaseFixture):
             with self.subTest(listing):
                 (self.tmp / 'calls').unlink(missing_ok=True)
 
-                result = self.sign(f'--tag={TAG}', f'--key={KEY}', '--upload', GH_PARTIAL=listing)
+                result = self.sign(f'--tag={TAG}', f'--key={KEY}', COMMIT, '--upload', GH_PARTIAL=listing)
 
                 self.assertRefused(result, message)
                 self.assertEqual(self.signings(), [])
@@ -648,7 +691,7 @@ class SignDashmateChecksumsTests(ReleaseFixture):
         self.assertEqual(self.calls(), [])
 
     def test_should_refuse_a_key_the_apt_repository_does_not_accept(self):
-        result = self.sign(f'--tag={TAG}', f'--key={STRANGER}', '--upload')
+        result = self.sign(f'--tag={TAG}', f'--key={STRANGER}', COMMIT, '--upload')
 
         self.assertRefused(result, f'{STRANGER} is not one of the signers this script accepts')
 
@@ -656,7 +699,7 @@ class SignDashmateChecksumsTests(ReleaseFixture):
         for key in [KEY, SUBKEY]:
             with self.subTest(key=key):
                 # a later gpg may append fields to VALIDSIG; the primary key stays the twelfth
-                result = self.sign(f'--tag={TAG}', f'--key={key}', GPG_SIGNER=KEY, GPG_SUBKEY=SUBKEY,
+                result = self.sign(f'--tag={TAG}', f'--key={key}', COMMIT, GPG_SIGNER=KEY, GPG_SUBKEY=SUBKEY,
                                    GPG_EXTRA_FIELD=' 0' * 2)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -668,12 +711,13 @@ class SignDashmateChecksumsTests(ReleaseFixture):
             'SHA256SUMS uploaded again': ('sums-reuploaded', 'changed while it was being signed'),
             'the checksums job ran again': ('job-rerun', 'checksums job changed while SHA256SUMS was being signed'),
             'a re-run started': ('run-restarted', f'{RUN_ID} (in_progress)'),
+            'the tag was moved': ('tag-moved', f'{TAG} names {OTHER_SHA}, not {HEAD_SHA}'),
         }
         for case, (change, message) in cases.items():
             with self.subTest(case):
                 self.release(self.packages)
 
-                result = self.sign(f'--tag={TAG}', f'--key={KEY}', '--upload', GH_AFTER_DOWNLOAD=change)
+                result = self.sign(f'--tag={TAG}', f'--key={KEY}', COMMIT, '--upload', GH_AFTER_DOWNLOAD=change)
 
                 self.assertRefused(result, message)
 
@@ -691,7 +735,7 @@ class SignDashmateChecksumsTests(ReleaseFixture):
             with self.subTest(case):
                 self.release(self.packages)
 
-                result = self.sign(f'--tag={TAG}', f'--key={KEY}', '--upload', **env)
+                result = self.sign(f'--tag={TAG}', f'--key={KEY}', COMMIT, '--upload', **env)
 
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertEqual(len(self.uploads()), 1)
@@ -701,7 +745,7 @@ class SignDashmateChecksumsTests(ReleaseFixture):
 
     def test_should_say_the_signature_may_be_attached_when_its_upload_fails(self):
         # The upload can fail after GitHub has created the asset.
-        result = self.sign(f'--tag={TAG}', f'--key={KEY}', '--upload', GH_UPLOAD_FAILS='1')
+        result = self.sign(f'--tag={TAG}', f'--key={KEY}', COMMIT, '--upload', GH_UPLOAD_FAILS='1')
 
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn(f'SHA256SUMS.asc may be attached to {TAG}', result.stderr)
@@ -762,13 +806,13 @@ class SignWithGnuPGTests(ReleaseFixture):
     def test_should_take_the_primary_key_or_its_signing_subkey(self):
         for key in [self.primary, self.subkey]:
             with self.subTest(key=key):
-                result = self.sign(f'--tag={TAG}', f'--key={key}', GNUPGHOME=str(self.home))
+                result = self.sign(f'--tag={TAG}', f'--key={key}', COMMIT, GNUPGHOME=str(self.home))
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_should_refuse_a_second_signature_from_gpg_conf(self):
         (self.home / 'gpg.conf').write_text(f'local-user {self.other}\n')
 
-        result = self.sign(f'--tag={TAG}', f'--key={self.primary}', GNUPGHOME=str(self.home))
+        result = self.sign(f'--tag={TAG}', f'--key={self.primary}', COMMIT, GNUPGHOME=str(self.home))
 
         self.assertRefused(result, 'exactly one signature')
 
