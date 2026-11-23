@@ -156,11 +156,12 @@ pub struct DriveAbciQueryAddressFundsVersions {
     /// the end of the recent zone at its height. 100 in every table, the
     /// literal the handler and the verifier used before.
     ///
-    /// Do not lower it in a future table without first changing the clients:
-    /// the SDK address sync and the wallet's balance history treat a page
-    /// shorter than this cap as the end of the query, reading the cap from
-    /// their own platform version. Lowering it needs the SDK to report query
-    /// exhaustion from the limit used for that proof before the cap changes.
+    /// Do not lower it in a future table without first changing the clients.
+    /// The wallet's history pager treats a page shorter than its own version's
+    /// cap as exhausted: before lowering this cap, have the SDK report
+    /// exhaustion using the limit that verified the proof. SDK address sync
+    /// reads Recent in one request: keep the cap large enough for the whole
+    /// zone, or paginate Recent before advancing the sync height.
     pub recent_address_balance_changes_max_blocks: u16,
     /// The most compacted ranges one `getRecentCompactedAddressBalanceChanges`
     /// answer holds (kept small to bound the proof size). The query handler
