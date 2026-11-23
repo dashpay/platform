@@ -380,6 +380,30 @@ class UpdateKeyLimitsViewModelTest {
     }
 
     @Test
+    fun shouldNotAskToCheckAReplacementDateWhileTheExpiryEditIsOff() = runTest(dispatcher) {
+        val last = org.dashfoundation.example.util.KeyLimitsFormatting.maxPickableMillis()
+        // An earlier restore dropped the edit (switched off) but kept a pick past this range.
+        val state = UpdateKeyLimitsViewModel(
+            SavedStateHandle(
+                mapOf(
+                    "keyLimits.extendExpiry" to false,
+                    "keyLimits.pickedExpiry" to last + 1,
+                    "keyLimits.expiryDropped" to true,
+                ),
+            ),
+        )
+        state.load {
+            Result.success(
+                FakeWallet(answer = { IdentityKeyLimitsUpdatePreview(identityId, 2, 0, null, 1_800_000_000_000uL, null, null) }),
+            )
+        }
+        advanceUntilIdle()
+        assertTrue(state.restoredExpiryDropped)
+        assertFalse(state.restoredExpiryReset)
+        assertTrue(state.pickedExpiryMillis!! <= last)
+    }
+
+    @Test
     fun shouldRefuseEveryCallOnceTheWalletWasReloaded() = runTest(dispatcher) {
         val wallet = FakeWallet(walletHandle = 1L, answer = ::preview)
         val state = UpdateKeyLimitsViewModel(SavedStateHandle())

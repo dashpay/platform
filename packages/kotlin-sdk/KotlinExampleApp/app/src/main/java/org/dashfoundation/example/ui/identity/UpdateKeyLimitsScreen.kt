@@ -322,7 +322,10 @@ class UpdateKeyLimitsViewModel(private val saved: SavedStateHandle) : ViewModel(
                     // zone) would open the picker on another day, so it is replaced too.
                     val base = maxOf(expiresAt.toLong(), System.currentTimeMillis())
                     setPickedExpiry(minOf(base, maxPickable - THIRTY_DAYS_MILLIS) + THIRTY_DAYS_MILLIS)
-                    if (restored != null) setExpiryNotice(reset = true, dropped = restoredExpiryDropped)
+                    // Only an edit still on has a replacement date to check.
+                    if (restored != null && extendExpiry) {
+                        setExpiryNotice(reset = true, dropped = restoredExpiryDropped)
+                    }
                 }
                 Gate.Ready(opening)
             } catch (e: CancellationException) {
@@ -673,7 +676,7 @@ private fun ChangeSection(opening: IdentityKeyLimitsUpdatePreview, state: Update
                 )
             }
             val picked = state.pickedExpiryMillis
-            if (state.restoredExpiryReset) {
+            if (state.restoredExpiryReset && state.extendExpiry) {
                 Text(
                     "The expiry you had picked is past this device's last pickable day, so it " +
                         "was set back. Check the new date before updating.",
