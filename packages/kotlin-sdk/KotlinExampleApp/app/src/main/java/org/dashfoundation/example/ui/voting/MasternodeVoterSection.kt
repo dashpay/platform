@@ -770,7 +770,15 @@ fun MasternodeVoterSection(
                 testTag = "$testTagPrefix.voter",
                 enabled = enabled && !usesTypedInput,
                 onSelected = {
-                    selectedIdentityHex = it.identityId.toHex()
+                    val hex = it.identityId.toHex()
+                    // A different identity is a new pick: its earlier check no longer releases
+                    // it, so nothing is published on that check before the new one finishes.
+                    if (hex != selectedHex) {
+                        pickedChecks[hex]?.let { picked ->
+                            pickedChecks = pickedChecks + (hex to picked.copy(finished = false))
+                        }
+                    }
+                    selectedIdentityHex = hex
                     publish()
                 },
             )
