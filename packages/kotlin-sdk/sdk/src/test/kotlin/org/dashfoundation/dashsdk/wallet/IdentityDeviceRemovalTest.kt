@@ -435,6 +435,42 @@ class IdentityDeviceRemovalTest {
     }
 
     @Test
+    fun `should retry a deferred delete when the round that staged its alias rolls back`() =
+        runBlocking {
+            // The handler as the manager wires it: rounds that staged a key
+            // settle pending deletes when they end.
+            handler = PlatformWalletPersistenceHandler(
+                db,
+                Dispatchers.Unconfined,
+                settlePendingKeyDeletesAfterRound = { inFlight ->
+                    storage.withPrivateKeyExclusion { settlePendingIdentityKeyDeletes(db, this, inFlight) }
+                },
+            )
+            val stagedKey = ByteArray(33) { 0x6d }
+            storage.storePrivateKey(stagedKey.hex(), ByteArray(32) { 7 }, ownerWalletId = walletId)
+            storage.withPrivateKeyExclusion {
+                recordPendingIdentityKeyDeletes(listOf(PendingIdentityKeyDelete(stagedKey.hex(), walletId)))
+            }
+
+            // An open round stages a row for the alias; a removal meanwhile
+            // defers its pending delete.
+            handler.onChangesetBegin(walletId)
+            handler.onPersistIdentityKeyUpsert(
+                walletId, siblingId, 9, 0, 0, 0, false, false, 0,
+                stagedKey, ByteArray(20), true, walletId,
+                true, 3, 5, 0, ByteArray(32), null,
+            )
+            remove(id = ByteArray(32) { 0x7c })
+            assertTrue(storage.hasPrivateKey(stagedKey.hex()))
+
+            // The round rolls back: its row never commits, and the deferred
+            // delete is settled right away, with no other removal.
+            handler.onChangesetEnd(walletId, success = false)
+            assertFalse(storage.hasPrivateKey(stagedKey.hex()))
+            assertTrue(storage.withPrivateKeyExclusion { pendingIdentityKeyDeletes() }.isEmpty())
+        }
+
+    @Test
     fun `should finish a voting key an earlier removal left when removed again`() = runBlocking {
         remove()
         storage.storePrivateKey(votingIdentifier, ByteArray(32) { 2 })

@@ -151,6 +151,17 @@ class PlatformWalletPersistenceHandler(
      * The manager wires `WalletStorage`; null (tests) records nothing.
      */
     private val recordRemovedIdentityKeys: (suspend (List<PendingIdentityKeyDelete>) -> Unit)? = null,
+    /**
+     * Settles pending identity-key deletes, leaving alone the aliases passed
+     * in (still staged by another open round). Called when a round that
+     * staged identity-key rows ends, committed or rolled back, so a delete a
+     * settle deferred while that round was open is retried then rather than
+     * at the next removal. The manager wires
+     * `org.dashfoundation.dashsdk.wallet.settlePendingIdentityKeyDeletes`;
+     * null (tests) retries nothing. A failure is logged and left for a later
+     * settle; it never fails the round.
+     */
+    private val settlePendingKeyDeletesAfterRound: (suspend (inFlight: Set<String>) -> Unit)? = null,
 ) : NativePersistenceBridge(), AutoCloseable {
 
     override fun persistenceCapabilitiesVersion(): Int = PERSISTENCE_CAPABILITIES_VERSION
@@ -471,6 +482,16 @@ class PlatformWalletPersistenceHandler(
     override fun onChangesetEnd(walletId: ByteArray, success: Boolean): Int = guarded {
         val key = walletId.toHex()
         val buffer = buffers.remove(key) ?: return@guarded 0
+        try {
+            endRound(walletId, key, buffer, success)
+        } finally {
+            retryDeferredKeyDeletes(buffer)
+        }
+        0
+    }
+
+    /** [onChangesetEnd] body for [buffer], already detached from [buffers]. */
+    private fun endRound(walletId: ByteArray, key: String, buffer: ChangesetBuffer, success: Boolean) {
         if (!success) {
             // Rollback: discard every staged write, mirroring
             // `backgroundContext.rollback()` — and delete the aliases the
@@ -480,7 +501,7 @@ class PlatformWalletPersistenceHandler(
             // staged pending-key deltas are discarded with the buffer, so
             // the pre-round [pendingIdentityKeys] map survives untouched.
             scrubPendingAliases(key)
-            return@guarded 0
+            return
         }
         try {
             runBlockingCatching {
@@ -512,7 +533,21 @@ class PlatformWalletPersistenceHandler(
             scrubPendingAliases(key)
             throw t
         }
-        0
+    }
+
+    /**
+     * After a round that staged identity-key rows ends, settle the pending
+     * identity-key deletes a settle may have deferred for those aliases
+     * meanwhile. Caller holds [callbackExclusion] (every callback does).
+     */
+    private fun retryDeferredKeyDeletes(buffer: ChangesetBuffer) {
+        val settle = settlePendingKeyDeletesAfterRound ?: return
+        if (buffer.stagedKeyAliases.isEmpty()) return
+        try {
+            runBlockingCatching { settle(aliasesStagedInOpenRounds()) }
+        } catch (t: Throwable) {
+            Log.w(TAG, "pending identity-key deletes left for a later settle", t)
+        }
     }
 
 

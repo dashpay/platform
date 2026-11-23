@@ -577,6 +577,11 @@ class PlatformWalletManager(
                 recordRemovedIdentityKeys = { deletes ->
                     walletStorage.withPrivateKeyExclusion { recordPendingIdentityKeyDeletes(deletes) }
                 },
+                settlePendingKeyDeletesAfterRound = { inFlight ->
+                    walletStorage.withPrivateKeyExclusion {
+                        settlePendingIdentityKeyDeletes(database, this, inFlight)
+                    }
+                },
             )
             CoreChildren(resolver, keySigner, deriver, handler)
         } catch (constructionFailure: Throwable) {
