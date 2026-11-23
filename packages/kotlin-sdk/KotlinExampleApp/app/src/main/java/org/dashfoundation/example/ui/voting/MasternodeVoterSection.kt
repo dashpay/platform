@@ -267,6 +267,12 @@ internal data class PickedKeyCheckState(
     val known: MasternodeRecordedVotingKey? = null,
     val finished: Boolean = true,
     val savedRevision: Long? = null,
+    /**
+     * The row's revision the finished check was made against (or wrote). A finished check
+     * counts only while the row is at that revision or earlier: a record written since (by
+     * another check or a load) needs a check of its own (Swift, after #6145).
+     */
+    val checkedRevision: Long = 0,
 )
 
 /**
@@ -332,10 +338,18 @@ internal fun storedVoterDecision(
         !keyUse.canVote -> StoredVoterDecision.REFUSED
         // Never derived from the row's id: Rust's load rule resolves it when picked.
         state.proTxHashHex == null -> StoredVoterDecision.UNRESOLVED
-        keyUse.checkBeforeUse && sameKey?.finished != true -> StoredVoterDecision.AWAITING_CHECK
+        keyUse.checkBeforeUse && !checkFinishedFor(state, sameKey) -> StoredVoterDecision.AWAITING_CHECK
         else -> StoredVoterDecision.CASTABLE
     }
 }
+
+/**
+ * Whether a check of [state]'s key finished since it was picked, against the record the row
+ * holds now: one made against an older revision does not count.
+ */
+internal fun checkFinishedFor(state: VoterKeyState, picked: PickedKeyCheckState?): Boolean =
+    picked != null && picked.checkedIdentifier == state.identifier && picked.finished &&
+        picked.checkedRevision >= state.revision
 
 /**
  * Whether the stored voting key is known not to vote: refused by Rust, or unreadable. Used for
@@ -787,9 +801,19 @@ fun MasternodeVoterSection(
     // state (voters compare by value).
     SideEffect { onVoterChange(voter) }
 
+    // A record written since the picked key's check finished (another check, or a load) needs
+    // a check of its own when Rust says so: a new check request, as Swift reruns its check
+    // when the record changes.
+    var recheckRequest by remember { mutableIntStateOf(0) }
+    LaunchedEffect(selectedState?.revision, selectedPicked) {
+        val state = selectedState ?: return@LaunchedEffect
+        val picked = selectedPicked ?: return@LaunchedEffect
+        if (picked.finished && picked.checkedRevision < state.revision) recheckRequest++
+    }
+
     // Once per pick of an identity and its stored key: the key is checked when Rust says to
     // check it before use. The record it writes recomposes the section through [keyStates].
-    LaunchedEffect(selectedHex, selectedState?.identifier, network, pickRequest) {
+    LaunchedEffect(selectedHex, selectedState?.identifier, network, pickRequest, recheckRequest) {
         val identity = selected ?: return@LaunchedEffect
         val identifier = selectedState?.identifier ?: return@LaunchedEffect
         // An unreadable identifier names no key to check; the status line says so.
@@ -800,6 +824,8 @@ fun MasternodeVoterSection(
         // A new pick starts a new check: until it finishes, the key is not castable on the
         // strength of an earlier check. What this dialog learned of the same key is kept.
         val previous = pickedChecks[hex]?.takeIf { it.checkedIdentifier == identifier }
+        // The revision of the row this check is made against.
+        val revisionAtStart = selectedState.revision
         pickedChecks = if (previous != null) {
             pickedChecks + (hex to previous.copy(finished = false))
         } else {
@@ -830,9 +856,12 @@ fun MasternodeVoterSection(
                 checkFailure = hex to result.message
                 pickedChecks = pickedChecks + (
                     hex to if (result.unsaved != null) {
-                        PickedKeyCheckState(identifier, result.unsaved, savedRevision = null)
+                        PickedKeyCheckState(
+                            identifier, result.unsaved, savedRevision = null, checkedRevision = revisionAtStart,
+                        )
                     } else {
-                        (previous ?: PickedKeyCheckState(identifier)).copy(finished = true)
+                        (previous ?: PickedKeyCheckState(identifier))
+                            .copy(finished = true, checkedRevision = revisionAtStart)
                     }
                 )
             }
@@ -840,15 +869,22 @@ fun MasternodeVoterSection(
                 if (checkFailure?.first == hex) checkFailure = null
                 pickedChecks = pickedChecks + (
                     hex to if (result.record != null) {
-                        PickedKeyCheckState(identifier, result.record, savedRevision = result.revision)
+                        PickedKeyCheckState(
+                            identifier, result.record, savedRevision = result.revision,
+                            checkedRevision = result.revision,
+                        )
                     } else {
-                        (previous ?: PickedKeyCheckState(identifier)).copy(finished = true)
+                        (previous ?: PickedKeyCheckState(identifier))
+                            .copy(finished = true, checkedRevision = maxOf(revisionAtStart, result.revision))
                     }
                 )
             }
             PickedVotingKeyCheck.NotNeeded -> {
                 if (checkFailure?.first == hex) checkFailure = null
-                pickedChecks = pickedChecks + (hex to (previous ?: PickedKeyCheckState(identifier)).copy(finished = true))
+                pickedChecks = pickedChecks + (
+                    hex to (previous ?: PickedKeyCheckState(identifier))
+                        .copy(finished = true, checkedRevision = revisionAtStart)
+                )
             }
             is PickedVotingKeyCheck.NotResolved -> notResolved = hex to result.message
             PickedVotingKeyCheck.Dropped -> Unit

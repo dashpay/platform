@@ -409,6 +409,22 @@ class MasternodeVoterKeyCheckTest {
         assertNull(db.identityDao().getByIdentityId(identityId)!!.masternodeProTxHash)
     }
 
+    /**
+     * A finished check counts only against the record it was made for: once another check or a
+     * load writes a newer record of the same key, a key Rust says to check is held again until
+     * a check of that record finishes (Swift, after #6145).
+     */
+    @Test
+    fun shouldHoldAKeyAgainWhenItsRecordChangesAfterTheCheck() {
+        rules.use = awaitingCheck
+        val picked = PickedKeyCheckState(identifierA, finished = true, checkedRevision = 2)
+
+        assertEquals(StoredVoterDecision.CASTABLE, storedVoterDecision(stateAt(2), picked, rules))
+        assertEquals(StoredVoterDecision.AWAITING_CHECK, storedVoterDecision(stateAt(3), picked, rules))
+        assertTrue(checkFinishedFor(stateAt(1), picked))
+        assertFalse(checkFinishedFor(stateAt(3), picked))
+    }
+
     /** A check started again for a re-picked key holds it until that check finishes. */
     @Test
     fun shouldHoldAReCheckedKeyUntilTheNewCheckFinishes() {
