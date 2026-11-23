@@ -162,6 +162,7 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | ID-15 | Same identity restored into two wallets (duplicate seed) | Platform | Uncommon | ✅ | multiwallet | Importing the same mnemonic as a second wallet derives the **same** identity; verify state stays consistent and balances are not double-counted or conflicting across the two wallets. |
 | ID-16 | Resume stuck top-up (tracked asset lock) | Cross | Uncommon | 🧪 |  | *Settings → Platform State Transitions → Top Up Identity (Resume)* (`TransitionDetailView` `executeIdentityTopUpResume`) → **confirmation dialog** (target identity + outpoint) → `wallet.resumeTopUpWithAssetLock` → `platform_wallet_topup_identity_with_existing_asset_lock_signer`. Crash-recovery for a `ID-13` top-up whose Core asset lock confirmed but whose IdentityTopUp never reached Platform: consumes the **already-tracked** lock by outpoint (txid hex in display order + vout). Enter the outpoint, confirm the dialog, and the selected identity's balance rises. Cancelling the dialog leaves the transition untouched; resuming an untracked / already-consumed / foreign-wallet outpoint fails cleanly with **no fund movement**. *(Funded e2e pending; testnet UAT.)* |
 | ID-17 | Update identity key limits: top up budget / extend expiry | Platform | Thorough | ✅ |  | Two entry points, one sheet (`UpdateKeyLimitsView`): `KeyDetailView` → **Limits → Update Limits** (`keyLimits.update.open`), and a leading-edge **Limits** swipe on any `KeysListView` row whose key carries a budget or an expiry (`keyLimits.update.swipe.<keyId>`; reaches limited keys whose row tap opens `PrivateKeyView`). Also *Settings → Platform State Transitions → Identity → Update Key Limits* (`transition.identity.updateKeyLimits`), a list of this network's limited keys. Opening the sheet (and the key detail screen, once) first refreshes the wallet's copy of the identity from Platform with a proof (`wallet.refreshIdentity` → `platform_wallet_refresh_identity`), so a limited key added on another client is known to the preview; if that refresh fails the sheet shows the error and offers no form (try with the network off). Gating is Rust's: the button and the sheet ask `wallet.previewIdentityKeyLimitsUpdate` → `platform_wallet_preview_identity_key_limits_update` with no change; when it refuses, the button is disabled with Rust's reason as a caption (disabled key, or no MASTER key / unlimited unbound CRITICAL key in the Keychain) and the sheet shows the reason with no form. The sheet shows the current total budget, expiry and **Signed by key #N** from the preview, offers **Add to budget (DASH)** (`keyLimits.update.addBudget`) only for a key with a budget and **Extend expiry** (`keyLimits.update.extendExpiryToggle` + `keyLimits.update.expiryPicker`) only for a key with an expiry, re-previews as you type and renders the new total / new expiry (`keyLimits.update.preview`) or Rust's refusal inline (`keyLimits.update.error`). **Update Limits** (`keyLimits.update.submit`) → `wallet.updateIdentityKeyLimits(asReviewed:)` → `platform_wallet_update_identity_key_limits_as_reviewed_with_signer` (keychain-signed); Rust refuses, before signing, anything other than the total, expiry and signing key the preview showed. If the result is unconfirmed (it may have landed), the sheet says so and offers no second submission. Refusals to try: a key without limits has no Update Limits action and no swipe; a zero top-up, an expiry that is not later and an expiry before 1970 are refused inline before signing (submit stays disabled); an **expired** key topped up without extending its expiry, or extended to a time that is still past, is refused inline before signing (the opening refresh proves a block time the preview checks the resulting key against). If Platform still refuses a submission (for example a key that expired between the preview and inclusion, consensus code **40219**), the sheet stays open showing Platform's text plus **Consensus error 40219** (`keyLimits.update.submitError`). After success the sheet closes and, without leaving `KeyDetailView`, the total budget, the freshly fetched remaining budget and the expiry show the new values (also on the `KeysListView` row); relaunch the app and confirm they persist. *(Implemented; not yet run on a device or simulator. Funded testnet UAT pending. Needs an identity holding a key with a budget and/or an expiry: in this app only `IdentityDetailView` → share a login key over Bluetooth (`ShareLoginKeyView`, needs a browser peer) registers one, since `AddIdentityKeyView` (`ID-07`) takes no limits; otherwise register one from another client, e.g. js-evo-sdk `sdk.identities.update` with a limited key. For the 40219 case use a key whose expiry has passed.)* |
+| ID-18 | Remove identity from device | Platform | Thorough | ✅ | regression | Identities tab → swipe the identity's row → **Remove** → confirm **Remove from Device** (`IdentitiesContentView.removeIdentityLocally`). Local only: nothing is broadcast and the identity stays on Platform. Use an identity that has a DPNS name and private keys stored on the device (for example one created with `ID-01` that registered a name with `DPNS-01`, or a masternode loaded with its voting key as in `VOTE-01`). Pass: the row disappears and the app does not crash (it used to crash here for any identity with a DPNS name or DashPay data, after its keys were already deleted, and relaunch showed the identity with no keys); after a relaunch the identity is still gone; loading it again (`ID-02`, or Load Identity with its keys) brings it back with usable keys, and a voting key typed again is stored without a replace prompt. If the Keychain refuses a delete (device locked) the identity is still removed and the alert names each key left in the Keychain. *SwiftData side and the rows-then-Keychain order are covered by `IdentityLocalRemovalTests`; simulator UAT pending.* |
 
 ### 4.3 Platform Addresses (DIP-17 credit addresses) — `Domain=Address`
 
@@ -361,7 +362,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 |---|---|---|
 | Essential | 22 | yes |
 | Common | 43 | yes |
-| Thorough | 47 | yes |
+| Thorough | 48 | yes |
 | Uncommon | 42 | yes |
 | Manual | 2 (`CORE-08`, `DP-10`) | no — physical device |
 
@@ -370,7 +371,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Layer | Count (approx.) |
 |---|---|
 | Core | 18 |
-| Platform | 100 |
+| Platform | 101 |
 | Cross | 19 |
 | Shielded | 16 |
 
@@ -385,7 +386,7 @@ Each row's **primary home** is its §4 section, but a few rows are cross-cutting
 **By category (§4 section):**
 
 - **Core / Wallet** — `CORE-01..24`
-- **Identity** — `ID-01..17`, `SH-11`, `SH-22`
+- **Identity** — `ID-01..18`, `SH-11`, `SH-22`
 - **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06..09`, `ID-06`, `ID-08`, `ID-11`
 - **DPNS** — `DPNS-01..13`
 - **Voting** — `VOTE-01..09`, `DPNS-05`
@@ -407,7 +408,7 @@ Each row's **primary home** is its §4 section, but a few rows are cross-cutting
 - **freeze** — `TOK-08`, `TOK-09`
 - **distribution** — `TOK-07`
 - **masternode** — `VOTE-01`, `VOTE-08`, `VOTE-09`
-- **regression** — `TOK-17`, `ADDR-09`, `DP-10`
+- **regression** — `ID-18`, `TOK-17`, `ADDR-09`, `DP-10`
 - **restart** (the flow is killed mid-way and must recover after relaunch) — `SH-19`, `SH-20`, `SH-23`
 
 Worked example — *"run all non-Uncommon Token tests"*: take **Token** = `TOK-01..20`; drop the `Uncommon`/stub ones (`TOK-08..16`, `TOK-20`) → run **`TOK-01..07`** plus the Thorough group / multi-wallet token rows `TOK-17`/`TOK-18`/`TOK-19`. Worked example — *"run all multi-wallet token tests"*: `Category=Token AND Tag=multiwallet` → `TOK-17`.

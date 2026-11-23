@@ -554,3 +554,64 @@ extension PersistentIdentity {
 // views read and mutate `PersistentIdentity` rows directly, and the
 // DPP projection for key crypto lives under `identityPublicKeys`
 // above.
+
+// MARK: - Deletion
+
+extension PersistentIdentity {
+    /// Marks for deletion every child row whose inverse to this identity is
+    /// non-optional: DPNS names, the DashPay profile, DashPay contact
+    /// profiles, contact requests, payments and ignored senders. Does not
+    /// save.
+    ///
+    /// SwiftData fatals in `save()` when it has to null a non-optional
+    /// inverse, and marking the children for delete in the same save as the
+    /// identity does not avoid it. So these rows go in a save of their own
+    /// before the identity is deleted. The other relationships (public keys,
+    /// documents, token balances, owned contracts, the owning wallet) have
+    /// optional inverses and need no pre-deletion.
+    public func deleteChildrenWithRequiredInverse(in context: ModelContext) {
+        for name in Array(dpnsNames) {
+            context.delete(name)
+        }
+        if let profile = dashpayProfile {
+            context.delete(profile)
+        }
+        for contactProfile in Array(contactProfiles) {
+            context.delete(contactProfile)
+        }
+        for request in Array(contactRequests) {
+            context.delete(request)
+        }
+        for payment in Array(dashpayPayments) {
+            context.delete(payment)
+        }
+        for ignored in Array(dashpayIgnoredSenders) {
+            context.delete(ignored)
+        }
+    }
+
+    /// Deletes `identity` from `context` without hitting the SwiftData fatal
+    /// described on `deleteChildrenWithRequiredInverse(in:)`: the children
+    /// with a non-optional inverse are deleted and saved first, then the
+    /// identity, whose cascade takes its public keys and documents, is
+    /// deleted and saved.
+    ///
+    /// On a failed save the context is rolled back, which drops every
+    /// unsaved change in it, and the error is rethrown. A failure in the
+    /// second save leaves the identity row but not the children the first
+    /// save already removed.
+    public static func deleteChildrenFirst(
+        _ identity: PersistentIdentity,
+        in context: ModelContext
+    ) throws {
+        do {
+            identity.deleteChildrenWithRequiredInverse(in: context)
+            try context.save()
+            context.delete(identity)
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
+    }
+}
