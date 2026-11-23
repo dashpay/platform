@@ -392,6 +392,28 @@ class MasternodeVoterKeyCheckTest {
         assertTrue(clearedRecordStillHolds(repeat, 3, undetermined))
     }
 
+    /**
+     * A pick counts as checked only when its result was saved (or no check was needed, or
+     * Platform could not answer): an answer that could not be saved keeps the key unpublished,
+     * whatever it said.
+     */
+    @Test
+    fun shouldKeepAKeyUnpublishedWhenItsCheckCouldNotBeSaved() {
+        val valid = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressA)
+        val unsaved = nextPickedState(
+            null, identifierA, PickedVotingKeyCheck.Failed("disk full", valid), revisionAtStart = 1,
+        )!!
+        rules.use = awaitingCheck
+
+        assertFalse(unsaved.finished)
+        assertEquals(StoredVoterDecision.AWAITING_CHECK, storedVoterDecision(stateAt(1), unsaved, rules))
+        // Platform could not answer: the pick counts as checked, as Swift lets it vote.
+        val unanswered = nextPickedState(
+            null, identifierA, PickedVotingKeyCheck.Failed("timeout"), revisionAtStart = 1,
+        )!!
+        assertEquals(StoredVoterDecision.CASTABLE, storedVoterDecision(stateAt(1), unanswered, rules))
+    }
+
     /** A check started again for a re-picked key holds it until that check finishes. */
     @Test
     fun shouldHoldAReCheckedKeyUntilTheNewCheckFinishes() {
