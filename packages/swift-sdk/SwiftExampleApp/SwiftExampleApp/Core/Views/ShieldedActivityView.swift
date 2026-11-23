@@ -479,7 +479,9 @@ struct ShieldedActivityDetailView: View {
                             .font(.footnote)
                             .foregroundColor(.secondary)
                     }
-                } else if !entry.counterparty.isEmpty {
+                } else if !entry.counterparty.isEmpty, entry.kindTag != 12 {
+                    // TokenUnshield (12) shows its token id in its own Token
+                    // section below, with or without a credited identity.
                     Section("Counterparty") {
                         let cpHex = entry.counterparty.map { String(format: "%02x", $0) }.joined()
                         Text(cpHex)
@@ -489,9 +491,11 @@ struct ShieldedActivityDetailView: View {
                 }
 
                 // TokenUnshield: the identity section above shows the
-                // credited identity; the counterparty is the token's id and
-                // the amount is the tokens moved, in the token's smallest
-                // unit; the fee came from the credit pool.
+                // credited identity when the row has one (a restored row may
+                // not: then the recipient is shown as unknown); the
+                // counterparty is the token's id and the amount is the tokens
+                // moved, in the token's smallest unit; the fee came from the
+                // credit pool.
                 if entry.kindTag == 12, entry.counterparty.count == 32 {
                     Section("Token") {
                         let tokenIdHex = entry.counterparty.map { String(format: "%02x", $0) }.joined()
@@ -499,6 +503,9 @@ struct ShieldedActivityDetailView: View {
                             .font(.caption.monospaced())
                             .textSelection(.enabled)
                         LabeledContent("Tokens unshielded", value: "\(entry.amount) (smallest units)")
+                        if entry.identityId.count != 32 {
+                            LabeledContent("Recipient", value: "Unknown")
+                        }
                         Text(tokenUnshieldNote)
                             .font(.footnote)
                             .foregroundColor(.secondary)

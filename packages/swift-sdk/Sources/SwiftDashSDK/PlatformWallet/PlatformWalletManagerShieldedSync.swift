@@ -1704,17 +1704,26 @@ extension PlatformWalletManager {
                 "recipientIdentityId must be exactly 32 bytes"
             )
         }
-        guard let resolverHandle = resolver.handle else {
+        guard resolver.handle != nil else {
             throw PlatformWalletError.invalidParameter(
                 "MnemonicResolver has no handle"
             )
         }
 
-        let handle = self.handle
-        try await Task.detached(priority: .userInitiated) {
+        // Admitted from before the FFI call until its result is converted, so
+        // `shutdown()` waits for an unshield already past this point instead
+        // of destroying the handle under it.
+        try await withAdmittedNativeOperation("shieldedTokenUnshield") { handle -> Void in
             // Guaranteed resolver keepalive across the FFI call:
-            // same rationale as `shieldedTransfer`.
+            // same rationale as `shieldedTransfer`. The handle is read here,
+            // inside the admitted body, because the raw pointer is not
+            // `Sendable` (the resolver is).
             try withExtendedLifetime(resolver) {
+                guard let resolverHandle = resolver.handle else {
+                    throw PlatformWalletError.invalidParameter(
+                        "MnemonicResolver has no handle"
+                    )
+                }
                 try walletId.withUnsafeBytes { widRaw in
                     guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
                     else {
@@ -1750,7 +1759,7 @@ extension PlatformWalletManager {
                     }
                 }
             }
-        }.value
+        }
     }
 
     /// What a token pool spend of `kind` moving `amount` (the token's
@@ -1786,9 +1795,11 @@ extension PlatformWalletManager {
             )
         }
 
-        let handle = self.handle
         let kindByte = kind.rawValue
-        return try await Task.detached(priority: .userInitiated) {
+        // Admitted through the FFI call and the result conversion, as the
+        // spends are, so `shutdown()` waits for a preview in flight.
+        return try await withAdmittedNativeOperation("shieldedTokenSpendPreview") {
+            handle -> ShieldedTokenSpendPreview in
             var fee: UInt64 = 0
             var tokenNotes: UInt32 = 0
             var feeNotes: UInt32 = 0
@@ -1819,7 +1830,7 @@ extension PlatformWalletManager {
                 }
             }
             return ShieldedTokenSpendPreview(tokenNotes: tokenNotes, feeNotes: feeNotes, fee: fee)
-        }.value
+        }
     }
 
     /// Whether a token's direct purchase can be paid from the shielded pool,
