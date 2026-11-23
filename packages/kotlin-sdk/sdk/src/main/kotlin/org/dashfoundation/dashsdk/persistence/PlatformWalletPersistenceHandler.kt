@@ -3756,9 +3756,10 @@ class PlatformWalletPersistenceHandler(
 
     /**
      * Delete one identity's Room footprint for
-     * `org.dashfoundation.dashsdk.wallet.removeIdentityFromDevice`, in one
+     * `org.dashfoundation.dashsdk.wallet.deleteIdentityFromDevice`, in one
      * transaction: its token balances (SET_NULL children), its private
-     * contact scan state except a position marked unresolved, then the
+     * contact scan state (a position marked unresolved is kept but rewound to
+     * the start, since the history its position covered goes), then the
      * identity row, whose delete cascades its public keys, DPNS names,
      * documents and DashPay rows. SQLite cascades in the same transaction,
      * so there is no SwiftData-style partial delete to order around. After
@@ -3766,14 +3767,15 @@ class PlatformWalletPersistenceHandler(
      * transaction deletes nothing and propagates.
      *
      * The caller must hold [callbackExclusion] (via [withCallbackExclusion]).
-     * An open changeset round is not discarded: it belongs to the whole
-     * wallet, and the identity's rows it may still write are the same
-     * re-persist dashpay/platform#6098 describes.
+     * Idempotent: it also runs after the live wallet already removed the
+     * identity through [onPersistIdentityRemoval]. An open changeset round is
+     * not discarded: it belongs to the whole wallet.
      */
     internal suspend fun deleteIdentityDataLocked(identityId: ByteArray) = runBlockingCatching {
         database.withTransaction {
             database.tokenDao().deleteBalancesByIdentity(identityId)
             database.privateContactScanStateDao().deleteUnmarkedPositionsOfIdentity(identityId)
+            database.privateContactScanStateDao().rewindMarkedPositionsOfIdentity(identityId)
             database.privateContactScanStateDao().deleteAddressesOwnedBy(identityId)
             database.identityDao().deleteByIdentityId(identityId)
         }
@@ -4013,6 +4015,19 @@ class PlatformWalletPersistenceHandler(
             keyType = keyType,
             force = true,
         )?.identifier ?: return null
+
+        // Fence against an identity removal that ran while the key was being
+        // derived: the slot was read from a row that removal has since deleted
+        // with its stored key, so this store must not outlive it. Checked
+        // AFTER the store; a removal still to come deletes the key itself, as
+        // it deletes keys only after the rows are gone.
+        if (database.publicKeyDao().getByPublicKeyData(publicKeyData).isEmpty()) {
+            deriver.deleteUnownedStored(listOf(pubkeyHex), walletId)
+            throw DashSdkError.PlatformWallet.SigningKeyUnavailable(
+                "identity-key repair for $pubkeyHex finished after its identity was " +
+                    "removed from the device; the repaired key was deleted again",
+            )
+        }
 
         // Independent confirmation the stored blob actually decrypts.
         if (!verifyRecoverable(pubkeyHex)) {

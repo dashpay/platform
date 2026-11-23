@@ -25,6 +25,7 @@ import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.DpnsMarketplaceNative
 import org.dashfoundation.dashsdk.ffi.FundingNative
+import org.dashfoundation.dashsdk.ffi.IdentityRemovalNative
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.NativeWalletEventBridge
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
@@ -1400,26 +1401,36 @@ class PlatformWalletManager(
     }
 
     /**
-     * Remove one identity from this device: its Room rows first, its stored
-     * private keys and masternode voting key after. Port of SwiftExampleApp's
-     * `IdentitiesContentView.removeIdentityLocally` (#6084). Nothing is
+     * Remove one identity from this device. Port of SwiftExampleApp's
+     * `IdentitiesContentView.removeIdentityLocally` (#6084), with the live
+     * wallet removal of dashpay/platform#6098 done first. Nothing is
      * broadcast and the identity stays on Platform; it can be loaded again.
      *
-     * A failed row delete throws and deletes nothing. Once the rows are
-     * gone, a secret the secure storage refuses to delete is reported in
+     * Rust removes the identity from every running wallet that manages it
+     * (`platform_wallet_manager_remove_identity_from_device`), so no later
+     * sync stores it again, or refuses while its DashPay contact request
+     * channel is held. A refusal throws the platform-wallet
+     * [org.dashfoundation.dashsdk.errors.DashSdkError] and nothing on the
+     * device is deleted. Then the identity's Room rows go in one transaction,
+     * then its stored private keys and masternode voting key; a secret the
+     * secure storage refuses to delete after the rows are gone is reported in
      * [IdentityDeviceRemovalResult.keysLeft] instead of thrown. A key another
      * identity row references, or another wallet's owner index claims, is
      * kept. See [deleteIdentityFromDevice] for the order.
      *
-     * The identity stays in this manager's running Rust wallet: a later
-     * DashPay sync can store its row again (dashpay/platform#6098, shared
-     * with iOS).
-     *
      * @param identityId the 32-byte identity id.
      */
     suspend fun removeIdentityFromDevice(identityId: ByteArray): IdentityDeviceRemovalResult =
-        withContext(Dispatchers.IO) {
-            deleteIdentityFromDevice(identityId, persistenceHandler, database, walletStorage)
+        teardownGate.op {
+            deleteIdentityFromDevice(
+                identityId,
+                persistenceHandler,
+                database,
+                walletStorage,
+                removeFromLiveWallets = { id ->
+                    mapNativeErrors { IdentityRemovalNative.removeIdentityFromDevice(managerHandle, id) }
+                },
+            )
         }
 
     // ── Watch-only restore ────────────────────────────────────────────

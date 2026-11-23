@@ -48,12 +48,10 @@ interface PrivateContactScanStateDao {
     )
     suspend fun deleteUnmarkedPositionsByWallet(walletId: ByteArray)
 
-    /** The ids of every wallet with a stored position record, a removed wallet's kept ones included. */
     /**
      * The identity's position records in any wallet, except those marked
-     * unresolved (see [deleteUnmarkedPositionsByWallet]), and the shielded
-     * addresses of requests to it: what removing an identity from the device
-     * deletes.
+     * unresolved (see [deleteUnmarkedPositionsByWallet]): what removing an
+     * identity from the device deletes.
      */
     @Query(
         "DELETE FROM private_contact_requests_positions " +
@@ -61,9 +59,23 @@ interface PrivateContactScanStateDao {
     )
     suspend fun deleteUnmarkedPositionsOfIdentity(identityId: ByteArray)
 
+    /**
+     * Rewind the identity's marked position records to the start of the
+     * store. Removing the identity deletes the contact history a record's
+     * position covers while the marker must stay, so a reload reads the store
+     * again from its start instead of from past requests it no longer has.
+     */
+    @Query(
+        "UPDATE private_contact_requests_positions SET position = 0 " +
+            "WHERE identityId = :identityId AND privatePaymentsUnresolved = 1",
+    )
+    suspend fun rewindMarkedPositionsOfIdentity(identityId: ByteArray)
+
+    /** The shielded addresses of private requests to the identity [identityId]. */
     @Query("DELETE FROM private_shielded_addresses WHERE ownerId = :identityId")
     suspend fun deleteAddressesOwnedBy(identityId: ByteArray)
 
+    /** The ids of every wallet with a stored position record, a removed wallet's kept ones included. */
     @Query("SELECT DISTINCT walletId FROM private_contact_requests_positions")
     suspend fun walletIdsWithPositions(): List<ByteArray>
 

@@ -12,6 +12,7 @@ import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.errors.DashSdkError
@@ -1868,6 +1869,58 @@ class PlatformWalletPersistenceHandlerTest {
             fun fakePubkeyFor(identityIndex: Int, keyIndex: Int): ByteArray =
                 ByteArray(33).also { it[0] = identityIndex.toByte(); it[1] = keyIndex.toByte() }
         }
+    }
+
+    /**
+     * An identity removal that runs while a repair derives (after the repair
+     * read its slot) must not be undone by the repair's store: the repair sees
+     * no row naming the key any more, deletes what it stored and fails.
+     */
+    @Test
+    fun repairFinishingAfterItsIdentityWasRemovedDeletesTheKeyAndFails() = runTest {
+        val identityId = ByteArray(32) { 31 }
+        val pubkey = VerifyingRepairDeriver.fakePubkeyFor(4, 6)
+        val deleted = mutableListOf<String>()
+        val deriver = object : PrivateKeyDeriver {
+            override fun deriveAndStore(
+                walletId: ByteArray,
+                publicKeyData: ByteArray,
+                identityIndex: Int,
+                keyIndex: Int,
+                keyType: Int,
+                force: Boolean,
+            ): DerivedKeyStoreResult? {
+                if (!force) return null
+                // The removal lands between the slot read and the store.
+                runBlocking { db.identityDao().deleteByIdentityId(identityId) }
+                return DerivedKeyStoreResult("privkey." + publicKeyData.toHex(), wasNewlyCreated = true)
+            }
+
+            override fun deleteUnownedStored(
+                pubkeyHexes: Collection<String>,
+                excludingWalletId: ByteArray,
+            ): Set<String> {
+                deleted += pubkeyHexes
+                return pubkeyHexes.toSet()
+            }
+        }
+        handler = newHandler(deriver)
+        seedIdentity(identityId)
+        upsertIdentityKey(pubkey, identityId)
+
+        val error = runCatching {
+            handler.repairIdentityKeyDurably(
+                walletId = walletId,
+                publicKeyData = pubkey,
+                verifyRecoverable = { true },
+            )
+        }.exceptionOrNull()
+
+        assertTrue(
+            "the repair fails, got $error",
+            error is DashSdkError.PlatformWallet.SigningKeyUnavailable,
+        )
+        assertEquals(listOf(pubkey.toHex()), deleted)
     }
 
     @Test

@@ -58,6 +58,18 @@ interface PublicKeyDao {
     ): Int
 
     /**
+     * How many `public_keys` rows with [publicKeyData] belong to an identity
+     * of the wallet [walletId]: whether that wallet still needs its
+     * owner-index claim on the key after one of its identities was removed.
+     */
+    @Query(
+        "SELECT COUNT(*) FROM public_keys pk JOIN identities i " +
+            "ON pk.identityIdData = i.identityId " +
+            "WHERE pk.publicKeyData = :publicKeyData AND i.walletId = :walletId",
+    )
+    suspend fun countReferencesInWallet(publicKeyData: ByteArray, walletId: ByteArray): Int
+
+    /**
      * Rows carrying a derivation breadcrumb (dashpay/platform#4060 finding
      * 5) — the candidate set for reconstructing the pending-repair state
      * after a restart. Kotlin-side filtering decides which of these are

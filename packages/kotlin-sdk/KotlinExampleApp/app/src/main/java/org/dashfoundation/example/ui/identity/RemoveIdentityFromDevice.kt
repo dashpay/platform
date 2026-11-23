@@ -138,6 +138,9 @@ internal suspend fun removeIdentityFromDeviceMessage(
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
+        // A refusal from the live wallet (a DashPay contact request in flight,
+        // private payments not restored) lands here with Rust's reason;
+        // nothing on the device was deleted.
         return "The identity was not removed from this device: ${e.message ?: e.javaClass.simpleName}. " +
             "Nothing was deleted."
     }
@@ -150,7 +153,7 @@ internal fun keysLeftMessage(keysLeft: List<String>): String? {
     val names = keysLeft.joinToString(" and ")
     val (stays, them) = if (keysLeft.size == 1) "It stays" to "it" else "They stay" to "them"
     return "The identity was removed from this device, but secure storage refused to delete " +
-        "its $names. $stays on the device with nothing pointing at $them. " +
-        "Removing the identity's wallet deletes wallet-owned keys; a voting key goes when the " +
-        "identity is loaded and removed again."
+        "its $names. $stays on the device for now: the next identity removal deletes " +
+        "leftover identity keys, and a voting key goes when the identity is loaded and " +
+        "removed again."
 }
