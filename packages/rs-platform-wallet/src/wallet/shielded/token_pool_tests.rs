@@ -681,14 +681,15 @@ async fn should_release_only_orphaned_token_reservations_in_scanned_pools() {
             .with_token_pool_conn(|conn| release_orphaned_reservations(conn, &scanned, &live))
             .expect("sweep")
     };
-    assert_eq!(
-        sweep(BTreeSet::new(), BTreeSet::from([record])).await,
-        0,
+    assert!(
+        sweep(BTreeSet::new(), BTreeSet::from([record]))
+            .await
+            .is_empty(),
         "a pool not scanned this pass keeps its reservations"
     );
     assert_eq!(
         sweep(BTreeSet::from([token().token_id]), BTreeSet::from([record])).await,
-        1,
+        BTreeSet::from([(id, [0xD1; 32])]),
         "only the orphan comes back"
     );
     let row = &balance_rows(&tables, WALLET, &[0]).await[0];
@@ -696,7 +697,9 @@ async fn should_release_only_orphaned_token_reservations_in_scanned_pools() {
 
     drop(in_flight_reservation);
     assert_eq!(
-        sweep(BTreeSet::from([token().token_id]), BTreeSet::new()).await,
+        sweep(BTreeSet::from([token().token_id]), BTreeSet::new())
+            .await
+            .len(),
         2,
         "with its spend gone and no record, every reservation comes back"
     );

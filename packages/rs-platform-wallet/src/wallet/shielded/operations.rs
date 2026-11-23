@@ -9909,6 +9909,223 @@ mod token_shielded_transfer_tests {
             .expect_err("the store holds no witness of the fee note");
         assert_nothing_held(&store, 1).await;
     }
+
+    /// A placeholder type 26 transition for a settlement test: only its
+    /// bytes are saved.
+    fn placeholder_transfer() -> StateTransition {
+        use dpp::shielded::SerializedAction;
+        use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::v0::TokenShieldedTransferWithShieldedFeeTransitionV0;
+        use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::TokenShieldedTransferWithShieldedFeeTransition;
+
+        let action = SerializedAction {
+            nullifier: [1; 32],
+            rk: [2; 32],
+            cmx: [3; 32],
+            encrypted_note: vec![4; 216],
+            cv_net: [5; 32],
+            spend_auth_sig: [6; 64],
+        };
+        StateTransition::TokenShieldedTransferWithShieldedFee(
+            TokenShieldedTransferWithShieldedFeeTransition::V0(
+                TokenShieldedTransferWithShieldedFeeTransitionV0 {
+                    data_contract_id: Identifier::from(CONTRACT_ID),
+                    token_contract_position: 0,
+                    token_id: token_id(),
+                    token_actions: vec![action.clone(), action.clone()],
+                    token_anchor: [7; 32],
+                    token_proof: vec![8; 64],
+                    token_binding_signature: [9; 64],
+                    fee_actions: vec![action.clone(), action],
+                    fee_anchor: [7; 32],
+                    fee_proof: vec![8; 64],
+                    fee_binding_signature: [9; 64],
+                    credit_amount: 2_000,
+                },
+            ),
+        )
+    }
+
+    fn pending_transfer_entry(
+        fee_note: &ShieldedNote,
+    ) -> super::super::activity::ShieldedActivityEntry {
+        super::super::activity::ShieldedActivityEntry {
+            id: [0xE2; 32],
+            kind: ShieldedActivityKind::TokenShieldedTransfer,
+            direction: ShieldedDirection::Out,
+            amount: 5,
+            fee: Some(1_000),
+            counterparty: Some(token_id().to_vec()),
+            memo: None,
+            block_height: None,
+            status: ShieldedActivityStatus::Pending,
+            created_at_ms: 1,
+            min_note_position: None,
+            note_cmxs: vec![[0xC2; 32]],
+            spent_nullifiers: vec![fee_note.nullifier],
+        }
+    }
+
+    /// A transfer whose token note and fee note are reserved, its row
+    /// recorded and its token notes held under the row's id, saved and
+    /// broadcast with `outcome` and settled as [`token_shielded_transfer`]
+    /// does from its record on: for tests that drive a settlement without a
+    /// network or a prover.
+    async fn transfer_with_outcome(
+        store: &Arc<RwLock<FileBackedShieldedStore>>,
+        fee_note: &ShieldedNote,
+        outcome: Result<StateTransitionProofResult, SpendFailure>,
+    ) -> Result<ShieldedTokenSpendOutcome, PlatformWalletError> {
+        let entry = pending_transfer_entry(fee_note);
+        let (_, mut token_reservation) =
+            reserve_token_notes(&*store.read().await, subwallet(), token_id(), 5, 3)
+                .expect("token notes");
+        let mut reservation = {
+            let mut locked = store.write().await;
+            locked.save_activity(subwallet(), &entry).expect("the row");
+            mark_notes_pending(
+                &mut *locked,
+                store,
+                subwallet(),
+                std::slice::from_ref(fee_note),
+            )
+            .expect("fee notes")
+        };
+        token_reservation
+            .rekey(&*store.read().await, entry.id)
+            .expect("rekey");
+        let pending_entry = Some(entry);
+        let result = save_spend_then_broadcast(
+            store,
+            subwallet(),
+            &pending_entry,
+            [7; 32],
+            0,
+            std::slice::from_ref(fee_note),
+            &mut reservation,
+            &placeholder_transfer(),
+            TOKEN_SHIELDED_TRANSFER_OPERATION,
+            move || std::future::ready(outcome),
+        )
+        .await;
+        settle_token_pool_spend(
+            store,
+            None,
+            WALLET_ID,
+            subwallet(),
+            token_id(),
+            &pending_entry,
+            reservation,
+            token_reservation,
+            TOKEN_SHIELDED_TRANSFER_OPERATION,
+            result,
+        )
+        .await
+    }
+
+    /// What the settlement left: the row's status, whether the fee note is
+    /// still reserved, the token note's holder, and the saved records.
+    async fn settled_state(
+        store: &Arc<RwLock<FileBackedShieldedStore>>,
+    ) -> (ShieldedActivityStatus, bool, Option<[u8; 32]>, usize) {
+        let store = store.read().await;
+        let status = store
+            .get_activity_by_entry_id(subwallet(), &[0xE2; 32])
+            .expect("the row reads")
+            .expect("the row")
+            .status;
+        let fee_reserved = store
+            .get_unspent_notes(subwallet())
+            .expect("notes")
+            .is_empty();
+        let token_holder = store
+            .with_token_pool_conn(|conn| token_pool::notes(conn, subwallet(), token_id()))
+            .expect("token notes")[0]
+            .reserved_by;
+        let records = store.pending_redrives(subwallet()).expect("records").len();
+        (status, fee_reserved, token_holder, records)
+    }
+
+    /// A transfer Platform accepts is submitted, not confirmed: its proof
+    /// shows its token notes spent, which another spend of them would show
+    /// too. Its row stays pending, its fee note and its token note stay held
+    /// (the token note under the row's id) and its record stays.
+    #[tokio::test]
+    async fn should_keep_an_accepted_transfer_pending_with_its_notes_held() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let fee_note = credit_note(1_000_000_000_000, 0);
+        let store = store_with(&dir, std::slice::from_ref(&fee_note), &[token_note(10, 0)]).await;
+        let outcome = transfer_with_outcome(
+            &store,
+            &fee_note,
+            Ok(StateTransitionProofResult::VerifiedShieldedNullifiers(
+                vec![],
+            )),
+        )
+        .await
+        .expect("accepted");
+        assert_eq!(outcome, ShieldedTokenSpendOutcome::Submitted);
+        assert_eq!(
+            settled_state(&store).await,
+            (ShieldedActivityStatus::Pending, true, Some([0xE2; 32]), 1)
+        );
+    }
+
+    /// A result wait that ends unconfirmed keeps the transfer as the accepted
+    /// one is kept, and reports it unconfirmed.
+    #[tokio::test]
+    async fn should_keep_an_unconfirmed_transfer_pending_with_its_notes_held() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let fee_note = credit_note(1_000_000_000_000, 0);
+        let store = store_with(&dir, std::slice::from_ref(&fee_note), &[token_note(10, 0)]).await;
+        let err = transfer_with_outcome(
+            &store,
+            &fee_note,
+            Err(SpendFailure::from(
+                PlatformWalletError::ShieldedSpendUnconfirmed {
+                    operation: TOKEN_SHIELDED_TRANSFER_OPERATION,
+                    reason: "the result wait timed out".to_string(),
+                },
+            )),
+        )
+        .await
+        .expect_err("unconfirmed");
+        assert!(
+            matches!(err, PlatformWalletError::ShieldedSpendUnconfirmed { .. }),
+            "got {err:?}"
+        );
+        assert_eq!(
+            settled_state(&store).await,
+            (ShieldedActivityStatus::Pending, true, Some([0xE2; 32]), 1)
+        );
+    }
+
+    /// A transfer whose broadcast proves nothing left the wallet can never
+    /// execute: its row reads failed, its record is retired and both its fee
+    /// note and its token note are released.
+    #[tokio::test]
+    async fn should_release_both_reservations_of_a_transfer_never_delivered() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let fee_note = credit_note(1_000_000_000_000, 0);
+        let store = store_with(&dir, std::slice::from_ref(&fee_note), &[token_note(10, 0)]).await;
+        let err = transfer_with_outcome(
+            &store,
+            &fee_note,
+            Err(SpendFailure {
+                error: PlatformWalletError::ShieldedBroadcastFailed("refused".to_string()),
+                never_delivered: true,
+            }),
+        )
+        .await
+        .expect_err("refused");
+        assert!(
+            matches!(err, PlatformWalletError::ShieldedBroadcastFailed(_)),
+            "got {err:?}"
+        );
+        assert_eq!(
+            settled_state(&store).await,
+            (ShieldedActivityStatus::Failed, false, None, 0)
+        );
+    }
 }
 
 #[cfg(test)]
