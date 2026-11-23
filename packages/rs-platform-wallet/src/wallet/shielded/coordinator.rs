@@ -345,9 +345,8 @@ struct OrphanedHoldSettlement {
 fn settle_orphaned_token_hold(
     orphan: &super::token_pool::OrphanedReservation,
 ) -> OrphanedHoldSettlement {
-    let (fail_row, release) = if !orphan.record_saved {
-        (true, true)
-    } else if orphan.any_spent && !orphan.all_spent {
+    let partly_spent = orphan.any_spent && !orphan.all_spent;
+    let (fail_row, release) = if !orphan.record_saved || partly_spent {
         (true, true)
     } else if orphan.signed_bound {
         (orphan.fee_anchor_pruned || !orphan.any_spent, true)
