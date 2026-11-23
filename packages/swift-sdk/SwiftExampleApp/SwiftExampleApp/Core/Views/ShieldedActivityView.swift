@@ -462,7 +462,7 @@ struct ShieldedActivityDetailView: View {
                         Text(tokenIdHex)
                             .font(.caption.monospaced())
                             .textSelection(.enabled)
-                        LabeledContent("Tokens sent", value: "\(entry.amount) (smallest units)")
+                        LabeledContent("Transfer amount", value: "\(entry.amount) (smallest units)")
                         Text(tokenTransferNote)
                             .font(.footnote)
                             .foregroundColor(.secondary)
