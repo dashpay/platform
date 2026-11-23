@@ -150,7 +150,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_identit
 /// What is left of the budgets of the given keys of an identity (protocol version
 /// 14), as a JSON object keyed by key id: `{"5": "1000", "6": null}`. A budgeted key
 /// maps to the credits left, as a decimal string; a key without a budget, or that the
-/// identity does not have, maps to null. `keyIds` is a JVM `int[]` of at least one id.
+/// identity does not have, maps to null. `keyIds` is a JVM `int[]` of at least one id,
+/// each the bit pattern of a `u32` key id.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_identityFetchKeysRemainingBudgets(
     mut env: JNIEnv,
@@ -169,10 +170,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_identit
                     throw_sdk_exception(env, 1, "keyIds could not be read");
                     return ptr::null_mut();
                 }
-                if buf.iter().any(|&i| i < 0) {
-                    throw_sdk_exception(env, 1, "keyIds must be non-negative");
-                    return ptr::null_mut();
-                }
+                // Each id is the `u32` key id's bit pattern, as Room stores it, so an id past
+                // `i32::MAX` arrives negative and is read back as the same `u32`.
                 buf.into_iter().map(|i| i as u32).collect()
             }
             _ => {

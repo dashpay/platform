@@ -151,7 +151,9 @@ pub type StalePendingSpend = ([u8; 32], [u8; 32], Option<[u8; 32]>, Option<u64>)
 /// byte-identical transition is fund-safe (identical nullifiers cannot be
 /// spent twice) and converts silence into a confirmation (next scan sees the
 /// nullifiers spent); a spend that never lands keeps its notes held until its
-/// anchor is proven pruned.
+/// anchor is proven pruned, or until the note scan reads another transition's
+/// action spending one of them, which the saved transition's own actions tell
+/// apart (`sync::SavedSpendInput`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingRedrive {
     /// Activity-entry id of the spend (sha256 of visible output cmxs);

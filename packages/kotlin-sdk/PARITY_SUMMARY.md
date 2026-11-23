@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **46**
+Capabilities tracked: **47**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 27 | 17 | 1 | 1 |
-| Swift | Example app | 6 | 30 | 1 | 9 |
-| Kotlin | SDK | 22 | 17 | 6 | 1 |
-| Kotlin | Example app | 7 | 23 | 6 | 10 |
+| Swift | SDK | 28 | 17 | 1 | 1 |
+| Swift | Example app | 6 | 31 | 1 | 9 |
+| Kotlin | SDK | 23 | 17 | 6 | 1 |
+| Kotlin | Example app | 7 | 24 | 6 | 10 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 16 | 28 |
-| Kotlin | 6 | 10 | 30 |
+| Swift | 2 | 17 | 28 |
+| Kotlin | 6 | 11 | 30 |
 
 ## Capability status
 
@@ -67,6 +67,7 @@ Capabilities tracked: **46**
 | `addresses.balance_history` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `shielded.token_purchase_from_pool` | partial / partial / required | partial / partial / required |
 | `identity.withdrawal_status` | supported / partial / not_applicable | supported / partial / not_applicable |
+| `identity.key_limits_update` | supported / partial / required | supported / partial / required |
 | `shielded.token_pool_balances` | partial / partial / required | unsupported / unsupported / not_applicable |
 | `shielded.token_shielded_transfer` | partial / partial / required | unsupported / unsupported / not_applicable |
 | `shielded.token_unshield` | partial / partial / required | unsupported / unsupported / not_applicable |

@@ -24,7 +24,8 @@
 //! private ones included, at every depth, to what the type's own properties are
 //! held to: its members keep their order and requiredness, members are added
 //! only after them, a `required` list loses nothing and gains only members the
-//! same update adds, and a member added to an object that holds stored
+//! same update adds (or one already required through a dotted name), and a
+//! member added to an object that holds stored
 //! documents is required only with `requiredSince`.
 //!
 //! Every other check is v1's, which v2 delegates to once the rules above have
@@ -106,7 +107,7 @@ impl DocumentTypeRef<'_> {
             return Ok(result);
         }
 
-        let result = self.validate_required_lists_kept(new_document_type);
+        let result = self.validate_required_lists_kept(new_document_type, platform_version);
 
         if !result.is_valid() {
             return Ok(result);
