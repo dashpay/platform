@@ -497,10 +497,10 @@ class LoadIdentityVotingKeyTest {
     fun shouldKeepTheStoredTypeUnlessOneIsGiven() = runBlocking<Unit> {
         dao.upsert(row(type = "Evonode"))
 
-        assertEquals(1, dao.updateLoadedFields(identityId, testnet, 1L, null, true, identityType = null, masternodeProTxHash = null, nowMillis = 0))
+        assertEquals(1, dao.updateLoadedFields(identityId, testnet, 1L, null, true, identityType = null, nowMillis = 0))
         assertEquals("Evonode", dao.getByIdentityId(identityId)!!.identityType)
 
-        assertEquals(1, dao.updateLoadedFields(identityId, testnet, 1L, null, true, identityType = "Masternode", masternodeProTxHash = null, nowMillis = 0))
+        assertEquals(1, dao.updateLoadedFields(identityId, testnet, 1L, null, true, identityType = "Masternode", nowMillis = 0))
         assertEquals("Masternode", dao.getByIdentityId(identityId)!!.identityType)
 
         // Through the load: an unpicked type leaves the stored one.
@@ -920,13 +920,15 @@ class LoadIdentityVotingKeyTest {
      */
     @Test
     fun shouldLoadAStoredVoterRowByItsRecordedProTxHash() = runBlocking {
-        val proTxHash = ByteArray(32) { 0x5a }
-        assertTrue(identityId.reversedArray().contentEquals(loadTargetProTxHash(dao, identityId, testnet)))
+        // Byte sequences that change when reversed, so a wrong byte order would show.
+        val typedId = ByteArray(32) { it.toByte() }
+        val proTxHash = ByteArray(32) { (0x40 + it).toByte() }
+        assertTrue(typedId.reversedArray().contentEquals(loadTargetProTxHash(dao, typedId, testnet)))
 
-        dao.upsert(row(type = "Masternode").copy(masternodeProTxHash = proTxHash))
-        assertTrue(proTxHash.contentEquals(loadTargetProTxHash(dao, identityId, testnet)))
+        dao.upsert(row(type = "Masternode").copy(identityId = typedId, masternodeProTxHash = proTxHash))
+        assertTrue(proTxHash.contentEquals(loadTargetProTxHash(dao, typedId, testnet)))
         // A row on another network says nothing about this one.
-        assertTrue(identityId.reversedArray().contentEquals(loadTargetProTxHash(dao, identityId, mainnet)))
+        assertTrue(typedId.reversedArray().contentEquals(loadTargetProTxHash(dao, typedId, mainnet)))
     }
 
     @Test

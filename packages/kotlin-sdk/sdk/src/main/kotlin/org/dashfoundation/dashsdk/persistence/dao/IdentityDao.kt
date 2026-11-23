@@ -106,8 +106,8 @@ interface IdentityDao {
         alias: String?,
         isLocal: Boolean,
         identityType: String?,
-        masternodeProTxHash: ByteArray?,
         nowMillis: Long,
+        masternodeProTxHash: ByteArray? = null,
     ): Int
 
     /**
