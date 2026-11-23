@@ -185,8 +185,9 @@ internal object FundingNative {
      * [signerIdentityHandle] is the Keystore identity signer (the manager's
      * `signerHandle`): the same handle credit transfers use, since the
      * transition is authorized by the identity's TRANSFER key. Blocks for the
-     * ~30s Halo 2 proof; returns the identity's proven post-debit credit
-     * balance (the wallet only confirms on the identity's own balance proof).
+     * ~30s Halo 2 proof; returns the funding identity's credit balance from
+     * the verified snapshot (or a newer one the wallet already knows), not a
+     * receipt for this debit.
      */
     external fun shieldedShieldFromIdentity(
         managerHandle: Long,
@@ -194,6 +195,28 @@ internal object FundingNative {
         shieldedAccount: Int,
         identityId: ByteArray,
         amount: Long,
+        signerIdentityHandle: Long,
+    ): Long
+
+    /**
+     * Shield from a Platform IDENTITY's balance to a third-party Orchard
+     * address, Type 21 (bridges
+     * `platform_wallet_manager_shielded_shield_from_identity_to_recipient`).
+     * See
+     * [org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedShieldFromIdentityToRecipient].
+     * [memoText] null or empty means no memo. Blocks for the ~30s Halo 2
+     * proof; returns the funding identity's credit balance from the verified
+     * snapshot (or a newer one the wallet already knows), not a receipt for
+     * this debit.
+     */
+    external fun shieldedShieldFromIdentityToRecipient(
+        managerHandle: Long,
+        walletId: ByteArray,
+        shieldedAccount: Int,
+        identityId: ByteArray,
+        recipientRaw43: ByteArray,
+        amount: Long,
+        memoText: String?,
         signerIdentityHandle: Long,
     ): Long
 
