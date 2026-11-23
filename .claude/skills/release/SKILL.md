@@ -290,10 +290,16 @@ Steps (skip whatever is already done — e.g. the next dev branch and default ma
 
 1. **Ensure the next dev branch exists** — `v(X.Y+1)-dev`. If it exists but is behind current dev, it just needs the sync in step 3.
 2. **`master`** is updated in [step 6](#6-stable-only-update-master) of the release flow, from the release tag.
-3. **Fast-forward next dev to current dev** (carry the release commits into the next line). It is typically strictly behind → a clean fast-forward:
+3. **Bring the release commits into next dev.** Check first whether next dev is still an ancestor of current dev:
+   ```sh
+   git fetch origin vX.Y-dev v(X.Y+1)-dev
+   git merge-base --is-ancestor origin/v(X.Y+1)-dev origin/vX.Y-dev && echo "fast-forward"
+   ```
+   If it prints `fast-forward`, fast-forward next dev to current dev, after the user's go:
    ```sh
    git push origin origin/vX.Y-dev:v(X.Y+1)-dev
    ```
+   Otherwise the branches have diverged, because next dev has commits of its own. Stop and tell the user: current dev is merged into next dev through a PR, not pushed.
    The next dev branch **stays at version `X.Y.0`** until its first `v(X.Y+1).0-dev.1` release is cut — do **not** bump it now.
 4. **Make next dev the default branch** if it isn't already (repo Settings → Branches, or `gh api`).
 5. **Milestones** — ensure `vX.Y.x` (patches for the just-released line) and `v(X.Y+1).0` (next dev prereleases) exist. Create with `gh api repos/dashpay/platform/milestones -f title="vX.Y.x" -f state=open`. (Stable-release milestone convention is `vX.Y.x`; prerelease is `vX.Y.0`.)
