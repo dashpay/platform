@@ -771,6 +771,13 @@ pub enum PlatformWalletFFIResultCode {
     /// [`Self::ErrorPrivateContactRequestPending`] (71).
     ErrorPublicContactRequestUnconfirmed = 76,
 
+    /// Maps `PlatformWalletError::BalanceHistoryInconsistentHeights`: the
+    /// balance history read kept getting one page of Platform's address
+    /// balance changes proved below a height it had already used, within its
+    /// per-page retry bound, so it returned no history rather than a partial
+    /// one. Nothing was changed; the read can be made again later.
+    ErrorBalanceHistoryInconsistentHeights = 77,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1253,6 +1260,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // submit it again.
             PlatformWalletError::PublicContactRequestUnconfirmed(..) => {
                 PlatformWalletFFIResultCode::ErrorPublicContactRequestUnconfirmed
+            }
+            // The balance history could not read its pages at consistent
+            // heights: no history was returned, and the read can be retried.
+            PlatformWalletError::BalanceHistoryInconsistentHeights { .. } => {
+                PlatformWalletFFIResultCode::ErrorBalanceHistoryInconsistentHeights
             }
             // The wallet's private payments from an earlier process are not
             // restored yet: wallet readiness, not one contact's pending request.
@@ -3174,6 +3186,32 @@ mod private_contact_request_error_tests {
             map_spend_result(Err(unconfirmed()), "private contact request").code,
             PlatformWalletFFIResultCode::ErrorPublicContactRequestUnconfirmed
         );
+    }
+
+    /// A balance history read that could not reach consistent heights
+    /// reaches the host by its own code with its message, not as an unknown
+    /// error.
+    #[test]
+    fn should_report_inconsistent_balance_history_heights_by_their_own_code() {
+        let mut result =
+            PlatformWalletFFIResult::from(PlatformWalletError::BalanceHistoryInconsistentHeights {
+                attempts: 3,
+                required_height: 12,
+                proved_height: 11,
+            });
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorBalanceHistoryInconsistentHeights
+        );
+        assert_eq!(result.code as u32, 77);
+        let message = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_str()
+            .expect("UTF-8 message")
+            .to_owned();
+        assert!(message.contains("height 11"), "{message}");
+        assert!(message.contains("height 12"), "{message}");
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
     }
 
     /// A public contact request a loaded wallet refuses until its private

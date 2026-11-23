@@ -865,20 +865,20 @@ pub enum PlatformWalletError {
     #[error("Address operation failed: {0}")]
     AddressOperation(String),
 
-    /// The balance history could not read Platform's recent and compacted
-    /// balance-change zones at consistent heights: within the retry bound,
-    /// every compacted read was proved below the recent read, so a
-    /// compaction that removed blocks from the recent read could be missing
-    /// from the compacted one. No partial history is returned; retry later.
+    /// The balance history could not read a page of Platform's balance
+    /// changes at a consistent height: within the per-page retry bound,
+    /// every answer for one page was proved below a height the read had
+    /// already used, so it could hide a block (or a compacted range) the
+    /// earlier pages relied on. No partial history is returned; retry later.
     #[error(
-        "Balance history: the recent and compacted zones could not be read at consistent \
-         heights after {attempts} attempts (recent read proved at height {recent_height}, \
-         compacted read at {compacted_height}); retry later"
+        "Balance history: a page of address balance changes was proved at height \
+         {proved_height}, below height {required_height} already read, in all {attempts} \
+         attempts; retry later"
     )]
     BalanceHistoryInconsistentHeights {
         attempts: usize,
-        recent_height: u64,
-        compacted_height: u64,
+        required_height: u64,
+        proved_height: u64,
     },
 
     /// A caller passed an argument this API cannot act on — as opposed to a

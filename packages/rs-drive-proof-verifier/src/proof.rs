@@ -116,6 +116,9 @@ use drive::query::vote_polls_by_document_type_query::{
     ResolvedVotePollsByDocumentTypeQuery, VotePollsByDocumentTypeQuery,
 };
 use drive::query::{ContractLookupFn, DriveDocumentQuery, VotePollsByEndDateDriveQuery};
+use drive::verify::address_funds::{
+    COMPACTED_ADDRESS_BALANCE_CHANGES_QUERY_LIMIT, RECENT_ADDRESS_BALANCE_CHANGES_QUERY_LIMIT,
+};
 use indexmap::IndexMap;
 use std::array::TryFromSliceError;
 use std::cell::RefCell;
@@ -1147,7 +1150,8 @@ impl FromProof<platform::GetRecentAddressBalanceChangesRequest> for RecentAddres
                 }
             };
 
-        let limit = Some(100u16); // Same limit as in query handler
+        // The same constant the query handler limits its answer to.
+        let limit = Some(RECENT_ADDRESS_BALANCE_CHANGES_QUERY_LIMIT);
 
         let (root_hash, verified_changes) = if start_height_exclusive {
             Drive::verify_recent_address_balance_changes_after(
@@ -1215,9 +1219,8 @@ impl FromProof<platform::GetRecentCompactedAddressBalanceChangesRequest>
             }
         };
 
-        // Ensure it is the same limit as in query handler; see
-        // packages/rs-drive-abci/src/query/address_funds/recent_compacted_address_balance_changes/v0/mod.rs
-        let limit = Some(25u16);
+        // The same constant the query handler limits its answer to.
+        let limit = Some(COMPACTED_ADDRESS_BALANCE_CHANGES_QUERY_LIMIT);
 
         if platform_version
             .drive

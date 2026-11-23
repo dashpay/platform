@@ -2397,8 +2397,24 @@
           "host": "shared",
           "kind": "unit",
           "file": "packages/rs-platform-wallet/src/wallet/platform_addresses/balance_history.rs",
-          "id": "should_fail_when_no_read_reaches_consistent_heights",
+          "id": "should_hold_the_floor_instead_of_restarting_when_both_zones_lag",
           "command": "cargo test -p platform-wallet --lib balance_history",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/platform_addresses/balance_history.rs",
+          "id": "should_read_both_zones_through_the_sdk_with_their_proved_heights",
+          "command": "cargo test -p platform-wallet --lib balance_history",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/error.rs",
+          "id": "should_report_inconsistent_balance_history_heights_by_their_own_code",
+          "command": "cargo test -p platform-wallet-ffi --lib inconsistent_balance_history",
           "covers_restart": false
         },
         {

@@ -16,6 +16,7 @@ use dapi_grpc::platform::v0::{
 use dpp::balances::credits::BlockAwareCreditOperation;
 use dpp::version::PlatformVersion;
 use drive::util::grove_operations::GroveDBToUse;
+use drive::verify::address_funds::COMPACTED_ADDRESS_BALANCE_CHANGES_QUERY_LIMIT;
 
 impl<C> Platform<C> {
     pub(super) fn query_recent_compacted_address_balance_changes_v0(
@@ -28,9 +29,10 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetRecentCompactedAddressBalanceChangesResponseV0>, Error>
     {
-        // Limit the number of compacted entries we return (max 25 to stay within proof size limits)
-        // Ensure it matches limit set in rs-drive-proof-verifier/src/proof.rs for RecentCompactedAddressBalanceChanges
-        let limit = Some(25u16);
+        // Limit the number of compacted entries we return (kept small to stay
+        // within proof size limits); the proof verifier checks against the
+        // same constant.
+        let limit = Some(COMPACTED_ADDRESS_BALANCE_CHANGES_QUERY_LIMIT);
 
         let response = if prove {
             let proof = self.drive.prove_compacted_address_balance_changes(

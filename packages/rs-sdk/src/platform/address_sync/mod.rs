@@ -67,6 +67,7 @@ use dpp::prelude::AddressNonce;
 use dpp::version::PlatformVersion;
 use drive::drive::{Drive, RootTree};
 use drive::grovedb::{Element, GroveBranchQueryResult, GroveTrunkQueryResult};
+use drive::verify::address_funds::COMPACTED_ADDRESS_BALANCE_CHANGES_QUERY_LIMIT;
 use drive_proof_verifier::types::{
     PlatformAddressTrunkState, RecentAddressBalanceChanges, RecentCompactedAddressBalanceChanges,
 };
@@ -80,8 +81,9 @@ use tracing::{debug, info, trace, warn};
 /// (`pending_unknown`). Cross-checked at the push site below.
 const PENDING_UNKNOWN_WARN_THRESHOLD: usize = 1000;
 
-/// Server limit for compacted address balance changes per request.
-const COMPACTED_BATCH_LIMIT: usize = 25;
+/// Server limit for compacted address balance changes per request: the
+/// constant the query handler and the proof verifier both use.
+const COMPACTED_BATCH_LIMIT: usize = COMPACTED_ADDRESS_BALANCE_CHANGES_QUERY_LIMIT as usize;
 
 #[cfg(all(test, feature = "mocks"))]
 mod signed_trunk_tests;

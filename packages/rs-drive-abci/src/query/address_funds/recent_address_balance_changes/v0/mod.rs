@@ -14,6 +14,7 @@ use dapi_grpc::platform::v0::{
 use dpp::balances::credits::CreditOperation;
 use dpp::version::PlatformVersion;
 use drive::util::grove_operations::GroveDBToUse;
+use drive::verify::address_funds::RECENT_ADDRESS_BALANCE_CHANGES_QUERY_LIMIT;
 
 impl<C> Platform<C> {
     pub(super) fn query_recent_address_balance_changes_v0(
@@ -26,8 +27,9 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetRecentAddressBalanceChangesResponseV0>, Error> {
-        // Limit the number of blocks we return
-        let limit = Some(100u16);
+        // Limit the number of blocks we return; the proof verifier checks
+        // against the same constant.
+        let limit = Some(RECENT_ADDRESS_BALANCE_CHANGES_QUERY_LIMIT);
 
         let response = if prove {
             let proof = if start_height_exclusive {
