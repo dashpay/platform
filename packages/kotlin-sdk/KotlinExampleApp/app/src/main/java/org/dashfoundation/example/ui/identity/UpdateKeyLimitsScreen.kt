@@ -228,7 +228,7 @@ class UpdateKeyLimitsViewModel(private val saved: SavedStateHandle) : ViewModel(
     val expiryPickable: Boolean
         get() {
             val expiresAt = (gate as? Gate.Ready)?.opening?.currentExpiresAt ?: return false
-            return expiresAt <= KeyLimitsFormatting.MAX_PICKABLE_MILLIS.toULong()
+            return expiresAt < KeyLimitsFormatting.MAX_PICKABLE_MILLIS.toULong()
         }
 
     init {
@@ -306,7 +306,7 @@ class UpdateKeyLimitsViewModel(private val saved: SavedStateHandle) : ViewModel(
                 val opening = resolved.preview(null, null)
                 val expiresAt = opening.currentExpiresAt
                 val maxPickable = KeyLimitsFormatting.MAX_PICKABLE_MILLIS
-                if (expiresAt != null && expiresAt <= maxPickable.toULong() && pickedExpiryMillis == null) {
+                if (expiresAt != null && expiresAt < maxPickable.toULong() && pickedExpiryMillis == null) {
                     // A starting point for the picker only, kept within what it can show;
                     // Rust judges the pick.
                     val base = maxOf(expiresAt.toLong(), System.currentTimeMillis())
@@ -618,7 +618,7 @@ private fun ChangeSection(opening: IdentityKeyLimitsUpdatePreview, state: Update
         }
         if (opening.currentExpiresAt != null && !state.expiryPickable) {
             Text(
-                "This key's expiry is past what the date picker can show (year 9999), so only " +
+                "This key's expiry is at or past the end of year 9999, the date picker's last day, so only " +
                     "its budget can be changed here." +
                     if (state.restoredExpiryDropped) " The expiry change you had started was dropped." else "",
                 style = MaterialTheme.typography.bodySmall,
@@ -664,7 +664,7 @@ private fun ChangeSection(opening: IdentityKeyLimitsUpdatePreview, state: Update
     val picked = state.pickedExpiryMillis
     if (showDatePicker && picked != null) {
         val pickerState = rememberDatePickerState(
-            initialSelectedDateMillis = KeyLimitsFormatting.dateUtcMillis(picked),
+            initialSelectedDateMillis = KeyLimitsFormatting.pickerDateUtcMillis(picked),
             yearRange = KeyLimitsFormatting.PICKABLE_YEARS,
         )
         DatePickerDialog(

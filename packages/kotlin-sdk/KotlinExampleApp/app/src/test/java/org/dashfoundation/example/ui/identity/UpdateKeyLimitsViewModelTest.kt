@@ -293,13 +293,19 @@ class UpdateKeyLimitsViewModelTest {
         assertFalse(far.expiryPickable)
         assertNull(far.pickedExpiryMillis)
 
-        // An expiry near the end of the range seeds the picker within it.
+        // An expiry on 9999-12-30 can still be moved later, and the picker is seeded within range.
         val edge = UpdateKeyLimitsViewModel(SavedStateHandle())
         val last = org.dashfoundation.example.util.KeyLimitsFormatting.MAX_PICKABLE_MILLIS
-        edge.load { Result.success(FakeWallet(answer = { opening(last.toULong()) })) }
+        edge.load { Result.success(FakeWallet(answer = { opening(253_402_171_200_000uL) })) }
         advanceUntilIdle()
         assertTrue(edge.expiryPickable)
         assertTrue(edge.pickedExpiryMillis!! <= last)
+
+        // An expiry at the end of the last year cannot be moved later here.
+        val end = UpdateKeyLimitsViewModel(SavedStateHandle())
+        end.load { Result.success(FakeWallet(answer = { opening(last.toULong()) })) }
+        advanceUntilIdle()
+        assertFalse(end.expiryPickable)
     }
 
     @Test

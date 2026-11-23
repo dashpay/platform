@@ -103,6 +103,14 @@ object KeyLimitsFormatting {
         }.timeInMillis
     }
 
+    /**
+     * The day the date picker opens on for [millis]: its local calendar day in [zone], held
+     * to the picker's last day, since late on 9999-12-31 UTC is already year 10000 east of UTC
+     * and the picker refuses an initial day outside its years.
+     */
+    fun pickerDateUtcMillis(millis: Long, zone: TimeZone = TimeZone.getDefault()): Long =
+        minOf(dateUtcMillis(millis, zone), LAST_PICKER_DAY_UTC_MILLIS)
+
     /** The local hour and minute of [millis] in [zone]. */
     fun timeOfDay(millis: Long, zone: TimeZone = TimeZone.getDefault()): Pair<Int, Int> {
         val local = Calendar.getInstance(zone).apply { timeInMillis = millis }
@@ -145,15 +153,15 @@ object KeyLimitsFormatting {
         }
 
     /**
-     * The latest instant the expiry date picker is opened on: 9999-12-30 00:00 UTC, a day
-     * short of the picker's last year so that its local calendar day is still in 9999 in
-     * every time zone (UTC+14 included). An expiry past it (Platform imposes no such bound)
-     * is shown, but not offered for editing here.
+     * The last instant the expiry editor works with: 9999-12-31 23:59:59.999 UTC, the end of
+     * the date picker's last year. A key whose expiry is at or past it (Platform imposes no
+     * such bound) shows its expiry but offers no expiry edit here; any earlier expiry can be
+     * moved later. Also the last instant shown as a calendar date.
      */
-    const val MAX_PICKABLE_MILLIS: Long = 253_402_128_000_000L
+    const val MAX_PICKABLE_MILLIS: Long = 253_402_300_799_999L
 
-    /** The last instant shown as a calendar date: 9999-12-31 23:59:59.999 UTC. */
-    private const val LAST_DATE_MILLIS: Long = 253_402_300_799_999L
+    /** UTC midnight of 9999-12-31, the last day the date picker can select. */
+    private const val LAST_PICKER_DAY_UTC_MILLIS: Long = 253_402_214_400_000L
 
     /** The years the expiry date picker offers. */
     val PICKABLE_YEARS: IntRange = 1970..9999
@@ -175,7 +183,7 @@ object KeyLimitsFormatting {
         locale: Locale = Locale.getDefault(),
         zone: TimeZone = TimeZone.getDefault(),
     ): String {
-        if (expiresAt > LAST_DATE_MILLIS.toULong()) return "$expiresAt ms after 1970"
+        if (expiresAt > MAX_PICKABLE_MILLIS.toULong()) return "$expiresAt ms after 1970"
         val formatter = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, locale)
         formatter.timeZone = zone
         return formatter.format(Date(expiresAt.toLong()))

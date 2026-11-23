@@ -128,10 +128,20 @@ class KeyLimitsFormattingTest {
         val last = KeyLimitsFormatting.MAX_PICKABLE_MILLIS
         for (zoneId in listOf("Pacific/Kiritimati", "UTC", "Etc/GMT+12")) { // UTC+14, UTC, UTC-12
             val day = java.util.Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
-                timeInMillis = KeyLimitsFormatting.dateUtcMillis(last, TimeZone.getTimeZone(zoneId))
+                timeInMillis = KeyLimitsFormatting.pickerDateUtcMillis(last, TimeZone.getTimeZone(zoneId))
             }
             assertTrue(zoneId, day.get(java.util.Calendar.YEAR) in KeyLimitsFormatting.PICKABLE_YEARS)
         }
+    }
+
+    @Test
+    fun shouldMoveADecember30ExpiryToDecember31OfTheLastYearInUtc() {
+        val utc = TimeZone.getTimeZone("UTC")
+        val dec30Noon = 253_402_171_200_000L // 9999-12-30 12:00 UTC
+        val dec31 = KeyLimitsFormatting.withDate(dec30Noon, 253_402_214_400_000L, utc)
+        assertEquals(253_402_257_600_000L, dec31) // 9999-12-31 12:00 UTC
+        assertTrue(dec31 <= KeyLimitsFormatting.MAX_PICKABLE_MILLIS)
+        assertEquals(253_402_214_400_000L, KeyLimitsFormatting.pickerDateUtcMillis(dec31, utc))
     }
 
     @Test
