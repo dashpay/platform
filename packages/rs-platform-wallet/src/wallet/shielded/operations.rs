@@ -1849,6 +1849,17 @@ pub(super) async fn ensure_token_has_shielded_pool(
     Ok(())
 }
 
+/// Whether a token pool transition signed at `platform_version` binds its token bundle to its
+/// fee bundle (from protocol version 15), so it cannot land with another fee bundle. Kept on
+/// the spend's token note hold, which the token note sweep settles it by.
+pub(super) fn token_bundle_binds_fee_bundle(platform_version: &PlatformVersion) -> bool {
+    platform_version
+        .dpp
+        .methods
+        .token_pool_paid_fee_binding
+        .is_some()
+}
+
 /// The protocol version a token pool transition paying from the credit pool is built and
 /// signed at: the network's, which a verified answer shows (`verified_network_version`). From
 /// protocol version 15 its token bundle binds the fee bundle's commitment and earlier versions
@@ -2465,12 +2476,11 @@ where
         // The token notes are held under the record's id from here on, so
         // once this spend has settled the record keeps them held.
         if let Some(entry) = &pending_entry {
-            let signed_bound = platform_version
-                .dpp
-                .methods
-                .token_pool_paid_fee_binding
-                .is_some();
-            token_reservation.rekey(&*store.read().await, entry.id, signed_bound)?;
+            token_reservation.rekey(
+                &*store.read().await,
+                entry.id,
+                token_bundle_binds_fee_bundle(platform_version),
+            )?;
         }
 
         save_spend_then_broadcast(
@@ -9714,6 +9724,19 @@ mod token_shielded_transfer_tests {
 
     const WALLET_ID: [u8; 32] = [0x72; 32];
     const CONTRACT_ID: [u8; 32] = [0x46; 32];
+
+    /// A transfer signed at protocol 14 is kept as unbound and one signed at
+    /// 15 as bound, which the token note sweep settles it by.
+    #[test]
+    fn should_record_a_token_spend_as_bound_only_from_protocol_version_15() {
+        assert!(!token_bundle_binds_fee_bundle(
+            PlatformVersion::get(14).expect("protocol version 14")
+        ));
+        assert!(token_bundle_binds_fee_bundle(
+            PlatformVersion::get(15).expect("protocol version 15")
+        ));
+        assert!(token_bundle_binds_fee_bundle(PlatformVersion::latest()));
+    }
 
     /// A prover the transfers here never reach: each stops before the build.
     struct UnreachableProver;
