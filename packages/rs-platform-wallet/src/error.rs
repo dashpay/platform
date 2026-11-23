@@ -121,15 +121,20 @@ pub enum PlatformWalletError {
         wallet: Network,
     },
 
-    /// The invitation's identity is this wallet's: it holds this claim's
-    /// master key (an earlier claim of this wallet landed), or the wallet
-    /// already records it. Nothing was recorded, and nothing was broadcast
-    /// unless a node that lagged behind let the claim through; the host loads
-    /// the identity the way it loads any of its own.
+    /// The invitation's identity is this wallet's: the wallet already records
+    /// it in one of its registration slots. No key the identity holds decides
+    /// this. Nothing was recorded, and nothing was broadcast unless a node
+    /// that lagged behind let the claim through; the host loads the identity
+    /// the way it loads any of its own.
     #[error("invitation was already claimed by this wallet as identity {identity_id}")]
     InvitationClaimedByThisWallet { identity_id: Identifier },
 
-    /// The invitation is claimed and the claim is not shown to be this wallet's (usually someone else's): the identity holds none of the submitted ECDSA or BLS keys. Nothing was broadcast unless a node that lagged behind let the claim through.
+    /// The invitation is claimed and this wallet does not record its
+    /// identity, so whose claim it is is unknown: usually someone else's, or
+    /// an earlier claim of this wallet whose result was lost before it was
+    /// recorded (a rescan records it). No key the identity holds decides
+    /// this. Nothing was broadcast unless a node that lagged behind let the
+    /// claim through.
     #[error("invitation was already claimed by identity {identity_id}")]
     InvitationAlreadyClaimed { identity_id: Identifier },
 
@@ -1289,9 +1294,6 @@ impl From<InvitationError> for PlatformWalletError {
                 Self::InvitationNetworkMismatch { invitation, wallet }
             }
             InvitationError::NotChainLocked(message) => Self::AssetLockNotChainLocked(message),
-            InvitationError::ClaimedByThisWallet { identity_id } => {
-                Self::InvitationClaimedByThisWallet { identity_id }
-            }
             InvitationError::AlreadyClaimed { identity_id } => {
                 Self::InvitationAlreadyClaimed { identity_id }
             }
@@ -2138,10 +2140,6 @@ mod invitation_error_mapping_tests {
     #[test]
     fn should_keep_the_identity_a_preflight_outcome_names() {
         let id = Identifier::new([5; 32]);
-        assert!(matches!(
-            PlatformWalletError::from(InvitationError::ClaimedByThisWallet { identity_id: id }),
-            PlatformWalletError::InvitationClaimedByThisWallet { identity_id } if identity_id == id
-        ));
         assert!(matches!(
             PlatformWalletError::from(InvitationError::AlreadyClaimed { identity_id: id }),
             PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == id

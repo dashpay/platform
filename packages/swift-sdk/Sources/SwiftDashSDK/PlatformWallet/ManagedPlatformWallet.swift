@@ -2914,13 +2914,12 @@ extension ManagedPlatformWallet {
         /// unspent (a reclaim top-up consumes it without creating this
         /// identity), so the claim can still fail late.
         public let alreadyClaimed: Bool
-        /// Whether this wallet made the claim: the invitation's identity is one
-        /// the wallet already records, or holds the wallet's master key at the
-        /// identity index asked about (a "no" covers only that index). `false`
-        /// whenever `alreadyClaimed` is false; `nil` when it could not be
-        /// decided (the wallet's key was unavailable), and always `nil` for a
-        /// claimed invitation from ``invitationClaimStatus(uri:)``, which does
-        /// not ask.
+        /// Whether this wallet made the claim: `true` only when the wallet
+        /// records the invitation's identity in one of its registration
+        /// slots, `false` whenever `alreadyClaimed` is false, and `nil` for
+        /// any other claimed invitation (no key the identity holds decides
+        /// it). Always `nil` for a claimed invitation from
+        /// ``invitationClaimStatus(uri:)``, which does not ask.
         public let claimedByThisWallet: Bool?
 
         /// `claimedByThisWallet` defaults to unknown; Rust reports `false`
@@ -3062,12 +3061,12 @@ extension ManagedPlatformWallet {
     /// invitee and, on confirm, calls `sendContactRequest` for the reciprocal.
     ///
     /// Nothing is broadcast when Platform would refuse the claim and charge
-    /// the voucher: it throws `.invitationClaimedByThisWallet` (an earlier
-    /// claim of this wallet landed, or the wallet already records the
-    /// invitation's identity; load that identity),
-    /// `.assetLockAlreadyConsumed` (claimed by an identity that holds none of
-    /// the submitted ECDSA or BLS keys and that the wallet does not record —
-    /// not shown to be this wallet's, usually someone else's),
+    /// the voucher: it throws `.invitationClaimedByThisWallet` (the wallet
+    /// already records the invitation's identity; load that identity),
+    /// `.assetLockAlreadyConsumed` (claimed by an identity the wallet does not
+    /// record: whose it is is unknown, usually someone else's, possibly an
+    /// earlier claim of this wallet whose result was lost before it was
+    /// recorded; no key the identity holds decides it),
     /// `.invitationKeysAlreadyRegistered` with no consensus error (another
     /// identity holds these keys)
     /// or `.invitationNotReady` (retry once synced). The same
@@ -3203,34 +3202,17 @@ extension ManagedPlatformWallet {
     }
 
     /// ``invitationClaimStatus(uri:)``, plus whether this wallet made the
-    /// claim as its identity at `identityIndex`
-    /// (``InvitationClaimStatus/claimedByThisWallet``).
-    ///
-    /// Rust reads the wallet's master key only when the invitation was
-    /// claimed, through a ``MnemonicResolver`` when the seed lives in the
-    /// Keychain, so an unclaimed invitation never needs it. A key that cannot
-    /// be read makes `claimedByThisWallet` `nil`, not an error. Same error
-    /// contract as ``invitationClaimStatus(uri:)``.
-    public func invitationClaimStatus(
-        uri: String,
-        identityIndex: UInt32,
-        storage: WalletStorage = WalletStorage()
-    ) async throws -> InvitationClaimStatus {
-        let resolver = MnemonicResolver(storage: storage)
-        // `self` and the resolver stay alive for the whole synchronous FFI
-        // call (up to ~12 s of funding-tx retries): the resolver's FFI ctx is
-        // a `passUnretained` pointer.
+    /// claim (``InvitationClaimStatus/claimedByThisWallet``): `true` only for
+    /// an identity the wallet records, `nil` for any other claimed
+    /// invitation. Same error contract as ``invitationClaimStatus(uri:)``.
+    public func invitationClaimStatusForThisWallet(uri: String) async throws -> InvitationClaimStatus {
+        // `self` stays alive for the whole call (up to ~12 s of funding-tx
+        // retries): a deinit mid-call would destroy the handle in use.
         return try await Task.detached(priority: .userInitiated) { [self] () -> InvitationClaimStatus in
-            try withExtendedLifetime((self, resolver)) {
+            try withExtendedLifetime(self) {
                 var out = InvitationClaimStatusFFI()
                 let result = uri.withCString { uriPtr in
-                    platform_wallet_invitation_claim_status_for_identity(
-                        handle,
-                        resolver.handle,
-                        identityIndex,
-                        uriPtr,
-                        &out
-                    )
+                    platform_wallet_invitation_claim_status_for_identity(handle, uriPtr, &out)
                 }
                 try result.check()
                 return InvitationClaimStatus(out)

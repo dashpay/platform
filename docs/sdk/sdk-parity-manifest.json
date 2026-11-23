@@ -701,7 +701,7 @@
           "host": "shared",
           "kind": "unit",
           "file": "packages/rs-platform-wallet/src/wallet/identity/network/invitation.rs",
-          "id": "should_resolve_the_master_key_only_for_a_claimed_invitation",
+          "id": "should_report_a_recorded_identity_as_this_wallets_claim",
           "command": "cargo test -p platform-wallet --all-features --lib invitation",
           "covers_restart": false
         }

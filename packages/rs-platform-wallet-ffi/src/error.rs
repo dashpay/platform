@@ -674,11 +674,11 @@ pub enum PlatformWalletFFIResultCode {
     ErrorInvitationKeysAlreadyRegistered = 63,
 
     /// Maps `PlatformWalletError::InvitationClaimedByThisWallet`. The
-    /// invitation's identity exists and holds this claim's master key: an
-    /// earlier claim of this wallet landed (or the wallet already records the
-    /// identity). Nothing was recorded, and nothing was broadcast unless a
-    /// node that lagged behind let the claim through; load the identity as
-    /// any of the wallet's own.
+    /// invitation's identity exists and this wallet already records it in
+    /// one of its registration slots (no key the identity holds decides
+    /// this). Nothing was recorded, and nothing was broadcast unless a node
+    /// that lagged behind let the claim through; load the identity as any of
+    /// the wallet's own.
     ///
     /// Message: a STABLE JSON detail object — `{"identityId":"<base58>"}`.
     /// Swift mirror: `PlatformWalletError.invitationClaimedByThisWallet`.
@@ -2643,8 +2643,9 @@ mod tests {
     }
 
     /// The invitation claim's outcomes keep their own pinned codes, so a
-    /// host can tell "this wallet already has an identity" (63) and "your
-    /// own claim landed" (64) from "not shown to be ours" (24), and the
+    /// host can tell "this wallet already has an identity" (63) and "an
+    /// identity this wallet records" (64) from "claimed, whose is unknown"
+    /// (24), and the
     /// two retry signals (65, 66) from an unknown failure.
     #[test]
     fn should_keep_distinct_pinned_codes_for_invitation_claim_outcomes() {

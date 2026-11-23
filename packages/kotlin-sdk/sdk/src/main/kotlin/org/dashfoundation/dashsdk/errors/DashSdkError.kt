@@ -284,8 +284,8 @@ sealed class DashSdkError(
 
         /**
          * Code 64: the invitation's identity ([identityId], base58) is this
-         * wallet's: it holds the claim's master key (an earlier claim landed)
-         * or the wallet already records it. Nothing was recorded, and nothing
+         * wallet's: the wallet already records it in one of its registration
+         * slots (no key the identity holds decides this). Nothing was recorded, and nothing
          * was broadcast unless a node that lagged behind let the claim
          * through; load the identity like any of the wallet's own.
          */

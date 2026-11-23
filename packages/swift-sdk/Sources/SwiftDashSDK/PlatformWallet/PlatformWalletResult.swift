@@ -275,8 +275,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// A key of a DashPay invitation claim already belongs to another
     /// identity; the message is a JSON detail naming it.
     case errorInvitationKeysAlreadyRegistered = 63
-    /// An earlier DashPay invitation claim of this wallet landed; the message
-    /// is a JSON detail naming its identity. Nothing was recorded.
+    /// The DashPay invitation's identity is one this wallet already records;
+    /// the message is a JSON detail naming it. Nothing was recorded.
     case errorInvitationClaimedByThisWallet = 64
     /// The invitation claim could not verify Platform's answers yet; nothing
     /// was broadcast. Retry once synced.
@@ -711,9 +711,9 @@ public enum PlatformWalletError: LocalizedError {
     /// protocol v11) when it came from the broadcast, `nil` when the claim's
     /// own lookup found the owner and nothing was sent.
     case invitationKeysAlreadyRegistered(identityId: String?, consensus: PlatformConsensusError?)
-    /// The invitation's identity (base58 `identityId`) is this wallet's: it
-    /// holds this claim's master key (an earlier claim landed) or the wallet
-    /// already records it. Nothing was recorded, and nothing was broadcast
+    /// The invitation's identity (base58 `identityId`) is this wallet's: the
+    /// wallet already records it in one of its registration slots (no key
+    /// the identity holds decides this). Nothing was recorded, and nothing was broadcast
     /// unless a node that lagged behind let the claim through; load the
     /// identity like any of the wallet's own.
     case invitationClaimedByThisWallet(identityId: String)
