@@ -54,11 +54,12 @@ jobs:
         run: |
           set -euo pipefail
           count="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?name=${ARTIFACT}" \
-            --jq '[.artifacts[] | select(.expired == false)] | length')"
+            --jq '.artifacts | if type == "array" and all(.[]; (.expired | type) == "boolean")
+              then map(select(.expired == false)) | length else "unexpected" end')"
           case "${count}" in
+            '' | *[!0-9]*) echo "::error::Unexpected answer from the artifacts API: ${count}"; exit 1 ;;
             0) echo "exists=false" >> "${GITHUB_OUTPUT}" ;;
-            [1-9]*) echo "exists=true" >> "${GITHUB_OUTPUT}" ;;
-            *) echo "::error::Unexpected answer from the artifacts API: ${count}"; exit 1 ;;
+            *) echo "exists=true" >> "${GITHUB_OUTPUT}" ;;
           esac
 
       # The entire runner, including HOME and Git state, is new for this job.

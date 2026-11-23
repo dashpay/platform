@@ -153,7 +153,8 @@ class EarlierBuildCheckTests(unittest.TestCase):
                          'api repos/dashpay/platform/actions/runs/123/artifacts?name=js-build-abc')
 
     def test_should_fail_rather_than_rebuild_when_it_cannot_tell(self):
-        for overrides in [{'GH_FAIL': '1'}, {'GH_ARTIFACTS': 'not json'}, {'GH_RAW': 'oops'}]:
+        for overrides in [{'GH_FAIL': '1'}, {'GH_ARTIFACTS': 'not json'}, {'GH_RAW': 'oops'}, {'GH_RAW': '1oops'},
+                          {'GH_ARTIFACTS': '{"artifacts": {}}'}, {'GH_ARTIFACTS': '{"artifacts": [{"name": "x"}]}'}]:
             with self.subTest(overrides=overrides):
                 result, output = self.run_check([], **overrides)
                 self.assertNotEqual(result.returncode, 0)
