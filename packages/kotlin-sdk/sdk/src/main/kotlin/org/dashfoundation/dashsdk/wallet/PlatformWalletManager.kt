@@ -1005,7 +1005,7 @@ class PlatformWalletManager(
      * wallet handle + [signerHandle] into each call.
      */
     val identityUpdates: org.dashfoundation.dashsdk.identity.IdentityUpdates =
-        org.dashfoundation.dashsdk.identity.IdentityUpdates(teardownGate)
+        org.dashfoundation.dashsdk.identity.IdentityUpdates(teardownGate) { signerHandle }
 
     /**
      * Document purchase + set-price bridge — the document state-transition
