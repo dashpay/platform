@@ -2,7 +2,15 @@ use std::ops::RangeInclusive;
 
 use bincode::{Decode, DecodeUntrusted, Encode};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
-use platform_version::version::feature_initial_protocol_versions::PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION;
+use platform_version::version::feature_initial_protocol_versions::{
+    ADDRESS_FUNDS_INITIAL_PROTOCOL_VERSION, CONTRACT_FEE_CLAIM_INITIAL_PROTOCOL_VERSION,
+    CONTRACT_USER_MODERATION_INITIAL_PROTOCOL_VERSION,
+    IDENTITY_KEY_LIMITS_UPDATE_INITIAL_PROTOCOL_VERSION,
+    IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+    PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+    SHIELDED_POOL_INITIAL_PROTOCOL_VERSION, SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION,
+    TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+};
 use platform_version::version::{ProtocolVersion, ALL_VERSIONS, LATEST_VERSION};
 
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -85,19 +93,35 @@ impl StateTransitionType {
             | StateTransitionType::IdentityTopUpFromAddresses
             | StateTransitionType::AddressFundsTransfer
             | StateTransitionType::AddressFundingFromAssetLock
-            | StateTransitionType::AddressCreditWithdrawal => Some(11..=LATEST_VERSION),
+            | StateTransitionType::AddressCreditWithdrawal => {
+                Some(ADDRESS_FUNDS_INITIAL_PROTOCOL_VERSION..=LATEST_VERSION)
+            }
             StateTransitionType::Shield
             | StateTransitionType::ShieldedTransfer
             | StateTransitionType::Unshield
-            | StateTransitionType::ShieldedWithdrawal => Some(12..=LATEST_VERSION),
-            StateTransitionType::ShieldFromIdentity
-            | StateTransitionType::IdentityTopUpFromShieldedPool
-            | StateTransitionType::IdentityKeyLimitsUpdate
-            | StateTransitionType::ContractUserModeration
-            | StateTransitionType::ContractFeeClaim
-            | StateTransitionType::TokenShieldedTransferWithShieldedFee
+            | StateTransitionType::ShieldedWithdrawal => {
+                Some(SHIELDED_POOL_INITIAL_PROTOCOL_VERSION..=LATEST_VERSION)
+            }
+            StateTransitionType::ShieldFromIdentity => {
+                Some(SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION..=LATEST_VERSION)
+            }
+            StateTransitionType::IdentityTopUpFromShieldedPool => {
+                Some(IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION..=LATEST_VERSION)
+            }
+            StateTransitionType::IdentityKeyLimitsUpdate => {
+                Some(IDENTITY_KEY_LIMITS_UPDATE_INITIAL_PROTOCOL_VERSION..=LATEST_VERSION)
+            }
+            StateTransitionType::ContractUserModeration => {
+                Some(CONTRACT_USER_MODERATION_INITIAL_PROTOCOL_VERSION..=LATEST_VERSION)
+            }
+            StateTransitionType::ContractFeeClaim => {
+                Some(CONTRACT_FEE_CLAIM_INITIAL_PROTOCOL_VERSION..=LATEST_VERSION)
+            }
+            StateTransitionType::TokenShieldedTransferWithShieldedFee
             | StateTransitionType::TokenUnshieldWithShieldedFee
-            | StateTransitionType::TokenPurchaseFromShieldedPool => Some(14..=LATEST_VERSION),
+            | StateTransitionType::TokenPurchaseFromShieldedPool => {
+                Some(TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION..=LATEST_VERSION)
+            }
             StateTransitionType::PrivateDocumentCreateFromShieldedPool => Some(
                 PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION
                     ..=LATEST_VERSION,
