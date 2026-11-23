@@ -168,9 +168,10 @@ pub fn decode_profile(payload: &[u8], format: i64) -> Result<DashPayProfile, Wal
     match format {
         0 => blob::decode::<LegacyProfile>(payload).map(Into::into),
         1 => blob::decode(payload),
-        _ => Err(WalletStorageError::blob_decode(
-            "unsupported profile encoding",
-        )),
+        _ => Err(WalletStorageError::UnknownBlobFormat {
+            column: "dashpay_profiles.profile_format",
+            format,
+        }),
     }
 }
 
@@ -180,9 +181,10 @@ pub fn decode_identity(payload: &[u8], format: i64) -> Result<IdentityEntry, Wal
     match format {
         1 => blob::decode(payload),
         0 => blob::decode::<LegacyIdentityEntry>(payload).map(Into::into),
-        _ => Err(WalletStorageError::blob_decode(
-            "unsupported identity profile encoding",
-        )),
+        _ => Err(WalletStorageError::UnknownBlobFormat {
+            column: "identities.entry_format",
+            format,
+        }),
     }
 }
 
@@ -212,7 +214,16 @@ mod tests {
         let current = blob::encode(&profile).unwrap();
         assert_eq!(decode_profile(&current, 1).unwrap(), profile);
         assert!(decode_profile(&current, 0).is_err());
-        assert!(decode_profile(&current, 2).is_err());
+        // An unknown stamp is named in the error, with the column it came from.
+        let unknown = decode_profile(&current, 2).unwrap_err();
+        assert!(matches!(
+            unknown,
+            WalletStorageError::UnknownBlobFormat {
+                column: "dashpay_profiles.profile_format",
+                format: 2
+            }
+        ));
+        assert!(unknown.to_string().contains("encoding 2"), "{unknown}");
         assert!(decode_profile(&current[..current.len() - 1], 1).is_err());
     }
 
@@ -253,7 +264,13 @@ mod tests {
         assert_eq!(current.len(), legacy.len() + 6);
         assert_eq!(decode_identity(&current, 1).unwrap(), entry);
         assert!(decode_identity(&current[..current.len() - 1], 1).is_err());
-        assert!(decode_identity(&current, 2).is_err());
+        assert!(matches!(
+            decode_identity(&current, 2),
+            Err(WalletStorageError::UnknownBlobFormat {
+                column: "identities.entry_format",
+                format: 2
+            })
+        ));
         assert!(decode_identity(&legacy, 2).is_err());
     }
 }

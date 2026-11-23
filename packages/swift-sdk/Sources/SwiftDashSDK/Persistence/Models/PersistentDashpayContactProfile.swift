@@ -182,7 +182,7 @@ extension PersistentDashpayContactProfile {
 extension PersistentDashpayContactProfile {
     private var paymentAddresses: PersistentDashpayPaymentAddresses? {
         guard let modelContext else { return nil }
-        return try? PersistentDashpayPaymentAddresses.fetch(in: modelContext, networkRaw: networkRaw,
+        return PersistentDashpayPaymentAddresses.fetchForDisplay(in: modelContext, networkRaw: networkRaw,
             ownerIdentityId: ownerIdentityId, profileIdentityId: contactIdentityId)
     }
     public var corePaymentAddress: Data? { paymentAddresses?.corePaymentAddress }
