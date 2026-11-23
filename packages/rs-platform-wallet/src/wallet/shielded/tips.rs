@@ -13,6 +13,7 @@ use crate::wallet::platform_wallet::{PlatformWallet, PlatformWalletInfo};
 use crate::PlatformWalletError;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
+use grovedb_commitment_tree::{PaymentAddress, Scope};
 use key_wallet::wallet::root_extended_keys::RootExtendedPrivKey;
 use key_wallet::Wallet;
 use key_wallet_manager::WalletManager;
@@ -295,6 +296,63 @@ impl PlatformWallet {
             .get(identity_id)
             .and_then(|prepared| prepared.standing_account_of(&managed.identity))
             .filter(|prepared| *prepared == current)
+    }
+
+    /// Refuse a profile `shieldedAddress` this wallet must not publish for
+    /// `identity_id`. An address of another wallet passes: only its owner
+    /// can tell what it is. One of this wallet's own passes only when it is
+    /// an external receiving address of the identity's dedicated account,
+    /// and that account stands prepared for the identity in this session
+    /// ([`Self::prepared_shielded_identity_account`]). An ordinary account's
+    /// address would tie the wallet's own funds to the identity, and another
+    /// identity's account would tie the two identities together.
+    pub(crate) async fn check_shielded_address_publication(
+        &self,
+        identity_id: &Identifier,
+        address: &[u8; 43],
+    ) -> Result<(), PlatformWalletError> {
+        let Some(address) =
+            Option::<PaymentAddress>::from(PaymentAddress::from_raw_address_bytes(address))
+        else {
+            return Ok(());
+        };
+        let owning_account = {
+            let keys = self.shielded_keys.read().await;
+            keys.as_ref().and_then(|keys| {
+                keys.iter().find_map(|(account, views)| {
+                    views
+                        .full_viewing_key
+                        .scope_for_address(&address)
+                        .map(|scope| (*account, scope))
+                })
+            })
+        };
+        let Some((owning_account, scope)) = owning_account else {
+            return Ok(());
+        };
+        if !is_shielded_identity_account(owning_account) {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "An address from this wallet's ordinary shielded accounts cannot be published \
+                 in an identity profile"
+                    .to_string(),
+            ));
+        }
+        if matches!(scope, Scope::Internal) {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "Only external receiving addresses from this wallet can be published \
+                 in an identity profile"
+                    .to_string(),
+            ));
+        }
+        if self.prepared_shielded_identity_account(identity_id).await == Some(owning_account) {
+            Ok(())
+        } else {
+            Err(PlatformWalletError::InvalidIdentityData(
+                "This shielded address was not prepared for the identity's account in this \
+                 session; prepare the identity's shielded address again"
+                    .to_string(),
+            ))
+        }
     }
 
     /// The tip account of a wallet-owned identity's slot, proved with the

@@ -38,6 +38,9 @@ use crate::changeset::{
     ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use crate::error::PlatformWalletError;
+#[cfg(feature = "shielded")]
+use crate::validated_shielded_address;
+use crate::{DashPayProfile, PaymentAddressUpdate, ProfileUpdate};
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
@@ -3316,6 +3319,67 @@ impl Clone for PlatformWallet {
     }
 }
 
+impl PlatformWallet {
+    /// Create (`create`) or update `identity_id`'s DashPay profile, and
+    /// return the profile as published.
+    ///
+    /// This is the one way a profile is written, because a profile can
+    /// publish payment addresses and the wallet decides which it may:
+    ///
+    /// - every address set must be a well-formed address of its kind, and
+    ///   the DashPay contract the connected network runs must already have
+    ///   the field. Removing an address needs neither;
+    /// - a shielded address that is one of this wallet's own must be the
+    ///   address of the identity's dedicated account, prepared in this
+    ///   session with [`Self::prepare_shielded_identity_address`]. Without
+    ///   the `shielded` feature no shielded address can be set at all, since
+    ///   the wallet could not tell whether it is its own.
+    ///
+    /// A removed or replaced wallet publishes nothing, and wallet removal
+    /// waits for a write in flight.
+    pub async fn write_dashpay_profile<S>(
+        &self,
+        identity_id: &Identifier,
+        input: ProfileUpdate,
+        signer: &S,
+        create: bool,
+    ) -> Result<DashPayProfile, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
+        let _lifecycle = self.core().generation_payment_guard().await;
+        if !self.core().is_current_generation().await {
+            return Err(PlatformWalletError::WalletNotFound(hex::encode(
+                self.wallet_id(),
+            )));
+        }
+        #[cfg(not(feature = "shielded"))]
+        if matches!(input.shielded_address, PaymentAddressUpdate::Set(_)) {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "Shielded address publication requires shielded support".to_string(),
+            ));
+        }
+        #[cfg(feature = "shielded")]
+        if let PaymentAddressUpdate::Set(bytes) = &input.shielded_address {
+            // Bytes that are not an address are refused by the write below.
+            if let Some(address) = validated_shielded_address(bytes) {
+                self.check_shielded_address_publication(identity_id, &address)
+                    .await?;
+            }
+        }
+        let dashpay = self.identity.dashpay();
+        if create {
+            dashpay
+                .create_profile_with_external_signer(identity_id, input, signer)
+                .await
+        } else {
+            dashpay
+                .update_profile_with_external_signer(identity_id, input, signer)
+                .await
+        }
+    }
+}
+
 impl std::fmt::Debug for PlatformWallet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PlatformWallet")
@@ -3948,6 +4012,95 @@ fn check_recipient_hrp(
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod profile_write_tests {
+    use super::*;
+    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::wallet::persister::NoPlatformPersistence;
+    use crate::PlatformWalletManager;
+    use dashcore::Network;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use simple_signer::signer::SimpleSigner;
+
+    struct NoopEvents;
+    impl EventHandler for NoopEvents {}
+    impl PlatformEventHandler for NoopEvents {}
+
+    async fn testnet_wallet(
+        manager: &PlatformWalletManager<NoPlatformPersistence>,
+    ) -> Arc<PlatformWallet> {
+        manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &[42; 64],
+                WalletAccountCreationOptions::None,
+                Some(0),
+            )
+            .await
+            .unwrap()
+    }
+
+    fn manager() -> PlatformWalletManager<NoPlatformPersistence> {
+        PlatformWalletManager::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            Arc::new(NoPlatformPersistence),
+            Arc::new(NoopEvents),
+        )
+    }
+
+    #[cfg(not(feature = "shielded"))]
+    #[tokio::test]
+    async fn should_reject_shielded_profile_addresses_without_shielded_support() {
+        let manager = manager();
+        let wallet = testnet_wallet(&manager).await;
+        let result = wallet
+            .write_dashpay_profile(
+                &Identifier::from([7; 32]),
+                ProfileUpdate {
+                    shielded_address: PaymentAddressUpdate::Set(vec![0; 43]),
+                    ..Default::default()
+                },
+                &SimpleSigner::default(),
+                false,
+            )
+            .await;
+        assert!(matches!(
+            result,
+            Err(PlatformWalletError::InvalidIdentityData(message))
+                if message.contains("requires shielded support")
+        ));
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_profile_write_from_a_removed_or_replaced_wallet() {
+        async fn assert_profile_write_refused(wallet: &PlatformWallet) {
+            for create in [true, false] {
+                assert!(matches!(
+                    wallet
+                        .write_dashpay_profile(
+                            &Identifier::default(),
+                            ProfileUpdate::default(),
+                            &SimpleSigner::default(),
+                            create,
+                        )
+                        .await,
+                    Err(PlatformWalletError::WalletNotFound(_))
+                ));
+            }
+        }
+
+        let manager = manager();
+        let old = testnet_wallet(&manager).await;
+        let id = old.wallet_id();
+        manager.remove_wallet(&id).await.unwrap();
+        assert_profile_write_refused(&old).await;
+
+        let current = testnet_wallet(&manager).await;
+        assert_eq!(current.wallet_id(), id);
+        assert_profile_write_refused(&old).await;
+    }
 }
 
 #[cfg(all(test, feature = "shielded"))]

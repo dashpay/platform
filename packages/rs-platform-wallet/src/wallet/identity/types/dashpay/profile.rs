@@ -16,7 +16,12 @@
 //!   SHA-256 hash + DHash fingerprint from the bytes, includes them in
 //!   the document, then drops the bytes.
 
+use orchard::Address as OrchardRawAddress;
 use sha2::{Digest, Sha256};
+
+/// A change to one profile payment address. The default keeps a published
+/// address, so leaving a field out of an update never removes it.
+pub use dash_sdk::platform::dashpay::PaymentAddressUpdate;
 
 /// User-facing DashPay profile data published via the DashPay data
 /// contract. This is the **output/stored** model — no raw image bytes.
@@ -37,6 +42,38 @@ pub struct DashPayProfile {
     pub avatar_fingerprint: Option<[u8; 8]>,
     /// Public message broadcast to contacts.
     pub public_message: Option<String>,
+    /// Core P2PKH/P2SH storage address (type byte plus HASH160, 21 bytes).
+    /// The address defaults support map formats such as JSON. Positional
+    /// bincode records require the storage layer's versioned legacy decoder.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub core_payment_address: Option<Vec<u8>>,
+    /// Platform P2PKH/P2SH storage address (21 bytes).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub platform_payment_address: Option<Vec<u8>>,
+    /// Complete raw Orchard address (11-byte diversifier + 32-byte pk_d).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub shielded_address: Option<Vec<u8>>,
+}
+
+/// Normalize profile data loaded from a host-owned persistence row.
+///
+/// Persistence adapters only marshal the row into this model; acceptance of
+/// payment-address bytes belongs to platform-wallet so restore policy cannot
+/// drift between FFI, JNI, Swift, and native callers.
+pub fn normalize_persisted_profile(mut profile: DashPayProfile) -> DashPayProfile {
+    profile.avatar_url = profile
+        .avatar_url
+        .filter(|url| !url.is_empty() && url.len() <= 2048 && url.starts_with("https://"));
+    profile.core_payment_address = profile
+        .core_payment_address
+        .filter(|address| valid_transparent_payment_address(address));
+    profile.platform_payment_address = profile
+        .platform_payment_address
+        .filter(|address| valid_transparent_payment_address(address));
+    profile.shielded_address = profile
+        .shielded_address
+        .and_then(|address| validated_shielded_address(&address).map(|address| address.to_vec()));
+    profile
 }
 
 /// A cached **contact** profile, keyed by the contact's identity id on the
@@ -79,6 +116,23 @@ pub struct ProfileUpdate {
     /// includes them in the document, then drops the bytes.
     /// `None` = no avatar / remove avatar.
     pub avatar_bytes: Option<Vec<u8>>,
+    /// Change to `corePaymentAddress` (21 bytes: type byte, then HASH160).
+    pub core_payment_address: PaymentAddressUpdate,
+    /// Change to `platformPaymentAddress` (21 bytes: type byte, then HASH160).
+    pub platform_payment_address: PaymentAddressUpdate,
+    /// Change to `shieldedAddress` (the raw 43-byte Orchard address).
+    pub shielded_address: PaymentAddressUpdate,
+}
+
+/// Validate public Orchard address metadata independently of spending support.
+pub fn validated_shielded_address(bytes: &[u8]) -> Option<[u8; 43]> {
+    let raw: [u8; 43] = bytes.try_into().ok()?;
+    Option::<OrchardRawAddress>::from(OrchardRawAddress::from_raw_address_bytes(&raw)).map(|_| raw)
+}
+
+/// Storage-form transparent address validation, matching the DashPay trigger.
+pub fn valid_transparent_payment_address(bytes: &[u8]) -> bool {
+    bytes.len() == 21 && matches!(bytes.first(), Some(0x00 | 0x01))
 }
 
 /// Compute SHA-256 hash of image bytes (DIP-15 `avatarHash` field).
@@ -162,5 +216,28 @@ mod tests {
     #[test]
     fn test_dhash_invalid_data() {
         assert!(calculate_dhash_fingerprint(b"not an image").is_err());
+    }
+}
+
+#[cfg(test)]
+mod normalize_tests {
+    use super::*;
+
+    #[test]
+    fn should_drop_invalid_addresses_and_keep_the_rest_of_a_persisted_profile() {
+        let profile = normalize_persisted_profile(DashPayProfile {
+            avatar_url: Some("http://example.com/avatar.png".to_string()),
+            core_payment_address: Some(vec![5; 21]),
+            platform_payment_address: Some(vec![1; 20]),
+            shielded_address: Some(vec![0xff; 43]),
+            display_name: Some("Alice".to_string()),
+            ..Default::default()
+        });
+
+        assert_eq!(profile.display_name.as_deref(), Some("Alice"));
+        assert_eq!(profile.avatar_url, None);
+        assert_eq!(profile.core_payment_address, None);
+        assert_eq!(profile.platform_payment_address, None);
+        assert_eq!(profile.shielded_address, None);
     }
 }

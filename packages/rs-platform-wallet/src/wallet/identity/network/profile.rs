@@ -22,9 +22,14 @@ use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::{
-    calculate_avatar_hash, calculate_dhash_fingerprint, ContactProfileEntry, DashPayProfile,
-    ProfileUpdate,
+    calculate_avatar_hash, calculate_dhash_fingerprint, normalize_persisted_profile,
+    ContactProfileEntry, DashPayProfile, PaymentAddressUpdate, ProfileUpdate,
 };
+use crate::{valid_transparent_payment_address, validated_shielded_address};
+use dash_sdk::platform::Fetch;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contracts::SystemDataContract;
+use dpp::prelude::DataContract;
 
 // Profile documents require HIGH or CRITICAL authentication; MASTER is reserved
 // for identity operations and cannot authorize an ordinary document write. A key
@@ -139,7 +144,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// All other behavior — avatar hashing, document construction,
     /// local cache update via the persister — is identical to the
     /// legacy variant.
-    pub async fn create_profile_with_external_signer<S>(
+    pub(crate) async fn create_profile_with_external_signer<S>(
         &self,
         identity_id: &Identifier,
         input: ProfileUpdate,
@@ -150,6 +155,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     {
         // 1. The DashPay data contract (process-wide cache).
         let dashpay_contract = super::dashpay_contract()?;
+        self.validate_payment_address_update(&input).await?;
 
         // 2. The profile fields, with avatar hashes computed from any raw bytes.
         let fields = profile_fields(input)?;
@@ -200,7 +206,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// Mirrors [`Self::update_profile`] but signing is routed through
     /// the supplied `&S: Signer<IdentityPublicKey>`.
-    pub async fn update_profile_with_external_signer<S>(
+    pub(crate) async fn update_profile_with_external_signer<S>(
         &self,
         identity_id: &Identifier,
         input: ProfileUpdate,
@@ -211,6 +217,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     {
         // 1. The DashPay contract (process-wide cache).
         let dashpay_contract = super::dashpay_contract()?;
+        self.validate_payment_address_update(&input).await?;
 
         // 2. The profile fields; avatar hashes are computed only when new
         //    bytes are provided. The SDK merges them onto the on-platform
@@ -304,10 +311,23 @@ fn profile_fields(input: ProfileUpdate) -> Result<ProfileFields, PlatformWalletE
         avatar_url: input.avatar_url,
         avatar_hash,
         avatar_fingerprint,
-        // A wallet profile update names no payment address, so the ones the
-        // profile publishes stay as they are.
-        ..ProfileFields::default()
+        core_payment_address: input.core_payment_address,
+        platform_payment_address: input.platform_payment_address,
+        shielded_address: input.shielded_address,
     })
+}
+
+/// The DashPay `profile` property of the shielded payment address.
+const SHIELDED_ADDRESS_PROPERTY: &str = "shieldedAddress";
+
+/// Each payment address change of `input`, with the `profile` property it
+/// writes.
+fn payment_address_updates(input: &ProfileUpdate) -> [(&'static str, &PaymentAddressUpdate); 3] {
+    [
+        ("corePaymentAddress", &input.core_payment_address),
+        ("platformPaymentAddress", &input.platform_payment_address),
+        (SHIELDED_ADDRESS_PROPERTY, &input.shielded_address),
+    ]
 }
 
 /// Parse a profile document's property map into a [`DashPayProfile`].
@@ -332,14 +352,29 @@ fn profile_from_properties(props: &std::collections::BTreeMap<String, Value>) ->
         .and_then(|v: &Value| v.as_bytes_slice().ok())
         .and_then(|bytes| <[u8; 8]>::try_from(bytes).ok());
 
-    DashPayProfile {
+    normalize_persisted_profile(DashPayProfile {
         display_name: text("displayName"),
         bio: public_message.clone(),
         avatar_url: text("avatarUrl"),
         avatar_hash,
         avatar_fingerprint,
         public_message,
-    }
+        core_payment_address: props
+            .get("corePaymentAddress")
+            .and_then(|v| v.as_bytes_slice().ok())
+            .filter(|bytes| valid_transparent_payment_address(bytes))
+            .map(|bytes| bytes.to_vec()),
+        platform_payment_address: props
+            .get("platformPaymentAddress")
+            .and_then(|v| v.as_bytes_slice().ok())
+            .filter(|bytes| valid_transparent_payment_address(bytes))
+            .map(|bytes| bytes.to_vec()),
+        shielded_address: props
+            .get(SHIELDED_ADDRESS_PROPERTY)
+            .and_then(|v| v.as_bytes_slice().ok())
+            .and_then(validated_shielded_address)
+            .map(|bytes| bytes.to_vec()),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -826,5 +861,285 @@ mod tests {
         // Present -> confirmed-absent is a change and caches the negative.
         assert!(apply_fetched_profile(&mut cache, id, None, 400));
         assert!(cache[&id].profile.is_none());
+    }
+}
+
+impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
+    /// Fetch a fresh, proof-verified profile, bypassing the contact cache.
+    pub async fn fetch_profile(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<Option<DashPayProfile>, PlatformWalletError> {
+        let contract = super::dashpay_contract()?;
+        Ok(self
+            .sdk
+            .get_profiles(&contract, &[*identity_id])
+            .await?
+            .remove(identity_id)
+            .map(|doc| profile_from_properties(doc.properties())))
+    }
+
+    /// Refuse an update that sets a payment address the network would not
+    /// take: bytes that are not an address of the field's kind, or a field
+    /// the DashPay contract on the connected network does not have yet.
+    /// An update that sets none is not checked, so an address can be removed
+    /// (and the other fields written) before the network has the fields.
+    async fn validate_payment_address_update(
+        &self,
+        input: &ProfileUpdate,
+    ) -> Result<(), PlatformWalletError> {
+        let updates = payment_address_updates(input);
+        if updates
+            .iter()
+            .all(|(_, patch)| !matches!(patch, PaymentAddressUpdate::Set(_)))
+        {
+            return Ok(());
+        }
+        for (field, patch) in updates {
+            if let PaymentAddressUpdate::Set(bytes) = patch {
+                let valid = if field == SHIELDED_ADDRESS_PROPERTY {
+                    validated_shielded_address(bytes).is_some()
+                } else {
+                    valid_transparent_payment_address(bytes)
+                };
+                if !valid {
+                    return Err(PlatformWalletError::InvalidIdentityData(format!(
+                        "Invalid or unsupported {field}"
+                    )));
+                }
+            }
+        }
+        // The contract bundled with this build is the latest one, which does
+        // not say the connected chain has activated it. Read the contract the
+        // network runs before submitting fields it may not have.
+        let contract = DataContract::fetch(&self.sdk, SystemDataContract::Dashpay.id())
+            .await?
+            .ok_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(
+                    "DashPay contract is not available".to_string(),
+                )
+            })?;
+        let profile = contract
+            .document_type_for_name("profile")
+            .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
+        for (field, patch) in updates {
+            if matches!(patch, PaymentAddressUpdate::Set(_))
+                && !profile.properties().contains_key(field)
+            {
+                return Err(PlatformWalletError::InvalidIdentityData(format!(
+                    "The connected network does not support {field} yet"
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod address_patch_tests {
+    use super::*;
+    use crate::{PaymentAddressUpdate, ProfileUpdate};
+
+    #[tokio::test]
+    async fn should_allow_removal_without_contract_activation_but_reject_unsupported_set() {
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+        use dpp::version::PlatformVersion;
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+        let contract = load_system_data_contract(
+            SystemDataContract::Dashpay,
+            PlatformVersion::get(13).unwrap(),
+        )
+        .unwrap();
+        sdk.mock()
+            .expect_fetch(SystemDataContract::Dashpay.id(), Some(contract))
+            .await
+            .unwrap();
+        let (wm, wallet_id, generation, _) = crate::test_support::funded_wallet_manager(
+            key_wallet::account::StandardAccountType::BIP44Account,
+        )
+        .await;
+        let spv = Arc::new(crate::spv::SpvRuntime::new(
+            wm.clone(),
+            Arc::new(crate::events::PlatformEventManager::new(vec![])),
+        ));
+        let wallet = crate::PlatformWallet::new(
+            Arc::new(sdk),
+            wallet_id,
+            wm,
+            generation,
+            Arc::new(tokio::sync::Notify::new()),
+            Arc::new(crate::wallet::persister::NoPlatformPersistence),
+            Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            crate::changeset::DurableCursors::default(),
+        );
+        let remove = ProfileUpdate {
+            display_name: Some("Alice II".into()),
+            core_payment_address: PaymentAddressUpdate::Remove,
+            platform_payment_address: PaymentAddressUpdate::Remove,
+            shielded_address: PaymentAddressUpdate::Remove,
+            ..Default::default()
+        };
+        wallet
+            .identity()
+            .dashpay()
+            .validate_payment_address_update(&remove)
+            .await
+            .unwrap();
+        let fields = profile_fields(remove).unwrap();
+        assert_eq!(fields.display_name.as_deref(), Some("Alice II"));
+        assert_eq!(fields.core_payment_address, PaymentAddressUpdate::Remove);
+        assert_eq!(
+            fields.platform_payment_address,
+            PaymentAddressUpdate::Remove
+        );
+        assert_eq!(fields.shielded_address, PaymentAddressUpdate::Remove);
+        // Removal must not bypass activation checks on a simultaneously set field.
+        let mixed = ProfileUpdate {
+            core_payment_address: PaymentAddressUpdate::Set(vec![0; 21]),
+            shielded_address: PaymentAddressUpdate::Remove,
+            ..Default::default()
+        };
+        let error = wallet
+            .identity()
+            .dashpay()
+            .validate_payment_address_update(&mixed)
+            .await
+            .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("does not support corePaymentAddress"));
+    }
+
+    #[tokio::test]
+    async fn should_sync_address_only_profile_and_retain_it_in_snapshots() {
+        use dash_sdk::drive::query::{OrderClause, WhereClause, WhereOperator};
+        use dash_sdk::{platform::DocumentQuery, query_types::Documents};
+        use dpp::document::DocumentV0;
+        use dpp::identity::IdentityV0;
+        use dpp::version::PlatformVersion;
+
+        let owner = Identifier::from([0x61; 32]);
+        let key = orchard::keys::SpendingKey::from_bytes([42; 32]).unwrap();
+        let raw = orchard::keys::FullViewingKey::from(&key)
+            .address_at(19u32, orchard::keys::Scope::External)
+            .to_raw_address_bytes();
+        let contract = super::super::dashpay_contract().unwrap();
+        let query = DocumentQuery::new(contract, "profile")
+            .unwrap()
+            .with_where(WhereClause {
+                field: "$ownerId".into(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![owner.into()]),
+            })
+            .with_order_by(OrderClause {
+                field: "$ownerId".into(),
+                ascending: true,
+            })
+            .with_limit(100);
+        let document = Document::V0(DocumentV0 {
+            id: Identifier::from([0x62; 32]),
+            owner_id: owner,
+            revision: Some(1),
+            properties: [("shieldedAddress".into(), Value::Bytes(raw.to_vec()))].into(),
+            ..Default::default()
+        });
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_network(key_wallet::Network::Testnet)
+            .with_version(PlatformVersion::latest())
+            .build()
+            .unwrap();
+        sdk.mock()
+            .expect_fetch_many::<Identifier, Document, _, Documents>(
+                query,
+                Some([(document.id(), Some(document))].into()),
+            )
+            .await
+            .unwrap();
+        let (wm, wallet_id, generation, _) = crate::test_support::funded_wallet_manager(
+            key_wallet::account::StandardAccountType::BIP44Account,
+        )
+        .await;
+        let persister: Arc<dyn crate::changeset::PlatformWalletPersistence> =
+            Arc::new(crate::wallet::persister::NoPlatformPersistence);
+        wm.write()
+            .await
+            .get_wallet_info_mut(&wallet_id)
+            .unwrap()
+            .identity_manager
+            .add_identity(
+                Identity::V0(IdentityV0 {
+                    id: owner,
+                    public_keys: Default::default(),
+                    balance: 0,
+                    revision: 0,
+                }),
+                0,
+                wallet_id,
+                &crate::wallet::persister::WalletPersister::new(wallet_id, persister.clone()),
+            )
+            .unwrap();
+        let spv = Arc::new(crate::spv::SpvRuntime::new(
+            wm.clone(),
+            Arc::new(crate::events::PlatformEventManager::new(vec![])),
+        ));
+        let wallet = crate::PlatformWallet::new(
+            Arc::new(sdk),
+            wallet_id,
+            wm.clone(),
+            generation,
+            Arc::new(tokio::sync::Notify::new()),
+            persister,
+            Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            crate::changeset::DurableCursors::default(),
+        );
+        assert_eq!(
+            wallet.identity().dashpay().sync_profiles().await.unwrap(),
+            1
+        );
+        let manager = wm.read().await;
+        let managed = manager
+            .get_wallet_info(&wallet_id)
+            .unwrap()
+            .identity_manager
+            .managed_identity(&owner)
+            .unwrap();
+        let snapshot = crate::changeset::IdentityEntry::from_managed(managed);
+        assert_eq!(
+            snapshot.dashpay_profile.unwrap().shielded_address,
+            Some(raw.to_vec())
+        );
+    }
+
+    #[test]
+    fn should_ignore_invalid_addresses_without_losing_profile() {
+        let profile = profile_from_properties(&std::collections::BTreeMap::from([
+            ("displayName".into(), Value::Text("Alice".into())),
+            ("shieldedAddress".into(), Value::Bytes(vec![255; 43])),
+            ("corePaymentAddress".into(), Value::Bytes(vec![255; 21])),
+        ]));
+        assert_eq!(profile.display_name.as_deref(), Some("Alice"));
+        assert!(profile.shielded_address.is_none());
+        assert!(profile.core_payment_address.is_none());
+    }
+
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_accept_external_addresses_with_nondefault_diversifiers() {
+        let keys = crate::wallet::shielded::OrchardKeySet::from_seed(
+            &[9; 64],
+            key_wallet::Network::Testnet,
+            7,
+        )
+        .unwrap();
+        let raw = keys.address_at(19).to_raw_address_bytes();
+        assert_ne!(raw, keys.default_address.to_raw_address_bytes());
+        let profile = profile_from_properties(&std::collections::BTreeMap::from([(
+            "shieldedAddress".into(),
+            Value::Bytes(raw.to_vec()),
+        )]));
+        assert_eq!(profile.shielded_address, Some(raw.to_vec()));
+        assert!(crate::validated_shielded_address(&raw[..42]).is_none());
     }
 }

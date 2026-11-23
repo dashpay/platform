@@ -3951,6 +3951,13 @@ fn build_contact_profile_restore(
             avatar_hash_present,
             avatar_fingerprint,
             avatar_fingerprint_present,
+            // Kotlin does not persist payment addresses yet; restore none.
+            core_payment_address: [0; 21],
+            core_payment_address_present: false,
+            platform_payment_address: [0; 21],
+            platform_payment_address_present: false,
+            shielded_address: [0; 43],
+            shielded_address_present: false,
             public_message: ptr::null(),
             checked_at_ms,
         },
