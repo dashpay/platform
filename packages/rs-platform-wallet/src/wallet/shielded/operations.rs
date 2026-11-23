@@ -2238,7 +2238,7 @@ impl TokenPoolSpendTarget<'_> {
         match self {
             Self::ShieldedTransfer { .. } => ShieldedActivityKind::TokenShieldedTransfer,
             Self::Unshield { recipient_id } => ShieldedActivityKind::TokenUnshield {
-                identity_id: recipient_id.to_buffer(),
+                identity_id: Some(recipient_id.to_buffer()),
             },
         }
     }
@@ -2664,7 +2664,7 @@ where
         if !token_anchors_now.contains(&token_anchor.to_bytes()) {
             return Err(PlatformWalletError::ShieldedNoRecordedAnchor(format!(
                 "the shielded pool of token {token_id} no longer records the root this \
-                 transfer was built on; sync the shielded pools and retry"
+                 spend was built on; sync the shielded pools and retry"
             ))
             .into());
         }

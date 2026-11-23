@@ -137,8 +137,10 @@ pub enum ShieldedActivityKind {
     /// 32-byte token id. Recorded only by the live path, as
     /// [`Self::TokenPurchase`] is.
     TokenUnshield {
-        /// The credited identity's id (32 bytes).
-        identity_id: [u8; 32],
+        /// The credited identity's id (32 bytes); `None` for a row restored
+        /// without it, which is still a token unshield, settled from its
+        /// token notes, with its recipient unknown.
+        identity_id: Option<[u8; 32]>,
     },
 }
 
@@ -1227,7 +1229,7 @@ mod tests {
             ShieldedActivityKind::TokenPurchase,
             ShieldedActivityKind::TokenShieldedTransfer,
             ShieldedActivityKind::TokenUnshield {
-                identity_id: [0u8; 32],
+                identity_id: Some([0u8; 32]),
             },
         ];
         let tags: Set<u8> = kinds.iter().map(|k| k.tag()).collect();

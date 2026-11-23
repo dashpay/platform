@@ -23,6 +23,7 @@ use crate::state_transition::token_purchase_from_shielded_pool_transition::Token
 use crate::state_transition::token_shielded_transfer_with_shielded_fee_transition::methods::TokenShieldedTransferWithShieldedFeeTransitionMethodsV0;
 use crate::state_transition::token_shielded_transfer_with_shielded_fee_transition::TokenShieldedTransferWithShieldedFeeTransition;
 use crate::state_transition::token_unshield_with_shielded_fee_transition::methods::TokenUnshieldWithShieldedFeeTransitionMethodsV0;
+use crate::state_transition::token_unshield_with_shielded_fee_transition::v0::TokenUnshieldWithShieldedFeeTransitionV0;
 use crate::state_transition::token_unshield_with_shielded_fee_transition::TokenUnshieldWithShieldedFeeTransition;
 use crate::state_transition::StateTransition;
 use crate::ProtocolError;
@@ -329,6 +330,11 @@ pub fn build_token_unshield_with_shielded_fee_transition<P: OrchardProver>(
         return Err(ProtocolError::ShieldedBuildError(
             "token unshield amount must be greater than zero".to_string(),
         ));
+    }
+    if !TokenUnshieldWithShieldedFeeTransitionV0::is_valid_amount(amount) {
+        return Err(ProtocolError::ShieldedBuildError(format!(
+            "token unshield amount {amount} is above the most one transition moves"
+        )));
     }
     let total_spent = total_value(&spender.spends)?;
     if amount > total_spent {

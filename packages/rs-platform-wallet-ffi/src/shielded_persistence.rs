@@ -135,8 +135,9 @@ pub struct ShieldedActivityFFI {
     pub direction: u8,
     /// Status: 0 Pending, 1 Confirmed, 2 Failed, 3 Unknown.
     pub status: u8,
-    /// Display amount in credits (principal; excludes self-change and
-    /// zero-value fillers).
+    /// Display principal, excluding self-change and zero-value fillers: in
+    /// the token's smallest unit for kind tags 11 and 12 (a token transfer or
+    /// unshield), in credits otherwise. `fee` is always in credits.
     pub amount: u64,
     /// Exact fee in credits when `has_fee == 1`.
     pub fee: u64,

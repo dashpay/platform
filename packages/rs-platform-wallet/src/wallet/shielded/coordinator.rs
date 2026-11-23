@@ -4051,7 +4051,7 @@ mod tests {
         let kinds = [
             ShieldedActivityKind::TokenShieldedTransfer,
             ShieldedActivityKind::TokenUnshield {
-                identity_id: [0x5E; 32],
+                identity_id: Some([0x5E; 32]),
             },
         ];
         for ((network, settled), kind) in [

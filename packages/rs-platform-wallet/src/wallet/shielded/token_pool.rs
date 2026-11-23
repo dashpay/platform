@@ -890,7 +890,10 @@ type HeldReservation = (Vec<u8>, u32, Vec<u8>, Vec<u8>);
 /// record in `live_records`. Their spend can no longer execute (the scan
 /// found its fee notes spent or pruned its anchor, which drops the record) or
 /// its process is gone; a note it did spend is marked spent by the scan, which
-/// ran first. Returns each account and marker released: the marker is the
+/// ran first. Only the reservations of `owners`, the accounts whose saved
+/// records `live_records` holds and that this pass scanned for, are judged: an
+/// account not registered now has records nobody read. Returns each account
+/// and marker released: the marker is the
 /// spend's activity id once its record was saved, so the caller can settle
 /// its activity row.
 ///
@@ -899,9 +902,11 @@ type HeldReservation = (Vec<u8>, u32, Vec<u8>, Vec<u8>);
 /// that settles meanwhile only makes its notes releasable a pass later.
 pub(crate) fn release_orphaned_reservations(
     conn: &Connection,
+    owners: &BTreeSet<SubwalletId>,
     scanned: &BTreeSet<Identifier>,
     live_records: &BTreeSet<[u8; 32]>,
 ) -> Result<BTreeSet<(SubwalletId, [u8; 32])>, PlatformWalletError> {
+    let in_flight: BTreeSet<[u8; 32]> = in_flight().clone();
     let mut statement = conn
         .prepare(
             "SELECT DISTINCT wallet_id, account_index, token_id, reserved_by \
@@ -915,19 +920,25 @@ pub(crate) fn release_orphaned_reservations(
         .map_err(storage("read reservations"))?
         .collect::<rusqlite::Result<_>>()
         .map_err(storage("read reservations"))?;
-    let in_flight: BTreeSet<[u8; 32]> = in_flight().clone();
     let mut released = BTreeSet::new();
+    // One transaction: a row that fails part way leaves every reservation as
+    // it was, for a later pass to settle, rather than releasing some whose
+    // markers the caller then never learns.
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(storage("begin release"))?;
     for (wallet_id, account_index, token_id, marker) in held {
         let id = SubwalletId::new(bytes32(wallet_id, "wallet id")?, account_index);
         let token_id = Identifier::from(bytes32(token_id, "token id")?);
         let marker = bytes32(marker, "reservation")?;
-        if !scanned.contains(&token_id)
+        if !owners.contains(&id)
+            || !scanned.contains(&token_id)
             || in_flight.contains(&marker)
             || live_records.contains(&marker)
         {
             continue;
         }
-        conn.execute(
+        tx.execute(
             "UPDATE shielded_token_pool_notes SET reserved_by = NULL \
              WHERE wallet_id = ?1 AND account_index = ?2 AND token_id = ?3 \
              AND reserved_by = ?4",
@@ -941,6 +952,7 @@ pub(crate) fn release_orphaned_reservations(
         .map_err(storage("release reservation"))?;
         released.insert((id, marker));
     }
+    tx.commit().map_err(storage("commit release"))?;
     Ok(released)
 }
 

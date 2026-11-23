@@ -2201,6 +2201,8 @@ impl PlatformWallet {
                 self.wallet_id,
             )));
         }
+        // Held through settlement, so a Clear waits for the unshield.
+        let _operation = coordinator.operation_guard().await;
         let keyset = self.derive_spend_keyset(seed, account).await?;
         token_unshield(
             &self.sdk,

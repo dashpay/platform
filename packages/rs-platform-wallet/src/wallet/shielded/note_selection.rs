@@ -26,6 +26,7 @@ use dpp::state_transition::token_purchase_from_shielded_pool_transition::TokenPu
 use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::methods::TokenShieldedTransferWithShieldedFeeTransitionMethodsV0;
 use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::TokenShieldedTransferWithShieldedFeeTransition;
 use dpp::state_transition::token_unshield_with_shielded_fee_transition::methods::TokenUnshieldWithShieldedFeeTransitionMethodsV0;
+use dpp::state_transition::token_unshield_with_shielded_fee_transition::v0::TokenUnshieldWithShieldedFeeTransitionV0;
 use dpp::state_transition::token_unshield_with_shielded_fee_transition::TokenUnshieldWithShieldedFeeTransition;
 use dpp::state_transition::{validate_state_transition_size, StateTransition};
 use dpp::version::PlatformVersion;
@@ -65,12 +66,13 @@ pub(crate) fn ensure_token_purchase_count(
     Ok(())
 }
 
-/// Refuse a `TokenUnshieldWithShieldedFee` amount its basic structure validation refuses: zero,
-/// or above [`MAX_DISTRIBUTION_PARAM`], the most one transition moves out of a token pool. A
+/// Refuse a `TokenUnshieldWithShieldedFee` amount its basic structure validation refuses (DPP's
+/// `is_valid_amount`: zero, or above [`MAX_DISTRIBUTION_PARAM`], the most one transition moves
+/// out of a token pool). A
 /// token shielded transfer moves nothing out of the pool and has no such bound. Store- and
 /// network-free, so an unshield is refused with it before anything is reserved or proved.
 pub(crate) fn ensure_token_unshield_amount(amount: TokenAmount) -> Result<(), PlatformWalletError> {
-    if amount == 0 || amount > MAX_DISTRIBUTION_PARAM {
+    if !TokenUnshieldWithShieldedFeeTransitionV0::is_valid_amount(amount) {
         return Err(PlatformWalletError::InvalidParameter(format!(
             "a token unshield moves from 1 to {MAX_DISTRIBUTION_PARAM} tokens, not {amount}"
         )));
