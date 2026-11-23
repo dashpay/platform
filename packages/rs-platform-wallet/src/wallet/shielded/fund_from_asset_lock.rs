@@ -444,15 +444,28 @@ impl PlatformWallet {
         // change in lockstep with the DPP-side multi-output bundle
         // builder.
         //
-        // The batch is sized for the lock's own proof first: the lock is built, and its
-        // proof known, only after the funding resolved, and an InstantSend proof of a funding
-        // transaction with many inputs leaves room for fewer actions than the ChainLock
-        // proof the batch size was chosen for. The fee follows the actions the transition
-        // carries.
-        let dummy_outputs = dummy_outputs_fitting_proof(dummy_outputs, &proof, self.sdk.version());
-        let num_actions = shield_from_asset_lock_num_actions(dummy_outputs);
+        // The batch, and with it the fee and the recipient's payout, is the one the caller
+        // asked for, whichever proof carries it: a resume of this lock that starts from a
+        // saved ChainLock proof pays what an uninterrupted call pays. An InstantSend proof of
+        // a funding transaction with many inputs can leave no room for the batch; it then
+        // gives way to the lock's ChainLock proof before anything is built, through the same
+        // persisted upgrade the submit's IS→ChainLock fallback uses. The value is read from
+        // the proof the funding resolved with, before any upgrade.
         let asset_lock_value_credits =
             lookup_asset_lock_value_credits(self, &proof, tracked_out_point.as_ref()).await?;
+        let proof = if instant_proof_cannot_carry_batch(dummy_outputs, &proof, self.sdk.version()) {
+            tracing::warn!(
+                "IS-lock proof leaves no room for {} actions in shielded fund-from-asset-lock \
+                 (tx {}); using the ChainLock proof",
+                num_actions,
+                out_point_from_proof(&proof).txid
+            );
+            self.asset_locks
+                .upgrade_to_persisted_chain_lock_proof(&out_point_from_proof(&proof), cl_wait)
+                .await?
+        } else {
+            proof
+        };
         // `pool_fee = compute_minimum_shielded_fee(2) + asset_lock_base_cost` — the SAME flat fee
         // consensus charges (`transform_into_action` Step 3b). Deriving `shield_amount =
         // lock_value − pool_fee` reserves room for the fee and pins the consensus surplus
@@ -963,18 +976,19 @@ where
     })
 }
 
-/// The `dummy_outputs` fillers a `ShieldFromAssetLock` carrying `proof` can have, so that the
-/// transition fits `max_state_transition_size`: an InstantSend proof embeds its whole funding
-/// transaction, which takes room from the Orchard actions. Fewer fillers shrink the batch
-/// and its fee together ([`shield_from_asset_lock_num_actions`]); a lock too large for any
-/// batch keeps the 2 actions of a single output, and the ChainLock fallback takes it from there.
-fn dummy_outputs_fitting_proof(
+/// Whether `proof` is an InstantSend proof that leaves no room, under
+/// `max_state_transition_size`, for the batch of `dummy_outputs` fillers: it embeds its whole
+/// funding transaction, which takes room from the Orchard actions. The batch is never shrunk
+/// to fit (that would change the fee, and the payout, with the proof); the lock's ChainLock
+/// proof, which names only the outpoint, carries it instead.
+fn instant_proof_cannot_carry_batch(
     dummy_outputs: usize,
     proof: &AssetLockProof,
     platform_version: &dpp::version::PlatformVersion,
-) -> usize {
-    let max_actions = usize::from(max_shield_from_asset_lock_actions(platform_version, proof));
-    dummy_outputs.min(max_actions.saturating_sub(1))
+) -> bool {
+    matches!(proof, AssetLockProof::Instant(_))
+        && usize::from(max_shield_from_asset_lock_actions(platform_version, proof))
+            < shield_from_asset_lock_num_actions(dummy_outputs)
 }
 
 /// Pre-flight check for the recipient list.
@@ -1077,11 +1091,12 @@ mod tests {
     use crate::wallet::persister::WalletPersister;
     use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
-    /// A seeding batch is sized for the lock's own proof: an InstantSend proof of a funding
-    /// transaction with many inputs leaves room for fewer actions, a ChainLock proof for the
-    /// full batch, and a lock too large for any batch keeps a single output.
+    /// The batch a funding asks for is never shrunk to fit its proof, so the fee and the
+    /// recipient's payout do not depend on whether an attempt carries the InstantSend proof or,
+    /// after a fallback or on resume, the ChainLock one. An InstantSend proof that leaves no room
+    /// for the batch gives way to the ChainLock proof instead; a ChainLock proof never does.
     #[test]
-    fn should_size_the_batch_for_the_asset_lock_proof_it_carries() {
+    fn should_keep_the_requested_batch_and_move_an_instant_proof_that_cannot_carry_it() {
         use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
         use dpp::tests::fixtures::{
             instant_asset_lock_is_lock_fixture,
@@ -1110,23 +1125,32 @@ mod tests {
             out_point: OutPoint::from([11u8; 36]),
         });
 
-        assert_eq!(dummy_outputs_fitting_proof(full_batch, &chain, version), 5);
-        assert_eq!(
-            dummy_outputs_fitting_proof(full_batch, &instant(1), version),
-            5
+        let cannot = |dummy_outputs, proof: &AssetLockProof| {
+            instant_proof_cannot_carry_batch(dummy_outputs, proof, version)
+        };
+        assert!(
+            !cannot(full_batch, &chain),
+            "a ChainLock proof carries the batch"
         );
-        assert_eq!(
-            dummy_outputs_fitting_proof(full_batch, &instant(7), version),
-            4,
-            "a 7-input lock does not fit 6 actions"
+        assert!(!cannot(full_batch, &instant(1)));
+        assert!(
+            cannot(full_batch, &instant(7)),
+            "a 7-input lock does not fit 6 actions: the ChainLock proof carries them"
         );
-        assert_eq!(dummy_outputs_fitting_proof(2, &instant(7), version), 2);
-        assert_eq!(
-            dummy_outputs_fitting_proof(full_batch, &instant(100), version),
-            0,
+        assert!(
+            !cannot(2, &instant(7)),
+            "3 actions fit beside a 7-input proof"
+        );
+        assert!(
+            cannot(0, &instant(100)),
             "no batch fits a 100-input InstantSend proof"
         );
-        assert_eq!(dummy_outputs_fitting_proof(0, &instant(1), version), 0);
+        assert!(
+            cannot(full_batch, &instant(100)),
+            "the 6 requested actions are kept, not clamped to the InstantSend proof"
+        );
+        // The fee is priced from the requested batch alone, whichever proof carries it.
+        assert_eq!(shield_from_asset_lock_num_actions(full_batch), 6);
     }
 
     // The preflight is a pure length/cardinality check; the
