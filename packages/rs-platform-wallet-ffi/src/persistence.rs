@@ -87,7 +87,10 @@ use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
-use platform_wallet::{DpnsNameInfo, IdentityManagerStartState, IdentityStatus, ManagedIdentity};
+use platform_wallet::{
+    normalize_persisted_profile, ContactProfileEntry, DashPayProfile, DpnsNameInfo,
+    IdentityManagerStartState, IdentityStatus, ManagedIdentity,
+};
 use std::ffi::CStr;
 
 /// The persisted `TransactionContext` discriminant values shared with the
@@ -7082,7 +7085,7 @@ fn build_unused_asset_locks(
     Ok(map)
 }
 
-fn funding_type_from_u8(
+pub(crate) fn funding_type_from_u8(
     b: u8,
 ) -> Result<
     key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType,
@@ -7105,7 +7108,7 @@ fn funding_type_from_u8(
     })
 }
 
-fn status_from_u8(b: u8) -> Result<platform_wallet::AssetLockStatus, PersistenceError> {
+pub(crate) fn status_from_u8(b: u8) -> Result<platform_wallet::AssetLockStatus, PersistenceError> {
     use platform_wallet::AssetLockStatus;
     Ok(match b {
         0 => AssetLockStatus::Built,
@@ -7333,26 +7336,46 @@ unsafe fn restore_contact_profiles(spec: &IdentityRestoreEntryFFI, managed: &mut
     apply_contact_profile_rows(rows, managed);
 }
 
-/// Maximum cached `avatarUrl` length — mirrors the
-/// `MAX_AVATAR_URL_LEN` gate `platform-wallet`'s profile fetch applies
-/// before caching (DIP-15's 2048-char cap).
-const MAX_AVATAR_URL_LEN: usize = 2048;
-
-/// Defensive re-validation of a cached `avatarUrl` at restore. The
-/// fetch path already dropped non-`https://` / over-length URLs before
-/// caching ([`platform_wallet`]'s `is_valid_avatar_url`), but the URL is
-/// attacker-controlled public data and the UI will load it, so we
-/// re-apply the same `https://`-only, length-capped rule on the way back
-/// in. A URL that fails is dropped to `None` (the rest of the profile is
-/// still restored) rather than discarding the whole row.
-fn is_valid_avatar_url(url: &str) -> bool {
-    !url.is_empty() && url.len() <= MAX_AVATAR_URL_LEN && url.starts_with("https://")
+/// Copy a host-owned profile row into a [`DashPayProfile`].
+/// The host frees the buffers after restoration returns. Acceptance of each
+/// field (the `https://`-only avatar URL, the payment-address forms) belongs
+/// to [`normalize_persisted_profile`]; this only marshals.
+///
+/// # Safety
+/// The row's string pointers must be null or readable NUL-terminated strings.
+unsafe fn profile_from_restore_row(row: &ContactProfileRestoreEntryFFI) -> DashPayProfile {
+    let opt_string = |ptr: *const std::os::raw::c_char| -> Option<String> {
+        if ptr.is_null() {
+            None
+        } else {
+            CStr::from_ptr(ptr).to_str().ok().map(str::to_string)
+        }
+    };
+    normalize_persisted_profile(DashPayProfile {
+        display_name: opt_string(row.display_name),
+        bio: opt_string(row.bio),
+        avatar_url: opt_string(row.avatar_url),
+        avatar_hash: row.avatar_hash_present.then_some(row.avatar_hash),
+        avatar_fingerprint: row
+            .avatar_fingerprint_present
+            .then_some(row.avatar_fingerprint),
+        public_message: opt_string(row.public_message),
+        core_payment_address: row
+            .core_payment_address_present
+            .then(|| row.core_payment_address.to_vec()),
+        platform_payment_address: row
+            .platform_payment_address_present
+            .then(|| row.platform_payment_address.to_vec()),
+        shielded_address: row
+            .shielded_address_present
+            .then(|| row.shielded_address.to_vec()),
+    })
 }
 
 /// Fold a slice of [`ContactProfileRestoreEntryFFI`] rows into
 /// the managed identity's contact-profile cache. Split out from
-/// [`restore_contact_profiles`] so the c-string decode + avatar-url
-/// re-validation is unit-testable without a full
+/// [`restore_contact_profiles`] so the c-string decode + profile
+/// normalization is unit-testable without a full
 /// [`IdentityRestoreEntryFFI`].
 ///
 /// # Safety
@@ -7362,43 +7385,11 @@ unsafe fn apply_contact_profile_rows(
     rows: &[ContactProfileRestoreEntryFFI],
     managed: &mut ManagedIdentity,
 ) {
-    use platform_wallet::{ContactProfileEntry, DashPayProfile};
-
-    let opt_string = |ptr: *const std::os::raw::c_char| -> Option<String> {
-        if ptr.is_null() {
-            None
-        } else {
-            CStr::from_ptr(ptr).to_str().ok().map(str::to_string)
-        }
-    };
-
     for row in rows {
-        let avatar_hash = if row.avatar_hash_present {
-            Some(row.avatar_hash)
-        } else {
-            None
-        };
-        let avatar_fingerprint = if row.avatar_fingerprint_present {
-            Some(row.avatar_fingerprint)
-        } else {
-            None
-        };
-        // Re-validate the public, attacker-controlled avatar URL; drop
-        // just the URL field (keep the rest of the profile) if it no
-        // longer passes the `https://` / length rule.
-        let avatar_url = opt_string(row.avatar_url).filter(|u| is_valid_avatar_url(u));
-
         managed.dashpay_contact_profiles_mut().insert(
             Identifier::from(row.contact_id),
             ContactProfileEntry {
-                profile: Some(DashPayProfile {
-                    display_name: opt_string(row.display_name),
-                    bio: opt_string(row.bio),
-                    avatar_url,
-                    avatar_hash,
-                    avatar_fingerprint,
-                    public_message: opt_string(row.public_message),
-                }),
+                profile: Some(profile_from_restore_row(row)),
                 checked_at_ms: row.checked_at_ms,
             },
         );
@@ -13931,6 +13922,12 @@ mod tests {
                 avatar_hash_present: true,
                 avatar_fingerprint: [0x22; 8],
                 avatar_fingerprint_present: true,
+                core_payment_address: transparent_address(0x00, 0xC1),
+                core_payment_address_present: true,
+                platform_payment_address: [0; 21],
+                platform_payment_address_present: false,
+                shielded_address: shielded_fixture(),
+                shielded_address_present: true,
                 public_message: public_message.as_ptr(),
                 checked_at_ms: 1_700_000_000_000,
             },
@@ -13943,6 +13940,12 @@ mod tests {
                 avatar_hash_present: false,
                 avatar_fingerprint: [0u8; 8],
                 avatar_fingerprint_present: false,
+                core_payment_address: [0; 21],
+                core_payment_address_present: false,
+                platform_payment_address: [0; 21],
+                platform_payment_address_present: false,
+                shielded_address: [0; 43],
+                shielded_address_present: false,
                 public_message: std::ptr::null(),
                 checked_at_ms: 1_700_000_000_001,
             },
@@ -13967,6 +13970,15 @@ mod tests {
         );
         assert_eq!(alice_profile.avatar_hash, Some([0x11; 32]));
         assert_eq!(alice_profile.avatar_fingerprint, Some([0x22; 8]));
+        assert_eq!(
+            alice_profile.core_payment_address,
+            Some(transparent_address(0x00, 0xC1).to_vec())
+        );
+        assert_eq!(alice_profile.platform_payment_address, None);
+        assert_eq!(
+            alice_profile.shielded_address,
+            Some(shielded_fixture().to_vec())
+        );
         assert!(alice_profile.bio.is_none());
 
         let bob = managed
@@ -13984,6 +13996,63 @@ mod tests {
         );
         assert!(bob_profile.avatar_hash.is_none());
         assert!(bob_profile.avatar_fingerprint.is_none());
+        assert!(bob_profile.shielded_address.is_none());
+    }
+
+    /// A storage-form transparent payment address: a 0x00/0x01 version byte,
+    /// then a 20-byte hash.
+    fn transparent_address(version: u8, fill: u8) -> [u8; 21] {
+        let mut address = [fill; 21];
+        address[0] = version;
+        address
+    }
+
+    /// Orchard key-components vector 0 (`default_d || default_pk_d`), a valid
+    /// raw Orchard address.
+    /// https://github.com/zcash-hackworks/zcash-test-vectors/blob/master/orchard_key_components.py
+    fn shielded_fixture() -> [u8; 43] {
+        [
+            0x8f, 0xf3, 0x38, 0x69, 0x71, 0xcb, 0x64, 0xb8, 0xe7, 0x78, 0x99, 0x08, 0xdd, 0x8e,
+            0xbd, 0x7d, 0xe9, 0x2a, 0x68, 0xe5, 0x86, 0xa3, 0x4d, 0xb8, 0xfe, 0xa9, 0x99, 0xef,
+            0xd2, 0x01, 0x6f, 0xae, 0x76, 0x75, 0x0a, 0xfa, 0xe7, 0xee, 0x94, 0x16, 0x46, 0xbc,
+            0xb9,
+        ]
+    }
+
+    /// Restore re-validates each payment address through platform-wallet,
+    /// dropping a wrong-version transparent address and undecodable Orchard
+    /// bytes from a stale or corrupt host row while keeping the rest.
+    #[test]
+    fn should_drop_invalid_payment_addresses_on_restore() {
+        use crate::wallet_restore_types::ContactProfileRestoreEntryFFI;
+
+        let name = std::ffi::CString::new("Carol").unwrap();
+        let row = ContactProfileRestoreEntryFFI {
+            contact_id: [0xDD; 32],
+            display_name: name.as_ptr(),
+            bio: std::ptr::null(),
+            avatar_url: std::ptr::null(),
+            avatar_hash: [0; 32],
+            avatar_hash_present: false,
+            avatar_fingerprint: [0; 8],
+            avatar_fingerprint_present: false,
+            core_payment_address: transparent_address(0x05, 0xC1),
+            core_payment_address_present: true,
+            platform_payment_address: transparent_address(0x01, 0xD1),
+            platform_payment_address_present: true,
+            shielded_address: [0xFF; 43],
+            shielded_address_present: true,
+            public_message: std::ptr::null(),
+            checked_at_ms: 0,
+        };
+        let profile = unsafe { profile_from_restore_row(&row) };
+        assert_eq!(profile.display_name.as_deref(), Some("Carol"));
+        assert_eq!(profile.core_payment_address, None);
+        assert_eq!(
+            profile.platform_payment_address,
+            Some(transparent_address(0x01, 0xD1).to_vec())
+        );
+        assert_eq!(profile.shielded_address, None);
     }
 
     /// Regression: ignored senders must be restored at load so a

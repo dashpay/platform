@@ -305,4 +305,141 @@ class WalletManagerRoundTripTest {
             storeDir.deleteRecursively()
         }
     }
+
+    /**
+     * A Core to shielded "Max" (a wallet drain) across a restart, offline.
+     *
+     * The first manager shows the read paths on a fresh wallet: the preview
+     * reports nothing to shield, and the status of an operation id nobody
+     * stored is "not sent". That status is a DURABLE read, so it only
+     * succeeds when the persistence bridge attests everything a drain
+     * requires, the asset-lock operation ids included; without the two
+     * operation-id slots Rust refuses it.
+     *
+     * Then a drain's asset lock is put in the store, as the persistence
+     * callbacks leave it once a drain has built one, and a NEW manager is
+     * created over the same database: the process restart. Rust finds the
+     * lock again by its operation id, which it can only do through
+     * `onLoadAssetLockOperationId`, and reports it pending with its exact
+     * outpoint, the one thing a resume may spend. A second Max under a new
+     * id is refused while that one is unfinished, and nothing is sent.
+     *
+     * Not covered here: a drain that builds and sends a lock, which needs
+     * funds and a network (TEST_PLAN SH-18 to SH-20).
+     */
+    @Test
+    fun walletDrainIsFoundByItsOperationIdAfterARestartAndASecondOneIsRefused() = runBlocking {
+        assumeTrue("the native library has no shielded support", Sdk.hasShielded())
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val storeDir = File(context.cacheDir, "wallet-drain-round-trip-${System.nanoTime()}")
+        assertTrue(storeDir.mkdirs())
+        val storePath = File(storeDir, "shielded.sqlite").absolutePath
+        val operationId = java.util.UUID.fromString("00112233-4455-6677-8899-aabbccddeeff")
+        val lockOutPoint = org.dashfoundation.dashsdk.persistence.makeOutpoint(ByteArray(32) { 3 }, 0)
+        try {
+            val walletId: ByteArray
+            PlatformWalletManager(sdk, Network.TESTNET, db, walletStorage).use { manager ->
+                manager.configureShielded(storePath)
+                walletId = manager.createWallet(
+                    mnemonic = testMnemonic,
+                    name = "wallet-drain-round-trip",
+                    createDefaultAccounts = true,
+                ).walletId
+                manager.bindShielded(walletId, listOf(0))
+
+                val preview = manager.shieldedWalletDrainPreview(walletId)
+                assertEquals(WalletDrainPreview.Status.InsufficientFunds, preview.status)
+                assertEquals(0L, preview.candidateInputCount)
+                assertEquals(0L, preview.candidateBalanceDuffs)
+                assertNull(preview.estimatedRecipientCredits)
+                assertTrue(preview.poolFeeCredits > 0)
+
+                val unknown = manager.shieldedWalletDrainStatus(walletId, operationId)
+                assertEquals(WalletDrainOutcome.State.NotSent, unknown.state)
+                assertNull(unknown.outpoint)
+            }
+
+            // What the callbacks store for a drain's lock: a shielded top-up
+            // (5), already broadcast (1), with its operation id. The
+            // transaction only has to decode: version 3, type 0, one input
+            // (an outpoint, an empty script, a sequence), one output (a
+            // value, an empty script) and a lock time, consensus encoded.
+            val lockTransaction = java.io.ByteArrayOutputStream().apply {
+                write(byteArrayOf(3, 0, 0, 0)) // version, type
+                write(1) // input count
+                write(ByteArray(32) { 0x11 }) // previous txid
+                write(ByteArray(4)) // previous output index
+                write(0) // script length
+                write(ByteArray(4) { 0xFF.toByte() }) // sequence
+                write(1) // output count
+                write(ByteArray(8).also { it[0] = 0x10 }) // value
+                write(0) // script length
+                write(ByteArray(4)) // lock time
+            }.toByteArray()
+            db.assetLockDao().upsert(
+                org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity(
+                    outPointHex = org.dashfoundation.dashsdk.persistence.encodeOutPointHex(lockOutPoint),
+                    walletId = walletId,
+                    transactionBytes = lockTransaction,
+                    fundingTypeRaw = 5,
+                    identityIndexRaw = 0,
+                    accountIndexRaw = 0,
+                    amountDuffs = 100_000,
+                    statusRaw = 1,
+                    operationId = operationId.toWalletDrainOperationIdBytes(),
+                ),
+            )
+
+            PlatformWalletManager(sdk, Network.TESTNET, db, walletStorage).use { reloaded ->
+                reloaded.configureShielded(storePath)
+                assertTrue(reloaded.loadPersistedWallets().isNotEmpty())
+                reloaded.bindShielded(walletId, listOf(0))
+
+                val found = reloaded.shieldedWalletDrainStatus(walletId, operationId)
+                assertEquals(WalletDrainOutcome.State.Pending, found.state)
+                assertEquals(
+                    "the exact asset lock, by the id stored with it",
+                    WalletDrainOutpoint(ByteArray(32) { 3 }, 0),
+                    found.outpoint,
+                )
+                assertNull(found.error)
+
+                // Another id still reads as not sent: the lock is found by
+                // its own id, not by being the wallet's only lock.
+                val otherId = java.util.UUID.fromString("ffeeddcc-bbaa-9988-7766-554433221100")
+                val other = reloaded.shieldedWalletDrainStatus(walletId, otherId)
+                assertEquals(WalletDrainOutcome.State.NotSent, other.state)
+                assertNull(other.outpoint)
+
+                // A second Max while the first is unfinished: refused by
+                // Rust, with nothing sent under the new id.
+                val recipient = reloaded.shieldedDefaultAddress(walletId)
+                assertNotNull("the bound wallet has a shielded address", recipient)
+                val refused = reloaded.shieldedFundFromWalletDrain(
+                    walletId = walletId,
+                    operationId = otherId,
+                    recipientRaw43 = recipient!!,
+                )
+                assertEquals(WalletDrainOutcome.State.NotSent, refused.state)
+                assertNull(refused.outpoint)
+                assertNotNull("the refusal is returned beside the outcome", refused.error)
+                assertTrue(
+                    "Rust names the unfinished drain: ${refused.error?.message}",
+                    refused.error!!.message.orEmpty().contains("another wallet drain is pending"),
+                )
+                assertEquals(
+                    "and it stays not sent afterwards",
+                    WalletDrainOutcome.State.NotSent,
+                    reloaded.shieldedWalletDrainStatus(walletId, otherId).state,
+                )
+                assertEquals(
+                    "the first one is untouched",
+                    WalletDrainOutcome.State.Pending,
+                    reloaded.shieldedWalletDrainStatus(walletId, operationId).state,
+                )
+            }
+        } finally {
+            storeDir.deleteRecursively()
+        }
+    }
 }

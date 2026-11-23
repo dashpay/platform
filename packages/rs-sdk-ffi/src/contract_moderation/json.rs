@@ -413,8 +413,10 @@ pub(super) fn action_counts_json(counts: &ContractModerationActionCounts) -> Jso
 }
 
 /// One pot; the last claim's fields only when the pot was ever claimed (epoch 0 is an epoch a
-/// pot can have been claimed in, so "never" is the absent fields).
-fn fee_pot_json(pot: &ContractFeePotState) -> JsonValue {
+/// pot can have been claimed in, so "never" is the absent fields). Public as
+/// `contract_fee_pot_json` for the platform wallet FFI, which writes the pot a fee claim leaves
+/// in this same shape.
+pub fn fee_pot_json(pot: &ContractFeePotState) -> JsonValue {
     let mut object = Map::new();
     object.insert("credits".to_string(), json!(pot.credits));
     if let Some(last_claim) = pot.last_claim {

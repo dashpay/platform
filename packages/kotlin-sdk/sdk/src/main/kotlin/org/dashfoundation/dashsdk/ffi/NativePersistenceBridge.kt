@@ -107,6 +107,21 @@ abstract class NativePersistenceBridge {
         const val CAPABILITY_CORE_SWEEP_REMOVAL: Long = 0x800
 
         /**
+         * `PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS` (bit 13,
+         * `0x2000`): a tracked asset lock's operation id survives store and
+         * load, on the terminal row too, and missing or malformed data fails
+         * the load instead of reading as empty. Rust requires it before a
+         * wallet drain may read "no lock carries this id" as "not sent". A
+         * store declaring it implements [onPersistAssetLockOperationId] and
+         * [onLoadAssetLockOperationId]. The one Kotlin home of this bit,
+         * aliased by the public diagnostic mirror.
+         */
+        const val CAPABILITY_ASSET_LOCK_OPERATION_IDS: Long = 1L shl 13
+
+        /** Bytes of an asset lock's operation id (a UUID). */
+        const val ASSET_LOCK_OPERATION_ID_SIZE: Int = 16
+
+        /**
          * `PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE`
          * (bit 15, `0x8000`; bit 14 is `ASSET_LOCK_SHIELDED_RECIPIENTS`): the
          * private contact request sync's scan state is stored on its round
@@ -811,6 +826,40 @@ abstract class NativePersistenceBridge {
 
     /** One 36-byte outpoint removal. Descriptor `([B[B)I`. */
     open fun onPersistAssetLockRemoval(walletId: ByteArray, outPoint: ByteArray): Int = 0
+
+    /**
+     * `on_persist_asset_lock_operation_id_fn`: associate the 16-byte
+     * [operationId] of a wallet drain with the tracked lock at [outPoint]
+     * (36 raw bytes: the txid in wire order, then the vout). Descriptor
+     * `([B[B[B)I`. Fires after the lock's [onPersistAssetLockUpsert], inside
+     * the same round, so the row and its id commit or roll back together.
+     * An id never changes and names one lock: a different id for the same
+     * lock, or the same id on another lock, must fail the round.
+     *
+     * Delivered only to a bridge that overrides this,
+     * [onLoadAssetLockOperationId] and [onPersistAssetLockUpsert]: an
+     * inherited no-op would acknowledge an id it never kept, and a drain
+     * would then read its own dispatched lock as "not sent". Without them
+     * Rust refuses a drain before any Core funds move. Port of
+     * `persistAssetLockOperationId` in
+     * `packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PlatformWalletPersistenceHandler.swift`.
+     */
+    open fun onPersistAssetLockOperationId(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        operationId: ByteArray,
+    ): Int = 0
+
+    /**
+     * `on_load_asset_lock_operation_id_fn`: the 16-byte operation id stored
+     * for the restored lock at [outPoint], or null when that lock has none.
+     * Descriptor `([B[B)[B`. Asked once per restored lock, terminal rows
+     * included. Throw on a store that cannot be read and on a lock that is
+     * not there: an id read as absent would hide a dispatched drain, so the
+     * whole load fails instead. Port of `loadAssetLockOperationId` in the
+     * same Swift file.
+     */
+    open fun onLoadAssetLockOperationId(walletId: ByteArray, outPoint: ByteArray): ByteArray? = null
 
     // ── Invitations (DIP-13) ──────────────────────────────────────────
 

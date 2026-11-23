@@ -66,6 +66,8 @@
     "platform_address_wallet_addresses_with_balances": "packages/rs-platform-wallet-ffi/src/platform_addresses/wallet.rs",
     "platform_address_wallet_balance_history": "packages/rs-platform-wallet-ffi/src/platform_addresses/balance_history.rs",
     "platform_wallet_claim_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
+    "platform_wallet_contract_fee_claim": "packages/rs-platform-wallet-ffi/src/contract_fee_claim.rs",
+    "platform_wallet_contract_fee_claim_eligibility": "packages/rs-platform-wallet-ffi/src/contract_fee_claim.rs",
     "platform_wallet_create_document_with_signer": "packages/rs-platform-wallet-ffi/src/document.rs",
     "platform_wallet_create_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
     "platform_wallet_dpns_give_up_name": "packages/rs-platform-wallet-ffi/src/dpns_marketplace.rs",
@@ -106,6 +108,13 @@
     "restore_provider_special_txs": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "platform_wallet_manager_shielded_token_purchase_from_pool": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
     "platform_wallet_manager_shielded_token_purchase_availability": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+    "platform_wallet_wallet_drain_marker_decision": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
+    "platform_wallet_wallet_drain_recovery_action": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
+    "platform_wallet_wallet_drain_attempt_finished": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
+    "platform_wallet_wallet_drain_preview_allows_start": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
+    "platform_wallet_wallet_drain_start_offered": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
+    "platform_wallet_wallet_drain_lock_listing": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
+    "platform_wallet_wallet_drain_status_during_host_call": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
     "platform_wallet_manager_create_private_document_entry": "packages/rs-platform-wallet-ffi/src/private_document_create.rs",
     "platform_wallet_manager_private_document_create_fee": "packages/rs-platform-wallet-ffi/src/private_document_create.rs",
     "platform_wallet_manager_private_document_recipient_keys": "packages/rs-platform-wallet-ffi/src/private_document_create.rs",
@@ -2345,7 +2354,14 @@
       "shared_apis": [
         "platform_wallet_manager_shielded_wallet_drain_preview",
         "platform_wallet_manager_shielded_fund_from_wallet_drain",
-        "platform_wallet_manager_shielded_wallet_drain_status"
+        "platform_wallet_manager_shielded_wallet_drain_status",
+        "platform_wallet_wallet_drain_marker_decision",
+        "platform_wallet_wallet_drain_recovery_action",
+        "platform_wallet_wallet_drain_attempt_finished",
+        "platform_wallet_wallet_drain_preview_allows_start",
+        "platform_wallet_wallet_drain_start_offered",
+        "platform_wallet_wallet_drain_lock_listing",
+        "platform_wallet_wallet_drain_status_during_host_call"
       ],
       "required_persistence_capabilities": [
         "asset_lock_funding_indices",
@@ -2362,10 +2378,10 @@
           "reason": "Swift exposes preview, execution, and status with durable operation UUIDs. Restart recovery resumes the exact asset-lock outpoint: a fresh Type18 that Platform executes, or that Platform rejects because the outpoint was already consumed by an earlier attempt, durably completes the operation. Unit tests cover store reopen, failed persistence and the terminal DrainCompleted rule. An iOS wallet testnet process-death test confirmed recovery after dispatch and enabled a subsequent Max transfer. SwiftExampleApp exposes the flow (TEST_PLAN SH-18 to SH-20): a Max toggle on the Core to shielded screen shows the preview and runs the drain, the operation UUID is written to a file before the call, the status is read at launch, and an unfinished transfer is listed on the wallet screen and resumed from the exact asset-lock outpoint its status names. Max in the app is shield-to-self only. The app is partial because only its unit tests have run (marker store reopen, the rule for forgetting a marker, the resume-list filter): the funded testnet run and the process-death run of SH-19 have not been executed in SwiftExampleApp, and the CoinJoin drain is not exposed there."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
-          "restart": "not_applicable",
-          "reason": "The typed input-limit error is mapped, but JNI drain wrappers and operation-ID callbacks are not implemented."
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "tested",
+          "reason": "The SDK bridges preview, execution and status by a durable operation UUID, the two asset-lock operation-id persistence slots and the wallet-drain recovery rules; an instrumented test finds a persisted drain lock by its operation UUID from a new manager over the same database and sees a second drain refused. KotlinExampleApp exposes the flow (TEST_PLAN SH-18 to SH-20): a Max switch on the Core to shielded screen shows the preview and runs the drain, the operation UUID is stored in Room before the call, the status is read when the manager is activated, and a saved transfer is listed on the wallet screen and resumed from the exact asset-lock outpoint its status names. An emulator run against testnet killed the app after the asset lock was broadcast and finished the same lock through Resume. The app is partial because Max sweeps only Core account index 0 (the screen has no account picker), the refused second Max (SH-20) has not been run in the app, only through the instrumented test, and the CoinJoin drain has no Max flow there."
         }
       },
       "verification": [
@@ -2423,6 +2439,100 @@
           "file": "packages/rs-platform-wallet/src/wallet/shielded/wallet_drain_tests.rs",
           "id": "should_refuse_drain_on_a_buffered_persistence_backend",
           "command": "cargo test -p platform-wallet --features shielded --lib should_refuse_drain_on_a_buffered_persistence_backend",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/wallet/WalletManagerRoundTripTest.kt",
+          "id": "walletDrainIsFoundByItsOperationIdAfterARestartAndASecondOneIsRefused",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": true
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/WalletDrainFfiTest.kt",
+          "id": "shouldOfferAResumeOnlyForAPendingReportThatNamedAnAssetLock",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "assetLockOperationIdCapabilityNeedsEveryOverride",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/persistence/DashDatabaseMigrationTest.kt",
+          "id": "migrate16To17AddsAssetLockOperationIdsAndWalletDrainOperations",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/WalletDrainPersistenceTest.kt",
+          "id": "shouldKeepTheOperationIdThroughLaterStatusUpsertsAndOnTheTerminalRow",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": true
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/WalletDrainTest.kt",
+          "id": "shouldDecodeAPendingOutcomeWithItsOutpointAndTheErrorBesideIt",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/services/shielded/WalletDrainCoordinatorTest.kt",
+          "id": "stores the operation id before the drain is called",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/wallet_drain.rs",
+          "id": "should_pack_an_outcome_with_its_outpoint_and_the_error_beside_it",
+          "command": "cargo test -p rs-unified-sdk-jni --lib",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/wallet_drain_recovery.rs",
+          "id": "should_forget_a_stored_id_only_when_the_operation_needs_nothing_more",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet_drain_recovery",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SH-19",
+          "covers_restart": true
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SH-18",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/WalletDrainTests.swift",
+          "id": "testShouldForgetAStoredIdOnlyWhenTheOperationNeedsNothingMore",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -sdk iphonesimulator -destination \"platform=iOS Simulator,name=iPhone 17\" ARCHS=arm64 -only-testing:SwiftDashSDKTests/WalletDrainTests",
           "covers_restart": false
         }
       ]
@@ -2597,6 +2707,63 @@
       ]
     },
     {
+      "id": "contracts.fee_claim",
+      "title": "Claim a contract's fee pots (protocol version 14)",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_contract_fee_claim",
+        "platform_wallet_contract_fee_claim_eligibility"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "ManagedPlatformWallet.contractFeeClaimEligibility and claimContractFees wrap the two FFI entry points; Rust (IdentityWallet::contract_fee_claim_eligibility) names the wallet identities that may claim each pot, from dpp's ContractFeePot::recipients or, for an elected contract with a seated charter, rs-sdk's ModerationTeam, and the claim keeps the proved balances of the wallet's identities it paid. The SwiftExampleApp fee pots section shows a claim button for exactly those identities and the proved result (TEST_PLAN DC-12). Partial because no simulator or network run of a claim has been recorded. A claim is one transition whose proved balances are persisted as it returns; there is nothing to resume."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI bridge, Kotlin wrapper or KotlinExampleApp control yet for the contract fee claim. Port from packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/ManagedPlatformWalletContractFeeClaims.swift and the SwiftExampleApp ContractFeePotsSection, reusing its contractModeration.feePots.* accessibility identifiers as testTags; the pot argument is the byte 0 owner, 1 moderators."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/contract_fee_claim.rs",
+          "id": "should_let_the_seated_leader_and_active_members_claim_and_not_the_interim_team",
+          "command": "cargo test -p platform-wallet --lib contract_fee_claim",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/contract_fee_claim.rs",
+          "id": "should_write_the_claim_with_the_pot_in_the_fee_pot_read_shape",
+          "command": "cargo test -p platform-wallet-ffi --lib contract_fee_claim",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ContractFeeClaimDecodingTests.swift",
+          "id": "testShouldDecodeAClaimWithThePotItLeftAndTheBalancesItPaid",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ContractFeeClaimDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DC-12",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
       "id": "system.block_and_transition_status_reads",
       "title": "Read blocks with their state transitions, an identity's transitions in a block, and a transition's status by hash (protocol version 15)",
       "area": "example_app",
@@ -2615,10 +2782,10 @@
           "reason": "SDK.getBlocks, getOwnerTransactionsInBlock, getRecentStateTransitionStatus and getStateTransitionStatusByHash decode the FFI's JSON one to one, with the proved flag Rust sets. The example app reaches them from the Platform Queries catalog and from two views, the Block Explorer (blocks, a block's transitions, an identity's transitions in it) and the Transition Status Checker (proved in a block, otherwise the node's unproved word), but no gate has run them against a protocol version 15 network yet: TEST_PLAN SYS-09..12 are the manual gates still to run. No write result screen links to the status checker, since none has the transition hash at hand. The reads keep nothing, so there is nothing to resume after a restart."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
+          "sdk": "supported",
+          "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "Not ported: rs-unified-sdk-jni binds none of dash_sdk_system_get_blocks, dash_sdk_system_get_owner_transactions_in_block, dash_sdk_system_get_recent_state_transition_status or dash_sdk_system_get_state_transition_status_by_hash, and KotlinExampleApp has no block or transition status screen."
+          "reason": "Sdk.blocks (PlatformBlocks.kt) wraps the four reads through rs-unified-sdk-jni's PlatformBlocksNative, one JNI export per FFI function, and decodes the FFI's JSON one to one with the proved flag Rust sets (JVM decoding tests; PlatformBlocksFfiTest checks the symbols, descriptors and argument refusals on a device and passed on an API 35 arm64 emulator on 2026-11-23). KotlinExampleApp reaches them from the Platform Queries catalog and from two screens, the Block Explorer (blocks, a block's transitions, an identity's transitions in it) and the Transition Status Checker, but no gate has run them against a protocol version 15 network yet: TEST_PLAN SYS-10..13 are the manual gates still to run. The reads keep nothing, so there is nothing to resume after a restart."
         }
       },
       "verification": [
@@ -2712,6 +2879,66 @@
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
           "id": "SYS-12",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/queries/PlatformBlocksDecodingTest.kt",
+          "id": "shouldDecodeABlockWithItsTransactions",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*PlatformBlocksDecodingTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/queries/PlatformBlocksDecodingTest.kt",
+          "id": "shouldDecodeATransitionFoundInItsBlockAsProved",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*PlatformBlocksDecodingTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/queries/PlatformBlocksDecodingTest.kt",
+          "id": "shouldDecodeEveryUnprovedStatusByHash",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*PlatformBlocksDecodingTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/PlatformBlocksFfiTest.kt",
+          "id": "shouldRefuseAMalformedOwnerOrHashBeforeTheNetwork",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=org.dashfoundation.dashsdk.PlatformBlocksFfiTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SYS-10",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SYS-11",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SYS-12",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SYS-13",
           "covers_restart": false
         }
       ]

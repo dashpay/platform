@@ -635,6 +635,26 @@ final class DashModelMigrationTests: XCTestCase {
         }
     }
 
+    /// V5 adds the payment-address and private-contact entities. Payment
+    /// addresses live in their own table, preserving the published V4 profile
+    /// columns.
+    func testV5AddsPaymentAddressesAndPrivateContactEntitiesToPublishedV4() throws {
+        let v4 = Schema(versionedSchema: DashSchemaV4.self)
+        let current = DashModelContainer.schema
+        XCTAssertEqual(
+            Set(current.entities.map(\.name)).subtracting(v4.entities.map(\.name)),
+            ["PersistentDashpayPaymentAddresses", "PersistentPrivateContactRequestsPosition",
+             "PersistentPrivateShieldedAddress"])
+        XCTAssertEqual(Set(v4.entities.map(\.name)).subtracting(current.entities.map(\.name)), [])
+        for name in ["PersistentDashpayProfile", "PersistentDashpayContactProfile"] {
+            let published = try XCTUnwrap(v4.entities.first { $0.name == name })
+            let live = try XCTUnwrap(current.entities.first { $0.name == name })
+            XCTAssertEqual(
+                live.attributesByName.keys.sorted(), published.attributesByName.keys.sorted(),
+                "\(name): V5 adds no column; addresses live in their own entity")
+        }
+    }
+
     /// Synthetic historical evidence generated from the reconstructed source;
     /// this test never accesses a device database or keychain.
     @MainActor

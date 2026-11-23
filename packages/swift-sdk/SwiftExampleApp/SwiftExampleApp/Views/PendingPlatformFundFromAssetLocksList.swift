@@ -154,41 +154,44 @@ struct PendingPlatformFundFromAssetLocksList: View {
 
     /// The whole row decision for this list, over plain values.
     ///
-    /// A lock whose operation id has a Max-transfer marker is hidden: it
-    /// resumes from `UnfinishedWalletDrainsList`. A markerless drain
-    /// checkpoint (`isDrainCheckpoint`) is offered even at Built, because
-    /// Rust resumes it by exact outpoint by rebroadcasting its transaction.
-    /// Everything else follows `isResumableTopUp`, which keeps every other
-    /// Built row out: that one is owned by a build still in flight.
+    /// The drain half is asked of Rust (`WalletDrainRules.lockListingIfKnown`):
+    /// a lock whose operation id has a Max-transfer marker is hidden (it
+    /// resumes from `UnfinishedWalletDrainsList`), and a markerless drain
+    /// checkpoint is offered even at Built, because Rust resumes it by exact
+    /// outpoint by rebroadcasting its transaction. A funding type or status
+    /// Rust does not know is not offered. Everything else follows
+    /// `isResumableTopUp`, which keeps every other Built row out: that one
+    /// is owned by a build still in flight.
     nonisolated static func isOfferedForResume(
         fundingTypeRaw: Int,
         statusRaw: Int,
         operationId: Data?,
         markedOperationIds: Set<UUID>
     ) -> Bool {
-        if isClaimedByDrainMarker(operationId: operationId, markedOperationIds: markedOperationIds) {
+        let hasOperationId = operationId.flatMap {
+            WalletDrainOperationRecord.uuid(fromOperationIdBytes: $0)
+        } != nil
+        let listing = WalletDrainRules.lockListingIfKnown(
+            fundingTypeRaw: fundingTypeRaw,
+            statusRaw: statusRaw,
+            hasOperationId: hasOperationId,
+            hostHoldsStoredId: isClaimedByDrainMarker(
+                operationId: operationId,
+                markedOperationIds: markedOperationIds
+            )
+        )
+        switch listing {
+        case nil, .hidden?:
             return false
-        }
-        if isDrainCheckpoint(fundingTypeRaw: fundingTypeRaw, statusRaw: statusRaw, operationId: operationId) {
+        case .offered?:
             return true
+        case .unaffected?:
+            return isResumableTopUp(fundingTypeRaw: fundingTypeRaw, statusRaw: statusRaw)
         }
-        return isResumableTopUp(fundingTypeRaw: fundingTypeRaw, statusRaw: statusRaw)
     }
 
-    /// A shielded top-up (`5`) at Built (`0`) carrying a 16-byte operation
-    /// id: a wallet drain's lock, stored durably before dispatch.
-    nonisolated static func isDrainCheckpoint(
-        fundingTypeRaw: Int,
-        statusRaw: Int,
-        operationId: Data?
-    ) -> Bool {
-        guard fundingTypeRaw == 5, statusRaw == 0, let operationId else { return false }
-        return WalletDrainOperationRecord.uuid(fromOperationIdBytes: operationId) != nil
-    }
-
-    /// Whether a lock belongs to a Max transfer that still has its marker.
-    /// A drain lock with no marker stays in this list: its exact-outpoint
-    /// resume is the fallback Rust supports.
+    /// Whether the app holds a Max-transfer marker for this lock's
+    /// operation id: the host fact `isOfferedForResume` passes to Rust.
     nonisolated static func isClaimedByDrainMarker(
         operationId: Data?,
         markedOperationIds: Set<UUID>

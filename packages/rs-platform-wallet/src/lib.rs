@@ -81,10 +81,11 @@ pub use masternode::{
 };
 pub use wallet::core_address_key::{CoreAddressKeyError, CoreAddressPrivateKey};
 pub use wallet::identity::network::{
-    derive_identity_auth_keypair, fetch_identity_public_keys, AutoAcceptProofSource,
-    ContactCryptoProvider, ContactInfoOpened, ContactInfoPublishOutcome, ContactInfoSealed,
-    FetchedIdentityPublicKeys, IdentityKeyLimitsUpdatePreview, OpenedPrivateDocument,
-    PaymentStarted, PreparedDashPayPayment, PrivateContactReadiness, PrivateContactSyncReport,
+    contract_fee_claim_eligibility, derive_identity_auth_keypair, fetch_identity_public_keys,
+    AutoAcceptProofSource, ContactCryptoProvider, ContactInfoOpened, ContactInfoPublishOutcome,
+    ContactInfoSealed, ContractFeeClaimEligibility, FetchedIdentityPublicKeys,
+    IdentityKeyLimitsUpdatePreview, ModeratorsPotTeam, OpenedPrivateDocument, PaymentStarted,
+    PreparedDashPayPayment, PrivateContactReadiness, PrivateContactSyncReport,
     PrivateDocumentCursor, PrivateDocumentDirection, PrivateDocumentKeyPaths, PrivateDocumentRead,
     SeedBindingVerification, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
 };
@@ -94,13 +95,17 @@ pub use wallet::identity::network::{
     PrivateDocumentRecipientKey, SealedPrivateDocumentEntry,
     PRIVATE_DOCUMENT_CREATE_FEE_PREVIEW_ACTIONS,
 };
+pub use wallet::identity::types::dashpay::profile::{
+    valid_transparent_payment_address, validated_shielded_address,
+};
 pub use wallet::identity::{
     calculate_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,
-    derive_contact_payment_addresses, derive_contact_xpub, pubkey_binds_expected_key_data,
-    unmask_account_reference, BlockTime, ContactProfileEntry, ContactRequest, ContactXpubData,
-    DashPayProfile, DashPayState, DpnsFetch, DpnsNameInfo, EstablishedContact, IdentityLocation,
-    IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity, PrivateContact, PrivateKeyData,
-    ProfileUpdate, RegistrationIndex, DEFAULT_CONTACT_GAP_LIMIT,
+    derive_contact_payment_addresses, derive_contact_xpub, normalize_persisted_profile,
+    pubkey_binds_expected_key_data, unmask_account_reference, BlockTime, ContactProfileEntry,
+    ContactRequest, ContactXpubData, DashPayProfile, DashPayState, DpnsFetch, DpnsNameInfo,
+    EstablishedContact, IdentityLocation, IdentityManager, IdentityStatus, KeyStorage,
+    ManagedIdentity, PaymentAddressUpdate, PrivateContact, PrivateKeyData, ProfileUpdate,
+    RegistrationIndex, DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use wallet::masternode_withdrawal::{
     MasternodeWithdrawalKey, MasternodeWithdrawalKeys, MasternodeWithdrawalRequest,
