@@ -121,6 +121,7 @@ final class AssetLockOperationPersistenceTests: XCTestCase {
         XCTAssertEqual(rows.count, 1)
         XCTAssertNil(rows.first?.operationId)
         XCTAssertNil(rows.first?.shieldedRecipientRaw43)
+        XCTAssertNil(rows.first?.identityRecipient)
         XCTAssertEqual(rows.first?.amountDuffs, 1000)
         XCTAssertEqual(DashModelContainer.schema.version, Schema.Version(5, 0, 0))
     }
