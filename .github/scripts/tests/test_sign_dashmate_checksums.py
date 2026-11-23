@@ -148,7 +148,7 @@ if args[:2] == ['release', 'download']:
     for name in names:
         shutil.copy(os.path.join(files, name), os.path.join(option('--dir'), name))
     change = os.environ.get('GH_AFTER_DOWNLOAD')
-    if change and not state.get('changed'):
+    if change and not state.get('changed') and any(p.startswith('dashmate') for p in patterns):
         state['changed'] = True
         if change == 'signed':
             asset('SHA256SUMS.asc', b'another signature', 'maintainer')
@@ -241,7 +241,8 @@ sys.exit(2)
 '''
 
 # Installed as sha256sum and as shasum. The check follows --check --strict on the inputs these
-# tests give it: every line must be well formed, every listed file present with those bytes. HASH_TOOL=shasum makes
+# tests give it: every line must be well formed, every listed file present with those bytes;
+# GNU sha256sum skips blank lines, shasum does not. HASH_TOOL=shasum makes
 # sha256sum report itself as the one macOS ships, which is not GNU's. HASH_CHECK_LENIENT passes
 # an empty file, as that one does; duplicated lines pass every one of them.
 HASH_STUB = '''#!/usr/bin/env python3
@@ -271,6 +272,8 @@ with open(args[2]) as handle:
     lines = handle.read().splitlines()
 good = bool(lines) or bool(os.environ.get('HASH_CHECK_LENIENT'))
 for line in lines:
+    if not line and tool == 'sha256sum':
+        continue
     match = re.fullmatch(r'([0-9a-f]{64})  (\\S+)', line)
     if not match:
         print('%s: improperly formatted SHA256 checksum line' % args[2], file=sys.stderr)
@@ -430,10 +433,15 @@ class SignDashmateChecksumsTests(ReleaseFixture):
         self.assertTrue(signing.startswith(f'gpg --armor --detach-sign --local-user {KEY} --output '), signing)
         self.assertTrue(signing.endswith('/release/SHA256SUMS'), signing)
         self.assertEqual(len([c for c in self.calls('gpg') if '--verify' in c]), 1)
-        # the download went into a directory of its own, removed afterwards
+        # SHA256SUMS first, then by name each package it lists, into a directory of their own that
+        # is removed afterwards
         downloads = [c for c in self.calls('gh') if c.startswith('gh release download')]
-        self.assertEqual(len(downloads), 1)
-        self.assertIn(f"--dir {self.tmp / 'temp'}/dashmate-sign.", downloads[0])
+        self.assertEqual(len(downloads), 2)
+        self.assertEqual(downloads[0].split(' --dir ')[0], f'gh release download {TAG} --repo dashpay/platform --pattern SHA256SUMS')
+        self.assertEqual(downloads[1].split(' --dir ')[0], f'gh release download {TAG} --repo dashpay/platform '
+                         + ' '.join(f'--pattern {name}' for name in sorted(PACKAGES)))
+        for download in downloads:
+            self.assertIn(f"--dir {self.tmp / 'temp'}/dashmate-sign.", download)
         self.assertEqual(list((self.tmp / 'temp').iterdir()), [])
 
     def test_should_take_the_fingerprint_with_spaces_and_in_lower_case(self):
@@ -455,8 +463,8 @@ class SignDashmateChecksumsTests(ReleaseFixture):
         self.assertIn('SHA256SUMS.asc', attached)
         # read back from the release after the upload
         downloads = [c for c in self.calls('gh') if c.startswith('gh release download')]
-        self.assertEqual(len(downloads), 2)
-        self.assertIn('--pattern SHA256SUMS.asc', downloads[1])
+        self.assertEqual(len(downloads), 3)
+        self.assertIn('--pattern SHA256SUMS.asc', downloads[2])
         self.assertIn(f'Attached SHA256SUMS.asc to {TAG}', result.stdout)
         self.assertEqual(list((self.tmp / 'temp').iterdir()), [])
 
@@ -614,55 +622,59 @@ class SignDashmateChecksumsTests(ReleaseFixture):
                 self.assertRefused(result, message)
                 self.assertEqual(self.signings(), [])
 
-    def test_should_refuse_packages_that_do_not_match_every_line(self):
+    def test_should_download_no_package_until_sha256sums_lists_exactly_the_ones_served(self):
+        # SHA256SUMS is checked against the names and digests GitHub reports for the release's
+        # dashmate assets before any package is downloaded.
         deb = 'dashmate_5.1.0-1_amd64.deb'
         others = {name: data for name, data in self.packages.items() if name != deb}
+        listed = ''.join(f'{sha256(data)}  {name}\n' for name, data in sorted(self.packages.items())).encode()
+        lines = listed.splitlines(keepends=True)
         cases = {
-            'a package with other bytes': (dict(self.packages, **{deb: b'other bytes'}), self.packages,
-                                           'do not match its SHA256SUMS'),
-            'a listed package not attached': (others, self.packages, 'do not match its SHA256SUMS'),
-            'an attached package not listed': (self.packages, others, 'is not one line per dashmate package it serves'),
+            'a package with other bytes': (dict(self.packages, **{deb: b'other bytes'}), self.packages, None),
+            'a listed package not attached': (others, self.packages, None),
+            'an attached package not listed': (self.packages, others, None),
+            'a line that is not <sha256>  <name>': (self.packages, None, listed + b'not a checksum line\n'),
+            'an empty SHA256SUMS': (self.packages, None, b''),
+            'a duplicated line': (self.packages, None, listed + lines[0]),
+            'a package listed twice and another not at all': (
+                self.packages, None, b''.join(sorted(lines[:-1] + lines[:1], key=lambda line: line.split(b'  ')[1]))),
+            'lines out of order': (self.packages, None, b''.join(reversed(lines))),
+            # GNU sha256sum --check --strict passes both
+            'a blank line at the end': (self.packages, None, listed + b'\n'),
+            'no newline at the end': (self.packages, None, listed[:-1]),
         }
-        for case, (files, listed, message) in cases.items():
+        for case, (files, sums, text) in cases.items():
             with self.subTest(case):
                 for leftover in self.files.iterdir():
                     leftover.unlink()
-                self.release(files, sums=listed)
-
-                result = self.sign()
-
-                self.assertRefused(result, message)
-                self.assertEqual(self.signings(), [])
-        with self.subTest('a line that is not <sha256>  <name>'):
-            self.release(self.packages)
-            sums = self.files / 'SHA256SUMS'
-            sums.write_bytes(sums.read_bytes() + b'not a checksum line\n')
-            self.edit_asset('SHA256SUMS', digest='sha256:' + sha256(sums.read_bytes()))
-
-            self.assertRefused(self.sign(), 'do not match its SHA256SUMS')
-        for case, text in [('an empty SHA256SUMS', b''), ('a duplicated line', None)]:
-            with self.subTest(case):
-                self.release(self.packages)
-                sums = self.files / 'SHA256SUMS'
-                if text is None:
-                    text = sums.read_bytes() + sums.read_bytes().splitlines(keepends=True)[0]
-                sums.write_bytes(text)
-                self.edit_asset('SHA256SUMS', digest='sha256:' + sha256(text))
+                self.release(files, sums=sums)
+                if text is not None:
+                    (self.files / 'SHA256SUMS').write_bytes(text)
+                    self.edit_asset('SHA256SUMS', digest='sha256:' + sha256(text))
 
                 result = self.sign(HASH_CHECK_LENIENT='1')
 
-                self.assertRefused(result, 'is not one line per dashmate package it serves')
+                self.assertRefused(result, 'the dashmate packages v5.1.0 serves are not the ones its SHA256SUMS lists')
+                self.assertEqual([c.split(' --dir ')[0] for c in self.calls('gh') if c.startswith('gh release download')],
+                                 [f'gh release download {TAG} --repo dashpay/platform --pattern SHA256SUMS'])
                 self.assertEqual(self.signings(), [])
                 self.assertEqual(list((self.tmp / 'temp').iterdir()), [])
-        with self.subTest('a package listed twice and another not at all'):
-            self.release(self.packages)
-            sums = self.files / 'SHA256SUMS'
-            lines = sums.read_bytes().splitlines(keepends=True)
-            text = b''.join(sorted(lines[:-1] + lines[:1], key=lambda line: line.split(b'  ')[1]))
-            sums.write_bytes(text)
-            self.edit_asset('SHA256SUMS', digest='sha256:' + sha256(text))
+        with self.subTest('a release without packages'):
+            for leftover in self.files.iterdir():
+                leftover.unlink()
+            self.release({})
 
-            self.assertRefused(self.sign(), 'is not one line per dashmate package it serves')
+            self.assertRefused(self.sign(HASH_CHECK_LENIENT='1'), f'SHA256SUMS of {TAG} lists no packages')
+
+    def test_should_refuse_packages_that_do_not_match_every_line(self):
+        # The bytes downloaded, not only the digests GitHub reports, must match every line.
+        deb = 'dashmate_5.1.0-1_amd64.deb'
+        with self.subTest('a package whose bytes are not the digest GitHub reports'):
+            self.release(dict(self.packages, **{deb: b'other bytes'}), sums=self.packages)
+            self.edit_asset(deb, digest='sha256:' + sha256(self.packages[deb]))
+
+            self.assertRefused(self.sign(), 'do not match its SHA256SUMS')
+            self.assertEqual(self.signings(), [])
         with self.subTest('a download that is not the file the release lists'):
             self.release(self.packages)
             self.edit_asset('SHA256SUMS', digest='sha256:' + 'f' * 64)

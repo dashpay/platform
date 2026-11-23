@@ -185,15 +185,15 @@ checksums_job() {
     --jq '.jobs[] | select(.name == "Release Dashmate checksums") | [.id, (.conclusion // "none")] | @tsv'
 }
 
-# The digests GitHub reports for the release's dashmate assets must be exactly SHA256SUMS. Prints
-# the difference and returns 1 when they are not.
+# The digests GitHub reports for the release's dashmate assets must be exactly SHA256SUMS, byte
+# for byte. Prints the difference and returns 1 when they are not.
 check_published_packages() {
-  local published
-  published="$(echo "$1" | awk -F'\t' '$1 ~ /^dashmate/ {
+  local published="${WORK_DIR}/published"
+  echo "$1" | awk -F'\t' '$1 ~ /^dashmate/ {
       print ($2 == "uploaded" && $4 ~ /^sha256:/ ? substr($4, 8) : "missing") "  " $1
-    }' | LC_ALL=C sort -k2,2)"
-  if [ "${published}" != "$(cat "$2")" ]; then
-    diff <(echo "${published}") "$2" >&2 || true
+    }' | LC_ALL=C sort -k2,2 > "${published}"
+  if ! cmp -s "${published}" "$2"; then
+    diff "${published}" "$2" >&2 || true
     return 1
   fi
 }
@@ -268,26 +268,30 @@ if [ "${SUMS_ID}" != "${RECORD_ID}" ] || [ "${SUMS_DIGEST}" != "sha256:${RECORD_
   fail "SHA256SUMS on ${TAG} (asset ${SUMS_ID}, ${SUMS_DIGEST:-no digest}) is not the file the Release Dashmate checksums job ${JOB_ID} of run ${RUN_ID} attached (asset ${RECORD_ID}, sha256:${RECORD_SUM})"
 fi
 
-echo "Downloading the dashmate packages and SHA256SUMS of ${TAG} into ${DIR}"
-gh release download "${TAG}" --repo "${REPO}" --pattern 'dashmate*' --pattern SHA256SUMS --dir "${DIR}" \
-  || fail "could not download the packages of ${TAG}"
+echo "Downloading the SHA256SUMS of ${TAG} into ${DIR}"
+gh release download "${TAG}" --repo "${REPO}" --pattern SHA256SUMS --dir "${DIR}" \
+  || fail "could not download the SHA256SUMS of ${TAG}"
 
 SIGNED_DIGEST="sha256:$(hash_of "${DIR}/SHA256SUMS")"
 [ "${SIGNED_DIGEST}" = "${SUMS_DIGEST}" ] || fail "the downloaded SHA256SUMS is not the file the release lists (${SIGNED_DIGEST}, release ${SUMS_DIGEST:-none})"
 
-# Every line, strictly: a malformed line, a missing package or other bytes all fail.
-( cd "${DIR}" && "${sha256[@]}" --check --strict SHA256SUMS ) || fail "the packages of ${TAG} do not match its SHA256SUMS"
+# The file must be exactly what the release workflow writes for the dashmate assets the release
+# serves, by the digests GitHub reports: one sha256 line per package, sorted by name. Only then
+# are those packages downloaded, each by its name.
+check_published_packages "${ASSETS}" "${DIR}/SHA256SUMS" \
+  || fail "the dashmate packages ${TAG} serves are not the ones its SHA256SUMS lists (< served, > listed)"
+patterns=()
+while IFS= read -r name; do
+  patterns+=(--pattern "${name}")
+done < <(cut -d' ' -f3 "${DIR}/SHA256SUMS")
+# Also keeps the expansion below from an empty array, which bash 3.2 rejects under set -u.
+[ "${#patterns[@]}" -gt 0 ] || fail "SHA256SUMS of ${TAG} lists no packages"
+echo "Downloading the $(( ${#patterns[@]} / 2 )) dashmate packages of ${TAG} into ${DIR}"
+gh release download "${TAG}" --repo "${REPO}" "${patterns[@]}" --dir "${DIR}" \
+  || fail "could not download the packages of ${TAG}"
 
-# The check reads only the lines there are, and shasum takes any digest length, a SHA-1 line
-# included. So the file must also be exactly what the release workflow writes for these
-# packages: one sha256 line per package, sorted by name.
-( cd "${DIR}" && for file in dashmate*; do
-    [ ! -e "${file}" ] || echo "$(hash_of "${file}")  ${file}"
-  done ) | LC_ALL=C sort -k2,2 > "${WORK_DIR}/expected"
-if ! cmp -s "${WORK_DIR}/expected" "${DIR}/SHA256SUMS"; then
-  diff "${WORK_DIR}/expected" "${DIR}/SHA256SUMS" >&2 || true
-  fail "SHA256SUMS of ${TAG} is not one line per dashmate package it serves (< packages, > SHA256SUMS)"
-fi
+# Every line, strictly, against the bytes downloaded: a missing package or other bytes fail.
+( cd "${DIR}" && "${sha256[@]}" --check --strict SHA256SUMS ) || fail "the packages of ${TAG} do not match its SHA256SUMS"
 
 echo "Signing SHA256SUMS with ${KEY}"
 gpg --armor --detach-sign --local-user "${KEY}" --output "${DIR}/SHA256SUMS.asc" "${DIR}/SHA256SUMS" \
