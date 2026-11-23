@@ -2339,7 +2339,9 @@ impl PlatformWallet {
     ///
     /// Admitted from the store read through the last reservation, so a Clear
     /// lands entirely before or after it, and refused while a Clear's host
-    /// wipe is pending.
+    /// wipe is pending or once the wallet was removed. It holds no generation
+    /// gate across the store read, so a removal never waits on a sync pass
+    /// here; its reservations are fenced by generation where they are made.
     #[cfg(feature = "shielded")]
     pub async fn restore_pending_private_contact_requests<C>(
         &self,
@@ -2348,11 +2350,11 @@ impl PlatformWallet {
     where
         C: ContactCryptoProvider + Sync,
     {
-        let locks = self.lock_for_shielded_operation(false).await?;
-        let coordinator = &locks.coordinator;
-        let _admission = locks.admit(self).await?;
+        let coordinator = self.shielded_coordinator().await?;
+        let _admission = coordinator.admit().await?;
+        self.ensure_shielded_attached()?;
         let entries = self
-            .unconfirmed_private_contact_requests(coordinator)
+            .unconfirmed_private_contact_requests(&coordinator)
             .await?;
         self.identity
             .dashpay()

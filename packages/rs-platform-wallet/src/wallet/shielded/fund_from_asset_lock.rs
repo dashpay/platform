@@ -262,6 +262,10 @@ impl PlatformWallet {
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
         P: OrchardProver,
     {
+        // Under `shield_guard`, held by the caller to the funding's end, which
+        // the removal marks the wallet detached under: a removed wallet funds
+        // nothing.
+        self.ensure_shielded_attached()?;
         // On-wire Orchard action count = max(1 real + dummy_outputs, 2). Consensus
         // prices the flat shielded fee from this count, so the wallet's fee
         // reservation below is derived from the SAME value (any mismatch is rejected).
@@ -274,12 +278,9 @@ impl PlatformWallet {
         // funding, or while a Clear's host wipe is pending, which refuses the
         // activity write a funding ends with. Not held: the broadcast and
         // ChainLock wait below must not hold a Clear back. Its epoch fences
-        // that write against a Clear completing in between. A removed
-        // wallet is refused before anything is built: the removal marks it
-        // under `shield_guard`, which this funding holds to its end.
+        // that write against a Clear completing in between.
         let coordinator = self.shielded_coordinator().await?;
         let funding_epoch = coordinator.admit().await?.epoch();
-        self.ensure_shielded_attached()?;
         let (requested_recipient, _) = *recipients.first().expect("preflight enforces len() == 1");
 
         // A resume pays the recipient its lock was built for. The row recorded
