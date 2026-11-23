@@ -1211,17 +1211,20 @@ extension KeychainManager {
         try deleteIdentityPrivateKeys(owners: [identityIdBase58], pendingPublicKeys: [])
     }
 
-    /// Owner tag that registration writes into the metadata before the
-    /// identity id is known (`MnemonicResolverAndPersister`).
-    private nonisolated static let pendingIdentityOwner = "pending"
+    /// Owner tags written into the metadata before the identity id is
+    /// known: `pending` (`MnemonicResolverAndPersister`) and the empty
+    /// string (the DashPay key pair written by Create Identity and by an
+    /// invitation claim). Confirmation links such a key to its public-key
+    /// row without rewriting the owner.
+    private nonisolated static let unattributedIdentityOwners: Set<String> = ["pending", ""]
 
     /// Deletes the `identity_privkey.*` items whose metadata owner is one
-    /// of `owners`, and the items still tagged `pending` whose metadata
-    /// public key is one of `pendingPublicKeys`. An item that names
-    /// another owner is never matched by its public key: Platform lets
-    /// identities share some keys (for example a HASH160 payout key), so
-    /// an explicit owner decides. Empty owners and public keys never
-    /// match.
+    /// of `owners`, and the unattributed items (owner `pending` or empty)
+    /// whose full metadata public key is one of `pendingPublicKeys`. An
+    /// item that names another owner is never matched by its public key:
+    /// Platform lets identities share some keys (for example a HASH160
+    /// payout key), so an explicit owner decides. Empty entries in
+    /// `owners` and `pendingPublicKeys` never match.
     private nonisolated func deleteIdentityPrivateKeys(
         owners: Set<String>,
         pendingPublicKeys: [Data]
@@ -1283,7 +1286,7 @@ extension KeychainManager {
                 continue
             }
             let ownedHere = owners.contains(metadata.identityId)
-            let pendingHere = metadata.identityId == Self.pendingIdentityOwner
+            let pendingHere = Self.unattributedIdentityOwners.contains(metadata.identityId)
                 && !metadata.publicKey.isEmpty
                 && pendingPublicKeyHexes.contains(metadata.publicKey.lowercased())
             guard ownedHere || pendingHere else {
@@ -1300,9 +1303,10 @@ extension KeychainManager {
     ///    payout slots), via `deleteAllKeychainItems(forIdentityId:)`;
     ///  * `identity_privkey.*` items whose metadata names the identity,
     ///    by its Base58 id or its hex id (Add Key writes the hex id);
-    ///  * `identity_privkey.*` items still tagged `pending` whose metadata
-    ///    public key is one of `publicKeys`: registration writes `pending`
-    ///    and confirmation links the key without rewriting the metadata.
+    ///  * unattributed `identity_privkey.*` items (owner `pending` or
+    ///    empty, as registration and the DashPay key pair write them) whose
+    ///    full metadata public key is one of `publicKeys`; confirmation
+    ///    links such a key without rewriting the owner.
     ///    An item naming another identity is left alone even when its
     ///    public key matches, since identities can share some keys.
     ///
@@ -1310,12 +1314,13 @@ extension KeychainManager {
     /// no-op when nothing matches.
     public nonisolated func deleteAllPrivateKeys(
         ofIdentityId identityId: Data,
-        identityIdBase58: String,
         publicKeys: [Data]
     ) throws {
         try deleteAllKeychainItems(forIdentityId: identityId)
+        // Both owner encodings come from the one binary id, so a caller
+        // cannot mix in another identity's id.
         try deleteIdentityPrivateKeys(
-            owners: [identityIdBase58, identityId.toHexString().lowercased()],
+            owners: [identityId.toBase58String(), identityId.toHexString().lowercased()],
             pendingPublicKeys: publicKeys
         )
     }

@@ -376,12 +376,12 @@ enum WalletKeyHealthChecker {
     ///     the context back and throws, and the Keychain is not
     ///     touched.
     ///  2. Only then wipe every private key of the identity from the
-    ///     Keychain with `KeychainManager.deleteAllPrivateKeys(ofIdentityId:identityIdBase58:publicKeys:)`,
+    ///     Keychain with `KeychainManager.deleteAllPrivateKeys(ofIdentityId:publicKeys:)`,
     ///     the same sweep Remove from Device runs: the direct
     ///     `privkey_*` / `specialkey_*` accounts (an imported key) and
     ///     the `identity_privkey.*` items whose metadata names the
-    ///     identity, or is still tagged `pending` with one of its public
-    ///     keys. The sweep reads only
+    ///     identity, or is unattributed (owner `pending` or empty) with
+    ///     one of its public keys. The sweep reads only
     ///     values captured before step 1, not the row.
     ///
     /// Returns a per-side outcome so the caller can distinguish
@@ -395,10 +395,9 @@ enum WalletKeyHealthChecker {
         identity: PersistentIdentity,
         modelContext: ModelContext
     ) throws -> OrphanDeleteOutcome {
-        // Snapshot the base58 id BEFORE the delete: once the row
-        // is removed its computed accessor is invalid.
+        // Snapshot the id and public keys BEFORE the delete: once the
+        // row is removed its accessors are invalid.
         let identityId = identity.identityId
-        let identityIdBase58 = identity.identityIdBase58
         let publicKeys = identity.publicKeys.map(\.publicKeyData)
 
         try PersistentIdentity.deleteChildrenFirst(identity, in: modelContext)
@@ -407,7 +406,6 @@ enum WalletKeyHealthChecker {
         do {
             try KeychainManager.shared.deleteAllPrivateKeys(
                 ofIdentityId: identityId,
-                identityIdBase58: identityIdBase58,
                 publicKeys: publicKeys
             )
         } catch {

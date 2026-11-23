@@ -495,12 +495,8 @@ struct IdentitiesContentView: View {
                 modelContext: modelContext,
                 deleteSpecialKey: { keychain.deleteSpecialKey(identityId: $0, keyType: $1) },
                 deleteKeyData: { keychain.deleteKeyData(identifier: $0) },
-                deleteAllForIdentity: { identityId, identityIdBase58, publicKeys in
-                    try keychain.deleteAllPrivateKeys(
-                        ofIdentityId: identityId,
-                        identityIdBase58: identityIdBase58,
-                        publicKeys: publicKeys
-                    )
+                deleteAllForIdentity: { identityId, publicKeys in
+                    try keychain.deleteAllPrivateKeys(ofIdentityId: identityId, publicKeys: publicKeys)
                 }
             )
         } catch {
@@ -541,11 +537,12 @@ struct IdentitiesContentView: View {
     ///     too and a later load can store the key again, then delete the
     ///     snapshotted identifiers.
     ///  4. Sweep the Keychain for this identity
-    ///     (`deleteAllForIdentity`, `KeychainManager.deleteAllPrivateKeys(ofIdentityId:identityIdBase58:publicKeys:)`):
+    ///     (`deleteAllForIdentity`, `KeychainManager.deleteAllPrivateKeys(ofIdentityId:publicKeys:)`):
     ///     the `privkey_<identityHex>_*` and `specialkey_<identityHex>_*`
     ///     accounts, and the `identity_privkey.*` items whose metadata
-    ///     names this identity, or is still tagged `pending` (as
-    ///     registration writes it) with one of its public keys; a key
+    ///     names this identity, or is unattributed (owner `pending` or
+    ///     empty, as registration and the DashPay key pair write it) with
+    ///     one of its public keys; a key
     ///     tagged with another identity is kept. This also deletes keys
     ///     the row no longer references, for example a key left by an
     ///     earlier removal the Keychain refused, which a reload can find
@@ -562,10 +559,9 @@ struct IdentitiesContentView: View {
         modelContext: ModelContext,
         deleteSpecialKey: (Data, SpecialKeyType) -> Bool,
         deleteKeyData: (String) -> Bool,
-        deleteAllForIdentity: (Data, String, [Data]) throws -> Void
+        deleteAllForIdentity: (Data, [Data]) throws -> Void
     ) throws -> [String] {
         let identityId = identity.identityId
-        let identityIdBase58 = identity.identityIdBase58
         let publicKeys = identity.publicKeys.map(\.publicKeyData)
         var referenced: [(name: String, identifier: String)] = []
         for publicKey in identity.publicKeys.sorted(by: { $0.keyId < $1.keyId }) {
@@ -599,7 +595,7 @@ struct IdentitiesContentView: View {
             }
         }
         do {
-            try deleteAllForIdentity(identityId, identityIdBase58, publicKeys)
+            try deleteAllForIdentity(identityId, publicKeys)
         } catch {
             keysLeft.append("other private keys")
         }

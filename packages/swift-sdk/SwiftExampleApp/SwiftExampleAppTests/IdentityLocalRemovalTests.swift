@@ -81,9 +81,8 @@ final class IdentityLocalRemovalTests: XCTestCase {
         var specialKeyDeletes: [SpecialKeyType] = []
         var identifierDeletes: [String] = []
         var rowsLeftAtKeychainCall: [Int] = []
-        var sweeps: [(Data, String, [Data])] = []
+        var sweeps: [(Data, [Data])] = []
         let expectedPublicKeys = doomed.publicKeys.map(\.publicKeyData)
-        let expectedBase58 = doomed.identityIdBase58
         let identityRowCount = { [doomedId] () -> Int in
             let target = doomedId
             let rows = try? ModelContext(container).fetch(FetchDescriptor<PersistentIdentity>(
@@ -106,16 +105,15 @@ final class IdentityLocalRemovalTests: XCTestCase {
                 identifierDeletes.append(identifier)
                 return true
             },
-            deleteAllForIdentity: { identityId, identityIdBase58, publicKeys in
+            deleteAllForIdentity: { identityId, publicKeys in
                 rowsLeftAtKeychainCall.append(identityRowCount())
-                sweeps.append((identityId, identityIdBase58, publicKeys))
+                sweeps.append((identityId, publicKeys))
             }
         )
 
         XCTAssertEqual(keysLeft, [])
         XCTAssertEqual(sweeps.map { $0.0 }, [doomedId])
-        XCTAssertEqual(sweeps.map { $0.1 }, [expectedBase58])
-        XCTAssertEqual(sweeps.map { Set($0.2) }, [Set(expectedPublicKeys)])
+        XCTAssertEqual(sweeps.map { Set($0.1) }, [Set(expectedPublicKeys)])
         XCTAssertEqual(specialKeyDeletes, [.voting, .owner, .payout])
         XCTAssertEqual(
             identifierDeletes,
@@ -139,7 +137,7 @@ final class IdentityLocalRemovalTests: XCTestCase {
             deleteKeyData: { identifier in
                 identifier != "privkey_key_1" && identifier != "specialkey_voting"
             },
-            deleteAllForIdentity: { _, _, _ in }
+            deleteAllForIdentity: { _, _ in }
         )
 
         // The refused voting slot and its row identifier are one key, named once.
@@ -159,7 +157,7 @@ final class IdentityLocalRemovalTests: XCTestCase {
             modelContext: context,
             deleteSpecialKey: { _, _ in true },
             deleteKeyData: { _ in true },
-            deleteAllForIdentity: { _, _, _ in throw Refused() }
+            deleteAllForIdentity: { _, _ in throw Refused() }
         )
 
         // Keys the row no longer references are still reported when the
@@ -170,18 +168,22 @@ final class IdentityLocalRemovalTests: XCTestCase {
 
     /// The removal sweep deletes every format a key of the identity can be
     /// stored in: direct and special accounts, derived keys tagged with the
-    /// Base58 id or the hex id (Add Key), and a registration key whose
-    /// metadata identity id is still `pending`. A key tagged with another
-    /// identity survives even when that identity shares the public key.
+    /// Base58 id or the hex id (Add Key), and unattributed keys whose
+    /// metadata owner is `pending` (registration) or empty (the DashPay
+    /// key pair) when their public key is the identity's. A key tagged with
+    /// another identity survives even when that identity shares the public
+    /// key, and so does an unattributed key with an unrelated public key.
     func testDeleteAllPrivateKeysOfIdentitySweepsEveryFormat() throws {
         let manager = SwiftDashSDK.KeychainManager(serviceName: "org.dash.identity-removal-tests.\(UUID().uuidString)")
         let identityId = doomedId
-        let identityIdBase58 = "doomedBase58"
+        let identityIdBase58 = identityId.toBase58String()
         let registrationKey = Data(repeating: 0x31, count: 33)
         let taggedKey = Data(repeating: 0x32, count: 33)
         let otherKey = Data(repeating: 0x33, count: 33)
         let hexTaggedKey = Data(repeating: 0x34, count: 33)
         let sharedKey = Data(repeating: 0x35, count: 33)
+        let dashpayKey = Data(repeating: 0x36, count: 33)
+        let unrelatedUnattributedKey = Data(repeating: 0x37, count: 33)
 
         XCTAssertNotNil(manager.storePrivateKey(Data(repeating: 0x01, count: 32), identityId: identityId, keyIndex: 3))
         XCTAssertNotNil(manager.storeSpecialKey(Data(repeating: 0x02, count: 32), identityId: identityId, keyType: .voting))
@@ -190,11 +192,12 @@ final class IdentityLocalRemovalTests: XCTestCase {
         storeDerivedKey(in: manager, path: "m/9'/1'/5'/0'/0'/1'/0'", identityId: "someoneElse", publicKey: otherKey)
         storeDerivedKey(in: manager, path: "m/9'/1'/5'/0'/0'/0'/2'", identityId: identityId.toHexString(), publicKey: hexTaggedKey)
         storeDerivedKey(in: manager, path: "m/9'/1'/5'/0'/0'/1'/1'", identityId: "someoneElse", publicKey: sharedKey)
+        storeDerivedKey(in: manager, path: "m/9'/1'/15'/0'/0'", identityId: "", publicKey: dashpayKey)
+        storeDerivedKey(in: manager, path: "m/9'/1'/15'/0'/1'", identityId: "", publicKey: unrelatedUnattributedKey)
 
         try manager.deleteAllPrivateKeys(
             ofIdentityId: identityId,
-            identityIdBase58: identityIdBase58,
-            publicKeys: [registrationKey, sharedKey, Data()]
+            publicKeys: [registrationKey, sharedKey, dashpayKey, Data()]
         )
 
         XCTAssertNil(manager.retrievePrivateKey(identityId: identityId, keyIndex: 3))
@@ -204,8 +207,11 @@ final class IdentityLocalRemovalTests: XCTestCase {
         XCTAssertNil(manager.retrieveIdentityPrivateKey(publicKeyHex: hexTaggedKey.toHexString()))
         XCTAssertNotNil(manager.retrieveIdentityPrivateKey(publicKeyHex: otherKey.toHexString()))
         XCTAssertNotNil(manager.retrieveIdentityPrivateKey(publicKeyHex: sharedKey.toHexString()))
+        XCTAssertNil(manager.retrieveIdentityPrivateKey(publicKeyHex: dashpayKey.toHexString()))
+        XCTAssertNotNil(manager.retrieveIdentityPrivateKey(publicKeyHex: unrelatedUnattributedKey.toHexString()))
 
-        try manager.deleteAllIdentityPrivateKeys(forIdentityIdBase58: "someoneElse")
+        // Clear the isolated service: every derived fixture uses this wallet id.
+        try manager.deleteAllIdentityPrivateKeys(forWalletId: Data(repeating: 0xcc, count: 32))
     }
 
     // MARK: - Helpers
