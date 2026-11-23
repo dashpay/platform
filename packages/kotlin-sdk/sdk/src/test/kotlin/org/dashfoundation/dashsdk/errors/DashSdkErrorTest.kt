@@ -41,6 +41,18 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun shouldTypeAnUnknownConsumptionAsAssetLockConsumptionUnknown() {
+        val native = DashSDKException(
+            DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 82,
+            "Platform may already have used this lock; nothing was assigned",
+        )
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.AssetLockConsumptionUnknown)
+        assertEquals(native.message, mapped.message)
+        assertFalse(mapped.isRetryable)
+    }
+
+    @Test
     fun mapsNativeCodesToHierarchy() {
         // Codes mirror DashSDKErrorCode in rs-sdk-ffi/src/error.rs.
         val cases = mapOf(

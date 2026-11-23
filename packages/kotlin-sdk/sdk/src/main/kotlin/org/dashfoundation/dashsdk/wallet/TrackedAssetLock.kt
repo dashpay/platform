@@ -35,7 +35,7 @@ import org.dashfoundation.dashsdk.ffi.TrackedAssetLocksNativeResult
  *   rebuilt after a restore from the seed carries: Platform may have used it
  *   long ago and no query tells the wallet, so do not present it as
  *   recoverable; assigning one is refused with
- *   [AssetLockAlreadyConsumed][org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.AssetLockAlreadyConsumed].
+ *   [AssetLockConsumptionUnknown][org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.AssetLockConsumptionUnknown].
  *   Rust decides it; this model only carries it.
  *
  * The shielded recipient a type-5 lock records is not carried: this model

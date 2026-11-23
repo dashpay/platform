@@ -146,10 +146,6 @@ sealed class DashSdkError(
          * The one-shot output cannot be reused. This may be a retained local
          * tombstone or an unauthenticated Platform report; operation completion
          * must not be inferred from this signal.
-         *
-         * Also `AssetLockConsumptionUnknown` on the same native code (24):
-         * assigning a recipient to a lock rebuilt from the chain, which
-         * Platform may already have used. Nothing was assigned.
          */
         class AssetLockAlreadyConsumed(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
@@ -280,6 +276,19 @@ sealed class DashSdkError(
          * then resume it.
          */
         class AssetLockRecipientUnknown(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * Code 82 (`ErrorAssetLockConsumptionUnknown`, dashpay/platform#5924):
+         * assigning a recipient to an unbound identity top-up lock that
+         * records none and was rebuilt from the chain
+         * ([org.dashfoundation.dashsdk.wallet.TrackedAssetLock.Status.RECOVERED_FROM_CHAIN])
+         * is refused, because Platform may already have used it and no query
+         * tells the wallet whether it did. Nothing was assigned and the lock
+         * stays tracked. Unlike [AssetLockAlreadyConsumed] (24) the use is
+         * unknown, not confirmed: the funds may still be unspent on Platform.
+         */
+        class AssetLockConsumptionUnknown(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
         /**
@@ -974,6 +983,7 @@ sealed class DashSdkError(
             60 -> PlatformWallet.AssetLockTooManyInputs(message, cause) // ErrorAssetLockTooManyInputs
             61 -> PlatformWallet.AssetLockRecipientMismatch(message, cause) // ErrorAssetLockRecipientMismatch
             81 -> PlatformWallet.AssetLockRecipientUnknown(message, cause) // ErrorAssetLockRecipientUnknown
+            82 -> PlatformWallet.AssetLockConsumptionUnknown(message, cause) // ErrorAssetLockConsumptionUnknown
             // The deferred-token trio sits at the contiguous block 34-36 because
             // 27-33 are claimed elsewhere: 27 ErrorShutdownIncomplete
             // (dashpay/platform#4268, merged), 29 ErrorAssetLockInsufficientFunds
