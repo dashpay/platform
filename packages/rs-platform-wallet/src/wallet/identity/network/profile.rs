@@ -865,20 +865,6 @@ mod tests {
 }
 
 impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
-    /// Fetch a fresh, proof-verified profile, bypassing the contact cache.
-    pub async fn fetch_profile(
-        &self,
-        identity_id: &Identifier,
-    ) -> Result<Option<DashPayProfile>, PlatformWalletError> {
-        let contract = super::dashpay_contract()?;
-        Ok(self
-            .sdk
-            .get_profiles(&contract, &[*identity_id])
-            .await?
-            .remove(identity_id)
-            .map(|doc| profile_from_properties(doc.properties())))
-    }
-
     /// Refuse an update that sets a payment address the network would not
     /// take: bytes that are not an address of the field's kind, or a field
     /// the DashPay contract on the connected network does not have yet.
