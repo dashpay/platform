@@ -320,6 +320,33 @@ class ReleaseChecksumsTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('::error::Not a regular file', result.stdout)
 
+    def test_should_publish_debs_only_as_one_amd64_and_one_arm64_package(self):
+        # The apt repository serves both architectures from the release's debs.
+        step = 'Require one amd64 and one arm64 deb'
+        # a hidden file is not uploaded, so it does not count
+        leg, _ = self.leg('deb', PACKAGES['deb'] + ['deb/.dashmate_5.1.0-2_amd64.deb'])
+        result = self.run_step(step, cwd=leg, package_type='deb')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        cases = {
+            'only the amd64 deb': ['deb/dashmate_5.1.0-1_amd64.deb'],
+            'only the arm64 deb': ['deb/dashmate_5.1.0-1_arm64.deb'],
+            'no deb': ['deb/dashmate-v5.1.0-3a5da22021-linux-x64.tar.gz'],
+            'a third architecture': PACKAGES['deb'] + ['deb/dashmate_5.1.0-1_i386.deb'],
+            'two amd64 debs': PACKAGES['deb'] + ['deb/dashmate_5.1.0-2_amd64.deb'],
+            # counted by file name, whatever the directories are called
+            'one deb under a directory name with a newline': ['deb/x_arm64.deb\nsub/dashmate_5.1.0-1_amd64.deb'],
+        }
+        for case, files in cases.items():
+            with self.subTest(case):
+                leg, _ = self.leg('deb', files)
+
+                result = self.run_step(step, cwd=leg, package_type='deb')
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('::error::', result.stdout)
+        # the deb leg alone runs it
+        self.assertEqual(step_block(step)[1], "        if: matrix.package_type == 'deb'")
+
     def test_should_refuse_a_leg_without_packages(self):
         result, _ = self.record('deb', [])
         self.assertNotEqual(result.returncode, 0)
@@ -560,7 +587,7 @@ class ReleaseChecksumsTests(unittest.TestCase):
         legs = job('release-dashmate-packages')
         order = [legs.index('- name: ' + step) for step in [
             'Sign and notarize macOS installers', 'Refuse to replace the packages of a signed release',
-            'Record package checksums', 'Upload artifacts to release']]
+            'Require one amd64 and one arm64 deb', 'Record package checksums', 'Upload artifacts to release']]
         self.assertEqual(order, sorted(order))
 
     def test_should_compare_names_bytewise(self):

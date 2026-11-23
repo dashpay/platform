@@ -480,6 +480,27 @@ jobs:
             exit 1
           fi
 
+      # The apt repository serves both architectures from the release's debs,
+      # so the deb leg publishes exactly one of each or nothing.
+      - name: Require one amd64 and one arm64 deb
+        if: matrix.package_type == 'deb'
+        run: |
+          set -euo pipefail
+          amd64=0 arm64=0 all=0 names=''
+          while IFS= read -r -d '' file; do
+            name="${file##*/}"
+            case "${name}" in
+              *_amd64.deb) amd64=$((amd64 + 1)) ;;
+              *_arm64.deb) arm64=$((arm64 + 1)) ;;
+            esac
+            all=$((all + 1))
+            names="${names} ${name}"
+          done < <(find release-artifacts -type f -name '*.deb' ! -path '*/.*' -print0)
+          if [ "${amd64} ${arm64} ${all}" != '1 1 2' ]; then
+            echo "::error::Expected one amd64 and one arm64 deb, found:${names:- none}"
+            exit 1
+          fi
+
       # Hashed in the job that publishes the packages, after signing and right
       # before the upload, so SHA256SUMS lists the bytes that were built and
       # signed rather than whatever the release holds later. Each file is
