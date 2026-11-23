@@ -69,12 +69,15 @@
     "platform_wallet_create_document_with_signer": "packages/rs-platform-wallet-ffi/src/document.rs",
     "platform_wallet_create_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
     "platform_wallet_dpns_give_up_name": "packages/rs-platform-wallet-ffi/src/dpns_marketplace.rs",
+    "platform_wallet_dpns_give_up_clears_main_name": "packages/rs-platform-wallet-ffi/src/dpns_marketplace.rs",
     "platform_wallet_dpns_name_give_up_choices": "packages/rs-platform-wallet-ffi/src/dpns_marketplace.rs",
     "platform_wallet_drain_pending_contact_crypto": "packages/rs-platform-wallet-ffi/src/dashpay.rs",
     "platform_wallet_get_private_contact_readiness": "packages/rs-platform-wallet-ffi/src/contact_request.rs",
     "platform_wallet_get_private_pair_held": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_get_private_payments_restore_failure": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_get_public_contact_request_unconfirmed": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
+    "platform_wallet_identity_withdrawals": "packages/rs-platform-wallet-ffi/src/identity_withdrawals.rs",
+    "platform_wallet_identity_withdrawals_free": "packages/rs-platform-wallet-ffi/src/identity_withdrawals.rs",
     "platform_wallet_manager_accept_contact_request_replying_in_kind": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_manager_accept_private_contact_request": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_manager_create_with_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
@@ -102,7 +105,11 @@
     "platform_wallet_tracked_asset_locks_list": "packages/rs-platform-wallet-ffi/src/manager_diagnostics.rs",
     "restore_provider_special_txs": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "platform_wallet_manager_shielded_token_purchase_from_pool": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
-    "platform_wallet_manager_shielded_token_purchase_availability": "packages/rs-platform-wallet-ffi/src/shielded_send.rs"
+    "platform_wallet_manager_shielded_token_purchase_availability": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+    "platform_wallet_manager_create_private_document_entry": "packages/rs-platform-wallet-ffi/src/private_document_create.rs",
+    "platform_wallet_manager_private_document_create_fee": "packages/rs-platform-wallet-ffi/src/private_document_create.rs",
+    "platform_wallet_manager_private_document_recipient_keys": "packages/rs-platform-wallet-ffi/src/private_document_create.rs",
+    "platform_wallet_private_document_recipient_keys_free": "packages/rs-platform-wallet-ffi/src/private_document_create.rs"
   },
   "capabilities": [
     {
@@ -1306,7 +1313,8 @@
       "area": "shared_policy",
       "shared_apis": [
         "platform_wallet_dpns_name_give_up_choices",
-        "platform_wallet_dpns_give_up_name"
+        "platform_wallet_dpns_give_up_name",
+        "platform_wallet_dpns_give_up_clears_main_name"
       ],
       "required_persistence_capabilities": [
         "dpns_name_states"
@@ -1319,10 +1327,10 @@
           "reason": "GiveUpNameView offers only the ways Rust reports (a contested name: tombstone only), refuses below protocol version 15 from the SDK's typed refusal, and drops the name through the persister after the network confirms it. The TEST_PLAN gates DPNS-09..13 are written but not yet run on a simulator or device. Restart is required and not yet met: the hold on a give-up that was sent but not confirmed is session-scoped, so after a process restart such a give-up is offered again until the name is seen gone."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
-          "restart": "not_applicable",
-          "reason": "No JNI binding in rs-unified-sdk-jni and no Kotlin wrapper or KotlinExampleApp screen for platform_wallet_dpns_name_give_up_choices / platform_wallet_dpns_give_up_name yet."
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "DpnsMarketplace.giveUpChoices / giveUpName bridge the two FFI calls through DpnsGiveUpNative, and GiveUpNameScreen offers only the ways Rust reports (a contested name: tombstone only), refuses below protocol version 15 from the SDK's typed refusal, and clears the main-name pick after a confirmed give-up only when Rust's platform_wallet_dpns_give_up_clears_main_name says the pick names the name. The name leaves Room through the persistence bridge after the network confirms it. The TEST_PLAN gates DPNS-09..13 are written but not yet run on an emulator. Restart is required and not yet met, as on iOS: the hold on a give-up that was sent but not confirmed is session-scoped in Rust (#6072), so after a process restart such a give-up is offered again until the name is seen gone."
         }
       },
       "verification": [
@@ -1351,6 +1359,22 @@
           "covers_restart": false
         },
         {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/dpns_marketplace/tests/give_up.rs",
+          "id": "should_clear_the_main_name_pick_only_for_the_name_given_up",
+          "command": "cargo test -p platform-wallet --lib give_up",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/dpns_marketplace.rs",
+          "id": "should_report_whether_a_give_up_clears_the_main_name_pick",
+          "command": "cargo test -p platform-wallet-ffi --lib dpns",
+          "covers_restart": false
+        },
+        {
           "host": "swift",
           "kind": "unit",
           "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/DpnsMarketplaceDecodingTests.swift",
@@ -1369,6 +1393,44 @@
           "host": "swift",
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DPNS-13",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/dpns/DpnsNameGiveUpTest.kt",
+          "id": "shouldFailClosedOnAnUnknownOrInconsistentGivenUpResult",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests org.dashfoundation.dashsdk.dpns.DpnsNameGiveUpTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/identity/GiveUpNamePresentationTest.kt",
+          "id": "shouldReadAProtocolVersionRefusalAsNotAvailableWithTheSdkMessage",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests org.dashfoundation.example.ui.identity.GiveUpNamePresentationTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "dpnsGiveUpSymbolsBindAndRejectInvalidInput",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=org.dashfoundation.dashsdk.FfiSmokeTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "DPNS-09",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "DPNS-13",
           "covers_restart": false
         }
@@ -1794,10 +1856,10 @@
           "reason": "PrivateDocuments.swift wraps the read (ManagedPlatformWallet.readPrivateDocumentEntries: proved store pages scanned with keys derived inside the Keychain mnemonic resolver, each opened payload decoded and checked against the type's schema in Rust, the sender reported as an unverified claim) and PersistentDocumentType.isPrivate / privateEntrySize read the keyword off the stored schema. The example app badges a private type, leaves it out of the ordinary document create and query pickers, and reads its entries page budget by page budget from the type's detail screen (TEST_PLAN DOC-17), handing back the cursor Rust returned (the position, the largest store size proved and the key set read with, so a node behind does not end the reading early and changed keys restart it), holding the entries in view state: the read keeps nothing, so there is nothing to resume after a restart. The Rust read and the FFI marshalling are unit-tested; no gate records the Swift call or the screen against a protocol version 15 network holding a private type. Keys the wallet does not derive at their identity key slot, such as DashPay Connect application keys, are reported as not scanned rather than scanned. Appending an entry of an arbitrary private type has no wallet entry point yet: only DashPay private contact requests append entries."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
+          "sdk": "supported",
+          "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "Not ported: no JNI binding for platform_wallet_read_private_document_entries, and the example app neither marks a private document type nor reads its entries."
+          "reason": "ManagedPlatformWallet.privateDocuments (PrivateDocuments.kt) wraps the read through rs-unified-sdk-jni's PrivateDocumentsNative, which copies the FFI result into JSON and frees it before returning; Kotlin decodes it one to one and hands the cursor back as it came (JVM decoding tests). PrivateDocumentsFfiTest checks the symbol, descriptor and argument refusals on a device and passed on an API 35 arm64 emulator on 2026-11-23. KotlinExampleApp badges a private type, shows a Private section with the Read Entries link in place of New Document and the document queries, leaves it out of the Settings builder's document type picker, and reads its entries page budget by page budget (TEST_PLAN DOC-17), holding them in screen state under a secure window and a cover off the foreground: the read keeps nothing, so there is nothing to resume after a restart. No gate has run it against a protocol version 15 network holding a private type."
         }
       },
       "verification": [
@@ -1855,6 +1917,136 @@
           "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/DocumentTypePrivateTests.swift",
           "id": "testShouldReadAPrivateTypesEntrySizeThroughTheParser",
           "command": "swift test --package-path packages/swift-sdk --filter DocumentTypePrivateTests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/PrivateDocumentEntriesReadTest.kt",
+          "id": "shouldDecodeAReceivedAnonymousEntryAndTheCounts",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*PrivateDocumentEntriesReadTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/PrivateDocumentEntriesReadTest.kt",
+          "id": "shouldKeepTheCursorAsItCameWithAnUnknownOrProvedStoreSize",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*PrivateDocumentEntriesReadTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/PrivateDocumentEntriesReadTest.kt",
+          "id": "shouldRefuseAnEntryItCannotRead",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*PrivateDocumentEntriesReadTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/contracts/PrivateDocumentTypesTest.kt",
+          "id": "shouldReadAPrivateDeclarationAndItsEntrySize",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*PrivateDocumentTypesTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/private_documents.rs",
+          "id": "should_write_the_counts_and_a_cursor_with_an_unknown_store_size",
+          "command": "cargo test -p rs-unified-sdk-jni --lib private_documents",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "DOC-17",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/PrivateDocumentsFfiTest.kt",
+          "id": "shouldRefuseWhatTheJniLayerCannotMarshal",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=org.dashfoundation.dashsdk.PrivateDocumentsFfiTest",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "documents.private_document_entry_create",
+      "title": "Create an entry of any private document type from a wallet identity, paid from the shielded pool (protocol version 15)",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_manager_create_private_document_entry",
+        "platform_wallet_manager_private_document_create_fee",
+        "platform_wallet_manager_private_document_recipient_keys",
+        "platform_wallet_private_document_recipient_keys_free"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PrivateDocuments.swift wraps the create (PlatformWalletManager.createPrivateDocumentEntry), the recipient key choices and the fee preview; Rust picks the sender's encryption key, checks the recipient key, the properties against the type's schema and the entry's capacity, seals inside the Keychain mnemonic resolver, and pays as a DashPay private contact request is paid (notes reserved, the transition saved for a redrive before the broadcast). The example app creates one entry from the private type's detail screen (TEST_PLAN DOC-19), anonymous or with a deniable MAC; a signed entry is not offered. The Rust preparation, sealing, refusals, fee preview and the seal-then-read round trip and the FFI marshalling are unit-tested; no gate records the Swift call, the screen, or the spend's recovery after a restart against a protocol version 15 network."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "Not ported: no JNI binding for platform_wallet_manager_create_private_document_entry or its key and fee helpers, and the example app has no create screen for a private document type."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk/src/platform/private_document_seal.rs",
+          "id": "should_seal_an_entry_the_recipient_opens_and_the_sender_recovers",
+          "command": "cargo test -p dash-sdk --lib should_seal_an_entry_the_recipient_opens_and_the_sender_recovers",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/private_document_create.rs",
+          "id": "should_seal_an_entry_the_recipient_opens_and_the_sender_s_read_recovers",
+          "command": "cargo test -p platform-wallet --lib should_seal_an_entry_the_recipient_opens_and_the_sender_s_read_recovers",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/private_document_create.rs",
+          "id": "should_refuse_what_cannot_be_sealed_before_the_signer",
+          "command": "cargo test -p platform-wallet --lib should_refuse_what_cannot_be_sealed_before_the_signer",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/private_document_create.rs",
+          "id": "should_preview_the_fee_a_create_reserves_at_two_actions",
+          "command": "cargo test -p platform-wallet --lib should_preview_the_fee_a_create_reserves_at_two_actions",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/private_document_create.rs",
+          "id": "should_marshal_and_free_the_recipient_keys",
+          "command": "cargo test -p platform-wallet-ffi --lib should_marshal_and_free_the_recipient_keys",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DOC-19",
           "covers_restart": false
         }
       ]
@@ -2679,10 +2871,10 @@
           "reason": "PlatformAddressBalanceHistoryView renders what Rust returns from one call (paging, the filter to every platform payment account's addresses, the reconciliation of the recent and compacted zones, the newest-first order and the bech32m addresses are in platform-wallet). The TEST_PLAN gate ADDR-10 is written but not yet run on a simulator or device."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
+          "sdk": "supported",
+          "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "No JNI binding in rs-unified-sdk-jni and no Kotlin wrapper or KotlinExampleApp screen for platform_address_wallet_balance_history yet."
+          "reason": "PlatformAddressBalanceHistoryScreen renders what Rust returns from one platform_address_wallet_balance_history call, which JNI copies into a BLOB that AddressHistoryDecodingTest pins against the Rust encoder; the screen keeps Rust's proved height and passes it into every later load, as Swift's does. The TEST_PLAN gate ADDR-10 is written but not yet run on an emulator."
         }
       },
       "verification": [
@@ -2772,6 +2964,45 @@
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
           "id": "ADDR-10",
           "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/address_history.rs",
+          "id": "should_encode_both_history_sections_in_the_given_order",
+          "command": "cargo test -p rs-unified-sdk-jni --lib address_history",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/AddressHistoryDecodingTest.kt",
+          "id": "should decode both history sections in Rust's order",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*AddressHistoryDecodingTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/errors/DashSdkErrorTest.kt",
+          "id": "shouldReportInconsistentBalanceHistoryHeightsByTheirOwnRetryableCode",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*DashSdkErrorTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "addressHistorySymbolsBindAndRejectInvalidInput",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "ADDR-10",
+          "covers_restart": false
         }
       ]
     },
@@ -2844,6 +3075,78 @@
           "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
           "id": "should_refuse_a_token_purchase_for_a_token_without_a_shielded_pool",
           "command": "cargo test -p platform-wallet --features shielded --lib token_purchase_from_pool_tests",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "identity.withdrawal_status",
+      "title": "An identity's withdrawals to Core and where each stands, read with a proof",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_identity_withdrawals",
+        "platform_wallet_identity_withdrawals_free"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "IdentityWithdrawalsView (IdentityDetailView -> Withdrawals, and View withdrawals after a submit in WithdrawCreditsView) lists the withdrawals Rust reads from the withdrawals contract with their status, finality and asset unlock index. The TEST_PLAN gates ID-19 and ID-20 are written but not yet run on a simulator or device. Nothing is stored locally, so there is no restart state: the list is read from the chain each time."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI binding in rs-unified-sdk-jni and no Kotlin wrapper or KotlinExampleApp screen for platform_wallet_identity_withdrawals; KotlinExampleApp's withdrawal screens show no status after a submit."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk/src/platform/identity_withdrawals.rs",
+          "id": "should_serve_the_listing_through_the_identity_recent_index_newest_first",
+          "command": "cargo test -p dash-sdk --lib identity_withdrawals",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk/src/platform/identity_withdrawals.rs",
+          "id": "should_treat_only_complete_and_failed_as_final",
+          "command": "cargo test -p dash-sdk --lib identity_withdrawals",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/identity_withdrawals.rs",
+          "id": "should_carry_the_core_transaction_and_rust_finality_for_each_status",
+          "command": "cargo test -p platform-wallet-ffi --lib identity_withdrawals",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/IdentityWithdrawalDecodingTests.swift",
+          "id": "testShouldThrowForAnUnknownStatusCode",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/IdentityWithdrawalDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "ID-19",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "ID-20",
           "covers_restart": false
         }
       ]

@@ -74,6 +74,7 @@ pub use wallet::signed_payment_registry::{
 // DashPay types + crypto helpers re-exported through the identity
 // domain (they live under `identity::types::dashpay::*` and
 // `identity::crypto::*` internally).
+pub use dash_sdk::platform::private_document_seal::PrivateDocumentSenderAuth;
 pub use masternode::{
     aggregate_masternodes, ListMembership, MasternodeKeyRole, MasternodeRecord, MasternodeSource,
     MasternodeStatus, TrackedMasternode, TrackedMasternodeSnapshot, WalletMasternodes,
@@ -86,6 +87,12 @@ pub use wallet::identity::network::{
     PaymentStarted, PreparedDashPayPayment, PrivateContactReadiness, PrivateContactSyncReport,
     PrivateDocumentCursor, PrivateDocumentDirection, PrivateDocumentKeyPaths, PrivateDocumentRead,
     SeedBindingVerification, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
+};
+pub use wallet::identity::network::{
+    private_document_create_fee, private_document_create_fee_for,
+    private_document_recipient_key_choices, NewPrivateDocumentEntry, PrivateDocumentEntryCreated,
+    PrivateDocumentRecipientKey, SealedPrivateDocumentEntry,
+    PRIVATE_DOCUMENT_CREATE_FEE_PREVIEW_ACTIONS,
 };
 pub use wallet::identity::types::dashpay::profile::{
     valid_transparent_payment_address, validated_shielded_address,

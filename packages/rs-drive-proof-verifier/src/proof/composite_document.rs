@@ -25,9 +25,7 @@ use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
-use dpp::data_contract::document_type::{
-    DecodedValueBudget, DocumentTypeRef, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
-};
+use dpp::data_contract::document_type::{DecodedValueBudget, DocumentTypeRef};
 use dpp::data_contract::errors::DataContractError;
 use dpp::document::Document;
 use dpp::platform_value::Value;
@@ -64,18 +62,30 @@ pub struct CompositeDocuments {
 
 impl CompositeDocuments {
     /// Decodes the kept field values of every removal record across every
-    /// sub-query, enforcing [`DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET`] across
-    /// the page documents, every sub-query's documents, and every sub-query's
-    /// removal records returned together in this response.
+    /// sub-query, enforcing a decoded-value budget proportional to each removal
+    /// record's encoded `kept_fields` length.
     ///
     /// `sub_query_document_type(index)` supplies the document type of sub-query
     /// `index` whenever `self.sub_result_removals[index]` is non-empty.
     pub fn decode_sub_result_removal_kept_values<'a>(
         &self,
-        sub_query_document_type: impl FnMut(usize) -> Result<DocumentTypeRef<'a>, DataContractError>,
+        mut sub_query_document_type: impl FnMut(usize) -> Result<DocumentTypeRef<'a>, DataContractError>,
     ) -> Result<Vec<Vec<BTreeMap<String, Value>>>, ProtocolError> {
-        let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
-        self.decode_sub_result_removal_kept_values_with_budget(sub_query_document_type, &mut budget)
+        self.sub_result_removals
+            .iter()
+            .enumerate()
+            .map(|(index, removals)| {
+                if removals.is_empty() {
+                    return Ok(Vec::new());
+                }
+                let document_type =
+                    sub_query_document_type(index).map_err(ProtocolError::DataContractError)?;
+                removals
+                    .iter()
+                    .map(|entry| entry.removal.kept_values_with_default_budget(document_type))
+                    .collect()
+            })
+            .collect()
     }
 
     /// Like [`Self::decode_sub_result_removal_kept_values`], charging every

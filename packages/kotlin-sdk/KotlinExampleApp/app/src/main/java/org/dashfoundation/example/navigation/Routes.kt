@@ -105,6 +105,9 @@ import kotlinx.serialization.Serializable
 /** Pick the identity's main DPNS name (← `SelectMainNameView.swift`). */
 @Serializable data class SelectMainName(val identityIdHex: String)
 
+/** Delete or tombstone one owned DPNS name (← `GiveUpNameView.swift`). */
+@Serializable data class GiveUpName(val identityIdHex: String, val name: String)
+
 /** Browse, buy and manage DPNS marketplace names for one wallet identity. */
 @Serializable data class DpnsMarketplace(val identityIdHex: String)
 
@@ -172,6 +175,12 @@ import kotlinx.serialization.Serializable
  * L1 address (← `WithdrawPlatformAddressView.swift`, ADDR-04). Wallet-scoped.
  */
 @Serializable data class WithdrawPlatformAddress(val walletIdHex: String)
+
+/**
+ * Balance change history of a wallet's Platform addresses
+ * (← `PlatformAddressBalanceHistoryView.swift`, ADDR-10). Wallet-scoped.
+ */
+@Serializable data class PlatformBalanceHistory(val walletIdHex: String)
 
 /**
  * Live address-funding progress (← `AddressFundFromAssetLockProgressView.swift`).
@@ -401,6 +410,26 @@ import kotlinx.serialization.Serializable
  */
 @Serializable object AddressQueries
 
+/** Recent address balance changes (← `GetRecentBalanceChangesView`, ADDR-11). */
+@Serializable object AddressRecentBalanceChangesQuery
+
+/** Compacted address balance changes (← `GetCompactedBalanceChangesView`, ADDR-11). */
+@Serializable object AddressCompactedBalanceChangesQuery
+
+/** The address tree's trunk state (← `GetTrunkStateView`, ADDR-11). */
+@Serializable object AddressTrunkStateQuery
+
+/**
+ * One branch of the address tree (← `GetBranchStateView`, ADDR-11). Empty fields by
+ * default; the trunk screen's "Query this branch" fills them from a leaf boundary.
+ */
+@Serializable data class AddressBranchStateQuery(
+    val keyHex: String = "",
+    val expectedHashHex: String = "",
+    val checkpointHeight: String = "",
+    val depth: String = "",
+)
+
 /** DAPI address ban list (← `BannedAddressesView.swift`). */
 @Serializable object BannedAddresses
 
@@ -453,6 +482,12 @@ import kotlinx.serialization.Serializable
  * `groups` map.
  */
 @Serializable data class GroupDetail(val contractIdHex: String, val position: Int)
+
+/**
+ * The entries of a private document type the device's wallets can open (protocol version 15,
+ * ← `PrivateDocumentEntriesView.swift`). Reached from a private type's detail screen.
+ */
+@Serializable data class PrivateDocumentEntries(val contractIdHex: String, val typeName: String)
 
 /** Query test-runner + environment snapshot (← `DiagnosticsView.swift`). */
 @Serializable object Diagnostics

@@ -289,6 +289,228 @@ extension ManagedPlatformWallet {
     }
 }
 
+// MARK: - Creating an entry (protocol version 15)
+//
+// `PlatformWalletManager.createPrivateDocumentEntry` seals one entry of any
+// private type from one of a wallet's identities to a key of any identity,
+// in Rust and inside the Keychain mnemonic resolver, and appends it paying
+// from a shielded account. Which sender key, which recipient keys qualify,
+// the schema check, the fee and the outcome are Rust's; this file only
+// marshals.
+
+/// How a created entry tells its recipient who wrote it. A signed entry is
+/// not offered: which keys may sign for a private type is not decided.
+public enum PrivateDocumentSenderAuth: UInt8, Sendable, Equatable, CaseIterable {
+    /// The entry names no sender.
+    case anonymous = 0
+    /// The entry names the sender's identity and encryption key, with a MAC
+    /// only the sender and the recipient can make.
+    case deniableMac = 1
+}
+
+/// A key of an identity an entry of a private document type may be sealed
+/// to, as Rust decides it (an enabled ECDSA_SECP256K1 DECRYPTION or
+/// ENCRYPTION key).
+public struct PrivateDocumentRecipientKey: Sendable, Equatable, Hashable {
+    /// The key's id.
+    public let keyId: UInt32
+    /// Its purpose as dpp numbers it: 1 ENCRYPTION, 2 DECRYPTION.
+    public let purpose: UInt8
+
+    /// The purpose's name, for display.
+    public var purposeName: String {
+        switch purpose {
+        case 1: return "Encryption"
+        case 2: return "Decryption"
+        default: return "Purpose \(purpose)"
+        }
+    }
+}
+
+/// What a created entry is known by.
+public struct PrivateDocumentEntryCreated: Sendable, Equatable {
+    /// The entry's commitment, 32 bytes: a read of the store reports the
+    /// entry with it (`PrivateDocumentEntry.commitment`).
+    public let commitment: Data
+    /// The sender's key the entry was sealed with: its outgoing viewing key
+    /// recovers the entry, and a deniable MAC names it.
+    public let senderKeyId: UInt32
+}
+
+extension PlatformWalletManager {
+    /// The keys of `identityId`, as the network proves the identity now,
+    /// that an entry of any private document type may be sealed to, by key
+    /// id. An identity with no such key gives none.
+    ///
+    /// Throws `PlatformWalletError.identityNotFound` when the network holds
+    /// no such identity.
+    public func privateDocumentRecipientKeys(
+        identityId: Identifier
+    ) async throws -> [PrivateDocumentRecipientKey] {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle("PlatformWalletManager not configured")
+        }
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("identityId must be exactly 32 bytes")
+        }
+        try admitNativeOp("privateDocumentRecipientKeys")
+        defer { finishNativeOp() }
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) {
+            () -> [PrivateDocumentRecipientKey] in
+            var keys = PrivateDocumentRecipientKeysFFI()
+            let result = identityId.withFFIBytes { idPtr in
+                platform_wallet_manager_private_document_recipient_keys(handle, idPtr, &keys)
+            }
+            defer { platform_wallet_private_document_recipient_keys_free(&keys) }
+            try result.check()
+            guard let pointer = keys.keys, keys.count > 0 else { return [] }
+            return UnsafeBufferPointer(start: pointer, count: Int(keys.count)).map {
+                PrivateDocumentRecipientKey(keyId: $0.key_id, purpose: $0.purpose)
+            }
+        }.value
+    }
+
+    /// The fee, in credits, a create of `entryCount` entries of the private
+    /// type `documentTypeName` of `contractId` reserves from the notes when
+    /// it spends one or two of them, computed in Rust at the network's
+    /// protocol version with the type's entry size: the least the spend
+    /// pays.
+    ///
+    /// Throws `PlatformWalletError.invalidParameter` for a type that is not
+    /// private or an entry count one create cannot append, and
+    /// `.protocolVersionNotActive` below protocol version 15.
+    public func privateDocumentCreateFee(
+        contractId: Identifier,
+        documentTypeName: String,
+        entryCount: UInt32 = 1
+    ) async throws -> UInt64 {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle("PlatformWalletManager not configured")
+        }
+        guard contractId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("contractId must be exactly 32 bytes")
+        }
+        guard !documentTypeName.utf8.contains(0) else {
+            throw PlatformWalletError.invalidParameter(
+                "documentTypeName contains an embedded NUL byte")
+        }
+        try admitNativeOp("privateDocumentCreateFee")
+        defer { finishNativeOp() }
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
+            var fee: UInt64 = 0
+            try contractId.withFFIBytes { contractPtr in
+                try documentTypeName.withCString { namePtr in
+                    try platform_wallet_manager_private_document_create_fee(
+                        handle,
+                        contractPtr,
+                        namePtr,
+                        entryCount,
+                        &fee
+                    ).check()
+                }
+            }
+            return fee
+        }.value
+    }
+
+    /// Create one entry of the private type `documentTypeName` of
+    /// `contractId` from the wallet's identity `senderIdentityId` to the key
+    /// `recipientKeyId` of `recipientIdentityId` (one of
+    /// `privateDocumentRecipientKeys`), paying for it from `account`'s
+    /// shielded notes: nothing on chain names either identity.
+    ///
+    /// `propertiesJSON` is the entry's properties as a document create takes
+    /// them (byte arrays as hex, identifiers as base58); Rust checks them
+    /// against the type's schema. The entry is sealed with the sender's
+    /// encryption key inside `resolver`, which also supplies the Orchard
+    /// spend authority, so `readPrivateDocumentEntries` on the sender's
+    /// wallet recovers it as sent.
+    ///
+    /// Throws `PlatformWalletError.invalidParameter` or `.identityNotFound`
+    /// with Rust's reason for what is refused before anything is paid (a
+    /// sender without an encryption key, a recipient key an entry cannot be
+    /// sealed to, properties the schema refuses), `.protocolVersionNotActive`
+    /// below protocol version 15, and `.shieldedSpendUnconfirmed` once the
+    /// entry may already be in the store: do not create it again.
+    public func createPrivateDocumentEntry(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32 = 0,
+        contractId: Identifier,
+        documentTypeName: String,
+        senderIdentityId: Identifier,
+        recipientIdentityId: Identifier,
+        recipientKeyId: UInt32,
+        auth: PrivateDocumentSenderAuth,
+        propertiesJSON: String
+    ) async throws -> PrivateDocumentEntryCreated {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle("PlatformWalletManager not configured")
+        }
+        for (name, id) in [
+            ("walletId", walletId),
+            ("contractId", contractId),
+            ("senderIdentityId", senderIdentityId),
+            ("recipientIdentityId", recipientIdentityId),
+        ] where id.count != 32 {
+            throw PlatformWalletError.invalidParameter("\(name) must be exactly 32 bytes")
+        }
+        // `withCString` would hand Rust only the part before a NUL.
+        guard !documentTypeName.utf8.contains(0), !propertiesJSON.utf8.contains(0) else {
+            throw PlatformWalletError.invalidParameter(
+                "documentTypeName or propertiesJSON contains an embedded NUL byte")
+        }
+        guard let resolverHandle = resolver.handle else {
+            throw PlatformWalletError.invalidParameter("MnemonicResolver has no handle")
+        }
+        // Counted as the other native manager operations are, so a teardown
+        // waits for this call to return before it frees the manager.
+        try admitNativeOp("createPrivateDocumentEntry")
+        defer { finishNativeOp() }
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) {
+            () -> PrivateDocumentEntryCreated in
+            var created = PrivateDocumentEntryCreatedFFI()
+            // Guaranteed resolver keepalive across the FFI call, whose
+            // vtable callback fires during it.
+            try withExtendedLifetime(resolver) {
+                try walletId.withFFIBytes { walletPtr in
+                    try contractId.withFFIBytes { contractPtr in
+                        try senderIdentityId.withFFIBytes { senderPtr in
+                            try recipientIdentityId.withFFIBytes { recipientPtr in
+                                try documentTypeName.withCString { namePtr in
+                                    try propertiesJSON.withCString { propertiesPtr in
+                                        try platform_wallet_manager_create_private_document_entry(
+                                            handle,
+                                            walletPtr,
+                                            resolverHandle,
+                                            account,
+                                            contractPtr,
+                                            namePtr,
+                                            senderPtr,
+                                            recipientPtr,
+                                            recipientKeyId,
+                                            auth.rawValue,
+                                            propertiesPtr,
+                                            &created
+                                        ).check()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return PrivateDocumentEntryCreated(
+                commitment: withUnsafeBytes(of: created.commitment) { Data($0) },
+                senderKeyId: created.sender_key_id
+            )
+        }.value
+    }
+}
+
 /// `body` with a pointer to `value`, or with nil when it is nil.
 private func withOptionalPointer<T, R>(
     to value: T?,

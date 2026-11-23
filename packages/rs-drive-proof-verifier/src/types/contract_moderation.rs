@@ -39,9 +39,7 @@ pub use dpp::data_contract::config::moderation::{
     ContractWarning,
 };
 pub use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
-use dpp::data_contract::document_type::{
-    DecodedValueBudget, DocumentTypeRef, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
-};
+use dpp::data_contract::document_type::{DecodedValueBudget, DocumentTypeRef};
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
@@ -115,14 +113,16 @@ impl ContractDocumentRemovals {
     }
 
     /// Decodes the kept field values of every removal record in this page under
-    /// `document_type`, sharing [`DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET`]
-    /// across the whole page.
+    /// `document_type`, enforcing a decoded-value budget proportional to each
+    /// removal record's encoded `kept_fields` length.
     pub fn decode_kept_values(
         &self,
         document_type: DocumentTypeRef,
     ) -> Result<Vec<BTreeMap<String, Value>>, ProtocolError> {
-        let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
-        self.decode_kept_values_with_budget(document_type, &mut budget)
+        self.0
+            .iter()
+            .map(|entry| entry.removal.kept_values_with_default_budget(document_type))
+            .collect()
     }
 
     /// Decodes the kept field values of every removal record in this page under

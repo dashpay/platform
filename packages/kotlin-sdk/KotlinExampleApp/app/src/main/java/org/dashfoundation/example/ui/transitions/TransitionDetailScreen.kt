@@ -66,6 +66,7 @@ import org.dashfoundation.example.ui.components.AccessiblePicker
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.SubmitButton
 import org.dashfoundation.example.ui.contracts.ParsedContract
+import org.dashfoundation.example.ui.contracts.isPrivateDocumentType
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.toHex
 import org.dashfoundation.example.util.truncateMiddle
@@ -609,7 +610,11 @@ private fun TransitionInputField(
         TransitionInputType.DOCUMENT_TYPE_PICKER -> {
             val typeNames = remember(contracts, selectedContractIdHex) {
                 contracts.firstOrNull { it.id.toHex() == selectedContractIdHex }
-                    ?.let { ParsedContract.from(it)?.documentTypes?.keys?.sorted() }
+                    // A private type takes no ordinary document (protocol version 15)
+                    ?.let { contract ->
+                        ParsedContract.from(contract)?.documentTypes
+                            ?.filterValues { !isPrivateDocumentType(it) }?.keys?.sorted()
+                    }
                     .orEmpty()
             }
             if (typeNames.isEmpty()) {

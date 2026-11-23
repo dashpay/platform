@@ -68,8 +68,8 @@ struct DocumentTypeDetailsView: View {
     }
 
     /// Protocol version 15: a private type's store holds encrypted entries,
-    /// not documents. What that means, and the way to read the entries this
-    /// app's wallets can open.
+    /// not documents. What that means, the way to read the entries this
+    /// app's wallets can open, and the way to create one.
     @ViewBuilder
     private var privateTypeSection: some View {
         Section {
@@ -98,6 +98,13 @@ struct DocumentTypeDetailsView: View {
                 Label("Read Entries", systemImage: "envelope.open")
             }
             .accessibilityIdentifier("documentType.privateEntriesLink")
+
+            NavigationLink {
+                privateDocumentEntryCreateDestination
+            } label: {
+                Label("Create Entry", systemImage: "square.and.pencil")
+            }
+            .accessibilityIdentifier("documentType.privateEntryCreateLink")
         } header: {
             Text("Private")
         }
@@ -120,6 +127,25 @@ struct DocumentTypeDetailsView: View {
             entries.environment(\.modelContext, deviceContext)
         } else {
             entries
+        }
+    }
+
+    /// The create screen, on the device's model context for the same reason
+    /// as `privateDocumentEntriesDestination`. The type goes along for its
+    /// schema only, to build the property form.
+    @ViewBuilder
+    private var privateDocumentEntryCreateDestination: some View {
+        let create = PrivateDocumentEntryCreateView(
+            documentType: documentType,
+            contractId: documentType.contractId,
+            documentTypeName: documentType.name
+        )
+        .environmentObject(appState)
+        .environmentObject(walletManager)
+        if let deviceContext = appState.deviceModelContext {
+            create.environment(\.modelContext, deviceContext)
+        } else {
+            create
         }
     }
 

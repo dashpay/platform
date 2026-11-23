@@ -3,8 +3,10 @@ package org.dashfoundation.dashsdk
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.Dispatchers
+import org.dashfoundation.dashsdk.ffi.AddressHistoryNative
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.DashpayNative
+import org.dashfoundation.dashsdk.ffi.DpnsGiveUpNative
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
@@ -31,6 +33,35 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class FfiSmokeTest {
+
+    /**
+     * The DPNS give-up exports bind with the descriptors
+     * `DpnsGiveUpNative` declares: bad input is refused at the JNI boundary
+     * (code 1), an unknown wallet handle is not found by Rust, and the pure
+     * main-name rule answers without a wallet.
+     */
+    @Test
+    fun dpnsGiveUpSymbolsBindAndRejectInvalidInput() {
+        NativeLoader.ensureLoaded()
+        val shortId = assertThrows(DashSDKException::class.java) {
+            DpnsGiveUpNative.choices(0L, ByteArray(31), "alice7")
+        }
+        assertEquals(1, shortId.code)
+        assertThrows(DashSDKException::class.java) {
+            DpnsGiveUpNative.choices(0L, ByteArray(32), "alice7")
+        }
+        val badMethod = assertThrows(DashSDKException::class.java) {
+            DpnsGiveUpNative.giveUp(0L, ByteArray(32), "alice7", ByteArray(32), 256, 1L)
+        }
+        assertEquals(1, badMethod.code)
+        val noSigner = assertThrows(DashSDKException::class.java) {
+            DpnsGiveUpNative.giveUp(0L, ByteArray(32), "alice7", ByteArray(32), 0, 0L)
+        }
+        assertEquals(1, noSigner.code)
+        assertTrue(DpnsGiveUpNative.clearsMainName("alice7.dash", "Alice7"))
+        assertFalse(DpnsGiveUpNative.clearsMainName("Keeper77", "Alice7"))
+        assertFalse(DpnsGiveUpNative.clearsMainName(null, "Alice7"))
+    }
 
     @Test
     fun documentEraseAndObserveBindsAndRejectsInvalidInput() {
@@ -208,6 +239,48 @@ class FfiSmokeTest {
         NativeLoader.ensureLoaded()
         assertThrows(DashSDKException::class.java) {
             WalletManagerNative.syncFaultDetected(0L)
+        }
+    }
+
+    /**
+     * The six `AddressHistoryNative` exports bind with their descriptors and their arguments
+     * arrive in order, without touching the network: a negative height or count is refused in
+     * the JNI layer (code 1); a wallet handle Rust does not know reaches
+     * `platform_wallet_get_platform` and comes back as a platform-wallet code; a null SDK
+     * handle reaches each rs-sdk-ffi query, which refuses it (`InvalidParameter`, 1); a
+     * 31-byte expected hash is refused before the query; and the branch depth comes from Rust
+     * (0 for a null handle, within the platform version's 6..9 for a live one).
+     */
+    @Test
+    fun addressHistorySymbolsBindAndRejectInvalidInput() {
+        NativeLoader.ensureLoaded()
+        fun code(block: () -> Unit): Int = assertThrows(DashSDKException::class.java) { block() }.code
+
+        assertEquals(1, code { AddressHistoryNative.balanceHistory(1L, false, -1L) })
+        assertTrue(code { AddressHistoryNative.balanceHistory(Long.MAX_VALUE, true, 0L) } >= 1000)
+        assertEquals(1, code { AddressHistoryNative.recentBalanceChanges(0L, 0L) })
+        assertEquals(1, code { AddressHistoryNative.recentBalanceChanges(1L, -1L) })
+        assertEquals(1, code { AddressHistoryNative.compactedBalanceChanges(0L, 0L) })
+        assertEquals(1, code { AddressHistoryNative.trunkState(0L) })
+        assertEquals(1, code { AddressHistoryNative.branchState(0L, byteArrayOf(1), 6, ByteArray(31), 1L) })
+        assertEquals(1, code { AddressHistoryNative.branchState(0L, byteArrayOf(1), 6, ByteArray(32), 1L) })
+        assertEquals(0, AddressHistoryNative.branchQueryDepth(0L, 0L))
+
+        val sdk = SdkNative.createTrusted(
+            network = 1,
+            dapiAddresses = null,
+            quorumUrl = null,
+            skipAssetLockProofVerification = false,
+            requestRetryCount = 3,
+            requestTimeoutMs = 30_000,
+            platformVersion = 0,
+        )
+        try {
+            val depth = AddressHistoryNative.branchQueryDepth(sdk, 0L)
+            assertTrue("depth $depth", depth in 6..9)
+            assertTrue(AddressHistoryNative.branchQueryDepth(sdk, 1_000_000L) >= depth)
+        } finally {
+            SdkNative.destroy(sdk)
         }
     }
 
