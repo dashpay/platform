@@ -193,8 +193,8 @@ class MasternodeVotingKeyStoreTest {
         assertTrue(storage.hasPrivateKey(identifierOfKey(1)))
         assertTrue(storage.hasPrivateKey(identifierOfKey(2)))
 
-        // Still pending in this process: kept.
-        assertTrue(assigning.removeStaleEntries(db, identityId))
+        // Still pending in this process: kept, and the cleanup reports it incomplete.
+        assertFalse(assigning.removeStaleEntries(db, identityId))
         assertTrue(storage.hasPrivateKey(identifierOfKey(1)))
         assertTrue(storage.hasPrivateKey(identifierOfKey(2)))
 
@@ -249,7 +249,8 @@ class MasternodeVotingKeyStoreTest {
                 assigning.removeStaleEntries(walDb, identityId).also { cleanedUp.complete(it) }
             }
             withTimeout(20_000) { writer.await() }
-            assertTrue(withTimeout(10_000) { cleanup.await() })
+            // B had to stay while pending: the cleanup reports it incomplete.
+            assertFalse(withTimeout(10_000) { cleanup.await() })
             // The cleanup ran against the committed row, before the commit.
             assertTrue("the cleanup did not run inside the open transaction", cleanupFinishedInsideTransaction)
 
@@ -265,6 +266,53 @@ class MasternodeVotingKeyStoreTest {
             walDb.close()
             context.deleteDatabase(name)
         }
+    }
+
+    /**
+     * S2: A then B assigned and committed before any sweep. B's assignment saw A on the row,
+     * so A is no longer pending: the first sweep removes it and reports a complete cleanup.
+     */
+    @Test
+    fun shouldSweepAKeyReplacedBeforeItsFirstCleanup() = runBlocking<Unit> {
+        insertRow(votingIdentifier = null)
+        assertEquals(
+            VotingKeyAssignment.Assigned(identifierOfKey(1)),
+            assigning.assignToIdentity(db, identityId, testnet, keyWithAddress(1), null),
+        )
+        assertEquals(
+            VotingKeyAssignment.Assigned(identifierOfKey(2)),
+            assigning.assignToIdentity(db, identityId, testnet, keyWithAddress(2), identifierOfKey(1)),
+        )
+
+        assertTrue(assigning.removeStaleEntries(db, identityId))
+        assertFalse(storage.hasPrivateKey(identifierOfKey(1)))
+        assertTrue(storage.hasPrivateKey(identifierOfKey(2)))
+    }
+
+    /**
+     * S1: a same-key re-entry whose row moves network between the check and the update. The
+     * update misses, but the row still names the entry the re-entry rewrote, so it stays.
+     */
+    @Test
+    fun shouldKeepARewrittenEntryTheRowStillNamesAfterANetworkChange() = runBlocking<Unit> {
+        insertRow(votingIdentifier = identifierOfKey(1))
+        storage.storePrivateKey(identifierOfKey(1), keyWithAddress(1))
+        // Moves the row to another network while key 1 is being rewritten, keeping its key.
+        val moving = MasternodeVotingKeyStore.forTesting(storage) { key ->
+            runBlocking {
+                val row = db.identityDao().getByIdentityId(identityId)!!
+                db.identityDao().upsert(row.copy(networkRaw = 0))
+            }
+            key.copyOf(20)
+        }
+
+        val assignment = moving.assignToIdentity(
+            db, identityId, testnet, keyWithAddress(1), expectedIdentifier = identifierOfKey(1),
+        )
+
+        assertEquals(VotingKeyAssignment.Changed(null), assignment)
+        assertEquals(identifierOfKey(1), db.identityDao().getByIdentityId(identityId)?.votingPrivateKeyIdentifier)
+        assertTrue("the entry the row still names was deleted", storage.hasPrivateKey(identifierOfKey(1)))
     }
 
     /** A row recreated on another network is not this load's: nothing is written. */
