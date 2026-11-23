@@ -215,6 +215,12 @@ npm install
 > Use `npm`, not `yarn`, here: `qa-contract` is intentionally *not* a member of
 > the repo's Yarn workspaces, and Yarn 4 aborts when run from a non-member dir.
 > (Option B builds the workspace SDK instead and needs no install in this dir.)
+>
+> The published SDK knows the protocol versions of its release. On a network
+> that runs a later one (a devnet or a local network built from a development
+> branch), use Option B: `register.mjs` refuses to publish when the network is
+> ahead of the SDK, because the registration could land while the SDK fails to
+> read the proof that confirms it.
 
 **Option B — in-repo (workspace build):** build the workspace SDK once and point
 the scripts at the bundle (no `yarn install` in this dir needed):
@@ -298,6 +304,39 @@ Re-running `register.mjs` while the committed contract still resolves is a no-op
 exist, so both scripts are safe to run repeatedly. Commit the updated
 `contract-id.testnet.json` after a re-register so consumers (the website) pick up
 the new ID.
+
+## Moving to a new contract
+
+A schema change that a contract update cannot carry (see [Contract ID](#contract-id))
+needs a new contract. Until its id is committed, `contract-id.<network>.json`
+still names the previous contract, and `submit-run.mjs`, `admin.mjs`, the
+`query.mjs` self-check and its `admin` and `testRun` reads refuse to run against
+it: they compare the schema hash saved at registration with the committed
+schema. The contract owner moves over in this order:
+
+```sh
+# 1. Publish the committed schema as a new contract. Writes the new id to
+#    contract-id.<network>.json and lists the owner as the first admin.
+node src/register.mjs --force
+
+# 2. Seed the lookups and the testCases, once per app
+node src/seed.mjs
+node src/seed.mjs --app KotlinExampleApp
+
+# 3. List everyone else who records runs
+node src/admin.mjs add <identityId> --label "..."
+
+# 4. Copy the previous contract's runs, once per app (they get a new $createdAt)
+node src/migrate-runs.mjs --dry-run
+node src/migrate-runs.mjs
+node src/migrate-runs.mjs --app KotlinExampleApp
+
+# 5. Check every index, then commit contract-id.<network>.json
+node src/query.mjs
+```
+
+Consumers (the website) re-pin to the new id from the committed file. The
+previous contract stays readable; nothing is deleted from it.
 
 ## How it maps to the test plan
 

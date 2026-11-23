@@ -175,7 +175,8 @@ export async function loadOwnerAuth(sdk, mod, network) {
 
 // The `admin` document naming `identityId`, or undefined. testRun.ownerRefersTo
 // reads the same unique index (`byIdentity`), so an identity with a document
-// here is one the platform lets record runs.
+// here is one the platform lets record runs. An identifier is compared by its
+// base58 string, as in any query on an identifier property.
 export async function findAdmin(sdk, contractId, identityId) {
   const res = await sdk.documents.query({
     dataContractId: contractId,
@@ -230,4 +231,43 @@ export function writeConfig(cfg, network = getNetwork()) {
   const p = configPath(network);
   writeFileSync(p, `${JSON.stringify(cfg, null, 2)}\n`);
   return p;
+}
+
+// Refuse to run against a contract registered with another schema. A contract
+// keeps the schema it was registered with, so after a schema change the
+// contract-id file still names the old contract until register.mjs --force
+// publishes the new one. Scripts that read or write the changed types (admin,
+// testRun) would otherwise fail with an unknown type or a missing index.
+export function requireCurrentSchema(cfg, network = getNetwork()) {
+  const current = schemaSha();
+  if (cfg?.schemaSha && cfg.schemaSha !== current) {
+    throw new Error(
+      `Contract ${cfg.contractId} on ${network} was registered with schema ${cfg.schemaSha}, `
+      + `but this checkout's schema is ${current}. The contract owner has to publish the new one `
+      + '(node src/register.mjs --force, then seed.mjs, admin.mjs add and migrate-runs.mjs; see '
+      + '"Moving to a new contract" in the README) and commit the new contract-id file. '
+      + 'To keep using the old contract, check out the commit its schema came from.',
+    );
+  }
+}
+
+// Refuse to write to a network that runs a protocol version this SDK build does
+// not know. The write itself can land while the SDK fails to read the proof that
+// confirms it, which for a registration means credits spent and no contract id
+// saved. Returns the network's protocol version.
+export async function requireKnownProtocolVersion(sdk, mod, network = getNetwork()) {
+  const state = await sdk.protocol.versionUpgradeState();
+  const current = Number((state?.toJSON?.() ?? state)?.currentProtocolVersion);
+  const known = Number(await mod.EvoSDK.getLatestVersionNumber());
+  if (!Number.isInteger(current) || !Number.isInteger(known)) {
+    throw new Error(`Could not compare the protocol version of ${network} (${current}) with the SDK's (${known}).`);
+  }
+  if (current > known) {
+    throw new Error(
+      `${network} runs protocol version ${current}, but this SDK build knows versions up to ${known}. `
+      + 'Use an SDK built for that version: set EVO_SDK_BUNDLE to a workspace build '
+      + '(see "Install & run" in the README).',
+    );
+  }
+  return current;
 }

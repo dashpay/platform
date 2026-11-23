@@ -14,7 +14,7 @@
 import { parseArgs } from 'node:util';
 import { randomBytes } from 'node:crypto';
 import {
-  loadDotEnv, connect, loadOwnerAuth, readConfig, networkId, findAdmin,
+  loadDotEnv, connect, loadOwnerAuth, readConfig, networkId, findAdmin, requireCurrentSchema,
 } from './sdk.mjs';
 import { appCode, DEFAULT_APP } from './codes.mjs';
 
@@ -56,16 +56,19 @@ async function main() {
   const { sdk, mod, network } = await connect();
   const cfg = readConfig(network);
   if (!cfg?.contractId) throw new Error(`No contract registered for ${network}. Run register.mjs first.`);
+  requireCurrentSchema(cfg, network);
   const contractId = cfg.contractId;
 
   const { ownerId, signer, identityKey } = await loadOwnerAuth(sdk, mod, network);
 
   // The platform accepts a run only from an identity the contract owner listed
   // (testRun.ownerRefersTo). Say so here rather than let the create be refused
-  // with a reference error.
+  // with a reference error, which would also cost the writer its fee. The read
+  // can be a block behind, so a listing made seconds ago may not show yet.
   if (!await findAdmin(sdk, contractId, ownerId)) {
-    throw new Error(`${ownerId} is not an admin of ${contractId} on ${network}, so it cannot record runs. `
-      + `Ask the contract owner (${cfg.ownerId ?? 'see contract-id file'}) to run: node src/admin.mjs add ${ownerId}`);
+    throw new Error(`${ownerId} is not listed as an admin of ${contractId} on ${network}, so it cannot record runs. `
+      + `Ask the contract owner (${cfg.ownerId ?? 'see contract-id file'}) to run: node src/admin.mjs add ${ownerId}. `
+      + 'If it was listed a moment ago, run this again in a few seconds.');
   }
 
   // testRun is immutable + non-deletable, so a typo'd testId would create a

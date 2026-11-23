@@ -15,7 +15,7 @@
 
 import { parseArgs } from 'node:util';
 import {
-  loadDotEnv, connect, loadOwnerAuth, readConfig, findAdmin, addAdmin,
+  loadDotEnv, connect, loadOwnerAuth, readConfig, findAdmin, addAdmin, requireCurrentSchema,
 } from './sdk.mjs';
 
 const PAGE = 100;
@@ -63,6 +63,7 @@ async function main() {
   const { sdk, mod, network } = await connect();
   const cfg = readConfig(network);
   if (!cfg?.contractId) throw new Error(`No contract registered for ${network}. Run register.mjs first.`);
+  requireCurrentSchema(cfg, network);
   const contractId = cfg.contractId;
 
   if (command === 'list') {

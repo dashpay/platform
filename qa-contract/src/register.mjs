@@ -11,7 +11,7 @@
 import { parseArgs } from 'node:util';
 import {
   loadDotEnv, connect, loadOwnerAuth, loadSchema, schemaSha,
-  readConfig, writeConfig, addAdmin,
+  readConfig, writeConfig, addAdmin, findAdmin, requireKnownProtocolVersion,
 } from './sdk.mjs';
 import { resolvePlanCommit } from './parse-test-plan.mjs';
 
@@ -47,11 +47,24 @@ async function main() {
       }
       console.log(`Already registered: ${existing.contractId} (still resolves on ${network}).`);
       console.log('Pass --force to register a fresh contract.');
+      // A registration that stopped between saving the id and listing the owner
+      // leaves the owner unable to record runs. Report it; the owner may also
+      // have removed itself on purpose, so do not list it again here.
+      if (existing.schemaSha === currentSchemaSha && existing.ownerId
+        && !await findAdmin(sdk, existing.contractId, existing.ownerId)) {
+        console.error(`\n⚠️  The owner ${existing.ownerId} is not on the admin list, so it cannot record runs.`);
+        console.error(`   To list it: node src/admin.mjs add ${existing.ownerId} --label "contract owner"`);
+      }
       return;
     }
     console.log(`Config has ${existing.contractId} but it no longer resolves on ${network} `
       + '(testnet reset?). Registering a fresh contract.');
   }
+
+  // Registering is paid for once and cannot be repeated for free, so make sure
+  // this SDK build can read the proof that confirms it before broadcasting.
+  const protocolVersion = await requireKnownProtocolVersion(sdk, mod, network);
+  console.log(`${network} runs protocol version ${protocolVersion}.`);
 
   const { ownerId, identity, signer, identityKey } = await loadOwnerAuth(sdk, mod, network);
   console.log(`Owner identity ${ownerId} (balance ${identity.balance} credits, `

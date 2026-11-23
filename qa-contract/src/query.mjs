@@ -18,7 +18,9 @@
 // scope to an app + a testId whoever recorded them; --recordedBy narrows to one.
 
 import { parseArgs } from 'node:util';
-import { loadDotEnv, connect, readConfig, networkId } from './sdk.mjs';
+import {
+  loadDotEnv, connect, readConfig, networkId, requireCurrentSchema,
+} from './sdk.mjs';
 import {
   appCode, tierCode, categoryCode, DEFAULT_APP,
   APP_BY_CODE, TIER_BY_CODE, CATEGORY_BY_CODE,
@@ -127,6 +129,11 @@ async function main() {
   const app = appCode(values.app || DEFAULT_APP);
   console.log(`Connected to ${network}. Contract ${contractId}${values.proof ? ' (proof-verified)' : ''}.`);
 
+  // The self-check and the admin and testRun reads depend on the committed
+  // schema's types and indices; the lookups and testCase read the same on the
+  // previous contract.
+  if (!values.type || ['admin', 'testRun'].includes(values.type)) requireCurrentSchema(cfg, network);
+
   if (!values.type) { await selfCheck(sdk, contractId, ownerId, app, netId, limit, values.proof); return; }
 
   const where = []; const orderBy = [];
@@ -149,9 +156,12 @@ async function main() {
     // or app,testId-led. Reject combinations no index can serve so the failure is
     // a clear CLI error.
     if (values.buildRef || values.recordedBy) {
-      if (values.testId || values.result || values.network || (values.buildRef && values.recordedBy)) {
+      // Neither index holds `app`, and a page filtered afterwards would drop
+      // matching runs past the limit, so an explicit --app is refused too.
+      if (values.app || values.testId || values.result || values.network
+        || (values.buildRef && values.recordedBy)) {
         throw new Error('--buildRef and --recordedBy each use an index of their own; '
-          + 'neither can be combined with the other or with --testId/--result/--network.');
+          + 'neither can be combined with the other or with --app/--testId/--result/--network.');
       }
       if (values.buildRef) where.push(['buildRef', '==', values.buildRef]);
       else where.push(['$ownerId', '==', values.recordedBy]);
