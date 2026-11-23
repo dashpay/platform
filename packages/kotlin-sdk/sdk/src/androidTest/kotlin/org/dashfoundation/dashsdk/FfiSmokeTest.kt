@@ -10,6 +10,7 @@ import org.dashfoundation.dashsdk.ffi.ContractUpdateNative
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.DpnsGiveUpNative
+import org.dashfoundation.dashsdk.ffi.IdentityKeyLimitsNative
 import org.dashfoundation.dashsdk.ffi.IdentityNative
 import org.dashfoundation.dashsdk.ffi.IdentityRemovalNative
 import org.dashfoundation.dashsdk.ffi.IdentityWithdrawalsNative
@@ -338,6 +339,48 @@ class FfiSmokeTest {
             )
         }
         assertEquals(1, badVersion.code)
+    }
+
+    /**
+     * The three `IdentityKeyLimitsNative` exports bind with their descriptors and their
+     * arguments arrive in order, without touching the network: an identity id that is not
+     * 32 bytes, a 0 signer handle and a reviewed preview of the wrong shape are refused in
+     * the JNI layer (code 1); a well-formed call on a wallet handle Rust does not know
+     * reaches its `platform-wallet-ffi` function, which answers `NotFound` (98, shifted by
+     * the platform-wallet offset).
+     */
+    @Test
+    fun identityKeyLimitsSymbolsBindAndRejectInvalidInput() {
+        NativeLoader.ensureLoaded()
+        fun code(block: () -> Unit): Int = assertThrows(DashSDKException::class.java) { block() }.code
+        val id = ByteArray(32) { 7 }
+        val unknownWallet = Long.MAX_VALUE
+
+        assertEquals(1, code {
+            IdentityKeyLimitsNative.previewKeyLimitsUpdate(1L, ByteArray(31), 2, false, 0L, false, 0L, 1L)
+        })
+        assertEquals(1, code {
+            IdentityKeyLimitsNative.previewKeyLimitsUpdate(1L, id, 2, false, 0L, false, 0L, 0L)
+        })
+        assertEquals(1000 + 98, code {
+            IdentityKeyLimitsNative.previewKeyLimitsUpdate(unknownWallet, id, 2, true, -1L, true, 1L, 1L)
+        })
+
+        assertEquals(1, code {
+            IdentityKeyLimitsNative.updateKeyLimitsAsReviewed(1L, id, 2, LongArray(5), 1L)
+        })
+        assertEquals(1, code {
+            IdentityKeyLimitsNative.updateKeyLimitsAsReviewed(1L, id, 2, longArrayOf(0, 1 shl 4, 0, 0, 0, 0), 1L)
+        })
+        assertEquals(1, code {
+            IdentityKeyLimitsNative.updateKeyLimitsAsReviewed(1L, id, 2, LongArray(6), 0L)
+        })
+        assertEquals(1000 + 98, code {
+            IdentityKeyLimitsNative.updateKeyLimitsAsReviewed(unknownWallet, id, 2, LongArray(6), 1L)
+        })
+
+        assertEquals(1, code { IdentityKeyLimitsNative.refreshIdentity(1L, ByteArray(33)) })
+        assertEquals(1000 + 98, code { IdentityKeyLimitsNative.refreshIdentity(unknownWallet, id) })
     }
 
     /**

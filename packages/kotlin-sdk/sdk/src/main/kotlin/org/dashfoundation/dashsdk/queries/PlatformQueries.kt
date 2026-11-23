@@ -55,12 +55,13 @@ class Identities internal constructor(private val sdk: Sdk) {
      * object keyed by key id: `{"5": "1000", "6": null}`. A budgeted key maps to
      * the credits left as a decimal string; a key without a budget, or that the
      * identity does not have, maps to null. Raising a budget with
-     * `IdentityUpdates.updateKeyLimits` raises what is left by the same amount.
+     * `IdentityUpdates.updateKeyLimits` raises what is left by the same amount. Each key id
+     * is the bit pattern of its `u32` id, as Room stores it, so an id past [Int.MAX_VALUE]
+     * is passed as the negative [Int] it is stored as; the answer keys it as the `u32`.
      */
     suspend fun fetchKeysRemainingBudgets(identityId: String, keyIds: List<Int>): String? =
         sdk.queryGate.op {
             require(keyIds.isNotEmpty()) { "keyIds must hold at least one key id" }
-            require(keyIds.all { it >= 0 }) { "every key id must be non-negative, got $keyIds" }
             mapNativeErrors {
                 QueriesNative.identityFetchKeysRemainingBudgets(
                     sdk.handle,

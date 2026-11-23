@@ -8,6 +8,9 @@ mod expand_property_type_shorthands;
 
 mod find_identifier_and_binary_paths;
 
+mod definitions_root;
+pub(crate) use definitions_root::*;
+
 mod member_position_order;
 pub use member_position_order::*;
 
