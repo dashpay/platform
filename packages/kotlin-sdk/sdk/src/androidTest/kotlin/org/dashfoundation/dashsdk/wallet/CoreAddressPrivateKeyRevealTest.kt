@@ -21,7 +21,7 @@ import java.math.BigInteger
 import java.security.MessageDigest
 
 /**
- * End to end through JNI: [ManagedPlatformWallet.coreAddressPrivateKey]
+ * End to end through JNI: [PlatformWalletManager.coreAddressPrivateKey]
  * reveals the key of a receive address the wallet derived, with the mnemonic
  * read through the manager's resolver, and refuses an address the wallet does
  * not track. Offline: the wallet is created from a test mnemonic and nothing
@@ -71,7 +71,7 @@ class CoreAddressPrivateKeyRevealTest {
             assertNotNull("created wallet is addressable", wallet)
             val address = wallet!!.coreWallet().use { it.nextReceiveAddress() }
 
-            val key = wallet.coreAddressPrivateKey(address, manager.mnemonicResolverHandle)
+            val key = manager.coreAddressPrivateKey(created.walletId, address)
             try {
                 val hex = String(key.hex)
                 assertEquals(64, hex.length)
@@ -86,12 +86,23 @@ class CoreAddressPrivateKeyRevealTest {
                 key.clear()
             }
 
-            val refusal = runCatching {
-                wallet.coreAddressPrivateKey(foreignAddress, manager.mnemonicResolverHandle)
+            // Rust owns address validity: a foreign or an empty address comes
+            // back as the SDK's error type, not a Kotlin precheck.
+            for (refused in listOf(foreignAddress, "")) {
+                val refusal = runCatching {
+                    manager.coreAddressPrivateKey(created.walletId, refused)
+                }.exceptionOrNull()
+                assertTrue(
+                    "address '$refused' is refused with a DashSdkError, got: $refusal",
+                    refusal is DashSdkError,
+                )
+            }
+            val unknownWallet = runCatching {
+                manager.coreAddressPrivateKey(ByteArray(32) { 0x7f }, address)
             }.exceptionOrNull()
             assertTrue(
-                "an address the wallet does not track is refused, got: $refusal",
-                refusal is DashSdkError,
+                "a wallet the manager has not loaded is NotFound, got: $unknownWallet",
+                unknownWallet is DashSdkError.NotFound,
             )
         }
     }

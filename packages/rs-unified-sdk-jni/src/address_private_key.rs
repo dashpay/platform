@@ -81,7 +81,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_AddressPrivateKeyNati
         match env.byte_array_from_slice(&blob) {
             Ok(array) => array.into_raw(),
             Err(_) => {
-                let _ = env.exception_clear();
+                // Keeps a pending `OutOfMemoryError` from `NewByteArray`:
+                // `throw_sdk_exception` throws only when none is pending.
                 throw_sdk_exception(env, 99, "address private key allocation failed");
                 ptr::null_mut()
             }

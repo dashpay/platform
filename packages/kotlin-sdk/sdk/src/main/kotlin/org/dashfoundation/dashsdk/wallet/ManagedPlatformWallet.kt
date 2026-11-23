@@ -3,7 +3,6 @@ package org.dashfoundation.dashsdk.wallet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
-import org.dashfoundation.dashsdk.ffi.AddressPrivateKeyNative
 import org.dashfoundation.dashsdk.ffi.AssetLockBuiltBridge
 import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.TokensNative
@@ -574,42 +573,6 @@ class ManagedPlatformWallet internal constructor(
                 core.signMessage(address, message, coreSignerHandle)
             }
         }
-    }
-
-    /**
-     * Reveal the private key of [address], one of this wallet's tracked core
-     * addresses, as hex and WIF. Port of Swift's
-     * `ManagedPlatformWallet.coreAddressPrivateKey(address:)`
-     * (`ManagedPlatformWallet.swift`), bridging
-     * `platform_wallet_address_private_key`.
-     *
-     * Rust finds the address in the wallet's account pools, reads the mnemonic
-     * through the resolver and derives the key; Kotlin only decodes the result.
-     * Which accounts can reveal a key is Rust's answer: an address the wallet
-     * does not track, or a DashPay contact's external address whose key the
-     * wallet never held, throws the platform-wallet error Rust reports.
-     *
-     * Gate this behind device authentication before calling it. The caller
-     * owns the result and should [CoreAddressPrivateKey.clear] it when the key
-     * leaves the screen. If the calling coroutine is cancelled after the native
-     * call returns, the key is cleared here instead of being handed back.
-     *
-     * @param mnemonicResolverHandle the manager's `MnemonicResolverHandle`
-     *   (`PlatformWalletManager.mnemonicResolverHandle`).
-     */
-    suspend fun coreAddressPrivateKey(
-        address: String,
-        mnemonicResolverHandle: Long,
-    ): CoreAddressPrivateKey = gate.opWithCleanupOnCancellation(cleanup = { it.clear() }) {
-        require(address.isNotEmpty()) { "address must not be empty" }
-        val blob = mapNativeErrors {
-            AddressPrivateKeyNative.revealCoreAddressPrivateKey(
-                handle,
-                mnemonicResolverHandle,
-                address,
-            )
-        }
-        CoreAddressPrivateKey.decodeAndWipe(blob)
     }
 
     /**

@@ -6,7 +6,7 @@ package org.dashfoundation.dashsdk.wallet
  * secret (64 characters) and compressed, network-aware WIF. Port of Swift's
  * `ManagedPlatformWallet.CoreAddressPrivateKey`
  * (`ManagedPlatformWallet.swift`), returned by
- * [ManagedPlatformWallet.coreAddressPrivateKey].
+ * [PlatformWalletManager.coreAddressPrivateKey].
  *
  * Held as [CharArray]s so the holder can wipe them with [clear] when it is
  * done. A screen that renders them as `String`s creates copies the JVM cannot

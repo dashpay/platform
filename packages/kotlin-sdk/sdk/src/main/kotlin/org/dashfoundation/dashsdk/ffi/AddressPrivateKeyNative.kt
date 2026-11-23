@@ -6,7 +6,7 @@ package org.dashfoundation.dashsdk.ffi
  * `platform-wallet-ffi` function.
  *
  * Internal: the public API is
- * [org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.coreAddressPrivateKey].
+ * [org.dashfoundation.dashsdk.wallet.PlatformWalletManager.coreAddressPrivateKey].
  * Rust zeroes its copies of the key; the returned array is the caller's to zero.
  */
 internal object AddressPrivateKeyNative {
