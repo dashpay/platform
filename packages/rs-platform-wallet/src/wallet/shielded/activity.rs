@@ -180,6 +180,10 @@ pub struct ShieldedActivityEntry {
     /// real height is unknowable client-side and is modeled as absent
     /// rather than stamped with the discovering batch's proof-anchor
     /// (scan-tip) height, which two devices would disagree on.
+    /// On a `Failed` row it is the height proven reads show its inputs
+    /// were spent by (an identity create proven unable to execute): a
+    /// bound, not an inclusion height, which the operation never had. A
+    /// `Failed` row with a height is final; the scan does not confirm it.
     /// **Canonical sort key** (desc) — see [`sort_activity_for_display`]
     /// for how the `None` bands order.
     pub block_height: Option<u64>,

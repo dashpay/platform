@@ -425,7 +425,7 @@ class DashSdkErrorTest {
     }
 
     @Test
-    fun consumedShieldedIdentityCreateCode77MapsTyped() {
+    fun consumedShieldedIdentityCreateCode81MapsTyped() {
         val detail = "Shielded identity create did not create its identity"
         val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 81, detail)
         val mapped = DashSdkError.fromNative(native)

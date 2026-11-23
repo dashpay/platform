@@ -59,6 +59,7 @@ use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use crate::changeset::merge::Merge;
+use crate::changeset::ShieldedChangeSet;
 
 /// Callback fired once per chunk during a coordinator sync pass —
 /// the **"downloaded"** progress signal.
@@ -1623,10 +1624,18 @@ impl NetworkShieldedCoordinator {
         // indices, AND the scan-detected spends, so split it per
         // WalletId directly — each per-wallet `WalletPersister.store`
         // only sees its own wallet's deltas.
-        let consolidated = notes.changeset.clone();
+        //
+        // The activity rows were written to the store during derivation,
+        // and the redrive passes since ran without its lock: a foreground
+        // writer (a proven failed identity create) may have rewritten one
+        // and queued it meanwhile. Each row goes out as the store holds it
+        // now, under the store's lock, so the host keeps the last write.
+        let mut consolidated = notes.changeset.clone();
         if !Merge::is_empty(&consolidated) {
-            let per_wallet = consolidated.split_by_wallet_id();
             let persisters = self.persisters.read().await;
+            let store = self.store.read().await;
+            refresh_activity_entries(&*store, &mut consolidated);
+            let per_wallet = consolidated.split_by_wallet_id();
             for (wallet_id, cs) in per_wallet {
                 let Some(persister) = persisters.get(&wallet_id) else {
                     tracing::warn!(
@@ -2795,13 +2804,26 @@ fn unchanged<S: ShieldedStore>(
         .is_ok_and(|records| records.contains(record))
 }
 
+/// Replace each activity row in `changeset` with the row `store` holds for it
+/// now: a writer that rewrote it after the changeset was built (and queued its
+/// own write) is not overwritten at the host by the older copy. A row the
+/// store no longer holds, or cannot read, goes out as it was built.
+fn refresh_activity_entries<S: ShieldedStore>(store: &S, changeset: &mut ShieldedChangeSet) {
+    for (id, entries) in changeset.activity_entries.iter_mut() {
+        for entry in entries.iter_mut() {
+            if let Ok(Some(current)) = store.get_activity_by_entry_id(*id, &entry.id) {
+                *entry = current;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::wallet::persister::NoPlatformPersistence;
     use crate::wallet::shielded::keys::OrchardKeySet;
 
-    use crate::changeset::ShieldedChangeSet;
     use crate::wallet::shielded::activity::compute_activity_id;
     use crate::wallet::shielded::store::{
         InMemoryShieldedStore, PendingRedrive, PrivateContactPayment, ShieldedNote,
@@ -3328,6 +3350,99 @@ mod tests {
             reopened.pending_redrives(id).unwrap().is_empty(),
             "clear must survive restart"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A live identity-create row seen by the scan through its outputs, and
+    /// proven failed by the foreground call, ends failed whichever comes
+    /// first. Proof first: the sighting leaves the failed row as it is. Scan
+    /// first: the proven failure rewrites the confirmed row (and queues it),
+    /// and the scan's changeset, persisted after its redrive passes, carries
+    /// the row the store holds by then, so the host's last write is failed.
+    #[tokio::test]
+    async fn should_end_a_proven_failed_create_failed_whichever_comes_first() {
+        let dir = temp_dir("proven_failed_vs_sighting");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let keys = coordinator.accounts.read().await[&id].clone();
+        let subwallets = vec![(id, keys)];
+        let cmx = [0x5C; 32];
+        let pending = crate::wallet::shielded::activity::ShieldedActivityEntry {
+            id: [0xAB; 32],
+            kind: crate::wallet::shielded::activity::ShieldedActivityKind::Shield,
+            direction: crate::wallet::shielded::activity::ShieldedDirection::Out,
+            amount: 1_000,
+            fee: Some(10),
+            counterparty: None,
+            memo: None,
+            block_height: None,
+            status: ShieldedActivityStatus::Pending,
+            created_at_ms: 1,
+            min_note_position: None,
+            note_cmxs: vec![cmx],
+            spent_nullifiers: vec![],
+        };
+        let proven_failed = super::super::activity_recorder::with_status(
+            &pending,
+            ShieldedActivityStatus::Failed,
+            Some(5),
+        );
+        let row = |store: &FileBackedShieldedStore| {
+            store
+                .get_activity_by_entry_id(id, &pending.id)
+                .unwrap()
+                .unwrap()
+        };
+        {
+            let mut store = coordinator.store().write().await;
+            let mut note = test_note([0x01; 32], 0, false);
+            note.cmx = cmx;
+            store.save_note(id, &note).unwrap();
+            // Proof first.
+            store.save_activity(id, &proven_failed).unwrap();
+        }
+        let mut changeset = ShieldedChangeSet::default();
+        coordinator
+            .derive_activity_into_changeset(&subwallets, &mut changeset)
+            .await
+            .unwrap();
+        assert_eq!(
+            row(&*coordinator.store().read().await),
+            proven_failed,
+            "a sighting does not confirm a proven failed row"
+        );
+
+        // Scan first.
+        coordinator
+            .store()
+            .write()
+            .await
+            .save_activity(id, &pending)
+            .unwrap();
+        let mut changeset = ShieldedChangeSet::default();
+        coordinator
+            .derive_activity_into_changeset(&subwallets, &mut changeset)
+            .await
+            .unwrap();
+        assert_eq!(
+            changeset.activity_entries[&id][0].status,
+            ShieldedActivityStatus::Confirmed,
+            "the scan confirmed the row from its outputs"
+        );
+        // The foreground proof lands while the scan's changeset waits.
+        coordinator
+            .store()
+            .write()
+            .await
+            .save_activity(id, &proven_failed)
+            .unwrap();
+        refresh_activity_entries(&*coordinator.store().read().await, &mut changeset);
+        assert_eq!(
+            changeset.activity_entries[&id],
+            vec![proven_failed],
+            "the scan persists the row as the store holds it now"
+        );
+        drop(coordinator);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -363,7 +363,13 @@ async fn record_pending_activity<S: ShieldedStore>(
 /// height between broadcast and the result-wait, and rewriting the stale
 /// capture would erase that scan-learned height. A row the scan already
 /// confirmed WITH a height is chain truth and is left untouched
-/// entirely — nothing the result-wait knows can improve on it.
+/// entirely — nothing the result-wait knows can improve on it — except by a
+/// proven failure (`Failed` with the height proven reads put it at): the scan
+/// confirms a row from a sighting of its outputs, and the paid failure path
+/// of an identity create appends them too, so the proof wins.
+///
+/// The changeset is queued under the same lock as the save, so writers reach
+/// the persister in the order they wrote the store.
 async fn record_activity_status<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
@@ -376,7 +382,8 @@ async fn record_activity_status<S: ShieldedStore>(
     let Some(entry) = entry else {
         return;
     };
-    let next = {
+    let proven_failure = status == ShieldedActivityStatus::Failed && block_height.is_some();
+    {
         let mut store = store.write().await;
         // A read FAILURE is not "no row": falling back to the captured
         // entry on Err would queue exactly the stale overwrite this
@@ -396,7 +403,10 @@ async fn record_activity_status<S: ShieldedStore>(
             }
         };
         let base = stored.as_ref().unwrap_or(entry);
-        if base.status == ShieldedActivityStatus::Confirmed && base.block_height.is_some() {
+        if base.status == ShieldedActivityStatus::Confirmed
+            && base.block_height.is_some()
+            && !proven_failure
+        {
             return;
         }
         // `with_status` keeps `base.block_height` when `block_height` is
@@ -409,9 +419,8 @@ async fn record_activity_status<S: ShieldedStore>(
                 "live activity status flip: in-memory save_activity failed; persister still queued"
             );
         }
-        next
-    };
-    queue_shielded_changeset(persister, wallet_id, changeset_for_entry(id, next));
+        queue_shielded_changeset(persister, wallet_id, changeset_for_entry(id, next));
+    }
 }
 
 /// Flip the activity row identified by `entry_id` (if present) to
@@ -3085,9 +3094,10 @@ const IDENTITY_CREATE_OPERATION: &str = "identity create from shielded pool";
 ///     paid failure path and this wallet's notes spent by
 ///     another transition (another device with the same keys) read the same.
 ///
-/// Every read after the broadcast names the transition (its nullifiers, its identity id), so
-/// with a node known to hold it each goes only to that node, through an SDK scoped to it. With
-/// none known, the create is never probed: it stays unconfirmed.
+/// Every read after the broadcast names the transition (its hash, its nullifiers, its identity
+/// id), so with a node known to hold it each goes only to that node, through an SDK scoped to it.
+/// With none known (a dispatch that timed out, or went through the shared SDK), nothing is read
+/// about it: it is reported unconfirmed at once, and the sync-time pass resolves it.
 ///
 /// Nothing here reports a failed create once a dispatch may have reached a node, unless proven
 /// reads show it can no longer execute: a create reported failed while it may still execute is
@@ -3128,7 +3138,7 @@ async fn broadcast_identity_create(
 
 /// Wait for the result of the identity create `st`, broadcast and possibly delivered
 /// ([`broadcast_identity_create`]). `endpoint` is the node known to hold it, if any: every read
-/// goes only there, and only with one known is a create whose identity is not found probed.
+/// goes only there. With none known, nothing is read and the create is unconfirmed.
 async fn await_identity_create(
     sdk: &Arc<dash_sdk::Sdk>,
     endpoint: Option<&dash_sdk::sdk::Address>,
@@ -3142,12 +3152,21 @@ async fn await_identity_create(
             reason,
         })
     };
+    // Each read names the transition, so another node must not see it: with no node known to
+    // hold it, none is made.
+    let Some(endpoint) = endpoint else {
+        warn!(
+            derived_id = %identity_id,
+            "IdentityCreateFromShieldedPool: no node is known to hold the transition; reporting \
+             it unconfirmed without reading its result"
+        );
+        return Err(unconfirmed(
+            "no node is known to hold the transition, so its result was not read".to_string(),
+        ));
+    };
     // The node known to hold the transition answers every read about it. A fresh scoped copy
     // per read: a node a failed read banned is banned only in that read's copy.
-    let reader = || match endpoint {
-        Some(endpoint) => Arc::new(sdk.scoped_to_address(endpoint.clone())),
-        None => Arc::clone(sdk),
-    };
+    let reader = || Arc::new(sdk.scoped_to_address(endpoint.clone()));
 
     // An identity-create-from-shielded-pool proof authenticates the spent
     // nullifiers and resulting identity as a snapshot; it cannot bind the
@@ -3172,8 +3191,6 @@ async fn await_identity_create(
             // enough not to wedge the caller's UI for minutes.
             let found = match fetch_identity_with_retries(reader, identity_id).await {
                 Some(identity) => Some(identity),
-                // No node is known to hold the transition: nothing more may be asked about it.
-                None if endpoint.is_none() => None,
                 // Not found: proven reads at its node tell a create that can no longer execute
                 // from an unknown outcome.
                 None => match probe_identity_create(&reader(), st, identity_id).await {
@@ -7996,9 +8013,11 @@ mod redrive_tests {
     /// An identity create whose result wait fails, with its identity not
     /// found, is probed at the node known to hold it: its notes spent and its
     /// identity absent report inputs consumed. With no node known to hold it,
-    /// nothing is read: it stays unconfirmed.
+    /// nothing naming it is read (its result, its identity, its outcome): it
+    /// stays unconfirmed.
     #[tokio::test(start_paused = true)]
     async fn should_report_inputs_consumed_only_from_reads_at_the_node_holding_the_create() {
+        use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
         use dash_sdk::query_types::ShieldedNullifiersQuery;
 
         let transition = identity_create_spending(&[spend_note()]);
@@ -8022,7 +8041,26 @@ mod redrive_tests {
                 .expect("a request");
             let reads = sdk.mock().request_count(&outcome_read).await;
             if !known {
-                assert_eq!(reads, 0, "no node holds it, so nothing is read");
+                assert_eq!(reads, 0, "no node holds it, so its outcome is not read");
+                let result_wait = transition
+                    .wait_for_state_transition_result_request()
+                    .expect("a request");
+                assert_eq!(
+                    sdk.mock().request_count(&result_wait).await,
+                    0,
+                    "no node holds it, so its result is not waited for"
+                );
+                let identity_read: dash_sdk::platform::types::identity::IdentityRequest =
+                    dash_sdk::platform::Query::query(
+                        &Identifier::from(CREATED_IDENTITY),
+                        &sdk.query_settings(),
+                    )
+                    .expect("a request");
+                assert_eq!(
+                    sdk.mock().request_count(&identity_read).await,
+                    0,
+                    "no node holds it, so its identity is not fetched"
+                );
                 assert!(
                     matches!(
                         failure.error,
@@ -8522,6 +8560,80 @@ mod record_activity_status_tests {
             .expect("row must still exist");
         assert_eq!(stored.status, ShieldedActivityStatus::Confirmed);
         assert_eq!(stored.block_height, Some(777));
+    }
+
+    /// Records every changeset the wallet queues for the host.
+    #[derive(Default)]
+    struct RecordingPersister {
+        stores: std::sync::Mutex<Vec<crate::changeset::PlatformWalletChangeSet>>,
+    }
+
+    impl crate::changeset::PlatformWalletPersistence for RecordingPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: crate::changeset::PlatformWalletChangeSet,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            self.stores.lock().unwrap().push(changeset);
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), crate::changeset::PersistenceError> {
+            Ok(())
+        }
+
+        fn load(
+            &self,
+        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
+        {
+            Ok(crate::changeset::ClientStartState::default())
+        }
+    }
+
+    /// A failure proven by reads (`Failed` with the height they put it at)
+    /// replaces a row the scan confirmed from a sighting of its outputs (an
+    /// identity create's paid failure path appends them), in the store and
+    /// in what the host is handed.
+    #[tokio::test]
+    async fn should_let_a_proven_failure_replace_a_scan_confirmed_row() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = sub();
+        let pending = captured_pending();
+        let scan_confirmed = with_status(&pending, ShieldedActivityStatus::Confirmed, Some(777));
+        store
+            .write()
+            .await
+            .save_activity(id, &scan_confirmed)
+            .unwrap();
+        let backend = Arc::new(RecordingPersister::default());
+        let persister = WalletPersister::new(id.wallet_id, Arc::clone(&backend) as _);
+
+        record_activity_status(
+            &store,
+            Some(&persister),
+            id.wallet_id,
+            id,
+            &Some(pending),
+            ShieldedActivityStatus::Failed,
+            Some(5),
+        )
+        .await;
+
+        let stored = store
+            .read()
+            .await
+            .get_activity_by_entry_id(id, &[0xAA; 32])
+            .unwrap()
+            .expect("row must still exist");
+        assert_eq!(stored.status, ShieldedActivityStatus::Failed);
+        assert_eq!(stored.block_height, Some(5));
+        let stores = backend.stores.lock().unwrap();
+        let handed = stores
+            .last()
+            .and_then(|cs| cs.shielded.as_ref())
+            .map(|cs| cs.activity_entries[&id].clone())
+            .expect("the failed row is queued for the host");
+        assert_eq!(handed, vec![stored]);
     }
 
     /// No concurrent scan: the flip applies to the stored Pending row
