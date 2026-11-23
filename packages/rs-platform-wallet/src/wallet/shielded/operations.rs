@@ -2394,11 +2394,23 @@ where
             fee_used, exact_fee,
             "builder fee must match the reserved token shielded transfer fee"
         );
-        // Proving takes a while, and other reads may have shown the network
-        // past the version this was signed at meanwhile; from protocol
-        // version 15 the token bundle must bind the fee bundle, so a
-        // transition signed at another version is refused before anything is
-        // recorded, saved or sent.
+        // Proving takes a while, and the network may have moved past the
+        // version this was signed at meanwhile; from protocol version 15 the
+        // token bundle must bind the fee bundle, so a transition signed at
+        // another version is refused before anything is recorded, saved or
+        // sent. The token pool's anchor set is read again first: a verified
+        // read, it brings the network version the SDK knows up to date, and
+        // it shows the spend's token anchor is still recorded. A version that
+        // changes in the moment between this read and the broadcast is
+        // refused by Platform at admission, unpaid.
+        let token_anchors_now = fetch_token_pool_anchor_set(sdk, token_id).await?;
+        if !token_anchors_now.contains(&token_anchor.to_bytes()) {
+            return Err(PlatformWalletError::ShieldedNoRecordedAnchor(format!(
+                "the shielded pool of token {token_id} no longer records the root this \
+                 transfer was built on; sync the shielded pools and retry"
+            ))
+            .into());
+        }
         let network_now = token_pool_paid_signing_version(
             sdk.version(),
             sdk.protocol_version_info().verified_version,
