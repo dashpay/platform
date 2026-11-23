@@ -159,8 +159,10 @@ pub struct ShieldedActivityFFI {
     pub min_note_position: u64,
     /// `1` if `min_note_position` is meaningful.
     pub has_min_note_position: u8,
-    /// Created identity id (only meaningful when `kind_tag == 6` /
-    /// IdentityCreate); all-zero and ignored otherwise.
+    /// The identity the entry names: the created identity (`kind_tag` 6,
+    /// IdentityCreate), the funding identity (8, ShieldFromIdentity), the
+    /// credited identity (9, IdentityTopUp) or the identity a token unshield
+    /// credits (12, TokenUnshield). All-zero and ignored for every other kind.
     pub identity_id: [u8; 32],
     /// `1` when `identity_id` is meaningful (an identity create, shield from
     /// identity, identity top-up or token unshield), else `0`. A token
