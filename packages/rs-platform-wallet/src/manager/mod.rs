@@ -3,6 +3,7 @@
 pub mod accessors;
 pub mod dashpay_sync;
 pub mod dpns_sync;
+mod identity_removal;
 pub mod identity_sync;
 mod load;
 #[cfg(test)]
