@@ -128,11 +128,11 @@ releases="$(gh api --paginate 'repos/dashpay/platform/releases?per_page=100' \
   --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name')" \
   && echo "${releases}" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1.2,1n -k2,2n -k3,3n | tail -n 1 \
   || echo "could not list the releases"
-git merge-base --is-ancestor v<version> origin/master && echo "v<version> is already in master"
+git merge-base --is-ancestor v<version> origin/master; echo "exit $?"   # 0: already in master; 1: not yet"
 gh api repos/dashpay/platform/rulesets/501248 --jq .current_user_can_bypass   # must print "always"
 ```
 
-Skip the rest of this step if the release is not the newest stable version or the tag is already in `master`. Stop and ask the user if a command failed or the tag names another commit than the merge commit.
+Skip the rest of this step if the release is not the newest stable version or the ancestry check exits 0, since the tag is then already in `master`; go on when it exits 1. Stop and ask the user if any other command failed, the ancestry check exits with anything else, or the tag names another commit than the merge commit.
 
 Then merge in a temporary worktree:
 
