@@ -1970,25 +1970,17 @@ pub async fn token_purchase_from_pool<S: ShieldedStore, P: OrchardProver>(
             "builder fee must match the reserved token purchase fee"
         );
 
-        // The price leaves the wallet for the token; the token id is the
-        // counterparty. Only the fee bundle's change keys the entry
-        // (`shielded_actions`), which is what the scan finds to confirm it.
-        pending_entry = record_pending_activity(
+        pending_entry = record_pending_token_purchase(
             store,
             persister,
             wallet_id,
             id,
             &views,
-            LiveEntryParams {
-                kind: ShieldedActivityKind::TokenPurchase,
-                direction: ShieldedDirection::Out,
-                amount: total_agreed_price,
-                fee: Some(fee_used),
-                counterparty: Some(token_id.to_vec()),
-                memo: None,
-                actions: shielded_actions(&state_transition),
-                spent_notes: &selected_notes,
-            },
+            token_id,
+            total_agreed_price,
+            fee_used,
+            &state_transition,
+            &selected_notes,
         )
         .await;
 
@@ -2025,6 +2017,44 @@ pub async fn token_purchase_from_pool<S: ShieldedStore, P: OrchardProver>(
         &pending_entry,
         reservation,
         result.map(|(proof, _metadata)| proof),
+    )
+    .await
+}
+
+/// Record the pending activity row of the built token purchase
+/// `state_transition`, which spends `spent_notes`. The price leaves the wallet
+/// for the token, whose id is the counterparty. Only the fee bundle's outputs
+/// key the row (`shielded_actions`): its credit pool change, which the scan
+/// finds and confirms the row by, is the one output the wallet's scan sees.
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn record_pending_token_purchase<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    id: SubwalletId,
+    views: &AccountViewingKeys,
+    token_id: Identifier,
+    total_agreed_price: Credits,
+    fee: Credits,
+    state_transition: &StateTransition,
+    spent_notes: &[ShieldedNote],
+) -> Option<super::activity::ShieldedActivityEntry> {
+    record_pending_activity(
+        store,
+        persister,
+        wallet_id,
+        id,
+        views,
+        LiveEntryParams {
+            kind: ShieldedActivityKind::TokenPurchase,
+            direction: ShieldedDirection::Out,
+            amount: total_agreed_price,
+            fee: Some(fee),
+            counterparty: Some(token_id.to_vec()),
+            memo: None,
+            actions: shielded_actions(state_transition),
+            spent_notes,
+        },
     )
     .await
 }
