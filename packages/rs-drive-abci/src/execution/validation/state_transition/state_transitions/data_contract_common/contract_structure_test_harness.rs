@@ -159,6 +159,24 @@ pub(in crate::execution) fn transient_summed_schema() -> Value {
     })
 }
 
+/// A document type whose object requires a name the object does not have, so no document of
+/// the type could be stored. Protocol version 15 refuses it at registration.
+pub(in crate::execution) fn unmeetable_required_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "properties": {
+            "meta": {
+                "type": "object",
+                "position": 0,
+                "properties": { "y": { "type": "boolean", "position": 0 } },
+                "required": ["w"],
+                "additionalProperties": false,
+            },
+        },
+        "additionalProperties": false,
+    })
+}
+
 /// The fragment of the parser's message for a `terminal` outside an indexOnly type.
 pub(in crate::execution) const TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE: &str =
     "which is only allowed on indexOnly document types";
