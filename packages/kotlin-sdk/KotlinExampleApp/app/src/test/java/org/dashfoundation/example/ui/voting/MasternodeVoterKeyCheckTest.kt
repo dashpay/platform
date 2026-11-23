@@ -178,13 +178,18 @@ class MasternodeVoterKeyCheckTest {
         )
     }
 
-    /** An answer that could not be saved keeps what Rust said to record, for the section. */
+    /**
+     * An answer that could not be saved keeps what Rust said to record, for the section, and a
+     * refusal Rust names as such stands over a newer permissive record the row shows later.
+     */
     @Test
     fun shouldKeepRustsRecordForAnAnswerThatCouldNotBeSaved() = runBlocking {
         db.identityDao().upsert(row(identifierA))
         val refusal = MasternodeVotingKeyCheck.Invalid("rotated")
         val unsaved = MasternodeRecordedVotingKey(refusal, addressA)
         rules.outcome = MasternodeVotingKeyCheckOutcome(storeKey = false, record = unsaved)
+        // Rust: a never-checked key is checked first; the refusal may not vote.
+        rules.useFor = { if (it?.check is MasternodeVotingKeyCheck.Invalid) refusedUse else awaitingCheck }
 
         // The row stops accepting writes while Platform answers, so the record write throws.
         val result = checkPicked(answer = {
@@ -197,6 +202,13 @@ class MasternodeVoterKeyCheckTest {
 
         assertTrue(result is PickedVotingKeyCheck.Failed)
         assertEquals(unsaved, (result as PickedVotingKeyCheck.Failed).unsaved)
+        assertTrue(result.unsavedRefuses)
+
+        // Rust's word, carried by the failed write, keeps the refusal over a later confirmation.
+        val picked = nextPickedState(null, identifierA, result, revisionAtStart = 0)!!
+        val later = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressA)
+        assertEquals(unsaved, effectiveRecord(stateAt(3, later), picked))
+        assertEquals(StoredVoterDecision.REFUSED, storedVoterDecision(stateAt(3, later), picked, rules))
     }
 
     /**
@@ -867,6 +879,8 @@ class MasternodeVoterKeyCheckTest {
     private class StubRules : MasternodeVotingKeyRules {
         var outcome = MasternodeVotingKeyCheckOutcome(storeKey = true, record = null)
         var use = MasternodeRecordedVotingKeyUse(canVote = true, checkBeforeUse = true)
+        /** When set, answers [use] per record instead of the fixed [use]. */
+        var useFor: ((MasternodeRecordedVotingKey?) -> MasternodeRecordedVotingKeyUse)? = null
         val asked = mutableListOf<MasternodeVotingKeySlot>()
         val usedWith = mutableListOf<Pair<MasternodeRecordedVotingKey?, MasternodeVotingKeyAddress?>>()
 
@@ -884,7 +898,7 @@ class MasternodeVoterKeyCheckTest {
             storedVotingAddress: MasternodeVotingKeyAddress?,
         ): MasternodeRecordedVotingKeyUse {
             usedWith += recorded to storedVotingAddress
-            return use
+            return useFor?.invoke(recorded) ?: use
         }
 
         override fun siblingRecord(
