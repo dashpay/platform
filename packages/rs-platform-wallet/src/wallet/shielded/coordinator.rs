@@ -821,6 +821,12 @@ impl NetworkShieldedCoordinator {
         self.operation_admission.read().await
     }
 
+    /// Whether any operation holds [`Self::operation_guard`] right now.
+    #[cfg(test)]
+    pub(crate) fn has_admitted_operation(&self) -> bool {
+        self.operation_admission.try_write().is_err()
+    }
+
     /// [`register_wallet`](Self::register_wallet)'s body, with the
     /// lifecycle mutex already held by the caller's transaction.
     async fn register_locked(
