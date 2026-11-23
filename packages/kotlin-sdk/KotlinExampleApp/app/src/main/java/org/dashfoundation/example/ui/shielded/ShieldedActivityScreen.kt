@@ -103,9 +103,11 @@ fun ShieldedActivityScreen(walletIdHex: String, navController: NavHostController
     }
     LaunchedEffect(manager, walletIdHex, readEpoch) {
         val activeManager = manager ?: return@LaunchedEffect
-        // Without shielded support there are no records and no export to read them.
+        // Without shielded support there is no export to read the records
+        // with; data an earlier build saved may still hold some, so they are
+        // unreadable here, not known to be empty.
         if (!hasShielded) {
-            recovery = recovery.applySuccess(emptyList())
+            recovery = recovery.applyFailure("This build does not support shielded recovery.")
             return@LaunchedEffect
         }
         recovery = try {

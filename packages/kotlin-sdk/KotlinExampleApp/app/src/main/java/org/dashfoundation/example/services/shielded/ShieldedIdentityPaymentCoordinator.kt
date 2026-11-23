@@ -48,16 +48,13 @@ class ShieldedIdentityPaymentCoordinator(private val scope: CoroutineScope) {
      * application scope and maps its own result to an outcome.
      */
     fun start(key: Key, amount: Long, pay: suspend () -> ShieldedPaymentOutcome): Boolean {
-        var started = false
-        _states.update { current ->
-            if (current.containsKey(key)) {
-                current
-            } else {
-                started = true
-                current + (key to State.InFlight(amount))
-            }
+        // Launch only after this caller's own compare-and-set reserved the
+        // slot, so two concurrent starts can never both pay.
+        while (true) {
+            val current = _states.value
+            if (current.containsKey(key)) return false
+            if (_states.compareAndSet(current, current + (key to State.InFlight(amount)))) break
         }
-        if (!started) return false
         scope.launch {
             val outcome = try {
                 pay()

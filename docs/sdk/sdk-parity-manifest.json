@@ -3495,7 +3495,7 @@
           "sdk": "supported",
           "example_app": "partial",
           "restart": "required",
-          "reason": "PlatformWalletManager.shieldedIdentityTopUpFromPool bridges the FFI through JNI (FfiSmokeTest and ShieldedIdentityFlowsFfiTest bind it). KotlinExampleApp's TopUpIdentityScreen offers Shielded Balance when account 0's spendable balance Rust announces is known and above zero, keeps that source selected with submission off while it is unavailable, shows the minimum fee, and runs the payment on an application-scoped coordinator so a rotation or tab switch can neither drop its outcome nor start a second one; a returned top-up reads submitted and one that may have gone through offers no retry (TEST_PLAN SH-22, SH-23; ShieldedIdentityFlowsTest, ShieldedIdentityPaymentCoordinatorTest). Unlike Swift the submit button does not compare amount plus fee with the balance; the wallet refuses a shortfall before building anything. Restart is required: Pending Shielded Top-Ups reads the kind 9 activity projection (ShieldedDao.observePendingIdentityTopUps), not the wallet's retry record, and the two can disagree across a crash at the write boundary (#6058, which also covers Swift's TopUpIdentityView); no test or recorded run reopens both stores. Partial because no emulator or network run is recorded either."
+          "reason": "PlatformWalletManager.shieldedIdentityTopUpFromPool bridges the FFI through JNI (FfiSmokeTest binds it and refuses arguments it cannot read). KotlinExampleApp's TopUpIdentityScreen offers Shielded Balance when account 0's spendable balance Rust announces is known and above zero, keeps that source selected with submission off while it is unavailable, shows the minimum fee, and runs the payment on an application-scoped coordinator so a rotation or tab switch can neither drop its outcome nor start a second one; a returned top-up reads submitted and one that may have gone through offers no retry (TEST_PLAN SH-22, SH-23; ShieldedIdentityFlowsTest, ShieldedIdentityPaymentCoordinatorTest). Unlike Swift the submit button does not compare amount plus fee with the balance; the wallet refuses a shortfall before building anything. Restart is required: Pending Shielded Top-Ups reads the kind 9 activity projection (ShieldedDao.observePendingIdentityTopUps), not the wallet's retry record, and the two can disagree across a crash at the write boundary (#6058, which also covers Swift's TopUpIdentityView); no test or recorded run reopens both stores. Partial because no emulator or network run is recorded either."
         }
       },
       "verification": [
@@ -3556,14 +3556,6 @@
           "kind": "device",
           "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
           "id": "identityShieldAndShieldedTopUpSymbolsBindAndRejectInvalidInput",
-          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
-          "covers_restart": false
-        },
-        {
-          "host": "kotlin",
-          "kind": "device",
-          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/ShieldedIdentityFlowsFfiTest.kt",
-          "id": "shouldListNoRecordsAndRefuseAnUnmanagedIdentityWithoutARecord",
           "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
           "covers_restart": false
         }

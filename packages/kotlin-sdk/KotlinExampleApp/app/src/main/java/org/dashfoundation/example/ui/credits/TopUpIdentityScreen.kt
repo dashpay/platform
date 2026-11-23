@@ -209,14 +209,24 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
 
     // The proof takes tens of seconds; leaving would drop its outcome and
     // allow a second top-up (← interactiveDismissDisabled).
-    BackHandler(enabled = isBusy) {}
+    // Leaving a shown result (Back or the toolbar arrow) counts as having seen
+    // it, as Done does; a rotation or tab switch keeps it.
+    val resultShown = (paymentState as? ShieldedIdentityPaymentCoordinator.State.Done)
+        ?.let { it.outcome !is ShieldedPaymentOutcome.Failed } == true
+    val leave: () -> Unit = {
+        if (resultShown && paymentKey != null) paymentCoordinator.acknowledge(paymentKey)
+        navController.popBackStack()
+    }
+    BackHandler(enabled = isBusy || resultShown) {
+        if (!isBusy) leave()
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Top Up Identity") },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }, enabled = !isBusy) {
+                    IconButton(onClick = leave, enabled = !isBusy) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },

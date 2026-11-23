@@ -54,7 +54,7 @@ class ShieldedIdentityFlowsFfiTest {
      * Through a real manager and a real (unfunded) wallet: both fee kinds
      * the screens show are positive, the wallet has no records to list, an
      * unknown record cannot be stopped, and a shield from an identity the
-     * wallet does not manage is refused as not found, without leaving a
+     * wallet does not manage is refused ("Identity not found"), without leaving a
      * record or an activity row.
      */
     @Test
@@ -94,7 +94,13 @@ class ShieldedIdentityFlowsFfiTest {
                     manager.shieldedShieldFromIdentity(id, identityId, 1_000L)
                     fail("a shield from an identity the wallet does not manage must be refused")
                 } catch (e: DashSdkError) {
-                    assertTrue("refused as an identity the wallet does not hold: $e", e is DashSdkError.NotFound)
+                    // The shield export reports the wallet's IdentityNotFound
+                    // as a wallet operation failure (code 6), naming the identity.
+                    assertTrue(
+                        "refused as an identity the wallet does not hold: $e",
+                        e is DashSdkError.PlatformWallet.WalletOperation &&
+                            e.message?.contains("Identity not found:") == true,
+                    )
                 }
                 assertEquals(
                     "the refused shield saved no record",
