@@ -12,6 +12,7 @@ import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.errors.DashSdkError
@@ -25,7 +26,9 @@ import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.PendingInputEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.PublicKeyEntity
+import org.dashfoundation.dashsdk.persistence.entities.TokenBalanceEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
+import org.dashfoundation.dashsdk.security.PendingIdentityKeyDelete
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -1869,6 +1872,118 @@ class PlatformWalletPersistenceHandlerTest {
             fun fakePubkeyFor(identityIndex: Int, keyIndex: Int): ByteArray =
                 ByteArray(33).also { it[0] = identityIndex.toByte(); it[1] = keyIndex.toByte() }
         }
+    }
+
+    /**
+     * A key upsert's alias counts as in flight from its callback until its
+     * round ends (committed or rolled back), so a pending identity-key delete
+     * for it is not settled in between.
+     */
+    @Test
+    fun keyUpsertAliasIsInFlightUntilItsRoundEnds() = runTest {
+        val identityId = ByteArray(32) { 33 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 34 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId, identityId, 0, 0, 0, 0, false, false, 0,
+            pubkey, ByteArray(20), true, walletId,
+            true, 3, 5, 0, ByteArray(32), null,
+        )
+        assertTrue(pubkey.toHex() in handler.withCallbackExclusion { handler.aliasesStagedInOpenRounds() })
+
+        handler.onChangesetEnd(walletId, success = true)
+        assertTrue(handler.withCallbackExclusion { handler.aliasesStagedInOpenRounds() }.isEmpty())
+    }
+
+    /**
+     * A removal Rust persists records the identity's key aliases (with its
+     * wallet) before its round commits, and deletes the dependent rows the
+     * identity cascade does not reach, in the same round.
+     */
+    @Test
+    fun persistedIdentityRemovalRecordsItsKeysAndDeletesItsWholeFootprint() = runTest {
+        val recorded = mutableListOf<PendingIdentityKeyDelete>()
+        handler = PlatformWalletPersistenceHandler(
+            db,
+            Dispatchers.Unconfined,
+            storedTransactionInputs = storedInputs,
+            recordRemovedIdentityKeys = { recorded += it },
+        )
+        val identityId = ByteArray(32) { 32 }
+        seedIdentity(identityId)
+        val pubkey = VerifyingRepairDeriver.fakePubkeyFor(1, 1)
+        upsertIdentityKey(pubkey, identityId)
+        db.tokenDao().insertBalance(
+            TokenBalanceEntity(
+                tokenId = "token-x",
+                identityId = identityId,
+                balance = UInt64Value(1u),
+                networkRaw = testnet,
+            ),
+        )
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityRemoval(walletId, identityId)
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNull(db.identityDao().getByIdentityId(identityId))
+        assertTrue(db.tokenDao().getBalancesOrderedByAmount().isEmpty())
+        assertEquals(listOf(pubkey.toHex()), recorded.map { it.aliasHex })
+        assertEquals(walletId.toHex(), recorded.single().walletId!!.toHex())
+    }
+
+    /**
+     * An identity removal that runs while a repair derives (after the repair
+     * read its slot) must not be undone by the repair's store: the repair sees
+     * no row naming the key any more, deletes what it stored and fails.
+     */
+    @Test
+    fun repairFinishingAfterItsIdentityWasRemovedDeletesTheKeyAndFails() = runTest {
+        val identityId = ByteArray(32) { 31 }
+        val pubkey = VerifyingRepairDeriver.fakePubkeyFor(4, 6)
+        val deleted = mutableListOf<String>()
+        val deriver = object : PrivateKeyDeriver {
+            override fun deriveAndStore(
+                walletId: ByteArray,
+                publicKeyData: ByteArray,
+                identityIndex: Int,
+                keyIndex: Int,
+                keyType: Int,
+                force: Boolean,
+            ): DerivedKeyStoreResult? {
+                if (!force) return null
+                // The removal lands between the slot read and the store.
+                runBlocking { db.identityDao().deleteByIdentityId(identityId) }
+                return DerivedKeyStoreResult("privkey." + publicKeyData.toHex(), wasNewlyCreated = true)
+            }
+
+            override fun deleteUnownedStored(
+                pubkeyHexes: Collection<String>,
+                excludingWalletId: ByteArray,
+            ): Set<String> {
+                deleted += pubkeyHexes
+                return pubkeyHexes.toSet()
+            }
+        }
+        handler = newHandler(deriver)
+        seedIdentity(identityId)
+        upsertIdentityKey(pubkey, identityId)
+
+        val error = runCatching {
+            handler.repairIdentityKeyDurably(
+                walletId = walletId,
+                publicKeyData = pubkey,
+                verifyRecoverable = { true },
+            )
+        }.exceptionOrNull()
+
+        assertTrue(
+            "the repair fails, got $error",
+            error is DashSdkError.PlatformWallet.SigningKeyUnavailable,
+        )
+        assertEquals(listOf(pubkey.toHex()), deleted)
     }
 
     @Test
