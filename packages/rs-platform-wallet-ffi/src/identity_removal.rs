@@ -48,16 +48,25 @@ pub unsafe extern "C" fn platform_wallet_manager_remove_identity_from_device(
     check_ptr!(identity_id);
     let identity_id = Identifier::from(unsafe { *identity_id });
 
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
-        runtime().block_on(manager.remove_identity_from_device(&identity_id))
-    });
-    match unwrap_option_or_return!(option) {
-        Ok(was_managed) => {
-            unsafe { *out_was_managed = was_managed };
-            PlatformWalletFFIResult::ok()
-        }
-        Err(error) => error.into(),
-    }
+    // A panic must come back as an error, not unwind through this C frame
+    // (which aborts the host process).
+    catch_panic_to_code(
+        "platform_wallet_manager_remove_identity_from_device",
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        "The identity may still be in a wallet; remove it again.",
+        || {
+            let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
+                runtime().block_on(manager.remove_identity_from_device(&identity_id))
+            });
+            match unwrap_option_or_return!(option) {
+                Ok(was_managed) => {
+                    unsafe { *out_was_managed = was_managed };
+                    PlatformWalletFFIResult::ok()
+                }
+                Err(error) => error.into(),
+            }
+        },
+    )
 }
 
 #[cfg(test)]
