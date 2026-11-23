@@ -47,7 +47,7 @@ Capabilities tracked: **42**
 | `tokens.direct_purchase_quote` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `protocol.address_validation` | supported / supported / not_applicable | partial / partial / not_applicable |
 | `documents.create_catalog` | supported / supported / not_applicable | supported / supported / not_applicable |
-| `contracts.update_preview` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
+| `contracts.update_preview` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `documents.private_document_entries_read` | partial / partial / not_applicable | supported / partial / not_applicable |
 | `documents.private_document_entry_create` | partial / partial / required | unsupported / unsupported / not_applicable |
 | `tokens.max_supply_proposal_discovery` | partial / partial / not_applicable | partial / partial / not_applicable |

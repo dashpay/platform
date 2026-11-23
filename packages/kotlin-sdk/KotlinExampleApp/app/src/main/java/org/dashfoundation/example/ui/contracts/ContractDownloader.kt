@@ -105,14 +105,87 @@ object ContractDownloader {
             return Result(contract = preExisting, alreadyExisted = true)
         }
 
-        val documents = (root["documents"] as? JsonObject)
-            ?: (root["documentSchemas"] as? JsonObject)
-            ?: JsonObject(emptyMap())
-        val tokens = (root["tokens"] as? JsonObject) ?: JsonObject(emptyMap())
+        val entity = entityFrom(
+            root = root,
+            json = json,
+            binarySerialization = binarySerialization,
+            contractId = contractIdBytes,
+            name = resolveName(suggestedName, trimmedId, documentsOf(root), tokensOf(root)),
+            network = network,
+        )
+        dao.upsert(entity)
+        // Materialize token child rows (← DataContractParser's
+        // PersistentToken pass) so the tokens UI has rows to serve.
+        org.dashfoundation.example.services.tokens.TokenMaterializer
+            .materialize(entity, database.tokenDao())
+        return Result(contract = entity, alreadyExisted = false)
+    }
 
-        val entity = DataContractEntity(
-            id = contractIdBytes,
-            name = resolveName(suggestedName, trimmedId, documents, tokens),
+    /**
+     * Bring the stored contract [contractId] up to date with Platform after an update (←
+     * `ContractDownloader.refreshPersistedContract` in Swift): fetch it with its binary
+     * serialization, refuse an answer for another id or a version below [minimumVersion] or
+     * below the stored one (a lagging node), then replace the stored row, register the new
+     * serialization with the SDK's trusted context (so proof verification reads the updated
+     * contract), and refresh its token rows. Throws on any refusal, leaving the row as it was.
+     */
+    suspend fun refreshPersistedContract(
+        contractId: ByteArray,
+        sdk: Sdk,
+        database: DashDatabase,
+        network: Network,
+        minimumVersion: Long?,
+    ) {
+        val requestedId = Base58.encode(contractId)
+        val fetched = sdk.contracts.fetchWithSerialization(requestedId)
+            ?: throw ContractNotFoundException("Data contract not found")
+        val root = LenientJson.parseToJsonElement(fetched.json).jsonObject
+        val fetchedId = (root["id"] as? JsonPrimitive)?.content?.let { Base58.decodeIdentifier(it) }
+        if (fetchedId != null && !fetchedId.contentEquals(contractId)) {
+            throw Exception("The fetch returned contract ${Base58.encode(fetchedId)}, not $requestedId")
+        }
+        val fetchedVersion = (root["version"] as? JsonPrimitive)?.content?.toLongOrNull()
+            ?: throw Exception("The fetched contract has no version")
+        val dao = database.dataContractDao()
+        val stored = dao.getById(contractId)
+        val floor = maxOf(minimumVersion ?: 0, stored?.version?.toLong() ?: 0)
+        if (fetchedVersion < floor) {
+            throw Exception(
+                "The node returned version $fetchedVersion, older than version $floor; try again later",
+            )
+        }
+        val binary = fetched.binarySerialization
+            ?: throw Exception("The node returned no binary serialization for the contract")
+        sdk.contracts.loadKnownContracts(listOf(requestedId to binary))
+        val entity = entityFrom(
+            root = root,
+            json = fetched.json,
+            binarySerialization = binary,
+            contractId = contractId,
+            name = stored?.name ?: resolveName(null, requestedId, documentsOf(root), tokensOf(root)),
+            network = network,
+        ).let { fresh ->
+            stored?.let { fresh.copy(createdAt = it.createdAt) } ?: fresh
+        }
+        dao.upsert(entity)
+        org.dashfoundation.example.services.tokens.TokenMaterializer
+            .materialize(entity, database.tokenDao())
+    }
+
+    /** The stored row for a fetched contract's JSON [root] (the shape [downloadAndPersistContract] stores). */
+    private fun entityFrom(
+        root: JsonObject,
+        json: String,
+        binarySerialization: ByteArray?,
+        contractId: ByteArray,
+        name: String,
+        network: Network,
+    ): DataContractEntity {
+        val documents = documentsOf(root)
+        val tokens = tokensOf(root)
+        return DataContractEntity(
+            id = contractId,
+            name = name,
             serializedContract = json.toByteArray(Charsets.UTF_8),
             binarySerialization = binarySerialization,
             version = (root["version"] as? JsonPrimitive)?.content?.toIntOrNull() ?: 1,
@@ -138,13 +211,15 @@ object ContractDownloader {
             groupsData = (root["groups"] as? JsonObject)?.takeIf { it.isNotEmpty() }
                 ?.toString()?.toByteArray(Charsets.UTF_8),
         )
-        dao.upsert(entity)
-        // Materialize token child rows (← DataContractParser's
-        // PersistentToken pass) so the tokens UI has rows to serve.
-        org.dashfoundation.example.services.tokens.TokenMaterializer
-            .materialize(entity, database.tokenDao())
-        return Result(contract = entity, alreadyExisted = false)
     }
+
+    private fun documentsOf(root: JsonObject): JsonObject =
+        (root["documents"] as? JsonObject)
+            ?: (root["documentSchemas"] as? JsonObject)
+            ?: JsonObject(emptyMap())
+
+    private fun tokensOf(root: JsonObject): JsonObject =
+        (root["tokens"] as? JsonObject) ?: JsonObject(emptyMap())
 
     private fun JsonObject.booleanFlag(key: String, default: Boolean): Boolean =
         (this[key] as? JsonPrimitive)?.content?.toBooleanStrictOrNull() ?: default

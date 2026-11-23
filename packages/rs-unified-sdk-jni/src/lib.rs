@@ -16,6 +16,7 @@
 
 mod address_history;
 mod contract_moderation;
+mod contract_update;
 mod credits;
 mod dashpay;
 mod decision_proposals;
