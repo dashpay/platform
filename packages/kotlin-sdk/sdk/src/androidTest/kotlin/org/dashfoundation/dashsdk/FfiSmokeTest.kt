@@ -10,6 +10,7 @@ import org.dashfoundation.dashsdk.ffi.ContractUpdateNative
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.DpnsGiveUpNative
+import org.dashfoundation.dashsdk.ffi.FundingNative
 import org.dashfoundation.dashsdk.ffi.IdentityKeyLimitsNative
 import org.dashfoundation.dashsdk.ffi.IdentityNative
 import org.dashfoundation.dashsdk.ffi.IdentityRemovalNative
@@ -30,6 +31,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -521,6 +523,35 @@ class FfiSmokeTest {
             IdentityWithdrawalsNative.identityWithdrawals(Long.MAX_VALUE, ByteArray(32) { 7 })
         }
         assertEquals(1000 + 98, unknownWallet.code)
+    }
+
+    /**
+     * The exports KotlinExampleApp uses for a shield from an identity's
+     * balance (type 21), its durable records and a top-up from the shielded
+     * pool (type 22) bind with the descriptors `FundingNative` declares: an
+     * id of the wrong size or a non-positive amount is refused at the JNI
+     * boundary (code 1), and an unknown manager handle throws instead of
+     * crashing. Nothing reaches the network.
+     */
+    @Test
+    fun identityShieldAndShieldedTopUpSymbolsBindAndRejectInvalidInput() {
+        NativeLoader.ensureLoaded()
+        // The four exports exist only in a build with shielded support.
+        assumeTrue("the native library has no shielded support", Sdk.hasShielded())
+        val id = ByteArray(32) { 7 }
+        val shortId = ByteArray(31)
+        fun code(block: () -> Unit): Int = assertThrows(DashSDKException::class.java) { block() }.code
+
+        assertEquals(1, code { FundingNative.shieldedShieldFromIdentity(1L, id, 0, shortId, 1L, 1L) })
+        assertEquals(1, code { FundingNative.shieldedShieldFromIdentity(1L, id, 0, id, 0L, 1L) })
+        assertEquals(1, code { FundingNative.shieldedIdentityDebitRecoveryRecords(1L, shortId) })
+        assertEquals(1, code { FundingNative.abandonShieldedIdentityDebit(1L, id, 0, shortId, true) })
+        assertEquals(1, code { FundingNative.shieldedIdentityTopUpFromPool(1L, id, 0L, 0, shortId, 1L) })
+        assertEquals(1, code { FundingNative.shieldedIdentityTopUpFromPool(1L, id, 0L, 0, id, -1L) })
+
+        // Valid arguments on an unknown manager reach Rust, which refuses them.
+        code { FundingNative.shieldedIdentityDebitRecoveryRecords(Long.MAX_VALUE, id) }
+        code { FundingNative.abandonShieldedIdentityDebit(Long.MAX_VALUE, id, 0, id, true) }
     }
 
     /**
