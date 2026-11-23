@@ -1309,7 +1309,7 @@ impl MockResponse for drive_proof_verifier::DocumentSum {
         Self: Sized,
     {
         let bincode_config = standard();
-        let (sum, _): (i64, _) =
+        let (sum, _): (i128, _) =
             bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentSum");
         drive_proof_verifier::DocumentSum(sum)
     }
@@ -1317,9 +1317,9 @@ impl MockResponse for drive_proof_verifier::DocumentSum {
 
 /// Wire shape for `DocumentSplitSums` mock round-trip. Mirrors
 /// [`DocumentSplitCountTriples`] — preserves the `in_key` axis
-/// and the verified-vs-absent sum distinction (`Option<i64>`)
+/// and the verified-vs-absent sum distinction (`Option<i128>`)
 /// across the roundtrip.
-type DocumentSplitSumTriples = Vec<(Option<Vec<u8>>, Vec<u8>, Option<i64>)>;
+type DocumentSplitSumTriples = Vec<(Option<Vec<u8>>, Vec<u8>, Option<i128>)>;
 
 impl MockResponse for drive_proof_verifier::DocumentSplitSums {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
@@ -1359,7 +1359,7 @@ impl MockResponse for drive_proof_verifier::DocumentAverage {
         Self: Sized,
     {
         let bincode_config = standard();
-        let ((count, sum), _): ((u64, i64), _) =
+        let ((count, sum), _): ((u64, i128), _) =
             bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentAverage");
         drive_proof_verifier::DocumentAverage { count, sum }
     }
@@ -1367,9 +1367,9 @@ impl MockResponse for drive_proof_verifier::DocumentAverage {
 
 /// Wire shape for `DocumentSplitAverages` mock round-trip. Same
 /// `(in_key, key)` axes as the sum variant, but carries both
-/// `Option<u64>` (count) and `Option<i64>` (sum) so the verified-vs-
+/// `Option<u64>` (count) and `Option<i128>` (sum) so the verified-vs-
 /// absent state of each axis can roundtrip independently.
-type DocumentSplitAverageTuples = Vec<(Option<Vec<u8>>, Vec<u8>, Option<u64>, Option<i64>)>;
+type DocumentSplitAverageTuples = Vec<(Option<Vec<u8>>, Vec<u8>, Option<u64>, Option<i128>)>;
 
 impl MockResponse for drive_proof_verifier::DocumentSplitAverages {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
