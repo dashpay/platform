@@ -100,10 +100,9 @@ impl ContenderV0 {
 }
 
 impl ContenderWithSerializedDocumentV0 {
-    pub fn try_into_contender(
+    fn try_into_contender_with(
         self,
-        document_type_ref: DocumentTypeRef,
-        platform_version: &PlatformVersion,
+        decode: impl FnOnce(&[u8]) -> Result<Document, ProtocolError>,
     ) -> Result<ContenderV0, ProtocolError> {
         let ContenderWithSerializedDocumentV0 {
             identity_id,
@@ -114,18 +113,15 @@ impl ContenderWithSerializedDocumentV0 {
         Ok(ContenderV0 {
             identity_id,
             document: serialized_document
-                .map(|document| {
-                    Document::from_bytes(document.as_slice(), document_type_ref, platform_version)
-                })
+                .map(|document| decode(document.as_slice()))
                 .transpose()?,
             vote_tally,
         })
     }
 
-    pub fn try_to_contender(
+    fn try_to_contender_with(
         &self,
-        document_type_ref: DocumentTypeRef,
-        platform_version: &PlatformVersion,
+        decode: impl FnOnce(&[u8]) -> Result<Document, ProtocolError>,
     ) -> Result<ContenderV0, ProtocolError> {
         let ContenderWithSerializedDocumentV0 {
             identity_id,
@@ -137,11 +133,49 @@ impl ContenderWithSerializedDocumentV0 {
             identity_id: *identity_id,
             document: serialized_document
                 .as_ref()
-                .map(|document| {
-                    Document::from_bytes(document.as_slice(), document_type_ref, platform_version)
-                })
+                .map(|document| decode(document.as_slice()))
                 .transpose()?,
             vote_tally: *vote_tally,
+        })
+    }
+
+    pub fn try_into_contender(
+        self,
+        document_type_ref: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<ContenderV0, ProtocolError> {
+        self.try_into_contender_with(|bytes| {
+            Document::from_bytes(bytes, document_type_ref, platform_version)
+        })
+    }
+
+    pub fn try_to_contender(
+        &self,
+        document_type_ref: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<ContenderV0, ProtocolError> {
+        self.try_to_contender_with(|bytes| {
+            Document::from_bytes(bytes, document_type_ref, platform_version)
+        })
+    }
+
+    pub fn try_into_contender_bounded(
+        self,
+        document_type_ref: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<ContenderV0, ProtocolError> {
+        self.try_into_contender_with(|bytes| {
+            Document::from_bytes_bounded(bytes, document_type_ref, platform_version)
+        })
+    }
+
+    pub fn try_to_contender_bounded(
+        &self,
+        document_type_ref: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<ContenderV0, ProtocolError> {
+        self.try_to_contender_with(|bytes| {
+            Document::from_bytes_bounded(bytes, document_type_ref, platform_version)
         })
     }
 
@@ -151,25 +185,8 @@ impl ContenderWithSerializedDocumentV0 {
         budget: &mut DecodedValueBudget,
         platform_version: &PlatformVersion,
     ) -> Result<ContenderV0, ProtocolError> {
-        let ContenderWithSerializedDocumentV0 {
-            identity_id,
-            serialized_document,
-            vote_tally,
-        } = self;
-
-        Ok(ContenderV0 {
-            identity_id,
-            document: serialized_document
-                .map(|document| {
-                    Document::from_bytes_with_budget(
-                        document.as_slice(),
-                        document_type_ref,
-                        budget,
-                        platform_version,
-                    )
-                })
-                .transpose()?,
-            vote_tally,
+        self.try_into_contender_with(|bytes| {
+            Document::from_bytes_with_budget(bytes, document_type_ref, budget, platform_version)
         })
     }
 
@@ -179,26 +196,8 @@ impl ContenderWithSerializedDocumentV0 {
         budget: &mut DecodedValueBudget,
         platform_version: &PlatformVersion,
     ) -> Result<ContenderV0, ProtocolError> {
-        let ContenderWithSerializedDocumentV0 {
-            identity_id,
-            serialized_document,
-            vote_tally,
-        } = self;
-
-        Ok(ContenderV0 {
-            identity_id: *identity_id,
-            document: serialized_document
-                .as_ref()
-                .map(|document| {
-                    Document::from_bytes_with_budget(
-                        document.as_slice(),
-                        document_type_ref,
-                        budget,
-                        platform_version,
-                    )
-                })
-                .transpose()?,
-            vote_tally: *vote_tally,
+        self.try_to_contender_with(|bytes| {
+            Document::from_bytes_with_budget(bytes, document_type_ref, budget, platform_version)
         })
     }
 }

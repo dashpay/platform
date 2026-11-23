@@ -14,9 +14,7 @@ use dpp::data_contract::associated_token::token_configuration::accessors::v0::To
 use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
-use dpp::data_contract::document_type::{
-    DecodedValueBudget, DocumentTypeRef, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
-};
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::document::document_methods::DocumentMethodsV0;
@@ -470,13 +468,9 @@ impl Drive {
                                 .map(|element| element.into_item_bytes().map_err(Error::from))
                                 .transpose()?
                                 .map(|serialized| {
-                                    let mut budget = DecodedValueBudget::new(
-                                        DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
-                                    );
-                                    Document::from_bytes_with_budget(
+                                    Document::from_bytes_bounded(
                                         serialized.as_slice(),
                                         document_type,
-                                        &mut budget,
                                         platform_version,
                                     )
                                     .map_err(|error| {
@@ -2337,19 +2331,14 @@ impl Drive {
                 })?;
 
                 let doc = match document_element {
-                    Some(Element::Item(serialized, _)) => {
-                        let mut budget =
-                            DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
-                        Document::from_bytes_with_budget(
-                            serialized.as_slice(),
-                            document_type,
-                            &mut budget,
-                            platform_version,
-                        )
-                        .map_err(|error| {
-                            with_proved_root_on_budget_exceeded(root_hash, error.into())
-                        })?
-                    }
+                    Some(Element::Item(serialized, _)) => Document::from_bytes_bounded(
+                        serialized.as_slice(),
+                        document_type,
+                        platform_version,
+                    )
+                    .map_err(|error| {
+                        with_proved_root_on_budget_exceeded(root_hash, error.into())
+                    })?,
                     Some(_) => {
                         return Err(Error::Proof(ProofError::CorruptedProof(
                             "expected an item element for withdrawal document".to_string(),
