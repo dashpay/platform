@@ -52,8 +52,14 @@ public struct MasternodeVotingLoadedIdentity: Sendable {
 public enum MasternodeVotingLoad: Sendable {
     /// Store this identity for the masternode.
     case loaded(MasternodeVotingLoadedIdentity)
-    /// Store nothing. `message`, worded in Rust, says why.
-    case refused(message: String)
+    /// Store nothing. `message`, worded in Rust, says why. When the voting key
+    /// was refused, `votingKeyRefusedFor` is the voter identity it was refused
+    /// for: a row this device already stores for that identity holding the
+    /// same key records the refusal
+    /// (``MasternodeVotingKeyCheck/outcome(votingAddress:slot:)`` with
+    /// ``MasternodeVotingKeyCheck/invalid(message:)``). Nothing is created or
+    /// replaced.
+    case refused(message: String, votingKeyRefusedFor: Data?)
 }
 
 extension SDK {
@@ -108,7 +114,12 @@ enum MasternodeVotingLoadFFI {
         case DashSDKMasternodeVotingLoadKind_VoterIdentity:
             role = .voter
         case DashSDKMasternodeVotingLoadKind_Refused:
-            return .refused(message: message ?? "")
+            // Rust sets a verdict on a refusal only for a refused voting
+            // key, and then names the voter identity it was refused for.
+            let refusedFor = load.has_voting_key_verdict
+                ? withUnsafeBytes(of: load.identity_id) { Data($0) }
+                : nil
+            return .refused(message: message ?? "", votingKeyRefusedFor: refusedFor)
         default:
             throw SDKError.internalError(
                 "dash_sdk_masternode_load_for_voting returned an unknown kind \(load.kind.rawValue)"

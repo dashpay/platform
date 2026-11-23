@@ -38,7 +38,10 @@ pub enum DashSDKMasternodeVotingLoadKind {
     /// identity holds the enabled voting key. Its id is not the pro_tx_hash; the host keeps
     /// the pro_tx_hash beside it and names the masternode by it in votes.
     VoterIdentity = 1,
-    /// Nothing is loaded; `message` says why.
+    /// Nothing is loaded; `message` says why. With `has_voting_key_verdict` (then always
+    /// `Invalid`), the voting key was refused for the voter identity `identity_id`: a host that
+    /// already stores a row for that identity holding the same key records the refusal on it
+    /// (`dash_sdk_masternode_voting_key_check_outcome`), and creates or replaces nothing.
     Refused = 2,
 }
 
@@ -51,16 +54,18 @@ pub enum DashSDKMasternodeVotingLoadKind {
 pub struct DashSDKMasternodeVotingLoad {
     /// Which identity is loaded.
     pub kind: DashSDKMasternodeVotingLoadKind,
-    /// The id of the loaded identity, to store its row under. All zero for `Refused`.
+    /// The id of the loaded identity, to store its row under. For `Refused`, the voter
+    /// identity the voting key was refused for when `has_voting_key_verdict`, all zero
+    /// otherwise.
     pub identity_id: [u8; 32],
     /// The loaded identity as JSON, the shape `dash_sdk_identity_fetch` returns. Null for
     /// `Refused`.
     pub identity_json: *mut c_char,
     /// Whether the voting key was checked: a voting address was given and the load was not
-    /// refused.
+    /// refused, or the load was refused because of the voting key.
     pub has_voting_key_verdict: bool,
     /// The voting key's verdict, meaningful only with `has_voting_key_verdict`. Always `Valid`
-    /// for `VoterIdentity`.
+    /// for `VoterIdentity` and `Invalid` for `Refused`.
     pub voting_key_verdict: DashSDKVotingKeyVerdict,
     /// Why the load was refused, or, with an `Invalid` or `Undetermined` verdict, why the
     /// voting key was; to show the user. Null otherwise.
@@ -86,8 +91,8 @@ pub struct DashSDKMasternodeVotingLoad {
 /// # Returns
 /// Success with no data and the decision written to `out_load`. An error when nothing is
 /// proved: the owner identity could not be fetched, or it is absent and the voter identity
-/// could not be fetched; `InvalidParameter` for a null pointer. Nothing is written on an
-/// error.
+/// could not be fetched; when the worker thread cannot start; `InvalidParameter` for a null
+/// pointer. Nothing is written on an error.
 ///
 /// # Safety
 /// `sdk_handle` must be null or a valid `SDKHandle`, `voter_pro_tx_hash` null or point to 32
@@ -130,11 +135,12 @@ unsafe fn load_for_voting_inner(
     }
     let pro_tx_hash = pro_tx_hash_from_wire_order(voter_pro_tx_hash)?;
     let wrapper = &*(sdk_handle as *const SDKWrapper);
-    let load = wrapper.runtime.block_on(load_masternode_for_voting(
+    let voting_address = has_voting_address.then_some(voting_address.bytes);
+    let load = wrapper.runtime.try_block_on(load_masternode_for_voting(
         &wrapper.sdk,
         ProTxHash::from_byte_array(pro_tx_hash.to_buffer()),
-        has_voting_address.then_some(&voting_address.bytes),
-    ))?;
+        voting_address.as_ref(),
+    ))??;
     let decision = LoadDecision::of(load)?;
     out_load.write(decision.into_ffi());
     Ok(())
@@ -182,13 +188,17 @@ impl LoadDecision {
                     message: message.map(|m| c_string(m, "message")).transpose()?,
                 })
             }
-            MasternodeVotingLoad::Refused(refusal) => Ok(LoadDecision {
-                kind: DashSDKMasternodeVotingLoadKind::Refused,
-                identity_id: [0u8; 32],
-                identity_json: None,
-                voting_key_verdict: None,
-                message: Some(c_string(refusal_message(refusal), "message")?),
-            }),
+            MasternodeVotingLoad::Refused(refusal) => {
+                let refused_voter_identity = refusal.refused_voter_identity();
+                Ok(LoadDecision {
+                    kind: DashSDKMasternodeVotingLoadKind::Refused,
+                    identity_id: refused_voter_identity.map_or([0u8; 32], |id| id.to_buffer()),
+                    identity_json: None,
+                    voting_key_verdict: refused_voter_identity
+                        .map(|_| DashSDKVotingKeyVerdict::Invalid),
+                    message: Some(c_string(refusal_message(refusal), "message")?),
+                })
+            }
         }
     }
 
@@ -237,12 +247,14 @@ fn refusal_message(refusal: MasternodeVotingLoadRefusal) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sdk::SDKWrapper;
     use crate::test_utils::test_utils::{create_mock_sdk_handle, destroy_mock_sdk_handle};
     use crate::{dash_sdk_error_free, DashSDKErrorCode};
+    use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dash_sdk::dpp::identity::v0::IdentityV0;
     use dash_sdk::dpp::identity::Identity;
     use dash_sdk::platform::transition::masternode_vote_keys::{
-        voter_identity_id, VotingKeyCheck, VotingKeyProblem,
+        voter_identity_id, voter_identity_voting_key, VotingKeyCheck, VotingKeyProblem,
     };
     use dash_sdk::Error;
     use std::collections::BTreeMap;
@@ -413,12 +425,14 @@ mod tests {
 
     #[test]
     fn should_marshal_a_refusal_with_its_reason_and_no_identity() {
-        for (refusal, says) in [
+        let voter = voter_identity_id(pro_tx_hash(), &VOTING_ADDRESS);
+        for (refusal, says, refused_for) in [
             (
                 MasternodeVotingLoadRefusal::NoOwnerIdentity {
                     pro_tx_hash: pro_tx_hash(),
                 },
                 "voting private key",
+                None,
             ),
             (
                 MasternodeVotingLoadRefusal::NoOwnerIdentityAndUnusableVotingKey {
@@ -429,19 +443,167 @@ mod tests {
                     },
                 },
                 "No voting identity exists",
+                Some(voter),
+            ),
+            (
+                MasternodeVotingLoadRefusal::NoOwnerIdentityAndUnusableVotingKey {
+                    pro_tx_hash: pro_tx_hash(),
+                    problem: VotingKeyProblem::NoUsableVotingKey {
+                        voter_identity: voter,
+                    },
+                },
+                "no enabled ECDSA_HASH160 voting key",
+                Some(voter),
             ),
         ] {
             let decision =
                 LoadDecision::of(MasternodeVotingLoad::Refused(refusal)).expect("marshalled");
             assert_eq!(decision.kind, DashSDKMasternodeVotingLoadKind::Refused);
-            assert_eq!(decision.identity_id, [0u8; 32]);
             assert_eq!(decision.identity_json, None);
-            assert_eq!(decision.voting_key_verdict, None);
+            // A refused voting key names the voter identity it was refused for, as invalid.
+            assert_eq!(
+                decision.identity_id,
+                refused_for.map_or([0u8; 32], |id: Identifier| id.to_buffer())
+            );
+            assert_eq!(
+                decision.voting_key_verdict,
+                refused_for.map(|_| DashSDKVotingKeyVerdict::Invalid)
+            );
             let message = decision.message.expect("a reason");
             let message = message.to_str().expect("utf-8");
             assert!(message.contains(says), "{message}");
             assert!(!message.contains("  "), "whitespace run: {message}");
         }
+    }
+
+    /// A mock SDK handle that proves `owner` at the pro_tx_hash and, when `voter` is given, that
+    /// identity at the voter identity of `VOTING_ADDRESS`. An identity the mock is not told
+    /// about fails its fetch.
+    fn mock_sdk_proving(
+        owner: Option<Identity>,
+        voter: Option<Option<Identity>>,
+    ) -> *mut SDKHandle {
+        let mut wrapper = Box::new(SDKWrapper::new_mock());
+        // The FFI entry point blocks on its own runtime, so this one must be gone first.
+        let setup_runtime = tokio::runtime::Runtime::new().expect("create setup runtime");
+        setup_runtime.block_on(async {
+            wrapper
+                .sdk
+                .mock()
+                .expect_fetch::<Identity, _>(Identifier::new(pro_tx_hash().to_byte_array()), owner)
+                .await
+                .expect("register the owner identity");
+            if let Some(voter) = voter {
+                wrapper
+                    .sdk
+                    .mock()
+                    .expect_fetch::<Identity, _>(
+                        voter_identity_id(pro_tx_hash(), &VOTING_ADDRESS),
+                        voter,
+                    )
+                    .await
+                    .expect("register the voter identity");
+            }
+        });
+        drop(setup_runtime);
+        Box::into_raw(wrapper) as *mut SDKHandle
+    }
+
+    /// Calls the export for `pro_tx_hash()` in wire order, the reverse of its Platform order,
+    /// and returns the decision with its strings copied and freed.
+    unsafe fn load_through_the_export(
+        handle: *mut SDKHandle,
+        with_voting_address: bool,
+    ) -> (DashSDKMasternodeVotingLoad, Option<String>, Option<String>) {
+        let mut wire_order = pro_tx_hash().to_byte_array();
+        wire_order.reverse();
+        let mut out = MaybeUninit::<DashSDKMasternodeVotingLoad>::uninit();
+        let result = dash_sdk_masternode_load_for_voting(
+            handle,
+            wire_order.as_ptr(),
+            with_voting_address,
+            DashSDKVotingAddress {
+                bytes: if with_voting_address {
+                    VOTING_ADDRESS
+                } else {
+                    [0u8; 20]
+                },
+            },
+            out.as_mut_ptr(),
+        );
+        if !result.error.is_null() {
+            let message = CStr::from_ptr((*result.error).message)
+                .to_string_lossy()
+                .into_owned();
+            dash_sdk_error_free(result.error);
+            panic!("the load failed: {message}");
+        }
+        let mut load = out.assume_init();
+        let take = |pointer: &mut *mut c_char| {
+            if pointer.is_null() {
+                return None;
+            }
+            let text = CStr::from_ptr(*pointer).to_string_lossy().into_owned();
+            crate::dash_sdk_string_free(*pointer);
+            *pointer = std::ptr::null_mut();
+            Some(text)
+        };
+        let json = take(&mut load.identity_json);
+        let message = take(&mut load.message);
+        (load, json, message)
+    }
+
+    /// A shared masternode through the C export: the wire-order pro_tx_hash names the
+    /// masternode, the owner identity is proved absent, and the voter identity is loaded.
+    #[test]
+    fn should_load_a_shared_masternode_through_the_export() {
+        let voter_id = voter_identity_id(pro_tx_hash(), &VOTING_ADDRESS);
+        let mut voter = identity(voter_id);
+        voter.add_public_keys([voter_identity_voting_key(&VOTING_ADDRESS)]);
+        let handle = mock_sdk_proving(None, Some(Some(voter)));
+        let (load, json, message) = unsafe { load_through_the_export(handle, true) };
+        destroy_mock_sdk_handle(handle);
+        assert_eq!(load.kind, DashSDKMasternodeVotingLoadKind::VoterIdentity);
+        assert_eq!(load.identity_id, voter_id.to_buffer());
+        assert!(load.has_voting_key_verdict);
+        assert_eq!(load.voting_key_verdict, DashSDKVotingKeyVerdict::Valid);
+        assert!(json.is_some());
+        assert_eq!(message, None);
+    }
+
+    /// Without a voting address the voter identity is never fetched (the mock holds no answer
+    /// for it, so a fetch would fail the load): the owner identity loads with no verdict.
+    #[test]
+    fn should_load_the_owner_identity_without_looking_up_a_voter_through_the_export() {
+        let owner_id = Identifier::new(pro_tx_hash().to_byte_array());
+        let handle = mock_sdk_proving(Some(identity(owner_id)), None);
+        let (load, json, message) = unsafe { load_through_the_export(handle, false) };
+        destroy_mock_sdk_handle(handle);
+        assert_eq!(load.kind, DashSDKMasternodeVotingLoadKind::OwnerIdentity);
+        assert_eq!(load.identity_id, owner_id.to_buffer());
+        assert!(!load.has_voting_key_verdict);
+        assert!(json.is_some());
+        assert_eq!(message, None);
+    }
+
+    /// A shared masternode whose voting key was disabled: refused, naming the voter identity
+    /// the key was refused for, so a host can record the refusal on a row it holds there.
+    #[test]
+    fn should_refuse_a_disabled_key_and_name_its_voter_identity_through_the_export() {
+        let voter_id = voter_identity_id(pro_tx_hash(), &VOTING_ADDRESS);
+        let mut voter = identity(voter_id);
+        let mut key = voter_identity_voting_key(&VOTING_ADDRESS);
+        key.set_disabled_at(1_700_000_000);
+        voter.add_public_keys([key]);
+        let handle = mock_sdk_proving(None, Some(Some(voter)));
+        let (load, json, message) = unsafe { load_through_the_export(handle, true) };
+        destroy_mock_sdk_handle(handle);
+        assert_eq!(load.kind, DashSDKMasternodeVotingLoadKind::Refused);
+        assert_eq!(load.identity_id, voter_id.to_buffer());
+        assert!(load.has_voting_key_verdict);
+        assert_eq!(load.voting_key_verdict, DashSDKVotingKeyVerdict::Invalid);
+        assert_eq!(json, None);
+        assert!(message.is_some());
     }
 
     /// The decision crosses the C ABI with its strings owned by the caller, and no verdict as

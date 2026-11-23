@@ -255,6 +255,26 @@ pub enum MasternodeVotingIdentity {
     Voter(Identity),
 }
 
+impl MasternodeVotingLoadRefusal {
+    /// The voter identity the voting key was refused for, when the refusal is about a voting
+    /// key. A host that already stores a row for that identity holding the same key records
+    /// the refusal on it, as it does for a refused key of an owner identity.
+    pub fn refused_voter_identity(&self) -> Option<Identifier> {
+        match self {
+            MasternodeVotingLoadRefusal::NoOwnerIdentity { .. } => None,
+            MasternodeVotingLoadRefusal::NoOwnerIdentityAndUnusableVotingKey {
+                problem, ..
+            } => Some(match problem {
+                VotingKeyProblem::NoVoterIdentity {
+                    expected_voter_identity,
+                    ..
+                } => *expected_voter_identity,
+                VotingKeyProblem::NoUsableVotingKey { voter_identity } => *voter_identity,
+            }),
+        }
+    }
+}
+
 impl MasternodeVotingIdentity {
     /// The fetched identity.
     pub fn identity(&self) -> &Identity {
@@ -405,17 +425,20 @@ pub async fn load_masternode_for_voting(
     voting_address: Option<&[u8; 20]>,
 ) -> Result<MasternodeVotingLoad, Error> {
     let owner = Identity::fetch(sdk, Identifier::new(pro_tx_hash.to_byte_array()));
+    // The voter fetch's own result is data (it decides an owner's voting key verdict), so only
+    // the owner fetch can fail the join: a failed owner fetch returns at once, without waiting
+    // for the voter fetch.
     let voter = async {
-        match voting_address {
+        Ok::<_, Error>(match voting_address {
             Some(address) => Some((
                 address,
                 Identity::fetch(sdk, voter_identity_id(pro_tx_hash, address)).await,
             )),
             None => None,
-        }
+        })
     };
-    let (owner, voter) = futures::join!(owner, voter);
-    masternode_voting_load(pro_tx_hash, owner?, voter)
+    let (owner, voter) = futures::try_join!(owner, voter)?;
+    masternode_voting_load(pro_tx_hash, owner, voter)
 }
 
 /// A [`VotingKeyCheck`] without its details: what a host records for a stored voting key.
@@ -1081,6 +1104,38 @@ mod tests {
                     voter_identity: voter_identity_id(pro_tx_hash(), &VOTING_ADDRESS),
                 },
             }
+        );
+    }
+
+    /// A refusal of the voting key names the voter identity it was refused for; a refusal for
+    /// want of an owner identity, with no voting key, names none.
+    #[test]
+    fn should_name_the_voter_identity_a_voting_key_was_refused_for() {
+        let voter = voter_identity_id(pro_tx_hash(), &VOTING_ADDRESS);
+        for problem in [
+            VotingKeyProblem::NoVoterIdentity {
+                pro_tx_hash: pro_tx_hash(),
+                expected_voter_identity: voter,
+            },
+            VotingKeyProblem::NoUsableVotingKey {
+                voter_identity: voter,
+            },
+        ] {
+            assert_eq!(
+                MasternodeVotingLoadRefusal::NoOwnerIdentityAndUnusableVotingKey {
+                    pro_tx_hash: pro_tx_hash(),
+                    problem,
+                }
+                .refused_voter_identity(),
+                Some(voter)
+            );
+        }
+        assert_eq!(
+            MasternodeVotingLoadRefusal::NoOwnerIdentity {
+                pro_tx_hash: pro_tx_hash()
+            }
+            .refused_voter_identity(),
+            None
         );
     }
 
