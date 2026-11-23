@@ -221,8 +221,9 @@ mkdir "${DIR}"
 LOG="$(gh api "repos/${REPO}/actions/jobs/${JOB_ID}/logs")" \
   || fail "could not read the log of the Release Dashmate checksums job (job ${JOB_ID} of run ${RUN_ID}). GitHub keeps job logs only as long as the repository's retention setting says, and re-runs a job only within 30 days of its run; past either, this release cannot be signed with this script"
 RECORD="$(echo "${LOG}" | sed -nE 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z SHA256SUMS attached: asset ([0-9]+) sha256 ([0-9a-f]{64})$/\1 \2/p')"
-[ -n "${RECORD}" ] && [ "$(echo "${RECORD}" | wc -l | tr -d ' ')" = 1 ] \
-  || fail "the log of the Release Dashmate checksums job (job ${JOB_ID} of run ${RUN_ID}) does not record exactly one SHA256SUMS"
+if [ -z "${RECORD}" ] || [ "$(echo "${RECORD}" | wc -l | tr -d ' ')" != 1 ]; then
+  fail "the log of the Release Dashmate checksums job (job ${JOB_ID} of run ${RUN_ID}) does not record exactly one SHA256SUMS"
+fi
 RECORD_ID="${RECORD%% *}"
 RECORD_SUM="${RECORD#* }"
 if [ "${SUMS_ID}" != "${RECORD_ID}" ] || [ "${SUMS_DIGEST}" != "sha256:${RECORD_SUM}" ]; then
