@@ -137,6 +137,44 @@ impl ShieldedTokenPurchaser {
     }
 }
 
+impl ShieldedTokenPurchaser {
+    /// Move `amount` of the token at `token_contract_position` of
+    /// `data_contract_id` from `account`'s notes in the token's shielded pool
+    /// into `recipient_id`'s token balance, paying the fee from the account's
+    /// credit pool notes ([`PlatformWallet::shielded_token_unshield`]), then
+    /// request a shielded sync when the unshield may be on the network, as
+    /// [`Self::purchase`] does.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn unshield<P: OrchardProver>(
+        &self,
+        seed: &[u8],
+        account: u32,
+        data_contract_id: &Identifier,
+        token_contract_position: TokenContractPosition,
+        recipient_id: &Identifier,
+        amount: TokenAmount,
+        prover: P,
+    ) -> Result<ShieldedTokenSpendOutcome, PlatformWalletError> {
+        let result = self
+            .wallet
+            .shielded_token_unshield(
+                &self.coordinator,
+                seed,
+                account,
+                data_contract_id,
+                token_contract_position,
+                recipient_id,
+                amount,
+                prover,
+            )
+            .await;
+        if spend_needs_shielded_sync(&result) {
+            request_shielded_sync(&self.sync);
+        }
+        result
+    }
+}
+
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// What a shielded token purchase from `wallet_id` needs
     /// ([`ShieldedTokenPurchaser`]). Refuses a wallet the manager does not

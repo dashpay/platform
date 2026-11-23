@@ -54,8 +54,8 @@ use {
     },
     super::shielded::operations::{
         discharge_read_back_private_payments, private_document_create_from_pool_with_metadata,
-        token_purchase_from_pool, token_shielded_transfer, ShieldedTokenPurchaseOutcome,
-        ShieldedTokenSpendOutcome,
+        token_purchase_from_pool, token_shielded_transfer, token_unshield,
+        ShieldedTokenPurchaseOutcome, ShieldedTokenSpendOutcome,
     },
     super::shielded::store::{
         PendingRedrive, PrivateContactPayment, PrivatePaymentEntry, PrivatePaymentRecord,
@@ -2170,6 +2170,48 @@ impl PlatformWallet {
             *data_contract_id,
             token_contract_position,
             recipient,
+            amount,
+            &prover,
+        )
+        .await
+    }
+
+    /// Move `amount` of the token at `token_contract_position` of
+    /// `data_contract_id` from `account`'s notes in the token's shielded pool
+    /// into `recipient_id`'s token balance (`TokenUnshieldWithShieldedFee`,
+    /// type 27), paying the fee from the account's credit pool notes. `seed`
+    /// supplies the transient spend authority, and the lifecycle gate is held
+    /// as [`Self::shielded_token_transfer`] holds it.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn shielded_token_unshield<P: OrchardProver>(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        seed: &[u8],
+        account: u32,
+        data_contract_id: &Identifier,
+        token_contract_position: TokenContractPosition,
+        recipient_id: &Identifier,
+        amount: TokenAmount,
+        prover: P,
+    ) -> Result<ShieldedTokenSpendOutcome, PlatformWalletError> {
+        let _lifecycle = self.core().generation_payment_guard().await;
+        if !self.core().is_current_generation().await {
+            return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
+                self.wallet_id,
+            )));
+        }
+        let keyset = self.derive_spend_keyset(seed, account).await?;
+        token_unshield(
+            &self.sdk,
+            coordinator.store(),
+            Some(&self.persister),
+            self.wallet_id,
+            &keyset,
+            account,
+            *data_contract_id,
+            token_contract_position,
+            *recipient_id,
             amount,
             &prover,
         )

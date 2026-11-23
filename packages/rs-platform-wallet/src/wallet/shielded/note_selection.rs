@@ -16,7 +16,8 @@ use dpp::shielded::{
     compute_shielded_identity_create_fee, compute_shielded_identity_top_up_fee,
     compute_shielded_unshield_fee, compute_shielded_withdrawal_fee,
     compute_token_purchase_from_shielded_pool_fee,
-    compute_token_shielded_transfer_with_shielded_fee_fee, is_allowed_identity_create_denomination,
+    compute_token_shielded_transfer_with_shielded_fee_fee,
+    compute_token_unshield_with_shielded_fee_fee, is_allowed_identity_create_denomination,
     SerializedAction,
 };
 use dpp::state_transition::state_transitions::shielded::common_validation::ENCRYPTED_NOTE_SIZE;
@@ -24,6 +25,8 @@ use dpp::state_transition::token_purchase_from_shielded_pool_transition::v0::Tok
 use dpp::state_transition::token_purchase_from_shielded_pool_transition::TokenPurchaseFromShieldedPoolTransition;
 use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::v0::TokenShieldedTransferWithShieldedFeeTransitionV0;
 use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::TokenShieldedTransferWithShieldedFeeTransition;
+use dpp::state_transition::token_unshield_with_shielded_fee_transition::v0::TokenUnshieldWithShieldedFeeTransitionV0;
+use dpp::state_transition::token_unshield_with_shielded_fee_transition::TokenUnshieldWithShieldedFeeTransition;
 use dpp::state_transition::{validate_state_transition_size, StateTransition};
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
@@ -131,49 +134,123 @@ pub fn token_pool_spend_token_actions(token_notes: usize) -> usize {
     token_notes.max(2)
 }
 
-/// The fee of a `TokenShieldedTransferWithShieldedFee` (type 26) whose token bundle has
-/// `token_actions` actions and whose credit pool fee bundle has `fee_actions`: the consensus
-/// formula, which writes nothing outside the two pools.
-pub fn compute_token_shielded_transfer_fee(
-    token_actions: usize,
-    fee_actions: usize,
-    platform_version: &PlatformVersion,
-) -> Result<Credits, ProtocolError> {
-    compute_token_shielded_transfer_with_shielded_fee_fee(
-        token_actions,
-        fee_actions,
-        platform_version,
-    )
+/// Which token pool spend paid from the credit pool a transition is: the two differ in what
+/// their token bundle does, what their fee writes outside the pools, and their wire size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenPoolSpendKind {
+    /// `TokenShieldedTransferWithShieldedFee` (type 26): tokens move within the pool.
+    ShieldedTransfer,
+    /// `TokenUnshieldWithShieldedFee` (type 27): tokens leave the pool into an identity's
+    /// balance.
+    Unshield,
 }
 
-/// The serialized size of a `TokenShieldedTransferWithShieldedFee` with `token_actions` and
-/// `fee_actions` actions, every variable field at its largest: the actions, the proofs at the
-/// canonical length Orchard gives a proof over them ([`Proof::expected_proof_size`]) and the
-/// credit amount at `u64::MAX`.
-fn token_shielded_transfer_wire_size(
-    token_actions: usize,
-    fee_actions: usize,
-) -> Result<u64, ProtocolError> {
-    let proof = |actions: usize| vec![0u8; Proof::expected_proof_size(actions)];
-    let transition = StateTransition::TokenShieldedTransferWithShieldedFee(
-        TokenShieldedTransferWithShieldedFeeTransition::V0(
-            TokenShieldedTransferWithShieldedFeeTransitionV0 {
-                data_contract_id: Identifier::from([0xFF; 32]),
-                token_contract_position: u16::MAX,
-                token_id: Identifier::from([0xFF; 32]),
-                token_actions: vec![largest_action(); token_actions],
-                token_anchor: [0xFF; 32],
-                token_proof: proof(token_actions),
-                token_binding_signature: [0xFF; 64],
-                fee_actions: vec![largest_action(); fee_actions],
-                fee_anchor: [0xFF; 32],
-                fee_proof: proof(fee_actions),
-                fee_binding_signature: [0xFF; 64],
-                credit_amount: u64::MAX,
-            },
-        ),
-    );
-    Ok(transition.serialize_to_bytes()?.len() as u64)
+impl TokenPoolSpendKind {
+    /// The consensus fee of this kind with `token_actions` and `fee_actions` actions.
+    pub fn fee(
+        self,
+        token_actions: usize,
+        fee_actions: usize,
+        platform_version: &PlatformVersion,
+    ) -> Result<Credits, ProtocolError> {
+        match self {
+            Self::ShieldedTransfer => compute_token_shielded_transfer_with_shielded_fee_fee(
+                token_actions,
+                fee_actions,
+                platform_version,
+            ),
+            Self::Unshield => compute_token_unshield_with_shielded_fee_fee(
+                token_actions,
+                fee_actions,
+                platform_version,
+            ),
+        }
+    }
+
+    /// The serialized size of this kind with `token_actions` and `fee_actions` actions, every
+    /// variable field at its largest: the actions, the proofs at the canonical length Orchard
+    /// gives a proof over them ([`Proof::expected_proof_size`]) and the amounts at `u64::MAX`.
+    fn wire_size(self, token_actions: usize, fee_actions: usize) -> Result<u64, ProtocolError> {
+        let proof = |actions: usize| vec![0u8; Proof::expected_proof_size(actions)];
+        let transition = match self {
+            Self::ShieldedTransfer => StateTransition::TokenShieldedTransferWithShieldedFee(
+                TokenShieldedTransferWithShieldedFeeTransition::V0(
+                    TokenShieldedTransferWithShieldedFeeTransitionV0 {
+                        data_contract_id: Identifier::from([0xFF; 32]),
+                        token_contract_position: u16::MAX,
+                        token_id: Identifier::from([0xFF; 32]),
+                        token_actions: vec![largest_action(); token_actions],
+                        token_anchor: [0xFF; 32],
+                        token_proof: proof(token_actions),
+                        token_binding_signature: [0xFF; 64],
+                        fee_actions: vec![largest_action(); fee_actions],
+                        fee_anchor: [0xFF; 32],
+                        fee_proof: proof(fee_actions),
+                        fee_binding_signature: [0xFF; 64],
+                        credit_amount: u64::MAX,
+                    },
+                ),
+            ),
+            Self::Unshield => StateTransition::TokenUnshieldWithShieldedFee(
+                TokenUnshieldWithShieldedFeeTransition::V0(
+                    TokenUnshieldWithShieldedFeeTransitionV0 {
+                        data_contract_id: Identifier::from([0xFF; 32]),
+                        token_contract_position: u16::MAX,
+                        token_id: Identifier::from([0xFF; 32]),
+                        recipient_id: Identifier::from([0xFF; 32]),
+                        amount: u64::MAX,
+                        token_actions: vec![largest_action(); token_actions],
+                        token_anchor: [0xFF; 32],
+                        token_proof: proof(token_actions),
+                        token_binding_signature: [0xFF; 64],
+                        fee_actions: vec![largest_action(); fee_actions],
+                        fee_anchor: [0xFF; 32],
+                        fee_proof: proof(fee_actions),
+                        fee_binding_signature: [0xFF; 64],
+                        credit_amount: u64::MAX,
+                    },
+                ),
+            ),
+        };
+        Ok(transition.serialize_to_bytes()?.len() as u64)
+    }
+
+    /// The most token notes this kind's token bundle may spend at `platform_version`, with a
+    /// one-note fee bundle: each bundle has at most `max_shielded_transition_actions` actions,
+    /// and the transition must fit `max_state_transition_size`, which every node and DAPI
+    /// enforce. A spend needing more is refused before anything is reserved.
+    pub fn max_token_notes(
+        self,
+        platform_version: &PlatformVersion,
+    ) -> Result<usize, ProtocolError> {
+        let mut fitting = 0;
+        for notes in 1..=max_bundle_actions(platform_version) {
+            let size = self.wire_size(token_pool_spend_token_actions(notes), 2)?;
+            if validate_state_transition_size(size, platform_version).is_err() {
+                break;
+            }
+            fitting = notes;
+        }
+        Ok(fitting)
+    }
+
+    /// The most credit pool notes this kind's fee bundle may spend next to a token bundle of
+    /// `token_actions` actions: the fee bundle has `max(notes, 2)` actions.
+    pub fn max_fee_notes(
+        self,
+        token_actions: usize,
+        platform_version: &PlatformVersion,
+    ) -> Result<usize, ProtocolError> {
+        let mut fitting = 0;
+        for notes in 1..=max_bundle_actions(platform_version) {
+            let size = self.wire_size(token_actions, notes.max(2))?;
+            if validate_state_transition_size(size, platform_version).is_err() {
+                break;
+            }
+            fitting = notes;
+        }
+        Ok(fitting)
+    }
 }
 
 /// A serialized action with every field at its largest.
@@ -185,53 +262,6 @@ fn largest_action() -> SerializedAction {
         encrypted_note: vec![0; ENCRYPTED_NOTE_SIZE],
         cv_net: [0; 32],
         spend_auth_sig: [0; 64],
-    }
-}
-
-/// How many notes each bundle of a `TokenShieldedTransferWithShieldedFee` (type 26) may spend at
-/// `platform_version`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TokenPoolSpendNoteLimits {
-    /// The most token notes the token bundle may spend, with a one-note fee bundle.
-    pub max_token_notes: usize,
-}
-
-impl TokenPoolSpendNoteLimits {
-    /// The limits of a type 26 transfer: each bundle has at most
-    /// `max_shielded_transition_actions` actions, and the transition must fit
-    /// `max_state_transition_size`, which every node and DAPI enforce. A transfer needing more
-    /// token notes than [`Self::max_token_notes`] is refused before anything is reserved.
-    pub fn token_shielded_transfer(
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
-        let max_actions = max_bundle_actions(platform_version);
-        let mut max_token_notes = 0;
-        for notes in 1..=max_actions {
-            let size = token_shielded_transfer_wire_size(token_pool_spend_token_actions(notes), 2)?;
-            if validate_state_transition_size(size, platform_version).is_err() {
-                break;
-            }
-            max_token_notes = notes;
-        }
-        Ok(Self { max_token_notes })
-    }
-
-    /// The most credit pool notes the fee bundle of a type 26 transfer may spend next to a token
-    /// bundle of `token_actions` actions: the fee bundle has `max(notes, 2)` actions.
-    pub fn token_shielded_transfer_fee_notes(
-        token_actions: usize,
-        platform_version: &PlatformVersion,
-    ) -> Result<usize, ProtocolError> {
-        let max_actions = max_bundle_actions(platform_version);
-        let mut fitting = 0;
-        for notes in 1..=max_actions {
-            let size = token_shielded_transfer_wire_size(token_actions, notes.max(2))?;
-            if validate_state_transition_size(size, platform_version).is_err() {
-                break;
-            }
-            fitting = notes;
-        }
-        Ok(fitting)
     }
 }
 
@@ -293,10 +323,13 @@ pub enum ShieldedFeeKind {
     /// change output, so it is `max(selected, 2)` as for any spend with change. The price is the
     /// amount selected for, the fee comes on top.
     TokenPurchase,
-    /// [`compute_token_shielded_transfer_fee`]: TokenShieldedTransferWithShieldedFee. The action
-    /// count is the credit pool fee bundle's, `max(selected, 2)`; nothing but the fee leaves the
-    /// credit pool, so the amount selected for is 0.
-    TokenShieldedTransfer {
+    /// A token pool spend paid from the credit pool (types 26 and 27,
+    /// [`TokenPoolSpendKind::fee`]). The action count is the credit pool fee bundle's,
+    /// `max(selected, 2)`; nothing but the fee leaves the credit pool, so the amount selected
+    /// for is 0.
+    TokenPoolSpend {
+        /// Which spend it is.
+        kind: TokenPoolSpendKind,
         /// The token bundle's action count ([`token_pool_spend_token_actions`]).
         token_actions: usize,
     },
@@ -335,9 +368,10 @@ impl ShieldedFeeKind {
             ShieldedFeeKind::TokenPurchase => {
                 compute_token_purchase_from_pool_fee(num_actions, platform_version)
             }
-            ShieldedFeeKind::TokenShieldedTransfer { token_actions } => {
-                compute_token_shielded_transfer_fee(token_actions, num_actions, platform_version)
-            }
+            ShieldedFeeKind::TokenPoolSpend {
+                kind,
+                token_actions,
+            } => kind.fee(token_actions, num_actions, platform_version),
         }
     }
 }
@@ -547,33 +581,49 @@ pub fn select_notes_for_denomination<'a>(
 #[cfg(test)]
 mod tests {
 
-    /// A type 26 transfer spends at least one token note with a one-note fee
-    /// bundle, and the fee kind charges the consensus formula for both
+    /// Types 26 and 27 spend at least one token note with a one-note fee
+    /// bundle, and their fee kind charges the consensus formula for both
     /// bundles' action counts.
     #[test]
-    fn should_bound_a_token_shielded_transfer_and_price_it_as_consensus_does() {
+    fn should_bound_token_pool_spends_and_price_them_as_consensus_does() {
         let platform_version = PlatformVersion::latest();
-        let limits =
-            TokenPoolSpendNoteLimits::token_shielded_transfer(platform_version).expect("limits");
-        assert!(limits.max_token_notes >= 1);
-        let token_actions = token_pool_spend_token_actions(limits.max_token_notes);
-        assert!(
-            TokenPoolSpendNoteLimits::token_shielded_transfer_fee_notes(
-                token_actions,
-                platform_version
-            )
-            .expect("fee notes")
-                >= 1,
-            "the largest token bundle still leaves room for a fee note"
-        );
+        for kind in [
+            TokenPoolSpendKind::ShieldedTransfer,
+            TokenPoolSpendKind::Unshield,
+        ] {
+            let max_token_notes = kind.max_token_notes(platform_version).expect("limit");
+            assert!(max_token_notes >= 1, "{kind:?}");
+            let token_actions = token_pool_spend_token_actions(max_token_notes);
+            assert!(
+                kind.max_fee_notes(token_actions, platform_version)
+                    .expect("fee notes")
+                    >= 1,
+                "{kind:?}: the largest token bundle still leaves room for a fee note"
+            );
+            assert_eq!(
+                ShieldedFeeKind::TokenPoolSpend {
+                    kind,
+                    token_actions: 3
+                }
+                .compute(2, platform_version)
+                .expect("fee"),
+                kind.fee(3, 2, platform_version).expect("consensus fee")
+            );
+        }
         assert_eq!(token_pool_spend_token_actions(1), 2);
         assert_eq!(token_pool_spend_token_actions(3), 3);
         assert_eq!(
-            ShieldedFeeKind::TokenShieldedTransfer { token_actions: 3 }
-                .compute(2, platform_version)
+            TokenPoolSpendKind::Unshield
+                .fee(2, 2, platform_version)
                 .expect("fee"),
-            compute_token_shielded_transfer_with_shielded_fee_fee(3, 2, platform_version)
-                .expect("consensus fee")
+            compute_token_unshield_with_shielded_fee_fee(2, 2, platform_version).expect("fee")
+        );
+        assert_eq!(
+            TokenPoolSpendKind::ShieldedTransfer
+                .fee(2, 2, platform_version)
+                .expect("fee"),
+            compute_token_shielded_transfer_with_shielded_fee_fee(2, 2, platform_version)
+                .expect("fee")
         );
     }
     use super::*;

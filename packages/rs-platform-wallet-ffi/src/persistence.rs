@@ -3635,6 +3635,9 @@ impl PlatformWalletPersistence for FFIPersister {
                                 }
                                 | platform_wallet::wallet::shielded::ShieldedActivityKind::IdentityTopUp {
                                     identity_id,
+                                }
+                                | platform_wallet::wallet::shielded::ShieldedActivityKind::TokenUnshield {
+                                    identity_id,
                                 } => (*identity_id, 1u8),
                                 _ => ([0u8; 32], 0u8),
                             };
@@ -4256,6 +4259,9 @@ impl PlatformWalletPersistence for FFIPersister {
                             },
                             10 => ShieldedActivityKind::TokenPurchase,
                             11 => ShieldedActivityKind::TokenShieldedTransfer,
+                            12 => ShieldedActivityKind::TokenUnshield {
+                                identity_id: ffi.identity_id,
+                            },
                             // 7 and any unknown tag fall back to the
                             // residual — a forward-compat tag we don't yet
                             // model still loads as an opaque spend rather
