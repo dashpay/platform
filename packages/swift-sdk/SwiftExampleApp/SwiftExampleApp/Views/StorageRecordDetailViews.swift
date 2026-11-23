@@ -190,6 +190,10 @@ struct IdentityStorageDetailView: View {
                 FieldRow(label: "Owner Key", value: record.ownerPrivateKeyIdentifier != nil ? "Present" : "Not set")
                 FieldRow(label: "Voting Key", value: record.votingPrivateKeyIdentifier != nil ? "Present" : "Not set")
                 FieldRow(label: "Payout Key", value: record.payoutPrivateKeyIdentifier != nil ? "Present" : "Not set")
+                FieldRow(
+                    label: "Masternode proTxHash (wire)",
+                    value: record.masternodeProTxHash.map(hexString) ?? "Not recorded"
+                )
             }
             Section("Relationships") {
                 // Owning wallet via the `@Relationship`. Prefer
