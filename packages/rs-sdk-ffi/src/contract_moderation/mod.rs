@@ -38,6 +38,7 @@
 mod json;
 mod queries;
 
+pub use json::fee_pot_json as contract_fee_pot_json;
 pub use queries::*;
 
 use crate::FFIError;

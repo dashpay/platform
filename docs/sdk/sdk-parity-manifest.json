@@ -66,6 +66,8 @@
     "platform_address_wallet_addresses_with_balances": "packages/rs-platform-wallet-ffi/src/platform_addresses/wallet.rs",
     "platform_address_wallet_balance_history": "packages/rs-platform-wallet-ffi/src/platform_addresses/balance_history.rs",
     "platform_wallet_claim_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
+    "platform_wallet_contract_fee_claim": "packages/rs-platform-wallet-ffi/src/contract_fee_claim.rs",
+    "platform_wallet_contract_fee_claim_eligibility": "packages/rs-platform-wallet-ffi/src/contract_fee_claim.rs",
     "platform_wallet_create_document_with_signer": "packages/rs-platform-wallet-ffi/src/document.rs",
     "platform_wallet_create_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
     "platform_wallet_dpns_give_up_name": "packages/rs-platform-wallet-ffi/src/dpns_marketplace.rs",
@@ -2676,6 +2678,63 @@
           "kind": "manual",
           "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "DC-08",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "contracts.fee_claim",
+      "title": "Claim a contract's fee pots (protocol version 14)",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_contract_fee_claim",
+        "platform_wallet_contract_fee_claim_eligibility"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "ManagedPlatformWallet.contractFeeClaimEligibility and claimContractFees wrap the two FFI entry points; Rust (IdentityWallet::contract_fee_claim_eligibility) names the wallet identities that may claim each pot, from dpp's ContractFeePot::recipients or, for an elected contract with a seated charter, rs-sdk's ModerationTeam, and the claim keeps the proved balances of the wallet's identities it paid. The SwiftExampleApp fee pots section shows a claim button for exactly those identities and the proved result (TEST_PLAN DC-12). Partial because no simulator or network run of a claim has been recorded. A claim is one transition whose proved balances are persisted as it returns; there is nothing to resume."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI bridge, Kotlin wrapper or KotlinExampleApp control yet for the contract fee claim. Port from packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/ManagedPlatformWalletContractFeeClaims.swift and the SwiftExampleApp ContractFeePotsSection, reusing its contractModeration.feePots.* accessibility identifiers as testTags; the pot argument is the byte 0 owner, 1 moderators."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/contract_fee_claim.rs",
+          "id": "should_let_the_seated_leader_and_active_members_claim_and_not_the_interim_team",
+          "command": "cargo test -p platform-wallet --lib contract_fee_claim",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/contract_fee_claim.rs",
+          "id": "should_write_the_claim_with_the_pot_in_the_fee_pot_read_shape",
+          "command": "cargo test -p platform-wallet-ffi --lib contract_fee_claim",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ContractFeeClaimDecodingTests.swift",
+          "id": "testShouldDecodeAClaimWithThePotItLeftAndTheBalancesItPaid",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ContractFeeClaimDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DC-12",
           "covers_restart": false
         }
       ]

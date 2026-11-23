@@ -797,6 +797,12 @@ pub enum PlatformWalletError {
     #[error("decision proposal {proposal_id} not found")]
     DecisionProposalNotFound { proposal_id: Identifier },
 
+    /// No data contract with this id exists on Platform. Distinct from
+    /// [`Self::InvalidParameter`]: the id was well-formed, the read came
+    /// back empty.
+    #[error("data contract {contract_id} not found")]
+    ContractNotFound { contract_id: Identifier },
+
     /// The DPNS domain document carries no `$price` — it is not listed
     /// for sale. Raised by the wallet's pre-flight check and by the
     /// consensus downcast of `DocumentNotForSaleError` (DPP code 40108).
