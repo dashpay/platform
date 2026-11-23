@@ -40,10 +40,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.dpns.DpnsNameGiveUpChoices
 import org.dashfoundation.dashsdk.dpns.DpnsNameGiveUpMethod
 import org.dashfoundation.dashsdk.errors.DashSdkError
+import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
+import org.dashfoundation.example.di.AppContainer
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
@@ -63,7 +67,7 @@ import org.dashfoundation.example.util.hexToBytes
  * it reports. The name leaves the identity's list through persistence once
  * the network confirmed it gone; this screen never removes or hides rows
  * itself. The one write it makes is clearing the identity's main-name pick
- * after a successful give-up, when Rust's
+ * after a confirmed give-up (even if the screen was left meanwhile), when Rust's
  * [org.dashfoundation.dashsdk.dpns.DpnsMarketplace.giveUpClearsMainName]
  * says the pick names this name, with the targeted update
  * [SelectMainNameScreen]'s pick also lands in.
@@ -138,14 +142,6 @@ fun GiveUpNameScreen(identityIdHex: String, name: String, navController: NavHost
                     method = method,
                     signerHandle = activeManager.signerHandle,
                 )
-                // Only after a confirmed give-up, and only when Rust says the pick names it
-                val pick = container.database.identityDao().getByIdentityId(idBytes)?.mainDpnsName
-                if (activeManager.dpnsMarketplace.giveUpClearsMainName(pick, name)) {
-                    container.database.identityDao()
-                        .updateMainDpnsName(idBytes, null, System.currentTimeMillis())
-                }
-                submitting = null
-                navController.popBackStack()
             } catch (t: Throwable) {
                 when (val failure = GiveUpNameUi.submitFailure(t)) {
                     is GiveUpNameSubmitFailure.Unconfirmed -> {
@@ -155,6 +151,29 @@ fun GiveUpNameScreen(identityIdHex: String, name: String, navController: NavHost
                     is GiveUpNameSubmitFailure.Failed -> submitError = failure.message
                 }
                 submitting = null
+                return@launch
+            }
+            // Platform confirmed it: from here nothing offers another give-up of the name.
+            // The cleanup runs even if this screen's scope was cancelled meanwhile.
+            val cleanupError = clearMainNamePickIfGivenUp(container, activeManager, idBytes, name)
+            submitting = null
+            if (cleanupError == null) {
+                navController.popBackStack()
+            } else {
+                phase = GiveUpNamePhase.GivenUpCleanupFailed(cleanupError)
+            }
+        }
+    }
+
+    fun retryCleanup() {
+        val activeManager = manager ?: return
+        if (submitting != null) return
+        scope.launch {
+            val cleanupError = clearMainNamePickIfGivenUp(container, activeManager, idBytes, name)
+            if (cleanupError == null) {
+                navController.popBackStack()
+            } else {
+                phase = GiveUpNamePhase.GivenUpCleanupFailed(cleanupError)
             }
         }
     }
@@ -237,6 +256,23 @@ fun GiveUpNameScreen(identityIdHex: String, name: String, navController: NavHost
                         onClick = { reload++ },
                         modifier = Modifier.testTag("giveUpName.retry"),
                     ) { Text("Retry") }
+                }
+                is GiveUpNamePhase.GivenUpCleanupFailed -> FormSection(title = "Given up") {
+                    Text(
+                        GiveUpNameUi.CLEANUP_FAILED_EXPLANATION,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    SelectionContainer {
+                        Text(
+                            current.message,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.testTag("giveUpName.cleanupError"),
+                        )
+                    }
+                    TextButton(
+                        onClick = { retryCleanup() },
+                        modifier = Modifier.testTag("giveUpName.retryCleanup"),
+                    ) { Text("Clear Main Name Again") }
                 }
                 is GiveUpNamePhase.Loaded -> LoadedSections(
                     choices = current.choices,
@@ -391,6 +427,31 @@ private fun ExplainedMessage(title: String, explanation: String, message: String
     }
 }
 
+/**
+ * After a confirmed give-up, clear the identity's main-name pick when Rust's
+ * rule says it names the given-up name, with the targeted update
+ * [SelectMainNameScreen]'s pick also lands in. Runs [NonCancellable]: the
+ * give-up already happened, so leaving the screen must not skip it. Returns
+ * the failure's message, or null when the pick is cleared or stays.
+ */
+private suspend fun clearMainNamePickIfGivenUp(
+    container: AppContainer,
+    manager: PlatformWalletManager,
+    identityId: ByteArray,
+    name: String,
+): String? = withContext(NonCancellable) {
+    try {
+        val pick = container.database.identityDao().getByIdentityId(identityId)?.mainDpnsName
+        if (manager.dpnsMarketplace.giveUpClearsMainName(pick, name)) {
+            container.database.identityDao()
+                .updateMainDpnsName(identityId, null, System.currentTimeMillis())
+        }
+        null
+    } catch (t: Throwable) {
+        t.message ?: t.javaClass.simpleName
+    }
+}
+
 private fun shortIdentifier(id: ByteArray): String {
     val encoded = Base58.encode(id)
     return if (encoded.length <= 12) encoded else "${encoded.take(6)}…${encoded.takeLast(6)}"
@@ -405,6 +466,11 @@ internal sealed interface GiveUpNamePhase {
     data class SdkPinned(val message: String) : GiveUpNamePhase
     data class Failed(val message: String) : GiveUpNamePhase
     data class Loaded(val choices: DpnsNameGiveUpChoices) : GiveUpNamePhase
+    /**
+     * Platform confirmed the give-up, but clearing the main-name pick in Room
+     * failed. Only that cleanup is offered again, never another give-up.
+     */
+    data class GivenUpCleanupFailed(val message: String) : GiveUpNamePhase
     /**
      * A give-up was sent and may have been delivered, but was not
      * confirmed. No further give-up is offered for this name here.
@@ -449,6 +515,10 @@ internal object GiveUpNameUi {
     const val TOMBSTONE_EXPLANATION =
         "Tombstoning retires the name for good. Nobody can register it again, you included, " +
             "and nobody can undo it."
+
+    const val CLEANUP_FAILED_EXPLANATION =
+        "Platform confirmed the name is given up, but the app could not clear it as your " +
+            "main name. Try again, or pick another main name from the identity."
 
     const val TOMBSTONE_ONLY_NOTICE =
         "The network accepts only a tombstone for this name: it can not be deleted."

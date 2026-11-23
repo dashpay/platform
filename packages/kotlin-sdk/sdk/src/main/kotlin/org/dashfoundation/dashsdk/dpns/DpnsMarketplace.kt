@@ -6,6 +6,7 @@ import org.dashfoundation.dashsdk.ffi.DpnsGiveUpNative
 import org.dashfoundation.dashsdk.ffi.DpnsMarketplaceNative
 import org.dashfoundation.dashsdk.wallet.TeardownGate
 import org.dashfoundation.dashsdk.wallet.op
+import org.dashfoundation.dashsdk.wallet.opReturningCompletedResult
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -229,6 +230,11 @@ class DpnsMarketplace internal constructor(
      * [signerHandle] is the wallet manager's identity signer; the caller keeps
      * it alive through the call.
      *
+     * A give-up the network confirmed is returned even if the caller was
+     * cancelled while the native call ran ([opReturningCompletedResult]), as
+     * Swift's `Task.detached` returns it: the caller must act on it before
+     * its next suspension point, which throws.
+     *
      * Port of `ManagedPlatformWallet.giveUpDpnsName(ownerIdentityId:name:expectedDocumentId:method:signer:)`
      * in `packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/DpnsMarketplace.swift`.
      */
@@ -239,7 +245,7 @@ class DpnsMarketplace internal constructor(
         expectedDocumentId: ByteArray,
         method: DpnsNameGiveUpMethod,
         signerHandle: Long,
-    ): DpnsNameGivenUp = gate.op {
+    ): DpnsNameGivenUp = gate.opReturningCompletedResult {
         require(ownerIdentityId.size == 32) { "ownerIdentityId must be 32 bytes" }
         require(expectedDocumentId.size == 32) { "expectedDocumentId must be 32 bytes" }
         require(signerHandle != 0L) { "signerHandle must not be 0" }
