@@ -145,10 +145,15 @@ object KeyLimitsFormatting {
         }
 
     /**
-     * The latest instant the expiry date picker offers: 9999-12-31 23:59:59.999 UTC. An expiry
-     * past it (Platform imposes no such bound) is shown, but not offered for editing here.
+     * The latest instant the expiry date picker is opened on: 9999-12-30 00:00 UTC, a day
+     * short of the picker's last year so that its local calendar day is still in 9999 in
+     * every time zone (UTC+14 included). An expiry past it (Platform imposes no such bound)
+     * is shown, but not offered for editing here.
      */
-    const val MAX_PICKABLE_MILLIS: Long = 253_402_300_799_999L
+    const val MAX_PICKABLE_MILLIS: Long = 253_402_128_000_000L
+
+    /** The last instant shown as a calendar date: 9999-12-31 23:59:59.999 UTC. */
+    private const val LAST_DATE_MILLIS: Long = 253_402_300_799_999L
 
     /** The years the expiry date picker offers. */
     val PICKABLE_YEARS: IntRange = 1970..9999
@@ -170,7 +175,7 @@ object KeyLimitsFormatting {
         locale: Locale = Locale.getDefault(),
         zone: TimeZone = TimeZone.getDefault(),
     ): String {
-        if (expiresAt > MAX_PICKABLE_MILLIS.toULong()) return "$expiresAt ms after 1970"
+        if (expiresAt > LAST_DATE_MILLIS.toULong()) return "$expiresAt ms after 1970"
         val formatter = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, locale)
         formatter.timeZone = zone
         return formatter.format(Date(expiresAt.toLong()))

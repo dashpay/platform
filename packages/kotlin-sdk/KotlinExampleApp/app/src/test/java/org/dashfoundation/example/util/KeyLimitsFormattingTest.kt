@@ -115,15 +115,23 @@ class KeyLimitsFormattingTest {
         assertEquals("$far ms after 1970", KeyLimitsFormatting.expiryDate(far))
         assertTrue(KeyLimitsFormatting.expiryRelative(far, 1_700_000_000_000).startsWith("Expires in "))
         assertTrue(KeyLimitsFormatting.expiryRelative((Long.MAX_VALUE.toULong() + 1uL), 0).startsWith("Expires in "))
-        // The last pickable instant still renders as a date.
+        // The last instant of year 9999 still renders as a date.
         assertEquals(
             "Dec 31, 9999, 11:59 PM",
-            KeyLimitsFormatting.expiryDate(
-                KeyLimitsFormatting.MAX_PICKABLE_MILLIS.toULong(),
-                Locale.US,
-                TimeZone.getTimeZone("UTC"),
-            ).replace('\u202F', ' '),
+            KeyLimitsFormatting.expiryDate(253_402_300_799_999uL, Locale.US, TimeZone.getTimeZone("UTC"))
+                .replace('\u202F', ' '),
         )
+    }
+
+    @Test
+    fun shouldOpenThePickerOnADayInsideItsYearsInEveryTimeZone() {
+        val last = KeyLimitsFormatting.MAX_PICKABLE_MILLIS
+        for (zoneId in listOf("Pacific/Kiritimati", "UTC", "Etc/GMT+12")) { // UTC+14, UTC, UTC-12
+            val day = java.util.Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+                timeInMillis = KeyLimitsFormatting.dateUtcMillis(last, TimeZone.getTimeZone(zoneId))
+            }
+            assertTrue(zoneId, day.get(java.util.Calendar.YEAR) in KeyLimitsFormatting.PICKABLE_YEARS)
+        }
     }
 
     @Test
