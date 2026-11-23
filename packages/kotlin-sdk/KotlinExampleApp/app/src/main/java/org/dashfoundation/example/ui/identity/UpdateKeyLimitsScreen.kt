@@ -202,14 +202,14 @@ class UpdateKeyLimitsViewModel(private val saved: SavedStateHandle) : ViewModel(
      * A restored Extend expiry edit was dropped because the key's expiry, read from Platform
      * on opening, is now past what the picker can show.
      */
-    var restoredExpiryDropped by mutableStateOf(false)
+    var restoredExpiryDropped by mutableStateOf(saved.get<Boolean>(EXPIRY_DROPPED) ?: false)
         private set
 
     /**
      * A restored picked expiry was past this device's last pickable instant (the draft was
      * saved in another time zone), so it was set back to a date the picker can show.
      */
-    var restoredExpiryReset by mutableStateOf(false)
+    var restoredExpiryReset by mutableStateOf(saved.get<Boolean>(EXPIRY_RESET) ?: false)
         private set
 
     /** The last submission's error text (Rust's), with the lock reason. */
@@ -322,7 +322,7 @@ class UpdateKeyLimitsViewModel(private val saved: SavedStateHandle) : ViewModel(
                     // zone) would open the picker on another day, so it is replaced too.
                     val base = maxOf(expiresAt.toLong(), System.currentTimeMillis())
                     setPickedExpiry(minOf(base, maxPickable - THIRTY_DAYS_MILLIS) + THIRTY_DAYS_MILLIS)
-                    if (restored != null) restoredExpiryReset = true
+                    if (restored != null) setExpiryNotice(reset = true, dropped = restoredExpiryDropped)
                 }
                 Gate.Ready(opening)
             } catch (e: CancellationException) {
@@ -334,7 +334,7 @@ class UpdateKeyLimitsViewModel(private val saved: SavedStateHandle) : ViewModel(
                 if (extendExpiry && !expiryPickable) {
                     extendExpiry = false
                     saved[EXTEND_EXPIRY] = false
-                    restoredExpiryDropped = true
+                    setExpiryNotice(reset = restoredExpiryReset, dropped = true)
                 }
                 schedulePreview(debounce = false)
             }
@@ -352,13 +352,27 @@ class UpdateKeyLimitsViewModel(private val saved: SavedStateHandle) : ViewModel(
         if (isSubmitting || locked) return
         extendExpiry = on
         saved[EXTEND_EXPIRY] = on
+        // The person has acted on the expiry edit: a notice about the restored one is done.
+        setExpiryNotice(reset = false, dropped = false)
         schedulePreview()
     }
 
     fun onPickedExpiry(millis: Long) {
         if (isSubmitting || locked) return
         setPickedExpiry(millis)
+        setExpiryNotice(reset = false, dropped = restoredExpiryDropped)
         schedulePreview()
+    }
+
+    /**
+     * Saved with the draft, so a notice that a restored expiry edit was changed survives
+     * another save and restore until the person picks a date or turns the edit off.
+     */
+    private fun setExpiryNotice(reset: Boolean, dropped: Boolean) {
+        restoredExpiryReset = reset
+        restoredExpiryDropped = dropped
+        saved[EXPIRY_RESET] = reset
+        saved[EXPIRY_DROPPED] = dropped
     }
 
     private fun setPickedExpiry(millis: Long) {
@@ -484,6 +498,8 @@ class UpdateKeyLimitsViewModel(private val saved: SavedStateHandle) : ViewModel(
         private const val LOCKED = "keyLimits.locked"
         private const val SUBMISSION_IN_FLIGHT = "keyLimits.submissionInFlight"
         private const val SUCCEEDED = "keyLimits.succeeded"
+        private const val EXPIRY_RESET = "keyLimits.expiryReset"
+        private const val EXPIRY_DROPPED = "keyLimits.expiryDropped"
     }
 }
 

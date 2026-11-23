@@ -354,6 +354,21 @@ class UpdateKeyLimitsViewModelTest {
         assertTrue(state.pickedExpiryMillis!! <= last)
         assertTrue(state.extendExpiry)
 
+        // Saved and restored again before the person acts: the notice is still shown.
+        val savedAgain = SavedStateHandle(saved.keys().associateWith { saved.get<Any?>(it) })
+        val again = UpdateKeyLimitsViewModel(savedAgain)
+        assertTrue(again.restoredExpiryReset)
+        again.load { Result.success(wallet) }
+        advanceUntilIdle()
+        assertTrue(again.restoredExpiryReset)
+        // Picking a date clears it, also for the next restore.
+        again.onPickedExpiry(1_900_000_000_000L)
+        assertFalse(again.restoredExpiryReset)
+        assertFalse(
+            UpdateKeyLimitsViewModel(SavedStateHandle(savedAgain.keys().associateWith { savedAgain.get<Any?>(it) }))
+                .restoredExpiryReset,
+        )
+
         // A restored pick within range is kept.
         val kept = UpdateKeyLimitsViewModel(
             SavedStateHandle(mapOf("keyLimits.extendExpiry" to true, "keyLimits.pickedExpiry" to 1_900_000_000_000L)),

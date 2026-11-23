@@ -129,7 +129,7 @@ class KeyLimitsFormattingTest {
         for (zoneId in listOf("Pacific/Kiritimati", "UTC", "Etc/GMT+12")) { // UTC+14, UTC, UTC-12
             val zone = TimeZone.getTimeZone(zoneId)
             for (instant in listOf(lastUtc, KeyLimitsFormatting.maxPickableMillis(zone))) {
-                val day = java.util.Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+                val day = java.util.GregorianCalendar(TimeZone.getTimeZone("UTC"), Locale.ROOT).apply {
                     timeInMillis = KeyLimitsFormatting.pickerDateUtcMillis(instant, zone)
                 }
                 assertTrue(zoneId, day.get(java.util.Calendar.YEAR) in KeyLimitsFormatting.PICKABLE_YEARS)
