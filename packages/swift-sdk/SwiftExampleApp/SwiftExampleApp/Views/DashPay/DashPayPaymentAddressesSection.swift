@@ -1,4 +1,3 @@
-import SwiftData
 import SwiftDashSDK
 import SwiftUI
 import UIKit
@@ -43,13 +42,28 @@ extension DashPayPaymentAddressKind {
 /// published address with a copy button. With `showsUnpublished` false the
 /// section is hidden when the profile publishes none (contact detail); with
 /// it true each unpublished kind reads "Not published" (own profile).
+///
+/// `isLastKnown` marks addresses read from a cached copy of someone else's
+/// profile (contact detail): the section is titled as the last known
+/// addresses and its footer says they may have changed since `checkedAt`.
 struct DashPayPublishedPaymentAddressesSection: View {
     let profile: DashPayProfile?
     let network: Network
     let identifierPrefix: String
     let showsUnpublished: Bool
+    var isLastKnown: Bool = false
+    /// When the cached profile was last checked, if known.
+    var checkedAt: Date?
 
     @State private var copiedKind: DashPayPaymentAddressKind?
+
+    private var lastKnownNote: String {
+        if let checkedAt {
+            let when = checkedAt.formatted(date: .abbreviated, time: .shortened)
+            return "Read from this contact's profile when it was last checked (\(when)). They may have changed since."
+        }
+        return "Read from this contact's profile when it was last checked. They may have changed since."
+    }
 
     private var publishedKinds: [DashPayPaymentAddressKind] {
         DashPayPaymentAddressKind.allCases.filter { profile?.paymentAddress($0) != nil }
@@ -66,9 +80,15 @@ struct DashPayPublishedPaymentAddressesSection: View {
                     row(kind)
                 }
             } header: {
-                Text("Payment addresses")
+                Text(isLastKnown ? "Last known payment addresses" : "Payment addresses")
             } footer: {
-                Text("Published addresses are public. Anyone can see them, and payments to them can be linked to this profile.")
+                VStack(alignment: .leading, spacing: 4) {
+                    if isLastKnown {
+                        Text(lastKnownNote)
+                            .accessibilityIdentifier("\(identifierPrefix).lastKnownNote")
+                    }
+                    Text("Published addresses are public. Anyone can see them, and payments to them can be linked to this profile.")
+                }
             }
         }
     }
@@ -139,6 +159,13 @@ final class DashPayPaymentAddressEditorModel: ObservableObject {
         var error: String?
         var isFetchingWalletAddress = false
         var walletAddressError: String?
+        /// True while `text` is the address "Use this wallet's address"
+        /// filled in; a later edit clears it.
+        var filledFromWallet = false
+        /// Changes on every text or mode change. A fill that awaits
+        /// applies its result only if this is unchanged, so a newer edit
+        /// by the user wins.
+        var revision = 0
     }
 
     let existing: DashPayProfile?
@@ -223,10 +250,18 @@ final class DashPayPaymentAddressEditorModel: ObservableObject {
     func setMode(_ mode: Mode, for kind: DashPayPaymentAddressKind) {
         if mode == .set, setUnavailableReason(kind) != nil { return }
         rows[kind]?.mode = mode
+        rows[kind]?.revision += 1
     }
 
+    /// The user's edit of the field.
     func setText(_ text: String, for kind: DashPayPaymentAddressKind) {
+        apply(text, for: kind, fromWallet: false)
+    }
+
+    private func apply(_ text: String, for kind: DashPayPaymentAddressKind, fromWallet: Bool) {
         rows[kind]?.text = text
+        rows[kind]?.filledFromWallet = fromWallet
+        rows[kind]?.revision += 1
         revalidate(kind)
     }
 
@@ -255,9 +290,10 @@ final class DashPayPaymentAddressEditorModel: ObservableObject {
     // MARK: Use this wallet's address
 
     /// Fill the Core field with this wallet's next receive address
-    /// (`ManagedCoreWallet.nextReceiveAddress(accountIndex: 0)`). That call
-    /// advances the BIP-44 receive pool, so the address is fetched once and
-    /// reused for later taps in this editor.
+    /// (`ManagedCoreWallet.nextReceiveAddress(accountIndex: 0)`; the wallet
+    /// picks it). That call advances the BIP-44 receive pool, so the address
+    /// is fetched once and reused for later taps in this editor. The
+    /// Platform field has no such fill: it is typed or pasted.
     func useCoreWalletAddress(wallet: ManagedPlatformWallet?) {
         rows[.core]?.walletAddressError = nil
         if coreWalletAddress == nil {
@@ -273,24 +309,14 @@ final class DashPayPaymentAddressEditorModel: ObservableObject {
             }
         }
         if let coreWalletAddress {
-            setText(coreWalletAddress, for: .core)
+            apply(coreWalletAddress, for: .core, fromWallet: true)
         }
-    }
-
-    /// Fill the Platform field with the wallet's Platform receive address,
-    /// the one Receive shows (persisted `PersistentPlatformAddress`).
-    func usePlatformWalletAddress(_ address: String?) {
-        rows[.platform]?.walletAddressError = nil
-        guard let address else {
-            rows[.platform]?.walletAddressError = "No Platform receive address is available for this wallet yet."
-            return
-        }
-        setText(address, for: .platform)
     }
 
     /// Fill the shielded field with this identity's dedicated shielded tip
     /// address, prepared now. It is the only shielded address of this wallet
-    /// a profile may publish.
+    /// a profile may publish. If the user edits the field or changes its
+    /// mode while the address is being prepared, the result is dropped.
     func useShieldedWalletAddress(
         walletManager: PlatformWalletManager,
         walletId: Data?,
@@ -305,6 +331,7 @@ final class DashPayPaymentAddressEditorModel: ObservableObject {
             rows[.shielded]?.walletAddressError = networkError ?? "The wallet's network is unknown."
             return
         }
+        let revision = rows[.shielded]?.revision
         rows[.shielded]?.isFetchingWalletAddress = true
         defer { rows[.shielded]?.isFetchingWalletAddress = false }
         do {
@@ -313,6 +340,7 @@ final class DashPayPaymentAddressEditorModel: ObservableObject {
                 identityId: identityId,
                 resolver: MnemonicResolver()
             )
+            guard rows[.shielded]?.revision == revision else { return }
             guard let text = DashPayProfile.paymentAddressString(
                 kind: .shielded,
                 bytes: raw,
@@ -321,8 +349,9 @@ final class DashPayPaymentAddressEditorModel: ObservableObject {
                 rows[.shielded]?.walletAddressError = "The prepared shielded address could not be shown on \(network.displayName)."
                 return
             }
-            setText(text, for: .shielded)
+            apply(text, for: .shielded, fromWallet: true)
         } catch {
+            guard rows[.shielded]?.revision == revision else { return }
             rows[.shielded]?.walletAddressError = "Couldn't prepare the shielded address: \(error.localizedDescription)"
         }
     }
@@ -330,11 +359,12 @@ final class DashPayPaymentAddressEditorModel: ObservableObject {
     // MARK: Submit
 
     /// True when a row is set to Set without an address platform-wallet
-    /// accepted.
+    /// accepted, or while its wallet address is still being filled in (so
+    /// Save cannot submit the address the fill is about to replace).
     var hasIncompleteSet: Bool {
         DashPayPaymentAddressKind.allCases.contains { kind in
             let row = row(kind)
-            return row.mode == .set && row.bytes == nil
+            return row.mode == .set && (row.bytes == nil || row.isFetchingWalletAddress)
         }
     }
 
@@ -368,8 +398,9 @@ enum DashPayPaymentAddressEditorError: LocalizedError {
 // MARK: - Editor section
 
 /// Editor rows for the three payment addresses: the published address, a
-/// Keep / Set / Remove choice, and for Set a field checked by platform-wallet
-/// plus a "Use this wallet's address" button.
+/// Keep / Set / Remove choice, and for Set a field checked by platform-wallet.
+/// The Core and shielded fields also offer "Use this wallet's address"; the
+/// Platform field is typed or pasted.
 struct DashPayPaymentAddressEditorSection: View {
     @ObservedObject var model: DashPayPaymentAddressEditorModel
     let wallet: ManagedPlatformWallet?
@@ -377,9 +408,6 @@ struct DashPayPaymentAddressEditorSection: View {
     let identityId: Data
 
     @EnvironmentObject private var walletManager: PlatformWalletManager
-
-    /// The wallet's Platform receive addresses, as Receive reads them.
-    @Query private var platformAddresses: [PersistentPlatformAddress]
 
     init(
         model: DashPayPaymentAddressEditorModel,
@@ -391,17 +419,6 @@ struct DashPayPaymentAddressEditorSection: View {
         self.wallet = wallet
         self.walletId = walletId
         self.identityId = identityId
-        _platformAddresses = Query(
-            filter: PersistentPlatformAddress.predicate(walletId: walletId ?? Data())
-        )
-    }
-
-    /// Lowest-indexed unused Platform address, the one Receive shows.
-    private var platformReceiveAddress: String? {
-        platformAddresses
-            .filter { !$0.isUsed }
-            .min(by: { $0.addressIndex < $1.addressIndex })?
-            .address
     }
 
     var body: some View {
@@ -480,7 +497,16 @@ struct DashPayPaymentAddressEditorSection: View {
                     .foregroundColor(.green)
             }
 
-            useWalletButton(kind, row: row, prefix: prefix)
+            if kind != .platform {
+                useWalletButton(kind, row: row, prefix: prefix)
+            }
+
+            if kind == .core, row.filledFromWallet {
+                Text("This wallet can offer the same address again for another identity's profile until it receives a payment. Publishing one address in two profiles links them.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .accessibilityIdentifier("\(prefix).reuseNote")
+            }
 
             if let error = row.walletAddressError {
                 Text(error)
@@ -568,7 +594,9 @@ struct DashPayPaymentAddressEditorSection: View {
             case .core:
                 model.useCoreWalletAddress(wallet: wallet)
             case .platform:
-                model.usePlatformWalletAddress(platformReceiveAddress)
+                // Not offered: no wallet operation picks a Platform address
+                // for a profile yet.
+                break
             case .shielded:
                 Task {
                     await model.useShieldedWalletAddress(

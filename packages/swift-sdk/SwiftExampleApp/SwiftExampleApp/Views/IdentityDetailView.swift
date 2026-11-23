@@ -1220,10 +1220,13 @@ struct DashPayProfileEditorView: View {
 
     private var isCreating: Bool { existing == nil }
 
-    /// Wallet that owns the identity, falling back to `firstWallet` for
-    /// legacy rows that predate walletId denormalization.
+    /// Wallet that owns the identity. Nil when the identity names a wallet
+    /// that is not loaded: another wallet is never substituted. Only legacy
+    /// rows with no `walletId` (predating walletId denormalization) fall
+    /// back to `firstWallet`.
     private var resolvedWallet: ManagedPlatformWallet? {
-        walletId.flatMap { walletManager.wallet(for: $0) } ?? walletManager.firstWallet
+        guard let walletId else { return walletManager.firstWallet }
+        return walletManager.wallet(for: walletId)
     }
 
     /// DashPay `profile` contract limits — live counters below gate
@@ -1399,9 +1402,8 @@ struct DashPayProfileEditorView: View {
                     shieldedAddress: shieldedAddress
                 )
 
-                // Resolve the wallet via the identity's `walletId`;
-                // fall back to `firstWallet` for legacy data rows
-                // that predate walletId denormalization.
+                // The identity's own wallet (see `resolvedWallet`);
+                // nil when that wallet is not loaded.
                 guard let wallet = resolvedWallet else {
                     errorMessage = "No wallet available for this identity"
                     return

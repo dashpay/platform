@@ -818,7 +818,10 @@ struct DashPayTabView: View {
                 publicMessage: persisted.publicMessage,
                 avatarUrl: persisted.avatarUrl,
                 avatarHash: persisted.avatarHash,
-                avatarFingerprint: persisted.avatarFingerprint
+                avatarFingerprint: persisted.avatarFingerprint,
+                corePaymentAddress: persisted.corePaymentAddress,
+                platformPaymentAddress: persisted.platformPaymentAddress,
+                shieldedAddress: persisted.shieldedAddress
             )
         }
     }
