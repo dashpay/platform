@@ -42,10 +42,12 @@ final class ShieldedServiceClearTests: XCTestCase {
         let container = try DashModelContainer.createInMemory()
         let context = try contextWithSyncState(in: container)
         var didClearHostState = false
+        var resetAttempts = 0
 
         XCTAssertThrowsError(
             try ShieldedService.executeClearPersistenceSequence(
                 resetRustState: { throw ResetFailure() },
+                afterResetAttempt: { resetAttempts += 1 },
                 clearHostState: {
                     didClearHostState = true
                     try clearSyncStates(in: context)
@@ -61,21 +63,68 @@ final class ShieldedServiceClearTests: XCTestCase {
         }
 
         XCTAssertFalse(didClearHostState)
+        XCTAssertEqual(
+            resetAttempts, 1,
+            "A reset Rust attempted and failed still requires a fresh binding"
+        )
         XCTAssertEqual(try fetchSyncStates(in: container).count, 1)
+    }
+
+    /// A Clear Rust refused because a shielded operation is in flight changed
+    /// nothing, so the host keeps its binding and its rows and shows the
+    /// retry text instead of a reset failure.
+    func testClearSequence_whenRefusedDuringAShieldedOperation_changesNothing() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = try contextWithSyncState(in: container)
+        var didClearHostState = false
+        var resetAttempts = 0
+
+        XCTAssertThrowsError(
+            try ShieldedService.executeClearPersistenceSequence(
+                resetRustState: {
+                    throw PlatformWalletError.shieldedOperationInProgress(
+                        "A shielded operation is in progress; clear the shielded state once it has finished"
+                    )
+                },
+                afterResetAttempt: { resetAttempts += 1 },
+                clearHostState: {
+                    didClearHostState = true
+                    try clearSyncStates(in: context)
+                }
+            )
+        ) { thrownError in
+            guard case ShieldedService.ClearLocalStateFailure.refusedDuringShieldedOperation =
+                thrownError
+            else {
+                return XCTFail("Expected the refusal, not a reset failure")
+            }
+        }
+
+        XCTAssertEqual(resetAttempts, 0, "A refused Clear must not prepare for a rebind")
+        XCTAssertFalse(didClearHostState)
+        XCTAssertEqual(try fetchSyncStates(in: container).count, 1)
+        XCTAssertEqual(
+            ShieldedService.clearRefusedDuringShieldedOperationMessage,
+            "A shielded payment or wallet setup is in progress. Try Clear again when it finishes."
+        )
     }
 
     /// Once the Rust reset succeeds, the host wipe proceeds normally.
     func testClearSequence_afterRustResetSucceeds_deletesRows() throws {
         let container = try DashModelContainer.createInMemory()
         let context = try contextWithSyncState(in: container)
-        var didResetRustState = false
+        var steps: [String] = []
 
         try ShieldedService.executeClearPersistenceSequence(
-            resetRustState: { didResetRustState = true },
-            clearHostState: { try clearSyncStates(in: context) }
+            resetRustState: { steps.append("reset") },
+            afterResetAttempt: { steps.append("prepare") },
+            clearHostState: {
+                steps.append("wipe")
+                try clearSyncStates(in: context)
+            }
         )
 
-        XCTAssertTrue(didResetRustState)
+        XCTAssertEqual(steps, ["reset", "prepare", "wipe"])
         XCTAssertTrue(try fetchSyncStates(in: container).isEmpty)
     }
 
@@ -85,10 +134,12 @@ final class ShieldedServiceClearTests: XCTestCase {
         let container = try DashModelContainer.createInMemory()
         _ = try contextWithSyncState(in: container)
         var didResetRustState = false
+        var resetAttempts = 0
 
         XCTAssertThrowsError(
             try ShieldedService.executeClearPersistenceSequence(
                 resetRustState: { didResetRustState = true },
+                afterResetAttempt: { resetAttempts += 1 },
                 clearHostState: { throw HostPersistenceFailure() }
             )
         ) { thrownError in
@@ -101,6 +152,7 @@ final class ShieldedServiceClearTests: XCTestCase {
         }
 
         XCTAssertTrue(didResetRustState)
+        XCTAssertEqual(resetAttempts, 1)
         XCTAssertEqual(try fetchSyncStates(in: container).count, 1)
     }
 

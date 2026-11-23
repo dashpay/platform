@@ -679,9 +679,20 @@ extension PlatformWalletManager {
     /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
     /// flight: Clear quiesces the same loop and would wait on the calling
     /// thread for the pass that stop is draining.
+    ///
+    /// Throws `PlatformWalletError.shieldedOperationInProgress` at once,
+    /// without waiting, while a shielded operation is in flight (a bind, an
+    /// account being added, a token pool transfer or unshield, a DashPay
+    /// profile write or a tip address preparation, or another Clear). Rust
+    /// decides that and changed nothing: the sync loop keeps running, and
+    /// this manager keeps its sync generation, progress mirrors and any
+    /// local balance read in flight. The host must not wipe its own rows;
+    /// call again once the operation has finished.
     public func clearShielded() throws {
         try ensureShieldedLifecycleAllowed("clearShielded")
         try ensureNoShieldedStopInFlight(before: "clearing shielded state")
+        // Every throw, the refusal included, leaves before the bump and the
+        // progress reset below.
         try withShieldedLocalBalanceMutation {
             try platform_wallet_manager_shielded_clear(handle).check()
         }

@@ -3321,8 +3321,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
 /// disk but its contents are reset so the next `shieldedBind` +
 /// sync cold-rebuilds from index 0. Throws `DashSDKException` on a
 /// store-reset failure — the host must NOT wipe its own persistence
-/// unless this succeeds. Mirrors Swift's
-/// `PlatformWalletManager.clearShieldedStorage()`.
+/// unless this succeeds. While a shielded operation is in flight it
+/// throws at once with code 1084 (`ErrorShieldedOperationInProgress`),
+/// nothing changed. Mirrors Swift's
+/// `PlatformWalletManager.clearShielded()`.
 #[cfg(feature = "shielded")]
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_shieldedClear(

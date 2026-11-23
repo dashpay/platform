@@ -88,11 +88,24 @@ struct PlatformWalletNativeShieldedLocalBalanceCalls: Sendable {
 }
 
 extension PlatformWalletManager {
-    /// Clear can purge notes before a later storage error is returned.
-    /// Invalidate before entering native code, including its failure path.
+    /// Clear can purge notes before a later storage error is returned, so
+    /// both its success and its failure invalidate queued delivery. The bump
+    /// follows the native call in the same synchronous MainActor turn, so no
+    /// snapshot delivery can be checked in between. A Clear Rust refused
+    /// because a shielded operation is in flight changed nothing, so it
+    /// leaves queued delivery valid.
     func withShieldedLocalBalanceMutation<T>(_ body: () throws -> T) rethrows -> T {
-        shieldedLocalBalanceGeneration.bump()
-        return try body()
+        do {
+            let result = try body()
+            shieldedLocalBalanceGeneration.bump()
+            return result
+        } catch {
+            if case PlatformWalletError.shieldedOperationInProgress(_) = error {
+                throw error
+            }
+            shieldedLocalBalanceGeneration.bump()
+            throw error
+        }
     }
 
     /// Native bind does not report whether it preserved or changed the

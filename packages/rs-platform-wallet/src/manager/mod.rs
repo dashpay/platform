@@ -1251,8 +1251,30 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Returns an error if the coordinator is absent, or if the coordinator's
     /// store reset (which resets the on-disk tree to 0 leaves and verifies it)
     /// fails; the host must not commit its own persistence wipe in that case.
+    ///
+    /// # A shielded operation in flight refuses the Clear
+    ///
+    /// Clear does not wait for a shielded operation (a bind, an added
+    /// account, a token pool transfer or unshield, a profile write, a tip
+    /// address preparation). While one is admitted this returns
+    /// [`PlatformWalletError::ShieldedOperationInProgress`] before anything
+    /// else: the sync loop is not stopped and nothing is reset, so the host
+    /// keeps its rows and offers the Clear again once the operation has
+    /// finished. A sync pass is not such an operation: Clear still cancels a
+    /// running pass and waits for it to drain, as described above.
+    ///
+    /// [`PlatformWalletError::ShieldedOperationInProgress`]:
+    ///     crate::error::PlatformWalletError::ShieldedOperationInProgress
     #[cfg(feature = "shielded")]
     pub async fn clear_shielded(&self) -> Result<(), crate::error::PlatformWalletError> {
+        // Asked before the quiesce, so a refused Clear leaves the sync loop
+        // running, and held through the wipe: an operation that arrives while
+        // the pass drains waits for this Clear instead of overtaking it.
+        let coordinator = self.shielded_coordinator().await;
+        let admission = coordinator
+            .as_deref()
+            .map(NetworkShieldedCoordinator::try_admit_clear)
+            .transpose()?;
         // Hold the registry's per-key clearing latch across the WHOLE
         // quiesce -> wipe. While it is up, `ShieldedSyncManager::start`
         // (and any registry (re)start) is a no-op, so no fresh pass can
@@ -1277,21 +1299,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .to_string(),
             ));
         };
-        match self.shielded_coordinator().await {
-            Some(coord) => coord.clear().await,
-            None => {
-                tracing::error!(
-                    "clear_shielded: no shielded coordinator installed on this manager — the \
-                     on-disk commitment tree cannot be reset. configure_shielded never ran on \
-                     THIS manager instance (or ran on a different one)."
-                );
-                Err(crate::error::PlatformWalletError::ShieldedStoreError(
-                    "shielded clear requested but no coordinator is configured on this manager — \
-                     on-disk tree not reset"
-                        .to_string(),
-                ))
-            }
-        }
+        let Some((coord, admission)) = coordinator.as_deref().zip(admission) else {
+            tracing::error!(
+                "clear_shielded: no shielded coordinator installed on this manager — the \
+                 on-disk commitment tree cannot be reset. configure_shielded never ran on \
+                 THIS manager instance (or ran on a different one)."
+            );
+            return Err(crate::error::PlatformWalletError::ShieldedStoreError(
+                "shielded clear requested but no coordinator is configured on this manager — \
+                 on-disk tree not reset"
+                    .to_string(),
+            ));
+        };
+        coord.clear_admitted(admission).await
     }
 
     /// Reset the platform-address (BLAST/DIP-17) incremental-sync
@@ -1648,6 +1668,8 @@ mod tests {
         PlatformWalletChangeSet, PlatformWalletPersistence,
     };
     use crate::events::{EventHandler, PlatformEventHandler};
+    #[cfg(feature = "shielded")]
+    use crate::wallet::shielded::store::ShieldedStore;
 
     struct NoopPersister;
     impl PlatformWalletPersistence for NoopPersister {
@@ -2377,6 +2399,66 @@ mod tests {
 
         release_tx.send(()).expect("writer still parked");
         writer.join().expect("writer thread completes");
+    }
+
+    /// A Clear requested while a shielded operation is admitted is refused
+    /// before the manager does anything: the sync loop it would have stopped
+    /// keeps running and the commitment tree keeps its leaves. Once the
+    /// operation has returned the Clear goes through, stopping the loop and
+    /// emptying the tree as before.
+    #[cfg(feature = "shielded")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn should_refuse_a_shielded_clear_and_keep_the_sync_loop_while_an_operation_is_admitted()
+    {
+        let manager = make_manager();
+        let dir = tempfile::tempdir().expect("a directory");
+        manager
+            .configure_shielded(dir.path().join("tree.sqlite"))
+            .await
+            .expect("configured");
+        let coordinator = manager.shielded_coordinator().await.expect("coordinator");
+        coordinator
+            .store()
+            .write()
+            .await
+            .append_commitment(&[7u8; 32], true)
+            .expect("a leaf");
+        // No wallet is registered, so the loop's passes have nothing to scan.
+        manager.shielded_sync_arc().start();
+        assert!(manager.shielded_sync().is_running());
+
+        let operation = coordinator.operation_guard().await;
+        let refused = manager.clear_shielded().await;
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::ShieldedOperationInProgress)
+            ),
+            "{refused:?}"
+        );
+        assert!(
+            manager.shielded_sync().is_running(),
+            "a refused Clear does not stop the sync loop"
+        );
+        assert_eq!(
+            coordinator.store().read().await.tree_size().expect("size"),
+            1,
+            "a refused Clear resets nothing"
+        );
+
+        drop(operation);
+        manager
+            .clear_shielded()
+            .await
+            .expect("clear succeeds once the operation has returned");
+        assert!(
+            !manager.shielded_sync().is_running(),
+            "the Clear that went through stopped the sync loop"
+        );
+        assert_eq!(
+            coordinator.store().read().await.tree_size().expect("size"),
+            0
+        );
     }
 
     /// A dirty drop CANCELS the wallet-event adapter; it must never `abort` it.

@@ -982,8 +982,10 @@ impl PlatformWallet {
     /// removal stores nothing. A caller must not hold the gate.
     ///
     /// Holds the coordinator's operation admission the same way, so a
-    /// Clear waits for a bind in flight and the host, which wipes its own
-    /// rows once the Clear returns, wipes the viewing keys the bind stored.
+    /// Clear is refused while a bind is in flight
+    /// ([`PlatformWalletError::ShieldedOperationInProgress`]): the host,
+    /// which wipes its own rows once a Clear returns, cannot wipe them and
+    /// then have the bind store its viewing keys after the wipe.
     /// A bind that waited for a Clear registers the wallet and restores
     /// nothing: the rows it reads may be the ones the host is about to
     /// wipe. A caller must not hold the admission either.
@@ -1176,7 +1178,7 @@ impl PlatformWallet {
         // Keep the generation alive from attachment validation through the
         // persisted snapshot read and coordinator/handle installation.
         let _lifecycle = self.core().generation_payment_guard().await;
-        // A Clear waits for this bind, as for a seed bind.
+        // A Clear is refused while this bind runs, as for a seed bind.
         let _operation = coordinator.operation_guard().await;
         let _config = self.shielded_config_lock.lock().await;
         self.ensure_no_other_shielded_coordinator(coordinator)?;
@@ -1493,10 +1495,11 @@ impl PlatformWallet {
     /// hold it.
     ///
     /// Holds the operation admission of the coordinator the keys were
-    /// installed on as well, so a Clear waits for an add in flight. Once a
-    /// Clear has run since that bind this returns `ShieldedNotBound` and
-    /// stores nothing: the Clear dropped the wallet's registration, so the
-    /// wallet is bound again first. A caller must not hold the admission.
+    /// installed on as well, so a Clear is refused while an add is in
+    /// flight. Once a Clear has run since that bind this returns
+    /// `ShieldedNotBound` and stores nothing: the Clear dropped the wallet's
+    /// registration, so the wallet is bound again first. A caller must not
+    /// hold the admission.
     ///
     /// An account number of the range reserved for identity accounts is
     /// refused, as in a bind.
@@ -1527,9 +1530,9 @@ impl PlatformWallet {
         // The lifecycle gate spans attachment validation through host
         // persistence and the final handle mutation.
         let _lifecycle = self.core().generation_payment_guard().await;
-        // A Clear waits for this add as it does for a bind: one completing
-        // between the host load and the host store below would have the
-        // viewing key written after the host wiped its rows.
+        // A Clear is refused while this add runs, as it is for a bind: one
+        // completing between the host load and the host store below would
+        // have the viewing key written after the host wiped its rows.
         let coordinator = self
             .shielded_binding()
             .and_then(|binding| binding.coordinator.upgrade());
@@ -2136,7 +2139,8 @@ impl PlatformWallet {
     /// An accepted transfer stays pending until a shielded sync sees it
     /// ([`ShieldedTokenSpendOutcome::Submitted`]). The lifecycle gate is held
     /// as the purchase holds it, through settlement, and so is the
-    /// coordinator's operation guard, so a Clear waits for the transfer.
+    /// coordinator's operation guard, so a Clear is refused until the
+    /// transfer has returned.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_token_transfer<P: OrchardProver>(
@@ -2156,8 +2160,8 @@ impl PlatformWallet {
                 self.wallet_id,
             )));
         }
-        // Held through settlement, so a Clear waits for the transfer instead
-        // of purging the store it reserves in and settles against.
+        // Held through settlement, so a Clear is refused meanwhile instead
+        // of purging the store the transfer reserves in and settles against.
         let _operation = coordinator.operation_guard().await;
         // Bound on this coordinator, with no Clear since: the keys this
         // handle holds outlive a Clear, and a caller may pass another
@@ -2208,7 +2212,7 @@ impl PlatformWallet {
                 self.wallet_id,
             )));
         }
-        // Held through settlement, so a Clear waits for the unshield.
+        // Held through settlement, so a Clear is refused meanwhile.
         let _operation = coordinator.operation_guard().await;
         // Bound on this coordinator, with no Clear since, and the config lock
         // held through settlement, as the transfer does.
@@ -3548,7 +3552,7 @@ impl PlatformWallet {
         // A preparation stands only until its coordinator is cleared. The
         // coordinator's admission is taken before the check that reads the
         // preparation and held until the profile is written, so a Clear
-        // waits for the write instead of landing between the two.
+        // is refused meanwhile instead of landing between the two.
         #[cfg(feature = "shielded")]
         let prepared_coordinator = match &input.shielded_address {
             PaymentAddressUpdate::Set(_) => self.prepared_tip_coordinator(identity_id),
