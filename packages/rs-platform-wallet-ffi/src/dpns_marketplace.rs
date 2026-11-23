@@ -48,8 +48,8 @@ use std::ptr;
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{DpnsNameSaleStatus, DpnsNameStateEntry};
 use platform_wallet::wallet::identity::network::{
-    DpnsDomainState, DpnsNameGiveUpChoices, DpnsNameGiveUpMethod, DpnsNameGiveUpOutcome,
-    DpnsNameGivenUp, DpnsNameHistoryEvent, DpnsNameHistoryEventKind,
+    give_up_clears_main_dpns_name, DpnsDomainState, DpnsNameGiveUpChoices, DpnsNameGiveUpMethod,
+    DpnsNameGiveUpOutcome, DpnsNameGivenUp, DpnsNameHistoryEvent, DpnsNameHistoryEventKind,
 };
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
@@ -1020,6 +1020,37 @@ pub unsafe extern "C" fn platform_wallet_dpns_give_up_name(
     PlatformWalletFFIResult::ok()
 }
 
+/// Whether a host clears its main-name pick for an identity after
+/// [`platform_wallet_dpns_give_up_name`] returned success for `given_up_name`:
+/// `*out_clears` is true exactly when `main_name` names the same DPNS name,
+/// compared by normalized label (`"Alice"` and `"a11ce.dash"` are one name).
+/// A null `main_name` (no pick), or one whose label is empty (`""`,
+/// `".dash"`), names nothing.
+///
+/// Goes through `platform_wallet::give_up_clears_main_dpns_name`, which owns
+/// the rule. Pure: no wallet, no network, so reading it before a give-up (to
+/// say the name is the main name) is fine. Only clearing the pick waits for a
+/// confirmed give-up, never an error.
+///
+/// `out_clears` is caller-owned and set to `false` before any fallible work.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_dpns_give_up_clears_main_name(
+    main_name: *const c_char,
+    given_up_name: *const c_char,
+    out_clears: *mut bool,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_clears);
+    unsafe { *out_clears = false };
+    check_ptr!(given_up_name);
+    if main_name.is_null() {
+        return PlatformWalletFFIResult::ok();
+    }
+    let main_str = unwrap_result_or_return!(unsafe { CStr::from_ptr(main_name) }.to_str());
+    let given_up_str = unwrap_result_or_return!(unsafe { CStr::from_ptr(given_up_name) }.to_str());
+    unsafe { *out_clears = give_up_clears_main_dpns_name(main_str, given_up_str) };
+    PlatformWalletFFIResult::ok()
+}
+
 // ---------------------------------------------------------------------------
 // On-demand sync
 // ---------------------------------------------------------------------------
@@ -1771,6 +1802,64 @@ mod tests {
             )
         };
         assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
+    }
+
+    /// The main-name rule crosses unchanged: a pick naming the given-up name
+    /// clears, any other pick and no pick keep, and a missing out-pointer or
+    /// given-up name is refused.
+    #[test]
+    fn should_report_whether_a_give_up_clears_the_main_name_pick() {
+        let given_up = CString::new("Alice7").unwrap();
+        let same = CString::new("alice7.dash").unwrap();
+        let other = CString::new("Keeper77").unwrap();
+        let mut clears = true;
+
+        let r = unsafe {
+            platform_wallet_dpns_give_up_clears_main_name(
+                same.as_ptr(),
+                given_up.as_ptr(),
+                &mut clears,
+            )
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::Success);
+        assert!(clears);
+
+        let r = unsafe {
+            platform_wallet_dpns_give_up_clears_main_name(
+                other.as_ptr(),
+                given_up.as_ptr(),
+                &mut clears,
+            )
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::Success);
+        assert!(!clears);
+
+        clears = true;
+        let r = unsafe {
+            platform_wallet_dpns_give_up_clears_main_name(
+                ptr::null(),
+                given_up.as_ptr(),
+                &mut clears,
+            )
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::Success);
+        assert!(!clears);
+
+        clears = true;
+        let r = unsafe {
+            platform_wallet_dpns_give_up_clears_main_name(same.as_ptr(), ptr::null(), &mut clears)
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert!(!clears);
+
+        let r = unsafe {
+            platform_wallet_dpns_give_up_clears_main_name(
+                same.as_ptr(),
+                given_up.as_ptr(),
+                ptr::null_mut(),
+            )
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
     }
 
     /// Required pointers are rejected with `ErrorNullPointer`, an unknown
