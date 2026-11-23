@@ -47,8 +47,8 @@ use tracing::{debug, info, warn};
 use super::activity::ShieldedActivityStatus;
 use super::activity_recorder::with_status;
 use super::keys::AccountViewingKeys;
-use super::operations::shielded_actions;
-use super::store::{ShieldedStore, SubwalletId};
+use super::operations::{shielded_actions, MAX_REDRIVE_ATTEMPTS};
+use super::store::{PendingRedrive, ShieldedStore, SubwalletId};
 use super::tips::is_shielded_identity_account;
 use crate::changeset::ShieldedChangeSet;
 use crate::error::PlatformWalletError;
@@ -192,6 +192,12 @@ pub struct MultiSyncNotesResult {
     /// `total_count` is the highest seen). `None` when no batch shows that:
     /// a proof of a longer tree than the run reached.
     pub covered_height: Option<u64>,
+    /// The saved spends this pass failed because another transition spent
+    /// one of their inputs, by subwallet and activity id. Each keeps its
+    /// saved transition, parked, until the host has stored the pass's
+    /// changeset, which carries the failed row
+    /// (`NetworkShieldedCoordinator::retire_failed_spends`).
+    pub spends_spent_elsewhere: Vec<(SubwalletId, [u8; 32])>,
 }
 
 impl MultiSyncNotesResult {
@@ -591,8 +597,14 @@ where
                     })?;
                     for input in inputs.iter().filter(|input| input.cmx != cmx) {
                         spent_elsewhere
-                            .entry((input.id, input.activity_id))
-                            .or_insert_with(|| Arc::clone(&input.inputs));
+                            .entry((input.id, input.record.activity_id))
+                            .and_modify(|spend| {
+                                spend.proved_at = spend.proved_at.max(batch.block_height);
+                            })
+                            .or_insert_with(|| SpendSpentElsewhere {
+                                record: Arc::clone(&input.record),
+                                proved_at: batch.block_height,
+                            });
                     }
                 }
                 let global_pos = batch.start_index + i as u64;
@@ -862,10 +874,15 @@ where
     .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
 
     // The saved spends another action took an input of never executed and
-    // never can: fail them and free the notes they still hold, under the
-    // guard that marked the input spent, so the balances this pass reads
-    // count the freed notes.
-    fail_spends_spent_elsewhere(&mut *store, &spent_elsewhere, &mut changeset);
+    // never can: fail them, and free the notes they still hold once the scan
+    // covers the height that proved it, under the guard that marked the
+    // input spent, so the balances this pass reads count the freed notes.
+    fail_spends_spent_elsewhere(
+        &mut *store,
+        &spent_elsewhere,
+        covered_height,
+        &mut changeset,
+    );
 
     // Advance every subwallet's watermark to the same global
     // tree position so the next sync resumes coherently across
@@ -915,6 +932,7 @@ where
         total_scanned: scanned_volume,
         changeset,
         covered_height,
+        spends_spent_elsewhere: spent_elsewhere.into_keys().collect(),
     })
 }
 
@@ -986,11 +1004,11 @@ fn apply_scanned_nullifier_spends<S: ShieldedStore>(
 /// One note a saved spend consumes, as its saved transition spends it.
 ///
 /// A spend whose result the wallet could not confirm keeps its signed
-/// transition ([`PendingRedrive`](super::store::PendingRedrive)). Platform
-/// records a nullifier once, and the note item an executed action leaves in
-/// the commitment tree holds that action's nullifier and its output
-/// commitment together, under one proof. So the item the scan reads for one
-/// of the spend's inputs names the action that took the note:
+/// transition ([`PendingRedrive`]). Platform records a nullifier once, and
+/// the note item an executed action leaves in the commitment tree holds that
+/// action's nullifier and its output commitment together, under one proof. So
+/// the item the scan reads for one of the spend's inputs names the action
+/// that took the note:
 ///
 /// - with the commitment the saved transition pairs with that nullifier, it
 ///   is the spend's own action: the spend executed, and the scan confirms
@@ -1005,18 +1023,25 @@ fn apply_scanned_nullifier_spends<S: ShieldedStore>(
 struct SavedSpendInput {
     /// The subwallet whose notes the spend consumes.
     id: SubwalletId,
-    /// The spend's activity id, which keys its saved record and its row.
-    activity_id: [u8; 32],
     /// The output commitment of the saved transition's action that spends
     /// the note.
     cmx: [u8; 32],
-    /// Every note the spend consumes.
-    inputs: Arc<[[u8; 32]]>,
+    /// The spend's saved record.
+    record: Arc<PendingRedrive>,
 }
 
-/// The saved spends an action other than their own took an input of, keyed
-/// by subwallet and activity id, each with every note it consumes.
-type SpendsSpentElsewhere = BTreeMap<(SubwalletId, [u8; 32]), Arc<[[u8; 32]]>>;
+/// A saved spend an action other than its own took an input of.
+struct SpendSpentElsewhere {
+    /// The spend's saved record, as it read when the pass began.
+    record: Arc<PendingRedrive>,
+    /// The highest proved height of a batch that held such an action: the
+    /// transition it belongs to executed at or below it.
+    proved_at: u64,
+}
+
+/// The saved spends an action other than their own took an input of, by
+/// subwallet and activity id.
+type SpendsSpentElsewhere = BTreeMap<(SubwalletId, [u8; 32]), SpendSpentElsewhere>;
 
 /// The inputs of every spend `subwallets` have saved, by nullifier.
 ///
@@ -1053,7 +1078,7 @@ fn saved_spend_inputs<S: ShieldedStore>(
                 continue;
             };
             let actions = shielded_actions(&transition);
-            let inputs: Arc<[[u8; 32]]> = record.nullifiers.as_slice().into();
+            let record = Arc::new(record);
             for nullifier in &record.nullifiers {
                 let Some(action) = actions.iter().find(|action| action.nullifier == *nullifier)
                 else {
@@ -1064,9 +1089,8 @@ fn saved_spend_inputs<S: ShieldedStore>(
                     .or_default()
                     .push(SavedSpendInput {
                         id: *id,
-                        activity_id: record.activity_id,
                         cmx: action.cmx,
-                        inputs: Arc::clone(&inputs),
+                        record: Arc::clone(&record),
                     });
             }
         }
@@ -1075,51 +1099,78 @@ fn saved_spend_inputs<S: ShieldedStore>(
 }
 
 /// Settle the saved spends an action other than their own took an input of
-/// ([`SavedSpendInput`]): each can never execute, so its record goes, the
-/// notes it still holds are released, and its pending row reads failed, on
-/// `changeset` for the host too.
+/// ([`SavedSpendInput`]). Each can never execute:
 ///
-/// A note is released only while its reservation still carries the spend's
-/// activity id, so another attempt's hold on the same note stays. A store
-/// call that fails is logged and the rest goes on: what is left (a record or
-/// a reservation) resolves as it did before, at the anchor's expiry.
+/// - Its row reads failed, in the store and on `changeset` for the host. A
+///   row that reads failed already is put on `changeset` again: the host may
+///   not have stored it (see below).
+/// - Its saved transition is kept, parked: saved again with its re-broadcasts
+///   used up, so it is never sent again. The spent mark dropped it with the
+///   note it spent, and the host learns of the failure only when the pass
+///   ends. A process that exits before then restores the pending row, and
+///   scans the action again from the watermark the host kept: with the
+///   transition still saved, that scan fails the row again. The coordinator
+///   drops it once the host has stored the row.
+/// - The notes it still holds are released once `covered_height`, what the
+///   pass's scan covers, reaches the height that proved the other action.
+///   The transition that action belongs to executed at or below that height,
+///   and may have spent those notes too, in actions of a range proved before
+///   it executed. Covered through that height, the scan read every one of
+///   its actions and marked the notes they spent. Short of that the notes
+///   stay reserved, and are released when the spend's anchor expires, as
+///   before. A note is released only while its reservation still carries the
+///   spend's activity id, so another attempt's hold on it stays.
+///
+/// A store call that fails is logged and the rest goes on: what is left (a
+/// record or a reservation) resolves as it did before, at the anchor's
+/// expiry.
 fn fail_spends_spent_elsewhere<S: ShieldedStore>(
     store: &mut S,
     spent_elsewhere: &SpendsSpentElsewhere,
+    covered_height: Option<u64>,
     changeset: &mut ShieldedChangeSet,
 ) {
-    for ((id, activity_id), inputs) in spent_elsewhere {
-        // The spent mark dropped the record with the note it spent; one whose
-        // note the store does not hold is dropped here.
-        if let Err(e) = store.clear_redrive(*id, activity_id) {
+    for ((id, activity_id), spend) in spent_elsewhere {
+        let covered = covered_height.is_some_and(|covered| covered >= spend.proved_at);
+        if covered {
+            match store.stale_pending_spends(*id) {
+                Ok(held) => {
+                    for nullifier in spend.record.nullifiers.iter().filter(|nullifier| {
+                        held.iter().any(|(held_nullifier, _, held_by, _)| {
+                            held_nullifier == *nullifier && *held_by == Some(*activity_id)
+                        })
+                    }) {
+                        if let Err(e) = store.clear_pending(*id, nullifier) {
+                            warn!(
+                                activity_id = %hex::encode(activity_id),
+                                error = %e,
+                                "a note of a spend whose input another transition spent was not \
+                                 released"
+                            );
+                        }
+                    }
+                }
+                Err(e) => warn!(
+                    activity_id = %hex::encode(activity_id),
+                    error = %e,
+                    "the notes of a spend whose input another transition spent were not read; \
+                     they stay reserved"
+                ),
+            }
+        }
+        // Parked after the release: releasing a note drops the records that
+        // carry it.
+        let parked = PendingRedrive {
+            attempts: MAX_REDRIVE_ATTEMPTS,
+            ..PendingRedrive::clone(&spend.record)
+        };
+        if let Err(e) = store.arm_redrive(*id, parked) {
             warn!(
                 activity_id = %hex::encode(activity_id),
                 error = %e,
-                "a spend whose input another transition spent kept its saved transition"
+                "the transition of a spend whose input another transition spent was not kept; \
+                 a restart before the host stores its failed row leaves the row pending"
             );
-        }
-        match store.stale_pending_spends(*id) {
-            Ok(held) => {
-                for nullifier in inputs.iter().filter(|nullifier| {
-                    held.iter().any(|(held_nullifier, _, held_by, _)| {
-                        held_nullifier == *nullifier && *held_by == Some(*activity_id)
-                    })
-                }) {
-                    if let Err(e) = store.clear_pending(*id, nullifier) {
-                        warn!(
-                            activity_id = %hex::encode(activity_id),
-                            error = %e,
-                            "a note of a spend whose input another transition spent was not released"
-                        );
-                    }
-                }
-            }
-            Err(e) => warn!(
-                activity_id = %hex::encode(activity_id),
-                error = %e,
-                "the notes of a spend whose input another transition spent were not read; they \
-                 stay reserved"
-            ),
         }
         match store.get_activity_by_entry_id(*id, activity_id) {
             Ok(Some(entry)) if entry.status == ShieldedActivityStatus::Pending => {
@@ -1128,11 +1179,14 @@ fn fail_spends_spent_elsewhere<S: ShieldedStore>(
                     warn!(
                         activity_id = %hex::encode(activity_id),
                         error = %e,
-                        "the row of a spend whose input another transition spent was not saved as \
-                         failed; the host is still told"
+                        "the row of a spend whose input another transition spent was not saved \
+                         as failed; the host is still told"
                     );
                 }
                 changeset.record_activity_entry(*id, failed);
+            }
+            Ok(Some(entry)) if entry.status == ShieldedActivityStatus::Failed => {
+                changeset.record_activity_entry(*id, entry);
             }
             Ok(_) => {}
             Err(e) => warn!(
@@ -1146,8 +1200,9 @@ fn fail_spends_spent_elsewhere<S: ShieldedStore>(
             wallet_id = %hex::encode(id.wallet_id),
             account = id.account_index,
             activity_id = %hex::encode(activity_id),
+            notes_released = covered,
             "another transition spent an input of a pending shielded spend, which can never \
-             execute; it is failed and its remaining notes are freed"
+             execute; it is failed"
         );
     }
 }

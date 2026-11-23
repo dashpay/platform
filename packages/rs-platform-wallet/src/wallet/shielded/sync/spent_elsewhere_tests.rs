@@ -13,9 +13,12 @@
 use std::sync::Arc;
 
 use dash_sdk::platform::shielded::notes_sync::types::ShieldedChunkBatch;
+use dpp::platform_value::Identifier;
 use dpp::serialization::PlatformSerializable;
 use dpp::shielded::SerializedAction;
 use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
+use dpp::state_transition::token_purchase_from_shielded_pool_transition::v0::TokenPurchaseFromShieldedPoolTransitionV0;
+use dpp::state_transition::token_purchase_from_shielded_pool_transition::TokenPurchaseFromShieldedPoolTransition;
 use dpp::state_transition::StateTransition;
 use drive_proof_verifier::types::ShieldedEncryptedNote;
 use futures::{Stream, StreamExt};
@@ -28,6 +31,7 @@ use crate::wallet::shielded::activity::{
 };
 use crate::wallet::shielded::file_store::FileBackedShieldedStore;
 use crate::wallet::shielded::keys::{AccountViewingKeys, OrchardKeySet};
+use crate::wallet::shielded::operations::MAX_REDRIVE_ATTEMPTS;
 use crate::wallet::shielded::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
 
 type BatchItem = Result<ShieldedChunkBatch, dash_sdk::Error>;
@@ -97,6 +101,33 @@ fn transfer(actions: Vec<SerializedAction>) -> StateTransition {
         binding_signature: [0; 64],
     }
     .into()
+}
+
+/// A token purchase from the shielded pool whose fee bundle, the one written
+/// to the credit pool, holds `fee_actions`. Its token bundle goes to the
+/// token's pool, which this scan does not read.
+fn purchase(fee_actions: Vec<SerializedAction>) -> StateTransition {
+    StateTransition::TokenPurchaseFromShieldedPool(TokenPurchaseFromShieldedPoolTransition::V0(
+        TokenPurchaseFromShieldedPoolTransitionV0 {
+            data_contract_id: Identifier::from([0x44; 32]),
+            token_contract_position: 0,
+            token_id: Identifier::from([0x45; 32]),
+            token_count: 10,
+            total_agreed_price: 1_000,
+            token_actions: vec![
+                action(nullifier(0xB1), cmx(20)),
+                action(nullifier(0xB2), cmx(21)),
+            ],
+            token_anchor: [7; 32],
+            token_proof: vec![8; 64],
+            token_binding_signature: [9; 64],
+            fee_actions,
+            fee_anchor: ANCHOR,
+            fee_proof: vec![8; 64],
+            fee_binding_signature: [9; 64],
+            credit_amount: 2_000,
+        },
+    ))
 }
 
 /// The note item an executed action leaves in the commitment tree. Its empty
@@ -249,6 +280,16 @@ fn unspent(store: &FileBackedShieldedStore, id: SubwalletId) -> Vec<[u8; 32]> {
     nullifiers
 }
 
+/// Whether `activity_id`'s transition is still saved and parked: kept for a
+/// scan after a restart, and never broadcast again.
+fn parked(store: &FileBackedShieldedStore, id: SubwalletId, activity_id: [u8; 32]) -> bool {
+    store
+        .pending_redrives(id)
+        .expect("records")
+        .iter()
+        .any(|record| record.activity_id == activity_id && record.attempts == MAX_REDRIVE_ATTEMPTS)
+}
+
 /// The statuses of `activity_id`'s row the pass handed the host.
 fn reported(
     result: &MultiSyncNotesResult,
@@ -309,17 +350,17 @@ async fn should_fail_a_pending_spend_whose_single_input_another_transition_spent
     );
     assert!(unspent(&store, id).is_empty());
     assert!(
-        store.pending_redrives(id).expect("records").is_empty(),
-        "its transition is never broadcast again"
+        parked(&store, id, SPEND),
+        "its transition is kept until the host has the row, and never broadcast again"
     );
+    assert_eq!(result.spends_spent_elsewhere, vec![(id, SPEND)]);
     drop(store);
     let _ = std::fs::remove_file(&path);
 }
 
 /// The same after a restart: the reopened store restores the saved
 /// transition, the host restores the note and the pending row, and the scan
-/// that then reads the competing action fails the row. A later restart finds
-/// nothing saved.
+/// that then reads the competing action fails the row.
 #[tokio::test]
 async fn should_fail_a_restored_pending_spend_whose_single_input_another_transition_spent() {
     let path = temp_tree_path("restart");
@@ -360,20 +401,154 @@ async fn should_fail_a_restored_pending_spend_whose_single_input_another_transit
             reported(&result, id, SPEND),
             vec![ShieldedActivityStatus::Failed]
         );
-        assert!(store.pending_redrives(id).expect("records").is_empty());
     }
     drop(store);
-    let reopened = open(&path);
-    assert!(
-        reopened
-            .read()
-            .await
-            .pending_redrives(id)
-            .expect("records")
-            .is_empty(),
-        "nothing is left to restore"
+    let _ = std::fs::remove_file(&path);
+}
+
+/// The process exits after the scan failed the row and before the host
+/// stored it: the host still holds the row as pending and the note as
+/// unspent, at the watermark before that pass. The transition is still saved,
+/// so the scan after the restart, which reads the competing action again,
+/// fails the row again and hands it to the host again.
+#[tokio::test]
+async fn should_fail_the_spend_again_after_a_restart_before_the_host_stored_its_row() {
+    let path = temp_tree_path("lost_row");
+    let (id, _) = subwallet();
+    let input = nullifier(0xA1);
+    {
+        let store = open(&path);
+        save_unconfirmed_spend(
+            &mut *store.write().await,
+            id,
+            SPEND,
+            &single_input_spend(),
+            &[input],
+        );
+        let result = scan_pool(&store, vec![scanned(input, cmx(9))]).await;
+        assert_eq!(
+            reported(&result, id, SPEND),
+            vec![ShieldedActivityStatus::Failed],
+            "the row the host never stores"
+        );
+    }
+
+    let store = open(&path);
+    {
+        let mut store = store.write().await;
+        assert!(parked(&store, id, SPEND), "the transition is still saved");
+        restore_notes_and_row(&mut store, id, SPEND, &[input]);
+        assert_eq!(status(&store, id, SPEND), ShieldedActivityStatus::Pending);
+    }
+
+    let result = scan_pool(&store, vec![scanned(input, cmx(9))]).await;
+
+    let store = store.read().await;
+    assert_eq!(status(&store, id, SPEND), ShieldedActivityStatus::Failed);
+    assert_eq!(
+        reported(&result, id, SPEND),
+        vec![ShieldedActivityStatus::Failed]
     );
-    drop(reopened);
+    assert!(unspent(&store, id).is_empty(), "the note is spent");
+    drop(store);
+    let _ = std::fs::remove_file(&path);
+}
+
+/// A host that failed to store the row is handed it again by a later pass
+/// that reads the competing action, for as long as the transition is saved.
+#[tokio::test]
+async fn should_hand_the_host_the_failed_row_again_while_its_transition_is_saved() {
+    let path = temp_tree_path("again");
+    let store = open(&path);
+    let (id, _) = subwallet();
+    let input = nullifier(0xA1);
+    save_unconfirmed_spend(
+        &mut *store.write().await,
+        id,
+        SPEND,
+        &single_input_spend(),
+        &[input],
+    );
+    scan_pool(&store, vec![scanned(input, cmx(9))]).await;
+
+    let result = scan_pool(&store, vec![scanned(input, cmx(9))]).await;
+
+    assert_eq!(
+        reported(&result, id, SPEND),
+        vec![ShieldedActivityStatus::Failed]
+    );
+    assert_eq!(result.spends_spent_elsewhere, vec![(id, SPEND)]);
+    drop(store);
+    let _ = std::fs::remove_file(&path);
+}
+
+/// The competing transition spent both inputs, in actions on either side of
+/// a range boundary, and the second range is proved a block before it
+/// executed, so it holds nothing. The pass reads only the first action. The
+/// row fails on it, but the second note is not released: the scan does not
+/// cover the height that proved the conflict, so it cannot show the note
+/// unspent. The next pass reads the second action and marks the note spent.
+#[tokio::test]
+async fn should_hold_the_other_notes_until_the_scan_covers_the_competing_spend() {
+    let path = temp_tree_path("stale_tail");
+    let store = open(&path);
+    let (id, _) = subwallet();
+    let (first, second) = (nullifier(0xA1), nullifier(0xA2));
+    save_unconfirmed_spend(
+        &mut *store.write().await,
+        id,
+        SPEND,
+        &transfer(vec![action(first, cmx(1)), action(second, cmx(2))]),
+        &[first, second],
+    );
+
+    // The first range, proved at 1000, where the tree holds both actions.
+    let fresh_head = ShieldedChunkBatch {
+        start_index: 0,
+        notes: vec![scanned(first, cmx(8))],
+        decrypted: vec![],
+        block_height: 1_000,
+        is_partial: false,
+        total_count: 2,
+    };
+    // The second range, proved at 999, where the tree ends before it.
+    let stale_tail = ShieldedChunkBatch {
+        start_index: 1,
+        notes: vec![],
+        decrypted: vec![],
+        block_height: 999,
+        is_partial: true,
+        total_count: 1,
+    };
+    let result = scan(
+        &store,
+        futures::stream::iter(vec![Ok(fresh_head), Ok(stale_tail)]),
+    )
+    .await;
+    assert_eq!(result.covered_height, Some(999));
+    {
+        let store = store.read().await;
+        assert_eq!(status(&store, id, SPEND), ShieldedActivityStatus::Failed);
+        assert!(
+            unspent(&store, id).is_empty(),
+            "the second note stays reserved"
+        );
+        assert_eq!(store.spendable_balance(id).expect("balance"), 0);
+    }
+
+    let result = scan_pool(
+        &store,
+        vec![scanned(first, cmx(8)), scanned(second, cmx(9))],
+    )
+    .await;
+
+    assert_eq!(
+        result.changeset.nullifiers_spent.get(&id),
+        Some(&vec![second]),
+        "the second note was spent all along"
+    );
+    assert!(unspent(&*store.read().await, id).is_empty());
+    drop(store);
     let _ = std::fs::remove_file(&path);
 }
 
@@ -422,9 +597,14 @@ async fn should_free_the_untouched_notes_of_a_spend_another_transition_took_an_i
         status(&store, id, OTHER_SPEND),
         ShieldedActivityStatus::Pending
     );
-    let records = store.pending_redrives(id).expect("records");
-    assert_eq!(records.len(), 1, "the other attempt keeps its transition");
-    assert_eq!(records[0].activity_id, OTHER_SPEND);
+    assert!(
+        store
+            .pending_redrives(id)
+            .expect("records")
+            .iter()
+            .any(|record| record.activity_id == OTHER_SPEND && record.attempts == 0),
+        "the other attempt keeps its transition, to be broadcast again"
+    );
     drop(store);
     let _ = std::fs::remove_file(&path);
 }
@@ -455,7 +635,7 @@ async fn should_fail_a_pending_spend_whose_every_input_another_transition_spent(
     let store = store.read().await;
     assert_eq!(status(&store, id, SPEND), ShieldedActivityStatus::Failed);
     assert!(unspent(&store, id).is_empty(), "both notes are spent");
-    assert!(store.pending_redrives(id).expect("records").is_empty());
+    assert!(parked(&store, id, SPEND));
     drop(store);
     let _ = std::fs::remove_file(&path);
 }
@@ -559,6 +739,10 @@ async fn should_fail_the_spend_on_the_pass_after_a_cancelled_one() {
     {
         let store = store.read().await;
         assert_eq!(status(&store, id, SPEND), ShieldedActivityStatus::Pending);
+        assert!(
+            !parked(&store, id, SPEND),
+            "its transition is saved as it was, to be broadcast again"
+        );
         assert_eq!(store.pending_redrives(id).expect("records").len(), 1);
     }
 
@@ -566,7 +750,34 @@ async fn should_fail_the_spend_on_the_pass_after_a_cancelled_one() {
 
     let store = store.read().await;
     assert_eq!(status(&store, id, SPEND), ShieldedActivityStatus::Failed);
-    assert!(store.pending_redrives(id).expect("records").is_empty());
+    assert!(parked(&store, id, SPEND));
     drop(store);
     let _ = std::fs::remove_file(&path);
+}
+
+/// A token purchase is told apart by its fee bundle, the bundle the credit
+/// pool records: its own fee action leaves it pending, another transition's
+/// spend of its fee note fails it.
+#[tokio::test]
+async fn should_tell_a_token_purchase_s_own_fee_action_from_another_spend_of_its_fee_note() {
+    let (id, _) = subwallet();
+    let fee_note = nullifier(0xA1);
+    let saved = purchase(vec![
+        action(fee_note, cmx(1)),
+        action(nullifier(0xD0), cmx(2)),
+    ]);
+    for (tag, scanned_cmx, expected) in [
+        ("purchase_own", cmx(1), ShieldedActivityStatus::Pending),
+        ("purchase_other", cmx(9), ShieldedActivityStatus::Failed),
+    ] {
+        let path = temp_tree_path(tag);
+        let store = open(&path);
+        save_unconfirmed_spend(&mut *store.write().await, id, SPEND, &saved, &[fee_note]);
+
+        scan_pool(&store, vec![scanned(fee_note, scanned_cmx)]).await;
+
+        assert_eq!(status(&*store.read().await, id, SPEND), expected, "{tag}");
+        drop(store);
+        let _ = std::fs::remove_file(&path);
+    }
 }
