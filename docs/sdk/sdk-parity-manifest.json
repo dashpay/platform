@@ -2160,10 +2160,10 @@
           "reason": "Swift exposes preview, execution, and status with durable operation UUIDs. Restart recovery resumes the exact asset-lock outpoint: a fresh Type18 that Platform executes, or that Platform rejects because the outpoint was already consumed by an earlier attempt, durably completes the operation. Unit tests cover store reopen, failed persistence and the terminal DrainCompleted rule. An iOS wallet testnet process-death test confirmed recovery after dispatch and enabled a subsequent Max transfer. SwiftExampleApp exposes the flow (TEST_PLAN SH-18 to SH-20): a Max toggle on the Core to shielded screen shows the preview and runs the drain, the operation UUID is written to a file before the call, the status is read at launch, and an unfinished transfer is listed on the wallet screen and resumed from the exact asset-lock outpoint its status names. Max in the app is shield-to-self only. The app is partial because only its unit tests have run (marker store reopen, the rule for forgetting a marker, the resume-list filter): the funded testnet run and the process-death run of SH-19 have not been executed in SwiftExampleApp, and the CoinJoin drain is not exposed there."
         },
         "kotlin": {
-          "sdk": "partial",
+          "sdk": "supported",
           "example_app": "partial",
-          "restart": "required",
-          "reason": "The JNI drain wrappers (preview, execution, status by a durable operation UUID), the two asset-lock operation-id persistence slots with their Room column, the wallet-drain recovery rules and the KotlinExampleApp flow (TEST_PLAN SH-18 to SH-20: a Max switch on the Core to shielded screen, the operation UUID stored in Room before the call, the status read when the manager is activated, and saved transfers listed on the wallet screen and resumed from the exact asset-lock outpoint) are implemented. Max in the app is shield-to-self only and sweeps Core account index 0. Partial because only the JVM unit tests have run: the instrumented tests against the native library, the funded testnet run and the process-death run of SH-19 have not been executed yet. The CoinJoin drain has no Max flow in the app."
+          "restart": "tested",
+          "reason": "The SDK bridges preview, execution and status by a durable operation UUID, the two asset-lock operation-id persistence slots and the wallet-drain recovery rules; an instrumented test finds a persisted drain lock by its operation UUID from a new manager over the same database and sees a second drain refused. KotlinExampleApp exposes the flow (TEST_PLAN SH-18 to SH-20): a Max switch on the Core to shielded screen shows the preview and runs the drain, the operation UUID is stored in Room before the call, the status is read when the manager is activated, and a saved transfer is listed on the wallet screen and resumed from the exact asset-lock outpoint its status names. An emulator run against testnet killed the app after the asset lock was broadcast and finished the same lock through Resume. The app is partial because Max sweeps only Core account index 0 (the screen has no account picker), the refused second Max (SH-20) has not been run in the app, only through the instrumented test, and the CoinJoin drain has no Max flow there."
         }
       },
       "verification": [
@@ -2293,6 +2293,28 @@
           "file": "packages/rs-platform-wallet/src/wallet/shielded/wallet_drain_recovery.rs",
           "id": "should_forget_a_stored_id_only_when_the_operation_needs_nothing_more",
           "command": "cargo test -p platform-wallet --features shielded --lib wallet_drain_recovery",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SH-19",
+          "covers_restart": true
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SH-18",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/WalletDrainTests.swift",
+          "id": "testShouldForgetAStoredIdOnlyWhenTheOperationNeedsNothingMore",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -sdk iphonesimulator -destination \"platform=iOS Simulator,name=iPhone 17\" ARCHS=arm64 -only-testing:SwiftDashSDKTests/WalletDrainTests",
           "covers_restart": false
         }
       ]

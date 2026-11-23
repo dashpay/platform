@@ -336,24 +336,25 @@ fun WalletDetailScreen(
                 }
             }
 
-            // Accounts (← the Accounts header + AccountListView).
-            FormSection(title = "Accounts") {
-                AccountListSection(
-                    walletIdHex = walletIdHex,
-                    walletId = walletId,
-                    navController = navController,
-                )
-            }
-
             // Saved Core to shielded Max transfers (← WalletDetailView's
             // `UnfinishedWalletDrainsList`). Renders nothing when this
-            // wallet has none.
+            // wallet has none. Above the accounts, whose list is long: an
+            // unfinished transfer must not sit below the fold.
             if (hasShielded) {
                 UnfinishedWalletDrainsList(
                     walletIdHex = walletIdHex,
                     walletId = walletId,
                     network = network,
                     manager = manager,
+                    navController = navController,
+                )
+            }
+
+            // Accounts (← the Accounts header + AccountListView).
+            FormSection(title = "Accounts") {
+                AccountListSection(
+                    walletIdHex = walletIdHex,
+                    walletId = walletId,
                     navController = navController,
                 )
             }

@@ -10,7 +10,7 @@ Capabilities tracked: **40**
 | --- | --- | ---: | ---: | ---: | ---: |
 | Swift | SDK | 25 | 13 | 1 | 1 |
 | Swift | Example app | 6 | 24 | 1 | 9 |
-| Kotlin | SDK | 14 | 17 | 8 | 1 |
+| Kotlin | SDK | 15 | 16 | 8 | 1 |
 | Kotlin | Example app | 6 | 16 | 8 | 10 |
 
 ## Restart coverage
@@ -18,7 +18,7 @@ Capabilities tracked: **40**
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
 | Swift | 2 | 12 | 26 |
-| Kotlin | 5 | 9 | 26 |
+| Kotlin | 6 | 8 | 26 |
 
 ## Capability status
 
@@ -55,7 +55,7 @@ Capabilities tracked: **40**
 | `errors.platform_wallet_not_found_typed` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
 | `persistence.pending_identity_key_repair` | unsupported / unsupported / not_applicable | supported / not-applicable / tested |
 | `errors.signing_key_unavailable_discriminator` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
-| `shielded.core_wallet_drain` | supported / partial / tested | partial / partial / required |
+| `shielded.core_wallet_drain` | supported / partial / tested | supported / partial / tested |
 | `network.adaptive_quorum_source` | supported / supported / tested | supported / supported / tested |
 | `contracts.moderation_reads` | supported / supported / not_applicable | unsupported / unsupported / not_applicable |
 | `system.block_and_transition_status_reads` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
