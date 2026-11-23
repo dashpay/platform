@@ -85,9 +85,14 @@ pub struct ShieldedTokenPoolBalance {
     /// checked for this account; `None` before the first scan reached it.
     /// The balance covers exactly these.
     pub scanned_note_count: Option<u64>,
-    /// The pool's note count at the last chunk read, `None` before any.
+    /// The highest note count a page of the pool's scans has proved, `None`
+    /// before any. A page answered by a lagging node never lowers it, and it
+    /// does not mean a scan covered it: `scanned_note_count` is what was
+    /// checked for this account.
     pub pool_note_count: Option<u64>,
-    /// The height the last chunk read was proven at, `None` before any.
+    /// The highest height a page of the pool's scans was proven at, `None`
+    /// before any. It does not by itself certify that a scan reached the
+    /// pool's end.
     pub scanned_height: Option<u64>,
     /// Why the last scan of the pool stopped early, if it did. Cleared by the
     /// next chunk read.
