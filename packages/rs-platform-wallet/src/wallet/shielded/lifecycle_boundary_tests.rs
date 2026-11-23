@@ -1234,4 +1234,5 @@ async fn should_refuse_every_shielded_spend_on_a_handle_kept_past_its_removal() 
             .abandon_shielded_identity_debit(0, [0; 32], true)
             .await,
     );
+    removed(wallet.bind_shielded_from_persisted(&[0]).await.map(drop));
 }
