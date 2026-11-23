@@ -110,7 +110,7 @@ Ask the user, then attach the signature. With `--upload` the script checks the r
 scripts/release/sign_dashmate_checksums.sh --tag=v<version> --key=<full fingerprint> --upload
 ```
 
-**To rebuild a signed release:** once a release carries `SHA256SUMS.asc` (or any `SHA256SUMS.*`), release jobs started afterwards refuse to replace its packages or its `SHA256SUMS` and fail instead. To change either, delete the signature first (`gh release delete-asset v<version> SHA256SUMS.asc --repo dashpay/platform`), re-run the jobs, and sign the new file.
+**To rebuild a signed release:** once a release carries `SHA256SUMS.asc` (or any `SHA256SUMS.*`), release jobs started afterwards refuse to replace its packages or its `SHA256SUMS` and fail instead. To change either, delete each `SHA256SUMS.*` asset first (`gh release delete-asset v<version> <name> --repo dashpay/platform`), re-run the jobs, and sign the new file.
 
 ### 6. Stable only: update `master`
 
