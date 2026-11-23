@@ -10,7 +10,8 @@
 //! [`create_tables`] makes, and nowhere else: unlike the credit pool's notes
 //! it is not handed to the host's persister.
 //!
-//! - `shielded_token_pool_watches`: which wallet watches which token.
+//! - `shielded_token_pool_watches`: which wallet watches which token. A
+//!   Clear keeps them; everything else is scan state a sync rebuilds.
 //! - `shielded_token_pool_scans`: per token, the pool's note count, the
 //!   height of the last chunk read and the last scan error.
 //! - `shielded_token_pool_watermarks`: per account and token, how many of
@@ -376,17 +377,21 @@ pub(super) fn purge_subwallet(conn: &mut Connection, id: SubwalletId) -> rusqlit
     tx.commit()
 }
 
-/// Drop every token pool row, as clearing the shielded store does.
+/// Drop every token pool row but the watches, as clearing the shielded store
+/// does: like the credit pool after a Clear, the next sync scans the watched
+/// pools again from the start. The watches stay because nothing else would
+/// bring them back, so the tokens they hold would stay unseen.
 pub(super) fn purge_all(conn: &mut Connection) -> rusqlite::Result<()> {
-    conn.execute_batch(
-        "BEGIN;
-         DELETE FROM shielded_token_pool_watches;
-         DELETE FROM shielded_token_pool_scans;
-         DELETE FROM shielded_token_pool_watermarks;
-         DELETE FROM shielded_token_pool_leaves;
-         DELETE FROM shielded_token_pool_notes;
-         COMMIT;",
-    )
+    let tx = conn.transaction()?;
+    for table in [
+        "shielded_token_pool_scans",
+        "shielded_token_pool_watermarks",
+        "shielded_token_pool_leaves",
+        "shielded_token_pool_notes",
+    ] {
+        tx.execute(&format!("DELETE FROM {table}"), [])?;
+    }
+    tx.commit()
 }
 
 /// Every watch, by wallet.
@@ -447,6 +452,7 @@ pub(super) fn watermark(
 }
 
 /// Every note `id` holds in `token_id`'s pool, spent or not, by position.
+#[cfg(test)]
 pub(crate) fn notes(
     conn: &Connection,
     id: SubwalletId,
@@ -504,6 +510,42 @@ pub(crate) fn notes(
         });
     }
     Ok(out)
+}
+
+/// The values of `id`'s unspent notes in `token_id`'s pool, read alone: a
+/// balance needs nothing else of the notes.
+fn unspent_values(
+    conn: &Connection,
+    id: SubwalletId,
+    token_id: Identifier,
+) -> Result<Vec<u64>, PlatformWalletError> {
+    let mut statement = conn
+        .prepare(
+            "SELECT value FROM shielded_token_pool_notes \
+             WHERE wallet_id = ?1 AND account_index = ?2 AND token_id = ?3 AND spent = 0",
+        )
+        .map_err(storage("read note values"))?;
+    let rows = statement
+        .query_map(
+            params![
+                id.wallet_id.as_slice(),
+                id.account_index,
+                token_id.as_slice()
+            ],
+            |row| row.get::<_, Vec<u8>>(0),
+        )
+        .map_err(storage("read note values"))?;
+    rows.map(|row| {
+        let value = row.map_err(storage("read note values"))?;
+        <[u8; 8]>::try_from(value.as_slice())
+            .map(u64::from_le_bytes)
+            .map_err(|_| {
+                PlatformWalletError::ShieldedStoreError(
+                    "token pool note value is not 8 bytes".to_string(),
+                )
+            })
+    })
+    .collect()
 }
 
 /// What is known of a pool's last scan.
@@ -579,11 +621,8 @@ pub(super) fn balances(
             let id = SubwalletId::new(wallet_id, account_index);
             let mut balance = 0u64;
             let mut unspent_note_count = 0u32;
-            for note in notes(conn, id, watch.token_id)?
-                .into_iter()
-                .filter(|note| !note.is_spent)
-            {
-                balance = balance.checked_add(note.value).ok_or_else(|| {
+            for value in unspent_values(conn, id, watch.token_id)? {
+                balance = balance.checked_add(value).ok_or_else(|| {
                     PlatformWalletError::ShieldedStoreError(format!(
                         "the notes of account {account_index} in the pool of token {} add up \
                          past u64",
@@ -608,10 +647,11 @@ pub(super) fn balances(
 }
 
 /// The accounts that scan one pool and the viewing keys they decrypt with,
-/// each with its watermark there.
+/// each with its watermark row there as this scan last read or wrote it
+/// (`None`: no row).
 struct PoolScanner<'a> {
     token_id: Identifier,
-    accounts: Vec<(SubwalletId, &'a AccountViewingKeys, u64)>,
+    accounts: Vec<(SubwalletId, &'a AccountViewingKeys, Option<u64>)>,
 }
 
 /// What one chunk did to the store.
@@ -619,6 +659,25 @@ struct PoolScanner<'a> {
 struct ChunkOutcome {
     new_notes: usize,
     newly_spent: usize,
+    /// No account scans the pool any more (see [`apply_chunk`]): the scan
+    /// ends.
+    stopped: bool,
+}
+
+/// Whether `wallet_id` watches `token_id`'s pool.
+fn is_watched(
+    conn: &Connection,
+    wallet_id: WalletId,
+    token_id: Identifier,
+) -> Result<bool, PlatformWalletError> {
+    conn.query_row(
+        "SELECT 1 FROM shielded_token_pool_watches WHERE wallet_id = ?1 AND token_id = ?2",
+        params![wallet_id.as_slice(), token_id.as_slice()],
+        |_| Ok(()),
+    )
+    .optional()
+    .map(|row| row.is_some())
+    .map_err(storage("read watch"))
 }
 
 /// Apply one chunk read from `start_index` to the store in one transaction:
@@ -626,6 +685,14 @@ struct ChunkOutcome {
 /// it had not checked, mark the account notes whose nullifiers the chunk
 /// reveals spent (after the saves, so a note received and spent within the
 /// chunk ends spent), and raise every account's watermark to the chunk's end.
+///
+/// The chunk was read without the store, so a purge may have landed since the
+/// scan last wrote (an unwatch, a wallet's removal, a Clear, an account a
+/// rebind dropped). Inside the transaction, so no purge can land between the
+/// check and the writes, it keeps only the accounts whose wallet still
+/// watches the pool and whose watermark row is still what this scan last read
+/// or wrote; the others are dropped from the scan. With none left, nothing is
+/// written and the scan stops, so a purge is never undone.
 fn apply_chunk(
     conn: &mut Connection,
     scanner: &mut PoolScanner<'_>,
@@ -643,6 +710,18 @@ fn apply_chunk(
     let height = to_sql_u64(chunk.height, "scan height")?;
     let mut outcome = ChunkOutcome::default();
     let tx = conn.transaction().map_err(storage("begin chunk"))?;
+    let mut still_scanning = Vec::with_capacity(scanner.accounts.len());
+    for account in scanner.accounts.drain(..) {
+        let (id, _, row) = account;
+        if is_watched(&tx, id.wallet_id, token)? && watermark(&tx, id, token)? == row {
+            still_scanning.push(account);
+        }
+    }
+    scanner.accounts = still_scanning;
+    if scanner.accounts.is_empty() {
+        outcome.stopped = true;
+        return Ok(outcome);
+    }
     for (offset, raw) in chunk.notes.iter().enumerate() {
         let position = start_index + offset as u64;
         let cmx = <[u8; 32]>::try_from(raw.cmx.as_slice()).map_err(|_| {
@@ -662,7 +741,7 @@ fn apply_chunk(
         )
         .map_err(storage("keep leaf"))?;
         for (id, views, watermark) in &scanner.accounts {
-            if position < *watermark {
+            if position < watermark.unwrap_or(0) {
                 continue;
             }
             let Some((note, _address)) = try_decrypt_note(&views.prepared_ivk, raw) else {
@@ -724,7 +803,7 @@ fn apply_chunk(
             ],
         )
         .map_err(storage("raise watermark"))?;
-        *watermark = (*watermark).max(end);
+        *watermark = Some(watermark.unwrap_or(0).max(end));
     }
     tx.execute(
         "INSERT INTO shielded_token_pool_scans \
@@ -771,7 +850,7 @@ where
     let lowest = scanner
         .accounts
         .iter()
-        .map(|(_, _, watermark)| *watermark)
+        .map(|(_, _, watermark)| watermark.unwrap_or(0))
         .min()
         .unwrap_or(0);
     let mut start = lowest / CHUNK_SIZE * CHUNK_SIZE;
@@ -790,7 +869,7 @@ where
             .with_token_pool_conn(|conn| apply_chunk(conn, &mut scanner, start, &chunk))?;
         total.new_notes += outcome.new_notes;
         total.newly_spent += outcome.newly_spent;
-        if read < u64::from(capacity) {
+        if outcome.stopped || read < u64::from(capacity) {
             return Ok(total);
         }
         start += read;
@@ -813,11 +892,11 @@ where
 {
     let mut summary = TokenPoolSyncSummary::default();
     let planned = store.read().await.with_token_pool_conn(|conn| {
-        let mut by_token: BTreeMap<Identifier, Vec<(SubwalletId, u64)>> = BTreeMap::new();
+        let mut by_token: BTreeMap<Identifier, Vec<(SubwalletId, Option<u64>)>> = BTreeMap::new();
         for (wallet_id, watched) in watches(conn)? {
             for watch in watched {
                 for (id, _) in accounts.iter().filter(|(id, _)| id.wallet_id == wallet_id) {
-                    let watermark = watermark(conn, *id, watch.token_id)?.unwrap_or(0);
+                    let watermark = watermark(conn, *id, watch.token_id)?;
                     by_token
                         .entry(watch.token_id)
                         .or_default()

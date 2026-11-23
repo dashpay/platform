@@ -10,7 +10,7 @@ use dpp::fee::Credits;
 use dpp::prelude::Identifier;
 use dpp::shielded::builder::OrchardProver;
 use dpp::tokens::calculate_token_id;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::changeset::PlatformWalletPersistence;
 use crate::error::PlatformWalletError;
@@ -45,6 +45,11 @@ impl ShieldedTokenPurchaser {
     /// purchase lands, a sync confirms its activity row and marks its notes
     /// spent; a sync also runs the redrive of its saved record. It is
     /// requested, not awaited: a pass already in flight takes its place.
+    ///
+    /// The token's shielded pool is watched first
+    /// ([`NetworkShieldedCoordinator::record_token_pool_watch`]), so the
+    /// bought tokens are found by the same syncs; a watch that cannot be
+    /// recorded refuses the purchase before anything is reserved or sent.
     #[allow(clippy::too_many_arguments)]
     pub async fn purchase<P: OrchardProver>(
         &self,
@@ -56,6 +61,21 @@ impl ShieldedTokenPurchaser {
         total_agreed_price: Credits,
         prover: P,
     ) -> Result<ShieldedTokenPurchaseOutcome, PlatformWalletError> {
+        // The bought tokens land in the token's pool: watch it first, so the
+        // sync that looks for the purchase also finds them. A watch that
+        // cannot be recorded refuses the purchase before anything is sent,
+        // rather than leaving bought tokens no scan reads.
+        let watch = ShieldedTokenPoolWatch {
+            token_id: Identifier::from(calculate_token_id(
+                &data_contract_id.to_buffer(),
+                token_contract_position,
+            )),
+            data_contract_id: *data_contract_id,
+            token_contract_position,
+        };
+        self.coordinator
+            .record_token_pool_watch(self.wallet.wallet_id(), watch)
+            .await?;
         let result = self
             .wallet
             .shielded_token_purchase_from_pool(
@@ -70,23 +90,6 @@ impl ShieldedTokenPurchaser {
             )
             .await;
         if purchase_needs_shielded_sync(&result) {
-            // The bought tokens land in the token's pool: watch it, so the
-            // sync that looks for the purchase also finds them.
-            let watch = ShieldedTokenPoolWatch {
-                token_id: Identifier::from(calculate_token_id(
-                    &data_contract_id.to_buffer(),
-                    token_contract_position,
-                )),
-                data_contract_id: *data_contract_id,
-                token_contract_position,
-            };
-            if let Err(e) = self
-                .coordinator
-                .record_token_pool_watch(self.wallet.wallet_id(), watch)
-                .await
-            {
-                warn!(token = %watch.token_id, error = %e, "shielded token purchase: watching the token pool failed");
-            }
             request_shielded_sync(&self.sync);
         }
         result

@@ -35,6 +35,9 @@ impl TokenPoolConnection for TestTables {
     }
 }
 
+/// Something to run while a chunk read is on the network.
+type ReadHook = Box<dyn FnOnce() + Send>;
+
 /// A token pool served from memory, one chunk per request.
 struct TestPool {
     notes: Mutex<Vec<ShieldedEncryptedNote>>,
@@ -44,6 +47,9 @@ struct TestPool {
     behind: Mutex<BTreeMap<u64, usize>>,
     failing: Mutex<bool>,
     requests: Mutex<Vec<u64>>,
+    /// Run once when the chunk at this start is read, before it is
+    /// answered: a purge landing while the scan is on the network.
+    on_read: Mutex<Option<(u64, ReadHook)>>,
 }
 
 impl TestPool {
@@ -54,6 +60,7 @@ impl TestPool {
             behind: Mutex::new(BTreeMap::new()),
             failing: Mutex::new(false),
             requests: Mutex::new(Vec::new()),
+            on_read: Mutex::new(None),
         }
     }
 
@@ -76,6 +83,19 @@ impl TokenPoolNoteSource for TestPool {
     ) -> Result<TokenPoolChunk, PlatformWalletError> {
         assert_eq!(start_index % CHUNK_SIZE, 0, "start must be chunk-aligned");
         self.requests.lock().unwrap().push(start_index);
+        let hook = {
+            let mut slot = self.on_read.lock().unwrap();
+            match slot.take() {
+                Some((at, hook)) if at == start_index => Some(hook),
+                other => {
+                    *slot = other;
+                    None
+                }
+            }
+        };
+        if let Some(hook) = hook {
+            hook();
+        }
         if *self.failing.lock().unwrap() {
             return Err(PlatformWalletError::ShieldedSyncFailed(
                 "node unreachable".to_string(),
@@ -470,5 +490,77 @@ async fn should_keep_token_pools_in_the_store_file_until_purged() {
         .await
         .with_token_pool_conn(|conn| watches(conn))
         .expect("watches");
-    assert!(watched.is_empty());
+    assert_eq!(
+        watched.get(&WALLET).map(Vec::len),
+        Some(1),
+        "a Clear keeps the watches, so the next sync scans the pool again"
+    );
+    sync_token_pools(&pool, &store, &accounts, &CancellationToken::new()).await;
+    let rows = store
+        .read()
+        .await
+        .with_token_pool_conn(|conn| balances(conn, WALLET, &[0]))
+        .expect("balances");
+    assert_eq!(rows[0].balance, 6, "found again after the Clear");
+}
+
+/// An unwatch that lands while a chunk is on the network is not undone by
+/// that chunk: nothing is written for the unwatched pool, and a later watch
+/// scans it from the start and finds every note.
+#[tokio::test]
+async fn should_not_undo_an_unwatch_that_lands_mid_scan() {
+    let tables = std::sync::Arc::new(TestTables::new());
+    watch(&tables, WALLET).await;
+    let mine = views(1, 0);
+    let mut entries: Vec<ShieldedEncryptedNote> = (0..CHUNK_SIZE as usize + 2)
+        .map(|_| foreign_entry())
+        .collect();
+    let (early, _) = note_to(&mine, 5, None);
+    let (late, _) = note_to(&mine, 7, None);
+    entries[3] = early;
+    entries[CHUNK_SIZE as usize + 1] = late;
+    let pool = TestPool::new(entries);
+    let purging = std::sync::Arc::clone(&tables);
+    *pool.on_read.lock().unwrap() = Some((
+        CHUNK_SIZE,
+        Box::new(move || {
+            purging
+                .try_read()
+                .expect("no writer")
+                .with_token_pool_conn(|conn| remove_watch(conn, WALLET, token().token_id))
+                .expect("unwatch");
+        }),
+    ));
+    let id = SubwalletId::new(WALLET, 0);
+    let accounts = vec![(id, mine)];
+
+    sync_token_pools(&pool, &*tables, &accounts, &CancellationToken::new()).await;
+    let store = tables.read().await;
+    let (notes_left, watermark_left, leaves_left) = store
+        .with_token_pool_conn(|conn| {
+            let count = |table: &str| {
+                conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .map_err(storage("count"))
+            };
+            Ok((
+                count("shielded_token_pool_notes")?,
+                count("shielded_token_pool_watermarks")?,
+                count("shielded_token_pool_leaves")?,
+            ))
+        })
+        .expect("counts");
+    assert_eq!(
+        (notes_left, watermark_left, leaves_left),
+        (0, 0, 0),
+        "the chunk read across the unwatch writes nothing"
+    );
+    drop(store);
+
+    watch(&tables, WALLET).await;
+    sync_token_pools(&pool, &*tables, &accounts, &CancellationToken::new()).await;
+    let row = &balance_rows(&tables, WALLET, &[0]).await[0];
+    assert_eq!((row.balance, row.unspent_note_count), (12, 2));
+    assert_eq!(row.scanned_note_count, Some(CHUNK_SIZE + 2));
 }

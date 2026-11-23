@@ -1753,9 +1753,19 @@ impl NetworkShieldedCoordinator {
 
         // The watched token pools, after the credit pool: a pass that stopped
         // reads none, and a token pool failure fails nothing else.
-        if !cancel.is_cancelled() {
-            super::token_pool::sync_token_pools(&*self.sdk, &self.store, &subwallets, cancel).await;
-        }
+        // A pass that found or spent token notes, or failed on a token pool,
+        // counts as activity for the cooldown below, as the credit pool's does:
+        // the next pass runs at once instead of waiting it out.
+        let token_pool_activity = if cancel.is_cancelled() {
+            false
+        } else {
+            let token_pools =
+                super::token_pool::sync_token_pools(&*self.sdk, &self.store, &subwallets, cancel)
+                    .await;
+            token_pools.new_notes > 0
+                || token_pools.newly_spent > 0
+                || !token_pools.failed.is_empty()
+        };
 
         let balances_per_sub = match super::sync::balances_across(&self.store, &subwallets).await {
             Ok(r) => r,
@@ -1845,7 +1855,9 @@ impl NetworkShieldedCoordinator {
         // needs an uncancelled pass: a stop after a complete scan that
         // found nothing proves nothing about staying caught up, so the
         // next pass walks Platform again right away.
-        let any_activity = notes.total_scanned > 0 || newly_spent_per_sub.values().any(|&n| n > 0);
+        let any_activity = notes.total_scanned > 0
+            || newly_spent_per_sub.values().any(|&n| n > 0)
+            || token_pool_activity;
         if let Ok(mut guard) = self.last_caught_up_at.lock() {
             if any_activity {
                 *guard = None;
@@ -3844,6 +3856,103 @@ mod tests {
             .await
             .expect("register wallet");
         coordinator
+    }
+
+    /// The network-checked watch refuses a token whose verified configuration
+    /// has no shielded pool, and one whose contract does not fetch, and
+    /// records nothing for either.
+    #[tokio::test]
+    async fn should_refuse_to_watch_a_token_without_a_readable_shielded_pool() {
+        use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+        use dpp::data_contract::associated_token::token_configuration::v1::TokenConfigurationV1;
+        use dpp::data_contract::config::DataContractConfig;
+        use dpp::data_contract::v1::DataContractV1;
+        use dpp::data_contract::{DataContract, TokenConfiguration};
+
+        let contract_id = Identifier::from([0x66; 32]);
+        let platform_version = PlatformVersion::latest();
+        let without_pool = DataContract::V1(DataContractV1 {
+            id: contract_id,
+            version: 1,
+            owner_id: Identifier::from([0x67; 32]),
+            document_types: BTreeMap::new(),
+            config: DataContractConfig::default_for_version(platform_version)
+                .expect("a contract config"),
+            schema_defs: None,
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
+            groups: BTreeMap::new(),
+            tokens: BTreeMap::from([(
+                0,
+                TokenConfiguration::V1(TokenConfigurationV1::from_v0(
+                    TokenConfigurationV0::default_most_restrictive(),
+                    false,
+                )),
+            )]),
+            keywords: vec![],
+            description: None,
+        });
+        let dir = temp_dir("token_pool_watch_refusals");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let db_path = dir.join("tree.sqlite");
+        let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store");
+        let mut sdk = dash_sdk::Sdk::new_mock();
+        sdk.mock()
+            .expect_fetch(contract_id, Some(without_pool))
+            .await
+            .expect("contract expectation");
+        sdk.mock()
+            .expect_fetch(Identifier::from([0x68; 32]), None::<DataContract>)
+            .await
+            .expect("missing contract expectation");
+        let coordinator = NetworkShieldedCoordinator::new(
+            Arc::new(sdk),
+            dashcore::Network::Testnet,
+            db_path,
+            store,
+        );
+        let wallet_id: WalletId = [0x11; 32];
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("derive viewing keys")
+            .viewing_keys();
+        coordinator
+            .register_wallet(
+                wallet_id,
+                BTreeMap::from([(0u32, views)]),
+                WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence)),
+            )
+            .await
+            .expect("register wallet");
+
+        let err = coordinator
+            .watch_token_pool(wallet_id, contract_id, 0)
+            .await
+            .expect_err("no shielded pool");
+        assert!(
+            matches!(err, PlatformWalletError::TokenShieldedPoolDisabled { .. }),
+            "got {err:?}"
+        );
+        let err = coordinator
+            .watch_token_pool(wallet_id, Identifier::from([0x68; 32]), 0)
+            .await
+            .expect_err("the contract is not on Platform");
+        assert!(
+            matches!(
+                err,
+                PlatformWalletError::TokenConfigurationUnavailable { .. }
+            ),
+            "got {err:?}"
+        );
+        assert!(coordinator
+            .token_pool_balances(wallet_id)
+            .await
+            .expect("balances")
+            .is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A watch needs a bound wallet; a bound wallet's watched pool lists one
