@@ -409,8 +409,11 @@ public enum ContractDownloader {
     /// - Throws: `ContractDownloadError.notFound` / `.fetchFailed` when the
     ///   fetch fails, the response is for another contract or for an older
     ///   version, or the trusted context refuses the binary; any error the
-    ///   parser or the save throws. On a throw the stored rows are left as
-    ///   they were.
+    ///   parser or the save throws, after which the stored rows are left as
+    ///   they were. `.fetchFailed` too when the refresh is saved but its rows
+    ///   cannot be fetched again in `modelContext`: then only the copies
+    ///   `modelContext` holds are stale, and a second refresh, which accepts
+    ///   the version just saved, fetches them again.
     public static func refreshPersistedContract(
         _ contract: PersistentDataContract,
         sdk: SDK,
@@ -448,7 +451,10 @@ public enum ContractDownloader {
     ///
     /// `registerBinary` is called with the fetched binary serialization
     /// after the checks pass and before any row is written; a throw from it
-    /// stops the refresh. Internal so tests can run it without the network.
+    /// stops the refresh. A throw before the save leaves the stored rows as
+    /// they were; a throw from the fetch after it means the refresh is saved
+    /// and only `modelContext`'s copies are stale. Internal so tests can run
+    /// it without the network.
     static func apply(
         fetched: FetchedContract,
         toContractWithId contractId: Data,
@@ -510,7 +516,13 @@ public enum ContractDownloader {
             modelContext: context
         )
         try context.save()
-        reloadRefreshedRows(ofContractWithId: contractId, in: modelContext)
+        do {
+            try reloadRefreshedRows(ofContractWithId: contractId, in: modelContext)
+        } catch {
+            throw ContractDownloadError.fetchFailed(
+                "The refreshed contract \(requestedId) was saved, but the copy on this screen could not be read again: \(error.localizedDescription)"
+            )
+        }
     }
 
     /// Fetch the contract's row, keywords, tokens and document types (with
@@ -520,15 +532,16 @@ public enum ContractDownloader {
     /// deleted, until a fetch reads them from the store. A fetch leaves the
     /// context's pending edits alone.
     ///
-    /// The refresh is saved by then, so a failed fetch only leaves those
-    /// copies stale and is not reported as a failed refresh.
-    private static func reloadRefreshedRows(ofContractWithId contractId: Data, in modelContext: ModelContext) {
+    /// The refresh is saved by then: a throw means only those copies are
+    /// stale, and running the refresh again (which accepts the saved version)
+    /// reads them again.
+    private static func reloadRefreshedRows(ofContractWithId contractId: Data, in modelContext: ModelContext) throws {
         var contract = FetchDescriptor<PersistentDataContract>(predicate: #Predicate { $0.id == contractId })
         contract.relationshipKeyPathsForPrefetching = [\.keywordRelations, \.tokens, \.documentTypes]
-        _ = try? modelContext.fetch(contract)
+        _ = try modelContext.fetch(contract)
         var documentTypes = FetchDescriptor<PersistentDocumentType>(predicate: #Predicate { $0.contractId == contractId })
         documentTypes.relationshipKeyPathsForPrefetching = [\.indices, \.propertiesList]
-        _ = try? modelContext.fetch(documentTypes)
+        _ = try modelContext.fetch(documentTypes)
     }
 
     /// The contract JSON's `version`, or nil when it has no integer one.
