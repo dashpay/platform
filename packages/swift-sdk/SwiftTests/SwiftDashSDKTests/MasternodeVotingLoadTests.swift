@@ -39,6 +39,32 @@ final class MasternodeVotingLoadTests: XCTestCase {
         XCTAssertTrue(fetched.isVotingOnlyIdentity)
     }
 
+    /// A send is refused to an identity this device stores on the network as
+    /// a masternode's voter identity, and only to that: not the same id on
+    /// another network, an owner identity's row, or an unknown id.
+    func testShouldKnowOnlyAStoredVoterIdentityAsAVotingOnlyRecipient() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = container.mainContext
+        let voterId = Data(repeating: 0x5a, count: 32)
+        let ownerId = Data(repeating: 0x6b, count: 32)
+        let voter = PersistentIdentity(identityId: voterId, identityType: .masternode, network: .testnet)
+        voter.masternodeRole = .voter
+        let owner = PersistentIdentity(identityId: ownerId, identityType: .masternode, network: .testnet)
+        owner.masternodeRole = .owner
+        context.insert(voter)
+        context.insert(owner)
+        try context.save()
+
+        XCTAssertTrue(try PersistentIdentity.isKnownVotingOnlyIdentity(voterId, on: .testnet, in: context))
+        XCTAssertFalse(try PersistentIdentity.isKnownVotingOnlyIdentity(voterId, on: .mainnet, in: context))
+        XCTAssertFalse(try PersistentIdentity.isKnownVotingOnlyIdentity(ownerId, on: .testnet, in: context))
+        XCTAssertFalse(try PersistentIdentity.isKnownVotingOnlyIdentity(
+            Data(repeating: 0x01, count: 32),
+            on: .testnet,
+            in: context
+        ))
+    }
+
     /// A row stored before the pro_tx_hash was recorded names no masternode:
     /// nothing is inferred from its id until Rust's load rule resolves it,
     /// and it is not a voting-only identity.

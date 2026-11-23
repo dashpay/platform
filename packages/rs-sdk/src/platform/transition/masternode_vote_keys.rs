@@ -271,7 +271,8 @@ impl MasternodeVotingLoadRefusal {
     pub fn refused_voter_identity(&self) -> Option<Identifier> {
         match self {
             MasternodeVotingLoadRefusal::NoOwnerIdentity { .. }
-            | MasternodeVotingLoadRefusal::VoterIdentityGivenAsProTxHash { .. } => None,
+            | MasternodeVotingLoadRefusal::VoterIdentityGivenAsProTxHash { .. }
+            | MasternodeVotingLoadRefusal::NotAnOwnerIdentity { .. } => None,
             MasternodeVotingLoadRefusal::NoOwnerIdentityAndUnusableVotingKey {
                 problem, ..
             } => Some(match problem {
@@ -322,6 +323,13 @@ pub enum MasternodeVotingLoadRefusal {
         /// The voter identity whose id was given.
         identity: Identifier,
     },
+    /// The identity at the id given as the pro_tx_hash is not a masternode's owner identity:
+    /// it holds a key an owner identity never holds (an ordinary identity's authentication
+    /// keys, an operator identity's system key), or none. Nothing is loaded or recorded.
+    NotAnOwnerIdentity {
+        /// The identity whose id was given.
+        identity: Identifier,
+    },
 }
 
 /// What [`load_masternode_for_voting`] decided.
@@ -348,15 +356,23 @@ fn masternode_voting_load(
     owner: Option<Identity>,
     voter: Option<FetchedVoter<'_>>,
 ) -> Result<MasternodeVotingLoad, Error> {
-    // An identity at the given id that holds only voting keys is a voter identity: the id is
-    // not a pro_tx_hash, whatever the voting key says.
+    // An identity at the given id is loaded as the masternode's owner only when it holds what
+    // an owner identity holds; otherwise the id is not a pro_tx_hash, whatever the voting key
+    // says.
     if let Some(identity) = owner
         .as_ref()
-        .filter(|identity| is_voter_identity(identity))
+        .filter(|identity| !is_owner_identity(identity))
     {
+        let identity_id = identity.id();
         return Ok(MasternodeVotingLoad::Refused(
-            MasternodeVotingLoadRefusal::VoterIdentityGivenAsProTxHash {
-                identity: identity.id(),
+            if is_voter_identity(identity) {
+                MasternodeVotingLoadRefusal::VoterIdentityGivenAsProTxHash {
+                    identity: identity_id,
+                }
+            } else {
+                MasternodeVotingLoadRefusal::NotAnOwnerIdentity {
+                    identity: identity_id,
+                }
             },
         ));
     }
@@ -430,6 +446,19 @@ fn is_voter_identity(identity: &Identity) -> bool {
     !keys.is_empty() && keys.values().all(|key| key.purpose() == Purpose::VOTING)
 }
 
+/// Whether `identity` is a masternode's owner identity: it holds keys, and every one is an
+/// owner or withdrawal key, the only keys Platform gives an owner identity. An ordinary
+/// identity needs an authentication key and an operator identity holds a system key, so
+/// neither is one; an owner from before owner keys existed, holding only its withdrawal key,
+/// is.
+fn is_owner_identity(identity: &Identity) -> bool {
+    let keys = identity.public_keys();
+    !keys.is_empty()
+        && keys
+            .values()
+            .all(|key| matches!(key.purpose(), Purpose::OWNER | Purpose::TRANSFER))
+}
+
 /// Whether Platform proved the owner identity absent at an older height than it proved the
 /// voter identity present (`voter_height`, `None` when the voter identity was not proved
 /// present). Platform adds an ordinary masternode's owner and voter identities in the same
@@ -441,6 +470,34 @@ fn owner_absence_predates_voter(
     voter_height: Option<u64>,
 ) -> bool {
     owner.is_none() && voter_height.is_some_and(|voter_height| owner_height < voter_height)
+}
+
+/// The owner identity to decide with, coherent with the voter identity's proof: `owner` as
+/// fetched, unless its absence was proved at an older height than the voter's presence, in
+/// which case `refetch` asks again (returning the identity and the height of its proof). An
+/// answer still older is an error, so nothing is stored.
+async fn owner_coherent_with_voter<Refetch, RefetchFuture>(
+    owner_id: Identifier,
+    owner: Option<Identity>,
+    owner_height: u64,
+    voter_height: Option<u64>,
+    refetch: Refetch,
+) -> Result<Option<Identity>, Error>
+where
+    Refetch: FnOnce() -> RefetchFuture,
+    RefetchFuture: std::future::Future<Output = Result<(Option<Identity>, u64), Error>>,
+{
+    if !owner_absence_predates_voter(&owner, owner_height, voter_height) {
+        return Ok(owner);
+    }
+    let (owner, owner_height) = refetch().await?;
+    if owner_absence_predates_voter(&owner, owner_height, voter_height) {
+        return Err(Error::Generic(format!(
+            "Platform proved the owner identity of masternode {owner_id} absent at height \
+             {owner_height}, older than the voter identity it proved present; load again"
+        )));
+    }
+    Ok(owner)
 }
 
 /// Runs the owner and voter fetches side by side. The voter fetch's own result is data (it
@@ -469,7 +526,8 @@ where
 ///   the voter identity is loaded. This is a masternode with no owner address (a shared
 ///   masternode), which has no owner identity from protocol version 14.
 /// - Owner identity proved absent otherwise: refused ([`MasternodeVotingLoadRefusal`]).
-/// - The id is a voter identity, not a masternode: refused, whatever the voting key.
+/// - The id is a voter identity, or any identity that is not an owner identity (it holds a
+///   key an owner identity never holds): refused, whatever the voting key.
 ///
 /// An owner identity proved absent at an older height than the voter identity was proved
 /// present is asked for again, since an ordinary masternode's two identities appear in the
@@ -497,24 +555,24 @@ pub async fn load_masternode_for_voting(
             None => None,
         }
     };
-    let ((mut owner, owner_metadata), voter) =
+    let ((owner, owner_metadata), voter) =
         fetch_owner_and_voter(Identity::fetch_with_metadata(sdk, owner_id, None), voter).await?;
-    let mut owner_height = owner_metadata.height;
     let voter_height = voter
         .as_ref()
         .and_then(|(_, fetched)| fetched.as_ref().ok())
         .and_then(|(identity, metadata)| identity.as_ref().map(|_| metadata.height));
-    if owner_absence_predates_voter(&owner, owner_height, voter_height) {
-        let (refetched, metadata) = Identity::fetch_with_metadata(sdk, owner_id, None).await?;
-        owner = refetched;
-        owner_height = metadata.height;
-        if owner_absence_predates_voter(&owner, owner_height, voter_height) {
-            return Err(Error::Generic(format!(
-                "Platform proved the owner identity of masternode {owner_id} absent at height \
-                 {owner_height}, older than the voter identity it proved present; load again"
-            )));
-        }
-    }
+    let owner = owner_coherent_with_voter(
+        owner_id,
+        owner,
+        owner_metadata.height,
+        voter_height,
+        || async {
+            Identity::fetch_with_metadata(sdk, owner_id, None)
+                .await
+                .map(|(identity, metadata)| (identity, metadata.height))
+        },
+    )
+    .await?;
     let voter = voter.map(|(address, fetched)| (address, fetched.map(|(identity, _)| identity)));
     masternode_voting_load(pro_tx_hash, owner, voter)
 }
@@ -1071,9 +1129,20 @@ mod tests {
 
     /// The masternode's owner identity: its id is the pro_tx_hash.
     fn owner_identity() -> Identity {
+        let mut public_keys = BTreeMap::new();
+        public_keys.insert(
+            0,
+            key(
+                0,
+                Purpose::OWNER,
+                KeyType::ECDSA_HASH160,
+                OTHER_ADDRESS,
+                None,
+            ),
+        );
         Identity::V0(IdentityV0 {
             id: Identifier::new(pro_tx_hash().to_byte_array()),
-            public_keys: BTreeMap::new(),
+            public_keys,
             balance: 5,
             revision: 0,
         })
@@ -1318,6 +1387,137 @@ mod tests {
             &Some(owner_identity()),
             9,
             Some(10)
+        ));
+    }
+
+    /// An identity at the given id that holds a key no owner identity holds (an ordinary
+    /// identity's authentication key, an operator's system key), or none, is not loaded as an
+    /// owner; an owner holding owner and withdrawal keys is.
+    #[test]
+    fn should_load_only_an_identity_holding_owner_and_withdrawal_keys_as_the_owner() {
+        let at_pro_tx_hash = |keys: Vec<IdentityPublicKey>| {
+            let mut public_keys = BTreeMap::new();
+            for k in keys {
+                public_keys.insert(k.id(), k);
+            }
+            Identity::V0(IdentityV0 {
+                id: Identifier::new(pro_tx_hash().to_byte_array()),
+                public_keys,
+                balance: 0,
+                revision: 0,
+            })
+        };
+        let id = Identifier::new(pro_tx_hash().to_byte_array());
+        for keys in [
+            vec![key(
+                0,
+                Purpose::AUTHENTICATION,
+                KeyType::ECDSA_HASH160,
+                OTHER_ADDRESS,
+                None,
+            )],
+            vec![key(
+                0,
+                Purpose::SYSTEM,
+                KeyType::ECDSA_HASH160,
+                OTHER_ADDRESS,
+                None,
+            )],
+            vec![
+                key(
+                    0,
+                    Purpose::OWNER,
+                    KeyType::ECDSA_HASH160,
+                    OTHER_ADDRESS,
+                    None,
+                ),
+                key(
+                    1,
+                    Purpose::AUTHENTICATION,
+                    KeyType::ECDSA_HASH160,
+                    OTHER_ADDRESS,
+                    None,
+                ),
+            ],
+            vec![],
+        ] {
+            assert_eq!(
+                refused(masternode_voting_load(
+                    pro_tx_hash(),
+                    Some(at_pro_tx_hash(keys.clone())),
+                    Some((&VOTING_ADDRESS, Ok(None))),
+                )),
+                MasternodeVotingLoadRefusal::NotAnOwnerIdentity { identity: id },
+                "{keys:?}"
+            );
+        }
+        let (owner, _) = loaded(masternode_voting_load(
+            pro_tx_hash(),
+            Some(at_pro_tx_hash(vec![
+                key(
+                    0,
+                    Purpose::OWNER,
+                    KeyType::ECDSA_HASH160,
+                    OTHER_ADDRESS,
+                    None,
+                ),
+                key(
+                    1,
+                    Purpose::TRANSFER,
+                    KeyType::ECDSA_HASH160,
+                    OTHER_ADDRESS,
+                    None,
+                ),
+            ])),
+            None,
+        ));
+        assert!(matches!(owner, MasternodeVotingIdentity::Owner { .. }));
+    }
+
+    /// The owner answer the loader decides with, through the refetch it makes: an owner
+    /// proved absent at height 9 while the voter was proved present at 10 is asked for again.
+    /// A second answer proving it present gives the owner, absence at 10 gives none (a voter
+    /// load), and absence at 9 again is an error. A coherent first answer is never asked again.
+    #[tokio::test]
+    async fn should_decide_with_a_refetched_owner_answer_coherent_with_the_voter() {
+        let id = Identifier::new(pro_tx_hash().to_byte_array());
+        let answer = |answer: Result<(Option<Identity>, u64), Error>| move || async move { answer };
+        assert!(matches!(
+            owner_coherent_with_voter(
+                id,
+                None,
+                9,
+                Some(10),
+                answer(Ok((Some(owner_identity()), 10)))
+            )
+            .await,
+            Ok(Some(_))
+        ));
+        assert!(matches!(
+            owner_coherent_with_voter(id, None, 9, Some(10), answer(Ok((None, 10)))).await,
+            Ok(None)
+        ));
+        assert!(matches!(
+            owner_coherent_with_voter(id, None, 9, Some(10), answer(Ok((None, 9)))).await,
+            Err(Error::Generic(_))
+        ));
+        assert!(matches!(
+            owner_coherent_with_voter(
+                id,
+                None,
+                9,
+                Some(10),
+                answer(Err(Error::Generic("down".to_string())))
+            )
+            .await,
+            Err(Error::Generic(_))
+        ));
+        let never = || -> std::future::Ready<Result<(Option<Identity>, u64), Error>> {
+            panic!("a coherent answer is not asked for again")
+        };
+        assert!(matches!(
+            owner_coherent_with_voter(id, None, 10, Some(10), never).await,
+            Ok(None)
         ));
     }
 

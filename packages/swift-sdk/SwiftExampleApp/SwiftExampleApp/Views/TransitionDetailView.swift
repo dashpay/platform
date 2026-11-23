@@ -993,11 +993,7 @@ struct TransitionDetailView: View {
     // A recipient this device knows as a masternode's voter identity holds
     // only a voting key, so credits sent to it could not be spent; a typed
     // or retained selection of one is refused too.
-    if identities.contains(where: { $0.identityIdBase58 == normalizedToIdentityId && $0.isVotingOnlyIdentity }) {
-      throw SDKError.invalidParameter(
-        "The recipient is a masternode's voter identity, which holds only a voting key, so credits sent to it could not be spent."
-      )
-    }
+    try await refuseVotingOnlyRecipient(normalizedToIdentityId, network: fromIdentity.network)
 
     // Use the convenience method with DPPIdentity
     let dppIdentity = DPPIdentity(
@@ -1947,6 +1943,8 @@ struct TransitionDetailView: View {
     guard let recipientId = formInputs["recipientId"], !recipientId.isEmpty else {
       throw SDKError.invalidParameter("Recipient identity ID is required")
     }
+    // Tokens sent to a known voter identity could not be spent either.
+    try await refuseVotingOnlyRecipient(normalizeIdentityId(recipientId), network: identity.network)
 
     guard let amountString = formInputs["amount"], !amountString.isEmpty else {
       throw SDKError.invalidParameter("Amount is required")
@@ -2522,6 +2520,20 @@ struct TransitionDetailView: View {
 
     schemaTemplate += "}"
     formInputs["documentFields"] = schemaTemplate
+  }
+
+  /// Throws when `base58IdentityId` names an identity this device stores on
+  /// `network` as a masternode's voter identity, which holds only a voting
+  /// key: what is sent to it could not be spent. An id that does not decode
+  /// or is unknown passes, for the SDK to judge.
+  private func refuseVotingOnlyRecipient(_ base58IdentityId: String, network: Network) async throws {
+    guard let identityId = Data.identifier(fromBase58: base58IdentityId) else { return }
+    let isVotingOnly = try await MainActor.run {
+      try PersistentIdentity.isKnownVotingOnlyIdentity(identityId, on: network, in: modelContext)
+    }
+    if isVotingOnly {
+      throw SDKError.invalidParameter(PersistentIdentity.votingOnlyRecipientMessage)
+    }
   }
 
   private func normalizeIdentityId(_ identityId: String) -> String {
