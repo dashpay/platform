@@ -70,6 +70,25 @@ As long as its nodes are not banned by one of the failures above:
 3. Rust apps that match `dash_sdk::error::StaleNodeError` exhaustively need arms for the
    variants 5.1 adds (`PrivateDocumentStoreBehind`, `NewerProtocolVersion`), or a wildcard arm.
 
+## Other changes in 5.1 SDKs that can change an app's handling
+
+- **FFI error codes (Swift and Kotlin).** `rs-sdk-ffi` now reports gRPC `INVALID_ARGUMENT`
+  as `InvalidParameter` instead of `NetworkError`, and a dependency the SDK proved absent
+  (`dash_sdk::Error::MissingDependency`, for example a contract that does not exist) as
+  `NotFound`, whatever words its message holds. Retry behaviour: these codes no longer fall
+  under a retry policy keyed to `NetworkError` (Kotlin's `isRetryable`, for example), so
+  such a policy does not retry them automatically. They are not permanent either:
+  - a contract proved absent at one block can exist at a later one, so a later read of it may
+    succeed;
+  - an `INVALID_ARGUMENT` can also come from building the local channel, for example a TLS
+    configuration problem, before any request is sent; once the configuration is fixed, the
+    same query succeeds (tracked in #6065). It also covers a node refusing the request as
+    asked, for example a moderation list the contract does not keep.
+- **wasm-sdk contract moderation status.** `getContractModerationStatus` and its
+  `WithProofInfo` variant, called without `lists`, are refused below protocol version 14
+  before the contract is looked up (a protocol version error), rather than reporting the
+  contract as not moderated.
+
 ## The next upgrade
 
 A 5.1 SDK will be the older client when a later protocol version arrives, so it handles that

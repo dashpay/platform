@@ -51,6 +51,24 @@ public final class PersistentIdentity {
     public var ownerPrivateKeyIdentifier: String?
     public var payoutPrivateKeyIdentifier: String?
 
+    // MARK: - Masternode voting key check
+    /// What Platform proved, when last asked, about the voting key stored
+    /// for this masternode or evonode identity
+    /// (``SDK/checkMasternodeVotingKey(proTxHash:votingAddress:)``): `"valid"`,
+    /// `"invalid"` or `"undetermined"`. `nil` when the key was never checked:
+    /// the identity has no voting key, or it was stored before keys were
+    /// checked. Read and write it through ``votingKeyCheck``.
+    public var votingKeyCheckRaw: String? = nil
+    /// The reason that came with an `"invalid"` or `"undetermined"` check,
+    /// worded in Rust; `nil` otherwise.
+    public var votingKeyCheckMessage: String? = nil
+    /// The 20-byte voting address of the key the check was made of. The
+    /// Keychain key and this row are written separately, so a check can
+    /// outlive its key; the address ties it to the key it describes. `nil`
+    /// for a check recorded without it, which the voting key rules read as
+    /// nothing recorded. Written through ``recordedVotingKey``.
+    public var votingKeyCheckAddress: Data? = nil
+
     // MARK: - Public Keys
     @Relationship(deleteRule: .cascade) public var publicKeys: [PersistentPublicKey]
 
@@ -306,6 +324,65 @@ public final class PersistentIdentity {
 
     public var identityTypeEnum: IdentityType {
         IdentityType(rawValue: identityType) ?? .user
+    }
+
+    /// The last check of the stored voting key, over ``votingKeyCheckRaw``
+    /// and ``votingKeyCheckMessage``, for display; `nil` when it was never
+    /// checked (or the stored value is not one this build knows). Setting it
+    /// clears ``votingKeyCheckAddress``, so a check set without its key's
+    /// address is read by the rules as nothing recorded; setting `nil` clears
+    /// all three, for a voting key that was removed. Record a check with
+    /// ``recordedVotingKey``.
+    public var votingKeyCheck: MasternodeVotingKeyCheck? {
+        get {
+            switch votingKeyCheckRaw {
+            case "valid":
+                return .valid
+            case "invalid":
+                return .invalid(message: votingKeyCheckMessage ?? "")
+            case "undetermined":
+                return .undetermined(message: votingKeyCheckMessage ?? "")
+            default:
+                return nil
+            }
+        }
+        set {
+            switch newValue {
+            case .valid:
+                votingKeyCheckRaw = "valid"
+                votingKeyCheckMessage = nil
+            case .invalid(let message):
+                votingKeyCheckRaw = "invalid"
+                votingKeyCheckMessage = message
+            case .undetermined(let message):
+                votingKeyCheckRaw = "undetermined"
+                votingKeyCheckMessage = message
+            case nil:
+                votingKeyCheckRaw = nil
+                votingKeyCheckMessage = nil
+            }
+            votingKeyCheckAddress = nil
+        }
+    }
+
+    /// The recorded check with the address of the key it was made of, as the
+    /// voting key rules take and return it; `nil` when nothing is recorded or
+    /// the check was recorded without a whole address. Setting a record
+    /// writes the check, its message and its address together; setting `nil`
+    /// clears all three.
+    public var recordedVotingKey: MasternodeRecordedVotingKey? {
+        get {
+            guard let check = votingKeyCheck,
+                  let data = votingKeyCheckAddress,
+                  let address = MasternodeVotingKeyAddress(data) else {
+                return nil
+            }
+            return MasternodeRecordedVotingKey(check: check, votingAddress: address)
+        }
+        set {
+            votingKeyCheck = newValue?.check
+            votingKeyCheckAddress = newValue?.votingAddress.data
+        }
     }
 
     // MARK: - Methods

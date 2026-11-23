@@ -623,6 +623,13 @@ pub(crate) fn map_spend_result(
         // built or broadcast. Preserve that distinction from an unconfirmed
         // submission so hosts can wait for the original payment's sync.
         Err(e @ PlatformWalletError::ShieldedIdentityDebitPending { .. })
+        // An identity shield whose proved balance cannot cover the amount and
+        // fee: refused before anything was armed or broadcast, code 39 with the
+        // figures in the stable JSON detail.
+        | Err(e @ PlatformWalletError::InsufficientIdentityCredits { .. })
+        // No balance for the identity on Platform yet (right after
+        // registration): refused before anything was armed, code 58, retry.
+        | Err(e @ PlatformWalletError::IdentityBalanceUnavailable(..))
         | Err(e @ PlatformWalletError::ShieldedRecoveryCorrupted { .. })
         | Err(e @ PlatformWalletError::ShieldedRecoveryKeysRequired { .. }) => e.into(),
         // A private contact request in flight, or paid and not yet read back
@@ -2923,6 +2930,43 @@ mod tests {
         assert!(
             message.contains("do NOT retry"),
             "the message must carry the do-not-retry guidance: {message}"
+        );
+    }
+
+    /// An identity shield the wallet refuses on the identity's proved balance
+    /// keeps its typed code and figures across the boundary.
+    #[test]
+    fn shield_from_identity_insufficient_balance_maps_to_code_39() {
+        let identity_id = dpp::prelude::Identifier::from([7; 32]);
+        let result = map_spend_result(
+            Err(PlatformWalletError::InsufficientIdentityCredits {
+                identity_id,
+                required: 200,
+                available: 100,
+            }),
+            "shielded shield from identity",
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInsufficientIdentityCredits
+        );
+        assert_eq!(result.code as i32, 39);
+        let detail: serde_json::Value = serde_json::from_str(&message_of(&result)).unwrap();
+        assert_eq!(detail["required"], 200);
+        assert_eq!(detail["available"], 100);
+    }
+
+    #[test]
+    fn shield_from_identity_balance_unavailable_maps_to_code_58() {
+        let result = map_spend_result(
+            Err(PlatformWalletError::IdentityBalanceUnavailable(
+                [7; 32].into(),
+            )),
+            "shielded shield from identity",
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorIdentityBalanceUnavailable
         );
     }
 

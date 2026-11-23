@@ -874,7 +874,7 @@ impl PlatformWallet {
                 crate::wallet::identity::network::sdk_writer::SdkWriter::new(Arc::clone(&sdk)),
             ),
             document_erase_gate: Default::default(),
-            dpns_operation_gate: Arc::new(tokio::sync::Mutex::new(())),
+            dpns_operation_gate: Default::default(),
             dpns_sync_progress: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
             #[cfg(feature = "shielded")]
             contact_shielded_addresses: super::shielded::ContactShieldedAddresses::new(Arc::clone(

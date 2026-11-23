@@ -7732,7 +7732,8 @@ pub(super) enum SigningGate {
     Removed,
 }
 
-/// The host's signer for a contact request send (and a key limits update),
+/// The host's signer for a contact request send (and a key limits update, and the
+/// DPNS name writes),
 /// taking the wallet generation's lifecycle gate once a signature returns and
 /// before it can leave: the SDK broadcasts right after signing, so the
 /// broadcast and the send's bookkeeping run under the gate, while the host's
@@ -7744,7 +7745,16 @@ pub(super) struct GatedSigner<'a, S: ?Sized, B: TransactionBroadcaster + ?Sized>
     pub(super) gate: std::sync::Mutex<SigningGate>,
 }
 
-impl<S: ?Sized, B: TransactionBroadcaster + ?Sized> GatedSigner<'_, S, B> {
+impl<'a, S: ?Sized, B: TransactionBroadcaster + ?Sized> GatedSigner<'a, S, B> {
+    /// `signer`, gated on `wallet`'s generation: nothing is held until a signature returns.
+    pub(super) fn new(signer: &'a S, wallet: &'a IdentityWallet<B>) -> Self {
+        Self {
+            signer,
+            wallet,
+            gate: std::sync::Mutex::new(SigningGate::Unsigned),
+        }
+    }
+
     fn gate(&self) -> std::sync::MutexGuard<'_, SigningGate> {
         self.gate
             .lock()

@@ -9,6 +9,11 @@ struct QueryDetailView: View {
     @State private var result: String = ""
     @State private var error: String = ""
     @State private var showResult = false
+    /// The token of each Execute; editing an input of a route that ties its
+    /// result to its inputs (``resultFollowsInputs``) invalidates it, so a
+    /// running read's completion, which answers the inputs it was submitted
+    /// with, is dropped.
+    @State private var submissions = InputBoundSubmissions()
 
     var body: some View {
         ScrollView {
@@ -121,6 +126,7 @@ struct QueryDetailView: View {
                 }
             }
         }
+        .onChange(of: appState.sdkGeneration) { _, _ in connectionReplaced() }
         .navigationTitle(query.label)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -132,9 +138,55 @@ struct QueryDetailView: View {
     private func binding(for key: String) -> Binding<String> {
         Binding(
             get: { queryInputs[key] ?? "" },
-            set: { queryInputs[key] = $0 }
+            set: { newValue in
+                guard queryInputs[key] ?? "" != newValue else { return }
+                queryInputs[key] = newValue
+                if resultFollowsInputs {
+                    // The result shown, and the read running, answer the old inputs
+                    submissions.invalidate()
+                    result = ""
+                    error = ""
+                    showResult = false
+                    isLoading = false
+                }
+            }
         )
     }
+
+    /// Whether the result shown names the inputs it answers and is cleared
+    /// when they change: the contract moderation and fee pot reads, whose
+    /// answers name neither the contract nor most of what was asked.
+    private var resultFollowsInputs: Bool {
+        Self.inputBoundQueries.contains(query.name)
+    }
+
+    /// Whether `submission`'s result may still be shown: it answers the inputs
+    /// on screen and, for a moderation read, was read through the current SDK.
+    private func stillAnswers(_ submission: InputBoundSubmission) -> Bool {
+        guard resultFollowsInputs else { return submissions.isCurrent(submission) }
+        return submissions.isCurrent(submission, connection: appState.sdkGeneration)
+    }
+
+    /// The SDK was replaced: a moderation result shown, or still being read,
+    /// answered for the old connection.
+    private func connectionReplaced() {
+        guard resultFollowsInputs else { return }
+        submissions.invalidate()
+        result = ""
+        error = ""
+        showResult = false
+        isLoading = false
+    }
+
+    private static let inputBoundQueries: Set<String> = [
+        "getContractModerationStatus",
+        "getContractModerationEntries",
+        "getContractDocumentRemovals",
+        "getContractTeamActions",
+        "getContractTeamActionSigners",
+        "getContractModerationActionCounts",
+        "getContractFeePots",
+    ]
 
     private func hasRequiredInputs() -> Bool {
         let fields = inputFields(for: query.name)
@@ -162,15 +214,28 @@ struct QueryDetailView: View {
         error = ""
         result = ""
         showResult = false
+        // A moderation read is built from its inputs as they are now, so an
+        // edit made before the task runs cannot change what it sends; its
+        // result echoes the same snapshot
+        let submission = submissions.submit(
+            resultFollowsInputs ? submittedInputs() : [:],
+            connection: appState.sdkGeneration
+        )
 
         Task {
             do {
                 print("🔵 QueryDetailView: Calling performQuery...")
-                let queryResult = try await performQuery(sdk: sdk)
+                let queryResult: Any
+                if resultFollowsInputs {
+                    queryResult = try await performModerationQuery(sdk: sdk, inputs: submission.inputs)
+                } else {
+                    queryResult = try await performQuery(sdk: sdk)
+                }
                 print("✅ QueryDetailView: performQuery returned successfully")
                 print("🔵 QueryDetailView: Query result type: \(type(of: queryResult))")
 
                 await MainActor.run {
+                    guard stillAnswers(submission) else { return }
                     result = formatResult(queryResult)
                     showResult = true
                     isLoading = false
@@ -179,6 +244,7 @@ struct QueryDetailView: View {
             } catch let sdkError as SDKError {
                 print("❌ QueryDetailView: SDK error occurred: \(sdkError)")
                 await MainActor.run {
+                    guard stillAnswers(submission) else { return }
                     // Handle SDK errors with more detail
                     switch sdkError {
                     case .invalidParameter(let message):
@@ -214,6 +280,7 @@ struct QueryDetailView: View {
             } catch {
                 print("❌ QueryDetailView: General error occurred: \(error)")
                 await MainActor.run {
+                    guard stillAnswers(submission) else { return }
                     // For non-SDK errors, try to get more information
                     let nsError = error as NSError
                     var errorMessage = ""
@@ -815,6 +882,10 @@ struct QueryDetailView: View {
     }
 
     private func formatResult(_ result: Any) -> String {
+        // JSON already written for display
+        if let json = result as? PreformattedJSON {
+            return json.text
+        }
         // Handle primitive types that can't be directly serialized as JSON
         if result is String || result is NSNumber || result is Bool ||
            result is Int || result is Int32 || result is Int64 ||
@@ -866,6 +937,175 @@ struct QueryDetailView: View {
             )
         }
         return values
+    }
+
+    // MARK: - Contract moderation reads
+
+    /// Runs one of the contract moderation and fee pot reads (protocol
+    /// version 14) from `inputs`, the snapshot ``submittedInputs()`` took at
+    /// Execute, and nothing else: the form may have changed since. The result
+    /// names the same inputs.
+    private func performModerationQuery(sdk: SDK, inputs: [String: String]) async throws -> Any {
+        let contractId = inputs["contractId"] ?? ""
+        switch query.name {
+        case "getContractModerationStatus":
+            let lists = try inputs["lists"].map { try parseModerationLists($0) }
+            return try moderationResult(inputs, await sdk.contractModerationStatus(
+                contractId: contractId,
+                identityId: inputs["identityId"] ?? "",
+                lists: lists
+            ))
+
+        case "getContractModerationEntries":
+            return try moderationResult(inputs, await sdk.contractModerationEntries(
+                contractId: contractId,
+                list: try parseModerationList(inputs["list"] ?? ""),
+                startAfter: inputs["startAfter"],
+                limit: try moderationLimit(inputs)
+            ))
+
+        case "getContractDocumentRemovals":
+            let documentTypeName = inputs["documentTypeName"] ?? ""
+            // Two reads: the records of the ids named, or one page of them all.
+            if let documentIds = inputs["documentIds"] {
+                if inputs["startAfter"] != nil || inputs["limit"] != nil {
+                    throw SDKError.invalidParameter("Give either Document IDs or Start After and Limit")
+                }
+                return try await removalsResult(inputs, await sdk.contractDocumentRemovals(
+                    contractId: contractId,
+                    documentTypeName: documentTypeName,
+                    documentIds: documentIds.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                ))
+            }
+            return try await removalsResult(inputs, await sdk.contractDocumentRemovals(
+                contractId: contractId,
+                documentTypeName: documentTypeName,
+                startAfter: inputs["startAfter"],
+                limit: try moderationLimit(inputs)
+            ))
+
+        case "getContractTeamActions":
+            return try moderationResult(inputs, await sdk.contractTeamActions(
+                contractId: contractId,
+                status: try parseTeamActionStatus(inputs["status"] ?? ""),
+                startAtActionId: inputs["startAtActionId"],
+                startAtActionIdIncluded: try parseStrictBool(
+                    inputs["startAtActionIdIncluded"], field: "Include Start Action"),
+                limit: try moderationLimit(inputs)
+            ))
+
+        case "getContractTeamActionSigners":
+            return try moderationResult(inputs, await sdk.contractTeamActionSigners(
+                contractId: contractId,
+                status: try parseTeamActionStatus(inputs["status"] ?? ""),
+                actionId: inputs["actionId"] ?? ""
+            ))
+
+        case "getContractModerationActionCounts":
+            return try moderationResult(inputs, await sdk.contractModerationActionCounts(
+                contractId: contractId
+            ))
+
+        case "getContractFeePots":
+            return try moderationResult(inputs, await sdk.contractFeePots(contractId: contractId))
+
+        default:
+            throw SDKError.notImplemented("Query \(query.name) is not a moderation read")
+        }
+    }
+
+    /// The trimmed form input `name`, `nil` when empty.
+    private func moderationInput(_ name: String) -> String? {
+        let value = (queryInputs[name] ?? "").trimmingCharacters(in: .whitespaces)
+        return value.isEmpty ? nil : value
+    }
+
+    /// The `limit` input of `inputs`, `nil` when absent (the SDK's default
+    /// page).
+    private func moderationLimit(_ inputs: [String: String]) throws -> UInt32? {
+        guard let raw = inputs["limit"] else { return nil }
+        guard let limit = UInt32(raw) else {
+            throw SDKError.invalidParameter("Limit must be a non-negative integer")
+        }
+        return limit
+    }
+
+    /// A yes/no input read strictly: absent is `false`, and only `true` or
+    /// `false` (any case) is accepted, so a typo is shown as an input error
+    /// before anything is sent rather than read as `false`.
+    private func parseStrictBool(_ raw: String?, field: String) throws -> Bool {
+        guard let raw else { return false }
+        switch raw.lowercased() {
+        case "true": return true
+        case "false": return false
+        default:
+            throw SDKError.invalidParameter("\(field) must be true or false, got '\(raw)'")
+        }
+    }
+
+    private func parseModerationList(_ raw: String) throws -> ContractModerationList {
+        let name = raw.trimmingCharacters(in: .whitespaces).lowercased()
+        guard let list = ContractModerationList(rawValue: name) else {
+            throw SDKError.invalidParameter("List must be banlist, suspensions or warnings, got '\(raw)'")
+        }
+        return list
+    }
+
+    private func parseModerationLists(_ raw: String) throws -> [ContractModerationList] {
+        try raw.split(separator: ",").map { try parseModerationList(String($0)) }
+    }
+
+    private func parseTeamActionStatus(_ raw: String) throws -> ContractTeamActionStatus {
+        let name = raw.trimmingCharacters(in: .whitespaces).lowercased()
+        guard let status = ContractTeamActionStatus(rawValue: name) else {
+            throw SDKError.invalidParameter("Status must be active or closed, got '\(raw)'")
+        }
+        return status
+    }
+
+    /// The inputs of this query as submitted, by name, each trimmed; an
+    /// empty input is left out.
+    private func submittedInputs() -> [String: String] {
+        var inputs: [String: String] = [:]
+        for field in inputFields(for: query.name) {
+            if let value = moderationInput(field.name) {
+                inputs[field.name] = value
+            }
+        }
+        return inputs
+    }
+
+    /// A moderation result as JSON: `{"inputs": ..., "result": ...}`, the
+    /// inputs it was read for beside the answer, `null` when the FFI returned
+    /// none. The answer is re-encoded from the decoded value as `JSONEncoder`
+    /// writes it, the models' `Codable` form, so a removal record's kept
+    /// values appear tagged (`{"type": "double", "value": 1}`).
+    private func moderationResult<T: Encodable>(_ inputs: [String: String], _ answer: T?) throws -> Any {
+        PreformattedJSON(text: try catalogJSON(ModerationCatalogResult(inputs: inputs, result: answer)))
+    }
+
+    /// `value` as the catalog shows it: pretty, sorted JSON, with bidi controls
+    /// in the values as JSON escapes, so the text shown cannot reorder itself
+    /// and, copied, is still the same JSON.
+    private func catalogJSON<T: Encodable>(_ value: T) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        return BidiControls.jsonEscaped(String(decoding: try encoder.encode(value), as: UTF8.self))
+    }
+
+    /// A removal records page as the catalog shows it, formatted off the main
+    /// actor by ``RemovalsPreviewFormatter`` (record by record, stopping once
+    /// its budget is spent). The caller shows it only while the submission is
+    /// still current.
+    private func removalsResult(
+        _ inputs: [String: String],
+        _ page: ContractDocumentRemovalsPage?
+    ) async throws -> Any {
+        guard let page else { return try moderationResult(inputs, page) }
+        let text = try await Task.detached(priority: .userInitiated) {
+            try RemovalsPreviewFormatter.format(inputs: inputs, page: page)
+        }.value
+        return PreformattedJSON(text: text)
     }
 
     private func inputFields(for queryName: String) -> [QueryInput] {
@@ -940,6 +1180,52 @@ struct QueryDetailView: View {
                 QueryInput(name: "startAfter", label: "Start After (Contract ID)", required: false, placeholder: "Last id of the previous page"),
                 QueryInput(name: "startAt", label: "Start At (Contract ID)", required: false, placeholder: "Inclusive start"),
                 QueryInput(name: "idsOnly", label: "IDs Only", required: false, placeholder: "true/false")
+            ]
+
+        // Contract Moderation Queries
+        case "getContractModerationStatus":
+            return [
+                QueryInput(name: "contractId", label: "Contract ID", required: true),
+                QueryInput(name: "identityId", label: "Identity ID", required: true),
+                QueryInput(name: "lists", label: "Lists (comma-separated)", required: false, placeholder: "banlist, suspensions, warnings; empty reads every list the contract keeps")
+            ]
+
+        case "getContractModerationEntries":
+            return [
+                QueryInput(name: "contractId", label: "Contract ID", required: true),
+                QueryInput(name: "list", label: "List", required: true, placeholder: "banlist, suspensions or warnings"),
+                QueryInput(name: "startAfter", label: "Start After (Identity ID)", required: false, placeholder: "The previous page's nextStartAfter"),
+                QueryInput(name: "limit", label: "Limit", required: false, placeholder: "Empty for the network's page cap")
+            ]
+
+        case "getContractDocumentRemovals":
+            return [
+                QueryInput(name: "contractId", label: "Contract ID", required: true),
+                QueryInput(name: "documentTypeName", label: "Document Type", required: true),
+                QueryInput(name: "documentIds", label: "Document IDs (comma-separated)", required: false, placeholder: "Read these records instead of a page"),
+                QueryInput(name: "startAfter", label: "Start After (Document ID)", required: false, placeholder: "The previous page's nextStartAfter"),
+                QueryInput(name: "limit", label: "Limit", required: false, placeholder: "Empty for the network's page cap")
+            ]
+
+        case "getContractTeamActions":
+            return [
+                QueryInput(name: "contractId", label: "Contract ID", required: true),
+                QueryInput(name: "status", label: "Status", required: true, placeholder: "active or closed"),
+                QueryInput(name: "startAtActionId", label: "Start At Action ID", required: false, placeholder: "The previous page's nextStartAtActionId"),
+                QueryInput(name: "startAtActionIdIncluded", label: "Include Start Action", required: false, placeholder: "true or false; empty is false"),
+                QueryInput(name: "limit", label: "Limit", required: false, placeholder: "Empty for the network's page cap")
+            ]
+
+        case "getContractTeamActionSigners":
+            return [
+                QueryInput(name: "contractId", label: "Contract ID", required: true),
+                QueryInput(name: "status", label: "Status", required: true, placeholder: "active or closed"),
+                QueryInput(name: "actionId", label: "Action ID", required: true)
+            ]
+
+        case "getContractModerationActionCounts", "getContractFeePots":
+            return [
+                QueryInput(name: "contractId", label: "Contract ID", required: true)
             ]
 
         // Document Queries
@@ -1232,6 +1518,96 @@ struct QueryDetailView: View {
             return []
         }
     }
+}
+
+/// A moderation result of the catalog: the inputs the read answered and its
+/// answer, `null` when the FFI returned none.
+private struct ModerationCatalogResult<Answer: Encodable>: Encodable {
+    let inputs: [String: String]
+    let result: Answer?
+
+    private enum CodingKeys: String, CodingKey {
+        case inputs, result
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(inputs, forKey: .inputs)
+        try container.encode(result, forKey: .result)
+    }
+}
+
+/// Formats a removal records page for the catalog: pretty, sorted JSON of
+/// `{"inputs", "result": {"nextStartAfter"?, "preview"?, "removals"}}`, with bidi
+/// controls as JSON escapes (``BidiControls/jsonEscaped(_:)``).
+///
+/// It encodes record by record and stops once ``maxBytes`` would be passed, so
+/// a large page is never formatted whole just to be cut. When records are left
+/// out, `nextStartAfter` is dropped (it is the full page's cursor: paging from
+/// it would skip the hidden records) and `preview` says so. Not isolated to the
+/// main actor: the catalog runs it in a detached task.
+enum RemovalsPreviewFormatter {
+    /// The most text a preview shows. It protects rendering only (one
+    /// selectable `Text` lays out every character); the page read is whole,
+    /// and a smaller limit shows it whole.
+    static let maxBytes = 64 * 1024
+
+    static func format(
+        inputs: [String: String],
+        page: ContractDocumentRemovalsPage,
+        maxBytes: Int = maxBytes
+    ) throws -> String {
+        let inputsText = try encode(inputs)
+        var records: [String] = []
+        var used = inputsText.utf8.count
+        for removal in page.removals {
+            let record = try encode(removal)
+            if used + record.utf8.count > maxBytes {
+                break
+            }
+            used += record.utf8.count
+            records.append(record)
+        }
+        let truncated = records.count < page.removals.count
+
+        var result: [String] = []
+        if !truncated, let next = page.nextStartAfter {
+            result.append("\"nextStartAfter\" : " + (try encode(next)))
+        }
+        if truncated {
+            let note = "Preview truncated (\(records.count) of \(page.removals.count) records shown). "
+                + "Reduce Limit and rerun from the same Start After to see every record; "
+                + "in by-id mode submit fewer ids."
+            result.append("\"preview\" : " + (try encode(note)))
+        }
+        let removals = records.isEmpty
+            ? "[]"
+            : "[\n" + records.map { indent($0, by: 2) }.joined(separator: ",\n") + "\n]"
+        result.append("\"removals\" : " + removals)
+        let resultText = "{\n" + result.map { indent($0, by: 2) }.joined(separator: ",\n") + "\n}"
+        return "{\n"
+            + indent("\"inputs\" : " + inputsText, by: 2) + ",\n"
+            + indent("\"result\" : " + resultText, by: 2)
+            + "\n}"
+    }
+
+    /// `value` as pretty, sorted JSON, bidi controls escaped.
+    private static func encode<T: Encodable>(_ value: T) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        return BidiControls.jsonEscaped(String(decoding: try encoder.encode(value), as: UTF8.self))
+    }
+
+    /// `text` with every line indented by `spaces`.
+    private static func indent(_ text: String, by spaces: Int) -> String {
+        let pad = String(repeating: " ", count: spaces)
+        return pad + text.replacingOccurrences(of: "\n", with: "\n" + pad)
+    }
+}
+
+/// A query result already written as JSON text, shown as it is.
+struct PreformattedJSON {
+    let text: String
 }
 
 struct QueryInput {
