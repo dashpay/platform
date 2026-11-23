@@ -316,7 +316,8 @@ struct QueryCategoryDetailView: View {
             ]
 
         case .addresses:
-            // Addresses use a dedicated view, but define queries for completeness
+            // Not shown: `QueryCategoryDetailView` routes addresses to the
+            // dedicated `AddressQueriesView`, which lists every address query.
             return [
                 QueryDefinition(name: "getAddressInfo", label: "Get Address Info", description: "Fetch balance and nonce for a single Platform address"),
                 QueryDefinition(name: "getAddressesInfos", label: "Get Addresses Infos", description: "Fetch balance and nonce for multiple Platform addresses")

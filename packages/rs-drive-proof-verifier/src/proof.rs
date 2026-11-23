@@ -1147,7 +1147,16 @@ impl FromProof<platform::GetRecentAddressBalanceChangesRequest> for RecentAddres
                 }
             };
 
-        let limit = Some(100u16); // Same limit as in query handler
+        // The same version-table value the query handler limits its answer
+        // to: 100, the literal used here before, in every shipped protocol
+        // version.
+        let limit = Some(
+            platform_version
+                .drive_abci
+                .query
+                .address_funds_queries
+                .recent_address_balance_changes_max_blocks,
+        );
 
         let (root_hash, verified_changes) = if start_height_exclusive {
             Drive::verify_recent_address_balance_changes_after(
@@ -1215,9 +1224,16 @@ impl FromProof<platform::GetRecentCompactedAddressBalanceChangesRequest>
             }
         };
 
-        // Ensure it is the same limit as in query handler; see
-        // packages/rs-drive-abci/src/query/address_funds/recent_compacted_address_balance_changes/v0/mod.rs
-        let limit = Some(25u16);
+        // The same version-table value the query handler limits its answer
+        // to: 25, the literal used here before, in every shipped protocol
+        // version.
+        let limit = Some(
+            platform_version
+                .drive_abci
+                .query
+                .address_funds_queries
+                .recent_compacted_address_balance_changes_max_ranges,
+        );
 
         if platform_version
             .drive

@@ -865,6 +865,30 @@ pub enum PlatformWalletError {
     #[error("Address operation failed: {0}")]
     AddressOperation(String),
 
+    /// The balance history could not read a page of Platform's balance
+    /// changes at a consistent height: within the per-page retry bound,
+    /// every answer for one page was proved below a height the read had
+    /// already used, so it could hide a block (or a compacted range) the
+    /// earlier pages relied on. No partial history is returned; retry later.
+    ///
+    /// Only replies the SDK fetched and proof-verified count toward it: every
+    /// attempt got such a reply, and each was below the floor. An error from
+    /// the SDK itself (its own stale-node rejection, a transport failure, a
+    /// proof verification failure) is returned as that SDK error instead.
+    #[error(
+        "Balance history: all {attempts} attempts to read a page of address balance changes \
+         were below the required height {required_height} (last reply proved at height \
+         {proved_height}); retry later"
+    )]
+    BalanceHistoryInconsistentHeights {
+        /// How many times the page was asked for.
+        attempts: usize,
+        /// The floor every reply had to reach.
+        required_height: u64,
+        /// The height the last reply was proved at.
+        proved_height: u64,
+    },
+
     /// A caller passed an argument this API cannot act on — as opposed to a
     /// lookup that found nothing. Kept distinct from [`WalletNotFound`] so a
     /// host is told to fix its input rather than that the wallet is missing;

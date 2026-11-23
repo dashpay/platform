@@ -322,6 +322,13 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// outcome yet. Nothing new was signed. Unconfirmed, not failed: do not
     /// submit it again; a public contact request sync settles it.
     case errorPublicContactRequestUnconfirmed = 76
+    /// The balance history could not read a page of Platform's address
+    /// balance changes at a height consistent with the pages it had already
+    /// read, within Rust's per-page retry bound: every attempt got a
+    /// successfully fetched, proof-verified reply below that height. No
+    /// history was returned; the read can be made again later. SDK errors
+    /// (stale-node rejection, transport or proof failures) are not this code.
+    case errorBalanceHistoryInconsistentHeights = 83
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -473,6 +480,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorSdkPinnedBelowProtocolVersion
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PUBLIC_CONTACT_REQUEST_UNCONFIRMED:
             self = .errorPublicContactRequestUnconfirmed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_BALANCE_HISTORY_INCONSISTENT_HEIGHTS:
+            self = .errorBalanceHistoryInconsistentHeights
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -745,6 +754,15 @@ public enum PlatformWalletError: LocalizedError {
     /// or accept made while another public request to that identity is being
     /// sent: one is sent at a time, and nothing is signed for the second.
     case publicContactRequestUnconfirmed(String)
+    /// `ManagedPlatformAddressWallet.balanceHistory(includeCompacted:)` kept
+    /// getting a page of Platform's address balance changes proved below a
+    /// height it had already read, within Rust's per-page retry bound, so it
+    /// returned no history rather than a partial one. Every attempt got a
+    /// successfully fetched, proof-verified reply below that height; errors
+    /// from the SDK itself (its own stale-node rejection, transport or proof
+    /// failures) keep their existing mapping. Nothing changed; load the
+    /// history again later.
+    case balanceHistoryInconsistentHeights(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition never
     /// left the wallet (refused before anything was sent), so it cannot
@@ -979,6 +997,7 @@ public enum PlatformWalletError: LocalizedError {
              .privateContactRecoveryUnsupported(let m),
              .privateContactStoreNotRead(let m), .sdkPinnedBelowProtocolVersion(let m),
              .publicContactRequestUnconfirmed(let m),
+             .balanceHistoryInconsistentHeights(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -1116,6 +1135,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .sdkPinnedBelowProtocolVersion(detail)
         case .errorPublicContactRequestUnconfirmed:
             self = .publicContactRequestUnconfirmed(detail)
+        case .errorBalanceHistoryInconsistentHeights:
+            self = .balanceHistoryInconsistentHeights(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)

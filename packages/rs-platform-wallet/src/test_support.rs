@@ -49,11 +49,17 @@ use crate::changeset::{DurableCursors, PlatformWalletPersistence};
 use crate::events::PlatformEventManager;
 #[cfg(test)]
 use crate::spv::SpvRuntime;
+#[cfg(test)]
+use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
 #[cfg(test)]
+use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+#[cfg(test)]
 use crate::wallet::platform_wallet::PlatformWallet;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+#[cfg(test)]
+use crate::wallet::PlatformAddressWallet;
 
 /// Broadcaster whose first call fails with a definitive pre-send rejection
 /// and which succeeds afterwards, to model a transient broadcast error
@@ -1014,6 +1020,32 @@ pub(crate) async fn platform_wallet_in(
         Arc::new(AtomicBool::new(false)),
         DurableCursors::default(),
     )
+}
+
+/// A `PlatformAddressWallet` over the wallet `wallet_id` that `wallet_manager`
+/// holds, on `sdk`, with no persistence. The address provider is left
+/// uninitialised, so it suits operations that read only the SDK and the
+/// wallet manager (input planning, address enumeration, history queries).
+#[cfg(test)]
+pub(crate) fn platform_address_wallet_in(
+    sdk: Arc<dash_sdk::Sdk>,
+    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: WalletId,
+) -> PlatformAddressWallet {
+    let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+    let spv = Arc::new(SpvRuntime::new(
+        Arc::clone(&wallet_manager),
+        Arc::new(PlatformEventManager::new(Vec::new())),
+    ));
+    let asset_locks = Arc::new(AssetLockManager::new(
+        Arc::clone(&sdk),
+        Arc::clone(&wallet_manager),
+        wallet_id,
+        Arc::new(Notify::new()),
+        Arc::new(SpvBroadcaster::new(spv)),
+        persister.clone(),
+    ));
+    PlatformAddressWallet::new(sdk, wallet_manager, wallet_id, asset_locks, persister)
 }
 
 /// A valid Orchard payment address, deterministic in `seed_byte`, for tests
