@@ -6,6 +6,7 @@ import SwiftDashSDK
 /// without one was the last.
 struct ContractModerationEntriesView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var offers: ContractModerationOfferStore
     /// The contract and the connection it was opened on: this screen reads
     /// only through that connection, and the hub hides it once replaced.
     let scope: ModerationScope
@@ -16,6 +17,8 @@ struct ContractModerationEntriesView: View {
     private static let pageSize: UInt32 = 20
 
     @StateObject private var loader = ModerationPagedLoader<ContractModerationEntry, String>()
+    /// The identity a moderation sheet is open for.
+    @State private var moderating: ModerationTarget?
 
     var body: some View {
         List {
@@ -45,6 +48,15 @@ struct ContractModerationEntriesView: View {
                 }
                 ForEach(loader.items) { entry in
                     ContractModerationEntryRow(entry: entry)
+                    // Only for an identity of a loaded wallet Rust named a
+                    // moderator of this contract's lists
+                    if !offers.userModerators.isEmpty {
+                        Button("Moderate…") {
+                            moderating = ModerationTarget(identityId: entry.identityId)
+                        }
+                        .font(.caption)
+                        .accessibilityIdentifier("contractModeration.entries.moderate.\(entry.identityId)")
+                    }
                 }
                 if loader.nextCursor != nil, !loader.items.isEmpty {
                     Button {
@@ -65,6 +77,12 @@ struct ContractModerationEntriesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await reload() }
         .task { await reload() }
+        .sheet(item: $moderating) { target in
+            ContractUserModerationSheet(scope: scope, target: target) {
+                Task { await reload() }
+            }
+            .environmentObject(offers)
+        }
         // A replaced SDK: drop what was read through the old one and read
         // nothing through the new one; the hub's gate shows the notice instead
         .onChange(of: appState.sdkGeneration) { _, _ in loader.clear() }

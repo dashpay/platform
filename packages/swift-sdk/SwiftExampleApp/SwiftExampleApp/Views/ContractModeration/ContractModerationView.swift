@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import SwiftDashSDK
 
 /// Contract moderation and fee pots (protocol version 14) for one contract:
@@ -6,10 +7,22 @@ import SwiftDashSDK
 /// identity's status, the removal records of its document types, its team
 /// actions and the moderation action counts.
 ///
-/// Every choice is offered whatever the contract declares: which lists it
+/// Every read is offered whatever the contract declares: which lists it
 /// keeps, which types keep removal records and whether it is elected are
 /// the node's to answer, and its refusal is shown on the screen that asked.
+///
+/// The moderations (state transition type 24) are offered only to the
+/// identities of the loaded wallets Rust names, and only what Rust lists for
+/// each (``ContractModerationOfferStore``), on the screens below: an identity
+/// from a list row or the status screen, a document from "Moderate
+/// Documents", a restore from a removal record, an approval from a team
+/// action.
 struct ContractModerationView: View {
+    @EnvironmentObject var appState: AppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @Query private var identities: [PersistentIdentity]
+    @StateObject private var offers = ContractModerationOfferStore()
+
     /// The contract, and the connection current when it was opened: the hub
     /// and every screen under it read and show only while that connection is
     /// still the app's.
@@ -22,16 +35,100 @@ struct ContractModerationView: View {
 
     var body: some View {
         ModerationScopeGate(scope: scope) { hub }
+            .environmentObject(offers)
             .navigationTitle("Moderation")
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: ContractModerationRoute.self) { route in
                 ModerationScopeGate(scope: scope) { destination(for: route) }
+                    .environmentObject(offers)
             }
+            .task(id: scope) { await reloadOffer() }
+            // A replaced SDK: the answer was read through the old connection
+            .onChange(of: appState.sdkGeneration) { _, _ in offers.clear() }
+    }
+
+    /// Ask every loaded wallet on the current network what its identities
+    /// may do on this contract.
+    private func reloadOffer() async {
+        guard appState.moderationConnection(in: scope) != nil else {
+            offers.clear()
+            return
+        }
+        let network = appState.currentNetwork
+        let walletIds = Set(
+            identities
+                .filter { $0.network == network }
+                .compactMap { $0.wallet?.walletId }
+        )
+        await offers.reload(
+            contractId: contractId,
+            walletIds: walletIds.sorted(by: { $0.lexicographicallyPrecedes($1) }),
+            walletManager: walletManager
+        )
+    }
+
+    @ViewBuilder
+    private var moderateSection: some View {
+        Section {
+            if offers.isLoading {
+                ModerationMessageRow(
+                    kind: .loading,
+                    text: "Asking who may moderate…",
+                    identifier: "contractModeration.offer.loading"
+                )
+            } else if let error = offers.errorMessage {
+                ModerationMessageRow(
+                    kind: .error,
+                    text: "Could not ask who may moderate: \(error)",
+                    identifier: "contractModeration.offer.error"
+                )
+            } else if offers.loadedOnce && offers.moderators.isEmpty {
+                ModerationMessageRow(
+                    kind: .empty,
+                    text: "No identity of a loaded wallet moderates this contract.",
+                    identifier: "contractModeration.offer.none"
+                )
+            }
+            ForEach(offers.moderators) { moderator in
+                VStack(alignment: .leading, spacing: 2) {
+                    ModerationFieldRow(label: moderator.offer.role.title, value: label(forIdentity: moderator.identityIdBase58), monospaced: true)
+                    if !moderator.offer.userActions.isEmpty {
+                        Text(moderator.offer.userActions.map(\.title).joined(separator: ", "))
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("contractModeration.offer.moderator.\(moderator.identityIdBase58)")
+            }
+            ForEach(offers.documentTypeNames, id: \.self) { name in
+                NavigationLink(value: ContractModerationRoute.document(documentTypeName: name)) {
+                    Label("Moderate \(name) Documents", systemImage: "doc.badge.gearshape")
+                }
+                .accessibilityIdentifier("contractModeration.documentLink.\(name)")
+            }
+            Button("Ask Again") {
+                Task { await reloadOffer() }
+            }
+            .disabled(offers.isLoading)
+            .accessibilityIdentifier("contractModeration.offer.reload")
+        } header: {
+            Text("Moderate")
+        } footer: {
+            Text("The identities of the loaded wallets that moderate this contract, as Rust read its declaration and seated team. Identities are moderated from a list row or the identity status screen; Platform still refuses what the target, document or team action does not admit.")
+        }
+    }
+
+    /// The alias of a local identity, or its base58 id.
+    private func label(forIdentity base58: String) -> String {
+        identities.first { $0.identityIdBase58 == base58 }?.alias ?? base58
     }
 
     private var hub: some View {
         List {
             ContractFeePotsSection(scope: scope)
+
+            moderateSection
 
             Section {
                 ForEach(ContractModerationList.allCases) { list in
@@ -107,6 +204,8 @@ struct ContractModerationView: View {
             )
         case .actionCounts:
             ContractModerationActionCountsView(scope: scope)
+        case .document(let documentTypeName):
+            ContractDocumentModerationView(scope: scope, documentTypeName: documentTypeName)
         }
     }
 }

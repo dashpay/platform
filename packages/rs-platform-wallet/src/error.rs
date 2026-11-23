@@ -803,6 +803,17 @@ pub enum PlatformWalletError {
     #[error("data contract {contract_id} not found")]
     ContractNotFound { contract_id: Identifier },
 
+    /// No document with this id exists on Platform under the named
+    /// contract and document type, so there is nothing to act on.
+    /// Distinct from [`Self::InvalidParameter`]: the id was well-formed,
+    /// the read came back empty.
+    #[error("document {document_id} of {document_type_name} on contract {contract_id} not found")]
+    DocumentNotFound {
+        contract_id: Identifier,
+        document_type_name: String,
+        document_id: Identifier,
+    },
+
     /// The DPNS domain document carries no `$price` — it is not listed
     /// for sale. Raised by the wallet's pre-flight check and by the
     /// consensus downcast of `DocumentNotForSaleError` (DPP code 40108).

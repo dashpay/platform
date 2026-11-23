@@ -40,7 +40,13 @@ pub use contract_fee_claim::{
     contract_fee_claim_eligibility, ContractFeeClaimEligibility, ModeratorsPotTeam,
 };
 mod contract_update_source;
+mod contract_user_moderation;
 pub use contract_update_source::{split_contract_update_source, ContractUpdateSource};
+pub use contract_user_moderation::{
+    contract_moderation_offer, ContractDocumentDeletion, ContractDocumentRestore,
+    ContractModerationOffer, ContractModeratorRole, ContractUserModerationKind,
+    DocumentTypeModerationOffer, IdentityModerationOffer,
+};
 mod decision_proposal;
 mod discovery;
 mod document;

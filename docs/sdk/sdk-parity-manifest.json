@@ -68,6 +68,13 @@
     "platform_wallet_claim_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
     "platform_wallet_contract_fee_claim": "packages/rs-platform-wallet-ffi/src/contract_fee_claim.rs",
     "platform_wallet_contract_fee_claim_eligibility": "packages/rs-platform-wallet-ffi/src/contract_fee_claim.rs",
+    "platform_wallet_contract_document_change_fields": "packages/rs-platform-wallet-ffi/src/contract_user_moderation.rs",
+    "platform_wallet_contract_document_delete": "packages/rs-platform-wallet-ffi/src/contract_user_moderation.rs",
+    "platform_wallet_contract_document_propose_settled_deletion": "packages/rs-platform-wallet-ffi/src/contract_user_moderation.rs",
+    "platform_wallet_contract_document_restore": "packages/rs-platform-wallet-ffi/src/contract_user_moderation.rs",
+    "platform_wallet_contract_moderation_offer": "packages/rs-platform-wallet-ffi/src/contract_user_moderation.rs",
+    "platform_wallet_contract_team_action_approve": "packages/rs-platform-wallet-ffi/src/contract_user_moderation.rs",
+    "platform_wallet_contract_user_moderate": "packages/rs-platform-wallet-ffi/src/contract_user_moderation.rs",
     "platform_wallet_create_document_with_signer": "packages/rs-platform-wallet-ffi/src/document.rs",
     "platform_wallet_create_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
     "platform_wallet_dpns_give_up_name": "packages/rs-platform-wallet-ffi/src/dpns_marketplace.rs",
@@ -2763,6 +2770,68 @@
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
           "id": "DC-12",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "contracts.moderation_writes",
+      "title": "Moderate a contract's users and documents (protocol version 14)",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_contract_moderation_offer",
+        "platform_wallet_contract_user_moderate",
+        "platform_wallet_contract_document_delete",
+        "platform_wallet_contract_document_restore",
+        "platform_wallet_contract_document_change_fields",
+        "platform_wallet_contract_document_propose_settled_deletion",
+        "platform_wallet_contract_team_action_approve"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "ManagedPlatformWallet.contractModerationOffer, moderateContractUser, deleteContractDocument, restoreContractDocument, changeContractDocumentFields, proposeSettledContractDocumentDeletion and approveContractTeamAction wrap the seven FFI entry points. Rust (IdentityWallet::contract_moderation_offer) names the wallet identities that moderate the contract and what each may do, from dpp's ContractModerationConfig (may_moderate, keeps), ElectedModerators (allows, allows_on_any_type) and document type accessors, and rs-sdk's ModerationTeam for a seated team. SwiftExampleApp offers each moderation only to those identities: identity moderations from the list rows and status screen, document deletion, field changes and settled deletion proposals from Moderate Documents, restores from the removal records of documents it deleted and kept, approvals from the team action detail (TEST_PLAN DC-11a to DC-11d). Partial because no simulator or network run of a moderation has been recorded. Each moderation is one transition with a proved result; the document kept for a restore is stored as it returns; there is nothing to resume."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI bridge, Kotlin wrapper or KotlinExampleApp control yet for contract moderation writes. Port from packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/ManagedPlatformWalletContractModeration.swift and the SwiftExampleApp ContractModeration views (ContractModerationOfferStore, ContractUserModerationSheet, ContractDocumentModerationView, the restore and approve controls), reusing their contractModeration.* accessibility identifiers as testTags; the action argument is the byte 0 ban, 1 unban, 2 suspend, 3 unsuspend, 4 warn, 5 clear warnings."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/contract_user_moderation.rs",
+          "id": "should_offer_the_seated_team_only_the_abilities_the_declaration_gives_it",
+          "command": "cargo test -p platform-wallet --lib contract_user_moderation",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/contract_user_moderation.rs",
+          "id": "should_write_who_may_moderate_and_what_each_may_do",
+          "command": "cargo test -p platform-wallet-ffi --lib contract_user_moderation",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ContractUserModerationDecodingTests.swift",
+          "id": "testShouldDecodeWhoMayModerateAndWhatEachMayDo",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ContractUserModerationDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DC-11a",
           "covers_restart": false
         }
       ]
