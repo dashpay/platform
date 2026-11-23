@@ -1306,6 +1306,10 @@ struct ChunkOutcome {
     /// No account scans the pool any more (see [`apply_chunk`]): the scan
     /// ends.
     stopped: bool,
+    /// The scan read the pool to its end, covering the highest note count
+    /// any page of it has proved, so it saw every spend up to the height that
+    /// count was proved at ([`scan_pool`]).
+    covered: bool,
 }
 
 /// Whether `wallet_id` watches `token_id`'s pool.
@@ -1453,9 +1457,16 @@ fn apply_chunk(
         "INSERT INTO shielded_token_pool_scans \
          (token_id, pool_note_count, scanned_height, scanned_protocol_version, last_error) \
          VALUES (?1, ?2, ?3, ?4, NULL) \
-         ON CONFLICT(token_id) DO UPDATE SET pool_note_count = excluded.pool_note_count, \
-         scanned_height = excluded.scanned_height, \
-         scanned_protocol_version = excluded.scanned_protocol_version, last_error = NULL",
+         ON CONFLICT(token_id) DO UPDATE SET \
+         pool_note_count = MAX(COALESCE(pool_note_count, 0), excluded.pool_note_count), \
+         scanned_height = MAX(COALESCE(scanned_height, 0), excluded.scanned_height), \
+         scanned_protocol_version = \
+         MAX(COALESCE(scanned_protocol_version, 0), excluded.scanned_protocol_version), \
+         last_error = NULL",
+        // Each only rises: a page answered by a node a block behind, with a
+        // shorter tree, does not lower what an earlier page proved, and the
+        // scan counts as complete only once it covers the highest count seen
+        // (`scan_pool`).
         params![
             token.as_slice(),
             to_sql_u64(chunk.total_count, "pool note count")?,
@@ -1516,7 +1527,19 @@ where
             .with_token_pool_conn(|conn| apply_chunk(conn, &mut scanner, start, &chunk))?;
         total.new_notes += outcome.new_notes;
         total.newly_spent += outcome.newly_spent;
-        if outcome.stopped || read < u64::from(capacity) {
+        if outcome.stopped {
+            return Ok(total);
+        }
+        if read < u64::from(capacity) {
+            // A short page ends the pass. It counts as the pool's end only if
+            // it reaches the highest note count a page has proved: a node a
+            // block behind answers with a shorter tree, and the notes past it
+            // may hold a spend this pass has not seen.
+            let end = start + read;
+            let highest_count = store.read().await.with_token_pool_conn(|conn| {
+                scan_state(conn, scanner.token_id).map(|state| state.pool_note_count)
+            })?;
+            total.covered = highest_count.is_some_and(|count| end >= count);
             return Ok(total);
         }
         start += read;
@@ -1580,7 +1603,7 @@ where
             Ok(outcome) => {
                 summary.new_notes += outcome.new_notes;
                 summary.newly_spent += outcome.newly_spent;
-                if !cancel.is_cancelled() {
+                if outcome.covered && !cancel.is_cancelled() {
                     summary.completed.insert(token_id);
                 }
             }

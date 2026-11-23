@@ -732,6 +732,16 @@ where
         return Ok(MultiSyncNotesResult::default());
     }
 
+    // Before any spend is applied: one can drop a saved record, and the
+    // height it was seen at must outlive that, even across a restart. Kept
+    // before anything else this pass saves or records, so a failure here
+    // leaves nothing half recorded for a retry to skip.
+    if let (Some(height), false) = (highest_batch_height, scanned_nullifiers.is_empty()) {
+        store
+            .note_spend_scan_height(height)
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+    }
+
     // Save decrypted notes per subwallet; count new notes per
     // subwallet; build a single consolidated changeset.
     let mut per_subwallet_new_notes: BTreeMap<SubwalletId, usize> = BTreeMap::new();
@@ -832,13 +842,6 @@ where
     // against each subwallet — see [`apply_scanned_nullifier_spends`]
     // for the ordering rationale.
     let subwallet_ids: Vec<SubwalletId> = subwallets.iter().map(|(id, _)| *id).collect();
-    // Before any spend is applied: one can drop a saved record, and the
-    // height it was seen at must outlive that, even across a restart.
-    if let (Some(height), false) = (highest_batch_height, scanned_nullifiers.is_empty()) {
-        store
-            .note_spend_scan_height(height)
-            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-    }
     let newly_spent_per_subwallet = apply_scanned_nullifier_spends(
         &mut *store,
         &subwallet_ids,
