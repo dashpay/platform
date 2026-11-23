@@ -306,25 +306,31 @@ impl PlatformWallet {
     /// ([`Self::prepared_shielded_identity_account`]). An ordinary account's
     /// address would tie the wallet's own funds to the identity, and another
     /// identity's account would tie the two identities together.
+    ///
+    /// The wallet tells its own addresses by the viewing keys of its bound
+    /// shielded accounts. Before the first bind it holds none and could not
+    /// tell, so it refuses with [`PlatformWalletError::ShieldedNotBound`]
+    /// instead of letting one of its own through.
     pub(crate) async fn check_shielded_address_publication(
         &self,
         identity_id: &Identifier,
         address: &[u8; 43],
     ) -> Result<(), PlatformWalletError> {
-        let Some(address) =
+        let address =
             Option::<PaymentAddress>::from(PaymentAddress::from_raw_address_bytes(address))
-        else {
-            return Ok(());
-        };
+                .ok_or_else(|| {
+                    PlatformWalletError::InvalidIdentityData(
+                        "Invalid or unsupported shieldedAddress".to_string(),
+                    )
+                })?;
         let owning_account = {
             let keys = self.shielded_keys.read().await;
-            keys.as_ref().and_then(|keys| {
-                keys.iter().find_map(|(account, views)| {
-                    views
-                        .full_viewing_key
-                        .scope_for_address(&address)
-                        .map(|scope| (*account, scope))
-                })
+            let keys = keys.as_ref().ok_or(PlatformWalletError::ShieldedNotBound)?;
+            keys.iter().find_map(|(account, views)| {
+                views
+                    .full_viewing_key
+                    .scope_for_address(&address)
+                    .map(|scope| (*account, scope))
             })
         };
         let Some((owning_account, scope)) = owning_account else {

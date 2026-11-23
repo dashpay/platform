@@ -3332,8 +3332,9 @@ impl PlatformWallet {
     /// - a shielded address that is one of this wallet's own must be the
     ///   address of the identity's dedicated account, prepared in this
     ///   session with [`Self::prepare_shielded_identity_address`]. Without
-    ///   the `shielded` feature no shielded address can be set at all, since
-    ///   the wallet could not tell whether it is its own.
+    ///   the `shielded` feature, or before the wallet's shielded accounts
+    ///   are bound, no shielded address can be set at all, since the wallet
+    ///   could not tell whether it is its own.
     ///
     /// A removed or replaced wallet publishes nothing, and wallet removal
     /// waits for a write in flight.
@@ -4071,6 +4072,36 @@ mod profile_write_tests {
             Err(PlatformWalletError::InvalidIdentityData(message))
                 if message.contains("requires shielded support")
         ));
+    }
+
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_refuse_a_shielded_profile_address_before_shielded_is_bound() {
+        let manager = manager();
+        let wallet = testnet_wallet(&manager).await;
+        // An address of this very wallet's ordinary account: unbound, the
+        // wallet holds no viewing key to recognise it by.
+        let own = OrchardKeySet::from_seed(&[42; 64], Network::Testnet, 0)
+            .unwrap()
+            .default_address
+            .to_raw_address_bytes();
+        for create in [true, false] {
+            let result = wallet
+                .write_dashpay_profile(
+                    &Identifier::from([7; 32]),
+                    ProfileUpdate {
+                        shielded_address: PaymentAddressUpdate::Set(own.to_vec()),
+                        ..Default::default()
+                    },
+                    &SimpleSigner::default(),
+                    create,
+                )
+                .await;
+            assert!(
+                matches!(result, Err(PlatformWalletError::ShieldedNotBound)),
+                "{result:?}"
+            );
+        }
     }
 
     #[tokio::test]
