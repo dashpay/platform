@@ -2236,6 +2236,11 @@ unsafe extern "C" fn tramp_load_asset_lock_operation_id(
     out_found: *mut bool,
     out_operation_id: *mut u8,
 ) -> i32 {
+    // A caller that cannot receive the answer gets a failed load, never an
+    // id read as absent.
+    if out_found.is_null() || out_operation_id.is_null() {
+        return ERR_JNI;
+    }
     *out_found = false;
     let loaded = with_bridge_load(context, |env, bridge| {
         let wid = id32(env, wallet_id)?;

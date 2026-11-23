@@ -110,7 +110,8 @@
     "platform_wallet_wallet_drain_attempt_finished": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
     "platform_wallet_wallet_drain_preview_allows_start": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
     "platform_wallet_wallet_drain_start_offered": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
-    "platform_wallet_wallet_drain_lock_listing": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs"
+    "platform_wallet_wallet_drain_lock_listing": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
+    "platform_wallet_wallet_drain_status_during_host_call": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs"
   },
   "capabilities": [
     {
@@ -2143,7 +2144,8 @@
         "platform_wallet_wallet_drain_attempt_finished",
         "platform_wallet_wallet_drain_preview_allows_start",
         "platform_wallet_wallet_drain_start_offered",
-        "platform_wallet_wallet_drain_lock_listing"
+        "platform_wallet_wallet_drain_lock_listing",
+        "platform_wallet_wallet_drain_status_during_host_call"
       ],
       "required_persistence_capabilities": [
         "asset_lock_funding_indices",

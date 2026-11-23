@@ -78,6 +78,14 @@ internal object WalletDrainNative {
         readNamedAssetLock: Boolean,
     ): Int
 
+    /**
+     * Bridges `platform_wallet_wallet_drain_status_during_host_call`: the
+     * state to report (0 not sent, 1 pending, 2 completed) for a status read
+     * that returned [reportedState] while a drain call of this host for the
+     * same operation id is active ([hostCallActive]).
+     */
+    external fun statusDuringHostCall(reportedState: Int, hostCallActive: Boolean): Int
+
     /** Bridges `platform_wallet_wallet_drain_attempt_finished`. */
     external fun attemptFinished(state: Int): Boolean
 

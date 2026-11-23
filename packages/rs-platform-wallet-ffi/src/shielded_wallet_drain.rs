@@ -11,8 +11,8 @@ use platform_wallet::wallet::shielded::wallet_drain::{
 use platform_wallet::wallet::shielded::wallet_drain_recovery::{
     wallet_drain_attempt_finished, wallet_drain_lock_listing, wallet_drain_marker_decision,
     wallet_drain_preview_allows_start, wallet_drain_recovery_action, wallet_drain_start_offered,
-    WalletDrainLockListing, WalletDrainMarkerDecision, WalletDrainRecoveryAction,
-    WalletDrainStatusRead,
+    wallet_drain_status_during_host_call, WalletDrainLockListing, WalletDrainMarkerDecision,
+    WalletDrainRecoveryAction, WalletDrainStatusRead,
 };
 use platform_wallet::wallet::shielded::CachedOrchardProver;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
@@ -166,6 +166,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_wallet_drain_preview(
 }
 
 /// Drain the permitted transparent accounts into one shielded recipient.
+///
+/// This export does not ask [`platform_wallet_wallet_drain_start_offered`]:
+/// a host that starts a new drain asks it first and does not call this where
+/// it answers `false` (mainnet, until dashpay/platform#5580).
 ///
 /// The caller persists its UUID before calling. Reusing a UUID must never
 /// create another lock. The result's error and `out_outcome` are complementary:
@@ -459,10 +463,44 @@ pub unsafe extern "C" fn platform_wallet_wallet_drain_preview_allows_start(
 
 /// Whether a host offers to start a new drain on `network`:
 /// `wallet_drain_start_offered`. Recovering an existing drain is offered on
-/// every network and does not ask this.
+/// every network and does not ask this. `false` if the rule panics.
 #[no_mangle]
 pub extern "C" fn platform_wallet_wallet_drain_start_offered(network: FFINetwork) -> bool {
-    wallet_drain_start_offered(network.into())
+    std::panic::catch_unwind(|| wallet_drain_start_offered(network.into())).unwrap_or(false)
+}
+
+/// The state a host reports for an operation while one of its own drain
+/// calls for the same id may not have reached the wallet yet:
+/// `wallet_drain_status_during_host_call`.
+///
+/// `reported_state` is the `state` a successful
+/// `platform_wallet_manager_shielded_wallet_drain_status` returned, and
+/// `host_call_active` says whether the host has a
+/// `platform_wallet_manager_shielded_fund_from_wallet_drain` call for the
+/// same operation id that has not returned. `out_state` receives the state to
+/// report, in the same encoding; it is 1 (pending) whenever the call fails.
+///
+/// # Safety
+/// `out_state` is writable.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_wallet_drain_status_during_host_call(
+    reported_state: u8,
+    host_call_active: bool,
+    out_state: *mut u8,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_state);
+    *out_state = 1;
+    match operation_state_from_u8(reported_state) {
+        Ok(reported) => {
+            *out_state = match wallet_drain_status_during_host_call(reported, host_call_active) {
+                AssetLockOperationState::NotSent => 0,
+                AssetLockOperationState::Pending => 1,
+                AssetLockOperationState::Completed => 2,
+            };
+            PlatformWalletFFIResult::ok()
+        }
+        Err(error) => error,
+    }
 }
 
 /// Where a host lists a tracked asset lock, as far as drains are concerned:
@@ -647,6 +685,28 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorInvalidParameter
         );
         assert_eq!(action, 2, "an undecodable state never offers a spend");
+        unsafe { crate::error::platform_wallet_ffi_result_free(&mut result) };
+
+        let mut state = 9;
+        result =
+            unsafe { platform_wallet_wallet_drain_status_during_host_call(0, true, &mut state) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(state, 1, "not sent while a host call is active: pending");
+        result =
+            unsafe { platform_wallet_wallet_drain_status_during_host_call(0, false, &mut state) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(state, 0);
+        result =
+            unsafe { platform_wallet_wallet_drain_status_during_host_call(2, true, &mut state) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(state, 2, "the wallet's own answer stands");
+        result =
+            unsafe { platform_wallet_wallet_drain_status_during_host_call(9, true, &mut state) };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(state, 1, "an undecodable state is reported as pending");
         unsafe { crate::error::platform_wallet_ffi_result_free(&mut result) };
 
         let mut finished = true;

@@ -390,20 +390,55 @@ class WalletDrainCoordinatorTest {
             }
         }
 
+        // The newer read reports the transfer finished, but the stored id
+        // cannot be removed, so the row stays.
+        f.store.failRemovals = true
+        val older = launch { f.reconcile() }
+        runCurrent()
+        f.reconcile()
+        assertEquals(1, f.store.rows.size)
+
+        // The older "pending" must not turn it into a resumable row again.
+        olderGate.complete(Unit)
+        older.join()
+
+        val entry = f.coordinator.entries.value.single()
+        assertEquals(
+            "the older report was not applied",
+            WalletDrainStatusRead.Reported(State.Completed),
+            entry.lastRead,
+        )
+        assertEquals(RowAction.CheckAgain, f.coordinator.rowAction(false, entry))
+    }
+
+    @Test
+    fun `an older read that finishes after the id was forgotten does not list it again`() = runTest {
+        val f = fixture()
+        f.store.rows += record(1)
+        val olderGate = CompletableDeferred<Unit>()
+        var call = 0
+        f.wallet.status = {
+            if (++call == 1) {
+                olderGate.await()
+                WalletDrainOutcome(State.Pending, outpoint)
+            } else {
+                WalletDrainOutcome(State.Completed, outpoint)
+            }
+        }
+
         val older = launch { f.reconcile() }
         runCurrent()
         f.reconcile()
         assertTrue("the newer read forgot it", f.store.rows.isEmpty())
 
-        // Put the id back, as if only the removal had failed: the older
-        // "pending" must not turn it into a resumable row again.
-        f.store.rows += record(1)
+        // Everything kept for the id went with it; the late report finds no
+        // stored id to list.
         olderGate.complete(Unit)
         older.join()
 
-        val entry = f.coordinator.entries.value.single()
-        assertNull("the older report was not applied", entry.lastRead)
-        assertEquals(RowAction.CheckAgain, f.coordinator.rowAction(false, entry))
+        assertTrue(f.store.rows.isEmpty())
+        assertTrue(f.coordinator.entries.value.isEmpty())
+        assertTrue(f.coordinator.markedOperationIds.value.isEmpty())
     }
 
     @Test

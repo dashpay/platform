@@ -44,15 +44,16 @@ internal val RESUMABLE_TOP_UP_FUNDING_TYPES = listOf(
 )
 
 /**
- * Where Rust's wallet-drain rule lists a lock: the seam over
- * [WalletDrainRules.lockListing], which a JVM unit test cannot call.
+ * Where Rust's wallet-drain rule lists a lock, or null when Rust does not
+ * know the lock's funding type or status: the seam over
+ * [WalletDrainRules.lockListingOrNull], which a JVM unit test cannot call.
  */
 internal typealias DrainLockListing = (
     fundingTypeRaw: Int,
     statusRaw: Int,
     hasOperationId: Boolean,
     hostHoldsStoredId: Boolean,
-) -> WalletDrainLockListing
+) -> WalletDrainLockListing?
 
 /**
  * Whether [lock] is offered on the "Pending Platform Top Ups" surface.
@@ -64,22 +65,23 @@ internal typealias DrainLockListing = (
  * has stored) names it, because the "Saved Max transfers" row owns it; and
  * offered even at Built when no stored id does, because an exact-outpoint
  * resume is then the only way to reach it. Every other lock keeps this
- * surface's own rule, [isVisibleAsResumable]. A rule that cannot be asked
- * (an unknown status, a native failure) offers nothing.
+ * surface's own rule, [isVisibleAsResumable]. A lock Rust does not know (an
+ * unknown status, a rule that cannot be asked) is offered nowhere.
+ *
+ * An operation id counts only when it is a valid 16-byte id, as on iOS: a
+ * row whose stored id is malformed is not a drain's lock to this rule.
  */
 internal fun AssetLockEntity.isOfferedForResume(
     markedOperationIds: Set<UUID>,
-    listing: DrainLockListing = WalletDrainRules::lockListing,
+    listing: DrainLockListing = WalletDrainRules::lockListingOrNull,
 ): Boolean {
-    val operationId = operationId
-    val holdsStoredId = operationId
-        ?.let(::walletDrainOperationIdFromBytes)
-        ?.let { it in markedOperationIds }
-        ?: false
+    val decodedOperationId = operationId?.let(::walletDrainOperationIdFromBytes)
+    val holdsStoredId = decodedOperationId?.let { it in markedOperationIds } ?: false
     val decided = runCatching {
-        listing(fundingTypeRaw, statusRaw, operationId != null, holdsStoredId)
-    }.getOrElse { return false }
+        listing(fundingTypeRaw, statusRaw, decodedOperationId != null, holdsStoredId)
+    }.getOrNull()
     return when (decided) {
+        null -> false
         WalletDrainLockListing.Hidden -> false
         WalletDrainLockListing.Offered -> true
         WalletDrainLockListing.Unaffected -> isVisibleAsResumable
@@ -109,7 +111,7 @@ internal fun resumableTopUpsAcrossWallets(
     walletIdHexes: List<String>,
     observe: (walletId: ByteArray, fundingTypeRaw: Int) -> Flow<List<AssetLockEntity>>,
     markedOperationIds: Flow<Set<UUID>> = flowOf(emptySet()),
-    listing: DrainLockListing = WalletDrainRules::lockListing,
+    listing: DrainLockListing = WalletDrainRules::lockListingOrNull,
 ): Flow<List<Pair<String, AssetLockEntity>>> {
     // `combine` over an empty source list never emits, which would leave the
     // section stuck on its initial value instead of resolving to "nothing to

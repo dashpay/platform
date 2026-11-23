@@ -61,6 +61,27 @@ pub fn wallet_drain_marker_decision(
     }
 }
 
+/// The state a host reports for an operation while one of its own drain
+/// calls for the same id may not have reached the wallet yet.
+///
+/// The wallet answers `NotSent` for an id it has never seen, and a host's
+/// call sits between its wrapper and the wallet's operation registry while it
+/// waits for a thread. A status read in that window (`host_call_active`)
+/// would report "never sent" for a drain that is about to dispatch, so
+/// `NotSent` is reported as `Pending` there. Once the wallet has seen the
+/// operation its answer stands: `Pending` and `Completed` pass through, and
+/// so does every state when no call is active.
+pub fn wallet_drain_status_during_host_call(
+    reported: AssetLockOperationState,
+    host_call_active: bool,
+) -> AssetLockOperationState {
+    if host_call_active && reported == AssetLockOperationState::NotSent {
+        AssetLockOperationState::Pending
+    } else {
+        reported
+    }
+}
+
 /// The one thing a host offers for a stored operation id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WalletDrainRecoveryAction {
@@ -239,6 +260,26 @@ mod tests {
                     "{read:?}, named: {named}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn should_report_not_sent_as_pending_only_while_a_host_call_is_active() {
+        for state in STATES {
+            assert_eq!(
+                wallet_drain_status_during_host_call(state, false),
+                state,
+                "no call active: the wallet's answer stands"
+            );
+            assert_eq!(
+                wallet_drain_status_during_host_call(state, true),
+                if state == AssetLockOperationState::NotSent {
+                    AssetLockOperationState::Pending
+                } else {
+                    state
+                },
+                "{state:?} while a call is active"
+            );
         }
     }
 

@@ -43,7 +43,8 @@ use platform_wallet_ffi::shielded_wallet_drain::{
     platform_wallet_wallet_drain_marker_decision,
     platform_wallet_wallet_drain_preview_allows_start,
     platform_wallet_wallet_drain_recovery_action, platform_wallet_wallet_drain_start_offered,
-    WalletDrainOutcomeFFI, WalletDrainPreviewFFI,
+    platform_wallet_wallet_drain_status_during_host_call, WalletDrainOutcomeFFI,
+    WalletDrainPreviewFFI,
 };
 use rs_sdk_ffi::MnemonicResolverHandle;
 use std::ffi::CStr;
@@ -390,6 +391,37 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletDrainNative_rec
             return CHECK_AGAIN;
         }
         jint::from(action)
+    })
+}
+
+/// The state to report for an operation while one of the host's own drain
+/// calls for the same id may not have reached the wallet yet: bridges
+/// `platform_wallet_wallet_drain_status_during_host_call`. Returns the state
+/// in the outcome's encoding (0 not sent, 1 pending, 2 completed).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletDrainNative_statusDuringHostCall(
+    mut env: JNIEnv,
+    _class: JClass,
+    reported_state: jint,
+    host_call_active: jboolean,
+) -> jint {
+    const PENDING: jint = 1;
+    guard(&mut env, PENDING, |env| {
+        let Some(reported) = read_u8(env, reported_state, "reportedState") else {
+            return PENDING;
+        };
+        let mut state = PENDING as u8;
+        let result = unsafe {
+            platform_wallet_wallet_drain_status_during_host_call(
+                reported,
+                host_call_active != JNI_FALSE,
+                &mut state,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return PENDING;
+        }
+        jint::from(state)
     })
 }
 

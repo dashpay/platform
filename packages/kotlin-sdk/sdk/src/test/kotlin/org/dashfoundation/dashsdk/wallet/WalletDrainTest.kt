@@ -187,20 +187,13 @@ class WalletDrainTest {
         assertNull(walletDrainOperationIdFromBytes(ByteArray(17)))
     }
 
+    /**
+     * The host's own fact: whether one of its drain calls is active. What a
+     * status read reports while one is, is Rust's rule (instrumented
+     * `WalletDrainFfiTest`).
+     */
     @Test
-    fun shouldReportNotSentAsPendingOnlyWhileACallForTheSameIdIsActive() {
-        val outpoint = WalletDrainOutpoint(ByteArray(32) { 5 }, 0)
-        val notSent = WalletDrainOutcome(WalletDrainOutcome.State.NotSent, null)
-        val masked = WalletDrainActiveCalls.statusDuringActiveCall(notSent)
-        assertEquals(WalletDrainOutcome.State.Pending, masked.state)
-        assertNull(masked.outpoint)
-
-        // Once Rust has seen the operation, its answer stands.
-        for (state in listOf(WalletDrainOutcome.State.Pending, WalletDrainOutcome.State.Completed)) {
-            val native = WalletDrainOutcome(state, outpoint)
-            assertSame(native, WalletDrainActiveCalls.statusDuringActiveCall(native))
-        }
-
+    fun shouldCountActiveCallsPerManagerWalletAndOperationId() {
         val walletId = ByteArray(32) { 3 }
         val id = UUID.randomUUID()
         assertTrue(!WalletDrainActiveCalls.isActive(7L, walletId, id))

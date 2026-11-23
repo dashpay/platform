@@ -369,7 +369,17 @@ class WalletDrainCoordinator(
             } else {
                 try {
                     store.remove(id)
-                    state.withLock { latest.remove(id) }
+                    // An id is minted per transfer and never reused, so what
+                    // is kept for it goes with its stored row: with no row,
+                    // a late older read has nothing to list or offer. The
+                    // running count is left to the attempt that holds it,
+                    // which clears it when it returns.
+                    state.withLock {
+                        latest.remove(id)
+                        attemptCounts.remove(id)
+                        readsStarted.remove(id)
+                        newestAppliedRead.remove(id)
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {

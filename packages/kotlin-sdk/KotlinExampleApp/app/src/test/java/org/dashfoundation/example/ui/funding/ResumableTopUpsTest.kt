@@ -61,7 +61,7 @@ class ResumableTopUpsTest {
 
     /**
      * Rust's answer for a lock no wallet drain is concerned with. The real
-     * rule is native (`WalletDrainRules.lockListing`), which a JVM test
+     * rule is native (`WalletDrainRules.lockListingOrNull`), which a JVM test
      * cannot load.
      */
     private val notADrain: DrainLockListing = { _, _, _, _ -> WalletDrainLockListing.Unaffected }
@@ -249,7 +249,8 @@ class ResumableTopUpsTest {
             .isOfferedForResume(setOf(drainId), recording)
         lock("d:1", fundingTypeRaw = 5, statusRaw = 1, operationId = drainIdBytes)
             .isOfferedForResume(emptySet(), recording)
-        // An id that is not 16 bytes names no stored operation.
+        // An id that is not 16 bytes is not an operation id at all, as on
+        // iOS: the row is not a drain's lock, and it names no stored one.
         lock("d:2", fundingTypeRaw = 5, statusRaw = 1, operationId = ByteArray(3))
             .isOfferedForResume(setOf(drainId), recording)
 
@@ -258,9 +259,23 @@ class ResumableTopUpsTest {
                 listOf(4, 2, false, false),
                 listOf(5, 1, true, true),
                 listOf(5, 1, true, false),
-                listOf(5, 1, true, false),
+                listOf(5, 1, false, false),
             ),
             asked,
+        )
+    }
+
+    /** A malformed stored id cannot turn a built lock into a drain's checkpoint. */
+    @Test
+    fun `a malformed operation id is not offered as a drain checkpoint`() {
+        assertFalse(
+            lock("d:0", fundingTypeRaw = 5, statusRaw = 0, operationId = ByteArray(3))
+                .isOfferedForResume(emptySet(), rustListing),
+        )
+        assertTrue(
+            "the same row with a valid id is the checkpoint",
+            lock("d:1", fundingTypeRaw = 5, statusRaw = 0, operationId = drainIdBytes)
+                .isOfferedForResume(emptySet(), rustListing),
         )
     }
 
@@ -269,6 +284,10 @@ class ResumableTopUpsTest {
     fun `offers nothing when the rule cannot be asked`() {
         val broken: DrainLockListing = { _, _, _, _ -> error("native library missing") }
         assertFalse(lock("a:0", fundingTypeRaw = 4, statusRaw = 2).isOfferedForResume(emptySet(), broken))
+        // What `WalletDrainRules.lockListingOrNull` returns for a funding type
+        // or status Rust does not know, and for a failed call.
+        val unknown: DrainLockListing = { _, _, _, _ -> null }
+        assertFalse(lock("a:0", fundingTypeRaw = 4, statusRaw = 2).isOfferedForResume(emptySet(), unknown))
     }
 
     /** The list re-filters when a stored id appears or goes. */

@@ -14,13 +14,13 @@ import java.util.concurrent.ConcurrentHashMap
 // funding wrappers; only meaningful on a shielded build ([org.dashfoundation.dashsdk.Sdk.hasShielded]).
 
 /**
- * Drain calls that have been made but may not have reached Rust's operation
- * registry yet. Rust reports `NotSent` for an id it has never seen, and a
- * call sits between this wrapper and that registry while it waits for a
- * thread, so a status read in that window would read "never sent" for a
- * drain that is about to dispatch. Counted, so one returning call cannot
- * clear another caller's protection. Process-wide, as the Swift wrapper's
- * `walletDrainCalls` is.
+ * Drain calls of this process that have not returned. Such a call may not
+ * have reached Rust's operation registry yet (it sits between this wrapper
+ * and that registry while it waits for a thread), which is a fact only the
+ * host knows; what a status read reports in that window is Rust's rule
+ * ([WalletDrainRules.statusDuringHostCall]). Counted, so one returning call
+ * cannot clear another caller's protection. Process-wide, as the Swift
+ * wrapper's `walletDrainCalls` is.
  */
 internal object WalletDrainActiveCalls {
     private data class Key(val managerHandle: Long, val walletIdHex: String, val operationId: UUID)
@@ -42,20 +42,6 @@ internal object WalletDrainActiveCalls {
 
     fun isActive(managerHandle: Long, walletId: ByteArray, operationId: UUID): Boolean =
         counts.containsKey(key(managerHandle, walletId, operationId))
-
-    /**
-     * The status to report while a call for the same id is active. Rust
-     * owns the operation's lifecycle, so its answer stands as soon as the
-     * call has entered its registry: an outpoint, a completion and a
-     * pending state all pass through. Only `NotSent`, the answer for an id
-     * Rust has not seen yet, is reported as pending without an outpoint.
-     */
-    fun statusDuringActiveCall(native: WalletDrainOutcome): WalletDrainOutcome =
-        if (native.state == WalletDrainOutcome.State.NotSent) {
-            WalletDrainOutcome(WalletDrainOutcome.State.Pending, outpoint = null)
-        } else {
-            native
-        }
 }
 
 /**
@@ -81,6 +67,10 @@ suspend fun PlatformWalletManager.shieldedWalletDrainPreview(
 /**
  * Drain the permitted transparent accounts at [fundingAccountIndex] into one
  * Orchard recipient. Port of Swift's `shieldedFundFromWalletDrain`.
+ *
+ * This does not ask [WalletDrainRules.startOffered]: a caller that starts a
+ * NEW drain asks it first and does not call this where the answer is false
+ * (mainnet, until dashpay/platform#5580). The example app does.
  *
  * Store [operationId] durably BEFORE calling. A repeated id names the same
  * operation; never replace it with a new one after an unknown result. Rust
@@ -169,5 +159,8 @@ suspend fun PlatformWalletManager.shieldedWalletDrainStatus(
         outcome.error?.let { throw it }
         outcome
     }
-    return if (callActive) WalletDrainActiveCalls.statusDuringActiveCall(native) else native
+    // What to report while this host's own call is active is Rust's rule;
+    // this wrapper only supplies the fact that one is.
+    val state = WalletDrainRules.statusDuringHostCall(native.state, hostCallActive = callActive)
+    return if (state == native.state) native else WalletDrainOutcome(state, native.outpoint)
 }

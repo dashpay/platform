@@ -2,7 +2,6 @@ package org.dashfoundation.dashsdk.wallet
 
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.errors.DashSdkError
-import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.WalletDrainNative
 import java.nio.ByteBuffer
@@ -237,6 +236,12 @@ enum class WalletDrainLockListing {
  * the rules, so this app and the Swift one cannot drift apart: the caller
  * gathers the facts it owns and does what these return.
  *
+ * None of them throws. A call that fails (a value Rust does not know, a
+ * native library that cannot be loaded) returns the fail-closed answer named
+ * on each function, the same one the C export writes before it validates
+ * and Swift's `WalletDrainRules` returns: keep the stored id, check again,
+ * pending, not finished, not allowed, not offered.
+ *
  * Swift callers of the same rules: `WalletDrainCoordinator`,
  * `ShieldedFundFromAssetLockView` and `PendingPlatformFundFromAssetLocksList`
  * in `packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/`.
@@ -245,10 +250,11 @@ object WalletDrainRules {
     /**
      * Whether the host keeps the operation id it stored, after one status
      * read. [attemptOverlappedRead] says whether one of the host's attempts
-     * for the id ran or started while that read was in progress.
+     * for the id ran or started while that read was in progress. A failed
+     * call keeps the id: forgetting is the one step that cannot be undone.
      */
     fun keepsStoredId(read: WalletDrainStatusRead, attemptOverlappedRead: Boolean): Boolean =
-        mapNativeErrors {
+        failClosed(true) {
             WalletDrainNative.keepsStoredId(
                 readSucceeded = read is WalletDrainStatusRead.Reported,
                 reportedState = (read as? WalletDrainStatusRead.Reported)?.state?.raw ?: 0,
@@ -259,14 +265,16 @@ object WalletDrainRules {
     /**
      * What the host offers for a stored operation id. [lastRead] is null
      * before any status read has finished; [readNamedAssetLock] says whether
-     * that read's outcome carried an outpoint.
+     * that read's outcome carried an outpoint. A failed call, or an action
+     * this build does not know, is [WalletDrainRecoveryAction.CheckAgain],
+     * which never spends.
      */
     fun recoveryAction(
         attemptInFlight: Boolean,
         lastRead: WalletDrainStatusRead?,
         readNamedAssetLock: Boolean,
     ): WalletDrainRecoveryAction {
-        val raw = mapNativeErrors {
+        val raw = failClosed(RECOVERY_ACTION_CHECK_AGAIN) {
             WalletDrainNative.recoveryAction(
                 attemptInFlight = attemptInFlight,
                 hasRead = lastRead != null,
@@ -278,41 +286,71 @@ object WalletDrainRules {
         return when (raw) {
             0 -> WalletDrainRecoveryAction.InProgress
             1 -> WalletDrainRecoveryAction.Resume
-            // An action this build does not know never offers a spend.
             else -> WalletDrainRecoveryAction.CheckAgain
         }
     }
 
     /**
+     * The state to report for a status read that returned [reported] while
+     * one of the host's own drain calls for the same operation id has not
+     * returned ([hostCallActive]): such a call may not have reached Rust
+     * yet, and Rust answers "not sent" for an id it has never seen. A failed
+     * call, or a state this build does not know, is
+     * [WalletDrainOutcome.State.Pending].
+     */
+    fun statusDuringHostCall(
+        reported: WalletDrainOutcome.State,
+        hostCallActive: Boolean,
+    ): WalletDrainOutcome.State {
+        val raw = failClosed(WalletDrainOutcome.State.Pending.raw) {
+            WalletDrainNative.statusDuringHostCall(reported.raw, hostCallActive)
+        }
+        return WalletDrainOutcome.State.entries.firstOrNull { it.raw == raw }
+            ?: WalletDrainOutcome.State.Pending
+    }
+
+    /**
      * Whether a returned attempt needs nothing more. An attempt that is not
-     * finished is shown as failed, with the error its call returned.
+     * finished is shown as failed, with the error its call returned. A
+     * failed call is "not finished".
      */
     fun attemptFinished(state: WalletDrainOutcome.State): Boolean =
-        mapNativeErrors { WalletDrainNative.attemptFinished(state.raw) }
+        failClosed(false) { WalletDrainNative.attemptFinished(state.raw) }
 
-    /** Whether a drain may be started after a preview with this [status]. */
+    /**
+     * Whether a drain may be started after a preview with this [status]. A
+     * failed call does not allow it.
+     */
     fun previewAllowsStart(status: WalletDrainPreview.Status): Boolean =
-        mapNativeErrors { WalletDrainNative.previewAllowsStart(status.raw) }
+        failClosed(false) { WalletDrainNative.previewAllowsStart(status.raw) }
 
     /**
      * Whether a NEW drain is offered on [network]. Recovering an existing
-     * one is offered on every network and does not ask this.
+     * one is offered on every network and does not ask this. A failed call
+     * does not offer it.
+     *
+     * [shieldedFundFromWalletDrain] does not ask this itself: a caller that
+     * starts a new drain asks first and does not call it where the answer is
+     * false (mainnet, until dashpay/platform#5580).
      */
     fun startOffered(network: Network): Boolean =
-        mapNativeErrors { WalletDrainNative.startOffered(network.ffiValue) }
+        failClosed(false) { WalletDrainNative.startOffered(network.ffiValue) }
 
     /**
-     * Where the host lists the asset lock with these stored values.
-     * [hostHoldsStoredId] says whether the host holds a stored operation id
-     * equal to the lock's.
+     * Where the host lists the asset lock with these stored values, or null
+     * when Rust does not know [fundingTypeRaw] or [statusRaw] (or the call
+     * fails): such a lock is offered nowhere. [hasOperationId] says whether
+     * the lock carries a valid 16-byte operation id, and [hostHoldsStoredId]
+     * whether the host holds a stored operation id equal to it. Swift:
+     * `WalletDrainRules.lockListingIfKnown`.
      */
-    fun lockListing(
+    fun lockListingOrNull(
         fundingTypeRaw: Int,
         statusRaw: Int,
         hasOperationId: Boolean,
         hostHoldsStoredId: Boolean,
-    ): WalletDrainLockListing {
-        val raw = mapNativeErrors {
+    ): WalletDrainLockListing? {
+        val raw = failClosed(LOCK_LISTING_UNKNOWN) {
             WalletDrainNative.lockListing(
                 fundingType = fundingTypeRaw,
                 status = statusRaw,
@@ -321,11 +359,45 @@ object WalletDrainRules {
             )
         }
         return when (raw) {
+            0 -> WalletDrainLockListing.Unaffected
             1 -> WalletDrainLockListing.Hidden
             2 -> WalletDrainLockListing.Offered
-            else -> WalletDrainLockListing.Unaffected
+            else -> null
         }
     }
+
+    /**
+     * [lockListingOrNull], with [WalletDrainLockListing.Unaffected] for a
+     * funding type or status Rust does not know.
+     */
+    fun lockListing(
+        fundingTypeRaw: Int,
+        statusRaw: Int,
+        hasOperationId: Boolean,
+        hostHoldsStoredId: Boolean,
+    ): WalletDrainLockListing =
+        lockListingOrNull(fundingTypeRaw, statusRaw, hasOperationId, hostHoldsStoredId)
+            ?: WalletDrainLockListing.Unaffected
+
+    private const val RECOVERY_ACTION_CHECK_AGAIN = 2
+
+    /** Not one of the listing bytes Rust returns. */
+    private const val LOCK_LISTING_UNKNOWN = -1
+
+    /**
+     * Run a rule call, returning [fallback] when it cannot answer: the
+     * native layer threw, or the library (or one of its symbols) cannot be
+     * loaded. Other errors, such as running out of memory, are not a rule's
+     * answer and pass through.
+     */
+    private inline fun <T> failClosed(fallback: T, call: () -> T): T =
+        try {
+            call()
+        } catch (_: Exception) {
+            fallback
+        } catch (_: LinkageError) {
+            fallback
+        }
 }
 
 /** A wallet drain operation id as the 16 bytes Rust stores, most significant first. */

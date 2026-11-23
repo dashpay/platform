@@ -1,7 +1,6 @@
 package org.dashfoundation.dashsdk
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.WalletDrainNative
@@ -149,10 +148,35 @@ class WalletDrainFfiTest {
                 ),
             )
         }
-        // A status Rust does not know cannot be listed.
-        assertThrows(DashSdkError::class.java) {
-            WalletDrainRules.lockListing(shielded, 99, hasOperationId = true, hostHoldsStoredId = false)
+        // A status or funding type Rust does not know is not listed: the
+        // native call refuses it, and the rule answers "unknown" for it.
+        assertThrows(DashSDKException::class.java) {
+            WalletDrainNative.lockListing(shielded, 99, hasOperationId = true, hostHoldsStoredId = false)
         }
+        assertNull(WalletDrainRules.lockListingOrNull(shielded, 99, hasOperationId = true, hostHoldsStoredId = false))
+        assertNull(WalletDrainRules.lockListingOrNull(99, 0, hasOperationId = true, hostHoldsStoredId = false))
+        assertEquals(
+            WalletDrainLockListing.Offered,
+            WalletDrainRules.lockListingOrNull(shielded, 0, hasOperationId = true, hostHoldsStoredId = false),
+        )
+        assertEquals(
+            WalletDrainLockListing.Unaffected,
+            WalletDrainRules.lockListing(shielded, 99, hasOperationId = true, hostHoldsStoredId = false),
+        )
+    }
+
+    @Test
+    fun shouldReportNotSentAsPendingOnlyWhileAHostCallIsActive() {
+        for (state in State.entries) {
+            assertEquals("no call active: $state", state, WalletDrainRules.statusDuringHostCall(state, false))
+        }
+        assertEquals(State.Pending, WalletDrainRules.statusDuringHostCall(State.NotSent, true))
+        // Once Rust has seen the operation, its answer stands.
+        assertEquals(State.Pending, WalletDrainRules.statusDuringHostCall(State.Pending, true))
+        assertEquals(State.Completed, WalletDrainRules.statusDuringHostCall(State.Completed, true))
+        // A state Rust does not know is refused, not passed through.
+        assertThrows(DashSDKException::class.java) { WalletDrainNative.statusDuringHostCall(3, true) }
+        assertThrows(DashSDKException::class.java) { WalletDrainNative.statusDuringHostCall(300, false) }
     }
 
     @Test
