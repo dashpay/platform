@@ -14,10 +14,12 @@
 //!   [`support::guard`].
 //! - Rust→Kotlin callbacks attach their (possibly Tokio) thread as a daemon.
 
+mod address_history;
 mod contract_moderation;
 mod credits;
 mod dashpay;
 mod decision_proposals;
+mod dpns_give_up;
 mod dpns_marketplace;
 mod events;
 mod funding;

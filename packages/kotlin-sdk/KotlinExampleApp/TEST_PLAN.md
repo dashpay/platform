@@ -45,7 +45,9 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | **Funded Core wallet** | all `Layer=Core` and `Layer=Cross` | A wallet with confirmed, mature, spendable UTXOs. Asset-lock funding needs InstantSend/ChainLock, so masternode sync must complete. |
 | **A registered identity with credit balance** | almost all `Layer=Platform` | Created via `ID-01`. Many transitions also need a specific **key purpose/security level** present on the identity. |
 | **A loaded data contract** (with a token + a document type) | `Domain=Token`, `Domain=Document`, group | Token actions are gated by the contract's on-chain permission rules. |
-| **A contested-name scenario** | `DPNS-05`, `VOTE-*` | Register a premium/contested name to create a live vote poll. |
+| **A contested-name scenario** | `DPNS-05`, `DPNS-11`, `VOTE-*` | Register a premium/contested name to create a live vote poll. `DPNS-11` needs one the vote has already awarded to the identity. |
+| **Network at protocol version 15** | `DPNS-09`..`DPNS-12` | Deleting or tombstoning a DPNS name is served from protocol version 15. Use a network already at it (a local or devnet network until testnet activates it). |
+| **Network still at protocol version 14** | `DPNS-13` | Any network proven at protocol version 14, where the give-up feature must be refused as not available yet. |
 | **Masternode / evonode voting key** | `VOTE-01`, `VOTE-12`, `VOTE-19`, `ID-02` (`VOTE-13`, `VOTE-20` also read any masternode's answer from a typed pro_tx_hash) | Two fixtures, one per signing path. **Stored-key path (every build, the only one in release builds):** a registered test masternode or evonode loaded on the device with its matching voting private key (Identities, Load Identity, type Masternode or Evonode, `ID-02`); the vote dialogs pick that identity (`<prefix>.voter`) and sign with the stored key through a signer made for that one vote. **Typed-credentials path (debug builds only):** a registered test masternode's wire-order pro_tx_hash and its matching voting private key, typed behind "Use typed test credentials (debug only)" (`<prefix>.useTypedCredentials`, fields `<prefix>.proTxHash` and `<prefix>.votingKey`); no loaded identity is needed, and a release build never offers or takes a typed key. Without either fixture the broadcast cannot be exercised; treat the rows as environment-limited. |
 | **Shielded pool: configured + bound + prover warmed + synced** | `Domain=Shielded` | `SH-01` sync + `SH-09` prover warm-up are preconditions for any shielded spend. |
 | **A second identity / contact** | credit transfer, token transfer, document transfer, DashPay | Needed as the counterparty/recipient. |
@@ -151,6 +153,8 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | ADDR-07 | Platform address balance sync (BLAST) — start / progress; address balances populate to tip | Platform | Essential | ✅ | | Sync tab → **PLATFORM SYNC STATUS** (`SyncStatusScreen`, `container.platformBalanceSyncService`): State reaches `Synced`, Sync Height advances to tip, Active Addresses populate, "Sync Now" forces a pass. Precondition for the other address rows. |
 | ADDR-08 | Clear & resync platform address balances | Platform | Common | ✅ | | Sync tab → Platform section **Clear** (`SyncStatusScreen`, `testTag("sync.platformClear")`) → `container.platformBalanceSyncService.clearLocalState` (fail-closed): wipes local platform-address balance state; the next sync repopulates from scratch to tip. |
 | ADDR-09 | Top up Platform balance from Core | Cross | Essential | ✅ | | `WalletDetailScreen` → Platform Balance row **⋯ menu → Top Up from Core** (`FundFromAssetLockScreen`) → builds a **new** asset lock from the wallet's Core balance and credits a DIP-17 Platform address once the lock proves (IS→CL) → `dash_sdk_address_top_up_from_asset_lock`. Needs a Core (SPV) balance to build the lock. |
+| ADDR-10 | Platform address balance change history (mirrors Swift `ADDR-10`) | Platform | Common | ✅ | read-only | `WalletDetailScreen` → Platform Balance row **⋯ menu → Balance History**, or on a wallet whose balances are all zero (*Empty Wallet*) the card's **Balance History** button (`balanceCard.platform.history` for both) → `PlatformAddressBalanceHistoryScreen` (`balanceHistory.list`). Both sections come from one call, `ManagedPlatformWallet.platformAddressBalanceHistory(includeCompacted, minProvedHeight)` → JNI `AddressHistoryNative.balanceHistory` → `platform_address_wallet_balance_history`. On open it reads the recent zone only: **Recent** lists the wallet's changes newest block first, with block height, the bech32m address Rust encoded on the wallet's network, and **+X DASH** for an addition or **set to X DASH** for a set (`balanceHistory.recent.row.<n>`). **Load older history** (`balanceHistory.loadOlder`) reads both zones and replaces both sections from that one result: Recent again, and the compacted ranges below, newest first: **Blocks A to B**, address, **set to X DASH** or **+X DASH** (the range total) with each addition and its block (`balanceHistory.compacted.row.<n>`). Every block shows once (Rust leaves out of Recent any block a compacted range covers). The screen keeps the `provedHeight` Rust returned and passes it into Load older and every pull to refresh (the first load passes 0). A read that cannot get a page at that height shows an error instead of a partial history (`balanceHistory.compacted.error`, or `balanceHistory.recent.error` on a Recent-only refresh; `DashSdkError.PlatformWallet.BalanceHistoryInconsistentHeights`, code 83, retryable). A failed refresh after a successful load keeps the last good rows with the error below them. Amounts are exact at full credit precision: 400 credits shows **0.000000004 DASH**. Checks: a wallet that never had Platform credits shows `balanceHistory.recent.empty`, then `balanceHistory.compacted.empty` after Load older; after `ADDR-09` (top up) the funded address shows a **+** row at the top-up block within a minute; after `ADDR-02` (transfer) the source shows **set to** its remaining balance and an own-wallet destination **+** the amount; with the network off the section shows its error and Load older stays available. Nothing is persisted, so after a process restart the screen reads the history again. Decoding is pinned by `AddressHistoryDecodingTest` and the Rust goldens in `rs-unified-sdk-jni`; the symbol by `FfiSmokeTest.addressHistorySymbolsBindAndRejectInvalidInput`. *(Implemented; not yet run on an emulator.)* |
+| ADDR-11 | Address-sync queries in the catalog: recent / compacted changes, trunk / branch state (mirrors Swift `ADDR-11`) | Platform | Uncommon | ✅ | read-only | *Settings → Platform Queries → Addresses* (`AddressQueriesScreen`, section **Address Sync**): **Get Recent Balance Changes** (`addressQueries.getRecentAddressBalanceChanges`, start height) → `sdk.addressSync.recentBalanceChanges` → `dash_sdk_address_fetch_recent_balance_changes`; **Get Compacted Balance Changes** (`addressQueries.getRecentCompactedAddressBalanceChanges`, start block height) → `compactedBalanceChanges` → `dash_sdk_address_fetch_compacted_balance_changes`; **Get Trunk State** (`addressQueries.getAddressesTrunkState`) → `trunkState` → `dash_sdk_address_fetch_trunk_state`; **Get Branch State** (`addressQueries.getAddressesBranchState`, key / depth / expected hash / checkpoint height) → `branchState` → `dash_sdk_address_fetch_branch_state`. Results are raw and network-wide (`addressQueries.result`, errors `addressQueries.error`). Recent from 0 returns at most one server page; compacted at most one page of ranges. For branch state, fetch the trunk and tap **Query this branch** on a leaf boundary (`addressQueries.trunk.queryBranch.<n>`): it opens Get Branch State with the key, hash and checkpoint height filled in and the depth Rust recommends for the boundary's estimated count (`sdk.addressSync.branchQueryDepth` → `dash_sdk_address_branch_query_depth`); every field stays editable. The depth field takes any whole number: the allowed range comes from the platform version and is enforced by the server and the Rust proof verification, so a depth outside it (e.g. 5 or 10) shows their error. A mistyped hash or a stale checkpoint fails with a proof error. *(Implemented; not yet run on an emulator.)* |
 
 ### 4.4 DPNS (usernames) — `Domain=DPNS`
 
@@ -164,6 +168,11 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | DPNS-06 | Select main / primary name | Platform | Common | ✅ | | `SelectMainNameScreen` (dialog from `IdentityDetailScreen`). |
 | DPNS-07 | Search names by prefix | Platform | Common | ✅ | | `QueriesListScreen` (dpnsSearch) / `DpnsTestScreen`. |
 | DPNS-08 | Contested DPNS race between two on-device identities | Platform | Uncommon | ✅ | multiwallet, contested | A and B both register the same premium/contested name (`DPNS-05`) → produces a contest observable via `VOTE-02`/`VOTE-03`. |
+| DPNS-09 | Delete a name that is not contested (mirrors Swift `DPNS-09`) | Platform | Thorough | ✅ |  | Needs a **network at protocol version 15**. `IdentityDetailScreen` DPNS section → **Give Up Name…** under an owned name (`identity.dpnsName.<normalized>.giveUp`) → `GiveUpNameScreen` (`platform_wallet_dpns_name_give_up_choices`) offers both **Delete Name** (`giveUpName.delete`) and **Tombstone Name** (`giveUpName.tombstone`). Tap Delete Name → confirmation dialog → **Delete Name** (`giveUpName.confirmDelete`) → `platform_wallet_dpns_give_up_name` (method 0). **Pass:** the screen closes, the row leaves the list through persistence (no `dpns_names` row with `isOwned = 1` for the label), the name no longer resolves, and the name is shown available again (`DPNS-02`). *(Implemented; not yet run on an emulator.)* |
+| DPNS-10 | Tombstone a name (mirrors Swift `DPNS-10`) | Platform | Uncommon | ✅ |  | Same entry as `DPNS-09`, on a throwaway name. Tap **Tombstone Name** (`giveUpName.tombstone`) → dialog stating it is permanent → **Tombstone Permanently** (`giveUpName.confirmTombstone`) → `platform_wallet_dpns_give_up_name` (method 1). **Pass:** the screen closes, the row leaves the list through persistence, and registering the same label again (`DPNS-01`, any identity) is refused. Irreversible: use a name nobody needs. *(Implemented; not yet run on an emulator.)* |
+| DPNS-11 | Give up a contested name: only a tombstone is offered (mirrors Swift `DPNS-11`) | Platform | Uncommon | ✅ | contested | Needs a contested (premium) name the masternode vote already **awarded** to the identity, on a network at protocol version 15. Open **Give Up Name…** on it. **Pass:** only **Tombstone Name** is shown, with the notice that the network accepts only a tombstone for this name (`giveUpName.tombstoneOnlyNotice`); no Delete Name button. The offer comes from the FFI flags (`can_delete == false`), not from an app-side contested check. Tombstoning it then behaves as `DPNS-10`. *(Implemented; not yet run on an emulator.)* |
+| DPNS-12 | Give up the identity's main name (mirrors Swift `DPNS-12`) | Platform | Thorough | ✅ |  | Select a name as main (`DPNS-06`), then give it up (`DPNS-09`). **Pass:** before confirming, the screen says it is the main name (`giveUpName.mainNameNotice`); after success `identities.mainDpnsName` is null and the header shows the next fallback (alias or the short id). Whether the pick names the given-up name is Rust's rule (`platform_wallet_dpns_give_up_clears_main_name`). On a failed give-up (e.g. cancel the key unlock) the pick is unchanged. *(Implemented; not yet run on an emulator.)* |
+| DPNS-13 | Give-up on a network still at protocol version 14 (mirrors Swift `DPNS-13`) | Platform | Thorough | ✅ |  | On a network proven at protocol version 14, open **Give Up Name…** on any owned name. **Pass:** the screen shows "Not available on this network yet" (`giveUpName.notAvailable`) with the SDK's message (error code 70, `ProtocolVersionNotActive`), explains names can be deleted or tombstoned from protocol version 15, and offers no Delete or Tombstone button. Nothing is signed. *(Implemented; not yet run on an emulator.)* |
 
 ### 4.5 Voting / Contested Resources — `Domain=Voting`
 
@@ -327,9 +336,9 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Tier | Count (approx.) | Automatable? |
 |---|---|---|
 | Essential | 21 | yes |
-| Common | 29 | yes |
-| Thorough | 49 | yes |
-| Uncommon | 25 | yes |
+| Common | 30 | yes |
+| Thorough | 52 | yes |
+| Uncommon | 28 | yes |
 | Manual | 1 (`CORE-08`) | no — physical device |
 
 **By layer (automatable only):**
@@ -337,7 +346,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Layer | Count (approx.) |
 |---|---|
 | Core | 17 |
-| Platform | ~87 |
+| Platform | ~94 |
 | Cross | 7 |
 | Shielded | 16 |
 
@@ -349,8 +358,8 @@ Membership of each feature category across **all** sections (primary section mem
 
 - **Core / Wallet** — `CORE-01..23`
 - **Identity** — `ID-01..15`, `SH-11`
-- **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06..09`, `ID-06`, `ID-08`, `ID-11`
-- **DPNS** — `DPNS-01..08`
+- **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06..11`, `ID-06`, `ID-08`, `ID-11`
+- **DPNS** — `DPNS-01..13`
 - **Voting** — `VOTE-01..20`, `DPNS-05`, `DPNS-08`
 - **Contract** — `DC-01..10`
 - **Document** — `DOC-01..17`
@@ -365,9 +374,9 @@ Tags are cross-cutting modalities. A test may appear under multiple tags.
 
 - **multiwallet** — `CORE-14..23`, `ID-14`, `ID-15`, `TOK-17`, `DPNS-08`, `DP-11`, `DP-14`, `DP-19`, `DOC-15`, `SH-14`, `SH-15`, `SH-16`, `SYS-08`
 - **group** — `TOK-15`, `TOK-16`, `TOK-18`, `TOK-19`
-- **contested** — `DPNS-05`, `DPNS-08`, `VOTE-01..06`
+- **contested** — `DPNS-05`, `DPNS-08`, `DPNS-11`, `VOTE-01..06`
 - **withdrawal** — `ID-10`, `ADDR-04`, `SH-08`, `SH-16`
 - **regression** — `TOK-17`, `DP-10`
-- **read-only** — `DOC-17`, `SH-13`, `SYS-05`, `SYS-06`, `VOTE-02..06`, `VOTE-08`, `VOTE-10`, `VOTE-13`, `VOTE-14`, `VOTE-16`, `VOTE-20`, `TOK-18`, `TOK-19`
+- **read-only** — `ADDR-10`, `ADDR-11`, `DOC-17`, `SH-13`, `SYS-05`, `SYS-06`, `VOTE-02..06`, `VOTE-08`, `VOTE-10`, `VOTE-13`, `VOTE-14`, `VOTE-16`, `VOTE-20`, `TOK-18`, `TOK-19`
 - **masternode** — `VOTE-01`, `VOTE-12`, `VOTE-13`, `VOTE-19`, `VOTE-20`
 - **proposal** (decision proposals, yes/no and multiple choice, protocol version 15): `VOTE-08..20`

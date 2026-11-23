@@ -69,6 +69,7 @@
     "platform_wallet_create_document_with_signer": "packages/rs-platform-wallet-ffi/src/document.rs",
     "platform_wallet_create_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
     "platform_wallet_dpns_give_up_name": "packages/rs-platform-wallet-ffi/src/dpns_marketplace.rs",
+    "platform_wallet_dpns_give_up_clears_main_name": "packages/rs-platform-wallet-ffi/src/dpns_marketplace.rs",
     "platform_wallet_dpns_name_give_up_choices": "packages/rs-platform-wallet-ffi/src/dpns_marketplace.rs",
     "platform_wallet_drain_pending_contact_crypto": "packages/rs-platform-wallet-ffi/src/dashpay.rs",
     "platform_wallet_get_private_contact_readiness": "packages/rs-platform-wallet-ffi/src/contact_request.rs",
@@ -1308,7 +1309,8 @@
       "area": "shared_policy",
       "shared_apis": [
         "platform_wallet_dpns_name_give_up_choices",
-        "platform_wallet_dpns_give_up_name"
+        "platform_wallet_dpns_give_up_name",
+        "platform_wallet_dpns_give_up_clears_main_name"
       ],
       "required_persistence_capabilities": [
         "dpns_name_states"
@@ -1321,10 +1323,10 @@
           "reason": "GiveUpNameView offers only the ways Rust reports (a contested name: tombstone only), refuses below protocol version 15 from the SDK's typed refusal, and drops the name through the persister after the network confirms it. The TEST_PLAN gates DPNS-09..13 are written but not yet run on a simulator or device. Restart is required and not yet met: the hold on a give-up that was sent but not confirmed is session-scoped, so after a process restart such a give-up is offered again until the name is seen gone."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
-          "restart": "not_applicable",
-          "reason": "No JNI binding in rs-unified-sdk-jni and no Kotlin wrapper or KotlinExampleApp screen for platform_wallet_dpns_name_give_up_choices / platform_wallet_dpns_give_up_name yet."
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "DpnsMarketplace.giveUpChoices / giveUpName bridge the two FFI calls through DpnsGiveUpNative, and GiveUpNameScreen offers only the ways Rust reports (a contested name: tombstone only), refuses below protocol version 15 from the SDK's typed refusal, and clears the main-name pick after a confirmed give-up only when Rust's platform_wallet_dpns_give_up_clears_main_name says the pick names the name. The name leaves Room through the persistence bridge after the network confirms it. The TEST_PLAN gates DPNS-09..13 are written but not yet run on an emulator. Restart is required and not yet met, as on iOS: the hold on a give-up that was sent but not confirmed is session-scoped in Rust (#6072), so after a process restart such a give-up is offered again until the name is seen gone."
         }
       },
       "verification": [
@@ -1353,6 +1355,22 @@
           "covers_restart": false
         },
         {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/dpns_marketplace/tests/give_up.rs",
+          "id": "should_clear_the_main_name_pick_only_for_the_name_given_up",
+          "command": "cargo test -p platform-wallet --lib give_up",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/dpns_marketplace.rs",
+          "id": "should_report_whether_a_give_up_clears_the_main_name_pick",
+          "command": "cargo test -p platform-wallet-ffi --lib dpns",
+          "covers_restart": false
+        },
+        {
           "host": "swift",
           "kind": "unit",
           "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/DpnsMarketplaceDecodingTests.swift",
@@ -1371,6 +1389,44 @@
           "host": "swift",
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DPNS-13",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/dpns/DpnsNameGiveUpTest.kt",
+          "id": "shouldFailClosedOnAnUnknownOrInconsistentGivenUpResult",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests org.dashfoundation.dashsdk.dpns.DpnsNameGiveUpTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/identity/GiveUpNamePresentationTest.kt",
+          "id": "shouldReadAProtocolVersionRefusalAsNotAvailableWithTheSdkMessage",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests org.dashfoundation.example.ui.identity.GiveUpNamePresentationTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "dpnsGiveUpSymbolsBindAndRejectInvalidInput",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=org.dashfoundation.dashsdk.FfiSmokeTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "DPNS-09",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "DPNS-13",
           "covers_restart": false
         }
@@ -2767,10 +2823,10 @@
           "reason": "PlatformAddressBalanceHistoryView renders what Rust returns from one call (paging, the filter to every platform payment account's addresses, the reconciliation of the recent and compacted zones, the newest-first order and the bech32m addresses are in platform-wallet). The TEST_PLAN gate ADDR-10 is written but not yet run on a simulator or device."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
+          "sdk": "supported",
+          "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "No JNI binding in rs-unified-sdk-jni and no Kotlin wrapper or KotlinExampleApp screen for platform_address_wallet_balance_history yet."
+          "reason": "PlatformAddressBalanceHistoryScreen renders what Rust returns from one platform_address_wallet_balance_history call, which JNI copies into a BLOB that AddressHistoryDecodingTest pins against the Rust encoder; the screen keeps Rust's proved height and passes it into every later load, as Swift's does. The TEST_PLAN gate ADDR-10 is written but not yet run on an emulator."
         }
       },
       "verification": [
@@ -2858,6 +2914,45 @@
           "host": "swift",
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "ADDR-10",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/address_history.rs",
+          "id": "should_encode_both_history_sections_in_the_given_order",
+          "command": "cargo test -p rs-unified-sdk-jni --lib address_history",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/AddressHistoryDecodingTest.kt",
+          "id": "should decode both history sections in Rust's order",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*AddressHistoryDecodingTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/errors/DashSdkErrorTest.kt",
+          "id": "shouldReportInconsistentBalanceHistoryHeightsByTheirOwnRetryableCode",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*DashSdkErrorTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "addressHistorySymbolsBindAndRejectInvalidInput",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "ADDR-10",
           "covers_restart": false
         }

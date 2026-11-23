@@ -25,7 +25,12 @@ import org.dashfoundation.example.ui.contracts.QueryDetailScreen
 import org.dashfoundation.example.ui.contracts.SumAverageDocumentsScreen
 import org.dashfoundation.example.ui.contracts.UpdateContractScreen
 import org.dashfoundation.example.ui.contracts.moderation.ContractModerationEntryScreen
+import org.dashfoundation.example.ui.diagnostics.AddressBranchStateScreen
 import org.dashfoundation.example.ui.diagnostics.AddressQueriesScreen
+import org.dashfoundation.example.ui.diagnostics.AddressTrunkStateScreen
+import org.dashfoundation.example.ui.diagnostics.CompactedAddressBalanceChangesScreen
+import org.dashfoundation.example.ui.diagnostics.RecentAddressBalanceChangesScreen
+import org.dashfoundation.example.ui.wallet.PlatformAddressBalanceHistoryScreen
 import org.dashfoundation.example.ui.diagnostics.BannedAddressesScreen
 import org.dashfoundation.example.ui.diagnostics.DiagnosticsScreen
 import org.dashfoundation.example.ui.diagnostics.KeystoreExplorerScreen
@@ -59,6 +64,7 @@ import org.dashfoundation.example.ui.identity.RegisterNameScreen
 import org.dashfoundation.example.ui.identity.RegistrationProgressScreen
 import org.dashfoundation.example.ui.identity.SearchWalletsForIdentitiesScreen
 import org.dashfoundation.example.ui.identity.SelectMainNameScreen
+import org.dashfoundation.example.ui.identity.GiveUpNameScreen
 import org.dashfoundation.example.ui.credits.TopUpIdentityFromCoreScreen
 import org.dashfoundation.example.ui.credits.TopUpIdentityScreen
 import org.dashfoundation.example.ui.credits.TransferCreditsScreen
@@ -188,6 +194,11 @@ fun AppNavHost(
         composable<SelectMainName> { entry ->
             val route = entry.toRoute<SelectMainName>()
             SelectMainNameScreen(route.identityIdHex, navController)
+        }
+
+        composable<GiveUpName> { entry ->
+            val route = entry.toRoute<GiveUpName>()
+            GiveUpNameScreen(route.identityIdHex, route.name, navController)
         }
 
         composable<DpnsMarketplace> { entry ->
@@ -477,6 +488,18 @@ fun AppNavHost(
         // ── Diagnostics graph ──────────────────────────────────────────
 
         composable<AddressQueries> { AddressQueriesScreen(navController) }
+        composable<AddressRecentBalanceChangesQuery> { RecentAddressBalanceChangesScreen(navController) }
+        composable<AddressCompactedBalanceChangesQuery> { CompactedAddressBalanceChangesScreen(navController) }
+        composable<AddressTrunkStateQuery> { AddressTrunkStateScreen(navController) }
+        composable<AddressBranchStateQuery> { entry ->
+            AddressBranchStateScreen(entry.toRoute<AddressBranchStateQuery>(), navController)
+        }
+        composable<PlatformBalanceHistory> { entry ->
+            PlatformAddressBalanceHistoryScreen(
+                entry.toRoute<PlatformBalanceHistory>().walletIdHex,
+                navController,
+            )
+        }
 
         composable<BannedAddresses> { BannedAddressesScreen(navController) }
 
