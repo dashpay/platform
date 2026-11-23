@@ -62,7 +62,8 @@ mod give_up;
 
 pub(crate) use give_up::DpnsOperationGate;
 pub use give_up::{
-    DpnsNameGiveUpChoices, DpnsNameGiveUpMethod, DpnsNameGiveUpOutcome, DpnsNameGivenUp,
+    give_up_clears_main_dpns_name, DpnsNameGiveUpChoices, DpnsNameGiveUpMethod,
+    DpnsNameGiveUpOutcome, DpnsNameGivenUp,
 };
 
 /// DPNS document type carrying registered names.

@@ -45,7 +45,9 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | **Funded Core wallet** | all `Layer=Core` and `Layer=Cross` | A wallet with confirmed, mature, spendable UTXOs. Asset-lock funding needs InstantSend/ChainLock, so masternode sync must complete. |
 | **A registered identity with credit balance** | almost all `Layer=Platform` | Created via `ID-01`. Many transitions also need a specific **key purpose/security level** present on the identity. |
 | **A loaded data contract** (with a token + a document type) | `Domain=Token`, `Domain=Document`, group | Token actions are gated by the contract's on-chain permission rules. |
-| **A contested-name scenario** | `DPNS-05`, `VOTE-*` | Register a premium/contested name to create a live vote poll. |
+| **A contested-name scenario** | `DPNS-05`, `DPNS-11`, `VOTE-*` | Register a premium/contested name to create a live vote poll. `DPNS-11` needs one the vote has already awarded to the identity. |
+| **Network at protocol version 15** | `DPNS-09`..`DPNS-12` | Deleting or tombstoning a DPNS name is served from protocol version 15. Use a network already at it (a local or devnet network until testnet activates it). |
+| **Network still at protocol version 14** | `DPNS-13` | Any network proven at protocol version 14, where the give-up feature must be refused as not available yet. |
 | **Masternode / evonode voting key** | `VOTE-01`, `VOTE-12`, `VOTE-19`, `ID-02` (`VOTE-13`, `VOTE-20` also read any masternode's answer from a typed pro_tx_hash) | Two fixtures, one per signing path. **Stored-key path (every build, the only one in release builds):** a registered test masternode or evonode loaded on the device with its matching voting private key (Identities, Load Identity, type Masternode or Evonode, `ID-02`); the vote dialogs pick that identity (`<prefix>.voter`) and sign with the stored key through a signer made for that one vote. **Typed-credentials path (debug builds only):** a registered test masternode's wire-order pro_tx_hash and its matching voting private key, typed behind "Use typed test credentials (debug only)" (`<prefix>.useTypedCredentials`, fields `<prefix>.proTxHash` and `<prefix>.votingKey`); no loaded identity is needed, and a release build never offers or takes a typed key. Without either fixture the broadcast cannot be exercised; treat the rows as environment-limited. |
 | **Shielded pool: configured + bound + prover warmed + synced** | `Domain=Shielded` | `SH-01` sync + `SH-09` prover warm-up are preconditions for any shielded spend. |
 | **A second identity / contact** | credit transfer, token transfer, document transfer, DashPay | Needed as the counterparty/recipient. |
@@ -164,6 +166,11 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | DPNS-06 | Select main / primary name | Platform | Common | ✅ | | `SelectMainNameScreen` (dialog from `IdentityDetailScreen`). |
 | DPNS-07 | Search names by prefix | Platform | Common | ✅ | | `QueriesListScreen` (dpnsSearch) / `DpnsTestScreen`. |
 | DPNS-08 | Contested DPNS race between two on-device identities | Platform | Uncommon | ✅ | multiwallet, contested | A and B both register the same premium/contested name (`DPNS-05`) → produces a contest observable via `VOTE-02`/`VOTE-03`. |
+| DPNS-09 | Delete a name that is not contested (mirrors Swift `DPNS-09`) | Platform | Thorough | ✅ |  | Needs a **network at protocol version 15**. `IdentityDetailScreen` DPNS section → **Give Up Name…** under an owned name (`identity.dpnsName.<normalized>.giveUp`) → `GiveUpNameScreen` (`platform_wallet_dpns_name_give_up_choices`) offers both **Delete Name** (`giveUpName.delete`) and **Tombstone Name** (`giveUpName.tombstone`). Tap Delete Name → confirmation dialog → **Delete Name** (`giveUpName.confirmDelete`) → `platform_wallet_dpns_give_up_name` (method 0). **Pass:** the screen closes, the row leaves the list through persistence (no `dpns_names` row with `isOwned = 1` for the label), the name no longer resolves, and the name is shown available again (`DPNS-02`). *(Implemented; not yet run on an emulator.)* |
+| DPNS-10 | Tombstone a name (mirrors Swift `DPNS-10`) | Platform | Uncommon | ✅ |  | Same entry as `DPNS-09`, on a throwaway name. Tap **Tombstone Name** (`giveUpName.tombstone`) → dialog stating it is permanent → **Tombstone Permanently** (`giveUpName.confirmTombstone`) → `platform_wallet_dpns_give_up_name` (method 1). **Pass:** the screen closes, the row leaves the list through persistence, and registering the same label again (`DPNS-01`, any identity) is refused. Irreversible: use a name nobody needs. *(Implemented; not yet run on an emulator.)* |
+| DPNS-11 | Give up a contested name: only a tombstone is offered (mirrors Swift `DPNS-11`) | Platform | Uncommon | ✅ | contested | Needs a contested (premium) name the masternode vote already **awarded** to the identity, on a network at protocol version 15. Open **Give Up Name…** on it. **Pass:** only **Tombstone Name** is shown, with the notice that the network accepts only a tombstone for this name (`giveUpName.tombstoneOnlyNotice`); no Delete Name button. The offer comes from the FFI flags (`can_delete == false`), not from an app-side contested check. Tombstoning it then behaves as `DPNS-10`. *(Implemented; not yet run on an emulator.)* |
+| DPNS-12 | Give up the identity's main name (mirrors Swift `DPNS-12`) | Platform | Thorough | ✅ |  | Select a name as main (`DPNS-06`), then give it up (`DPNS-09`). **Pass:** before confirming, the screen says it is the main name (`giveUpName.mainNameNotice`); after success `identities.mainDpnsName` is null and the header shows the next fallback (alias or the short id). Whether the pick names the given-up name is Rust's rule (`platform_wallet_dpns_give_up_clears_main_name`). On a failed give-up (e.g. cancel the key unlock) the pick is unchanged. *(Implemented; not yet run on an emulator.)* |
+| DPNS-13 | Give-up on a network still at protocol version 14 (mirrors Swift `DPNS-13`) | Platform | Thorough | ✅ |  | On a network proven at protocol version 14, open **Give Up Name…** on any owned name. **Pass:** the screen shows "Not available on this network yet" (`giveUpName.notAvailable`) with the SDK's message (error code 70, `ProtocolVersionNotActive`), explains names can be deleted or tombstoned from protocol version 15, and offers no Delete or Tombstone button. Nothing is signed. *(Implemented; not yet run on an emulator.)* |
 
 ### 4.5 Voting / Contested Resources — `Domain=Voting`
 
@@ -324,8 +331,8 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 |---|---|---|
 | Essential | 21 | yes |
 | Common | 30 | yes |
-| Thorough | 49 | yes |
-| Uncommon | 25 | yes |
+| Thorough | 52 | yes |
+| Uncommon | 27 | yes |
 | Manual | 1 (`CORE-08`) | no — physical device |
 
 **By layer (automatable only):**
@@ -333,7 +340,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Layer | Count (approx.) |
 |---|---|
 | Core | 17 |
-| Platform | ~87 |
+| Platform | ~92 |
 | Cross | 7 |
 | Shielded | 17 |
 
@@ -346,7 +353,7 @@ Membership of each feature category across **all** sections (primary section mem
 - **Core / Wallet** — `CORE-01..23`
 - **Identity** — `ID-01..15`, `SH-11`
 - **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06..09`, `ID-06`, `ID-08`, `ID-11`
-- **DPNS** — `DPNS-01..08`
+- **DPNS** — `DPNS-01..13`
 - **Voting** — `VOTE-01..20`, `DPNS-05`, `DPNS-08`
 - **Contract** — `DC-01..04`
 - **Document** — `DOC-01..17`
@@ -361,7 +368,7 @@ Tags are cross-cutting modalities. A test may appear under multiple tags.
 
 - **multiwallet** — `CORE-14..23`, `ID-14`, `ID-15`, `TOK-17`, `DPNS-08`, `DP-11`, `DP-14`, `DP-19`, `DOC-15`, `SH-14`, `SH-15`, `SH-16`, `SYS-08`
 - **group** — `TOK-15`, `TOK-16`, `TOK-18`, `TOK-19`
-- **contested** — `DPNS-05`, `DPNS-08`, `VOTE-01..06`
+- **contested** — `DPNS-05`, `DPNS-08`, `DPNS-11`, `VOTE-01..06`
 - **withdrawal** — `ID-10`, `ADDR-04`, `SH-08`, `SH-16`
 - **regression** — `TOK-17`, `DP-10`
 - **read-only** — `DOC-17`, `SH-13`, `SH-25`, `SYS-05`, `SYS-06`, `VOTE-02..06`, `VOTE-08`, `VOTE-10`, `VOTE-13`, `VOTE-14`, `VOTE-16`, `VOTE-20`, `TOK-18`, `TOK-19`
