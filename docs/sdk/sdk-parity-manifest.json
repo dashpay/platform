@@ -2061,7 +2061,7 @@
           "sdk": "partial",
           "example_app": "partial",
           "restart": "required",
-          "reason": "PlatformWalletManagerPrivateDocuments.kt wraps the create (PlatformWalletManager.createPrivateDocumentEntry), the recipient key choices and the fee preview through rs-unified-sdk-jni's PrivateDocumentCreateNative, which converts the arguments, calls the FFI once and copies the result into a Java array; Kotlin decodes it one to one (JVM decoding tests). Rust picks the sender's encryption key, checks the recipient key, the properties against the type's schema and the entry's capacity, seals inside the manager's mnemonic resolver, and pays as a DashPay private contact request is paid (notes reserved, the transition saved for a redrive before the broadcast). KotlinExampleApp creates one entry from the private type's detail screen (TEST_PLAN DOC-19), anonymous or with a deniable MAC, with the Swift accessibility ids as test tags; a signed entry is not offered. A create that may have gone through is shown as such and holds Create while the form is unchanged (JVM-tested). PrivateDocumentsFfiTest gains the symbol, descriptor and refusal checks of the three exports but has not run on a device yet, and no gate records the call, the screen, or the spend's recovery after a restart against a protocol version 15 network."
+          "reason": "PlatformWalletManagerPrivateDocuments.kt wraps the create (PlatformWalletManager.createPrivateDocumentEntry), the recipient key choices and the fee preview through rs-unified-sdk-jni's PrivateDocumentCreateNative, which converts the arguments, calls the FFI once and copies the result into a Java array; Kotlin decodes it one to one (JVM decoding tests). Rust picks the sender's encryption key, checks the recipient key, the properties against the type's schema and the entry's capacity, seals inside the manager's mnemonic resolver, and pays as a DashPay private contact request is paid (notes reserved, the transition saved for a redrive before the broadcast). KotlinExampleApp creates one entry from the private type's detail screen (TEST_PLAN DOC-19), anonymous or with a deniable MAC, with the Swift accessibility ids as test tags; a signed entry is not offered. The create runs on the application scope past the screen, under a secure window, and a create that may have gone through is shown as such and that exact request is not sent again in the process (JVM-tested); the link shows only on a build with shielded support. PrivateDocumentsFfiTest gains the symbol, descriptor and refusal checks of the three exports but has not run on a device yet, and no gate records the call, the screen, or the spend's recovery after a restart against a protocol version 15 network."
         }
       },
       "verification": [
@@ -2147,9 +2147,9 @@
         {
           "host": "kotlin",
           "kind": "unit",
-          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/contracts/PrivateDocumentEntryCreateTest.kt",
-          "id": "shouldHoldCreateWhileTheFormIsTheOneThatMayHaveGoneThrough",
-          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*PrivateDocumentEntryCreateTest'",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/services/shielded/PrivateDocumentEntryCreateCoordinatorTest.kt",
+          "id": "should never send again a request that may have gone through, even after a refused one",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*PrivateDocumentEntryCreateCoordinatorTest'",
           "covers_restart": false
         },
         {

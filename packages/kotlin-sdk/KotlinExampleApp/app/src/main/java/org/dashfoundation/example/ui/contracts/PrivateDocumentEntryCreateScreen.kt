@@ -55,6 +55,10 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
+import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
@@ -67,6 +71,8 @@ import org.dashfoundation.dashsdk.wallet.privateDocumentRecipientKeys
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.PrivateDocumentEntries
+import org.dashfoundation.example.services.shielded.PrivateDocumentEntryCreateCoordinator
+import org.dashfoundation.example.ui.identity.HoldSecureWindow
 import org.dashfoundation.example.ui.components.AccessiblePicker
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
@@ -146,12 +152,20 @@ fun PrivateDocumentEntryCreateScreen(
     val touchedBools = remember { mutableStateSetOf<String>() }
     val listValues = remember { mutableStateMapOf<String, List<String>>() }
 
-    var isSubmitting by remember { mutableStateOf(false) }
-    var outcome by remember { mutableStateOf<PrivateEntryCreateOutcome?>(null) }
-    // The inputs of the last create that may have gone through: Create stays disabled while
-    // the form still describes it, as another tap would pay for a second entry. Leaving the
-    // screen drops it with the rest of this state.
-    var heldInputs by remember { mutableStateOf<PrivateEntryCreateInputs?>(null) }
+    val coordinator = container.privateDocumentEntryCreateCoordinator
+    val createStates by coordinator.states.collectAsStateWithLifecycle()
+    val heldRequests by coordinator.held.collectAsStateWithLifecycle()
+    val hasShielded = remember { runCatching { Sdk.hasShielded() }.getOrDefault(false) }
+    // Why the last tap sent nothing (the properties did not encode, the form changed under it)
+    var localRefusal by remember { mutableStateOf<String?>(null) }
+
+    // The wallet's create lives in the coordinator, past this screen: going back or a rotation
+    // keeps it running and keeps its outcome
+    val walletState = selectedWalletHex?.let { createStates[it] }
+    val isSubmitting = walletState is PrivateDocumentEntryCreateCoordinator.State.InFlight
+    val outcome = (walletState as? PrivateDocumentEntryCreateCoordinator.State.Done)
+        ?.takeIf { it.request.contractIdHex == contractIdHex.lowercase() && it.request.documentTypeName == documentTypeName }
+        ?.outcome
 
     val recipientId = parsePrivateEntryRecipientId(recipientText)
     // Keys read for another identity do not apply to the one typed now
@@ -197,22 +211,28 @@ fun PrivateDocumentEntryCreateScreen(
         }
     }
 
-    val inputs = PrivateEntryCreateInputs(
-        walletHex = selectedWalletHex,
-        senderHex = selectedSenderHex,
+    fun encodeProperties(): String = buildPropertiesJson(
+        properties, required, textValues, boolValues, touchedBools, listValues, trimStrings = false,
+    )
+
+    // What a tap would send now, judged on the live form; null while it is not complete
+    val encodedProperties = runCatching { encodeProperties() }.getOrNull()
+    val request = privateEntryCreateRequest(
+        walletIdHex = selectedWalletHex,
+        senderIdentityIdHex = selectedSenderHex,
+        contractIdHex = contractIdHex,
+        documentTypeName = documentTypeName,
         recipientText = recipientText,
+        recipientKeysFor = recipientKeysFor,
+        recipientKeys = recipientKeys,
         recipientKeyId = selectedRecipientKeyId,
         auth = auth,
-        fields = listOf(textValues.toMap(), boolValues.toMap(), touchedBools.toSet(), listValues.toMap()),
+        propertiesJson = encodedProperties ?: "",
     )
-    val canSubmit = canSubmitPrivateEntryCreate(
-        walletLoaded = selectedWalletHex != null && selectedWalletHex in loadedWalletHexes,
-        hasSender = selectedSenderHex != null,
-        keysApply = keysApply,
-        hasRecipientKey = selectedRecipientKeyId != null,
-        inputs = inputs,
-        heldInputs = heldInputs,
-    )
+    // The same request may already have gone through: it is not sent again
+    val isHeld = encodedProperties != null && request != null && request in heldRequests
+    val canSubmit = hasShielded && !isSubmitting && !isHeld && request != null &&
+        selectedWalletHex in loadedWalletHexes
 
     fun loadRecipientKeys() {
         val recipient = recipientId ?: return
@@ -241,72 +261,88 @@ fun PrivateDocumentEntryCreateScreen(
         }
     }
 
+    // Judged again from the live form when the tap is handled, not from the last composition: a
+    // recipient edited just before the tap must not send to the keys loaded for the previous one
     fun submit() {
-        val walletHex = selectedWalletHex ?: return
-        val senderHex = selectedSenderHex ?: return
-        val recipient = recipientKeysFor ?: return
-        val keyId = selectedRecipientKeyId ?: return
+        localRefusal = null
         val activeManager = manager ?: return
         val propertiesJson = try {
-            buildPropertiesJson(properties, required, textValues, boolValues, touchedBools, listValues)
+            encodeProperties()
         } catch (e: Exception) {
-            outcome = PrivateEntryCreateOutcome.Failed("Could not encode the properties: ${e.message}")
+            localRefusal = "Could not encode the properties: ${e.message}"
             return
         }
-        val submitted = inputs
-        isSubmitting = true
-        outcome = null
-        heldInputs = null
-        scope.launch {
-            try {
-                val created = activeManager.createPrivateDocumentEntry(
-                    walletId = walletHex.hexToBytes(),
-                    account = PRIVATE_ENTRY_CREATE_ACCOUNT,
-                    contractId = contractId,
-                    documentTypeName = documentTypeName,
-                    senderIdentityId = senderHex.hexToBytes(),
-                    recipientIdentityId = recipient,
-                    recipientKeyId = keyId,
-                    auth = auth,
-                    propertiesJson = propertiesJson,
-                )
-                outcome = PrivateEntryCreateOutcome.Created(created)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                val failed = PrivateEntryCreateOutcome.of(e)
-                outcome = failed
-                // Rust keeps the notes reserved until a shielded sync sees the transition:
-                // another tap would pay for a second entry
-                if (failed is PrivateEntryCreateOutcome.Unconfirmed) heldInputs = submitted
-            } finally {
-                isSubmitting = false
-            }
+        val live = privateEntryCreateRequest(
+            walletIdHex = selectedWalletHex,
+            senderIdentityIdHex = selectedSenderHex,
+            contractIdHex = contractIdHex,
+            documentTypeName = documentTypeName,
+            recipientText = recipientText,
+            recipientKeysFor = recipientKeysFor,
+            recipientKeys = recipientKeys,
+            recipientKeyId = selectedRecipientKeyId,
+            auth = auth,
+            propertiesJson = propertiesJson,
+        )
+        if (live == null) {
+            localRefusal = "The recipient changed: load its keys again."
+            return
+        }
+        val refusal = coordinator.start(live) {
+            activeManager.createPrivateDocumentEntry(
+                walletId = live.walletIdHex.hexToBytes(),
+                account = PRIVATE_ENTRY_CREATE_ACCOUNT,
+                contractId = live.contractIdHex.hexToBytes(),
+                documentTypeName = live.documentTypeName,
+                senderIdentityId = live.senderIdentityIdHex.hexToBytes(),
+                recipientIdentityId = live.recipientIdentityIdHex.hexToBytes(),
+                recipientKeyId = live.recipientKeyId,
+                auth = live.auth,
+                propertiesJson = live.propertiesJson,
+            )
+        }
+        localRefusal = when (refusal) {
+            null -> null
+            PrivateDocumentEntryCreateCoordinator.Refusal.BUSY -> "A create from this wallet is still running."
+            PrivateDocumentEntryCreateCoordinator.Refusal.HELD -> HELD_MESSAGE
         }
     }
+
+    // The app's FLAG_SECURE toggle (LocalSecureScreen), held while this screen is shown: the
+    // draft, the sender and the recipient are private before Rust encrypts them
+    HoldSecureWindow()
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("New $documentTypeName Entry") },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }, enabled = !isSubmitting) {
+                    IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
             )
         },
     ) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding)) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .imePadding()
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             FormSection(title = "Pay From") {
+                if (!hasShielded) {
+                    Text(
+                        "This build has no shielded support, so it cannot pay for an entry.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = WarningOrange,
+                        modifier = Modifier.testTag("privateEntryCreate.noShielded"),
+                    )
+                }
                 if (wallets.isEmpty()) {
                     Footer("No wallets on this network. Create or import a wallet first.")
                 } else {
@@ -324,7 +360,6 @@ fun PrivateDocumentEntryCreateScreen(
                         selectedSenderHex = identities
                             .firstOrNull { it.walletId?.toHex() == selectedWalletHex }
                             ?.identityId?.toHex()
-                        outcome = null
                     }
                     if (selectedWalletHex != null && selectedWalletHex !in loadedWalletHexes) {
                         Text(
@@ -507,14 +542,44 @@ fun PrivateDocumentEntryCreateScreen(
                 modifier = Modifier.fillMaxWidth().testTag("privateEntryCreate.createButton"),
             ) { submit() }
 
+            if (isHeld) {
+                Text(
+                    HELD_MESSAGE,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = WarningOrange,
+                    modifier = Modifier.testTag("privateEntryCreate.held"),
+                )
+            }
+
+            localRefusal?.let {
+                SelectionContainer {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag("privateEntryCreate.refusal"),
+                    )
+                }
+            }
+
             outcome?.let { current ->
                 OutcomeSection(current) {
                     navController.navigate(PrivateDocumentEntries(contractIdHex, documentTypeName))
                 }
             }
         }
+
+        if (!lifecycleState.isAtLeast(Lifecycle.State.RESUMED)) {
+            PrivacyCover(text = "Private entry hidden", testTag = "privateEntryCreate.privacyCover")
+        }
+        }
     }
 }
+
+/** Shown, and nothing sent, for a request whose create may already have gone through. */
+private const val HELD_MESSAGE =
+    "This entry may already have gone through: it is not created again. Change what it sends to " +
+        "create another."
 
 /** The fee preview's state. */
 private sealed class FeePreview {
@@ -524,38 +589,47 @@ private sealed class FeePreview {
 }
 
 /**
- * Everything the user chose on the form, compared to the inputs of a create that may have
- * gone through so the same create is not sent twice. Ids are compared as hex, so equality is
- * by value.
+ * What one create would send, from the form as it is now, or null while it is not complete: a
+ * wallet and a sender, a recipient that decodes to the identity whose keys were loaded, and one
+ * of those keys chosen (← Swift `canSubmit`). Ids are lowercase hex, so two spellings of the same
+ * recipient give the same request. What a create needs beyond that is Rust's to refuse.
  */
-internal data class PrivateEntryCreateInputs(
-    val walletHex: String?,
-    val senderHex: String?,
-    val recipientText: String,
-    val recipientKeyId: Long?,
-    val auth: PrivateDocumentSenderAuth,
-    val fields: List<Any>,
-)
-
-/**
- * Whether Create may be tapped: a loaded wallet, a sender, keys read for the recipient typed
- * now and one of them chosen, and a form that is not the one of a create that may have gone
- * through (← Swift `canSubmit`). What a create needs beyond that is Rust's to refuse.
- */
-internal fun canSubmitPrivateEntryCreate(
-    walletLoaded: Boolean,
-    hasSender: Boolean,
-    keysApply: Boolean,
-    hasRecipientKey: Boolean,
-    inputs: PrivateEntryCreateInputs,
-    heldInputs: PrivateEntryCreateInputs?,
-): Boolean = walletLoaded && hasSender && keysApply && hasRecipientKey && inputs != heldInputs
+@Suppress("LongParameterList")
+internal fun privateEntryCreateRequest(
+    walletIdHex: String?,
+    senderIdentityIdHex: String?,
+    contractIdHex: String,
+    documentTypeName: String,
+    recipientText: String,
+    recipientKeysFor: ByteArray?,
+    recipientKeys: List<PrivateDocumentRecipientKey>?,
+    recipientKeyId: Long?,
+    auth: PrivateDocumentSenderAuth,
+    propertiesJson: String,
+): PrivateDocumentEntryCreateCoordinator.Request? {
+    val wallet = walletIdHex ?: return null
+    val sender = senderIdentityIdHex ?: return null
+    val recipient = parsePrivateEntryRecipientId(recipientText) ?: return null
+    if (recipientKeysFor == null || !recipientKeysFor.contentEquals(recipient)) return null
+    val keyId = recipientKeyId ?: return null
+    if (recipientKeys == null || recipientKeys.none { it.keyId == keyId }) return null
+    return PrivateDocumentEntryCreateCoordinator.Request(
+        walletIdHex = wallet.lowercase(),
+        senderIdentityIdHex = sender.lowercase(),
+        contractIdHex = contractIdHex.lowercase(),
+        documentTypeName = documentTypeName,
+        recipientIdentityIdHex = recipient.toHex(),
+        recipientKeyId = keyId,
+        auth = auth,
+        propertiesJson = propertiesJson,
+    )
+}
 
 /** The typed recipient as a 32-byte identifier (base58 or hex), or null. */
 internal fun parsePrivateEntryRecipientId(text: String): ByteArray? = Base58.decodeIdentifier(text)
 
 /** How a create ended, each shown in its own state. */
-internal sealed class PrivateEntryCreateOutcome {
+sealed class PrivateEntryCreateOutcome {
     data class Created(val created: PrivateDocumentEntryCreated) : PrivateEntryCreateOutcome()
 
     /** The entry may already be in the store: it is not reported as failed, and not sent again. */

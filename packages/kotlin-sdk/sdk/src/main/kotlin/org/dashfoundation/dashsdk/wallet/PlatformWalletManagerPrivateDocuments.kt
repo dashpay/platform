@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.wallet
 
+import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.PrivateDocumentCreateNative
@@ -155,7 +156,12 @@ suspend fun PlatformWalletManager.privateDocumentCreateFee(
  * refuses, an identity neither the wallet nor the network holds),
  * [DashSdkError.PlatformWallet.ProtocolVersionNotActive] below protocol version 15, and
  * [DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed] once the entry may already be in the
- * store: do not create it again.
+ * store: do not create it again. On a build without shielded support it throws
+ * [DashSdkError.InvalidState] before anything is called.
+ *
+ * The native call cannot observe cancellation, so a create can finish after the caller was
+ * cancelled: its result is then returned rather than dropped (as the other calls that move
+ * funds do), and the caller must handle it before suspending again.
  */
 @Suppress("LongParameterList")
 suspend fun PlatformWalletManager.createPrivateDocumentEntry(
@@ -168,7 +174,10 @@ suspend fun PlatformWalletManager.createPrivateDocumentEntry(
     recipientKeyId: Long,
     auth: PrivateDocumentSenderAuth,
     propertiesJson: String,
-): PrivateDocumentEntryCreated = teardownGate.op {
+): PrivateDocumentEntryCreated = teardownGate.opReturningCompletedResult {
+    if (!Sdk.hasShielded()) {
+        throw DashSdkError.InvalidState("This build has no shielded support: a private document entry cannot be created")
+    }
     require(account >= 0) { "account must be non-negative, got $account" }
     for ((name, id) in listOf(
         "walletId" to walletId,

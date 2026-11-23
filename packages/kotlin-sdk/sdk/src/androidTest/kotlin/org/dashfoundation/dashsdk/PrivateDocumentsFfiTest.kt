@@ -7,6 +7,7 @@ import org.dashfoundation.dashsdk.ffi.PrivateDocumentCreateNative
 import org.dashfoundation.dashsdk.ffi.PrivateDocumentsNative
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -77,29 +78,47 @@ class PrivateDocumentsFfiTest {
         ByteArray(32), ByteArray(32), recipientKeyId, authMode, properties,
     )
 
-    /** The create's JNI layer refuses what its C arguments cannot hold with InvalidParameter (1). */
+    /**
+     * The recipient key and fee exports, present on every build, refuse what their C arguments
+     * cannot hold with InvalidParameter (1): a Java string with an unpaired surrogate is refused,
+     * not replaced.
+     */
     @Test
-    fun shouldRefuseWhatTheCreateJniLayerCannotMarshal() {
+    fun shouldRefuseWhatTheKeyAndFeeJniLayerCannotMarshal() {
         assertCode(1) { PrivateDocumentCreateNative.recipientKeys(1L, ByteArray(31)) }
         assertCode(1) { PrivateDocumentCreateNative.createFee(1L, contractId, "note", -1) }
         assertCode(1) { PrivateDocumentCreateNative.createFee(1L, ByteArray(31), "note", 1) }
         assertCode(1) { PrivateDocumentCreateNative.createFee(1L, contractId, "no\u0000te", 1) }
+        assertCode(1) { PrivateDocumentCreateNative.createFee(1L, contractId, "no\uD800te", 1) }
+    }
+
+    /**
+     * platform-wallet-ffi refuses an unknown manager handle with ErrorInvalidHandle (1), shifted
+     * by 1000, before the network.
+     */
+    @Test
+    fun shouldRefuseAnUnknownManagerInPlatformWalletFfi() {
+        assertCode(1001) { PrivateDocumentCreateNative.recipientKeys(-1L, ByteArray(32)) }
+        assertCode(1001) { PrivateDocumentCreateNative.createFee(-1L, contractId, "note", 1) }
+    }
+
+    /** The create export, on a shielded build, refuses what its C arguments cannot hold with 1. */
+    @Test
+    fun shouldRefuseWhatTheCreateJniLayerCannotMarshal() {
+        assumeTrue("the native library has no shielded support", Sdk.hasShielded())
         assertCode(1) { create(account = -1) }
         assertCode(1) { create(recipientKeyId = -1L) }
         assertCode(1) { create(recipientKeyId = 1L shl 32) }
         assertCode(1) { create(authMode = 256) }
         assertCode(1) { create(walletId = ByteArray(31)) }
         assertCode(1) { create(properties = "{\"a\":\"\u0000\"}") }
+        assertCode(1) { create(properties = "{\"a\":\"\uDC00\"}") }
     }
 
-    /**
-     * platform-wallet-ffi refuses an unknown manager handle with ErrorInvalidHandle (1) before
-     * the network, and a null resolver with ErrorNullPointer (3), each shifted by 1000.
-     */
+    /** platform-wallet-ffi refuses a null resolver with ErrorNullPointer (3), shifted by 1000. */
     @Test
-    fun shouldRefuseAnUnknownManagerOrANullResolverInPlatformWalletFfi() {
-        assertCode(1001) { PrivateDocumentCreateNative.recipientKeys(-1L, ByteArray(32)) }
-        assertCode(1001) { PrivateDocumentCreateNative.createFee(-1L, contractId, "note", 1) }
+    fun shouldRefuseANullResolverForACreateInPlatformWalletFfi() {
+        assumeTrue("the native library has no shielded support", Sdk.hasShielded())
         assertCode(1003) { create(resolverHandle = 0L) }
     }
 

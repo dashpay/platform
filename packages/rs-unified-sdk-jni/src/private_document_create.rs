@@ -11,8 +11,11 @@
 //!
 //! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.PrivateDocumentCreateNative`.
 
+use crate::private_documents::read_32;
 use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
+use cesu8::from_java_cesu8;
 use jni::objects::{JByteArray, JClass, JString};
+use jni::strings::JNIStr;
 use jni::sys::{jbyteArray, jint, jlong, jlongArray};
 use jni::JNIEnv;
 use platform_wallet_ffi::error::PlatformWalletFFIResultCode;
@@ -38,52 +41,37 @@ use rs_sdk_ffi::MnemonicResolverHandle;
 #[cfg(feature = "shielded")]
 const CREATED_LEN: usize = 36;
 
-/// A required 32-byte array; throws `InvalidParameter` and returns `None` otherwise.
-fn read_32(env: &mut JNIEnv, array: &JByteArray, field: &str) -> Option<[u8; 32]> {
-    if array.is_null() {
-        throw_sdk_exception(env, 1, &format!("{field} was null"));
-        return None;
-    }
-    let bytes = match env.convert_byte_array(array) {
-        Ok(bytes) => bytes,
-        Err(_) => {
-            let _ = env.exception_clear();
-            throw_sdk_exception(env, 1, &format!("{field} byte[] was invalid"));
-            return None;
-        }
-    };
-    match <[u8; 32]>::try_from(bytes.as_slice()) {
-        Ok(bytes) => Some(bytes),
-        Err(_) => {
-            throw_sdk_exception(
-                env,
-                1,
-                &format!("{field} must be 32 bytes, got {}", bytes.len()),
-            );
-            None
-        }
-    }
+/// The Modified UTF-8 bytes `GetStringUTFChars` returned for a Java string, decoded strictly,
+/// as a C string. A Java string holding an unpaired surrogate (which no UTF-8 string can carry)
+/// is refused rather than replaced, and so is one holding a NUL, which C would cut short.
+fn c_string_from_java_utf8(bytes: &[u8]) -> Result<CString, &'static str> {
+    let decoded =
+        from_java_cesu8(bytes).map_err(|_| "is not valid UTF-16 (an unpaired surrogate)")?;
+    CString::new(decoded.into_owned()).map_err(|_| "holds a NUL character")
 }
 
 /// A required Java string as a C string; throws `InvalidParameter` and returns `None` for
-/// null, an unreadable string or one holding a NUL, which C would cut short.
+/// null, an unreadable string, an unpaired surrogate or a NUL ([`c_string_from_java_utf8`]).
 fn read_c_string(env: &mut JNIEnv, string: &JString, field: &str) -> Option<CString> {
     if string.is_null() {
         throw_sdk_exception(env, 1, &format!("{field} was null"));
         return None;
     }
-    let value: String = match env.get_string(string) {
-        Ok(value) => value.into(),
+    let decoded = match env.get_string(string) {
+        Ok(java) => {
+            let raw = <&JNIStr>::from(&java);
+            c_string_from_java_utf8(raw.to_bytes())
+        }
         Err(_) => {
             let _ = env.exception_clear();
             throw_sdk_exception(env, 1, &format!("{field} was not a readable string"));
             return None;
         }
     };
-    match CString::new(value) {
+    match decoded {
         Ok(value) => Some(value),
-        Err(_) => {
-            throw_sdk_exception(env, 1, &format!("{field} holds a NUL character"));
+        Err(reason) => {
+            throw_sdk_exception(env, 1, &format!("{field} {reason}"));
             None
         }
     }
@@ -273,6 +261,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_PrivateDocumentCreate
         let Some(properties) = read_c_string(env, &properties_json, "propertiesJson") else {
             return ptr::null_mut();
         };
+        // Allocated before anything is paid: once the wallet reports success there is no
+        // allocation left that could fail and hide the entry's commitment.
+        let Ok(out) = env.new_byte_array(CREATED_LEN as jint) else {
+            return ptr::null_mut();
+        };
         let mut created = PrivateDocumentEntryCreatedFFI::default();
         let result = unsafe {
             platform_wallet_manager_create_private_document_entry(
@@ -293,9 +286,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_PrivateDocumentCreate
         if take_pwffi_error(env, result) {
             return ptr::null_mut();
         }
-        env.byte_array_from_slice(&created_bytes(&created))
-            .map(|array| array.into_raw())
-            .unwrap_or(ptr::null_mut())
+        let bytes = created_bytes(&created).map(|byte| byte as i8);
+        if env.set_byte_array_region(&out, 0, &bytes).is_err() {
+            return ptr::null_mut();
+        }
+        out.into_raw()
     })
 }
 
@@ -320,6 +315,24 @@ mod tests {
             vec![1, 1, i64::from(u32::MAX), 2]
         );
         assert!(recipient_keys_flat(&[]).is_empty());
+    }
+
+    #[test]
+    fn should_decode_a_java_string_strictly() {
+        // U+1F600 crosses as a surrogate pair, each half three bytes of Modified UTF-8
+        let pair = [0xED, 0xA0, 0xBD, 0xED, 0xB8, 0x80];
+        assert_eq!(
+            c_string_from_java_utf8(&pair).expect("a valid pair"),
+            CString::new("\u{1F600}").expect("no NUL")
+        );
+        assert_eq!(
+            c_string_from_java_utf8(b"{\"note\":\"hi\"}").expect("ASCII"),
+            CString::new("{\"note\":\"hi\"}").expect("no NUL")
+        );
+        // A lone high surrogate is refused, not replaced
+        assert!(c_string_from_java_utf8(&[b'a', 0xED, 0xA0, 0xBD, b'b']).is_err());
+        // Modified UTF-8 writes NUL as C0 80: it decodes, then C refuses it
+        assert!(c_string_from_java_utf8(&[b'a', 0xC0, 0x80, b'b']).is_err());
     }
 
     #[cfg(feature = "shielded")]

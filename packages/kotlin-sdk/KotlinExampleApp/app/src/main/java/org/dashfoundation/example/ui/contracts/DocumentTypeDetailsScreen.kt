@@ -43,6 +43,7 @@ import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.CountDocuments
 import org.dashfoundation.example.navigation.Documents
 import org.dashfoundation.example.navigation.NewDocument
+import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.example.navigation.PrivateDocumentEntries
 import org.dashfoundation.example.navigation.PrivateDocumentEntryCreate
 import org.dashfoundation.example.navigation.SumAverageDocuments
@@ -143,6 +144,7 @@ fun DocumentTypeDetailsScreen(
             if (isPrivateDocumentType(schema)) {
                 PrivateTypeSection(
                     schema,
+                    canCreateEntries = remember { runCatching { Sdk.hasShielded() }.getOrDefault(false) },
                     onReadEntries = {
                         navController.navigate(PrivateDocumentEntries(contractIdHex, typeName))
                     },
