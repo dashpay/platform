@@ -22,6 +22,22 @@ export const DEFAULT_TEST_PLAN = join(
   'TEST_PLAN.md',
 );
 
+// Each app's own test plan. seed.mjs reads the plan of the app it seeds, so
+// `--app KotlinExampleApp` can never store the Swift catalog under the Kotlin
+// app code.
+const APP_TEST_PLANS = {
+  SwiftExampleApp: DEFAULT_TEST_PLAN,
+  KotlinExampleApp: join(REPO_ROOT, 'packages', 'kotlin-sdk', 'KotlinExampleApp', 'TEST_PLAN.md'),
+};
+
+export function testPlanFor(appName) {
+  const plan = APP_TEST_PLANS[appName];
+  if (!plan) {
+    throw new Error(`No test plan known for app '${appName}'. Pass --plan <path to its TEST_PLAN.md>.`);
+  }
+  return plan;
+}
+
 // Resolve the TEST_PLAN commit to stamp on records: $PLAN_COMMIT, else the git
 // short-sha of the plan file, else undefined.
 export function resolvePlanCommit(planPath = DEFAULT_TEST_PLAN) {

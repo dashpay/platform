@@ -239,8 +239,9 @@ Then:
 #    lists the owner as the first admin)
 node src/register.mjs                 # --force to re-register a fresh contract
 
-# 2. Seed testCases from TEST_PLAN.md (idempotent; skips existing)
-node src/seed.mjs                     # all rows
+# 2. Seed testCases from the app's TEST_PLAN.md (idempotent; skips existing)
+node src/seed.mjs                     # all rows of SwiftExampleApp
+node src/seed.mjs --app KotlinExampleApp  # reads packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md
 node src/seed.mjs --ids CORE-01,ID-04 # a subset
 node src/seed.mjs --tier Essential    # filter by tier / --category / --limit
 node src/seed.mjs --update            # push changed rows (replace)
@@ -321,7 +322,8 @@ schema. The contract owner moves over in this order:
 #    contract-id.<network>.json and lists the owner as the first admin.
 node src/register.mjs --force
 
-# 2. Seed the lookups and the testCases, once per app
+# 2. Seed the lookups and the testCases, once per app. Each app reads its own
+#    TEST_PLAN.md; --plan <path> overrides it.
 node src/seed.mjs
 node src/seed.mjs --app KotlinExampleApp
 
