@@ -664,9 +664,10 @@ mod tests {
     fn should_load_the_owner_identity_without_looking_up_a_voter_through_the_export() {
         let owner_id = Identifier::new(pro_tx_hash().to_byte_array());
         let mut owner = identity(owner_id);
-        // What Platform gives an owner identity: its owner key.
+        // What Platform gives an owner identity with no single payout address: its owner key,
+        // at slot 1.
         owner.add_public_keys([IdentityPublicKey::V0(IdentityPublicKeyV0 {
-            id: 0,
+            id: 1,
             purpose: Purpose::OWNER,
             security_level: SecurityLevel::CRITICAL,
             contract_bounds: None,

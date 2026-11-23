@@ -397,25 +397,6 @@ public final class PersistentIdentity {
         masternodeRole == .voter
     }
 
-    /// Why a send to a known voting-only identity is refused.
-    public static let votingOnlyRecipientMessage =
-        "The recipient is a masternode's voter identity, which holds only a voting key, so credits or tokens sent to it could not be spent."
-
-    /// Whether this device stores `identityId` on `network` as a masternode's
-    /// voter identity (``isVotingOnlyIdentity``). An identity the device does
-    /// not know is not one; a failed read throws, so it is never taken as
-    /// "not known".
-    public static func isKnownVotingOnlyIdentity(
-        _ identityId: Data,
-        on network: Network,
-        in context: ModelContext
-    ) throws -> Bool {
-        let target = identityId
-        return try context.fetch(
-            FetchDescriptor<PersistentIdentity>(predicate: #Predicate { $0.identityId == target })
-        ).contains { $0.network == network && $0.isVotingOnlyIdentity }
-    }
-
     /// The recorded check with the address of the key it was made of, as the
     /// voting key rules take and return it; `nil` when nothing is recorded or
     /// the check was recorded without a whole address. Setting a record
@@ -682,5 +663,28 @@ extension PersistentIdentity {
             context.rollback()
             throw error
         }
+    }
+}
+
+// Kept out of the model's class body: the schema freezer reads only stored
+// declarations there.
+extension PersistentIdentity {
+    /// Why a send to a known voting-only identity is refused.
+    public static let votingOnlyRecipientMessage =
+        "The recipient is a masternode's voter identity, which holds only a voting key, so credits or tokens sent to it could not be spent."
+
+    /// Whether this device stores `identityId` on `network` as a masternode's
+    /// voter identity (``isVotingOnlyIdentity``). An identity the device does
+    /// not know is not one; a failed read throws, so it is never taken as
+    /// "not known".
+    public static func isKnownVotingOnlyIdentity(
+        _ identityId: Data,
+        on network: Network,
+        in context: ModelContext
+    ) throws -> Bool {
+        let target = identityId
+        return try context.fetch(
+            FetchDescriptor<PersistentIdentity>(predicate: #Predicate { $0.identityId == target })
+        ).contains { $0.network == network && $0.isVotingOnlyIdentity }
     }
 }

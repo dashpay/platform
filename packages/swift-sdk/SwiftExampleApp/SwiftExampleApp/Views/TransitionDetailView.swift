@@ -987,13 +987,9 @@ struct TransitionDetailView: View {
       throw SDKError.invalidParameter("Invalid amount")
     }
 
-    // Normalize the recipient identity ID to base58
-    let normalizedToIdentityId = normalizeIdentityId(toIdentityId)
-
-    // A recipient this device knows as a masternode's voter identity holds
-    // only a voting key, so credits sent to it could not be spent; a typed
-    // or retained selection of one is refused too.
-    try await refuseVotingOnlyRecipient(normalizedToIdentityId, network: fromIdentity.network)
+    // The recipient, decoded once to its 32 bytes and checked: a known
+    // voter identity is refused, and exactly the checked id is sent.
+    let normalizedToIdentityId = try await checkedRecipient(toIdentityId, network: fromIdentity.network)
 
     // Use the convenience method with DPPIdentity
     let dppIdentity = DPPIdentity(
@@ -1943,8 +1939,9 @@ struct TransitionDetailView: View {
     guard let recipientId = formInputs["recipientId"], !recipientId.isEmpty else {
       throw SDKError.invalidParameter("Recipient identity ID is required")
     }
-    // Tokens sent to a known voter identity could not be spent either.
-    try await refuseVotingOnlyRecipient(normalizeIdentityId(recipientId), network: identity.network)
+    // Tokens sent to a known voter identity could not be spent either; the
+    // checked id is the one sent.
+    let checkedRecipientId = try await checkedRecipient(recipientId, network: identity.network)
 
     guard let amountString = formInputs["amount"], !amountString.isEmpty else {
       throw SDKError.invalidParameter("Amount is required")
@@ -1969,7 +1966,7 @@ struct TransitionDetailView: View {
 
     let result = try await sdk.tokenTransfer(
       contractId: contractId,
-      recipientId: recipientId,
+      recipientId: checkedRecipientId,
       amount: amount,
       ownerIdentity: dppIdentity,
       keyId: transferKey.id,
@@ -2522,18 +2519,27 @@ struct TransitionDetailView: View {
     formInputs["documentFields"] = schemaTemplate
   }
 
-  /// Throws when `base58IdentityId` names an identity this device stores on
-  /// `network` as a masternode's voter identity, which holds only a voting
-  /// key: what is sent to it could not be spent. An id that does not decode
-  /// or is unknown passes, for the SDK to judge.
-  private func refuseVotingOnlyRecipient(_ base58IdentityId: String, network: Network) async throws {
-    guard let identityId = Data.identifier(fromBase58: base58IdentityId) else { return }
+  /// The recipient typed or picked as `text` (64 hex characters or Base58),
+  /// decoded once to exactly 32 bytes and returned in canonical Base58, so
+  /// the id that is sent is the id that was checked. Throws for text that
+  /// does not decode to an identity id, and for an identity this device
+  /// stores on `network` as a masternode's voter identity, which holds only
+  /// a voting key: what is sent to it could not be spent. An unknown id
+  /// passes.
+  private func checkedRecipient(_ text: String, network: Network) async throws -> String {
+    guard let identityId = Data.identifier(fromBase58: normalizeIdentityId(text)),
+          identityId.count == 32 else {
+      throw SDKError.invalidParameter(
+        "The recipient identity ID must be 64 hex characters or a Base58 identity ID."
+      )
+    }
     let isVotingOnly = try await MainActor.run {
       try PersistentIdentity.isKnownVotingOnlyIdentity(identityId, on: network, in: modelContext)
     }
     if isVotingOnly {
       throw SDKError.invalidParameter(PersistentIdentity.votingOnlyRecipientMessage)
     }
+    return identityId.toBase58String()
   }
 
   private func normalizeIdentityId(_ identityId: String) -> String {
