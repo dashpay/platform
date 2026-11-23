@@ -69,6 +69,7 @@ import androidx.compose.ui.text.font.FontWeight
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.shielded.UnfinishedWalletDrainsList
 import org.dashfoundation.example.ui.theme.appStatusColors
 import org.dashfoundation.example.util.formatCredits
 import org.dashfoundation.example.util.formatDate
@@ -340,6 +341,19 @@ fun WalletDetailScreen(
                 AccountListSection(
                     walletIdHex = walletIdHex,
                     walletId = walletId,
+                    navController = navController,
+                )
+            }
+
+            // Saved Core to shielded Max transfers (← WalletDetailView's
+            // `UnfinishedWalletDrainsList`). Renders nothing when this
+            // wallet has none.
+            if (hasShielded) {
+                UnfinishedWalletDrainsList(
+                    walletIdHex = walletIdHex,
+                    walletId = walletId,
+                    network = network,
+                    manager = manager,
                     navController = navController,
                 )
             }

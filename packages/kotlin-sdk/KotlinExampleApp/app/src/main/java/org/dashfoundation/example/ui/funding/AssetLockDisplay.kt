@@ -4,16 +4,17 @@ import org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity
 
 /**
  * Asset-lock display helpers — port of `PersistentAssetLockDisplay.swift`.
- * Consolidates the 0..5 `AssetLockStatus` discriminants (a protocol-
+ * Consolidates the 0..6 `AssetLockStatus` discriminants (a protocol-
  * mirrored constant from the Rust side) into one place so the funding UIs
  * don't re-implement the same `when` blocks. Extensions on
  * [AssetLockEntity] so every list surface reads the status the same way.
  *
  * The status domain is NOT an ordered severity scale, and no predicate here
  * may treat it as one. `4` (Consumed) is the terminal tombstone; `5`
- * (RecoveredFromChain) sits above it numerically but is very much alive.
- * Every predicate below therefore excludes `4` by name rather than by an
- * upper bound.
+ * (RecoveredFromChain) sits above it numerically but is very much alive;
+ * `6` (DrainCompleted) is terminal again.
+ * Every predicate below therefore names the statuses it admits rather than
+ * using an upper bound.
  */
 
 /**
@@ -71,6 +72,8 @@ val AssetLockEntity.statusLabel: String
         // Core finality proven, Platform-side consumption unknown.
         // Rendered as "Unknown(5)" before this branch existed.
         5 -> "RecoveredFromChain"
+        // The receipt of a finished Core to shielded Max (a wallet drain).
+        6 -> "DrainCompleted"
         else -> "Unknown($statusRaw)"
     }
 

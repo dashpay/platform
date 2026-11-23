@@ -224,6 +224,16 @@ pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
 /// coverage would stay on disk while the wallet is published without it.
 /// With the slot unwired that invalidation is refused instead, and the
 /// publication fails closed.
+///
+/// The asset-lock operation-id pair is wired only when the bridge OVERRIDES
+/// `onPersistAssetLockOperationId`, `onLoadAssetLockOperationId` and
+/// `onPersistAssetLockUpsert`, the callback that keeps the row the id is
+/// stored on. `FFIPersister` derives `ASSET_LOCK_OPERATION_IDS` from the two
+/// slots, and a wallet drain reads "no row carries this id" as "not sent":
+/// an inherited no-op store would acknowledge an id it never kept, and an
+/// inherited load would answer "no id" for a lock that has one. Unwired, the
+/// capability is not derived and a drain is refused before any Core funds
+/// move.
 pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> PersistenceCallbacksExtension {
     extension_for(BridgeOverrides {
         sweeps: bridge_overrides(
@@ -264,6 +274,22 @@ pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> Persistence
             bridge,
             "onPersistContactUpsert",
             CONTACT_UPSERT_DESCRIPTOR,
+        ),
+        asset_lock_operation_ids: bridge_overrides(
+            env,
+            bridge,
+            "onPersistAssetLockOperationId",
+            PERSIST_ASSET_LOCK_OPERATION_ID_DESCRIPTOR,
+        ) && bridge_overrides(
+            env,
+            bridge,
+            "onLoadAssetLockOperationId",
+            LOAD_ASSET_LOCK_OPERATION_ID_DESCRIPTOR,
+        ) && bridge_overrides(
+            env,
+            bridge,
+            "onPersistAssetLockUpsert",
+            ASSET_LOCK_UPSERT_DESCRIPTOR,
         ),
     })
 }
@@ -328,6 +354,10 @@ struct BridgeOverrides {
     /// vouches for the contact requests read before it, which an inherited
     /// no-op contact upsert never keeps.
     private_contact_scan_state: bool,
+    /// `onPersistAssetLockOperationId`, `onLoadAssetLockOperationId` and
+    /// `onPersistAssetLockUpsert`: an operation id is stored on the asset
+    /// lock's row, which an inherited no-op upsert never keeps.
+    asset_lock_operation_ids: bool,
 }
 
 /// The extension slots wired for a bridge with `overrides` (see
@@ -363,6 +393,12 @@ fn extension_for(overrides: BridgeOverrides) -> PersistenceCallbacksExtension {
         on_load_private_contact_scan_state_wallets_free_fn: overrides
             .private_contact_scan_state
             .then_some(tramp_load_private_contact_scan_state_wallets_free),
+        on_persist_asset_lock_operation_id_fn: overrides
+            .asset_lock_operation_ids
+            .then_some(tramp_persist_asset_lock_operation_id),
+        on_load_asset_lock_operation_id_fn: overrides
+            .asset_lock_operation_ids
+            .then_some(tramp_load_asset_lock_operation_id),
         ..Default::default()
     }
 }
@@ -2136,6 +2172,106 @@ unsafe fn persist_contact_removal(
 
 // ── Asset locks ───────────────────────────────────────────────────────
 
+/// Descriptor of `NativePersistenceBridge.onPersistAssetLockUpsert`.
+const ASSET_LOCK_UPSERT_DESCRIPTOR: &str = "([B[B[BIBIJB[B)I";
+
+/// Descriptor of `NativePersistenceBridge.onPersistAssetLockOperationId`:
+/// `(walletId, outPoint, operationId)`.
+const PERSIST_ASSET_LOCK_OPERATION_ID_DESCRIPTOR: &str = "([B[B[B)I";
+
+/// Descriptor of `NativePersistenceBridge.onLoadAssetLockOperationId`:
+/// `(walletId, outPoint) -> operationId`, JVM null when the row has none.
+const LOAD_ASSET_LOCK_OPERATION_ID_DESCRIPTOR: &str = "([B[B)[B";
+
+/// Width of an asset-lock operation id (a UUID's bytes).
+const ASSET_LOCK_OPERATION_ID_LEN: usize = 16;
+
+/// Width of a raw outpoint: the txid in wire order, then the vout.
+const RAW_OUT_POINT_LEN: usize = 36;
+
+/// Associate an operation id with a tracked asset lock (see
+/// `PersistAssetLockOperationIdFn`). Fires after the lock's upsert, inside
+/// the same round, so the row and its id commit or roll back together.
+unsafe extern "C" fn tramp_persist_asset_lock_operation_id(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    out_point: *const u8,
+    operation_id: *const u8,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        let out_point = bytes(env, out_point, RAW_OUT_POINT_LEN)?;
+        let operation_id = bytes(env, operation_id, ASSET_LOCK_OPERATION_ID_LEN)?;
+        env.call_method(
+            bridge,
+            "onPersistAssetLockOperationId",
+            PERSIST_ASSET_LOCK_OPERATION_ID_DESCRIPTOR,
+            &[(&wid).into(), (&out_point).into(), (&operation_id).into()],
+        )?
+        .i()
+    })
+}
+
+/// What `onLoadAssetLockOperationId` returned: JVM null is "this lock has no
+/// operation id", 16 bytes is its id, and any other length is a malformed
+/// row, which fails the load.
+fn loaded_operation_id(
+    returned: Option<&[u8]>,
+) -> Result<Option<[u8; ASSET_LOCK_OPERATION_ID_LEN]>, ()> {
+    match returned {
+        None => Ok(None),
+        Some(bytes) => bytes.try_into().map(Some).map_err(|_| ()),
+    }
+}
+
+/// Read a restored asset lock's operation id (see
+/// `LoadAssetLockOperationIdFn`). A thrown exception (an unreadable store, a
+/// row that is gone) or a value that is not 16 bytes returns `ERR_JNI`,
+/// which fails the whole load: an id read as absent would let a drain's
+/// status report "not sent" for a lock that was dispatched.
+unsafe extern "C" fn tramp_load_asset_lock_operation_id(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    out_point: *const u8,
+    out_found: *mut bool,
+    out_operation_id: *mut u8,
+) -> i32 {
+    *out_found = false;
+    let loaded = with_bridge_load(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        let out_point = bytes(env, out_point, RAW_OUT_POINT_LEN)?;
+        let returned = env
+            .call_method(
+                bridge,
+                "onLoadAssetLockOperationId",
+                LOAD_ASSET_LOCK_OPERATION_ID_DESCRIPTOR,
+                &[(&wid).into(), (&out_point).into()],
+            )?
+            .l()?;
+        if returned.is_null() {
+            return Ok(None);
+        }
+        let returned: JByteArray = returned.into();
+        env.convert_byte_array(&returned).map(Some)
+    });
+    let Some(returned) = loaded else {
+        return ERR_JNI;
+    };
+    match loaded_operation_id(returned.as_deref()) {
+        Ok(Some(operation_id)) => {
+            ptr::copy_nonoverlapping(
+                operation_id.as_ptr(),
+                out_operation_id,
+                ASSET_LOCK_OPERATION_ID_LEN,
+            );
+            *out_found = true;
+            0
+        }
+        Ok(None) => 0,
+        Err(()) => ERR_JNI,
+    }
+}
+
 unsafe extern "C" fn tramp_persist_asset_locks(
     context: *mut c_void,
     wallet_id: *const u8,
@@ -2154,7 +2290,7 @@ unsafe extern "C" fn tramp_persist_asset_locks(
                 env.call_method(
                     bridge,
                     "onPersistAssetLockUpsert",
-                    "([B[B[BIBIJB[B)I",
+                    ASSET_LOCK_UPSERT_DESCRIPTOR,
                     &[
                         (&wid).into(),
                         (&outpoint).into(),
@@ -5269,8 +5405,19 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
     ("onPersistContactUpsert", CONTACT_UPSERT_DESCRIPTOR),
     ("onPersistContactRemovalSent", "([B[B[B)I"),
     ("onPersistContactRemovalIncoming", "([B[B[B)I"),
-    ("onPersistAssetLockUpsert", "([B[B[BIBIJB[B)I"),
+    ("onPersistAssetLockUpsert", ASSET_LOCK_UPSERT_DESCRIPTOR),
     ("onPersistAssetLockRemoval", "([B[B)I"),
+    // Wired only for a bridge that overrides both (`bridge_overrides`), so a
+    // drifted descriptor would silently drop the slots, the capability and
+    // with it every wallet drain.
+    (
+        "onPersistAssetLockOperationId",
+        PERSIST_ASSET_LOCK_OPERATION_ID_DESCRIPTOR,
+    ),
+    (
+        "onLoadAssetLockOperationId",
+        LOAD_ASSET_LOCK_OPERATION_ID_DESCRIPTOR,
+    ),
     ("onPersistInvitationUpsert", "([B[BIJIIZI)I"),
     ("onPersistInvitationRemoval", "([B[B)I"),
     #[cfg(feature = "shielded")]
@@ -5473,6 +5620,7 @@ mod tests {
                 header,
                 backfill,
                 private_contact_scan_state: false,
+                asset_lock_operation_ids: false,
             });
             assert_eq!(
                 extension.on_persist_wallet_dashpay_backfill_fn.is_some(),
@@ -5485,6 +5633,7 @@ mod tests {
             header: false,
             backfill: false,
             private_contact_scan_state: false,
+            asset_lock_operation_ids: false,
         });
         assert!(sweeps_only.on_persist_wallet_changeset_sweeps_fn.is_some());
         assert!(sweeps_only.on_persist_wallet_dashpay_backfill_fn.is_none());
@@ -5502,6 +5651,7 @@ mod tests {
                 header: false,
                 backfill: false,
                 private_contact_scan_state: wired,
+                asset_lock_operation_ids: false,
             });
             assert_eq!(
                 extension.on_persist_private_contact_scan_state_fn.is_some(),
@@ -5553,6 +5703,63 @@ mod tests {
             method_descriptor(&names(&["[B"]), "[[B"),
             LOAD_PRIVATE_CONTACT_SCAN_STATE_DESCRIPTOR
         );
+    }
+
+    /// The operation-id pair is wired together or not at all: `FFIPersister`
+    /// derives `ASSET_LOCK_OPERATION_IDS` from both slots, and a bridge that
+    /// inherits either no-op must not attest it.
+    #[test]
+    fn should_wire_the_operation_id_slots_only_for_a_bridge_that_stores_and_loads_them() {
+        for wired in [false, true] {
+            let extension = extension_for(BridgeOverrides {
+                sweeps: false,
+                header: false,
+                backfill: false,
+                private_contact_scan_state: false,
+                asset_lock_operation_ids: wired,
+            });
+            assert_eq!(
+                extension.on_persist_asset_lock_operation_id_fn.is_some(),
+                wired
+            );
+            assert_eq!(
+                extension.on_load_asset_lock_operation_id_fn.is_some(),
+                wired
+            );
+            // The shielded-recipient sidecar is a separate capability this
+            // bridge does not implement.
+            assert!(extension
+                .on_persist_asset_lock_shielded_recipient_fn
+                .is_none());
+            assert!(extension.on_load_asset_lock_shielded_recipient_fn.is_none());
+        }
+        let names = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            method_descriptor(&names(&["[B", "[B", "[B"]), "int"),
+            PERSIST_ASSET_LOCK_OPERATION_ID_DESCRIPTOR
+        );
+        assert_eq!(
+            method_descriptor(&names(&["[B", "[B"]), "[B"),
+            LOAD_ASSET_LOCK_OPERATION_ID_DESCRIPTOR
+        );
+        assert_eq!(
+            method_descriptor(
+                &names(&["[B", "[B", "[B", "int", "byte", "int", "long", "byte", "[B"]),
+                "int"
+            ),
+            ASSET_LOCK_UPSERT_DESCRIPTOR
+        );
+    }
+
+    /// A lock with no operation id loads as absent, a 16-byte value as its
+    /// id, and any other length fails the load instead of reading as absent.
+    #[test]
+    fn should_read_a_loaded_operation_id_as_absent_or_sixteen_bytes_and_fail_otherwise() {
+        assert_eq!(loaded_operation_id(None), Ok(None));
+        assert_eq!(loaded_operation_id(Some(&[9; 16])), Ok(Some([9; 16])));
+        assert_eq!(loaded_operation_id(Some(&[])), Err(()));
+        assert_eq!(loaded_operation_id(Some(&[9; 15])), Err(()));
+        assert_eq!(loaded_operation_id(Some(&[9; 17])), Err(()));
     }
 
     /// A read position and a shielded address survive the packed arrays the

@@ -269,6 +269,50 @@ class FfiSmokeTest {
     }
 
     /**
+     * The asset-lock operation ids need every override they depend on. JNI
+     * wires the two slots only for a bridge that overrides the operation id
+     * store, the operation id load and the asset lock upsert (the row an id
+     * is stored on), and Rust then attests the capability only when the
+     * bridge declares it. A wallet drain reads "no lock carries this id" as
+     * "not sent", so a bridge that inherits any of the three no-ops, or does
+     * not declare the bit, must not have it; one implementing all three and
+     * declaring it has it, and the Room handler has everything a wallet
+     * drain requires (`PersistenceCapabilities::WALLET_DRAIN`).
+     */
+    @Test
+    fun assetLockOperationIdCapabilityNeedsEveryOverride() {
+        NativeLoader.ensureLoaded()
+        val bit = NativePersistenceBridge.CAPABILITY_ASSET_LOCK_OPERATION_IDS
+        fun effective(bridge: NativePersistenceBridge): Boolean =
+            WalletManagerNative.nativeEffectivePersistenceCapabilityBits(bridge) and bit == bit
+
+        assertTrue("every override", effective(OperationIdBridge.Full()))
+        assertFalse("no operation id store", effective(OperationIdBridge.WithoutStore()))
+        assertFalse("no operation id load", effective(OperationIdBridge.WithoutLoad()))
+        assertFalse("no asset lock upsert", effective(OperationIdBridge.WithoutUpsert()))
+        assertFalse(
+            "every override, not declared",
+            effective(object : OperationIdBridge.Full() {
+                override fun persistenceCapabilitiesBits(): Long = TRACKED_ASSET_LOCKS or WALLET_RESTORE
+            }),
+        )
+
+        val db = DashDatabase.createInMemory(ApplicationProvider.getApplicationContext())
+        try {
+            val handlerBits = WalletManagerNative.nativeEffectivePersistenceCapabilityBits(
+                PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined),
+            )
+            assertEquals(
+                "the Room handler attests everything a wallet drain requires",
+                WALLET_DRAIN,
+                handlerBits and WALLET_DRAIN,
+            )
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
      * Rust↔Kotlin persistence-descriptor lockstep. The trampolines resolve
      * each bridge method by (name, descriptor) only when its slot first
      * fires — for the invitation upsert that would be mid-way through a
@@ -291,6 +335,105 @@ class FfiSmokeTest {
         } finally {
             db.close()
         }
+    }
+}
+
+/** `PersistenceCapabilities::TRACKED_ASSET_LOCKS`. */
+private const val TRACKED_ASSET_LOCKS: Long = 1L shl 9
+
+/** `PersistenceCapabilities::WALLET_RESTORE`. */
+private const val WALLET_RESTORE: Long = 1L shl 7
+
+/**
+ * `PersistenceCapabilities::WALLET_DRAIN` (0x2285): atomic changesets,
+ * asset-lock funding indices, wallet restore, tracked asset locks and
+ * asset-lock operation ids.
+ */
+private const val WALLET_DRAIN: Long = 0x2285
+
+/**
+ * Bridges declaring the asset-lock operation ids with some of the overrides
+ * they depend on, for [FfiSmokeTest.assetLockOperationIdCapabilityNeedsEveryOverride].
+ * Each concrete class declares exactly the overrides its name says.
+ */
+private abstract class OperationIdBridge : NativePersistenceBridge() {
+    override fun persistenceCapabilitiesVersion(): Int = 1
+
+    override fun persistenceCapabilitiesBits(): Long =
+        CAPABILITY_ASSET_LOCK_OPERATION_IDS or TRACKED_ASSET_LOCKS or WALLET_RESTORE
+
+    open class Full : OperationIdBridge() {
+        @Suppress("LongParameterList")
+        override fun onPersistAssetLockUpsert(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            transactionBytes: ByteArray,
+            accountIndex: Int,
+            fundingType: Byte,
+            identityIndex: Int,
+            amountDuffs: Long,
+            status: Byte,
+            proofBytes: ByteArray?,
+        ): Int = 0
+
+        override fun onPersistAssetLockOperationId(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            operationId: ByteArray,
+        ): Int = 0
+
+        override fun onLoadAssetLockOperationId(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+            null
+    }
+
+    class WithoutStore : OperationIdBridge() {
+        @Suppress("LongParameterList")
+        override fun onPersistAssetLockUpsert(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            transactionBytes: ByteArray,
+            accountIndex: Int,
+            fundingType: Byte,
+            identityIndex: Int,
+            amountDuffs: Long,
+            status: Byte,
+            proofBytes: ByteArray?,
+        ): Int = 0
+
+        override fun onLoadAssetLockOperationId(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+            null
+    }
+
+    class WithoutLoad : OperationIdBridge() {
+        @Suppress("LongParameterList")
+        override fun onPersistAssetLockUpsert(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            transactionBytes: ByteArray,
+            accountIndex: Int,
+            fundingType: Byte,
+            identityIndex: Int,
+            amountDuffs: Long,
+            status: Byte,
+            proofBytes: ByteArray?,
+        ): Int = 0
+
+        override fun onPersistAssetLockOperationId(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            operationId: ByteArray,
+        ): Int = 0
+    }
+
+    class WithoutUpsert : OperationIdBridge() {
+        override fun onPersistAssetLockOperationId(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            operationId: ByteArray,
+        ): Int = 0
+
+        override fun onLoadAssetLockOperationId(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+            null
     }
 }
 

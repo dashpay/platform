@@ -91,6 +91,13 @@ data class PlatformWalletPersistenceCapabilities(
          */
         const val PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long =
             NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
+        /**
+         * A tracked asset lock's operation id survives store and load, so a
+         * wallet drain ("Max") can be found again after a restart. Mirrors
+         * `PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS`.
+         */
+        const val ASSET_LOCK_OPERATION_IDS: Long =
+            NativePersistenceBridge.CAPABILITY_ASSET_LOCK_OPERATION_IDS
     }
 }
 
@@ -271,8 +278,11 @@ class PlatformWalletManager(
      * builds; [closeSuspending] awaits it before freeing the signer /
      * resolver boxes (raw, non-refcounted `Box::from_raw` frees on the
      * Rust side).
+     *
+     * Internal, with [managerHandle], for the wrappers kept in their own
+     * files (`PlatformWalletManagerWalletDrain.kt`).
      */
-    private val teardownGate = TeardownGate()
+    internal val teardownGate = TeardownGate()
 
     /**
      * Typed sync events fanned from the native `EventHandlerCallbacks`
@@ -1025,7 +1035,7 @@ class PlatformWalletManager(
     private val bundleRef: AtomicLong = AtomicLong(nativeInitialization.bundle)
 
     /** Raw native manager `Handle` (for the sync / wallet-accessor calls). */
-    private val managerHandle: Long = nativeInitialization.managerHandle
+    internal val managerHandle: Long = nativeInitialization.managerHandle
 
     /** Effective persistence contract captured during native initialization. */
     val persistenceCapabilities: PlatformWalletPersistenceCapabilities =

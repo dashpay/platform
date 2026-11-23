@@ -4,9 +4,13 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity
+import org.dashfoundation.dashsdk.wallet.WalletDrainLockListing
+import org.dashfoundation.dashsdk.wallet.WalletDrainRules
+import org.dashfoundation.dashsdk.wallet.walletDrainOperationIdFromBytes
 import org.dashfoundation.example.navigation.FundFromAssetLock
 import org.dashfoundation.example.navigation.ShieldedFund
 import org.dashfoundation.example.util.hexToBytes
+import java.util.UUID
 
 /**
  * The two `AssetLockFundingType` discriminants that own the "Pending
@@ -40,16 +44,63 @@ internal val RESUMABLE_TOP_UP_FUNDING_TYPES = listOf(
 )
 
 /**
+ * Where Rust's wallet-drain rule lists a lock: the seam over
+ * [WalletDrainRules.lockListing], which a JVM unit test cannot call.
+ */
+internal typealias DrainLockListing = (
+    fundingTypeRaw: Int,
+    statusRaw: Int,
+    hasOperationId: Boolean,
+    hostHoldsStoredId: Boolean,
+) -> WalletDrainLockListing
+
+/**
+ * Whether [lock] is offered on the "Pending Platform Top Ups" surface.
+ * ← Swift `PendingPlatformFundFromAssetLocksList.isOfferedForResume`.
+ *
+ * A Core to shielded Max (a wallet drain) builds a shielded top-up lock
+ * that carries an operation id, and Rust's rule ([listing]) says where such
+ * a lock goes: hidden while one of [markedOperationIds] (the ids this app
+ * has stored) names it, because the "Saved Max transfers" row owns it; and
+ * offered even at Built when no stored id does, because an exact-outpoint
+ * resume is then the only way to reach it. Every other lock keeps this
+ * surface's own rule, [isVisibleAsResumable]. A rule that cannot be asked
+ * (an unknown status, a native failure) offers nothing.
+ */
+internal fun AssetLockEntity.isOfferedForResume(
+    markedOperationIds: Set<UUID>,
+    listing: DrainLockListing = WalletDrainRules::lockListing,
+): Boolean {
+    val operationId = operationId
+    val holdsStoredId = operationId
+        ?.let(::walletDrainOperationIdFromBytes)
+        ?.let { it in markedOperationIds }
+        ?: false
+    val decided = runCatching {
+        listing(fundingTypeRaw, statusRaw, operationId != null, holdsStoredId)
+    }.getOrElse { return false }
+    return when (decided) {
+        WalletDrainLockListing.Hidden -> false
+        WalletDrainLockListing.Offered -> true
+        WalletDrainLockListing.Unaffected -> isVisibleAsResumable
+    }
+}
+
+/**
  * Cross-wallet, cross-funding-type stream of resumable orphan top-up locks,
  * each tagged with the hex wallet id that owns it (needed for the Resume
  * navigation, which is wallet-scoped while the Identities tab is not).
  *
  * [observe] is the DAO seam — production passes
- * `AssetLockDao::observeResumableTopUpsByFundingType`, which applies the
- * recoverable-status predicate (`[1,3] ∪ {5}`) SQL-side. Taking it as a
- * parameter keeps this function a pure combinator: the funding-type fan-out
+ * `AssetLockDao::observeByWalletAndFundingType`, every lock of the funding
+ * type, and [isOfferedForResume] filters them. Taking it as a parameter
+ * keeps this function a pure combinator: the funding-type fan-out
  * that the blocker was about is then assertable without a Room database or
  * a Compose runtime.
+ *
+ * [markedOperationIds] is the set of Max operation ids this app has stored
+ * (`WalletDrainCoordinator.markedOperationIds`), and [listing] Rust's rule
+ * for a drain's lock.
  *
  * Emissions are ordered by (wallet, funding type) so the rendered list
  * doesn't reshuffle between recompositions.
@@ -57,6 +108,8 @@ internal val RESUMABLE_TOP_UP_FUNDING_TYPES = listOf(
 internal fun resumableTopUpsAcrossWallets(
     walletIdHexes: List<String>,
     observe: (walletId: ByteArray, fundingTypeRaw: Int) -> Flow<List<AssetLockEntity>>,
+    markedOperationIds: Flow<Set<UUID>> = flowOf(emptySet()),
+    listing: DrainLockListing = WalletDrainRules::lockListing,
 ): Flow<List<Pair<String, AssetLockEntity>>> {
     // `combine` over an empty source list never emits, which would leave the
     // section stuck on its initial value instead of resolving to "nothing to
@@ -67,11 +120,14 @@ internal fun resumableTopUpsAcrossWallets(
         RESUMABLE_TOP_UP_FUNDING_TYPES.map { fundingType -> hex to fundingType }
     }
     val flows = slots.map { (hex, fundingType) -> observe(hex.hexToBytes(), fundingType) }
-    return combine(flows) { emissions ->
+    val allLocks = combine(flows) { emissions ->
         slots.zip(emissions.toList()).flatMap { (slot, locks) ->
             val (hex, _) = slot
             locks.map { hex to it }
         }
+    }
+    return combine(allLocks, markedOperationIds) { locks, marked ->
+        locks.filter { (_, lock) -> lock.isOfferedForResume(marked, listing) }
     }
 }
 

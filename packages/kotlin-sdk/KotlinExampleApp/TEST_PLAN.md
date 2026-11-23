@@ -270,6 +270,9 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SH-15 | Unshield from A to a Platform address owned by B | Shielded | Uncommon | ✅ | multiwallet | A unshields (`SH-06`) to a Platform address belonging to wallet B. Both wallets are engine-bound automatically at rebind, so A can spend from its own pool without a wallet-swap. |
 | SH-16 | Shielded withdraw from A to B's Core L1 address | Shielded | Uncommon | ✅ | multiwallet, withdrawal | Wallet A's pool → a Core L1 address owned by wallet B (`SH-08`). Verify B's Core balance rises after SPV sync. Both wallets are engine-bound automatically at rebind. |
 | SH-17 | Multiple wallets bound to the shielded pool concurrently | Shielded | Uncommon | ✅ | multiwallet | `platform_wallet_manager_bind_shielded` is per `wallet_id`; the manager syncs all bound wallets. EVERY loaded wallet is engine-bound automatically at rebind (`AppContainer.rebindWalletScopedServices` → `ShieldedService.bindEngine`); the global Sync tab still mirrors one wallet, but per-wallet Receive/Balance surfaces read per-wallet. |
+| SH-18 | Shield the whole Core balance (Max) | Cross | Common | ✅ | | Mirrors Swift `SH-18`. Not yet run on an emulator. A new Max is not offered on mainnet until #5580 is fixed (Rust's rule, `platform_wallet_wallet_drain_start_offered`): there the **Max** switch is disabled and off and its footer says why; unfinished Max transfers still list and resume there (`SH-19`). `ShieldedFundScreen` (`WalletDetailScreen` → Shielded Balance menu → **Fund Shielded**) → turn on **Max (everything at this account index)** (`shieldFromCore.maxToggle`). The Amount and Recipient fields are replaced by the estimate from `shieldedWalletDrainPreview` (`platform_wallet_manager_shielded_wallet_drain_preview`) for Core account index 0, the only index this screen offers: swept amount and input count, Core network fee, shielded pool fee and amount received (`shieldFromCore.maxPreview.swept` / `.l1Fee` / `.poolFee` / `.receive` / `.status`, **Refresh** = `shieldFromCore.maxPreview.refreshButton`). The recipient is the wallet's own shielded address, read-only (`shieldFromCore.fixedRecipient`). **Shield Max** (`shieldFromCore.submitButton`) is enabled once an estimate for these inputs has loaded and Rust's rule allows a start (`platform_wallet_wallet_drain_preview_allows_start`: only "nothing to shield" refuses); it writes the operation id to Room (`wallet_drain_operations`) and then calls `shieldedFundFromWalletDrain` (`platform_wallet_manager_shielded_fund_from_wallet_drain`), with the same progress screen as `SH-07`. Verify: no change output on the asset-lock transaction; the note pays the wallet's own shielded address and arrives on the next shielded sync; standard funds at other account indices, coins that are not final, locked coins and CoinJoin stay in Core; while it runs the wallet screen lists the transfer under **Saved Max transfers** (`walletDetail.unfinishedMaxTransfers`, "In progress."), and the row goes once Rust reports the operation completed (`asset_locks.statusRaw == 6` for the row with that `operationId`, no `wallet_drain_operations` row left). An empty or dust wallet shows "does not cover the fees" and a disabled **Shield Max**; a wallet over the asset-lock input limit shows a warning and can still try. |
+| SH-19 | Max transfer survives a restart | Cross | Thorough | ✅ | restart | Mirrors Swift `SH-19`. Not yet run on an emulator. Start `SH-18`, wait until the asset lock is broadcast (the `asset_locks` row with the `operationId` reaches `statusRaw >= 1`), then kill the app (`adb shell am force-stop org.dashfoundation.example`) before the shield finishes. Relaunch: when the manager is activated the app reads `shieldedWalletDrainStatus` (`platform_wallet_manager_shielded_wallet_drain_status`) for every operation id in `wallet_drain_operations`, and `WalletDetailScreen` lists them under **Saved Max transfers (N)** (`walletDetail.unfinishedMaxTransfers`), each with its asset-lock outpoint and a status line (`walletDetail.unfinishedMaxTransfer.status`, or `walletDetail.unfinishedMaxTransfer.checkingStatus` for **Checking status…** before the first read). Only a row Rust reported `pending` says **Unfinished: resume to finish it. A new Max cannot start until it does.** A failed read shows **Status could not be read: …**. **Resume** (`walletDetail.unfinishedMaxTransfer.resumeButton`) is offered only when Rust's rule says so (`platform_wallet_wallet_drain_recovery_action`: a `pending` report that named an outpoint) and calls `shieldedResumeFundFromAssetLock` with that exact outpoint and the stored recipient, never the drain again; every other row offers only **Check again** (`walletDetail.unfinishedMaxTransfer.checkAgainButton`), which re-reads the status and sends nothing. Verify: the outpoint shown after the restart equals the one broadcast before it; no second asset-lock transaction is built (one `asset_locks` row with that `operationId`, ending at `statusRaw == 6`); the note arrives; the row disappears and its `wallet_drain_operations` row is deleted (Rust's rule, `platform_wallet_wallet_drain_marker_decision`); the lock is not also offered under **Pending Platform Top Ups** on the Identities tab (`platform_wallet_wallet_drain_lock_listing`). Also kill before the lock's row is stored: after relaunch the status reads "not sent", the saved record is removed and the Core balance is untouched. Automated without funds by `WalletManagerRoundTripTest.walletDrainIsFoundByItsOperationIdAfterARestartAndASecondOneIsRefused` (a persisted drain lock is found by its operation id from a new manager over the same database). |
+| SH-20 | A second Max is refused while one is unfinished | Cross | Uncommon | ✅ | restart | Mirrors Swift `SH-20`. Not yet run on an emulator. Leave the transfer from `SH-19` unfinished (do not resume it). Make funds available for a second estimate (confirm a new incoming payment to the wallet); without spendable funds the estimate shows insufficient funds and **Shield Max** stays disabled before Rust can refuse. Wait for a ready estimate, then tap **Shield Max**. Verify: Rust refuses it ("another wallet drain is pending; resume that transfer before starting a new one"), nothing is built (no new `asset_locks` row), the progress screen shows the failure, the new attempt leaves no row behind (its `wallet_drain_operations` row is removed once the status reads "not sent"), and the first transfer is still listed and still resumes. The refusal itself is automated without funds by the same `WalletManagerRoundTripTest` case. |
 
 ### 4.10 DashPay — `Domain=DashPay`
 
@@ -320,9 +323,9 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Tier | Count (approx.) | Automatable? |
 |---|---|---|
 | Essential | 21 | yes |
-| Common | 29 | yes |
-| Thorough | 49 | yes |
-| Uncommon | 25 | yes |
+| Common | 30 | yes |
+| Thorough | 50 | yes |
+| Uncommon | 26 | yes |
 | Manual | 1 (`CORE-08`) | no — physical device |
 
 **By layer (automatable only):**
@@ -331,7 +334,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 |---|---|
 | Core | 17 |
 | Platform | ~87 |
-| Cross | 7 |
+| Cross | 10 |
 | Shielded | 16 |
 
 ---
@@ -348,7 +351,7 @@ Membership of each feature category across **all** sections (primary section mem
 - **Contract** — `DC-01..04`
 - **Document** — `DOC-01..15`
 - **Token** — `TOK-01..20`
-- **Shielded** — `SH-01..17`
+- **Shielded** — `SH-01..20`
 - **DashPay** — `DP-01..19` (`DP-12..19` = invitation create, claim, persistence, reclaim; funded run 2026-07-23)
 - **System / Diagnostics** — `SYS-01..09`
 
@@ -364,3 +367,4 @@ Tags are cross-cutting modalities. A test may appear under multiple tags.
 - **read-only** — `SH-13`, `SYS-05`, `SYS-06`, `VOTE-02..06`, `VOTE-08`, `VOTE-10`, `VOTE-13`, `VOTE-14`, `VOTE-16`, `VOTE-20`, `TOK-18`, `TOK-19`
 - **masternode** — `VOTE-01`, `VOTE-12`, `VOTE-13`, `VOTE-19`, `VOTE-20`
 - **proposal** (decision proposals, yes/no and multiple choice, protocol version 15): `VOTE-08..20`
+- **restart** (the flow is killed mid-way and must recover after relaunch): `SH-19`, `SH-20`
