@@ -766,6 +766,57 @@ async fn should_release_only_orphaned_token_reservations_in_scanned_pools() {
     );
 }
 
+/// The re-key to a spend's record keeps whether the spend was signed at a
+/// version that binds its token bundle to its fee bundle, as the sweep reads
+/// it back.
+#[tokio::test]
+async fn should_keep_the_signing_era_a_rekey_records() {
+    let id = SubwalletId::new(WALLET, 0);
+    let tables = tables_with(&[owned(id, 0, 5)]).await;
+    tables
+        .read()
+        .await
+        .with_token_pool_conn(|conn| {
+            record_scan(conn, token().token_id, 50);
+            Ok(())
+        })
+        .expect("scan");
+    for (record, signed_bound) in [([0xE1; 32], true), ([0xE2; 32], false)] {
+        let (_, mut reservation) =
+            reserve_token_notes(&*tables.read().await, id, token().token_id, 5, 1)
+                .expect("reserve");
+        reservation
+            .rekey(&*tables.read().await, record, signed_bound)
+            .expect("rekey");
+        drop(reservation);
+        let found = tables
+            .read()
+            .await
+            .with_token_pool_conn(|conn| {
+                orphaned_reservations(
+                    conn,
+                    &BTreeSet::from([id]),
+                    &BTreeSet::from([token().token_id]),
+                    50,
+                    &BTreeSet::new(),
+                )
+            })
+            .expect("read");
+        assert_eq!(
+            found
+                .iter()
+                .map(|orphan| (orphan.marker, orphan.signed_bound))
+                .collect::<Vec<_>>(),
+            vec![(record, signed_bound)]
+        );
+        tables
+            .read()
+            .await
+            .with_token_pool_conn(|conn| release_reservations(conn, &found))
+            .expect("release");
+    }
+}
+
 /// A reservation whose notes the scan has seen spent is still judged: at
 /// protocol 15 a competing spend of those notes means its own spend can
 /// never execute, so its record must still be settled.
