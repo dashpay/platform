@@ -11,9 +11,13 @@
 import { parseArgs } from 'node:util';
 import {
   loadDotEnv, connect, loadOwnerAuth, loadSchema, schemaSha,
-  readConfig, writeConfig, addAdmin, findAdmin,
+  readConfig, writeConfig, addAdmin, findAdmin, requireKnownProtocolVersion,
 } from './sdk.mjs';
 import { resolvePlanCommit } from './parse-test-plan.mjs';
+
+// testRun.ownerRefersTo is a protocol version 14 keyword; an older network
+// refuses the schema.
+const MIN_PROTOCOL_VERSION = 14;
 
 async function main() {
   loadDotEnv();
@@ -59,6 +63,15 @@ async function main() {
     }
     console.log(`Config has ${existing.contractId} but it no longer resolves on ${network} `
       + '(testnet reset?). Registering a fresh contract.');
+  }
+
+  // A registration is paid for once. Before reading any key, make sure the
+  // network accepts this schema and that no upgrade the SDK does not know can
+  // overtake the registration.
+  const protocolVersion = await requireKnownProtocolVersion(sdk, mod, network, { andUpcoming: true });
+  if (protocolVersion < MIN_PROTOCOL_VERSION) {
+    throw new Error(`${network} runs protocol version ${protocolVersion}, but this schema needs ${MIN_PROTOCOL_VERSION} `
+      + '(testRun.ownerRefersTo). Upgrade the network before registering.');
   }
 
   const { ownerId, identity, signer, identityKey } = await loadOwnerAuth(sdk, mod, network);

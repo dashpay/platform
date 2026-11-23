@@ -220,7 +220,9 @@ npm install
 > that runs a later one (a devnet or a local network built from a development
 > branch), use Option B: the scripts that sign refuse to run when the network
 > is ahead of the SDK, because a write could land while the SDK fails to read
-> the proof that confirms it.
+> the proof that confirms it. `register.mjs` also refuses while the network is
+> voting for a version the SDK does not know, and on a network older than
+> protocol version 14, which does not accept the schema.
 
 **Option B — in-repo (workspace build):** build the workspace SDK once and point
 the scripts at the bundle (no `yarn install` in this dir needed):
@@ -326,12 +328,21 @@ node src/seed.mjs --app KotlinExampleApp
 # 3. List everyone else who records runs
 node src/admin.mjs add <identityId> --label "..."
 
-# 4. Copy the previous contract's runs, once per app (they get a new $createdAt)
+# 4. Stop recording runs on the previous contract and let the last ones land.
+#    A run recorded there after its test was copied stays behind.
+
+# 5. Copy the previous contract's runs, once per app (they get a new $createdAt).
+#    The dry run needs no key.
 node src/migrate-runs.mjs --dry-run
 node src/migrate-runs.mjs
 node src/migrate-runs.mjs --app KotlinExampleApp
 
-# 5. Check every index, then commit contract-id.<network>.json
+# 6. Run the copy again. It skips what is already there, so it should report
+#    "0 migrated"; if it copies more, a writer was still recording.
+node src/migrate-runs.mjs
+node src/migrate-runs.mjs --app KotlinExampleApp
+
+# 7. Check every index, then commit contract-id.<network>.json
 node src/query.mjs
 ```
 

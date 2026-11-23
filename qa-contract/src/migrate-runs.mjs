@@ -14,7 +14,8 @@
 // (testId, result, buildRef) is skipped, so re-running won't duplicate.
 //
 // Usage:
-//   QA_IDENTITY_ID=... QA_PRIVATE_KEY=... node src/migrate-runs.mjs [--dry-run]
+//   node src/migrate-runs.mjs --dry-run            # reads only, no key needed
+//   QA_IDENTITY_ID=... QA_PRIVATE_KEY=... node src/migrate-runs.mjs
 //     [--from <oldContractId>] [--from-owner <oldOwnerId>] [--app SwiftExampleApp]
 
 import { parseArgs } from 'node:util';
@@ -99,7 +100,10 @@ async function main() {
   }
   if (!oldOwner) oldOwner = DEFAULT_OLD_OWNER;
 
-  let { ownerId: newOwner, signer, identityKey } = await loadOwnerAuth(sdk, mod, network);
+  // A dry run only reads, so it needs no key and is not held to the checks a
+  // signing identity goes through.
+  let newOwner; let signer; let identityKey;
+  if (!dryRun) ({ ownerId: newOwner, signer, identityKey } = await loadOwnerAuth(sdk, mod, network));
   let { Document } = mod;
 
   // Reconnect a fresh SDK + re-derive auth. A fresh instance re-fetches the
@@ -113,7 +117,7 @@ async function main() {
 
   console.log('Migrating runs:');
   console.log(`  from  ${oldContractId} (owner ${oldOwner})`);
-  console.log(`  to    ${newContractId} (owner ${newOwner})`);
+  console.log(`  to    ${newContractId}${dryRun ? '' : ` (recorded by ${newOwner})`}`);
   console.log(`  app '${appName}' (code ${app})${dryRun ? '  [DRY RUN]' : ''}`);
 
   // 1. Enumerate old testIds (across every old category code so MW/GRP are caught).

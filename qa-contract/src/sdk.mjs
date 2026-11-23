@@ -258,19 +258,28 @@ export function requireCurrentSchema(cfg, network = getNetwork()) {
 // not know. The write itself can land while the SDK fails to read the proof that
 // confirms it: a registration then costs its credits and saves no contract id,
 // and a run sent again is recorded twice. Returns the network's protocol version.
-export async function requireKnownProtocolVersion(sdk, mod, network = getNetwork()) {
+//
+// `andUpcoming` also refuses while the masternodes are voting for a version the
+// SDK does not know. register.mjs asks for it: a registration is paid for once,
+// so it must not be sent by an SDK that an upgrade could overtake before the
+// confirmation is read.
+export async function requireKnownProtocolVersion(sdk, mod, network = getNetwork(), { andUpcoming = false } = {}) {
   const state = await sdk.protocol.versionUpgradeState();
-  const current = Number((state?.toJSON?.() ?? state)?.currentProtocolVersion);
+  const plain = state?.toJSON?.() ?? state;
+  const current = Number(plain?.currentProtocolVersion);
   const known = Number(await mod.EvoSDK.getLatestVersionNumber());
   if (!Number.isInteger(current) || !Number.isInteger(known)) {
     throw new Error(`Could not compare the protocol version of ${network} (${current}) with the SDK's (${known}).`);
   }
+  const useNewerSdk = 'Use an SDK built for that version: set EVO_SDK_BUNDLE to a workspace build '
+    + '(see "Install & run" in the README).';
   if (current > known) {
-    throw new Error(
-      `${network} runs protocol version ${current}, but this SDK build knows versions up to ${known}. `
-      + 'Use an SDK built for that version: set EVO_SDK_BUNDLE to a workspace build '
-      + '(see "Install & run" in the README).',
-    );
+    throw new Error(`${network} runs protocol version ${current}, but this SDK build knows versions up to ${known}. ${useNewerSdk}`);
+  }
+  const upcoming = plain?.nextProtocolVersion;
+  if (andUpcoming && upcoming != null && Number(upcoming) > known) {
+    throw new Error(`${network} is voting for protocol version ${Number(upcoming)}, but this SDK build knows versions up to ${known}. `
+      + `If it activates before this write is confirmed, the SDK cannot read the confirmation. ${useNewerSdk}`);
   }
   return current;
 }
