@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -45,6 +46,7 @@ import org.dashfoundation.dashsdk.voting.MasternodeVotingKeySlot
 import org.dashfoundation.dashsdk.voting.MasternodeVotingSigner
 import org.dashfoundation.dashsdk.voting.recordedVotingKey
 import org.dashfoundation.dashsdk.voting.storedVotingKeyAddress
+import org.dashfoundation.dashsdk.voting.storedVotingKeyUse
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.example.BuildConfig
 import org.dashfoundation.example.di.AppContainer
@@ -492,6 +494,11 @@ internal const val UNREADABLE_VOTING_KEY_IDENTIFIER_MESSAGE =
 internal const val VOTING_KEY_CHANGED_SINCE_PICK_MESSAGE =
     "This masternode's voting key changed since it was picked. Pick it again to vote."
 
+/** Shown when a refusal of the picked key was recorded after the section decided on it. */
+internal const val VOTING_KEY_REFUSED_SINCE_PICK_MESSAGE =
+    "Platform refused this masternode's voting key since it was picked, so the vote was not " +
+        "cast. Load the identity again with its voting key under Identities, Load Identity."
+
 /** Shown when there is no wallet manager whose signer could sign the vote. */
 internal const val NO_WALLET_MANAGER_MESSAGE =
     "No wallet manager is active on this network, so the stored voting key cannot sign. " +
@@ -547,6 +554,11 @@ class MasternodeVoteCall(
                     ?: throw MasternodeVoteCallException(NO_STORED_VOTING_KEY_MESSAGE)
                 if (identifier != voter.votingKeyIdentifier) {
                     throw MasternodeVoteCallException(VOTING_KEY_CHANGED_SINCE_PICK_MESSAGE)
+                }
+                // A refusal recorded since the pick is honoured before the signer is opened:
+                // Rust decides from the row as read now.
+                if (identity.storedVotingKeyUse()?.canVote == false) {
+                    throw MasternodeVoteCallException(VOTING_KEY_REFUSED_SINCE_PICK_MESSAGE)
                 }
                 val manager = container.walletManagerStore.activeManager.value
                     ?: throw MasternodeVoteCallException(NO_WALLET_MANAGER_MESSAGE)
@@ -637,6 +649,8 @@ fun MasternodeVoterSection(
     var checkingIdentityHex by remember { mutableStateOf<String?>(null) }
     var checkFailure by remember { mutableStateOf<Pair<String, String>?>(null) }
     var pickedChecks by remember { mutableStateOf<Map<String, PickedKeyCheckState>>(emptyMap()) }
+    // Counts explicit picks, so picking the shown identity again starts its check again.
+    var pickRequest by remember { mutableIntStateOf(0) }
 
     var selectedIdentityHex by rememberSaveable { mutableStateOf<String?>(null) }
     var useTypedProTxHash by rememberSaveable { mutableStateOf(false) }
@@ -693,7 +707,7 @@ fun MasternodeVoterSection(
 
     // Once per pick of an identity and its stored key: the key is checked when Rust says to
     // check it before use. The record it writes recomposes the section through [keyStates].
-    LaunchedEffect(selectedHex, selectedState?.identifier, network) {
+    LaunchedEffect(selectedHex, selectedState?.identifier, network, pickRequest) {
         val identity = selected ?: return@LaunchedEffect
         val identifier = selectedState?.identifier ?: return@LaunchedEffect
         // An unreadable identifier names no key to check; the status line says so.
@@ -785,13 +799,13 @@ fun MasternodeVoterSection(
                 enabled = enabled && !usesTypedInput,
                 onSelected = {
                     val hex = it.identityId.toHex()
-                    // A different identity is a new pick: its earlier check no longer releases
-                    // it, so nothing is published on that check before the new one finishes.
-                    if (hex != selectedHex) {
-                        pickedChecks[hex]?.let { picked ->
-                            pickedChecks = pickedChecks + (hex to picked.copy(finished = false))
-                        }
+                    // Every explicit pick, of this identity again too, is a new pick: its
+                    // earlier check no longer releases it, and the check runs again when Rust
+                    // says to check it before use (a retry of an unanswered check).
+                    pickedChecks[hex]?.let { picked ->
+                        pickedChecks = pickedChecks + (hex to picked.copy(finished = false))
                     }
+                    pickRequest++
                     selectedIdentityHex = hex
                     publish()
                 },

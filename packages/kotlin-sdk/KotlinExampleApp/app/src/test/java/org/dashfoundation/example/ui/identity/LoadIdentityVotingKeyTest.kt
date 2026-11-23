@@ -623,11 +623,15 @@ class LoadIdentityVotingKeyTest {
             check: MasternodeVotingKeyCheck,
         ): MasternodeVotingKeyCheckOutcome? {
             recordFailure?.let { throw it }
+            beforeRecord?.invoke()
             return MasternodeVotingKeyRecords.record(db, identityId, networkRaw, identifier, check, rules)
         }
 
         /** When set, recording a check throws it. */
         var recordFailure: Exception? = null
+
+        /** Runs just before a check is recorded (another write landing in between). */
+        var beforeRecord: (suspend () -> Unit)? = null
     }
 
     /**
@@ -657,8 +661,11 @@ class LoadIdentityVotingKeyTest {
 
     private fun addressOf(key: ByteArray) = MasternodeVotingKeyAddress.of(key.copyOf(20))!!
 
-    private suspend fun preflight(check: MasternodeVotingKeyCheck, key: ByteArray = keyA) =
-        checkEnteredVotingKey(dao, entries, rules, identityId, testnet, identifierOf(key), check)
+    private suspend fun preflight(
+        check: MasternodeVotingKeyCheck,
+        key: ByteArray = keyA,
+        stillCurrent: () -> Boolean = { true },
+    ) = checkEnteredVotingKey(dao, entries, rules, identityId, testnet, identifierOf(key), check, stillCurrent)
 
     /** A key Rust refuses stops the load: nothing is saved, and the reason is Rust's. */
     @Test
@@ -852,6 +859,42 @@ class LoadIdentityVotingKeyTest {
             rules.asked,
         )
         assertEquals(valid, dao.getByIdentityId(identityId)!!.recordedVotingKey)
+    }
+
+    /** A refusal of the stored key is not recorded once the network changed during the read. */
+    @Test
+    fun shouldNotRecordARefusalAfterTheNetworkChanged() = runBlocking {
+        dao.upsert(row(type = "Masternode", votingIdentifier = identifierOf(keyA)))
+        val refusal = MasternodeVotingKeyCheck.Invalid("rotated")
+        rules.answer = MasternodeVotingKeyCheckOutcome(
+            storeKey = false,
+            record = MasternodeRecordedVotingKey(refusal, addressOf(keyA)),
+        )
+
+        assertTrue(preflight(refusal, stillCurrent = { false }) is EnteredVotingKeyCheck.Refused)
+        assertNull(dao.getByIdentityId(identityId)!!.votingKeyCheckRaw)
+    }
+
+    /** A key replaced before its check is recorded is reported, not passed as a success. */
+    @Test
+    fun shouldSayWhenTheKeyChangedBeforeItsCheckWasSaved() = runBlocking {
+        entries.beforeRecord = {
+            dao.replaceVotingPrivateKeyIdentifier(identityId, testnet, identifierOf(keyA), identifierOf(keyB), 0L)
+        }
+
+        val result = save(
+            pickedType = LoadIdentityType.MASTERNODE,
+            typePicked = true,
+            votingKey = keyA,
+            votingKeyCheck = MasternodeVotingKeyCheck.Valid,
+        )
+
+        assertEquals(
+            LoadSaveResult.SavedWithWarning(
+                "The identity was loaded and its voting key was stored. $VOTING_KEY_CHANGED_BEFORE_CHECK_MESSAGE",
+            ),
+            result,
+        )
     }
 
     @Test
