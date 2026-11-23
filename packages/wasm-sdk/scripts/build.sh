@@ -22,7 +22,9 @@ if [ "${CARGO_BUILD_PROFILE:-}" = "dev" ] || [ "${CI:-}" != "true" ]; then
     OPT_LEVEL="minimal"
 fi
 
-# Functional tests use the mock-only key helper. Keep the default contracts.
-export CARGO_BUILD_FEATURES="${CARGO_BUILD_FEATURES:-default,mocks}"
+# Functional tests use the mock-only key helper, so add `mocks` to any caller
+# features. build-wasm.sh never passes --no-default-features, so the default
+# contracts stay on.
+export CARGO_BUILD_FEATURES="mocks${CARGO_BUILD_FEATURES:+,$CARGO_BUILD_FEATURES}"
 
 exec "$SCRIPT_DIR/../../scripts/build-wasm.sh" --package wasm-sdk --opt-level "$OPT_LEVEL"
