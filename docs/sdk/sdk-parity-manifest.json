@@ -131,7 +131,10 @@
     "platform_wallet_manager_shielded_token_pool_watch": "packages/rs-platform-wallet-ffi/src/shielded_token_pools.rs",
     "platform_wallet_manager_shielded_token_pool_unwatch": "packages/rs-platform-wallet-ffi/src/shielded_token_pools.rs",
     "platform_wallet_manager_shielded_token_pool_balances": "packages/rs-platform-wallet-ffi/src/shielded_token_pools.rs",
-    "platform_wallet_manager_shielded_token_pool_balances_free": "packages/rs-platform-wallet-ffi/src/shielded_token_pools.rs"
+    "platform_wallet_manager_shielded_token_pool_balances_free": "packages/rs-platform-wallet-ffi/src/shielded_token_pools.rs",
+    "platform_wallet_preview_identity_key_limits_update": "packages/rs-platform-wallet-ffi/src/identity_key_limits.rs",
+    "platform_wallet_update_identity_key_limits_as_reviewed_with_signer": "packages/rs-platform-wallet-ffi/src/identity_key_limits.rs",
+    "platform_wallet_refresh_identity": "packages/rs-platform-wallet-ffi/src/wallet.rs"
   },
   "capabilities": [
     {
@@ -3654,6 +3657,111 @@
           "kind": "manual",
           "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "ID-20",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "identity.key_limits_update",
+      "title": "Show an identity key's budget and expiry and raise them from a reviewed preview",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_preview_identity_key_limits_update",
+        "platform_wallet_update_identity_key_limits_as_reviewed_with_signer",
+        "platform_wallet_refresh_identity"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "UpdateKeyLimitsView (KeyDetailView -> Limits -> Update Limits, the KeysListView Limits swipe, and Settings -> Platform State Transitions) starts from a proved refreshIdentity, asks previewIdentityKeyLimitsUpdate whether the key can be raised and what a change would set, and signs only the reviewed preview with updateIdentityKeyLimits(asReviewed:). TEST_PLAN ID-17 has not been run on a simulator or device. Restart is required: after a submission whose outcome is unknown the sheet locks only until it is closed, and nothing remembers the pending update across reopening or a relaunch (issue #6063). The sheet's KeyLimitsRetryGate (offer the same preview again after a consensus refusal while the wallet shows the reviewed limits) is a decision in the view that #6063 moves to Rust."
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "IdentityUpdates.previewKeyLimitsUpdate, updateKeyLimitsAsReviewed and refreshIdentity bridge the three shared functions through IdentityKeyLimitsNative, one JNI export each; the preview crosses JNI as six long slots whose round trip is pinned on both sides. KotlinExampleApp shows the budget, remaining budget and expiry on KeyDetailScreen and KeysListScreen, and UpdateKeyLimitsScreen (Limits -> Update Limits, or the Limits action on a key row) is the Swift sheet with Swift's keyLimits.update.* identifiers as testTags. Unlike Swift, it does not copy KeyLimitsRetryGate: every failed submission locks the screen until it is reopened. The form and the lock live in SavedStateHandle, so a process killed while the screen is in the back stack comes back locked when it died during a submission (unit-tested); a pending update is still not remembered once the screen is left or the task is removed (issue #6063), so restart stays required. Partial until TEST_PLAN ID-21 is run on an emulator."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/key_limits.rs",
+          "id": "should_submit_only_the_limits_and_signing_key_that_were_reviewed",
+          "command": "cargo test -p platform-wallet --lib key_limits",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/key_limits.rs",
+          "id": "should_refuse_a_change_that_is_not_a_raise",
+          "command": "cargo test -p platform-wallet --lib key_limits",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/IdentityKeyLimitsPersistenceTests.swift",
+          "id": "testUpsertOfTheSameKeyRaisesTheStoredLimits",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/IdentityKeyLimitsPersistenceTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "ID-17",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/identity_key_limits.rs",
+          "id": "should_round_trip_a_preview_through_its_slots_unchanged",
+          "command": "cargo test -p rs-unified-sdk-jni --lib identity_key_limits",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/identity/IdentityKeyLimitsUpdatePreviewTest.kt",
+          "id": "shouldRoundTripValuesPastTheSignedRangeUnchanged",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*IdentityKeyLimitsUpdatePreviewTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/identity/UpdateKeyLimitsViewModelTest.kt",
+          "id": "shouldSendExactlyTheReviewedPreviewOnceAndFinish",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*UpdateKeyLimitsViewModelTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/identity/UpdateKeyLimitsViewModelTest.kt",
+          "id": "shouldComeBackLockedWhenTheProcessDiedDuringASubmission",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*UpdateKeyLimitsViewModelTest*'",
+          "covers_restart": true
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "identityKeyLimitsSymbolsBindAndRejectInvalidInput",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "ID-21",
           "covers_restart": false
         }
       ]

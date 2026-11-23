@@ -259,7 +259,6 @@ impl DocumentTypeV0 {
                 property_value,
                 &root_schema,
                 &mut Vec::new(),
-                false,
                 data_contact_config,
                 platform_version,
             )

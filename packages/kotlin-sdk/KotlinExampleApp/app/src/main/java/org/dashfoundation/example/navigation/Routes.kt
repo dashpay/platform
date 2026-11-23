@@ -120,6 +120,12 @@ import kotlinx.serialization.Serializable
 /** One public key's detail + private-key reveal (← `KeyDetailView.swift`). */
 @Serializable data class KeyDetail(val identityIdHex: String, val keyId: Int)
 
+/**
+ * Raise one key's budget or expiry (<- `UpdateKeyLimitsView.swift`). Carries the identity id
+ * and the key id only, never key material.
+ */
+@Serializable data class UpdateKeyLimits(val identityIdHex: String, val keyId: Int)
+
 /** Add a public key to an identity (← `AddIdentityKeyView.swift`). */
 @Serializable data class AddIdentityKey(val identityIdHex: String)
 

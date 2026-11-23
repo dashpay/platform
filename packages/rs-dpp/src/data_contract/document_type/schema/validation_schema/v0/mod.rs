@@ -793,53 +793,18 @@ fn validator_format(name: &str) -> Option<ValidatorFormat> {
 /// or leading zero, and a segment naming a repeated map key reaches its last entry, as
 /// [`last_wins`] reads the map.
 fn resolve_reference<'a>(root: &'a Value, reference: &str) -> Result<&'a Value, DataContractError> {
-    let pointer = reference
-        .strip_prefix('#')
-        .filter(|pointer| pointer.is_empty() || pointer.starts_with('/'))
-        .filter(|pointer| {
-            !pointer.contains(|c: char| c == '%' || c.is_whitespace() || c.is_control())
-        })
-        .ok_or_else(|| {
-            structure_error(format!(
-                "`$ref` `{reference}` is not a JSON pointer into the document schema (`#` or \
-                 `#/...`, without `%`, whitespace or control characters), which the validation \
-                 schema does not represent"
-            ))
-        })?;
-    let unresolved = || {
+    let pointer = json_pointer_of(reference).ok_or_else(|| {
+        structure_error(format!(
+            "`$ref` `{reference}` is not a JSON pointer into the document schema (`#` or \
+             `#/...`, without `%`, whitespace or control characters), which the validation \
+             schema does not represent"
+        ))
+    })?;
+    follow_json_pointer(root, pointer).ok_or_else(|| {
         structure_error(format!(
             "`$ref` `{reference}` does not resolve within the document schema"
         ))
-    };
-    let mut target = root;
-    let Some(pointer) = pointer.strip_prefix('/') else {
-        return Ok(target);
-    };
-    for segment in pointer.split('/') {
-        let segment = if segment.contains('~') {
-            Cow::Owned(segment.replace("~1", "/").replace("~0", "~"))
-        } else {
-            Cow::Borrowed(segment)
-        };
-        target = match target {
-            Value::Map(map) => last_value(map, &segment).ok_or_else(unresolved)?,
-            Value::Array(elements) => array_index(&segment)
-                .and_then(|index| elements.get(index))
-                .ok_or_else(unresolved)?,
-            _ => return Err(unresolved()),
-        };
-    }
-    Ok(target)
-}
-
-/// An array index in a JSON pointer segment, as the JSON Schema validator reads one: decimal
-/// digits with no sign and no leading zero.
-fn array_index(segment: &str) -> Option<usize> {
-    if segment.starts_with('+') || (segment.starts_with('0') && segment.len() != 1) {
-        None
-    } else {
-        segment.parse().ok()
-    }
+    })
 }
 
 #[cfg(test)]
