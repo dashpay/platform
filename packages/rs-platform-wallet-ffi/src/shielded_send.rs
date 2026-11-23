@@ -1557,6 +1557,36 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_token_purchase_availab
     token_contract_position: u16,
     out_availability: *mut u8,
 ) -> PlatformWalletFFIResult {
+    // A panic in the read, including the worker join, must not unwind across
+    // this `extern "C"` frame. Nothing is reserved or sent, so it is a plain
+    // failure the host may ask again after.
+    catch_panic_to_code(
+        "platform_wallet_manager_shielded_token_purchase_availability",
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        "Nothing was reserved or sent; ask again.",
+        || unsafe {
+            shielded_token_purchase_availability_inner(
+                handle,
+                data_contract_id,
+                token_contract_position,
+                out_availability,
+            )
+        },
+    )
+}
+
+/// Body of [`platform_wallet_manager_shielded_token_purchase_availability`],
+/// as an ordinary Rust function so a panic unwinds into
+/// [`catch_panic_to_code`] instead of across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn shielded_token_purchase_availability_inner(
+    handle: Handle,
+    data_contract_id: *const u8,
+    token_contract_position: u16,
+    out_availability: *mut u8,
+) -> PlatformWalletFFIResult {
     check_ptr!(data_contract_id);
     check_ptr!(out_availability);
     let data_contract_id = unwrap_result_or_return!(read_identifier(data_contract_id));
@@ -2911,6 +2941,24 @@ mod tests {
             .code,
             PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
         );
+    }
+
+    /// The availability export answers a handle that names no manager with
+    /// its own code, through the panic guard, and writes nothing.
+    #[test]
+    fn should_refuse_a_token_purchase_availability_for_an_unknown_manager() {
+        let contract_id = [0x44u8; 32];
+        let mut out = 0xFFu8;
+        let result = unsafe {
+            platform_wallet_manager_shielded_token_purchase_availability(
+                Handle::MAX,
+                contract_id.as_ptr(),
+                0,
+                &mut out,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
+        assert_eq!(out, 0xFF, "nothing is written");
     }
 
     /// Each availability the wallet reports has its own byte.
