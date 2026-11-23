@@ -871,13 +871,16 @@ pub enum PlatformWalletError {
     /// already used, so it could hide a block (or a compacted range) the
     /// earlier pages relied on. No partial history is returned; retry later.
     #[error(
-        "Balance history: a page of address balance changes was proved at height \
-         {proved_height}, below height {required_height} already read, in all {attempts} \
-         attempts; retry later"
+        "Balance history: all {attempts} attempts to read a page of address balance changes \
+         were below the required height {required_height} (last reply proved at height \
+         {proved_height}); retry later"
     )]
     BalanceHistoryInconsistentHeights {
+        /// How many times the page was asked for.
         attempts: usize,
+        /// The floor every reply had to reach.
         required_height: u64,
+        /// The height the last reply was proved at.
         proved_height: u64,
     },
 

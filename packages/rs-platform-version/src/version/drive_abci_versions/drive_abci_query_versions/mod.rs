@@ -150,6 +150,19 @@ pub struct DriveAbciQueryAddressFundsVersions {
     pub addresses_branch_state: FeatureVersionBounds,
     pub recent_address_balance_changes: FeatureVersionBounds,
     pub recent_compacted_address_balance_changes: FeatureVersionBounds,
+    /// The most blocks one `getRecentAddressBalanceChanges` answer holds. The
+    /// query handler proves at most this many and the proof verifier checks a
+    /// proof against the same value, so a proved answer with fewer blocks is
+    /// the end of the recent zone at its height. 100 in every table, the
+    /// literal the handler and the verifier used before.
+    pub recent_address_balance_changes_max_blocks: u16,
+    /// The most compacted ranges one `getRecentCompactedAddressBalanceChanges`
+    /// answer holds (kept small to bound the proof size). The query handler
+    /// proves at most this many and the proof verifier checks a proof against
+    /// the same value, so a proved answer with fewer ranges is the end of the
+    /// compacted zone at its height. 25 in every table, the literal the
+    /// handler and the verifier used before.
+    pub recent_compacted_address_balance_changes_max_ranges: u16,
 }
 
 #[derive(Clone, Debug, Default)]

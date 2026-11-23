@@ -20,11 +20,19 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 /// first and names the wallet's network. Each entry's `address_bech32m` is
 /// that address on that network.
 ///
+/// `min_proved_height` seeds the read's height floor: pass 0 for a first
+/// read and the `out_proved_height` of the history already shown for every
+/// later read, so no page older than what is shown is used. A read that
+/// cannot get a page at its floor fails with
+/// `ErrorBalanceHistoryInconsistentHeights` (83).
+///
 /// On success `out_recent` / `out_recent_count` and `out_compacted` /
 /// `out_compacted_count` hold heap arrays (null with a count of 0 when
 /// empty; the compacted array is always empty when `include_compacted` is
-/// false). Free both with `platform_address_wallet_free_balance_history`.
-/// On error every out pointer is null with a count of 0.
+/// false), and `out_proved_height` the floor the read reached. Free both
+/// arrays with `platform_address_wallet_free_balance_history`. On error
+/// every out pointer is null with a count of 0, and `out_proved_height` is
+/// 0.
 ///
 /// A panic while fetching becomes an `ErrorWalletOperation` result where
 /// panics unwind (see `catch_panic_to_code`).
@@ -32,22 +40,27 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 /// # Safety
 /// Every out pointer must be valid and writable.
 #[no_mangle]
+#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_address_wallet_balance_history(
     handle: Handle,
     include_compacted: bool,
+    min_proved_height: u64,
     out_recent: *mut *mut AddressBalanceChangeEntryFFI,
     out_recent_count: *mut usize,
     out_compacted: *mut *mut CompactedAddressBalanceChangeEntryFFI,
     out_compacted_count: *mut usize,
+    out_proved_height: *mut u64,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_recent);
     check_ptr!(out_recent_count);
     check_ptr!(out_compacted);
     check_ptr!(out_compacted_count);
+    check_ptr!(out_proved_height);
     *out_recent = std::ptr::null_mut();
     *out_recent_count = 0;
     *out_compacted = std::ptr::null_mut();
     *out_compacted_count = 0;
+    *out_proved_height = 0;
 
     catch_panic_to_code(
         "platform address balance history",
@@ -60,9 +73,13 @@ pub unsafe extern "C" fn platform_address_wallet_balance_history(
             // the small stacks of iOS dispatch threads (see runtime.rs).
             let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| wallet.clone());
             let wallet = unwrap_option_or_return!(option);
-            let result =
-                block_on_worker(async move { wallet.balance_history(include_compacted).await });
+            let result = block_on_worker(async move {
+                wallet
+                    .balance_history(include_compacted, min_proved_height)
+                    .await
+            });
             let history = unwrap_result_or_return!(result);
+            let proved_height = history.proved_height;
 
             let (recent, compacted) = match balance_history_into_ffi(history) {
                 Ok(arrays) => arrays,
@@ -75,6 +92,7 @@ pub unsafe extern "C" fn platform_address_wallet_balance_history(
             };
             (*out_recent, *out_recent_count) = into_raw_array(recent);
             (*out_compacted, *out_compacted_count) = into_raw_array(compacted);
+            *out_proved_height = proved_height;
             PlatformWalletFFIResult::ok()
         },
     )
@@ -198,6 +216,7 @@ mod tests {
                     change: CompactedAddressBalanceChange::SetFinal(50),
                 },
             ],
+            proved_height: 12,
         };
 
         let (recent, compacted) =
@@ -258,6 +277,7 @@ mod tests {
             network: Network::Testnet,
             recent: Vec::new(),
             compacted: Vec::new(),
+            proved_height: 0,
         };
 
         let (recent, compacted) = balance_history_into_ffi(history).expect("nothing to encode");
@@ -284,15 +304,18 @@ mod tests {
         let mut recent_count = 0usize;
         let mut compacted: *mut CompactedAddressBalanceChangeEntryFFI = std::ptr::null_mut();
         let mut compacted_count = 0usize;
+        let mut proved_height = 7u64;
 
         let mut result = unsafe {
             platform_address_wallet_balance_history(
                 Handle::MAX,
                 true,
+                12,
                 &mut recent,
                 &mut recent_count,
                 &mut compacted,
                 &mut compacted_count,
+                &mut proved_height,
             )
         };
 
@@ -301,6 +324,7 @@ mod tests {
         assert_eq!(recent_count, 0);
         assert!(compacted.is_null());
         assert_eq!(compacted_count, 0);
+        assert_eq!(proved_height, 0);
         unsafe { platform_wallet_ffi_result_free(&mut result) };
     }
 }

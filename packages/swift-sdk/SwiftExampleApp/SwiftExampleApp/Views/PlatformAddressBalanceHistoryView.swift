@@ -7,11 +7,13 @@
 // Both sections come from one `ManagedPlatformAddressWallet.balanceHistory`
 // call: the first load asks for recent changes only, "Load older history"
 // asks for both and replaces both sections from that one result, so a block
-// compacted in between never shows twice. Paging, the filter to this
-// wallet's addresses (every platform payment account), the reconciliation
-// of the two zones, the newest-first order and each address's bech32m form
-// all happen in Rust (`platform-wallet`); this view only renders what it
-// gets back.
+// compacted in between never shows twice. Every load after the first passes
+// the `provedHeight` Rust returned for the history on screen, so Rust never
+// replaces it with an older read. Paging, the filter to this wallet's
+// addresses (every platform payment account), the height floor and its
+// retries, the reconciliation of the two zones, the newest-first order and
+// each address's bech32m form all happen in Rust (`platform-wallet`); this
+// view only renders what it gets back and keeps that height.
 
 import SwiftUI
 import SwiftDashSDK
@@ -31,6 +33,11 @@ struct PlatformAddressBalanceHistoryView: View {
     @State private var compacted: [ManagedPlatformAddressWallet.CompactedBalanceHistoryEntry]?
     @State private var isLoadingCompacted = false
     @State private var compactedError: String?
+
+    /// The height Rust reported for the history on screen (0 before the
+    /// first load). Every later load passes it back so Rust never shows an
+    /// older page than this one.
+    @State private var shownProvedHeight: UInt64 = 0
 
     /// One load at a time: the first load, Load older and pull to refresh
     /// all replace the same sections.
@@ -242,8 +249,10 @@ struct PlatformAddressBalanceHistoryView: View {
             hasLoadedRecent = true
         }
         do {
-            let history = try await addressWallet().balanceHistory(includeCompacted: false)
+            let history = try await addressWallet().balanceHistory(
+                includeCompacted: false, minProvedHeight: shownProvedHeight)
             recent = history.recent
+            shownProvedHeight = history.provedHeight
             recentError = nil
         } catch {
             recentError = error.localizedDescription
@@ -257,9 +266,11 @@ struct PlatformAddressBalanceHistoryView: View {
         isLoadingCompacted = true
         defer { isLoadingCompacted = false }
         do {
-            let history = try await addressWallet().balanceHistory(includeCompacted: true)
+            let history = try await addressWallet().balanceHistory(
+                includeCompacted: true, minProvedHeight: shownProvedHeight)
             recent = history.recent
             compacted = history.compacted
+            shownProvedHeight = history.provedHeight
             hasLoadedRecent = true
             recentError = nil
             compactedError = nil

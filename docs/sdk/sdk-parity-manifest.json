@@ -2529,6 +2529,14 @@
           "host": "shared",
           "kind": "unit",
           "file": "packages/rs-platform-wallet/src/wallet/platform_addresses/balance_history.rs",
+          "id": "should_keep_a_shown_top_up_when_the_next_read_starts_from_its_height",
+          "command": "cargo test -p platform-wallet --lib balance_history",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/platform_addresses/balance_history.rs",
           "id": "should_read_both_zones_through_the_sdk_with_their_proved_heights",
           "command": "cargo test -p platform-wallet --lib balance_history",
           "covers_restart": false

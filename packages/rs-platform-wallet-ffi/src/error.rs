@@ -775,8 +775,9 @@ pub enum PlatformWalletFFIResultCode {
     /// balance history read kept getting one page of Platform's address
     /// balance changes proved below a height it had already used, within its
     /// per-page retry bound, so it returned no history rather than a partial
-    /// one. Nothing was changed; the read can be made again later.
-    ErrorBalanceHistoryInconsistentHeights = 77,
+    /// one. Nothing was changed; the read can be made again later. 83: open
+    /// branches hold 77 to 82 (see `ERROR_CODE_REGISTRY.md`).
+    ErrorBalanceHistoryInconsistentHeights = 83,
 
     /// The named thing does not exist.
     ///
@@ -3204,7 +3205,7 @@ mod private_contact_request_error_tests {
             result.code,
             PlatformWalletFFIResultCode::ErrorBalanceHistoryInconsistentHeights
         );
-        assert_eq!(result.code as u32, 77);
+        assert_eq!(result.code as u32, 83);
         let message = unsafe { std::ffi::CStr::from_ptr(result.message) }
             .to_str()
             .expect("UTF-8 message")

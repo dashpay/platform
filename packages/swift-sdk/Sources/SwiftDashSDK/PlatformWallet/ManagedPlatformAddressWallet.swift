@@ -161,6 +161,10 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         /// Compacted ranges, newest range first. Empty unless compacted
         /// history was asked for; no block here is also in `recent`.
         public let compacted: [CompactedBalanceHistoryEntry]
+        /// The height the read reached (decided in Rust). Pass it as the
+        /// `minProvedHeight` of the next read of a history that shows this
+        /// one, so that read never uses an older page.
+        public let provedHeight: UInt64
     }
 
     /// Runs the blocking history export off Swift's cooperative pool, like
@@ -175,20 +179,27 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     /// payment account): the recent zone, and the compacted zone too when
     /// `includeCompacted` is set.
     ///
-    /// Paging, the wallet-address filter, the reconciliation of the two
-    /// zones (a block compacted between the two fetches shows once, in
-    /// `recent`), the ordering, each range's total and each address's
-    /// bech32m form all happen in `platform-wallet`
+    /// `minProvedHeight` is the `provedHeight` of the history already shown
+    /// (0 for a first read): the read starts its height floor there, so it
+    /// never uses a page older than what is on screen. A read that cannot
+    /// get a page at its floor throws
+    /// `PlatformWalletError.balanceHistoryInconsistentHeights`.
+    ///
+    /// Paging, the wallet-address filter, the height floor and its retries,
+    /// the reconciliation of the two zones (a recent block a compacted range
+    /// covers shows once, in `compacted`), the ordering, each range's total
+    /// and each address's bech32m form all happen in `platform-wallet`
     /// (`PlatformAddressWallet::balance_history`). Each page is
     /// proof-verified, so the call goes through the network.
-    public func balanceHistory(includeCompacted: Bool) async throws -> BalanceHistory {
+    public func balanceHistory(includeCompacted: Bool, minProvedHeight: UInt64) async throws -> BalanceHistory {
         try await withCheckedThrowingContinuation { continuation in
             Self.historyQueue.async { [self] in
                 do {
                     // `self` is captured strongly: `deinit` destroys the
                     // handle, so the wallet must outlive the FFI call.
                     let history = try withExtendedLifetime(self) {
-                        try Self.readBalanceHistory(handle: handle, includeCompacted: includeCompacted)
+                        try Self.readBalanceHistory(
+                            handle: handle, includeCompacted: includeCompacted, minProvedHeight: minProvedHeight)
                     }
                     continuation.resume(returning: history)
                 } catch {
@@ -200,13 +211,17 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
 
     /// Call the history export and copy both arrays into Swift values,
     /// freeing them before returning on every path.
-    private static func readBalanceHistory(handle: Handle, includeCompacted: Bool) throws -> BalanceHistory {
+    private static func readBalanceHistory(
+        handle: Handle, includeCompacted: Bool, minProvedHeight: UInt64
+    ) throws -> BalanceHistory {
         var recentPtr: UnsafeMutablePointer<AddressBalanceChangeEntryFFI>?
         var recentCount: UInt = 0
         var compactedPtr: UnsafeMutablePointer<CompactedAddressBalanceChangeEntryFFI>?
         var compactedCount: UInt = 0
+        var provedHeight: UInt64 = 0
         try platform_address_wallet_balance_history(
-            handle, includeCompacted, &recentPtr, &recentCount, &compactedPtr, &compactedCount
+            handle, includeCompacted, minProvedHeight, &recentPtr, &recentCount, &compactedPtr,
+            &compactedCount, &provedHeight
         ).check()
         defer {
             platform_address_wallet_free_balance_history(
@@ -214,7 +229,8 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         }
         return BalanceHistory(
             recent: try recentEntries(recentPtr, count: recentCount),
-            compacted: try compactedEntries(compactedPtr, count: compactedCount)
+            compacted: try compactedEntries(compactedPtr, count: compactedCount),
+            provedHeight: provedHeight
         )
     }
 

@@ -326,7 +326,7 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// balance changes at a height consistent with the pages it had already
     /// read, within Rust's per-page retry bound. No history was returned;
     /// the read can be made again later.
-    case errorBalanceHistoryInconsistentHeights = 77
+    case errorBalanceHistoryInconsistentHeights = 83
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.

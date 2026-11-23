@@ -575,6 +575,8 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
+                recent_address_balance_changes_max_blocks: 100,
+                recent_compacted_address_balance_changes_max_ranges: 25,
             },
         },
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,

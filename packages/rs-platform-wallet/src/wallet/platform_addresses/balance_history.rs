@@ -12,9 +12,6 @@ use std::cmp::Reverse;
 use std::collections::BTreeSet;
 use std::future::Future;
 
-use dash_sdk::drive::verify::address_funds::{
-    COMPACTED_ADDRESS_BALANCE_CHANGES_QUERY_LIMIT, RECENT_ADDRESS_BALANCE_CHANGES_QUERY_LIMIT,
-};
 use dash_sdk::platform::query::{
     RecentAddressBalanceChangesQuery, RecentCompactedAddressBalanceChangesQuery,
 };
@@ -27,6 +24,7 @@ use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::{BlockAwareCreditOperation, CreditOperation};
 use dpp::fee::Credits;
 use dpp::prelude::BlockHeight;
+use dpp::version::PlatformVersion;
 use key_wallet::Network;
 
 use super::saturating_sum_credits;
@@ -104,6 +102,13 @@ pub struct AddressBalanceHistory {
     /// start), then by address. Empty unless compacted history was asked for.
     /// No block here is also in `recent`.
     pub compacted: Vec<CompactedAddressBalanceChangeEntry>,
+    /// The height floor the read reached: the highest height any page it
+    /// used was proved at, and never below the `min_proved_height` it was
+    /// given (equal to it when the wallet has no address and nothing was
+    /// read). A host that shows this history passes it as the
+    /// `min_proved_height` of its next read, so that read never uses a page
+    /// older than what is already on screen.
+    pub proved_height: BlockHeight,
 }
 
 impl PlatformAddressWallet {
@@ -121,9 +126,17 @@ impl PlatformAddressWallet {
     /// range is kept and a recent block a range covers shows only in that
     /// range (see `wallet_balance_history`). Drive expires compacted ranges
     /// after about a week, so the history is bounded.
+    ///
+    /// The floor starts at `min_proved_height`: pass 0 for a first read and
+    /// the [`AddressBalanceHistory::proved_height`] of the history already
+    /// shown for every later one, so a later read (Load older, a refresh)
+    /// cannot use a page proved below what is on screen and drop a change
+    /// the screen already shows. The page sizes are the query caps of the
+    /// SDK's platform version.
     pub async fn balance_history(
         &self,
         include_compacted: bool,
+        min_proved_height: BlockHeight,
     ) -> Result<AddressBalanceHistory, PlatformWalletError> {
         let network = self.network();
         let wallet_addresses = self.all_accounts_address_set().await?;
@@ -132,12 +145,15 @@ impl PlatformAddressWallet {
                 network,
                 recent: Vec::new(),
                 compacted: Vec::new(),
+                proved_height: min_proved_height,
             });
         }
         let sdk = self.sdk.as_ref();
-        let (recent, compacted) = wallet_balance_history(
+        let read = wallet_balance_history(
             &wallet_addresses,
             include_compacted,
+            min_proved_height,
+            ZonePageLimits::of(sdk.version()),
             |start_height| async move {
                 let (page, metadata) = RecentAddressBalanceChanges::fetch_with_metadata(
                     sdk,
@@ -170,8 +186,9 @@ impl PlatformAddressWallet {
         .await?;
         Ok(AddressBalanceHistory {
             network,
-            recent,
-            compacted,
+            recent: read.recent,
+            compacted: read.compacted,
+            proved_height: read.proved_height,
         })
     }
 
@@ -221,12 +238,45 @@ struct ProvedPage<T> {
     proved_height: BlockHeight,
 }
 
+/// The most items one page of each zone holds: the query caps of a platform
+/// version, the values the query handlers prove and the proof verifier
+/// checks against.
+#[derive(Debug, Clone, Copy)]
+struct ZonePageLimits {
+    recent: usize,
+    compacted: usize,
+}
+
+impl ZonePageLimits {
+    fn of(platform_version: &PlatformVersion) -> Self {
+        let address_funds = &platform_version.drive_abci.query.address_funds_queries;
+        Self {
+            recent: usize::from(address_funds.recent_address_balance_changes_max_blocks),
+            compacted: usize::from(
+                address_funds.recent_compacted_address_balance_changes_max_ranges,
+            ),
+        }
+    }
+}
+
+/// What one read of both zones produced.
+#[derive(Debug)]
+struct ZonesRead {
+    recent: Vec<AddressBalanceChangeEntry>,
+    compacted: Vec<CompactedAddressBalanceChangeEntry>,
+    /// The floor the read reached.
+    proved_height: BlockHeight,
+}
+
 /// The wallet rows of both zones, reconciled and sorted:
 /// `fetch_recent_page` and `fetch_compacted_page` fetch one network-wide
-/// page at a start height, with its proved height.
+/// page at a start height, with its proved height; `page_limits` are the
+/// servers' page caps.
 ///
-/// One height floor is carried across the whole read: the highest height
-/// any page used so far was proved at, never lowered. Every page, empty
+/// One height floor is carried across the whole read, starting at
+/// `min_proved_height` (the height a host already shows, 0 for a first
+/// read): the highest height any page used so far was proved at, never
+/// lowered. Every page, empty
 /// continuations included, must be proved at or above it before it is used
 /// ([`fetch_page_at_floor`]); a page below it is asked for again at the same
 /// cursor, and the scan is never restarted. The recent zone is paged first;
@@ -247,15 +297,11 @@ struct ProvedPage<T> {
 async fn wallet_balance_history<RF, RFut, CF, CFut>(
     wallet_addresses: &BTreeSet<PlatformAddress>,
     include_compacted: bool,
+    min_proved_height: BlockHeight,
+    page_limits: ZonePageLimits,
     fetch_recent_page: RF,
     fetch_compacted_page: CF,
-) -> Result<
-    (
-        Vec<AddressBalanceChangeEntry>,
-        Vec<CompactedAddressBalanceChangeEntry>,
-    ),
-    PlatformWalletError,
->
+) -> Result<ZonesRead, PlatformWalletError>
 where
     RF: FnMut(BlockHeight) -> RFut,
     RFut: Future<Output = Result<ProvedPage<BlockAddressBalanceChanges>, PlatformWalletError>>,
@@ -264,10 +310,10 @@ where
         Output = Result<ProvedPage<CompactedBlockAddressBalanceChanges>, PlatformWalletError>,
     >,
 {
-    let mut floor: BlockHeight = 0;
+    let mut floor = min_proved_height;
     let recent_zone = fetch_pages_from_genesis(
         &mut floor,
-        usize::from(RECENT_ADDRESS_BALANCE_CHANGES_QUERY_LIMIT),
+        page_limits.recent,
         fetch_recent_page,
         |block: &BlockAddressBalanceChanges| (block.block_height, block.block_height),
         |block: BlockAddressBalanceChanges| wallet_rows_of_block(block, wallet_addresses),
@@ -276,12 +322,16 @@ where
     if !include_compacted {
         let mut recent = recent_zone.rows;
         sort_recent_newest_first(&mut recent);
-        return Ok((recent, Vec::new()));
+        return Ok(ZonesRead {
+            recent,
+            compacted: Vec::new(),
+            proved_height: floor,
+        });
     }
 
     let compacted_zone = fetch_pages_from_genesis(
         &mut floor,
-        usize::from(COMPACTED_ADDRESS_BALANCE_CHANGES_QUERY_LIMIT),
+        page_limits.compacted,
         fetch_compacted_page,
         |range: &CompactedBlockAddressBalanceChanges| {
             (range.start_block_height, range.end_block_height)
@@ -293,7 +343,11 @@ where
     sort_recent_newest_first(&mut recent);
     let mut compacted = compacted_zone.rows;
     sort_compacted_newest_first(&mut compacted);
-    Ok((recent, compacted))
+    Ok(ZonesRead {
+        recent,
+        compacted,
+        proved_height: floor,
+    })
 }
 
 /// What a paged zone kept, and what it saw before the wallet filter.
@@ -516,7 +570,6 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::sync::Arc;
 
-    use dash_sdk::drive::verify::address_funds::COMPACTED_ADDRESS_BALANCE_CHANGES_QUERY_LIMIT;
     use dash_sdk::platform::query::{
         RecentAddressBalanceChangesQuery, RecentCompactedAddressBalanceChangesQuery,
     };
@@ -527,6 +580,7 @@ mod tests {
     use dpp::address_funds::PlatformAddress;
     use dpp::balances::credits::{BlockAwareCreditOperation, CreditOperation};
     use dpp::prelude::BlockHeight;
+    use dpp::version::PlatformVersion;
     use key_wallet::bip32::{ChildNumber, DerivationPath};
     use key_wallet::managed_account::address_pool::{
         AddressInfo as PoolAddressInfo, AddressPool, AddressPoolType,
@@ -542,7 +596,8 @@ mod tests {
         sort_compacted_newest_first, sort_recent_newest_first, wallet_balance_history,
         wallet_rows_of_block, wallet_rows_of_range, AddressBalanceChange,
         AddressBalanceChangeEntry, CompactedAddressBalanceChange,
-        CompactedAddressBalanceChangeEntry, PagedZone, ProvedPage, BALANCE_HISTORY_PAGE_ATTEMPTS,
+        CompactedAddressBalanceChangeEntry, PagedZone, ProvedPage, ZonePageLimits, ZonesRead,
+        BALANCE_HISTORY_PAGE_ATTEMPTS,
     };
     use crate::error::PlatformWalletError;
     use crate::test_support::platform_address_wallet_in;
@@ -651,6 +706,11 @@ mod tests {
             address: address(1),
             change: AddressBalanceChange::Added(credits),
         }
+    }
+
+    /// The page caps of the latest platform version.
+    fn page_limits() -> ZonePageLimits {
+        ZonePageLimits::of(PlatformVersion::latest())
     }
 
     /// A page of `items` proved at `proved_height`.
@@ -1086,9 +1146,13 @@ mod tests {
             )],
         )];
 
-        let (recent, compacted) = wallet_balance_history(
+        let ZonesRead {
+            recent, compacted, ..
+        } = wallet_balance_history(
             &wallet,
             true,
+            0,
+            page_limits(),
             |start| {
                 let page = page_at(&recent_pages, start, 11);
                 async move { Ok(page) }
@@ -1133,9 +1197,13 @@ mod tests {
             )],
         )];
 
-        let (recent, compacted) = wallet_balance_history(
+        let ZonesRead {
+            recent, compacted, ..
+        } = wallet_balance_history(
             &wallet,
             true,
+            0,
+            page_limits(),
             |start| {
                 let page = page_at(&recent_pages, start, 12);
                 async move { Ok(page) }
@@ -1157,9 +1225,13 @@ mod tests {
         let wallet = BTreeSet::from([address(1)]);
         let compacted_requests = RefCell::new(Vec::new());
 
-        let (recent, compacted) = wallet_balance_history(
+        let ZonesRead {
+            recent, compacted, ..
+        } = wallet_balance_history(
             &wallet,
             true,
+            0,
+            page_limits(),
             // Recent is proved at 12, after block 12's compaction moved the
             // top-up out of the recent zone.
             |start| {
@@ -1220,6 +1292,8 @@ mod tests {
         let result = wallet_balance_history(
             &wallet,
             true,
+            0,
+            page_limits(),
             // Recent was seen at 12 with a top-up.
             |start| {
                 recent_requests.borrow_mut().push(start);
@@ -1259,9 +1333,115 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn should_keep_a_shown_top_up_when_the_next_read_starts_from_its_height() {
+        let wallet = BTreeSet::from([address(1)]);
+        let top_up = vec![(
+            0,
+            vec![recent_block(
+                12,
+                [(address(1), CreditOperation::AddToCredits(6))],
+            )],
+        )];
+        let older = vec![(
+            0,
+            vec![compacted_range(
+                3,
+                9,
+                [(address(1), BlockAwareCreditOperation::SetCredits(40))],
+            )],
+        )];
+
+        // Read 1: Recent proved at 12 shows the top-up.
+        let first = wallet_balance_history(
+            &wallet,
+            false,
+            0,
+            page_limits(),
+            |start| {
+                let page = page_at(&top_up, start, 12);
+                async move { Ok(page) }
+            },
+            |start| {
+                let page = page_at::<CompactedBlockAddressBalanceChanges>(&[], start, 12);
+                async move { Ok(page) }
+            },
+        )
+        .await
+        .expect("read 1");
+        assert_eq!(first.recent, vec![recent_row(12, 6)]);
+        assert_eq!(first.proved_height, 12);
+
+        // Read 2 (Load older), seeded with the height read 1 showed. A node
+        // at 11 answers Recent first with a short page lacking the top-up;
+        // it is asked again and answers at 12. Older at 12 has no range
+        // holding the top-up: it is still in Recent.
+        let recent_answers = Cell::new(0usize);
+        let second = wallet_balance_history(
+            &wallet,
+            true,
+            first.proved_height,
+            page_limits(),
+            |start| {
+                recent_answers.set(recent_answers.get() + 1);
+                let page = if recent_answers.get() == 1 {
+                    proved(Vec::new(), 11)
+                } else {
+                    page_at(&top_up, start, 12)
+                };
+                async move { Ok(page) }
+            },
+            |start| {
+                let page = page_at(&older, start, 12);
+                async move { Ok(page) }
+            },
+        )
+        .await
+        .expect("read 2");
+
+        assert_eq!(second.recent, vec![recent_row(12, 6)]);
+        assert_eq!(second.compacted, vec![compacted_row(3, 9, 40)]);
+        assert_eq!(recent_answers.get(), 2);
+        assert_eq!(second.proved_height, 12);
+    }
+
+    #[tokio::test]
+    async fn should_fail_when_every_reply_is_below_the_seeded_height() {
+        let wallet = BTreeSet::from([address(1)]);
+        let recent_requests = Cell::new(0usize);
+
+        let result = wallet_balance_history(
+            &wallet,
+            false,
+            50,
+            page_limits(),
+            |start| {
+                recent_requests.set(recent_requests.get() + 1);
+                let page = page_at::<BlockAddressBalanceChanges>(&[], start, 12);
+                async move { Ok(page) }
+            },
+            |start| {
+                let page = page_at::<CompactedBlockAddressBalanceChanges>(&[], start, 12);
+                async move { Ok(page) }
+            },
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(PlatformWalletError::BalanceHistoryInconsistentHeights {
+                attempts: BALANCE_HISTORY_PAGE_ATTEMPTS,
+                required_height: 50,
+                proved_height: 12,
+            })
+        ));
+        assert_eq!(recent_requests.get(), BALANCE_HISTORY_PAGE_ATTEMPTS);
+    }
+
+    #[tokio::test]
     async fn should_check_the_height_of_an_empty_continuation_after_a_full_page() {
         let wallet = BTreeSet::from([address(1)]);
-        let page_limit = BlockHeight::from(COMPACTED_ADDRESS_BALANCE_CHANGES_QUERY_LIMIT);
+        let page_limit =
+            BlockHeight::try_from(page_limits().compacted).expect("a page cap fits a height");
         // A full first page of single-block ranges of another wallet.
         let full_page: Vec<CompactedBlockAddressBalanceChanges> = (1..=page_limit)
             .map(|height| {
@@ -1280,9 +1460,11 @@ mod tests {
         );
         let compacted_requests = RefCell::new(Vec::new());
 
-        let (_, compacted) = wallet_balance_history(
+        let ZonesRead { compacted, .. } = wallet_balance_history(
             &wallet,
             true,
+            0,
+            page_limits(),
             |start| {
                 let page = page_at::<BlockAddressBalanceChanges>(&[], start, 100);
                 async move { Ok(page) }
@@ -1319,9 +1501,11 @@ mod tests {
         let wallet = BTreeSet::from([address(1)]);
         let compacted_requests = RefCell::new(Vec::new());
 
-        let (_, compacted) = wallet_balance_history(
+        let ZonesRead { compacted, .. } = wallet_balance_history(
             &wallet,
             true,
+            0,
+            page_limits(),
             |start| {
                 let page = page_at::<BlockAddressBalanceChanges>(&[], start, 12);
                 async move { Ok(page) }
@@ -1413,9 +1597,11 @@ mod tests {
         let wallet = address_wallet_with_address(sdk, byte);
 
         let history = wallet
-            .balance_history(true)
+            .balance_history(true, 0)
             .await
             .expect("the compacted page is proved above the recent one");
+
+        assert_eq!(history.proved_height, 13);
 
         assert_eq!(
             history.recent,
@@ -1442,7 +1628,7 @@ mod tests {
         let sdk = mock_sdk_with_both_zones(byte, 12, 11).await;
         let wallet = address_wallet_with_address(sdk, byte);
 
-        let result = wallet.balance_history(true).await;
+        let result = wallet.balance_history(true, 0).await;
 
         assert!(
             matches!(
@@ -1478,9 +1664,13 @@ mod tests {
             )],
         )];
 
-        let (recent, compacted) = wallet_balance_history(
+        let ZonesRead {
+            recent, compacted, ..
+        } = wallet_balance_history(
             &wallet,
             true,
+            0,
+            page_limits(),
             |start| {
                 let page = page_at(&recent_pages, start, 12);
                 async move { Ok(page) }
@@ -1505,6 +1695,8 @@ mod tests {
         wallet_balance_history(
             &wallet,
             true,
+            0,
+            page_limits(),
             |start| {
                 calls.borrow_mut().push(("recent", start));
                 async move { Ok(proved(Vec::new(), 10)) }
@@ -1532,9 +1724,13 @@ mod tests {
             )],
         )];
 
-        let (recent, compacted) = wallet_balance_history(
+        let ZonesRead {
+            recent, compacted, ..
+        } = wallet_balance_history(
             &wallet,
             false,
+            0,
+            page_limits(),
             |start| {
                 let page = page_at(&recent_pages, start, 12);
                 async move { Ok(page) }
@@ -1610,7 +1806,7 @@ mod tests {
 
         for include_compacted in [false, true] {
             let history = wallet
-                .balance_history(include_compacted)
+                .balance_history(include_compacted, 0)
                 .await
                 .expect("no fetch is made for a wallet without addresses");
 

@@ -116,9 +116,6 @@ use drive::query::vote_polls_by_document_type_query::{
     ResolvedVotePollsByDocumentTypeQuery, VotePollsByDocumentTypeQuery,
 };
 use drive::query::{ContractLookupFn, DriveDocumentQuery, VotePollsByEndDateDriveQuery};
-use drive::verify::address_funds::{
-    COMPACTED_ADDRESS_BALANCE_CHANGES_QUERY_LIMIT, RECENT_ADDRESS_BALANCE_CHANGES_QUERY_LIMIT,
-};
 use indexmap::IndexMap;
 use std::array::TryFromSliceError;
 use std::cell::RefCell;
@@ -1150,8 +1147,16 @@ impl FromProof<platform::GetRecentAddressBalanceChangesRequest> for RecentAddres
                 }
             };
 
-        // The same constant the query handler limits its answer to.
-        let limit = Some(RECENT_ADDRESS_BALANCE_CHANGES_QUERY_LIMIT);
+        // The same version-table value the query handler limits its answer
+        // to: 100, the literal used here before, in every shipped protocol
+        // version.
+        let limit = Some(
+            platform_version
+                .drive_abci
+                .query
+                .address_funds_queries
+                .recent_address_balance_changes_max_blocks,
+        );
 
         let (root_hash, verified_changes) = if start_height_exclusive {
             Drive::verify_recent_address_balance_changes_after(
@@ -1219,8 +1224,16 @@ impl FromProof<platform::GetRecentCompactedAddressBalanceChangesRequest>
             }
         };
 
-        // The same constant the query handler limits its answer to.
-        let limit = Some(COMPACTED_ADDRESS_BALANCE_CHANGES_QUERY_LIMIT);
+        // The same version-table value the query handler limits its answer
+        // to: 25, the literal used here before, in every shipped protocol
+        // version.
+        let limit = Some(
+            platform_version
+                .drive_abci
+                .query
+                .address_funds_queries
+                .recent_compacted_address_balance_changes_max_ranges,
+        );
 
         if platform_version
             .drive
