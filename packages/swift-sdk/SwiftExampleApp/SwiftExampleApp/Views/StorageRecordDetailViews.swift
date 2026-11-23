@@ -2604,14 +2604,14 @@ struct ShieldedActivityStorageDetailView: View {
                 FieldRow(label: "Status", value: statusDisplay(record.status))
             }
             Section("Amounts") {
-                // Kinds 11 (TokenShieldedTransfer) and 12 (TokenUnshield)
-                // record the tokens moved, in the token's smallest unit; every
-                // other kind records credits.
+                // Token kinds record the tokens moved, in the token's smallest
+                // unit; every other kind records credits.
                 FieldRow(
                     label: "Amount",
-                    value: record.kindTag == 11 || record.kindTag == 12
-                        ? "\(record.amount) token units"
-                        : "\(record.amount) credits"
+                    value: ShieldedActivityKindDisplay.rawAmountText(
+                        record.amount,
+                        tag: record.kindTag
+                    )
                 )
                 FieldRow(
                     label: "Fee",

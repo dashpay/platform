@@ -381,10 +381,13 @@ struct ShieldedTokenSpendTarget: Identifiable {
 /// the amount, the token and the network, picks the token notes and the
 /// credit pool notes that pay the fee, proves, broadcasts and records the
 /// activity. The form only reads the recipient (a pasted bech32m Orchard
-/// address, or this account's own one) and the amount, which it converts to
-/// the token's smallest unit with the token's decimals when the app has the
-/// token locally (the same decimals the list shows amounts with), and shows
-/// Rust's fee preview and answer.
+/// address, or this account's own one) and the amount, and shows Rust's fee
+/// preview and answer.
+///
+/// The amount is typed in the token's smallest unit, as a whole number, and
+/// passed to Rust unchanged. The app's cached token decimals can be stale or
+/// from another network, so they never convert the amount; when the app has
+/// them they only give a non-authoritative hint under the field.
 struct ShieldedTokenSendSheet: View {
     let walletId: Data
     let target: ShieldedTokenSpendTarget
@@ -407,10 +410,6 @@ struct ShieldedTokenSendSheet: View {
 
     private var balance: ShieldedTokenPoolBalance { target.balance }
 
-    /// The token's decimals when the app has the token; otherwise amounts
-    /// are typed in the token's smallest unit.
-    private var decimals: Int { token?.decimals ?? 0 }
-
     /// The 43 raw bytes of the typed recipient when it is an Orchard address
     /// on the current network.
     private var recipientRaw: Data? {
@@ -421,18 +420,25 @@ struct ShieldedTokenSendSheet: View {
         return raw
     }
 
-    /// The typed amount has a nonzero digit past the token's decimals (or
-    /// any fraction when the decimals are unknown), which parsing would
-    /// round down: it is refused, not truncated.
-    private var amountExceedsPrecision: Bool {
-        hasDigitsBeyondPrecision(amountText, decimals: decimals)
+    private var trimmedAmountText: String {
+        amountText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// The amount in the token's smallest unit; `nil` while the text does not
-    /// parse or is not exactly representable, so neither the fee preview nor
-    /// a submission sees a rounded amount.
-    private var amount: UInt64? {
-        amountExceedsPrecision ? nil : parseTokenAmount(amountText, decimals: decimals)
+    /// The amount in the token's smallest unit: the typed whole number,
+    /// exactly. `nil` for empty text and for anything else (a decimal point,
+    /// a sign, other characters, or a number past `UInt64`).
+    private var amount: UInt64? { Self.smallestUnitAmount(trimmedAmountText) }
+
+    /// The typed text is not a whole number of smallest units.
+    private var amountRefused: Bool { !trimmedAmountText.isEmpty && amount == nil }
+
+    /// Parse `text` as a whole number of the token's smallest unit: ASCII
+    /// digits only, nothing rounded or converted.
+    static func smallestUnitAmount(_ text: String) -> UInt64? {
+        guard !text.isEmpty, text.utf8.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }) else {
+            return nil
+        }
+        return UInt64(text)
     }
 
     /// This account's own default Orchard address, when the wallet's
@@ -493,17 +499,16 @@ struct ShieldedTokenSendSheet: View {
                 }
 
                 Section {
-                    TextField(decimals > 0 ? "0.0" : "0", text: $amountText)
-                        .keyboardType(decimals > 0 ? .decimalPad : .numberPad)
+                    TextField("0", text: $amountText)
+                        .keyboardType(.numberPad)
                         .font(.body.monospacedDigit())
                         .accessibilityIdentifier("shieldedTokenSend.amount")
-                    if amountExceedsPrecision {
-                        ShieldedTokenAmountPrecisionError(
-                            decimals: decimals,
-                            decimalsKnown: token != nil,
-                            accessibilityId: "shieldedTokenSend.precisionError"
-                        )
-                    }
+                    ShieldedTokenAmountFeedback(
+                        refused: amountRefused,
+                        amount: amount,
+                        token: token,
+                        idPrefix: "shieldedTokenSend"
+                    )
                     ShieldedTokenSpendFeeLine(
                         walletId: walletId,
                         balance: balance,
@@ -512,12 +517,9 @@ struct ShieldedTokenSendSheet: View {
                         accessibilityId: "shieldedTokenSend.fee"
                     )
                 } header: {
-                    Text("Amount")
+                    Text("Amount (smallest unit)")
                 } footer: {
-                    Text(
-                        token.map { "In \($0.displayName) units (\(decimals) decimals)." }
-                            ?? "In the token's smallest unit: the app does not have this token's decimals."
-                    )
+                    Text("A whole number of the token's smallest unit, sent exactly as typed.")
                 }
 
                 Section {
@@ -720,24 +722,30 @@ struct ShieldedTokenSpendFeeLine: View {
     }
 }
 
-/// Shown under a token pool spend form's amount when the text has more
-/// fractional digits than the token has decimals: the amount is refused
-/// rather than rounded down.
-struct ShieldedTokenAmountPrecisionError: View {
-    let decimals: Int
-    /// The app has the token, so `decimals` is the token's own.
-    let decimalsKnown: Bool
-    let accessibilityId: String
+/// What a token pool spend form shows under its smallest-unit amount: an
+/// error when the text is not a whole number (`<idPrefix>.precisionError`),
+/// otherwise, when the app has the token cached, the approximate token amount
+/// at the cached decimals (`<idPrefix>.decimalsHint`). The hint is display
+/// only: the cached decimals may be stale or from another network, so they
+/// never change what is sent.
+struct ShieldedTokenAmountFeedback: View {
+    let refused: Bool
+    let amount: UInt64?
+    let token: PersistentToken?
+    let idPrefix: String
 
     var body: some View {
-        Text(
-            decimalsKnown
-                ? "This token has \(decimals) decimal places; enter an amount with no more than that."
-                : "Enter a whole number of the token's smallest unit: the app does not have this token's decimals."
-        )
-        .font(.caption)
-        .foregroundColor(.red)
-        .accessibilityIdentifier(accessibilityId)
+        if refused {
+            Text("Enter a whole number of the token's smallest unit: no decimal point or other characters.")
+                .font(.caption)
+                .foregroundColor(.red)
+                .accessibilityIdentifier("\(idPrefix).precisionError")
+        } else if let amount, let token {
+            Text("≈ \(formatTokenAmount(amount, decimals: token.decimals)) tokens if the token has \(token.decimals) decimals (from this app's token cache).")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .accessibilityIdentifier("\(idPrefix).decimalsHint")
+        }
     }
 }
 
@@ -752,15 +760,10 @@ struct ShieldedTokenSpendSourceSection: View {
             if target.showsAccount {
                 LabeledContent("From account", value: "\(target.balance.accountIndex)")
             }
-            LabeledContent(
-                "Available",
-                value: ShieldedTokenPoolsView.amountText(target.balance.balance, token: token)
-            )
+            // In smallest units, the unit the amount is typed in.
+            LabeledContent("Available", value: "\(target.balance.balance) (smallest units)")
             if target.balance.reservedBalance > 0 {
-                LabeledContent(
-                    "Pending",
-                    value: ShieldedTokenPoolsView.amountText(target.balance.reservedBalance, token: token)
-                )
+                LabeledContent("Pending", value: "\(target.balance.reservedBalance) (smallest units)")
             }
         }
     }
@@ -774,7 +777,8 @@ struct ShieldedTokenSpendSourceSection: View {
 /// `ShieldedTokenSendSheet`. The form only reads the recipient identity (one
 /// of this wallet's identities, or a pasted Base58 id decoded with
 /// `Data.identifier(fromBase58:)`) and the amount, and shows Rust's fee
-/// preview and answer.
+/// preview and answer. The amount is a whole number of the token's smallest
+/// unit, passed to Rust unchanged, exactly as in `ShieldedTokenSendSheet`.
 struct ShieldedTokenUnshieldSheet: View {
     let walletId: Data
     let target: ShieldedTokenSpendTarget
@@ -812,10 +816,6 @@ struct ShieldedTokenUnshieldSheet: View {
 
     private var balance: ShieldedTokenPoolBalance { target.balance }
 
-    /// The token's decimals when the app has the token; otherwise amounts
-    /// are typed in the token's smallest unit.
-    private var decimals: Int { token?.decimals ?? 0 }
-
     /// The 32-byte identity id the recipient field decodes to.
     private var recipientId: Data? {
         let trimmed = recipientText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -835,19 +835,16 @@ struct ShieldedTokenUnshieldSheet: View {
         return identities.first { $0.identityId == recipientId }
     }
 
-    /// The typed amount has a nonzero digit past the token's decimals (or
-    /// any fraction when the decimals are unknown), which parsing would
-    /// round down: it is refused, not truncated.
-    private var amountExceedsPrecision: Bool {
-        hasDigitsBeyondPrecision(amountText, decimals: decimals)
+    private var trimmedAmountText: String {
+        amountText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// The amount in the token's smallest unit; `nil` while the text does not
-    /// parse or is not exactly representable, so neither the fee preview nor
-    /// a submission sees a rounded amount.
-    private var amount: UInt64? {
-        amountExceedsPrecision ? nil : parseTokenAmount(amountText, decimals: decimals)
-    }
+    /// The amount in the token's smallest unit: the typed whole number,
+    /// exactly, parsed as the Send form parses it.
+    private var amount: UInt64? { ShieldedTokenSendSheet.smallestUnitAmount(trimmedAmountText) }
+
+    /// The typed text is not a whole number of smallest units.
+    private var amountRefused: Bool { !trimmedAmountText.isEmpty && amount == nil }
 
     private var canSubmit: Bool {
         !isSubmitting && resultMessage == nil && recipientId != nil && amount != nil
@@ -905,17 +902,16 @@ struct ShieldedTokenUnshieldSheet: View {
                 }
 
                 Section {
-                    TextField(decimals > 0 ? "0.0" : "0", text: $amountText)
-                        .keyboardType(decimals > 0 ? .decimalPad : .numberPad)
+                    TextField("0", text: $amountText)
+                        .keyboardType(.numberPad)
                         .font(.body.monospacedDigit())
                         .accessibilityIdentifier("shieldedTokenUnshield.amount")
-                    if amountExceedsPrecision {
-                        ShieldedTokenAmountPrecisionError(
-                            decimals: decimals,
-                            decimalsKnown: token != nil,
-                            accessibilityId: "shieldedTokenUnshield.precisionError"
-                        )
-                    }
+                    ShieldedTokenAmountFeedback(
+                        refused: amountRefused,
+                        amount: amount,
+                        token: token,
+                        idPrefix: "shieldedTokenUnshield"
+                    )
                     ShieldedTokenSpendFeeLine(
                         walletId: walletId,
                         balance: balance,
@@ -924,12 +920,9 @@ struct ShieldedTokenUnshieldSheet: View {
                         accessibilityId: "shieldedTokenUnshield.fee"
                     )
                 } header: {
-                    Text("Amount")
+                    Text("Amount (smallest unit)")
                 } footer: {
-                    Text(
-                        token.map { "In \($0.displayName) units (\(decimals) decimals). The fee is paid from this account's shielded credit balance." }
-                            ?? "In the token's smallest unit: the app does not have this token's decimals. The fee is paid from this account's shielded credit balance."
-                    )
+                    Text("A whole number of the token's smallest unit, sent exactly as typed. The fee is paid from this account's shielded credit balance.")
                 }
 
                 Section {

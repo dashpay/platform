@@ -64,6 +64,13 @@ enum ShieldedActivityKindDisplay {
     /// tokens sent) and 12 (TokenUnshield, the tokens moved to the
     /// identity). Their fee is still credits.
     static func amountIsTokens(_ tag: Int) -> Bool { tag == 11 || tag == 12 }
+
+    /// The raw stored `amount` with its unit for `tag`: token units for the
+    /// kinds `amountIsTokens` names, credits otherwise. For diagnostic views
+    /// that show the stored number as is.
+    static func rawAmountText(_ amount: UInt64, tag: Int) -> String {
+        amountIsTokens(tag) ? "\(amount) token units" : "\(amount) credits"
+    }
 }
 
 extension PersistentShieldedActivity {
