@@ -643,6 +643,17 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorIdentityBalanceUnavailable` (native code 58). The identity's
+         * balance could not be read with a proof, so the operation that needed
+         * it (a shield from the identity's balance, Type 21) was refused
+         * before anything was saved or sent. Mirrors Swift's
+         * `PlatformWalletError.identityBalanceUnavailable` in
+         * `PlatformWalletResult.swift`.
+         */
+        class IdentityBalanceUnavailable(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * `ErrorShutdownIncomplete` (native code 27). A sync pass or an SPV
          * teardown was still running; nothing was wiped. Retry the stop or
          * clear. An SPV start refused with this needs an SPV stop first.
@@ -1012,6 +1023,7 @@ sealed class DashSdkError(
             55 -> PlatformWallet.ShieldedIdentityDebitPending(message, cause)
             56 -> PlatformWallet.ShieldedRecoveryCorrupted(message, cause)
             57 -> PlatformWallet.ShieldedRecoveryKeysRequired(message, cause)
+            58 -> PlatformWallet.IdentityBalanceUnavailable(message, cause) // ErrorIdentityBalanceUnavailable
             59 -> PlatformWallet.SpvProcessRestartRequired(message, cause) // ErrorSpvProcessRestartRequired
             // ErrorPrivateContactRequestNeedsPrivateReply: the explicitly
             // public accept or send refused a contact that went private.
