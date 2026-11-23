@@ -588,6 +588,9 @@ struct MasternodeVoterSection: View {
             if checkFailure?.identityId == identityId { checkFailure = nil }
             completed = true
         } catch {
+            // The row goes back to what is stored, so neither this pick nor
+            // a rerun can sign on a verdict that was not saved.
+            modelContext.rollback()
             checkFailure = (identityId, .notFinished(
                 "The voting key check could not be saved: \(error.localizedDescription)"
             ))
