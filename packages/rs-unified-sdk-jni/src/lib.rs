@@ -15,6 +15,7 @@
 //! - Rust→Kotlin callbacks attach their (possibly Tokio) thread as a daemon.
 
 mod address_history;
+mod address_private_key;
 mod contract_moderation;
 mod contract_update;
 mod credits;
