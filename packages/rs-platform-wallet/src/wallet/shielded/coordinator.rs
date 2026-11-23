@@ -94,6 +94,7 @@ use super::store::{
     IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, PrivatePaymentRecord, ShieldedNote,
     ShieldedStore, StalePendingSpend, SubwalletId,
 };
+use super::sync::SpendHeights;
 use super::CAUGHT_UP_COOLDOWN;
 use crate::error::PlatformWalletError;
 use crate::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
@@ -179,6 +180,12 @@ pub struct NetworkShieldedCoordinator {
     /// network instead of once per wallet. Cleared on any
     /// activity; bypassed by `force` syncs.
     last_caught_up_at: std::sync::Mutex<Option<Instant>>,
+
+    /// What the note scans of this process proved about spends of the
+    /// wallets' notes, which a pending spend is judged displaced by
+    /// ([`displaced_pending_spends`]). Kept in memory: after a restart a
+    /// spend seen before it proves nothing, and its row stays pending.
+    spend_evidence: std::sync::Mutex<SpendEvidence>,
 
     /// The journal records, by wallet and entry commitment, whose entry an
     /// expiry read found in DashPay's private store
@@ -431,6 +438,7 @@ impl NetworkShieldedCoordinator {
             accounts: Arc::new(RwLock::new(BTreeMap::new())),
             persisters: Arc::new(RwLock::new(BTreeMap::new())),
             last_caught_up_at: std::sync::Mutex::new(None),
+            spend_evidence: std::sync::Mutex::new(SpendEvidence::default()),
             landed_private_payments: std::sync::Mutex::new(BTreeSet::new()),
             progress_handler: std::sync::Mutex::new(None),
             tree_progress_handler: std::sync::Mutex::new(None),
@@ -1396,7 +1404,27 @@ impl NetworkShieldedCoordinator {
         if let Ok(mut g) = self.last_caught_up_at.lock() {
             *g = None;
         }
+        if let Ok(mut evidence) = self.spend_evidence.lock() {
+            *evidence = SpendEvidence::default();
+        }
         Ok(())
+    }
+
+    /// Keep what a completed note scan proved about spends: the height it
+    /// covers (`covered_height`) and the heights it saw the wallets' notes
+    /// spent at or below (`spend_heights`), as
+    /// [`super::sync::MultiSyncNotesResult`] reports them.
+    pub(crate) fn record_spend_evidence(
+        &self,
+        covered_height: Option<u64>,
+        spend_heights: &SpendHeights,
+    ) {
+        match self.spend_evidence.lock() {
+            Ok(mut evidence) => evidence.record(covered_height, spend_heights),
+            Err(_) => tracing::warn!(
+                "shielded spend evidence lock poisoned; pending spends stay pending this pass"
+            ),
+        }
     }
 
     /// Discharge the private payment journal records of the private contact
@@ -1580,6 +1608,7 @@ impl NetworkShieldedCoordinator {
             tracing::debug!("Coordinator sync cancelled; the scan published nothing");
             return summary;
         }
+        self.record_spend_evidence(notes.covered_height, &notes.spend_heights);
         // Scan-based spend detection now happens INSIDE
         // `sync_notes_across`: every scanned action's nullifier is
         // replayed against each subwallet's store as part of the note
@@ -1642,11 +1671,6 @@ impl NetworkShieldedCoordinator {
             }
         }
 
-        let balances_per_sub = match super::sync::balances_across(&self.store, &subwallets).await {
-            Ok(r) => r,
-            Err(e) => return self.fail_all_wallets(&subwallets, &e),
-        };
-
         // Restore-path activity derivation: reconstruct per-operation
         // activity entries best-effort from the notes / outgoing notes
         // this pass (and earlier passes) persisted. Runs every pass so it
@@ -1669,6 +1693,13 @@ impl NetworkShieldedCoordinator {
         {
             tracing::warn!(error = %e, "Shielded activity derivation failed; skipping this pass");
         }
+
+        // Read after the derivation, which releases the untouched notes of a
+        // displaced spend, so this pass's balances count them.
+        let balances_per_sub = match super::sync::balances_across(&self.store, &subwallets).await {
+            Ok(r) => r,
+            Err(e) => return self.fail_all_wallets(&subwallets, &e),
+        };
 
         // Identity-funded shields have no input nullifiers and use an
         // outputs-only empty-tree anchor, so the ordinary stale-reservation
@@ -2387,7 +2418,16 @@ impl NetworkShieldedCoordinator {
                         .then_some(redrive.activity_id)
                 })
                 .collect();
-            let displaced = displaced_pending_spends(&activity, &input.notes, &observed_cmxs);
+            let displaced = match self.spend_evidence.lock() {
+                Ok(evidence) => displaced_pending_spends(
+                    &activity,
+                    &input.notes,
+                    &observed_cmxs,
+                    &evidence,
+                    *id,
+                ),
+                Err(_) => Vec::new(),
+            };
             if derived.new_entries.is_empty()
                 && derived.confirmations.is_empty()
                 && confirmed_identity_debits.is_empty()
@@ -2549,6 +2589,27 @@ impl NetworkShieldedCoordinator {
                 let Some(stored) = stored else { continue };
                 if stored.status != ShieldedActivityStatus::Pending {
                     continue;
+                }
+                // Its untouched inputs stay reserved by this attempt, with no
+                // record left to resolve them: release, under this lock, each
+                // reservation still carrying this activity. One another
+                // attempt holds carries that attempt's activity and is kept.
+                let own: Vec<[u8; 32]> = store
+                    .stale_pending_spends(*id)
+                    .map_err(|e| {
+                        crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                    })?
+                    .into_iter()
+                    .filter(|(nullifier, _, activity_id, _)| {
+                        *activity_id == Some(entry_id)
+                            && stored.spent_nullifiers.contains(nullifier)
+                    })
+                    .map(|(nullifier, _, _, _)| nullifier)
+                    .collect();
+                for nullifier in own {
+                    store.clear_pending(*id, &nullifier).map_err(|e| {
+                        crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                    })?;
                 }
                 let failed = super::activity_recorder::with_status(
                     &stored,
@@ -2890,15 +2951,19 @@ pub(crate) fn private_payment_journal_snapshot<S: ShieldedStore>(
 /// they can never execute: a note the row spent is marked spent in `notes`,
 /// yet none of the row's outputs is in `observed_cmxs`.
 ///
-/// Called only after a complete scan (a cancelled or interrupted one
-/// publishes nothing, so marks no note spent). The scan marks an input spent
-/// from the nullifier an action of the spending transition reveals, and saves
-/// the outputs of that transition's actions in the same pass, as they sit in
-/// the same block. Had the row's own transition spent the input, its
-/// wallet-visible outputs (at least the credit pool change every spend
-/// carries, zero-valued included) would therefore be observed; none being
-/// observed means a different transition spent it, as a second device on the
-/// same seed does. An input the wallet itself marked spent after a proven
+/// An input counts as spent only where a scan proved coverage through the
+/// spend ([`SpendEvidence::proves_spent`]): the scan saw the action revealing
+/// its nullifier in a batch proved at height H, so the spending transition
+/// was appended at or below H, and a scan proved every action at or below
+/// some height at least H scanned. Every action of the spending transition,
+/// its outputs included, was then scanned and its wallet outputs saved. Had
+/// the row's own transition spent the input, its wallet-visible outputs (at
+/// least the credit pool change every spend carries, zero-valued included)
+/// would therefore be observed; none being observed means a different
+/// transition spent it, as a second device on the same seed does. A scan can
+/// see the revealing action at H while a neighbouring range of positions,
+/// proved at a lower height, ends before the transition's other actions:
+/// that pass covers less than H, and the row waits for one that covers it. An input the wallet itself marked spent after a proven
 /// execution leaves its row Confirmed, so it is not a candidate; were such a
 /// row left pending by a failed status write, the scan that later observes its
 /// outputs upgrades the Failed row to Confirmed, as it does any height-less
@@ -2907,6 +2972,8 @@ fn displaced_pending_spends(
     activity: &[ShieldedActivityEntry],
     notes: &[ShieldedNote],
     observed_cmxs: &HashSet<[u8; 32]>,
+    evidence: &SpendEvidence,
+    id: SubwalletId,
 ) -> Vec<[u8; 32]> {
     let spent: HashSet<[u8; 32]> = notes
         .iter()
@@ -2919,11 +2986,53 @@ fn displaced_pending_spends(
             entry.status == ShieldedActivityStatus::Pending
                 // Live rows only: scan-derived rows carry no record time.
                 && entry.created_at_ms != 0
-                && entry.spent_nullifiers.iter().any(|nf| spent.contains(nf))
+                && entry
+                    .spent_nullifiers
+                    .iter()
+                    .any(|nf| spent.contains(nf) && evidence.proves_spent(id, nf))
                 && !entry.note_cmxs.iter().any(|cmx| observed_cmxs.contains(cmx))
         })
         .map(|entry| entry.id)
         .collect()
+}
+
+/// What this process's note scans proved about spends of the wallets' notes
+/// ([`displaced_pending_spends`]).
+#[derive(Debug, Default)]
+struct SpendEvidence {
+    /// The highest height a scan proved covered
+    /// ([`super::sync::MultiSyncNotesResult::covered_height`]): every action
+    /// appended at or below it was scanned, by that pass or an earlier one.
+    /// It speaks of heights, not passes, so it holds whichever pass proved it.
+    covered_height: Option<u64>,
+    /// Per subwallet, the lowest height each of its notes was seen spent at
+    /// or below ([`super::sync::MultiSyncNotesResult::spend_heights`]).
+    spent_at: SpendHeights,
+}
+
+impl SpendEvidence {
+    fn record(&mut self, covered_height: Option<u64>, spend_heights: &SpendHeights) {
+        self.covered_height = self.covered_height.max(covered_height);
+        for (id, heights) in spend_heights {
+            let spent_at = self.spent_at.entry(*id).or_default();
+            for (nullifier, height) in heights {
+                spent_at
+                    .entry(*nullifier)
+                    .and_modify(|lowest| *lowest = (*lowest).min(*height))
+                    .or_insert(*height);
+            }
+        }
+    }
+
+    /// Whether a scan saw `id`'s note with `nullifier` spent at or below a
+    /// height a scan proved covered.
+    fn proves_spent(&self, id: SubwalletId, nullifier: &[u8; 32]) -> bool {
+        let spent_at = self
+            .spent_at
+            .get(&id)
+            .and_then(|heights| heights.get(nullifier));
+        matches!((spent_at, self.covered_height), (Some(at), Some(covered)) if *at <= covered)
+    }
 }
 
 fn unchanged<S: ShieldedStore>(
@@ -3534,6 +3643,21 @@ mod tests {
         (coordinator, id, keys, row)
     }
 
+    /// A complete scan that saw `id`'s note with `nullifier` spent in a
+    /// batch proved at `spent_at` and proved coverage through `covered`.
+    fn scan_saw_spend(
+        coordinator: &NetworkShieldedCoordinator,
+        id: SubwalletId,
+        nullifier: [u8; 32],
+        spent_at: u64,
+        covered: u64,
+    ) {
+        coordinator.record_spend_evidence(
+            Some(covered),
+            &BTreeMap::from([(id, BTreeMap::from([(nullifier, spent_at)]))]),
+        );
+    }
+
     async fn row_status(
         coordinator: &NetworkShieldedCoordinator,
         id: SubwalletId,
@@ -3566,6 +3690,7 @@ mod tests {
             competing_change.cmx = [0xD1; 32];
             store.save_note(id, &competing_change).unwrap();
         }
+        scan_saw_spend(&coordinator, id, PURCHASE_INPUT_NF, 200, 200);
         coordinator
             .derive_activity_into_changeset(&[(id, keys)], &mut ShieldedChangeSet::default())
             .await
@@ -3611,6 +3736,134 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A pass sees the action spending the purchase's input in a batch proved
+    /// at 200 while the neighbouring range, proved at 199, ends before the
+    /// purchase's change: it ends normally covering only 199, so the row stays
+    /// pending. The next pass covers 200, finds the change and confirms the
+    /// same row.
+    #[tokio::test]
+    async fn should_wait_for_coverage_through_the_spend_before_failing_a_pending_spend() {
+        let dir = temp_dir("displaced_coverage");
+        let (coordinator, id, keys, row) = coordinator_with_pending_purchase(&dir).await;
+        coordinator
+            .store()
+            .write()
+            .await
+            .mark_spent(id, &PURCHASE_INPUT_NF)
+            .unwrap();
+        scan_saw_spend(&coordinator, id, PURCHASE_INPUT_NF, 200, 199);
+        coordinator
+            .derive_activity_into_changeset(
+                &[(id, keys.clone())],
+                &mut ShieldedChangeSet::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Pending,
+            "the scan does not cover the spend's height"
+        );
+
+        {
+            let mut change = test_note([0xC2; 32], 1, false);
+            change.cmx = PURCHASE_CHANGE_CMX;
+            change.value = 0;
+            coordinator
+                .store()
+                .write()
+                .await
+                .save_note(id, &change)
+                .unwrap();
+        }
+        coordinator.record_spend_evidence(Some(200), &BTreeMap::new());
+        coordinator
+            .derive_activity_into_changeset(&[(id, keys)], &mut ShieldedChangeSet::default())
+            .await
+            .unwrap();
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Confirmed
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A displaced spend of two notes, one consumed by the competing spend:
+    /// the untouched note it reserved is released at once, selectable and
+    /// counted in the spendable balance, the consumed note stays spent, and
+    /// another attempt's reservation of a third note is kept.
+    #[tokio::test]
+    async fn should_release_the_untouched_notes_of_a_displaced_spend() {
+        let dir = temp_dir("displaced_release");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let keys = coordinator.accounts.read().await[&id].clone();
+        let (consumed, untouched, other) = ([0xA1; 32], [0xB1; 32], [0xE1; 32]);
+        let mut row = pending_purchase_row(consumed, PURCHASE_CHANGE_CMX);
+        row.spent_nullifiers = vec![consumed, untouched];
+        let other_attempt = [0xF1; 32];
+        {
+            let mut store = coordinator.store().write().await;
+            for (position, nullifier) in [consumed, untouched, other].into_iter().enumerate() {
+                let mut note = test_note(nullifier, position as u64, false);
+                note.cmx = [position as u8 + 0x60; 32];
+                store.save_note(id, &note).unwrap();
+            }
+            for (nullifier, reservation, activity) in [
+                (consumed, 1, row.id),
+                (untouched, 1, row.id),
+                (other, 2, other_attempt),
+            ] {
+                store.mark_pending_by(id, &nullifier, reservation).unwrap();
+                store
+                    .set_pending_spend(id, &nullifier, [7; 32], activity, Some(10))
+                    .unwrap();
+            }
+            store.save_activity(id, &row).unwrap();
+            // The competing spend lands and the scan covers it.
+            assert!(store.mark_spent(id, &consumed).unwrap());
+        }
+        scan_saw_spend(&coordinator, id, consumed, 200, 200);
+        coordinator
+            .derive_activity_into_changeset(&[(id, keys)], &mut ShieldedChangeSet::default())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Failed
+        );
+        let store = coordinator.store().read().await;
+        let unspent: Vec<[u8; 32]> = store
+            .get_unspent_notes(id)
+            .unwrap()
+            .iter()
+            .map(|note| note.nullifier)
+            .collect();
+        assert_eq!(
+            unspent,
+            vec![untouched],
+            "only the untouched note is selectable"
+        );
+        assert_eq!(store.spendable_balance(id).unwrap(), 1_000);
+        assert!(store
+            .get_all_notes(id)
+            .unwrap()
+            .iter()
+            .any(|note| note.nullifier == consumed && note.is_spent));
+        assert!(
+            store
+                .stale_pending_spends(id)
+                .unwrap()
+                .iter()
+                .any(|(nullifier, _, activity, _)| *nullifier == other
+                    && *activity == Some(other_attempt)),
+            "another attempt's reservation is kept"
+        );
+        drop(store);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// The purchase's own landing: the scan marks its input spent and finds
     /// its change, so the row is Confirmed, never Failed.
     #[tokio::test]
@@ -3625,6 +3878,7 @@ mod tests {
             change.value = 0;
             store.save_note(id, &change).unwrap();
         }
+        scan_saw_spend(&coordinator, id, PURCHASE_INPUT_NF, 200, 200);
         coordinator
             .derive_activity_into_changeset(&[(id, keys)], &mut ShieldedChangeSet::default())
             .await
