@@ -705,6 +705,25 @@ class ContactRequestOutcomesTest {
         assertEquals(CollisionAccept.ReplyInKind, public.collisionAccept)
     }
 
+    /**
+     * An accept that may have gone through never points at the public sync
+     * alone: an in-kind accept may have replied privately.
+     */
+    @Test
+    fun shouldPointAnAcceptThatMayHaveGoneThroughAtAReadOfPrivateRequests() {
+        val inKind = ContactRequestSubmission.of(byteArrayOf(1), sendPrivately = false, accountLabel = "", dpnsLabel = null)
+        assertEquals(
+            "This may have gone through. It shows up once Requests is refreshed: pull to refresh on " +
+                "Requests, which reads public and private requests. Do not submit it again.",
+            inKind.acceptMayHaveGoneThroughMessage,
+        )
+        val private = ContactRequestSubmission.of(byteArrayOf(1), sendPrivately = true, accountLabel = "", dpnsLabel = null)
+        assertEquals(
+            ContactRequestSubmissionOutcome.PRIVATE_MAY_HAVE_GONE_THROUGH_MESSAGE,
+            private.acceptMayHaveGoneThroughMessage,
+        )
+    }
+
     /** An unconfirmed submission marks only its own contact, and a read that does not cover it leaves the mark. */
     @Test
     fun shouldKeepAnUnconfirmedSubmissionAReadDidNotCover() {

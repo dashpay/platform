@@ -69,6 +69,15 @@ sealed interface ContactRequestSubmissionOutcome {
             "private requests on Add Contact. Do not submit it again."
 
         /**
+         * [MAY_HAVE_GONE_THROUGH_MESSAGE] for an accept that replies in kind:
+         * the wallet may have replied privately, which only the Requests
+         * refresh (both reads) shows.
+         */
+        const val IN_KIND_MAY_HAVE_GONE_THROUGH_MESSAGE = "This may have gone through. It shows " +
+            "up once Requests is refreshed: pull to refresh on Requests, which reads public and " +
+            "private requests. Do not submit it again."
+
+        /**
          * A public request or accept that may have gone through, as the
          * wallet holds it until a sync settles its outcome.
          */
@@ -522,12 +531,23 @@ class ContactRequestSubmission(
     /** How the collision dialog accepts the request the recipient already sent. */
     val collisionAccept: CollisionAccept get() = CollisionAccept.of(sendPrivately)
 
-    /** The Submitted notice for a send or accept that may have gone through. */
+    /** The Submitted notice for a send that may have gone through. */
     val mayHaveGoneThroughMessage: String
         get() = if (sendPrivately) {
             ContactRequestSubmissionOutcome.PRIVATE_MAY_HAVE_GONE_THROUGH_MESSAGE
         } else {
             ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE
+        }
+
+    /**
+     * The Submitted notice for the collision dialog's accept that may have
+     * gone through. An in-kind accept may reply privately (the wallet decides),
+     * so neither accept points at the public sync alone.
+     */
+    val acceptMayHaveGoneThroughMessage: String
+        get() = when (collisionAccept) {
+            CollisionAccept.PrivateReply -> ContactRequestSubmissionOutcome.PRIVATE_MAY_HAVE_GONE_THROUGH_MESSAGE
+            CollisionAccept.ReplyInKind -> ContactRequestSubmissionOutcome.IN_KIND_MAY_HAVE_GONE_THROUGH_MESSAGE
         }
 
     companion object {

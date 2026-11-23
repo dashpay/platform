@@ -418,7 +418,7 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                     ContactRequestSubmissionOutcome.MayHaveGoneThrough -> {
                         // Pending, not failed: the next sync settles it.
                         kickDashPaySync(scope, m)
-                        unconfirmedNotice = submission.mayHaveGoneThroughMessage
+                        unconfirmedNotice = submission.acceptMayHaveGoneThroughMessage
                     }
                     // Nothing was signed: the screen shows the pair being
                     // checked, with the DashPay sync, never a retry.
@@ -536,6 +536,11 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
             }
 
             val recipient = resolvedRecipient
+            if (recipient == null && sendPrivately) {
+                // Kept while it is on with no recipient picked, so the user can
+                // turn it off again, which Scan QR needs.
+                SendPrivatelySection(sendPrivately, enabled = !isSending) { sendPrivately = it }
+            }
             if (recipient != null) {
                 PreviewSection(
                     recipient = recipient,
@@ -552,30 +557,7 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                         singleLine = true,
                     )
                 }
-                FormSection {
-                    // One toggleable row, so TalkBack reads the label with the
-                    // switch's role and state.
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .toggleable(
-                                value = sendPrivately,
-                                enabled = !isSending,
-                                role = Role.Switch,
-                                onValueChange = { sendPrivately = it },
-                            )
-                            .testTag("dashpay.addContact.sendPrivately"),
-                    ) {
-                        Text("Send privately", modifier = Modifier.weight(1f))
-                        Switch(checked = sendPrivately, onCheckedChange = null, enabled = !isSending)
-                    }
-                    Text(
-                        "Paid from this wallet's shielded balance, so nothing on chain names either of you.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                SendPrivatelySection(sendPrivately, enabled = !isSending) { sendPrivately = it }
                 SubmitButton(
                     text = "Send Request",
                     isLoading = isSending,
@@ -666,6 +648,36 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                     modifier = Modifier.testTag("dashpay.addContact.submitted.done"),
                 ) { Text("Done") }
             },
+        )
+    }
+}
+
+/**
+ * "Send privately", one toggleable row so TalkBack reads the label with the
+ * switch's role and state. ← Swift `AddContactView.sendPrivatelySection`.
+ */
+@Composable
+private fun SendPrivatelySection(sendPrivately: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    FormSection {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(
+                    value = sendPrivately,
+                    enabled = enabled,
+                    role = Role.Switch,
+                    onValueChange = onChange,
+                )
+                .testTag("dashpay.addContact.sendPrivately"),
+        ) {
+            Text("Send privately", modifier = Modifier.weight(1f))
+            Switch(checked = sendPrivately, onCheckedChange = null, enabled = enabled)
+        }
+        Text(
+            "Paid from this wallet's shielded balance, so nothing on chain names either of you.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
