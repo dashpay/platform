@@ -17,11 +17,12 @@ A release goes through the seven steps of **Release flow** in order. A **stable*
 1. Confirm the target version and base branch with the user, and resolve the version the params will produce (dry-check with the [derivation rules](#-t-derivation-rules-from-bump_versionjs-when--v-is-not-given)).
 2. **Stable only:** work out now whether it will be the newest stable version. Steps 3 and 6 depend on it. The newest stable version is the highest-numbered stable release published on GitHub; tags alone don't count, since a tag can exist without a release:
    ```sh
-   gh api --paginate 'repos/dashpay/platform/releases?per_page=100' \
-     --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
-     | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1.2,1n -k2,2n -k3,3n | tail -n 1
+   releases="$(gh api --paginate 'repos/dashpay/platform/releases?per_page=100' \
+     --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name')" \
+     && echo "${releases}" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1.2,1n -k2,2n -k3,3n | tail -n 1 \
+     || echo "could not list the releases"
    ```
-   It will be the newest stable version when it is numerically above the version this prints. A `5.0.4` cut after `5.1.0` is not. Run the same check again right before step 3, and step 6 runs it in its preflight, since another release may come out in between.
+   If it says it could not list the releases, stop: an incomplete list can make an older version look newest. It will be the newest stable version when it is numerically above the version this prints. A `5.0.4` cut after `5.1.0` is not. Run the same check again right before step 3, and step 6 runs it in its preflight, since another release may come out in between.
 3. Verify the [preconditions](#preconditions--check-before-running). If the tree is dirty, surface it and ask how to handle it; never fold stray files into the release.
 4. Run `yarn release -v=<target-version>`, only after the user's go: it pushes `release_<version>` and opens a PR against the branch you ran it from.
 5. Fix the [offset package versions](#known-gotcha-offset-package-versions-fix-on-the-pr) on the release branch and push.
@@ -38,14 +39,16 @@ Publishing a GitHub **release** creates its tag, unless the tag exists already, 
 1. Confirm the release PR is merged and the dev-branch tip carries the version bump.
 2. Write concise, **non-technical** release notes: a short highlights list (main features), a bug-fixes/hardening summary, and a link to the changelog. Summarize from the version's `CHANGELOG.md` section (its `### Features` / `### Bug Fixes` blocks); don't paste the raw commit list. Changelog link: `https://github.com/dashpay/platform/blob/v<version>/CHANGELOG.md` (or the compare URL `.../compare/v<prev>...v<version>`).
    - **Upgrade notices are not in the changelog.** `CHANGELOG.md` is regenerated from commit titles, so what operators and app developers must do lives in the book and has to be carried into the notes' **Upgrading** section by hand. For a release line that brings a new protocol version, check the book for an "Updating Apps for Protocol Version N" chapter and state its requirement under **Upgrading → App developers**, with a link. For 5.1 (protocol version 15) that is `book/src/sdk/protocol-version-15-upgrade.md`: wallets and apps must update to a 5.1 SDK before protocol version 15 activates, because a 5.0.x client can no longer read DPNS, DashPay, contracts created at protocol version 15, document history or 128-bit sums. Include it in every 5.1 prerelease's notes too, since testnet activates first.
-3. Check whether `v<version>` already exists on GitHub: a tag can exist without a release (`v4.1.2` does), and publishing a release for an existing tag uses that tag whatever `--target` says. This prints the commit the tag names, or nothing when there is no such tag:
+3. Check whether `v<version>` already exists on GitHub: a tag can exist without a release (`v4.1.2` does), and publishing a release for an existing tag uses that tag whatever `--target` says.
 
    ```sh
-   git ls-remote origin "refs/tags/v<version>" "refs/tags/v<version>^{}" | sort -k2 | tail -n 1 | cut -f1
+   git ls-remote --exit-code origin "refs/tags/v<version>" "refs/tags/v<version>^{}"; echo "exit $?"
    ```
 
-   If it prints another commit than the merge commit, stop and ask the user.
-4. Create the release. Confirm the notes and the command with the user first. Without a tag, create it at the merge commit; with a tag that names the merge commit, publish that tag:
+   - `exit 2`: there is no such tag.
+   - `exit 0`: the tag exists. The commit it names is on the line ending in `^{}` if there is one, otherwise on the only line. If that is not the merge commit, stop and ask the user.
+   - Any other exit: the check failed, which says nothing about the tag. Don't publish; run it again.
+4. Create the release. Confirm the notes and the command with the user first, then run the tag check from item 3 once more, since a tag can appear in between. Without a tag, create it at the merge commit; with a tag that names the merge commit, publish that tag:
 
 ```sh
 # no v<version> tag yet
@@ -64,7 +67,7 @@ gh release create v<version> --verify-tag \
 
 GitHub marks a stable release "Latest" by default, and the install docs download the deb from the latest release, so a patch on an older line must say `--latest=false`. Tell the user before publishing such a patch that `release.yml` still moves npm's `latest` dist-tag and the Docker `latest` image to it.
 
-5. Run the tag check from item 3 again: it must now print the merge commit. Steps 5 and 6 run it once more before they sign or touch `master`.
+5. Run the tag check from item 3 again: it must now exit 0 and name the merge commit. If it names another commit, tell the user at once: `release.yml` is building that commit. Steps 5 and 6 run the check once more before they sign or touch `master`.
 
 ### 4. Wait for `release.yml` and check the assets
 
