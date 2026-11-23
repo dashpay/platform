@@ -4255,6 +4255,138 @@ mod tests {
         }
     }
 
+    /// A transfer whose held token note another spend used keeps the pool
+    /// watched while its record lives, and once its fee anchor is pruned a
+    /// pool scan at a binding version settles it failed and releases the
+    /// hold, after which the pool can be unwatched.
+    #[tokio::test]
+    async fn should_settle_a_transfer_whose_token_note_another_spend_used() {
+        use super::super::store::PendingRedrive;
+        use super::super::token_pool::{insert_note_for_test, insert_watch, TokenPoolNote};
+
+        let dir = temp_dir("token_transfer_competing_spend");
+        let sdk = dash_sdk::Sdk::new_mock();
+        sdk.mock_verified_protocol_version(15).expect("a mock SDK");
+        let coordinator = coordinator_with_one_wallet_on(&dir, sdk).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let subwallets: Vec<(SubwalletId, AccountViewingKeys)> = coordinator
+            .accounts
+            .read()
+            .await
+            .iter()
+            .map(|(id, views)| (*id, views.clone()))
+            .collect();
+        let token = ShieldedTokenPoolWatch {
+            token_id: Identifier::from([0x77; 32]),
+            data_contract_id: Identifier::from([0x66; 32]),
+            token_contract_position: 0,
+        };
+        let fee_nf = [0xF1u8; 32];
+        let pruned_anchor = [0xF2u8; 32];
+        let row = ShieldedActivityEntry {
+            kind: ShieldedActivityKind::TokenShieldedTransfer,
+            ..pending_purchase_row(fee_nf, [0xF3; 32])
+        };
+        {
+            let mut store = coordinator.store().write().await;
+            store.save_note(id, &test_note(fee_nf, 0, false)).unwrap();
+            store.save_activity(id, &row).unwrap();
+            store
+                .with_token_pool_conn(|conn| {
+                    insert_watch(conn, id.wallet_id, &token)?;
+                    conn.execute(
+                        "INSERT INTO shielded_token_pool_scans \
+                         (token_id, pool_note_count, scanned_height, scanned_protocol_version) \
+                         VALUES (?1, 1, 10, 15)",
+                        rusqlite::params![token.token_id.as_slice()],
+                    )
+                    .expect("scan row");
+                    // Held by this transfer, and seen spent by another.
+                    insert_note_for_test(
+                        conn,
+                        &TokenPoolNote {
+                            id,
+                            token_id: token.token_id,
+                            position: 0,
+                            cmx: [1; 32],
+                            nullifier: [2; 32],
+                            value: 5,
+                            note_data: vec![0; 115],
+                            block_height: 1,
+                            is_spent: true,
+                            reserved_by: Some(row.id),
+                        },
+                    )
+                })
+                .unwrap();
+            store.mark_pending(id, &fee_nf).unwrap();
+            store
+                .set_pending_spend(id, &fee_nf, pruned_anchor, row.id, Some(10))
+                .unwrap();
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: row.id,
+                        anchor: pruned_anchor,
+                        nullifiers: vec![fee_nf],
+                        st_bytes: vec![0],
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                        anchor_height: Some(10),
+                    },
+                )
+                .unwrap();
+        }
+        let unwatch = || coordinator.unwatch_token_pool(id.wallet_id, token.token_id);
+        assert!(
+            matches!(
+                unwatch().await,
+                Err(PlatformWalletError::TokenShieldedPoolSpendPending { .. })
+            ),
+            "a hold on a spent note still keeps the pool watched"
+        );
+
+        // While its record lives, the sweep leaves it alone.
+        coordinator
+            .release_orphaned_token_reservations(
+                &subwallets,
+                &BTreeSet::from([token.token_id]),
+                Some(10),
+            )
+            .await;
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Pending
+        );
+
+        coordinator
+            .release_stranded_spends(
+                vec![(id, (fee_nf, pruned_anchor, Some(row.id), Some(10)))],
+                PrunedAnchorEvidence {
+                    recorded: &HashSet::new(),
+                    height: 10,
+                    scan_covered_height: Some(10),
+                    heightless: None,
+                },
+            )
+            .await;
+        coordinator
+            .release_orphaned_token_reservations(
+                &subwallets,
+                &BTreeSet::from([token.token_id]),
+                Some(10),
+            )
+            .await;
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Failed
+        );
+        unwatch().await.expect("nothing is held any more");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// A credit scan's height is kept even from a pass in which no token
     /// pool completed: a later pass answered from below cannot lower the
     /// height a token pool's scan must reach before its holds are judged.
