@@ -7,10 +7,14 @@ package org.dashfoundation.dashsdk.security
  * models decryption.
  */
 internal class PlaintextIdentityKeysKeystore : KeystoreManager(KeySecurityPolicy.AUTH_GATED) {
+    /** How many identity-key writes went through this keystore: every `storePrivateKey`. */
+    @Volatile
+    var writes: Int = 0
+
     override fun encryptForIdentityKeys(plaintext: ByteArray): KeysAliasEncryptedBlob =
         KeysAliasEncryptedBlob(
             EncryptedBlob(iv = ByteArray(0), ciphertext = plaintext.copyOf()),
             keyFingerprint = "plaintext-test",
             alias = KEYS_ALIAS_AUTH_GATED,
-        )
+        ).also { writes += 1 }
 }

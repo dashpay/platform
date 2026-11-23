@@ -1,6 +1,7 @@
 package org.dashfoundation.dashsdk.security
 
 import androidx.test.core.app.ApplicationProvider
+import androidx.room.withTransaction
 import kotlinx.coroutines.runBlocking
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
@@ -35,13 +36,15 @@ class MasternodeVotingKeyStoreTest {
     private val identifier = "mnvoting.$identityIdHex.$addressHex"
 
     private lateinit var db: DashDatabase
+    private lateinit var keystore: PlaintextIdentityKeysKeystore
 
     /** A store whose voting address of a key is its first 20 bytes (no native library). */
     private lateinit var assigning: MasternodeVotingKeyStore
 
     @Before
     fun setUp() = runBlocking {
-        storage = WalletStorage(ApplicationProvider.getApplicationContext(), PlaintextIdentityKeysKeystore())
+        keystore = PlaintextIdentityKeysKeystore()
+        storage = WalletStorage(ApplicationProvider.getApplicationContext(), keystore)
         storage.deleteAll()
         store = MasternodeVotingKeyStore(storage)
         assigning = MasternodeVotingKeyStore.forTesting(storage) { key -> key.copyOf(20) }
@@ -76,7 +79,7 @@ class MasternodeVotingKeyStoreTest {
         storage.storePrivateKey(identifierOfKey(3), keyWithAddress(3))
 
         val assignment = assigning.assignToIdentity(
-            db.identityDao(), identityId, keyWithAddress(2), expectedIdentifier = identifierOfKey(1),
+            db, identityId, keyWithAddress(2), expectedIdentifier = identifierOfKey(1),
         )
 
         assertEquals(VotingKeyAssignment.Assigned(identifierOfKey(2), otherEntriesRemoved = true), assignment)
@@ -88,28 +91,77 @@ class MasternodeVotingKeyStoreTest {
         assertFalse(db.identityDao().existsByVotingPrivateKeyIdentifier(identifierOfKey(1)))
     }
 
+    /** S2: a row that names another key is seen before anything is written. */
     @Test
-    fun shouldRecordNothingAndDeleteTheNewKeyWhenTheRowNamesAnother() = runBlocking<Unit> {
+    fun shouldWriteNothingWhenTheRowNamesAnother() = runBlocking<Unit> {
         insertRow(votingIdentifier = identifierOfKey(1))
         storage.storePrivateKey(identifierOfKey(1), keyWithAddress(1))
+        val writesBefore = keystore.writes
 
         val assignment = assigning.assignToIdentity(
-            db.identityDao(), identityId, keyWithAddress(2), expectedIdentifier = null,
+            db, identityId, keyWithAddress(2), expectedIdentifier = null,
         )
 
         assertEquals(VotingKeyAssignment.Changed(identifierOfKey(1)), assignment)
         assertEquals(identifierOfKey(1), db.identityDao().getByIdentityId(identityId)?.votingPrivateKeyIdentifier)
         assertTrue(storage.hasPrivateKey(identifierOfKey(1)))
         assertFalse(storage.hasPrivateKey(identifierOfKey(2)))
+        assertEquals(writesBefore, keystore.writes)
     }
 
+    /** S2: a row that is gone (a clear ran first) gets no key written back. */
     @Test
-    fun shouldRecordNothingAndDeleteTheNewKeyWhenTheRowIsGone() = runBlocking<Unit> {
+    fun shouldWriteNothingWhenTheRowIsGone() = runBlocking<Unit> {
         val assignment = assigning.assignToIdentity(
-            db.identityDao(), identityId, keyWithAddress(2), expectedIdentifier = null,
+            db, identityId, keyWithAddress(2), expectedIdentifier = null,
         )
 
         assertEquals(VotingKeyAssignment.Changed(null), assignment)
+        assertFalse(storage.hasPrivateKey(identifierOfKey(2)))
+        assertEquals(0, keystore.writes)
+    }
+
+    /** A row changed between the check and the record still keeps its key; the new one goes. */
+    @Test
+    fun shouldDeleteTheNewKeyWhenTheRowChangesAfterTheWrite() = runBlocking<Unit> {
+        insertRow(votingIdentifier = null)
+        storage.storePrivateKey(identifierOfKey(1), keyWithAddress(1))
+        // Records key 1 on the row while key 2 is being written, outside the lock.
+        val racing = MasternodeVotingKeyStore.forTesting(storage) { key ->
+            runBlocking {
+                db.identityDao().replaceVotingPrivateKeyIdentifier(identityId, null, identifierOfKey(1), 0)
+            }
+            key.copyOf(20)
+        }
+
+        val assignment = racing.assignToIdentity(db, identityId, keyWithAddress(2), expectedIdentifier = null)
+
+        assertEquals(VotingKeyAssignment.Changed(identifierOfKey(1)), assignment)
+        assertTrue(storage.hasPrivateKey(identifierOfKey(1)))
+        assertFalse(storage.hasPrivateKey(identifierOfKey(2)))
+    }
+
+    /** B1: inside a Room transaction it refuses before writing, and a rollback finds A intact. */
+    @Test
+    fun shouldRefuseToRunInsideARoomTransaction() = runBlocking<Unit> {
+        insertRow(votingIdentifier = identifierOfKey(1))
+        storage.storePrivateKey(identifierOfKey(1), keyWithAddress(1))
+        val writesBefore = keystore.writes
+
+        var refused: Throwable? = null
+        db.withTransaction {
+            refused = try {
+                assigning.assignToIdentity(db, identityId, keyWithAddress(2), identifierOfKey(1))
+                null
+            } catch (e: IllegalStateException) {
+                e
+            }
+        }
+
+        assertTrue(refused.toString(), refused is IllegalStateException)
+        assertEquals(writesBefore, keystore.writes)
+        assertEquals(identifierOfKey(1), db.identityDao().getByIdentityId(identityId)?.votingPrivateKeyIdentifier)
+        assertTrue(storage.hasPrivateKey(identifierOfKey(1)))
         assertFalse(storage.hasPrivateKey(identifierOfKey(2)))
     }
 

@@ -45,6 +45,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import org.dashfoundation.dashsdk.Network
+import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.dao.IdentityDao
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore
@@ -292,7 +293,7 @@ fun LoadIdentityScreen(navController: NavHostController) {
 
                         val result = saveLoadedIdentity(
                             dao = container.database.identityDao(),
-                            entries = StoredVotingKeyEntries(keys),
+                            entries = StoredVotingKeyEntries(keys, container.database),
                             identityId = idBytes,
                             networkRaw = activeNetwork.ffiValue,
                             balance = balance,
@@ -369,7 +370,7 @@ fun LoadIdentityScreen(navController: NavHostController) {
                                 val result = try {
                                     replaceVotingKey(
                                         dao = container.database.identityDao(),
-                                        entries = StoredVotingKeyEntries(keys),
+                                        entries = StoredVotingKeyEntries(keys, container.database),
                                         identityId = pending.identityId,
                                         expectedIdentifier = pending.storedIdentifier,
                                         votingKey = key,
@@ -570,7 +571,6 @@ internal interface VotingKeyEntries {
 
     /** [MasternodeVotingKeyStore.assignToIdentity]: store, record and sweep, under the lock. */
     suspend fun assign(
-        dao: IdentityDao,
         identityId: ByteArray,
         votingKey: ByteArray,
         expectedIdentifier: String?,
@@ -584,19 +584,21 @@ internal interface VotingKeyEntries {
     suspend fun deleteOtherEntriesOf(identityId: ByteArray, keep: String?)
 }
 
-/** [VotingKeyEntries] over [MasternodeVotingKeyStore]. */
-internal class StoredVotingKeyEntries(private val keys: MasternodeVotingKeyStore) : VotingKeyEntries {
+/** [VotingKeyEntries] over [MasternodeVotingKeyStore] and the identities of [database]. */
+internal class StoredVotingKeyEntries(
+    private val keys: MasternodeVotingKeyStore,
+    private val database: DashDatabase,
+) : VotingKeyEntries {
     override fun identifierFor(identityId: ByteArray, votingKey: ByteArray): String =
         MasternodeVotingKeyStore.identifierFor(identityId, keys.votingAddress(votingKey))
 
     override suspend fun assign(
-        dao: IdentityDao,
         identityId: ByteArray,
         votingKey: ByteArray,
         expectedIdentifier: String?,
         nowMillis: Long,
     ): VotingKeyAssignment =
-        keys.assignToIdentity(dao, identityId, votingKey, expectedIdentifier, nowMillis)
+        keys.assignToIdentity(database, identityId, votingKey, expectedIdentifier, nowMillis)
 
     override suspend fun <T> withLock(block: suspend () -> T): T =
         MasternodeVotingKeyStore.withVotingKeyLock(block)
@@ -651,7 +653,7 @@ internal suspend fun saveLoadedIdentity(
         is VotingKeyOutcome.Conflicting ->
             return LoadSaveResult.ConfirmReplacement(outcome.storedIdentifier)
     }
-    val assignment = assignOrFail(entries, dao, identityId, votingKey, expected, nowMillis) { reason ->
+    val assignment = assignOrFail(entries, identityId, votingKey, expected, nowMillis) { reason ->
         return LoadSaveResult.Failed(votingKeyNotStoredMessage(reason))
     }
     return when (assignment) {
@@ -729,7 +731,7 @@ internal suspend fun replaceVotingKey(
     nowMillis: Long = System.currentTimeMillis(),
 ): LoadSaveResult {
     val assignment =
-        assignOrFail(entries, dao, identityId, votingKey, expectedIdentifier, nowMillis) { reason ->
+        assignOrFail(entries, identityId, votingKey, expectedIdentifier, nowMillis) { reason ->
             return LoadSaveResult.Failed(votingKeyNotReplacedMessage(reason))
         }
     return when (assignment) {
@@ -770,14 +772,13 @@ private suspend fun removeStaleEntries(
  */
 private suspend inline fun assignOrFail(
     entries: VotingKeyEntries,
-    dao: IdentityDao,
     identityId: ByteArray,
     votingKey: ByteArray,
     expectedIdentifier: String?,
     nowMillis: Long,
     onFailure: (reason: String?) -> Nothing,
 ): VotingKeyAssignment = try {
-    entries.assign(dao, identityId, votingKey, expectedIdentifier, nowMillis)
+    entries.assign(identityId, votingKey, expectedIdentifier, nowMillis)
 } catch (e: CancellationException) {
     throw e
 } catch (e: Exception) {

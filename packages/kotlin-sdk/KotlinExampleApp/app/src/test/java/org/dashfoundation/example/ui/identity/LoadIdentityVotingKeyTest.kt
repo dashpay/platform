@@ -11,6 +11,7 @@ import org.dashfoundation.dashsdk.persistence.dao.IdentityDao
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
 import org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore
+import org.dashfoundation.dashsdk.security.WalletStorage
 import org.dashfoundation.dashsdk.security.VotingKeyAssignment
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -50,6 +51,7 @@ class LoadIdentityVotingKeyTest {
 
     @After
     fun tearDown() {
+        MasternodeVotingKeyStore.onLockContendedForTesting = null
         db.close()
     }
 
@@ -345,7 +347,8 @@ class LoadIdentityVotingKeyTest {
 
         assertEquals(LoadSaveResult.Failed(VOTING_KEY_CHANGED_MESSAGE), result)
         assertEquals(current, dao.getByIdentityId(identityId)!!.votingPrivateKeyIdentifier)
-        assertEquals(listOf(identifierOf(keyB)), entries.deletedIdentifiers)
+        // The change is seen before the new key is written.
+        assertEquals(emptyList<String>(), entries.storedIdentifiers)
     }
 
     /** S2: every reload warns while an earlier entry cannot be removed, then sweeps it. */
@@ -385,26 +388,27 @@ class LoadIdentityVotingKeyTest {
         val release = CompletableDeferred<Unit>()
         entries.onStore = {
             storing.complete(Unit)
-            release.await()
+            withTimeout(10_000) { release.await() }
         }
 
         try {
             val replacement = async(Dispatchers.IO) {
                 replaceVotingKey(dao, entries, identityId, identifierOf(keyA), keyB)
             }
-            storing.await()
+            withTimeout(10_000) { storing.await() }
             val reloadWaiting = CompletableDeferred<Unit>()
-            entries.onLockRequested = { reloadWaiting.complete(Unit) }
+            // The SDK's own signal that a caller is waiting on the real voting key mutex.
+            MasternodeVotingKeyStore.onLockContendedForTesting = { reloadWaiting.complete(Unit) }
             val reload = async(Dispatchers.IO) {
                 save(alias = "again", pickedType = LoadIdentityType.USER, typePicked = false)
             }
-            // The reload asks for the voting key lock the replacement holds, and has swept nothing.
+            // The reload waits on the lock the replacement holds, and has swept nothing.
             withTimeout(10_000) { reloadWaiting.await() }
             assertTrue(identifierOf(keyB) in entries.live)
 
             release.complete(Unit)
-            assertEquals(LoadSaveResult.Saved, replacement.await())
-            assertEquals(LoadSaveResult.Saved, reload.await())
+            assertEquals(LoadSaveResult.Saved, withTimeout(10_000) { replacement.await() })
+            assertEquals(LoadSaveResult.Saved, withTimeout(10_000) { reload.await() })
             assertEquals(identifierOf(keyB), dao.getByIdentityId(identityId)!!.votingPrivateKeyIdentifier)
             assertEquals(setOf(identifierOf(keyB)), entries.live)
         } finally {
@@ -501,25 +505,37 @@ class LoadIdentityVotingKeyTest {
         var sweepFailure: Exception? = null
         var onStore: (suspend () -> Unit)? = null
 
-        /** Called just before asking for the voting key lock. */
-        var onLockRequested: (() -> Unit)? = null
+        /**
+         * The app's production adapter, whose [VotingKeyEntries.withLock] this fake uses, so
+         * every lock taken here is the real one the app takes. Only the key storage below it
+         * is faked.
+         */
+        private val production by lazy {
+            StoredVotingKeyEntries(
+                MasternodeVotingKeyStore(WalletStorage(RuntimeEnvironment.getApplication())),
+                db,
+            )
+        }
 
         override fun identifierFor(identityId: ByteArray, votingKey: ByteArray): String =
             MasternodeVotingKeyStore.identifierFor(identityId, votingKey.copyOf(20))
 
         /**
          * What `MasternodeVotingKeyStore.assignToIdentity` does, over [live] instead of
-         * secure storage, under the real voting key lock. The SDK's own tests cover the real
-         * operation.
+         * secure storage, under the production adapter's voting key lock. The SDK's own tests
+         * cover the real operation.
          */
         override suspend fun assign(
-            dao: IdentityDao,
             identityId: ByteArray,
             votingKey: ByteArray,
             expectedIdentifier: String?,
             nowMillis: Long,
         ): VotingKeyAssignment = withLock {
             failure?.let { throw it }
+            val before = dao.getByIdentityId(identityId)
+            if (before == null || before.votingPrivateKeyIdentifier != expectedIdentifier) {
+                return@withLock VotingKeyAssignment.Changed(before?.votingPrivateKeyIdentifier)
+            }
             val identifier = identifierFor(identityId, votingKey)
             storedIdentifiers += identifier
             live += identifier
@@ -544,10 +560,7 @@ class LoadIdentityVotingKeyTest {
             }
         }
 
-        override suspend fun <T> withLock(block: suspend () -> T): T {
-            onLockRequested?.invoke()
-            return MasternodeVotingKeyStore.withVotingKeyLock(block)
-        }
+        override suspend fun <T> withLock(block: suspend () -> T): T = production.withLock(block)
 
         override suspend fun deleteOtherEntriesOf(identityId: ByteArray, keep: String?) {
             sweepFailure?.let { throw it }

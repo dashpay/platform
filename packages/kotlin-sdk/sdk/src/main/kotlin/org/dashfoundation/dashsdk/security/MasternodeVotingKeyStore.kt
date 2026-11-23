@@ -1,12 +1,13 @@
 package org.dashfoundation.dashsdk.security
 
+import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.MasternodeVotingKeyNative
 import org.dashfoundation.dashsdk.ffi.NativeLoader
-import org.dashfoundation.dashsdk.persistence.dao.IdentityDao
+import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.hexToByteArray
 import org.dashfoundation.dashsdk.persistence.toHex
 
@@ -86,6 +87,7 @@ class MasternodeVotingKeyStore private constructor(
      *
      * @param identityId the masternode or evonode identity's 32-byte id.
      */
+    @JvmSynthetic
     internal suspend fun store(identityId: ByteArray, privateKey: ByteArray): String {
         val address = votingAddressForTesting?.invoke(privateKey) ?: votingAddress(privateKey)
         val identifier = identifierFor(identityId, address)
@@ -105,21 +107,52 @@ class MasternodeVotingKeyStore private constructor(
      * - The row is gone or names another key: the entry just written is deleted unless the
      *   row names it, and [VotingKeyAssignment.Changed] carries what the row names now.
      *
+     * The row is checked first, inside the lock: when it is gone or does not name
+     * [expectedIdentifier] (a clear or another assignment ran first), nothing is written and
+     * the result is [VotingKeyAssignment.Changed]. The conditional update after the write
+     * checks again.
+     *
      * Entering the key the row already names, with that identifier as [expectedIdentifier],
      * rewrites the entry, which repairs one that no longer reads. [privateKey] stays the
      * caller's to zero.
      *
+     * @param database the database whose `identities` row records the key. Must not be in a
+     *   transaction: the secure-storage writes cannot roll back with it, so a rolled-back row
+     *   could name a key this call already deleted.
      * @param expectedIdentifier the identifier the row is expected to name, null for none.
+     * @throws IllegalStateException inside a Room transaction, before anything is written.
      * @throws Exception when the key cannot be written (nothing is recorded then);
      *   cancellation propagates.
      */
     suspend fun assignToIdentity(
-        identityDao: IdentityDao,
+        database: DashDatabase,
         identityId: ByteArray,
         privateKey: ByteArray,
         expectedIdentifier: String?,
         nowMillis: Long = System.currentTimeMillis(),
-    ): VotingKeyAssignment = withVotingKeyLock {
+    ): VotingKeyAssignment {
+        check(!database.inTransaction()) {
+            "assignToIdentity cannot run inside a Room transaction: its secure-storage writes " +
+                "cannot roll back with it"
+        }
+        return withVotingKeyLock {
+            assignLocked(database, identityId, privateKey, expectedIdentifier, nowMillis)
+        }
+    }
+
+    private suspend fun assignLocked(
+        database: DashDatabase,
+        identityId: ByteArray,
+        privateKey: ByteArray,
+        expectedIdentifier: String?,
+        nowMillis: Long,
+    ): VotingKeyAssignment {
+        val identityDao = database.identityDao()
+        // Nothing is written for a row that is gone or names another key by now.
+        val before = identityDao.getByIdentityId(identityId)
+        if (before == null || before.votingPrivateKeyIdentifier != expectedIdentifier) {
+            return VotingKeyAssignment.Changed(before?.votingPrivateKeyIdentifier)
+        }
         val identifier = store(identityId, privateKey)
         val changed = identityDao.replaceVotingPrivateKeyIdentifier(
             identityId, expectedIdentifier, identifier, nowMillis,
@@ -127,18 +160,17 @@ class MasternodeVotingKeyStore private constructor(
         if (changed == 0) {
             val current = identityDao.getByIdentityId(identityId)?.votingPrivateKeyIdentifier
             if (current != identifier) storage.deletePrivateKey(identifier)
-            VotingKeyAssignment.Changed(current)
-        } else {
-            val swept = try {
-                deleteOtherEntriesOf(identityId, keep = identifier)
-                true
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                false
-            }
-            VotingKeyAssignment.Assigned(identifier, otherEntriesRemoved = swept)
+            return VotingKeyAssignment.Changed(current)
         }
+        val swept = try {
+            deleteOtherEntriesOf(identityId, keep = identifier)
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            false
+        }
+        return VotingKeyAssignment.Assigned(identifier, otherEntriesRemoved = swept)
     }
 
     /**
@@ -217,11 +249,14 @@ class MasternodeVotingKeyStore private constructor(
         private val votingKeyLock = Mutex()
 
         /**
-         * Test hook: called just before a caller waits for [votingKeyLock] while another
-         * holds it, so a test can see the second operation reached the lock.
+         * TEST ONLY; production code never sets it. Called just before a caller of
+         * [withVotingKeyLock] waits for the lock while another holds it, so a test (in this
+         * module or an app's) can see the second operation reached the lock. Reset it to null
+         * after the test.
          */
         @Volatile
-        internal var onLockContendedForTesting: (() -> Unit)? = null
+        @VisibleForTesting
+        var onLockContendedForTesting: (() -> Unit)? = null
 
         /** A store whose voting addresses come from [votingAddress], for JVM tests. */
         @JvmSynthetic
