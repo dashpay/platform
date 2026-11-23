@@ -488,9 +488,20 @@ struct MasternodeVoterSection: View {
         )
         let knownProTxHash = identity.masternodeProTxHash
         guard keyUse.checkBeforeUse || knownProTxHash == nil else {
+            // The current key reads and needs no check, so an earlier failure
+            // (such as a resolution that failed before the row was loaded
+            // again) no longer holds.
+            if checkFailure?.identityId == identityId { checkFailure = nil }
             completed = true
             return
         }
+        // What the row recorded when this check started: a result is written
+        // only onto that, never over a verdict recorded since.
+        let startedFrom = (
+            checkRaw: identity.votingKeyCheckRaw,
+            checkAddress: identity.votingKeyCheckAddress,
+            proTxHash: identity.masternodeProTxHash
+        )
         checkingIdentityId = identityId
         defer {
             if checkingIdentityId == identityId { checkingIdentityId = nil }
@@ -570,6 +581,24 @@ struct MasternodeVoterSection: View {
             return
         }
         guard storedAddress == checkedAddress else { return }
+        // A verdict recorded since this check started (another window, or a
+        // load) is newer than this answer: it is kept, and the changed record
+        // starts a check of its own.
+        guard row.votingKeyCheckRaw == startedFrom.checkRaw,
+              row.votingKeyCheckAddress == startedFrom.checkAddress,
+              row.masternodeProTxHash == startedFrom.proTxHash else {
+            return
+        }
+        // The fields this check writes, as stored, to put back if the save
+        // fails. Only these: the context is shared, so a rollback would also
+        // discard other unsaved changes.
+        let stored = (
+            checkRaw: row.votingKeyCheckRaw,
+            checkMessage: row.votingKeyCheckMessage,
+            checkAddress: row.votingKeyCheckAddress,
+            proTxHash: row.masternodeProTxHash,
+            roleRaw: row.masternodeRoleRaw
+        )
         if let resolvedProTxHash {
             row.masternodeProTxHash = resolvedProTxHash
             row.masternodeRole = .owner
@@ -588,9 +617,14 @@ struct MasternodeVoterSection: View {
             if checkFailure?.identityId == identityId { checkFailure = nil }
             completed = true
         } catch {
-            // The row goes back to what is stored, so neither this pick nor
-            // a rerun can sign on a verdict that was not saved.
-            modelContext.rollback()
+            // The fields this check wrote go back to what is stored, so
+            // neither this pick nor a rerun can sign on a verdict that was not
+            // saved; nothing else in the context is touched.
+            row.votingKeyCheckRaw = stored.checkRaw
+            row.votingKeyCheckMessage = stored.checkMessage
+            row.votingKeyCheckAddress = stored.checkAddress
+            row.masternodeProTxHash = stored.proTxHash
+            row.masternodeRoleRaw = stored.roleRaw
             checkFailure = (identityId, .notFinished(
                 "The voting key check could not be saved: \(error.localizedDescription)"
             ))

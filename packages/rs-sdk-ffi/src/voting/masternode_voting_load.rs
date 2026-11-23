@@ -247,7 +247,9 @@ impl LoadDecision {
 /// * `loaded_address` - The voting address of the key just loaded.
 /// * `sibling` - The record the host holds for the other key, with its address; `{0}` for none.
 ///
-/// Every argument is passed by value and must be fully initialized.
+/// Every argument is passed by value and must be fully initialized even where it is not read:
+/// each enum a declared value, and every address byte set. Pass `{0}` for `sibling` when there
+/// is no record.
 ///
 /// # Returns
 /// The record to persist for the other key; `check` `None` leaves its record unchanged.

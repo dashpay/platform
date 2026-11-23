@@ -482,13 +482,13 @@ async fn owner_coherent_with_voter<Refetch, RefetchFuture>(
     owner_height: u64,
     voter_height: Option<u64>,
     refetch: Refetch,
-) -> Result<Option<Identity>, Error>
+) -> Result<(Option<Identity>, u64), Error>
 where
     Refetch: FnOnce() -> RefetchFuture,
     RefetchFuture: std::future::Future<Output = Result<(Option<Identity>, u64), Error>>,
 {
     if !owner_absence_predates_voter(&owner, owner_height, voter_height) {
-        return Ok(owner);
+        return Ok((owner, owner_height));
     }
     let (owner, owner_height) = refetch().await?;
     if owner_absence_predates_voter(&owner, owner_height, voter_height) {
@@ -497,7 +497,37 @@ where
              {owner_height}, older than the voter identity it proved present; load again"
         )));
     }
-    Ok(owner)
+    Ok((owner, owner_height))
+}
+
+/// The voter identity to decide with, coherent with the owner identity's proof at
+/// `owner_height`: `fetched` as it came (the identity and the height of its proof), unless the
+/// voter identity was proved absent at an older height, in which case `refetch` asks again. An
+/// absence still older is an error: it does not prove the voter identity absent when the owner
+/// answer was taken (a shared masternode's voter identity may have been created in between).
+/// A failed fetch stays an error, which the rule reads as nothing proved.
+async fn voter_coherent_with_owner<Refetch, RefetchFuture>(
+    voter_id: Identifier,
+    fetched: Result<(Option<Identity>, u64), Error>,
+    owner_height: u64,
+    refetch: Refetch,
+) -> Result<Option<Identity>, Error>
+where
+    Refetch: FnOnce() -> RefetchFuture,
+    RefetchFuture: std::future::Future<Output = Result<(Option<Identity>, u64), Error>>,
+{
+    let (voter, voter_height) = fetched?;
+    if voter.is_some() || voter_height >= owner_height {
+        return Ok(voter);
+    }
+    let (voter, voter_height) = refetch().await?;
+    if voter.is_none() && voter_height < owner_height {
+        return Err(Error::Generic(format!(
+            "Platform proved the voter identity {voter_id} absent at height {voter_height}, \
+             older than its answer about the owner identity; load again"
+        )));
+    }
+    Ok(voter)
 }
 
 /// Runs the owner and voter fetches side by side. The voter fetch's own result is data (it
@@ -561,7 +591,7 @@ pub async fn load_masternode_for_voting(
         .as_ref()
         .and_then(|(_, fetched)| fetched.as_ref().ok())
         .and_then(|(identity, metadata)| identity.as_ref().map(|_| metadata.height));
-    let owner = owner_coherent_with_voter(
+    let (owner, owner_height) = owner_coherent_with_voter(
         owner_id,
         owner,
         owner_metadata.height,
@@ -573,7 +603,20 @@ pub async fn load_masternode_for_voting(
         },
     )
     .await?;
-    let voter = voter.map(|(address, fetched)| (address, fetched.map(|(identity, _)| identity)));
+    let voter = match voter {
+        Some((address, fetched)) => {
+            let voter_id = voter_identity_id(pro_tx_hash, address);
+            let fetched = fetched.map(|(identity, metadata)| (identity, metadata.height));
+            let voter = voter_coherent_with_owner(voter_id, fetched, owner_height, || async move {
+                Identity::fetch_with_metadata(sdk, voter_id, None)
+                    .await
+                    .map(|(identity, metadata)| (identity, metadata.height))
+            })
+            .await;
+            Some((address, voter))
+        }
+        None => None,
+    };
     masternode_voting_load(pro_tx_hash, owner, voter)
 }
 
@@ -1482,11 +1525,11 @@ mod tests {
                 answer(Ok((Some(owner_identity()), 10)))
             )
             .await,
-            Ok(Some(_))
+            Ok((Some(_), 10))
         ));
         assert!(matches!(
             owner_coherent_with_voter(id, None, 9, Some(10), answer(Ok((None, 10)))).await,
-            Ok(None)
+            Ok((None, 10))
         ));
         assert!(matches!(
             owner_coherent_with_voter(id, None, 9, Some(10), answer(Ok((None, 9)))).await,
@@ -1508,6 +1551,50 @@ mod tests {
         };
         assert!(matches!(
             owner_coherent_with_voter(id, None, 10, Some(10), never).await,
+            Ok((None, 10))
+        ));
+    }
+
+    /// The voter answer the loader decides with: a voter identity proved absent at height 9
+    /// while the owner answer was taken at 10 is asked for again. Presence, or absence at 10,
+    /// is used; absence at 9 again, or a failed refetch, is an error. A voter proved present,
+    /// or absent at a height as new as the owner's, is never asked for again.
+    #[tokio::test]
+    async fn should_decide_with_a_refetched_voter_answer_coherent_with_the_owner() {
+        let id = voter_identity_id(pro_tx_hash(), &VOTING_ADDRESS);
+        let present = || Some(voter_identity(pro_tx_hash(), VOTING_ADDRESS, None));
+        let answer = |answer: Result<(Option<Identity>, u64), Error>| move || async move { answer };
+        let never = || -> std::future::Ready<Result<(Option<Identity>, u64), Error>> {
+            panic!("a coherent answer is not asked for again")
+        };
+        assert!(matches!(
+            voter_coherent_with_owner(id, Ok((None, 9)), 10, answer(Ok((present(), 10)))).await,
+            Ok(Some(_))
+        ));
+        assert!(matches!(
+            voter_coherent_with_owner(id, Ok((None, 9)), 10, answer(Ok((None, 10)))).await,
+            Ok(None)
+        ));
+        assert!(matches!(
+            voter_coherent_with_owner(id, Ok((None, 9)), 10, answer(Ok((None, 9)))).await,
+            Err(Error::Generic(_))
+        ));
+        assert!(matches!(
+            voter_coherent_with_owner(
+                id,
+                Ok((None, 9)),
+                10,
+                answer(Err(Error::Generic("down".to_string())))
+            )
+            .await,
+            Err(Error::Generic(_))
+        ));
+        assert!(matches!(
+            voter_coherent_with_owner(id, Ok((present(), 9)), 10, never).await,
+            Ok(Some(_))
+        ));
+        assert!(matches!(
+            voter_coherent_with_owner(id, Ok((None, 10)), 10, never).await,
             Ok(None)
         ));
     }

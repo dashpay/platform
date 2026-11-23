@@ -63,6 +63,10 @@ struct LoadIdentityView: View {
         /// checked, shown only when that key is in the voting slot after the
         /// replacement.
         let uncheckedVotingKeyNote: String?
+        /// What the load reported when the other voting keys stored for the
+        /// masternode could not be marked to be checked again, repeated in
+        /// the report after the replacement.
+        let siblingNote: String?
     }
 
     /// Held only until the replacement dialog is answered, then cleared.
@@ -901,7 +905,8 @@ struct LoadIdentityView: View {
                                 unstoredNote: unstoredNote,
                                 enteredKeyDigests: enteredKeyDigests,
                                 votingKeyRecord: storedVotingKeyOutcome?.record,
-                                uncheckedVotingKeyNote: uncheckedNoteIfStored
+                                uncheckedVotingKeyNote: uncheckedNoteIfStored,
+                                siblingNote: siblingNote
                             )
                         }
                     }
@@ -1153,8 +1158,11 @@ struct LoadIdentityView: View {
         if let uncheckedNote {
             parts.append(uncheckedNote)
         }
+        if let siblingNote = pending.siblingNote {
+            parts.append(siblingNote)
+        }
         if saved && replaced.count == pending.keys.count && pending.unstoredNote == nil && notInPlace.isEmpty
-            && uncheckedNote == nil {
+            && uncheckedNote == nil && pending.siblingNote == nil {
             errorMessage = nil
             showSuccess = true
         } else {

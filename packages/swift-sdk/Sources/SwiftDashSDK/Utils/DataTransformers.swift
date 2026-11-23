@@ -47,10 +47,13 @@ public enum AddressTransformer {
     /// so damaged input is refused rather than silently repaired.
     /// - Returns: The id, or `nil` when `input` is not one.
     public static func identityId(fromInput input: String) -> Data? {
-        var text = Substring(input.trimmingCharacters(in: .whitespacesAndNewlines))
-        if text.hasPrefix("id:") { text = text.dropFirst(3) }
-        if text.hasPrefix("0x") { text = text.dropFirst(2) }
-        return normalizeIdentityId(String(text))
+        var text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.hasPrefix("id:") {
+            // Space after `id:` is allowed, also before a `0x`.
+            text = String(text.dropFirst(3)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if text.hasPrefix("0x") { text = String(text.dropFirst(2)) }
+        return normalizeIdentityId(text)
     }
 
     /// Parses a bech32m Platform address to its raw storage/FFI address bytes.

@@ -71,7 +71,7 @@ final class MasternodeVotingLoadTests: XCTestCase {
         let id = Data((1...32).map { UInt8($0) })
         let hex = id.toHexString()
         let base58 = id.toBase58String()
-        for accepted in [hex, "0x" + hex, "id:" + base58, " id:0x\(hex) ", base58] {
+        for accepted in [hex, "0x" + hex, "id:" + base58, " id:0x\(hex) ", "id: 0x" + hex, "id: " + base58, base58] {
             XCTAssertEqual(AddressTransformer.identityId(fromInput: accepted), id, accepted)
         }
         let middle = base58.index(base58.startIndex, offsetBy: 10)
