@@ -41,6 +41,7 @@
     "dash_sdk_decision_proposal_cast_vote_with_signer": "packages/rs-sdk-ffi/src/decision_proposal/transitions.rs",
     "dash_sdk_get_context_provider_source": "packages/rs-sdk-ffi/src/sdk.rs",
     "dash_sdk_masternode_voting_address_from_private_key": "packages/rs-sdk-ffi/src/voting/masternode_vote.rs",
+    "dash_sdk_masternode_load_for_voting": "packages/rs-sdk-ffi/src/voting/masternode_voting_load.rs",
     "dash_sdk_multiple_choice_proposal_cast_vote_with_signer": "packages/rs-sdk-ffi/src/decision_proposal/multiple_choice/mod.rs",
     "dash_sdk_private_key_bytes_from_text": "packages/rs-sdk-ffi/src/crypto/mod.rs",
     "dash_sdk_set_context_provider_mode": "packages/rs-sdk-ffi/src/sdk.rs",
@@ -3206,6 +3207,78 @@
           "kind": "manual",
           "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "ID-02",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "identity.load_shared_masternode_for_voting",
+      "title": "Load a masternode without an owner identity (a shared masternode) for voting through its voter identity",
+      "area": "example_app",
+      "shared_apis": [
+        "dash_sdk_masternode_load_for_voting"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "SDK.loadMasternodeForVoting bridges dash_sdk_masternode_load_for_voting, whose rule is rs-sdk's load_masternode_for_voting: the owner identity when Platform holds one, else the voter identity when Platform proves it holds the enabled voting key (unit and mock-SDK tested in Rust). Load Identity stores a masternode or evonode under the identity the rule returns and records its pro_tx_hash apart from the id (PersistentIdentity.masternodeProTxHash, round-trip tested); the vote sheets name that pro_tx_hash. No gate loads a shared masternode on a network: the test network probably has none (TEST_PLAN VOTE-10). The load is one call with nothing to resume."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "Not ported yet: KotlinExampleApp still loads a masternode at its owner identity and derives the pro_tx_hash from the identity id. The port calls the same Rust rule through JNI (dash_sdk_masternode_load_for_voting) in a PR stacked on the Swift one."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk/src/platform/transition/masternode_vote_keys.rs",
+          "id": "should_load_a_shared_masternode_through_its_voter_identity",
+          "command": "cargo test -p dash-sdk --lib masternode_vote_keys",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk/src/platform/transition/masternode_vote_keys.rs",
+          "id": "should_refuse_a_shared_masternode_whose_voting_key_is_disabled",
+          "command": "cargo test -p dash-sdk --lib masternode_vote_keys",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk-ffi/src/voting/masternode_voting_load.rs",
+          "id": "should_marshal_a_voter_identity_load_with_a_valid_verdict",
+          "command": "cargo test -p rs-sdk-ffi --lib masternode_voting_load",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/MasternodeVotingLoadTests.swift",
+          "id": "testShouldRoundTripTheProTxHashOfARowStoredUnderItsVoterIdentity",
+          "command": "swift test --package-path packages/swift-sdk --filter MasternodeVotingLoadTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/MasternodeVotingLoadTests.swift",
+          "id": "testShouldNameTheOwnerIdentitysProTxHashForARowStoredBeforeItWasRecorded",
+          "command": "swift test --package-path packages/swift-sdk --filter MasternodeVotingLoadTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "VOTE-10",
           "covers_restart": false
         }
       ]
