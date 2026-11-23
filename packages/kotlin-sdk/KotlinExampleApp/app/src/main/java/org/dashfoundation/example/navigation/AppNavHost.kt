@@ -23,6 +23,7 @@ import org.dashfoundation.example.ui.contracts.QueriesListScreen
 import org.dashfoundation.example.ui.contracts.QueryDetailScreen
 import org.dashfoundation.example.ui.contracts.SumAverageDocumentsScreen
 import org.dashfoundation.example.ui.contracts.UpdateContractScreen
+import org.dashfoundation.example.ui.contracts.moderation.ContractModerationEntryScreen
 import org.dashfoundation.example.ui.diagnostics.AddressQueriesScreen
 import org.dashfoundation.example.ui.diagnostics.BannedAddressesScreen
 import org.dashfoundation.example.ui.diagnostics.DiagnosticsScreen
@@ -329,6 +330,11 @@ fun AppNavHost(
         composable<DocumentTypeDetail> { entry ->
             val route = entry.toRoute<DocumentTypeDetail>()
             DocumentTypeDetailsScreen(route.contractIdHex, route.typeName, navController)
+        }
+
+        composable<ContractModerationHub> { entry ->
+            val route = entry.toRoute<ContractModerationHub>()
+            ContractModerationEntryScreen(route.contractIdHex, navController)
         }
 
         composable<Documents> { entry ->

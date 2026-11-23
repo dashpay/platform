@@ -105,6 +105,14 @@ class Sdk private constructor(
         org.dashfoundation.dashsdk.voting.MultipleChoiceProposals(this)
     }
 
+    /**
+     * Contract moderation and fee pot reads (protocol version 14); mirrors the Swift SDK's
+     * `SDK+ContractModeration.swift`.
+     */
+    val contractModeration: org.dashfoundation.dashsdk.moderation.ContractModeration by lazy {
+        org.dashfoundation.dashsdk.moderation.ContractModeration(this)
+    }
+
     /** Evonode proposed-epoch-block queries. */
     val evonodes: org.dashfoundation.dashsdk.queries.Evonodes by lazy {
         org.dashfoundation.dashsdk.queries.Evonodes(this)

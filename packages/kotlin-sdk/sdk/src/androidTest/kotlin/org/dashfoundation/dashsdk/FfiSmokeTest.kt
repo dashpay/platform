@@ -3,6 +3,7 @@ package org.dashfoundation.dashsdk
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.Dispatchers
+import org.dashfoundation.dashsdk.ffi.ContractModerationNative
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
@@ -48,6 +49,62 @@ class FfiSmokeTest {
         NativeLoader.ensureLoaded()
         val version = SdkNative.version()
         assertTrue("version should be non-empty", version.isNotEmpty())
+    }
+
+    /**
+     * The contract moderation and fee pot reads (protocol version 14) bind with the
+     * descriptors `ContractModerationNative` declares: each export reaches its C function,
+     * which refuses a null SDK handle, and an argument the C type cannot carry (a list or
+     * status byte above 255, a limit that is neither -1 nor a `u32`) is refused by the JNI
+     * layer with code 1 before any C call. The reads themselves need a protocol version 14
+     * network; their Rust side is covered by the rs-sdk-ffi tests.
+     */
+    @Test
+    fun contractModerationSymbolsBindAndRejectInvalidInput() {
+        NativeLoader.ensureLoaded()
+        val contract = "11111111111111111111111111111111"
+        val noLimit = ContractModerationNative.NO_LIMIT
+        assertThrows(DashSDKException::class.java) {
+            ContractModerationNative.getStatus(0L, contract, contract, null)
+        }
+        assertThrows(DashSDKException::class.java) {
+            ContractModerationNative.getStatus(0L, contract, contract, ByteArray(0))
+        }
+        assertThrows(DashSDKException::class.java) {
+            ContractModerationNative.getEntries(0L, contract, 0, null, noLimit)
+        }
+        assertThrows(DashSDKException::class.java) {
+            ContractModerationNative.getDocumentRemovals(0L, contract, "note", null, 20)
+        }
+        assertThrows(DashSDKException::class.java) {
+            ContractModerationNative.getDocumentRemovalsByIds(
+                0L, contract, "note", arrayOf(contract),
+            )
+        }
+        assertThrows(DashSDKException::class.java) {
+            ContractModerationNative.getTeamActions(0L, contract, 0, null, false, noLimit)
+        }
+        assertThrows(DashSDKException::class.java) {
+            ContractModerationNative.getTeamActionSigners(0L, contract, 1, contract)
+        }
+        assertThrows(DashSDKException::class.java) {
+            ContractModerationNative.getActionCounts(0L, contract)
+        }
+        assertThrows(DashSDKException::class.java) {
+            ContractModerationNative.getFeePots(0L, contract)
+        }
+        val badList = assertThrows(DashSDKException::class.java) {
+            ContractModerationNative.getEntries(0L, contract, 256, null, noLimit)
+        }
+        assertEquals(1, badList.code)
+        val badStatus = assertThrows(DashSDKException::class.java) {
+            ContractModerationNative.getTeamActionSigners(0L, contract, -1, contract)
+        }
+        assertEquals(1, badStatus.code)
+        val badLimit = assertThrows(DashSDKException::class.java) {
+            ContractModerationNative.getDocumentRemovals(0L, contract, "note", null, -2)
+        }
+        assertEquals(1, badLimit.code)
     }
 
     @Test

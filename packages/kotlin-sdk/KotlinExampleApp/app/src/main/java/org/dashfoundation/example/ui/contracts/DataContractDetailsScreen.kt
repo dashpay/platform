@@ -205,6 +205,21 @@ fun DataContractDetailsScreen(
                 }
             }
 
+            // Contract moderation and fee pots (protocol version 14), offered for every
+            // contract: whether it is moderated and what its pots hold are the node's to answer
+            FormSection(title = "Moderation") {
+                ListItem(
+                    headlineContent = { Text("Moderation and Fee Pots") },
+                    modifier = Modifier
+                        .clickable {
+                            navController.navigate(
+                                org.dashfoundation.example.navigation.ContractModerationHub(contractIdHex),
+                            )
+                        }
+                        .testTag("contractModeration.link"),
+                )
+            }
+
             FormSection(title = "Raw Contract JSON") {
                 TextButton(
                     onClick = { showRawJson = !showRawJson },

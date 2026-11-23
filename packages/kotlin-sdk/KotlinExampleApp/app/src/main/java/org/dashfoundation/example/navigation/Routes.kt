@@ -268,6 +268,9 @@ import kotlinx.serialization.Serializable
 /** Document-type schema drill-in (← `DocumentTypeDetailsView.swift`). */
 @Serializable data class DocumentTypeDetail(val contractIdHex: String, val typeName: String)
 
+/** Contract moderation and fee pots of a saved contract (← `ContractModerationView.swift`). */
+@Serializable data class ContractModerationHub(val contractIdHex: String)
+
 /** Document query builder + results (query role of `DocumentsView.swift`). */
 @Serializable data class Documents(val contractIdHex: String, val typeName: String)
 
