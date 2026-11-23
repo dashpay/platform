@@ -1542,15 +1542,24 @@ private struct ModerationCatalogResult<Answer: Encodable>: Encodable {
 /// controls as JSON escapes (``BidiControls/jsonEscaped(_:)``).
 ///
 /// It encodes record by record and stops once ``maxBytes`` would be passed, so
-/// a large page is never formatted whole just to be cut. When records are left
-/// out, `nextStartAfter` is dropped (it is the full page's cursor: paging from
-/// it would skip the hidden records) and `preview` says so. Not isolated to the
-/// main actor: the catalog runs it in a detached task.
+/// a large page is never formatted whole just to be cut. The budget counts the
+/// text as emitted: each record with its indentation and separator, and the
+/// text around the records, which is always shown even when it alone passes
+/// the limit. Records are counted first against a whole page's text (the
+/// inputs and the cursor, when there is one), so a page that fits exactly is
+/// shown whole with its cursor. When records are left out, `nextStartAfter` is
+/// dropped (it is the full page's cursor: paging from it would skip the hidden
+/// records) and `preview` says so; records already counted are dropped from
+/// the end until the text with the note fits. Not isolated
+/// to the main actor: the catalog runs it in a detached task.
 enum RemovalsPreviewFormatter {
     /// The most text a preview shows. It protects rendering only (one
     /// selectable `Text` lays out every character); the page read is whole,
     /// and a smaller limit shows it whole.
     static let maxBytes = 64 * 1024
+
+    /// How far a record's lines are indented in the output.
+    private static let recordIndent = 6
 
     static func format(
         inputs: [String: String],
@@ -1558,36 +1567,62 @@ enum RemovalsPreviewFormatter {
         maxBytes: Int = maxBytes
     ) throws -> String {
         let inputsText = try encode(inputs)
-        var records: [String] = []
-        var used = inputsText.utf8.count
-        for removal in page.removals {
-            let record = try encode(removal)
-            if used + record.utf8.count > maxBytes {
-                break
-            }
-            used += record.utf8.count
-            records.append(record)
-        }
-        let truncated = records.count < page.removals.count
-
-        var result: [String] = []
-        if !truncated, let next = page.nextStartAfter {
-            result.append("\"nextStartAfter\" : " + (try encode(next)))
-        }
-        if truncated {
-            let note = "Preview truncated (\(records.count) of \(page.removals.count) records shown). "
+        let total = page.removals.count
+        let cursorLine = try page.nextStartAfter.map { "\"nextStartAfter\" : " + (try encode($0)) }
+        func noteLine(shown: Int) throws -> String {
+            let note = "Preview truncated (\(shown) of \(total) records shown). "
                 + "Reduce Limit and rerun from the same Start After to see every record; "
                 + "in by-id mode submit fewer ids."
-            result.append("\"preview\" : " + (try encode(note)))
+            return "\"preview\" : " + (try encode(note))
         }
+
+        // The text around the records of a whole page: the inputs, the cursor
+        // when there is one, and the brackets of a non-empty list.
+        let wholeFrame = assemble(inputsText: inputsText, header: cursorLine, records: [""]).utf8.count
+
+        var records: [String] = []
+        // Each record's bytes with the separator before it.
+        var costs: [Int] = []
+        var recordBytes = 0
+        for removal in page.removals {
+            let record = indent(try encode(removal), by: recordIndent)
+            let cost = record.utf8.count + (records.isEmpty ? 0 : ",\n".utf8.count)
+            if wholeFrame + recordBytes + cost > maxBytes {
+                break
+            }
+            recordBytes += cost
+            records.append(record)
+            costs.append(cost)
+        }
+        if records.count == total {
+            return assemble(inputsText: inputsText, header: cursorLine, records: records)
+        }
+
+        // Cut: the note replaces the cursor. Its frame counts the note at
+        // `total`, its most digits, so it is never less than what is emitted.
+        let noteFrame = assemble(inputsText: inputsText, header: try noteLine(shown: total), records: [""]).utf8.count
+        while noteFrame + recordBytes > maxBytes, let cost = costs.popLast() {
+            records.removeLast()
+            recordBytes -= cost
+        }
+        return assemble(inputsText: inputsText, header: try noteLine(shown: records.count), records: records)
+    }
+
+    /// The preview text: `inputsText` under `inputs`, and under `result` the
+    /// `header` line (`nextStartAfter` or `preview`, when there is one) and the
+    /// `records`, which are already indented by ``recordIndent``.
+    private static func assemble(inputsText: String, header: String?, records: [String]) -> String {
         let removals = records.isEmpty
             ? "[]"
-            : "[\n" + records.map { indent($0, by: 2) }.joined(separator: ",\n") + "\n]"
-        result.append("\"removals\" : " + removals)
-        let resultText = "{\n" + result.map { indent($0, by: 2) }.joined(separator: ",\n") + "\n}"
+            : "[\n" + records.joined(separator: ",\n") + "\n    ]"
+        var result: [String] = []
+        if let header {
+            result.append(indent(header, by: 4))
+        }
+        result.append("    \"removals\" : " + removals)
         return "{\n"
             + indent("\"inputs\" : " + inputsText, by: 2) + ",\n"
-            + indent("\"result\" : " + resultText, by: 2)
+            + "  \"result\" : {\n" + result.joined(separator: ",\n") + "\n  }"
             + "\n}"
     }
 

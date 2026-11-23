@@ -9,7 +9,9 @@ import SwiftDashSDK
 ///
 /// The refresh writes in a context of its own: a refused refresh leaves an
 /// unrelated pending edit in the main context alone (no rollback of it), a
-/// successful one saves only its own rows, and the main context sees them.
+/// successful one saves only its own rows, and the main context sees them
+/// (the refresh fetches them again there; a context does not take in another
+/// context's save by itself).
 @MainActor
 final class ContractRefreshApplyTests: XCTestCase {
 
@@ -32,7 +34,9 @@ final class ContractRefreshApplyTests: XCTestCase {
         let other: PersistentDataContract
     }
 
-    private func makeFixture() throws -> Fixture {
+    /// With `documents`, the contract's document types are parsed from them
+    /// in the main context and saved with it.
+    private func makeFixture(documents: [String: Any]? = nil) throws -> Fixture {
         let container = try DashModelContainer.createInMemory()
         let main = container.mainContext
         let contract = PersistentDataContract(
@@ -52,6 +56,13 @@ final class ContractRefreshApplyTests: XCTestCase {
         )
         main.insert(contract)
         main.insert(other)
+        if let documents {
+            try DataContractParser.parseDataContract(
+                contractData: ["version": 2, "documents": documents],
+                contractId: contractId,
+                modelContext: main
+            )
+        }
         try main.save()
 
         other.name = "Edited"
@@ -78,15 +89,6 @@ final class ContractRefreshApplyTests: XCTestCase {
         )
     }
 
-    /// Run the main run loop until `condition` holds or two seconds pass,
-    /// for the main context to merge another context's save.
-    private func waitForMainContext(_ condition: () -> Bool) {
-        let deadline = Date().addingTimeInterval(2)
-        while !condition() && Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
-        }
-    }
-
     // MARK: - Refused
 
     func testShouldRefuseAnOlderContractAndLeaveTheMainContextsPendingEdit() throws {
@@ -104,7 +106,7 @@ final class ContractRefreshApplyTests: XCTestCase {
                     fetched: try fetched(["version": refusal.version, "description": "Older"]),
                     toContractWithId: contractId,
                     minimumVersion: refusal.minimumVersion,
-                    container: fixture.container
+                    modelContext: fixture.container.mainContext
                 ) { _ in registered = true },
                 "\(refusal)"
             ) { error in
@@ -139,7 +141,7 @@ final class ContractRefreshApplyTests: XCTestCase {
             fetched: try fetched(["version": 3, "description": "New", "keywords": ["beta", "gamma"]]),
             toContractWithId: contractId,
             minimumVersion: 3,
-            container: fixture.container
+            modelContext: fixture.container.mainContext
         ) { registered = $0 }
         XCTAssertEqual(registered, Data([0x01, 0x02]))
 
@@ -160,8 +162,7 @@ final class ContractRefreshApplyTests: XCTestCase {
         XCTAssertEqual(fixture.other.name, "Edited")
         XCTAssertEqual(try storedRow(otherContractId, in: fixture.container).name, "Other")
 
-        // The main context sees the refreshed row.
-        waitForMainContext { fixture.contract.version == 3 }
+        // The main context sees the refreshed row as soon as `apply` returns.
         XCTAssertEqual(fixture.contract.version, 3)
         XCTAssertEqual(fixture.contract.contractDescription, "New")
         XCTAssertEqual(fixture.contract.keywords.sorted(), ["beta", "gamma"])
@@ -177,7 +178,7 @@ final class ContractRefreshApplyTests: XCTestCase {
             fetched: try fetched(["version": 3, "tokens": ["0": token]]),
             toContractWithId: contractId,
             minimumVersion: nil,
-            container: fixture.container
+            modelContext: fixture.container.mainContext
         ) { _ in }
 
         let stored = try storedRow(contractId, in: fixture.container)
@@ -187,9 +188,91 @@ final class ContractRefreshApplyTests: XCTestCase {
         XCTAssertNil(stored.contractDescription)
         XCTAssertEqual(stored.keywords, [])
 
-        waitForMainContext { fixture.contract.hasTokens }
+        // The main context sees the refreshed row as soon as `apply` returns.
         XCTAssertTrue(fixture.contract.hasTokens)
         XCTAssertEqual(fixture.contract.tokens?.count, 1)
+    }
+
+    /// A `note` type with string `properties` (`message` with `messageMaxLength`)
+    /// and one index named `index` on its first property.
+    private func noteType(properties: [String], messageMaxLength: Int, index: String) -> [String: Any] {
+        var schemas: [String: Any] = [:]
+        for (position, name) in properties.enumerated() {
+            schemas[name] = [
+                "type": "string",
+                "maxLength": name == "message" ? messageMaxLength : 63,
+                "position": position
+            ]
+        }
+        return [
+            "type": "object",
+            "properties": schemas,
+            "indices": [["name": index, "properties": [[properties[0]: "asc"]]]],
+            "additionalProperties": false
+        ]
+    }
+
+    /// The main context already holds the document type, its index and its
+    /// properties when the refresh changes them. The refresh updates kept rows
+    /// in place and deletes the index and property the type no longer
+    /// declares; right after `apply` the main context shows the new
+    /// definition, through the contract and through the objects it held.
+    func testShouldShowARefreshedDocumentTypeThroughTheObjectsTheMainContextHeld() throws {
+        let fixture = try makeFixture(documents: [
+            "note": noteType(properties: ["message", "body"], messageMaxLength: 63, index: "byMessage")
+        ])
+        defer { withExtendedLifetime(fixture.container) {} }
+        let main = fixture.container.mainContext
+
+        let heldType = try XCTUnwrap(fixture.contract.documentTypes?.first { $0.name == "note" })
+        let heldProperties = try XCTUnwrap(heldType.propertiesList)
+        let heldIndices = try XCTUnwrap(heldType.indices)
+        XCTAssertEqual(Set(heldProperties.map(\.name)), ["message", "body"])
+        XCTAssertEqual(heldIndices.map(\.name), ["byMessage"])
+        let heldMessage = try XCTUnwrap(heldProperties.first { $0.name == "message" })
+        let heldBody = try XCTUnwrap(heldProperties.first { $0.name == "body" })
+        let heldIndex = try XCTUnwrap(heldIndices.first)
+        XCTAssertEqual(heldMessage.maxLength, 63)
+
+        // `body` removed, `title` added, the index replaced by one on `title`,
+        // and `message` longer.
+        try ContractDownloader.apply(
+            fetched: try fetched([
+                "version": 3,
+                "documents": [
+                    "note": noteType(properties: ["message", "title"], messageMaxLength: 100, index: "byTitle")
+                ]
+            ]),
+            toContractWithId: contractId,
+            minimumVersion: 3,
+            modelContext: main
+        ) { _ in }
+
+        // Read through the contract's relationship, as a view does. The held
+        // objects of the deleted rows are only checked to be gone from it:
+        // their attributes are not read.
+        let type = try XCTUnwrap(fixture.contract.documentTypes?.first { $0.name == "note" })
+        XCTAssertTrue(type === heldType)
+        XCTAssertEqual(Set(type.properties?.keys.map { $0 } ?? []), ["message", "title"])
+        let properties = type.propertiesList ?? []
+        XCTAssertEqual(Set(properties.map(\.name)), ["message", "title"])
+        XCTAssertFalse(properties.contains { $0 === heldBody })
+        XCTAssertTrue(properties.contains { $0 === heldMessage })
+        let indices = type.indices ?? []
+        XCTAssertEqual(indices.map(\.name), ["byTitle"])
+        XCTAssertFalse(indices.contains { $0 === heldIndex })
+        XCTAssertEqual(heldMessage.maxLength, 100)
+
+        XCTAssertTrue(main.hasChanges)
+        XCTAssertEqual(fixture.other.name, "Edited")
+        XCTAssertEqual(try storedRow(otherContractId, in: fixture.container).name, "Other")
+
+        // Saving the pending edit later writes none of the old definition back.
+        try main.save()
+        let fresh = ModelContext(fixture.container)
+        XCTAssertEqual(Set(try fresh.fetch(FetchDescriptor<PersistentProperty>()).map(\.name)), ["message", "title"])
+        XCTAssertEqual(try fresh.fetch(FetchDescriptor<PersistentIndex>()).map(\.name), ["byTitle"])
+        XCTAssertEqual(try storedRow(otherContractId, in: fixture.container).name, "Edited")
     }
 
     /// The UTF-8 bytes of the stored keyword rows, sorted.
@@ -214,7 +297,7 @@ final class ContractRefreshApplyTests: XCTestCase {
             fetched: try fetched(["version": 3, "keywords": [composed]]),
             toContractWithId: contractId,
             minimumVersion: nil,
-            container: fixture.container
+            modelContext: fixture.container.mainContext
         ) { _ in }
         XCTAssertEqual(try storedKeywordBytes(in: fixture.container), [Array(composed.utf8)])
 
@@ -222,7 +305,7 @@ final class ContractRefreshApplyTests: XCTestCase {
             fetched: try fetched(["version": 4, "keywords": [decomposed]]),
             toContractWithId: contractId,
             minimumVersion: nil,
-            container: fixture.container
+            modelContext: fixture.container.mainContext
         ) { _ in }
         XCTAssertEqual(try storedKeywordBytes(in: fixture.container), [Array(decomposed.utf8)])
 
@@ -230,7 +313,7 @@ final class ContractRefreshApplyTests: XCTestCase {
             fetched: try fetched(["version": 5, "keywords": [composed, decomposed]]),
             toContractWithId: contractId,
             minimumVersion: nil,
-            container: fixture.container
+            modelContext: fixture.container.mainContext
         ) { _ in }
         XCTAssertEqual(
             try storedKeywordBytes(in: fixture.container),
