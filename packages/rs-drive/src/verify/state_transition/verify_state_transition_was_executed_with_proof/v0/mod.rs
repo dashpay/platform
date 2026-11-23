@@ -1510,7 +1510,6 @@ impl Drive {
                 verify_contract_document_restore_execution(
                     proof,
                     transition,
-                    known_contracts_provider_fn,
                     carries_owner_balance,
                     platform_version,
                 )
@@ -3563,12 +3562,11 @@ fn verify_contract_team_action_execution(
 /// A moderator's document restore is proved by the document's removal record, now marked
 /// restored by the transition's signer, and holding the hash of the bytes the transition
 /// brought back. The document itself is not in the proof: the record says it is live again,
-/// and the hash says it is the document the transition carries. The id is inside those bytes,
-/// read under the contract's document type, which the verifier resolves through the provider.
+/// and the hash says it is the document the transition carries. The id is read directly from
+/// those bytes' header, without resolving the data contract through the provider.
 fn verify_contract_document_restore_execution(
     proof: &[u8],
     transition: &ContractUserModerationTransition,
-    known_contracts_provider_fn: &ContractLookupFn,
     verify_subset_of_proof: bool,
     platform_version: &PlatformVersion,
 ) -> Result<(RootHash, StateTransitionProofResult), Error> {
@@ -3578,13 +3576,6 @@ fn verify_contract_document_restore_execution(
             "only a document restore is verified by its marked removal record".to_string(),
         )));
     };
-    let contract = known_contracts_provider_fn(&contract_id)?.ok_or(Error::Proof(
-        ProofError::UnknownContract(format!(
-            "unknown contract with id {} in contract document restore verification",
-            contract_id
-        )),
-    ))?;
-    let _document_type = contract.document_type_for_name(document_type_name)?;
     let document_id = Document::id_from_bytes(document_bytes, platform_version)?;
     let document_hash = hash_double(document_bytes);
     let (root_hash, mut entries) = Drive::verify_contract_document_removals(

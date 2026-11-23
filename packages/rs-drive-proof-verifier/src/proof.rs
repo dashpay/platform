@@ -1656,7 +1656,7 @@ fn verify_document_history_response_v1(
         .into_documents(
             &query.document_id,
             document_type,
-            Some(&mut budget),
+            &mut budget,
             query_version,
         )
         .map_err(|error| Error::UnusableVerifiedResult {

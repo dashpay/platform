@@ -143,8 +143,28 @@ pub struct SerializedDocumentHistoryDriveQueryExecutionResult {
 
 impl SerializedDocumentHistoryDriveQueryExecutionResult {
     /// Materializes each header-validated revision entry into a [`Document`], enforcing
-    /// `budget` when supplied.
+    /// `budget` across the entire page.
     pub fn into_documents(
+        self,
+        document_id: &[u8; 32],
+        document_type: DocumentTypeRef,
+        budget: &mut DecodedValueBudget,
+        platform_version: &PlatformVersion,
+    ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
+        self.into_documents_inner(document_id, document_type, Some(budget), platform_version)
+    }
+
+    #[cfg(any(feature = "server", test))]
+    pub(crate) fn into_documents_unbounded(
+        self,
+        document_id: &[u8; 32],
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
+        self.into_documents_inner(document_id, document_type, None, platform_version)
+    }
+
+    fn into_documents_inner(
         self,
         document_id: &[u8; 32],
         document_type: DocumentTypeRef,
@@ -345,8 +365,13 @@ impl DocumentHistoryDriveQuery {
         budget: Option<&mut DecodedValueBudget>,
         version: &PlatformVersion,
     ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
-        self.decode_result_serialized(rows, document_type, version)?
-            .into_documents(&self.document_id, document_type, budget, version)
+        let serialized = self.decode_result_serialized(rows, document_type, version)?;
+        match budget {
+            Some(budget) => {
+                serialized.into_documents(&self.document_id, document_type, budget, version)
+            }
+            None => serialized.into_documents_unbounded(&self.document_id, document_type, version),
+        }
     }
 
     pub(crate) fn lifecycle(

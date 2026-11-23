@@ -60,12 +60,7 @@ impl Drive {
             Self::verify_document_history_serialized_v1(query, proof, document_type, version)?;
         let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
         let result = serialized
-            .into_documents(
-                &query.document_id,
-                document_type,
-                Some(&mut budget),
-                version,
-            )
+            .into_documents(&query.document_id, document_type, &mut budget, version)
             .map_err(|error| with_proved_root_on_budget_exceeded(root, error))?;
         Ok((root, result))
     }

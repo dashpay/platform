@@ -73,9 +73,11 @@ As long as its nodes are not banned by one of the failures above:
    `StaleNodeError::NewerProtocolVersion`, `DataContractError::DecodedValueBudgetExceeded`,
    `ProofError::DecodedValueBudgetExceeded { .. }`), or a wildcard arm. Direct `drive` proof
    verifiers return `ProofError::DecodedValueBudgetExceeded { root_hash, .. }` carrying the
-   reconstructed root hash; higher-level `drive-proof-verifier` / `dash-sdk` callers authenticate
-   that root against the quorum signature and surface an honest refusal as
-   `drive_proof_verifier::Error::UnusableVerifiedResult`.
+   reconstructed root hash; direct `drive-proof-verifier` callers authenticate that root against
+   the quorum signature and receive `drive_proof_verifier::Error::UnusableVerifiedResult`. At
+   the `dash-sdk` fetch boundary, `Sdk` first checks the authenticated response metadata for
+   freshness (routing stale metadata through its stale-answer path) and converts a fresh
+   `UnusableVerifiedResult` refusal to `dash_sdk::Error::InvalidRequest(reason)`.
 4. Apps that read document sums or averages: a type that keeps its sums in 128 bits can hold a
    sum past what a 64-bit integer holds, and a 5.1 SDK returns it whole from a proved query.
    The result types widen, so code that stored a sum in a 64-bit integer has to change:
