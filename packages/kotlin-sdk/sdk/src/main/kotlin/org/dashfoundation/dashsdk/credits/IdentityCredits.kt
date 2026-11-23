@@ -46,6 +46,12 @@ data class FundingInput(
     init {
         require(hash.size == 20) { "FundingInput.hash must be 20 bytes, got ${hash.size}" }
         require(credits > 0) { "FundingInput.credits must be positive, got $credits" }
+        // The row carries the type as one byte; a wider value would be truncated to another
+        // type (256 → 0, P2PKH) and the signer asked to authorize an address the caller did
+        // not name. Which byte values are supported stays Rust's decision.
+        require(addressType in 0..255) {
+            "FundingInput.addressType must fit in a u8, got $addressType"
+        }
     }
 
     override fun equals(other: Any?): Boolean =

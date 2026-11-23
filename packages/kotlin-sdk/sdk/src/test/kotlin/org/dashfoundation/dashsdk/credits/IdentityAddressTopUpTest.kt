@@ -11,6 +11,7 @@ import kotlinx.coroutines.withTimeout
 import org.dashfoundation.dashsdk.wallet.TeardownGate
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -102,6 +103,24 @@ class IdentityAddressTopUpTest {
             assertEquals(777L, received.await())
             gate?.let { withTimeout(5_000) { it.closeAndAwait() } }
         }
+    }
+
+    /**
+     * A funding row whose address type does not fit the wire's one byte is
+     * refused where it is built, so it never reaches either bridge truncated
+     * to another type; every byte value is passed through for Rust to judge.
+     */
+    @Test
+    fun `an address type outside a byte never reaches the native bridge`() {
+        for (outOfRange in listOf(-1, 256, 257, Int.MAX_VALUE)) {
+            assertThrows(IllegalArgumentException::class.java) {
+                FundingInput(addressType = outOfRange, hash = ByteArray(20) { 7 }, credits = 1_000)
+            }
+        }
+        val edges = listOf(0, 255).map { FundingInput(addressType = it, hash = ByteArray(20) { 7 }, credits = 1_000) }
+        val blob = FundingInput.encode(edges)
+        assertEquals(0, blob[4].toInt() and 0xFF)
+        assertEquals(255, blob[4 + 29].toInt() and 0xFF)
     }
 
     private enum class TopUpRoute { ANY_IDENTITY, MANAGED_DEPRECATED }
