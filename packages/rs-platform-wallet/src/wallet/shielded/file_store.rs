@@ -859,6 +859,9 @@ impl FileBackedShieldedStore {
             StateTransition::PrivateDocumentCreateFromShieldedPool(_) => {
                 Some(PRIVATE_DOCUMENT_CREATE_KIND)
             }
+            StateTransition::TokenPurchaseFromShieldedPool(_) => {
+                Some("token purchase from shielded pool")
+            }
             _ => None,
         }
     }

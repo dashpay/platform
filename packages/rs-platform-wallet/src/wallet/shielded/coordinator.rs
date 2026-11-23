@@ -2876,15 +2876,30 @@ mod tests {
     use crate::wallet::shielded::keys::OrchardKeySet;
 
     use crate::changeset::ShieldedChangeSet;
-    use crate::wallet::shielded::activity::compute_activity_id;
+    use crate::wallet::shielded::activity::{
+        compute_activity_id, ShieldedActivityEntry, ShieldedActivityKind, ShieldedDirection,
+    };
+    use crate::wallet::shielded::note_selection::compute_token_purchase_from_pool_fee;
+    use crate::wallet::shielded::operations::record_pending_token_purchase;
+    use crate::wallet::shielded::prover::CachedOrchardProver;
     use crate::wallet::shielded::store::{
         InMemoryShieldedStore, PendingRedrive, PrivateContactPayment, ShieldedNote,
     };
+    use dash_sdk::platform::shielded::try_decrypt_note;
+    use dpp::address_funds::OrchardAddress;
     use dpp::platform_value::BinaryData;
+    use dpp::platform_value::Identifier;
     use dpp::serialization::PlatformSerializable;
+    use dpp::shielded::builder::{
+        build_token_purchase_from_shielded_pool_transition, ShieldedFeePayer, SpendableNote,
+    };
     use dpp::shielded::SerializedAction;
     use dpp::state_transition::shield_from_identity_transition::v0::ShieldFromIdentityTransitionV0;
+    use dpp::state_transition::token_purchase_from_shielded_pool_transition::accessors::TokenPurchaseFromShieldedPoolTransitionAccessorsV0;
     use dpp::state_transition::StateTransition;
+    use dpp::tokens::calculate_token_id;
+    use dpp::version::PlatformVersion;
+    use drive_proof_verifier::types::ShieldedEncryptedNote;
     use grovedb_commitment_tree::{
         DashMemo, Domain, ExtractedNoteCommitment, Note, NoteValue, Nullifier, OrchardDomain,
         RandomSeed, Rho, ValueCommitTrapdoor, ValueCommitment,
@@ -3401,6 +3416,281 @@ mod tests {
         assert!(
             reopened.pending_redrives(id).unwrap().is_empty(),
             "clear must survive restart"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A live token purchase row, pending, that spent the note with
+    /// nullifier `spent` and expects its change note `change`.
+    fn pending_purchase_row(spent: [u8; 32], change: [u8; 32]) -> ShieldedActivityEntry {
+        ShieldedActivityEntry {
+            id: compute_activity_id(&[change]),
+            kind: ShieldedActivityKind::TokenPurchase,
+            direction: ShieldedDirection::Out,
+            amount: 1_000,
+            fee: Some(100),
+            counterparty: Some(vec![0x44; 32]),
+            memo: None,
+            block_height: None,
+            status: ShieldedActivityStatus::Pending,
+            created_at_ms: 1,
+            min_note_position: None,
+            note_cmxs: vec![change],
+            spent_nullifiers: vec![spent],
+        }
+    }
+
+    const PURCHASE_INPUT_NF: [u8; 32] = [0xA1; 32];
+    const PURCHASE_CHANGE_CMX: [u8; 32] = [0xC1; 32];
+
+    /// A coordinator whose wallet holds the purchase's input note, unspent,
+    /// and the pending purchase row; returns it with the subwallet and keys.
+    async fn coordinator_with_pending_purchase(
+        dir: &std::path::Path,
+    ) -> (
+        NetworkShieldedCoordinator,
+        SubwalletId,
+        AccountViewingKeys,
+        ShieldedActivityEntry,
+    ) {
+        let coordinator = coordinator_with_one_wallet(dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let keys = coordinator.accounts.read().await[&id].clone();
+        let row = pending_purchase_row(PURCHASE_INPUT_NF, PURCHASE_CHANGE_CMX);
+        {
+            let mut store = coordinator.store().write().await;
+            let mut input = test_note(PURCHASE_INPUT_NF, 0, false);
+            input.cmx = [0xA2; 32];
+            store.save_note(id, &input).unwrap();
+            store.save_activity(id, &row).unwrap();
+        }
+        (coordinator, id, keys, row)
+    }
+
+    async fn row_status(
+        coordinator: &NetworkShieldedCoordinator,
+        id: SubwalletId,
+        entry_id: &[u8; 32],
+    ) -> ShieldedActivityStatus {
+        coordinator
+            .store()
+            .read()
+            .await
+            .get_activity_by_entry_id(id, entry_id)
+            .unwrap()
+            .expect("the row")
+            .status
+    }
+
+    /// The purchase's own landing: the scan marks its input spent and finds
+    /// its change, so the row is Confirmed.
+    #[tokio::test]
+    async fn should_confirm_a_pending_spend_whose_own_change_the_scan_found() {
+        let dir = temp_dir("own_landing");
+        let (coordinator, id, keys, row) = coordinator_with_pending_purchase(&dir).await;
+        {
+            let mut store = coordinator.store().write().await;
+            store.mark_spent(id, &PURCHASE_INPUT_NF).unwrap();
+            let mut change = test_note([0xC2; 32], 1, false);
+            change.cmx = PURCHASE_CHANGE_CMX;
+            change.value = 0;
+            store.save_note(id, &change).unwrap();
+        }
+        coordinator
+            .derive_activity_into_changeset(&[(id, keys)], &mut ShieldedChangeSet::default())
+            .await
+            .unwrap();
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Confirmed
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Offline round trip of a token purchase built by the real builder from
+    /// one note holding exactly price plus fee, so its change is zero-valued.
+    /// Both bundles carry an output the wallet decrypts (the bought tokens and
+    /// the credit change), and the row the live recorder writes is keyed by
+    /// the credit change alone. Scanning only the fee bundle, as the wallet's
+    /// credit pool scan does, confirms that same row.
+    #[tokio::test]
+    async fn should_confirm_a_built_token_purchase_from_its_fee_bundle_change() {
+        let dir = temp_dir("built_purchase");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let views = coordinator.accounts.read().await[&id].clone();
+        let keys = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("the coordinator wallet's keys");
+        let own = OrchardAddress::from_raw_bytes(&keys.default_address.to_raw_address_bytes())
+            .expect("the default address");
+        let platform_version = PlatformVersion::latest();
+        let price = 1_000_000;
+        let fee = compute_token_purchase_from_pool_fee(2, platform_version).expect("the fee");
+
+        // The input: one note to the wallet holding exactly price plus fee,
+        // in the commitment tree the anchor comes from.
+        let mut rng = OsRng;
+        let (rho, rseed) = loop {
+            let mut b = [0u8; 32];
+            rng.fill_bytes(&mut b);
+            let Some(rho) = Rho::from_bytes(&b).into_option() else {
+                continue;
+            };
+            rng.fill_bytes(&mut b);
+            if let Some(rseed) = RandomSeed::from_bytes(b, &rho).into_option() {
+                break (rho, rseed);
+            }
+        };
+        let input = Note::from_parts(
+            keys.default_address,
+            NoteValue::from_raw(price + fee),
+            rho,
+            rseed,
+        )
+        .into_option()
+        .expect("a note");
+        let input_cmx = ExtractedNoteCommitment::from(input.commitment());
+        let input_nf = input.nullifier(&keys.full_viewing_key).to_bytes();
+        let input_row = ShieldedNote {
+            position: 0,
+            cmx: input_cmx.to_bytes(),
+            nullifier: input_nf,
+            block_height: 100,
+            is_spent: false,
+            value: price + fee,
+            note_data: vec![0u8; 115],
+        };
+        let merkle_path = {
+            let mut store = coordinator.store().write().await;
+            store
+                .append_commitment(&input_cmx.to_bytes(), true)
+                .unwrap();
+            store.checkpoint_tree(1).unwrap();
+            store.save_note(id, &input_row).unwrap();
+            store.witness(0).unwrap().expect("a witness")
+        };
+        let anchor = merkle_path.root(input_cmx);
+
+        let data_contract_id = Identifier::from([0x44; 32]);
+        let token_id = Identifier::from(calculate_token_id(&data_contract_id.to_buffer(), 0));
+        let prover = CachedOrchardProver::new();
+        let (transition, fee_used) = build_token_purchase_from_shielded_pool_transition(
+            token_id,
+            data_contract_id,
+            0,
+            &own,
+            &keys.full_viewing_key,
+            10,
+            price,
+            [0u8; 36],
+            ShieldedFeePayer {
+                spends: vec![SpendableNote {
+                    note: input,
+                    merkle_path,
+                }],
+                change_address: &own,
+                fvk: &keys.full_viewing_key,
+                ask: &keys.spend_auth_key,
+                anchor,
+            },
+            &&prover,
+            platform_version,
+        )
+        .expect("the purchase builds");
+        assert_eq!(fee_used, fee);
+        let StateTransition::TokenPurchaseFromShieldedPool(purchase) = &transition else {
+            panic!("a token purchase");
+        };
+
+        let wire = |action: &SerializedAction| ShieldedEncryptedNote {
+            cmx: action.cmx.to_vec(),
+            nullifier: action.nullifier.to_vec(),
+            cv_net: action.cv_net.to_vec(),
+            encrypted_note: action.encrypted_note.clone(),
+        };
+        let decrypted = |actions: &[SerializedAction]| -> Vec<(SerializedAction, Note)> {
+            actions
+                .iter()
+                .filter_map(|action| {
+                    try_decrypt_note(&views.prepared_ivk, &wire(action))
+                        .map(|(note, _)| (action.clone(), note))
+                })
+                .collect()
+        };
+        let token_outputs = decrypted(purchase.token_actions());
+        let fee_outputs = decrypted(purchase.fee_actions());
+        assert_eq!(token_outputs.len(), 1, "the bought tokens' note");
+        assert_eq!(token_outputs[0].1.value().inner(), 10);
+        assert_eq!(fee_outputs.len(), 1, "the credit change");
+        assert_eq!(
+            fee_outputs[0].1.value().inner(),
+            0,
+            "price plus fee leaves no change"
+        );
+        let change_cmx = fee_outputs[0].0.cmx;
+        assert_ne!(token_outputs[0].0.cmx, change_cmx);
+
+        let row = record_pending_token_purchase(
+            coordinator.store(),
+            None,
+            wallet_id,
+            id,
+            &views,
+            token_id,
+            price,
+            fee_used,
+            &transition,
+            std::slice::from_ref(&input_row),
+        )
+        .await
+        .expect("the live row");
+        assert_eq!(
+            row.note_cmxs,
+            vec![change_cmx],
+            "keyed by the credit change alone"
+        );
+        assert_eq!(row.status, ShieldedActivityStatus::Pending);
+
+        // The credit pool scan: it saves the fee bundle's change it decrypts
+        // and marks the input spent from the nullifier its action reveals.
+        {
+            let mut store = coordinator.store().write().await;
+            for (position, (action, note)) in (1u64..).zip(fee_outputs.iter()) {
+                store
+                    .save_note(
+                        id,
+                        &ShieldedNote {
+                            position,
+                            cmx: action.cmx,
+                            nullifier: note.nullifier(&keys.full_viewing_key).to_bytes(),
+                            block_height: 200,
+                            is_spent: false,
+                            value: note.value().inner(),
+                            note_data: vec![0u8; 115],
+                        },
+                    )
+                    .unwrap();
+            }
+            for action in purchase.fee_actions() {
+                store.mark_spent(id, &action.nullifier).unwrap();
+            }
+            assert!(
+                store
+                    .get_all_notes(id)
+                    .unwrap()
+                    .iter()
+                    .any(|note| note.nullifier == input_nf && note.is_spent),
+                "the scan marks the input spent"
+            );
+        }
+        coordinator
+            .derive_activity_into_changeset(&[(id, views)], &mut ShieldedChangeSet::default())
+            .await
+            .unwrap();
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Confirmed
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

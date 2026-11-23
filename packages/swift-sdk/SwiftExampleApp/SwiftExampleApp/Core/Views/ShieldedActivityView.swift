@@ -27,6 +27,7 @@ enum ShieldedActivityKindDisplay {
         case 6: return "Identity Created"
         case 8: return "Shielded from Identity"
         case 9: return "Identity Top-Up from Pool"
+        case 10: return "Token Purchase"
         // 7 (ShieldedSpend) and any tag this build doesn't know yet.
         default: return "Shielded Spend"
         }
@@ -45,6 +46,7 @@ enum ShieldedActivityKindDisplay {
         // IdentityCreate / IdentityTopUp: both send pool value out to a
         // Platform identity's balance.
         case 6, 9: return "person.crop.circle.badge.plus"
+        case 10: return "cart.fill"                   // TokenPurchase
         default: return "questionmark.circle.fill"     // ShieldedSpend
         }
     }
@@ -337,6 +339,19 @@ struct ShieldedActivityDetailView: View {
         }
     }
 
+    /// What a token purchase row says about its tokens, by its stored
+    /// status: minted only once Confirmed.
+    private var tokenPurchaseNote: String {
+        switch entry.status {
+        case 1:
+            return "The tokens were minted to this wallet's shielded token pool, which the app does not show yet."
+        case 2:
+            return "The purchase did not go through; no tokens were minted."
+        default:
+            return "Not confirmed yet: a shielded sync confirms the purchase once it lands. The app does not show the shielded token pool yet."
+        }
+    }
+
     private var directionText: String {
         switch entry.direction {
         case 0: return "In"
@@ -388,6 +403,21 @@ struct ShieldedActivityDetailView: View {
                         } label: {
                             Label("Copy Identity ID", systemImage: "doc.on.doc")
                         }
+                    }
+                } else if entry.kindTag == 10, entry.counterparty.count == 32 {
+                    // TokenPurchase: the counterparty is the token's id, and
+                    // the tokens are destined for the wallet's shielded token
+                    // pool, which the app does not show yet. The mint is
+                    // stated as done only once the row is Confirmed.
+                    Section("Token") {
+                        let tokenIdHex = entry.counterparty.map { String(format: "%02x", $0) }.joined()
+                        Text(tokenIdHex)
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
+                        LabeledContent("Tokens to", value: "This wallet's shielded token pool")
+                        Text(tokenPurchaseNote)
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
                     }
                 } else if !entry.counterparty.isEmpty {
                     Section("Counterparty") {
