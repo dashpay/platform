@@ -1020,6 +1020,7 @@ async fn arm_identity_shield_redrive<S: ShieldedStore>(
                 identity_nonce_finalized: false,
                 identity_user_abandoned: false,
                 anchor_height: None,
+                identity_index: None,
             },
         )
         .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
@@ -2784,6 +2785,9 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
 /// identity is created holding `denomination - total_fee`. Any spent value above the denomination
 /// re-enters the pool as a single change note to `account`'s default Orchard address.
 ///
+/// `identity_index` is the identity slot the keys were derived at; the create's saved record keeps
+/// it, holding the slot across a restart while the create may still execute.
+///
 /// `public_keys` is the new identity's key set (each entry is the `IdentityPublicKey` and its
 /// `IdentityPublicKeyInCreation` form); `identity_signer` produces each key's proof-of-possession
 /// signature over the transition's signable bytes. Authorization is 100% the Orchard proof +
@@ -2802,6 +2806,7 @@ pub async fn identity_create_from_shielded_pool<S, P, IS>(
     wallet_id: WalletId,
     keys: &OrchardKeySet,
     account: u32,
+    identity_index: u32,
     public_keys: Vec<(IdentityPublicKey, IdentityPublicKeyInCreation)>,
     denomination: u64,
     send_to_address_on_creation_failure: PlatformAddress,
@@ -2940,6 +2945,7 @@ where
             &mut reservation,
             &st,
             identity_id,
+            identity_index,
             submitted_public_keys,
         )
         .await
@@ -3036,6 +3042,7 @@ async fn broadcast_identity_create_with_redrive<S: ShieldedStore>(
     reservation: &mut NoteReservation<S>,
     st: &StateTransition,
     identity_id: Identifier,
+    identity_index: u32,
     submitted_public_keys: BTreeMap<u32, IdentityPublicKey>,
 ) -> Result<(Identifier, Identity), SpendFailure> {
     save_spend_then_broadcast(
@@ -3048,6 +3055,7 @@ async fn broadcast_identity_create_with_redrive<S: ShieldedStore>(
         reservation,
         st,
         IDENTITY_CREATE_OPERATION,
+        Some(identity_index),
         || broadcast_identity_create(sdk, st, identity_id, submitted_public_keys),
     )
     .await
@@ -3886,6 +3894,7 @@ async fn broadcast_shielded_spend_with_redrive_with_metadata<S: ShieldedStore>(
         reservation,
         state_transition,
         operation,
+        None,
         || broadcast_shielded_spend_classified(sdk, state_transition, operation, wait),
     )
     .await
@@ -3920,6 +3929,7 @@ async fn save_spend_then_broadcast<S, B, Fut, T>(
     reservation: &mut NoteReservation<S>,
     state_transition: &StateTransition,
     operation: &'static str,
+    identity_index: Option<u32>,
     broadcast: B,
 ) -> Result<T, SpendFailure>
 where
@@ -3928,7 +3938,7 @@ where
     Fut: Future<Output = Result<T, SpendFailure>>,
 {
     arm_pending_release(store, id, anchor, anchor_height, pending_entry, notes).await?;
-    arm_redrive_before_broadcast(
+    arm_redrive_holding_slot(
         store,
         id,
         pending_entry.as_ref().map(|entry| entry.id),
@@ -3939,6 +3949,7 @@ where
         None,
         None,
         anchor_height,
+        identity_index,
     )
     .await?;
     // Saved: the notes are the spend's resolution's from here on.
@@ -4074,6 +4085,40 @@ pub(crate) async fn arm_redrive_before_broadcast<S: ShieldedStore>(
     payment_started: Option<&PaymentStarted>,
     anchor_recorded_at: u64,
 ) -> Result<(), PlatformWalletError> {
+    arm_redrive_holding_slot(
+        store,
+        id,
+        activity_id,
+        anchor,
+        nullifiers,
+        state_transition,
+        operation,
+        private_contact,
+        payment_started,
+        anchor_recorded_at,
+        None,
+    )
+    .await
+}
+
+/// [`arm_redrive_before_broadcast`], keeping with the record the identity
+/// slot `identity_index` an identity create derived its keys at
+/// ([`PendingRedrive::identity_index`]): the record holds it across a
+/// restart while the create may still execute.
+#[allow(clippy::too_many_arguments)]
+async fn arm_redrive_holding_slot<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    activity_id: Option<[u8; 32]>,
+    anchor: [u8; 32],
+    nullifiers: Vec<[u8; 32]>,
+    state_transition: &StateTransition,
+    operation: &'static str,
+    private_contact: Option<PrivateContactPayment>,
+    payment_started: Option<&PaymentStarted>,
+    anchor_recorded_at: u64,
+    identity_index: Option<u32>,
+) -> Result<(), PlatformWalletError> {
     use dpp::serialization::PlatformSerializable;
 
     let activity_id = activity_id.ok_or_else(|| {
@@ -4109,6 +4154,7 @@ pub(crate) async fn arm_redrive_before_broadcast<S: ShieldedStore>(
         identity_nonce_finalized: false,
         identity_user_abandoned: false,
         anchor_height: Some(anchor_recorded_at),
+        identity_index,
     };
     let mut store = store.write().await;
     match journal {
@@ -5049,6 +5095,7 @@ mod redrive_tests {
             identity_nonce_finalized: false,
             identity_user_abandoned: true,
             anchor_height: None,
+            identity_index: None,
         };
         store.arm_redrive(id, archived.clone()).unwrap();
         assert!(!has_unresolved_identity_shield(&store, wallet_id, identity_id).unwrap());
@@ -5100,6 +5147,7 @@ mod redrive_tests {
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
                     anchor_height: None,
+                    identity_index: None,
                 },
             )
             .unwrap();
@@ -5173,6 +5221,7 @@ mod redrive_tests {
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
                     anchor_height: None,
+                    identity_index: None,
                 },
             )
             .expect("redrive should arm");
@@ -5202,6 +5251,7 @@ mod redrive_tests {
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
                     anchor_height: None,
+                    identity_index: None,
                 },
             )
             .expect("redrive should arm");
@@ -5314,6 +5364,7 @@ mod redrive_tests {
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
                     anchor_height: None,
+                    identity_index: None,
                 },
             )
             .expect("arm identity guard");
@@ -5689,6 +5740,7 @@ mod redrive_tests {
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
                     anchor_height: None,
+                    identity_index: None,
                 },
                 payment,
                 &[PrivatePaymentEntry::for_commitment([0xC4; 32])],
@@ -6372,6 +6424,7 @@ mod redrive_tests {
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
                     anchor_height: None,
+                    identity_index: None,
                 },
             )
             .expect("arm identity guard");
@@ -6409,6 +6462,7 @@ mod redrive_tests {
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
             anchor_height: None,
+            identity_index: None,
         };
         {
             let mut guard = store.write().await;
@@ -6469,6 +6523,7 @@ mod redrive_tests {
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
             anchor_height: None,
+            identity_index: None,
         };
         {
             let mut guard = store.write().await;
@@ -6575,7 +6630,18 @@ mod redrive_tests {
         IdentityCreate,
     }
 
+    /// The identity slot the tests' identity create holds.
+    const CREATED_IDENTITY_INDEX: u32 = 3;
+
     impl SpendPath {
+        /// The identity slot the path's saved record holds.
+        fn identity_index(self) -> Option<u32> {
+            match self {
+                Self::Shared => None,
+                Self::IdentityCreate => Some(CREATED_IDENTITY_INDEX),
+            }
+        }
+
         /// A signed transition of the path, as it saves and broadcasts one.
         fn transition(self) -> StateTransition {
             match self {
@@ -6637,6 +6703,7 @@ mod redrive_tests {
                     &mut spend.reservation,
                     &transition,
                     Identifier::from(CREATED_IDENTITY),
+                    CREATED_IDENTITY_INDEX,
                     BTreeMap::new(),
                 )
                 .await
@@ -6826,6 +6893,7 @@ mod redrive_tests {
             &mut reservation,
             &transition,
             "transfer",
+            None,
             || {
                 // Nothing is dispatched before the record is on the file.
                 let durable =
@@ -6959,6 +7027,7 @@ mod redrive_tests {
                 &mut spend.reservation,
                 &transition,
                 "transfer",
+                None,
                 || async {
                     dispatched.store(true, Ordering::SeqCst);
                     Err(match outcome {
@@ -7087,6 +7156,11 @@ mod redrive_tests {
                     saved[0].st_bytes,
                     transition.serialize_to_bytes().expect("serializes"),
                     "{spend_path:?}: the exact signed transition"
+                );
+                assert_eq!(
+                    saved[0].identity_index,
+                    spend_path.identity_index(),
+                    "{spend_path:?}: the slot it holds"
                 );
             }
             let recorded = [SPEND_ANCHOR].into_iter().collect();

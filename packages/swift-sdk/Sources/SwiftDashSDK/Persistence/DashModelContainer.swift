@@ -97,7 +97,8 @@ public enum DashModelContainer {
             PersistentIdentityBalanceMetadata.self,
             PersistentPrivateContactRequestsPosition.self,
             PersistentPrivateShieldedAddress.self,
-            PersistentLockedOutpoint.self
+            PersistentLockedOutpoint.self,
+            PersistentIdentitySlotLease.self
         ]
     }
 
@@ -400,7 +401,8 @@ public enum DashSchemaV4: VersionedSchema {
 /// Current schema: an asset lock records the optional Orchard recipient of its
 /// shielded funding, the private contact request sync keeps its scan state
 /// (each identity's read position and its private contacts' shielded addresses),
-/// and a wallet keeps the outpoints it holds out of coin selection.
+/// a wallet keeps the outpoints it holds out of coin selection, and an
+/// invitation claim keeps the identity slot it leased.
 public enum DashSchemaV5: VersionedSchema {
     public static var versionIdentifier: Schema.Version { Schema.Version(5, 0, 0) }
     public static var models: [any PersistentModel.Type] { DashModelContainer.modelTypes }

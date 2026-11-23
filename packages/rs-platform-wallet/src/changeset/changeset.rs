@@ -36,6 +36,7 @@ use key_wallet::{AddressInfo, Network, PlatformP2PKHAddress, Utxo};
 
 use crate::changeset::dashpay_backfill::DashPayBackfillRecord;
 use crate::changeset::identity_scan_state::IdentityScanStateEntry;
+use crate::changeset::identity_slot_lease::IdentitySlotLeaseChangeSet;
 use crate::changeset::wallet_accounting::apply_wallet_accounting;
 use crate::wallet::platform_wallet::WalletId;
 
@@ -2436,6 +2437,11 @@ pub struct PlatformWalletChangeSet {
     /// that has not adopted the slot keeps today's behaviour — the backfill
     /// re-fires on every launch — which is slow but never lossy.
     pub dashpay_backfill: Option<DashPayBackfillRecord>,
+    /// Invitation-claim slot leases taken, updated or released. Stored only by
+    /// a backend declaring
+    /// [`PersistenceCapabilities::IDENTITY_SLOT_LEASES`](crate::changeset::PersistenceCapabilities::IDENTITY_SLOT_LEASES);
+    /// a claim is refused on any other. See [`IdentitySlotLeaseChangeSet`].
+    pub identity_slot_leases: Option<IdentitySlotLeaseChangeSet>,
     /// Per-account registration entries emitted at registration / on
     /// later `add_account` calls. See [`AccountRegistrationEntry`] for
     /// the merge policy (plain `Vec::extend`, dedup is the apply-side
@@ -2592,6 +2598,7 @@ impl Merge for PlatformWalletChangeSet {
         if let Some(record) = other.dashpay_backfill {
             self.dashpay_backfill = Some(record);
         }
+        self.identity_slot_leases.merge(other.identity_slot_leases);
         // Per-account specs and address-pool snapshots: append-only.
         // See the type docstrings for the rationale (registration
         // round emits each key once; snapshots are whole-pool, so
@@ -2629,6 +2636,7 @@ impl Merge for PlatformWalletChangeSet {
             && self.wallet_metadata.is_none()
             && self.identity_scan_state.is_none()
             && self.dashpay_backfill.is_none()
+            && self.identity_slot_leases.is_empty()
             && self.account_registrations.is_empty()
             && self.provider_key_account_registrations.is_empty()
             && self.account_address_pools.is_empty()

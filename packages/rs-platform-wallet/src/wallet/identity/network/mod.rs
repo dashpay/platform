@@ -51,6 +51,7 @@ mod loading;
 mod multiple_choice_proposal;
 mod register_from_addresses;
 mod registration;
+mod slots;
 mod state_transition_summary;
 mod top_up;
 mod top_up_from_addresses;
@@ -126,6 +127,11 @@ pub use identity_handle::{
     identity_auth_derivation_path_for_type, ConnectKey, DerivedIdentityAuthKey, IdentityWallet,
     IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
 };
+pub(crate) use invitation::InvitationClaimantKey;
+pub(crate) use slots::ClaimLeaseResolution;
+#[cfg(test)]
+pub(crate) use slots::ResolvedSlotRequest;
+pub use slots::{IdentitySlot, SlotRequest};
 pub use state_transition_summary::{
     check_document_type_name, decode_state_transition, summarize_state_transition,
     BatchedTransitionSummary, BatchedTransitionTarget, DataContractSummary, StateTransitionSummary,

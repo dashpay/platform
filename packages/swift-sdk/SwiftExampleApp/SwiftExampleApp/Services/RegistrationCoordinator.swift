@@ -18,8 +18,8 @@ import SwiftDashSDK
 ///
 /// Keyed by `(walletId, identityIndex)`. The slot model enforces
 /// "one registration in flight per identity slot" naturally because
-/// the wallet's `unusedIdentityIndices` invariant only ever
-/// surfaces a slot to the UI once.
+/// the wallet leases each new registration's slot to it alone
+/// (`ManagedPlatformWallet.acquireRegistrationSlot`).
 @MainActor
 final class RegistrationCoordinator: ObservableObject {
     /// Composite key — needs `Hashable` so the map can index by it.
@@ -45,16 +45,14 @@ final class RegistrationCoordinator: ObservableObject {
     ///   mid-flight tears down the FFI manager and would abort the
     ///   in-flight call mid-stream.
     /// - `.unconfirmed`: the identity is probably live on chain. The
-    ///   picker's `usedIdentityIndices` unions the persisted `isUsed`
-    ///   reservation with the `PersistentIdentity` rows, but that
-    ///   reservation write is best-effort (silent no-op when the slot row
-    ///   is beyond the derived lookahead) — so the live controller remains
-    ///   a load-bearing guard until the identity row lands via sync.
-    ///   Switching networks tears down the `PlatformWalletManager` and
-    ///   with it this coordinator, dropping the controller (and the
-    ///   Rust-side note reservation); the same HD slot could become
-    ///   selectable and a re-submission would be rejected by the
-    ///   registered-key-hash stateful check and burn the funded spend.
+    ///   wallet keeps the slot leased in memory, and no
+    ///   `PersistentIdentity` row holds it until the identity row lands
+    ///   via sync. Switching networks tears down the
+    ///   `PlatformWalletManager` and with it this coordinator, dropping the
+    ///   controller (and the Rust-side note reservation and slot lease);
+    ///   the wallet could hand the same HD slot to a new registration, and
+    ///   a re-submission would be rejected by the registered-key-hash
+    ///   stateful check and burn the funded spend.
     ///
     /// Reading `isActive` directly (rather than re-listing the cases)
     /// keeps this gate from drifting from the phase model, mirroring

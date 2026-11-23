@@ -366,6 +366,7 @@ async fn local_balance_restores_funds_and_durable_pending_reservations_offline()
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
                     anchor_height: None,
+                    identity_index: None,
                 },
             )
             .unwrap();

@@ -381,6 +381,63 @@ final class CreateIdentityResumableTests: XCTestCase {
         )
     }
 
+    // MARK: - failure next step
+
+    /// A resumed lock keeps its own index, so `.identitySlotTakenOnChain`
+    /// (82) must never re-run the same resume: it offers to top up the
+    /// identity found at that index, whatever the retry count.
+    func testResumedLockSlotTakenOffersTopUpInsteadOfRetry() {
+        let taken = PlatformWalletError.identitySlotTakenOnChain(
+            identityIndex: 4,
+            identityId: "8nUyGRbR3fVsLLuxBnD9QCBz1VKPVxGsFyhNWVYP3PvR"
+        )
+        for retries in [0, ManagedPlatformWallet.identitySlotTakenRetryLimit] {
+            XCTAssertEqual(
+                RegistrationFailureNextStep.after(taken, isResume: true, slotTakenRetries: retries),
+                .offerLockTopUp(
+                    identityIndex: 4,
+                    identityId: "8nUyGRbR3fVsLLuxBnD9QCBz1VKPVxGsFyhNWVYP3PvR"
+                )
+            )
+        }
+    }
+
+    /// A fresh registration keeps acquiring a new slot on 82, up to the
+    /// retry limit, then shows the failure.
+    func testFreshRegistrationSlotTakenRetriesUpToLimit() {
+        let taken = PlatformWalletError.identitySlotTakenOnChain(identityIndex: 1, identityId: "x")
+        let limit = ManagedPlatformWallet.identitySlotTakenRetryLimit
+        XCTAssertEqual(
+            RegistrationFailureNextStep.after(taken, isResume: false, slotTakenRetries: 0),
+            .retryAtNewSlot
+        )
+        XCTAssertEqual(
+            RegistrationFailureNextStep.after(taken, isResume: false, slotTakenRetries: limit - 1),
+            .retryAtNewSlot
+        )
+        XCTAssertEqual(
+            RegistrationFailureNextStep.after(taken, isResume: false, slotTakenRetries: limit),
+            .showFailure
+        )
+    }
+
+    /// Any other failure, on either path, is shown as is.
+    func testOtherFailuresAreShown() {
+        let other = PlatformWalletError.invalidParameter("nope")
+        XCTAssertEqual(
+            RegistrationFailureNextStep.after(other, isResume: true, slotTakenRetries: 0),
+            .showFailure
+        )
+        XCTAssertEqual(
+            RegistrationFailureNextStep.after(other, isResume: false, slotTakenRetries: 0),
+            .showFailure
+        )
+        XCTAssertEqual(
+            RegistrationFailureNextStep.after(nil, isResume: true, slotTakenRetries: 0),
+            .showFailure
+        )
+    }
+
     // MARK: - network-switch gate
 
     /// The network picker's `.disabled(_:)` gate reads

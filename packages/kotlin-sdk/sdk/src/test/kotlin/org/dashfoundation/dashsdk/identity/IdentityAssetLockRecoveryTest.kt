@@ -25,8 +25,10 @@ class IdentityAssetLockRecoveryTest {
         var capturedTxid: ByteArray? = null
         var capturedVout = -1
         var consumeVoucher = true
+        var capturedToken = -1L
         val registration = IdentityRegistration(
-            resumeNative = ResumeIdentityNativeCall { _, txid, vout, _, _, _, _, consume ->
+            resumeNative = ResumeIdentityNativeCall { _, txid, vout, _, token, _, _, _, consume ->
+                capturedToken = token
                 capturedTxid = txid.copyOf()
                 capturedVout = vout
                 consumeVoucher = consume
@@ -47,6 +49,7 @@ class IdentityAssetLockRecoveryTest {
         assertTrue(lock.outpointTxid.contentEquals(capturedTxid!!))
         assertEquals(lock.outpointVout, capturedVout)
         assertFalse(consumeVoucher)
+        assertEquals("a tracked lock holds its index; no slot token", 0L, capturedToken)
         assertEquals(listOf(77L), destroyed)
         assertEquals(32, identityId.size)
     }
@@ -55,7 +58,7 @@ class IdentityAssetLockRecoveryTest {
     fun `managed identity handle is freed when native result validation fails`() = runTest {
         val destroyed = mutableListOf<Long>()
         val registration = IdentityRegistration(
-            resumeNative = ResumeIdentityNativeCall { _, _, _, _, _, _, _, _ ->
+            resumeNative = ResumeIdentityNativeCall { _, _, _, _, _, _, _, _, _ ->
                 IdentityRegistrationNativeResult(ByteArray(31), 91L)
             },
             destroyManagedIdentity = destroyed::add,
@@ -75,7 +78,7 @@ class IdentityAssetLockRecoveryTest {
     fun `registration rejects topup lock before JNI`() = runTest {
         var called = false
         val registration = IdentityRegistration(
-            resumeNative = ResumeIdentityNativeCall { _, _, _, _, _, _, _, _ ->
+            resumeNative = ResumeIdentityNativeCall { _, _, _, _, _, _, _, _, _ ->
                 called = true
                 IdentityRegistrationNativeResult(ByteArray(32), 1)
             },
@@ -95,7 +98,7 @@ class IdentityAssetLockRecoveryTest {
     fun `registration rejects identity index that differs from tracked lock before JNI`() = runTest {
         var called = false
         val registration = IdentityRegistration(
-            resumeNative = ResumeIdentityNativeCall { _, _, _, _, _, _, _, _ ->
+            resumeNative = ResumeIdentityNativeCall { _, _, _, _, _, _, _, _, _ ->
                 called = true
                 IdentityRegistrationNativeResult(ByteArray(32), 1)
             },
@@ -115,7 +118,7 @@ class IdentityAssetLockRecoveryTest {
     fun `registration rejects keys derived from a different HD slot before JNI`() = runTest {
         var called = false
         val registration = IdentityRegistration(
-            resumeNative = ResumeIdentityNativeCall { _, _, _, _, _, _, _, _ ->
+            resumeNative = ResumeIdentityNativeCall { _, _, _, _, _, _, _, _, _ ->
                 called = true
                 IdentityRegistrationNativeResult(ByteArray(32), 1)
             },
@@ -142,7 +145,7 @@ class IdentityAssetLockRecoveryTest {
         val release = CountDownLatch(1)
         val registration = IdentityRegistration(
             gate = gate,
-            resumeNative = ResumeIdentityNativeCall { _, _, _, _, _, _, _, _ ->
+            resumeNative = ResumeIdentityNativeCall { _, _, _, _, _, _, _, _, _ ->
                 entered.countDown()
                 check(release.await(5, TimeUnit.SECONDS))
                 IdentityRegistrationNativeResult(ByteArray(32), 55)

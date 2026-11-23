@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **33**
+Capabilities tracked: **34**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 20 | 11 | 1 | 1 |
-| Swift | Example app | 5 | 14 | 4 | 10 |
-| Kotlin | SDK | 14 | 14 | 4 | 1 |
-| Kotlin | Example app | 6 | 13 | 3 | 11 |
+| Swift | SDK | 21 | 11 | 1 | 1 |
+| Swift | Example app | 5 | 15 | 4 | 10 |
+| Kotlin | SDK | 15 | 14 | 4 | 1 |
+| Kotlin | Example app | 6 | 14 | 3 | 11 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 10 | 21 |
-| Kotlin | 5 | 8 | 20 |
+| Swift | 2 | 11 | 21 |
+| Kotlin | 5 | 9 | 20 |
 
 ## Capability status
 
@@ -57,6 +57,7 @@ Capabilities tracked: **33**
 | `shielded.core_wallet_drain` | supported / unsupported / tested | unsupported / unsupported / not_applicable |
 | `network.adaptive_quorum_source` | supported / supported / tested | supported / supported / tested |
 | `shielded.shield_from_identity_to_recipient` | supported / unsupported / not_applicable | unsupported / unsupported / not_applicable |
+| `identity.slot_leases` | supported / partial / required | supported / partial / required |
 
 Source: [`docs/sdk/sdk-parity-manifest.json`](../../docs/sdk/sdk-parity-manifest.json).
 Detailed legacy view mapping remains in [`PARITY.md`](PARITY.md), but its manual totals are not authoritative.

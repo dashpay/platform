@@ -2641,6 +2641,34 @@ struct LockedOutpointStorageDetailView: View {
     }
 }
 
+// MARK: - PersistentIdentitySlotLease
+
+struct IdentitySlotLeaseStorageDetailView: View {
+    let record: PersistentIdentitySlotLease
+
+    var body: some View {
+        Form {
+            Section("Wallet") {
+                FieldRow(label: "Network", value: Network(rawValue: record.networkRaw)?.displayName ?? "raw \(record.networkRaw)")
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+            }
+            Section {
+                FieldRow(label: "Identity Index", value: "\(record.identityIndex)")
+                FieldRow(label: "Phase", value: identitySlotLeasePhaseLabel(record.phase))
+                FieldRow(label: "Invitation Outpoint", value: hexString(record.invitationOutPoint))
+            } header: {
+                Text("Identity Slot Lease")
+            } footer: {
+                Text("The identity index an invitation claim holds until its identity lands. Reserved: "
+                    + "nothing was sent yet. Submitted: the claim may have reached Platform, and only "
+                    + "its outcome frees the slot.")
+            }
+        }
+        .navigationTitle("Identity Slot Lease")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - PersistentAssetLock
 
 struct AssetLockStorageDetailView: View {

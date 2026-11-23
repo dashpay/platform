@@ -72,6 +72,10 @@ use crate::identity_persistence::{
     free_identity_entry_ffi, free_identity_key_entry_ffi, IdentityEntryFFI, IdentityKeyEntryFFI,
     IdentityKeyRemovalFFI,
 };
+use crate::identity_slot_lease_persistence::{
+    load_identity_slot_leases, persist_identity_slot_leases, FreeIdentitySlotLeasesFn,
+    IdentitySlotLeaseFFI, LoadIdentitySlotLeasesFn, PersistIdentitySlotLeasesFn,
+};
 use crate::invitation_persistence::{build_invitation_entries, InvitationEntryFFI};
 use crate::platform_address_types::AddressBalanceEntryFFI;
 use crate::token_persistence::{TokenBalanceRemovalFFI, TokenBalanceUpsertFFI};
@@ -199,6 +203,15 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS:
 /// un-ignore stores the sender's removal and the read-position rewind it
 /// brings in one changeset.
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: u64 = 1 << 15;
+/// Invitation-claim slot leases are persisted AND restored across restarts.
+/// Requires the extension slots `on_persist_identity_slot_leases_fn` +
+/// `on_load_identity_slot_leases_fn` + `on_load_identity_slot_leases_free_fn`,
+/// the wallet-list restore callbacks, and the host declaring the bit. The
+/// wallet uses it only together with
+/// [`PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ATOMIC_CHANGESETS`]
+/// (`PersistenceCapabilities::IDENTITY_SLOT_LEASE_RESTART`); without that set
+/// an invitation claim is refused before it takes a slot.
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_IDENTITY_SLOT_LEASES: u64 = 1 << 17;
 
 /// Locked outpoints (masternode collateral, and outpoints locked by hand)
 /// are persisted AND restored. Requires the extension trio
@@ -776,6 +789,37 @@ pub struct PersistenceCallbacksExtension {
     pub on_load_wallet_locked_outpoints_free_fn: Option<
         unsafe extern "C" fn(context: *mut c_void, outpoints: *const OutPointFFI, count: usize),
     >,
+    /// Store a round's invitation-claim slot leases (see
+    /// [`PersistIdentitySlotLeasesFn`]). All three lease slots are required
+    /// before the host can attest
+    /// [`PLATFORM_WALLET_PERSISTENCE_CAPABILITY_IDENTITY_SLOT_LEASES`].
+    pub on_persist_identity_slot_leases_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            leases: *const IdentitySlotLeaseFFI,
+            leases_count: usize,
+            released: *const [u8; 36],
+            released_count: usize,
+        ) -> i32,
+    >,
+    /// Return a wallet's stored claim leases (see [`LoadIdentitySlotLeasesFn`]).
+    pub on_load_identity_slot_leases_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            out_leases: *mut *const IdentitySlotLeaseFFI,
+            out_leases_count: *mut usize,
+        ) -> i32,
+    >,
+    /// Release the array `on_load_identity_slot_leases_fn` returned.
+    pub on_load_identity_slot_leases_free_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            leases: *const IdentitySlotLeaseFFI,
+            leases_count: usize,
+        ),
+    >,
 }
 
 impl Default for PersistenceCallbacksExtension {
@@ -806,6 +850,9 @@ impl Default for PersistenceCallbacksExtension {
             on_persist_wallet_changeset_outpoint_locks_fn: None,
             on_load_wallet_locked_outpoints_fn: None,
             on_load_wallet_locked_outpoints_free_fn: None,
+            on_persist_identity_slot_leases_fn: None,
+            on_load_identity_slot_leases_fn: None,
+            on_load_identity_slot_leases_free_fn: None,
         }
     }
 }
@@ -837,6 +884,9 @@ pub struct PersistenceExtensionCallbacks {
     pub wallet_changeset_outpoint_locks: Option<PersistWalletChangesetOutpointLocksFn>,
     pub load_wallet_locked_outpoints: Option<LoadWalletLockedOutpointsFn>,
     pub load_wallet_locked_outpoints_free: Option<FreeWalletLockedOutpointsFn>,
+    pub persist_identity_slot_leases: Option<PersistIdentitySlotLeasesFn>,
+    pub load_identity_slot_leases: Option<LoadIdentitySlotLeasesFn>,
+    pub load_identity_slot_leases_free: Option<FreeIdentitySlotLeasesFn>,
 }
 
 /// Return value by which a persistence callback reports a **retryable**
@@ -2126,6 +2176,24 @@ impl FFIPersister {
         // bit's own gating exists to prevent, reproduced one channel over.
         if self.callbacks.on_persist_dashpay_payments_fn.is_some() {
             capabilities = capabilities.union(PersistenceCapabilities::DASHPAY_PAYMENTS);
+        }
+        // Claim leases are restored per wallet during the wallet-list load,
+        // so that load is required alongside the three extension slots.
+        if wallet_restore
+            && self
+                .tracked_masternodes_callbacks
+                .persist_identity_slot_leases
+                .is_some()
+            && self
+                .tracked_masternodes_callbacks
+                .load_identity_slot_leases
+                .is_some()
+            && self
+                .tracked_masternodes_callbacks
+                .load_identity_slot_leases_free
+                .is_some()
+        {
+            capabilities = capabilities.union(PersistenceCapabilities::IDENTITY_SLOT_LEASES);
         }
         // Sweeps travel through the size-tagged extension callback, so —
         // unlike the legacy `on_persist_wallet_changeset_fn`, whose
@@ -3506,6 +3574,25 @@ impl PlatformWalletPersistence for FFIPersister {
             }
         }
 
+        // Invitation-claim slot leases, after the identities a lease release
+        // lands with.
+        if let (Some(cb), Some(leases)) = (
+            self.tracked_masternodes_callbacks
+                .persist_identity_slot_leases,
+            changeset.identity_slot_leases.as_ref(),
+        ) {
+            let rc = unsafe {
+                persist_identity_slot_leases(cb, self.callbacks.context, &wallet_id, leases)
+            };
+            if rc != 0 {
+                eprintln!(
+                    "Identity slot lease persistence callback returned error code {}",
+                    rc
+                );
+                outcome.record(rc);
+            }
+        }
+
         // Send sync state updates.
         if let Some(ref addr_cs) = changeset.platform_addresses {
             if let Some(cb) = self.callbacks.on_persist_sync_state_fn {
@@ -4086,6 +4173,32 @@ impl PlatformWalletPersistence for FFIPersister {
                 }
             }
             self.restore_locked_outpoints(&entry.wallet_id, &mut wallet_state.wallet_info)?;
+            if let (Some(load), Some(free)) = (
+                self.tracked_masternodes_callbacks.load_identity_slot_leases,
+                self.tracked_masternodes_callbacks
+                    .load_identity_slot_leases_free,
+            ) {
+                // Read only for a host the wallet trusts with leases
+                // (`IDENTITY_SLOT_LEASE_RESTART`): any other host's claims are
+                // refused before they take a slot, so it has none to restore.
+                if self
+                    .persistence_capabilities()
+                    .contains(PersistenceCapabilities::IDENTITY_SLOT_LEASE_RESTART)
+                {
+                    let leases = load_identity_slot_leases(
+                        load,
+                        free,
+                        self.callbacks.context,
+                        &entry.wallet_id,
+                    )?;
+                    if !leases.is_empty() {
+                        wallet_state
+                            .identity_manager
+                            .claim_leases
+                            .insert(entry.wallet_id, leases);
+                    }
+                }
+            }
             if let Some(cb) = self.load_identity_balance_block_time_callback {
                 for identities in wallet_state.identity_manager.wallet_identities.values_mut() {
                     for managed in identities.values_mut() {
@@ -6754,6 +6867,8 @@ fn build_wallet_start_state(
         // warm-launch shortcut rather than forcing a scan every launch — see
         // `IdentityManagerStartState::scan_states`.
         scan_states: BTreeMap::new(),
+        // Filled after the build by the lease slot, for a host attesting it.
+        claim_leases: BTreeMap::new(),
     };
 
     // Rehydrate tracked asset-locks (built / broadcast / IS-locked
@@ -9468,7 +9583,9 @@ mod tests {
         let wallet = create(&manager);
         assert_eq!(wallet.wallet_id(), wallet_id);
 
-        let held = |id: Identifier| {
+        // Each identity at its own slot: the wallet refuses a second
+        // identity in an occupied one.
+        let held = |id: Identifier, identity_index: u32| {
             runtime().block_on(async {
                 let mut wm = wallet.wallet_manager().write().await;
                 let identities = &mut wm
@@ -9483,7 +9600,7 @@ mod tests {
                             balance: 0,
                             revision: 0,
                         }),
-                        0,
+                        identity_index,
                         wallet.wallet_id(),
                         wallet.persister(),
                     )
@@ -9495,8 +9612,11 @@ mod tests {
                     .private_payments_unrestored()
             })
         };
-        assert!(held(marked), "the identity the kept record names is held");
-        assert!(!held(other), "an identity no kept record names is not");
+        assert!(
+            held(marked, 0),
+            "the identity the kept record names is held"
+        );
+        assert!(!held(other, 1), "an identity no kept record names is not");
     }
 
     #[test]
@@ -12299,6 +12419,36 @@ mod tests {
                 PersistenceCallbacksExtension,
                 on_load_wallet_locked_outpoints_free_fn
             ) + std::mem::size_of::<Option<FreeWalletLockedOutpointsFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_identity_slot_leases_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_identity_slot_leases_fn
+            ) + std::mem::size_of::<Option<PersistIdentitySlotLeasesFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_identity_slot_leases_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_identity_slot_leases_fn
+            ) + std::mem::size_of::<Option<LoadIdentitySlotLeasesFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_identity_slot_leases_free_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_identity_slot_leases_free_fn
+            ) + std::mem::size_of::<Option<FreeIdentitySlotLeasesFn>>(),
             std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(
@@ -12372,6 +12522,10 @@ mod tests {
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_OUTPOINT_LOCKS,
             PersistenceCapabilities::OUTPOINT_LOCKS.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_IDENTITY_SLOT_LEASES,
+            PersistenceCapabilities::IDENTITY_SLOT_LEASES.bits()
         );
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ACCOUNT_ADDRESS_POOLS,

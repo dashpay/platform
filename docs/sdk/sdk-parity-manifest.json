@@ -6,6 +6,7 @@
     "asset_lock_funding_indices",
     "asset_lock_operation_ids",
     "atomic_changesets",
+    "identity_slot_leases",
     "invitations",
     "pending_contact_crypto",
     "private_contact_request_scan_state",
@@ -78,7 +79,14 @@
     "platform_wallet_topup_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
     "platform_wallet_tracked_asset_locks_free": "packages/rs-platform-wallet-ffi/src/manager_diagnostics.rs",
     "platform_wallet_tracked_asset_locks_list": "packages/rs-platform-wallet-ffi/src/manager_diagnostics.rs",
-    "restore_provider_special_txs": "packages/rs-platform-wallet-ffi/src/persistence.rs"
+    "restore_provider_special_txs": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+    "platform_wallet_identity_slot_acquire_invitation_claim": "packages/rs-platform-wallet-ffi/src/identity_slot.rs",
+    "platform_wallet_identity_slot_acquire_registration": "packages/rs-platform-wallet-ffi/src/identity_slot.rs",
+    "platform_wallet_identity_slot_release_invitation_claim": "packages/rs-platform-wallet-ffi/src/identity_slot.rs",
+    "platform_wallet_identity_slot_release_registration": "packages/rs-platform-wallet-ffi/src/identity_slot.rs",
+    "platform_wallet_manager_shielded_identity_create_from_pool": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+    "platform_wallet_register_identity_with_funding_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
+    "platform_wallet_register_identity_with_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_with_signer.rs"
   },
   "capabilities": [
     {
@@ -2160,6 +2168,75 @@
           "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ShieldFromIdentityToRecipientGuardTests.swift",
           "id": "testRecipientNot43BytesThrowsInvalidParameter",
           "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ShieldFromIdentityToRecipientGuardTests",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "identity.slot_leases",
+      "title": "Wallet-owned identity slots for registration (asset lock, platform address, shielded pool), invitation claim and voucher reclaim",
+      "area": "shared_policy",
+      "shared_apis": [
+        "platform_wallet_identity_slot_acquire_registration",
+        "platform_wallet_identity_slot_acquire_invitation_claim",
+        "platform_wallet_identity_slot_release_registration",
+        "platform_wallet_identity_slot_release_invitation_claim",
+        "platform_wallet_register_identity_with_funding_signer",
+        "platform_wallet_register_identity_with_signer",
+        "platform_wallet_manager_shielded_identity_create_from_pool",
+        "platform_wallet_resume_identity_with_existing_asset_lock_signer",
+        "platform_wallet_claim_invitation"
+      ],
+      "required_persistence_capabilities": [
+        "atomic_changesets",
+        "identity_slot_leases",
+        "wallet_restore"
+      ],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "SDK wraps acquire/release and types codes 81/82; SwiftExampleApp takes every index from the wallet on every registration path. No restart or on-chain-taken retry was executed."
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "JNI + SDK wrap acquire/release and type codes 81/82; KotlinExampleApp takes every index from the wallet on every registration path. Instrumented JNI smoke not run; no restart executed."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ErrorHandlingTests.swift",
+          "id": "testShouldPreserveIdentitySlotRefusalsFromFFI",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ErrorHandlingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/IdentitySlotLeasePersistenceTests.swift",
+          "id": "testShouldStoreUpdateAndReleaseALeaseWithItsRound",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/IdentitySlotLeasePersistenceTests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/IdentitySlotLeasePersistenceTest.kt",
+          "id": "shouldStoreUpdateAndReleaseTheLeasesWithTheirRound",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/identity.rs",
+          "id": "should_lay_out_a_claim_slot_as_kotlin_decodes_it",
+          "command": "cargo test -p rs-unified-sdk-jni --lib should_lay_out_a_claim_slot_as_kotlin_decodes_it",
           "covers_restart": false
         }
       ]

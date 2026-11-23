@@ -2909,6 +2909,7 @@ mod tests {
                 identity_nonce_finalized: true,
                 identity_user_abandoned: false,
                 anchor_height: None,
+                identity_index: None,
             },
             cmxs,
         )
@@ -3483,6 +3484,7 @@ mod tests {
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
             anchor_height: None,
+            identity_index: None,
         };
         coordinator
             .store()
@@ -3860,6 +3862,7 @@ mod tests {
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
             anchor_height: None,
+            identity_index: None,
         };
         coordinator
             .store()
@@ -3974,6 +3977,7 @@ mod tests {
                     identity_nonce_finalized: true,
                     identity_user_abandoned: false,
                     anchor_height: None,
+                    identity_index: None,
                 },
             )
             .unwrap();
@@ -4475,6 +4479,7 @@ mod tests {
                             identity_nonce_finalized: false,
                             identity_user_abandoned: false,
                             anchor_height: Some(*anchor_height),
+                            identity_index: None,
                         },
                     )
                     .expect("record");
@@ -4580,6 +4585,7 @@ mod tests {
                         identity_nonce_finalized: false,
                         identity_user_abandoned: false,
                         anchor_height: None,
+                        identity_index: None,
                     },
                 )
                 .expect("record");
@@ -4679,6 +4685,7 @@ mod tests {
                         identity_nonce_finalized: false,
                         identity_user_abandoned: false,
                         anchor_height: None,
+                        identity_index: None,
                     },
                 )
                 .expect("record");

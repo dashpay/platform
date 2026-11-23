@@ -39,7 +39,8 @@
     "PersistentIdentityBalanceMetadata": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentIdentityBalanceMetadata.swift",
     "PersistentPrivateContactRequestsPosition": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentPrivateContactRequestsPosition.swift",
     "PersistentPrivateShieldedAddress": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentPrivateShieldedAddress.swift",
-    "PersistentLockedOutpoint": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentLockedOutpoint.swift"
+    "PersistentLockedOutpoint": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentLockedOutpoint.swift",
+    "PersistentIdentitySlotLease": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentIdentitySlotLease.swift"
   },
   "value_types": [
     {

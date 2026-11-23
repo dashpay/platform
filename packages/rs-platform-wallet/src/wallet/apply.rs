@@ -112,6 +112,7 @@ impl PlatformWalletInfo {
             invitations: _,
             dpns_name_states,
             identity_scan_state,
+            identity_slot_leases,
             // The backfill record is persistence-only here: the reconcile
             // sweep mutates `PlatformWalletInfo::dashpay_backfill` directly
             // and the start-state path restores it at load. No replay hook.
@@ -181,6 +182,13 @@ impl PlatformWalletInfo {
         if let Some(scan) = identity_scan_state {
             self.identity_manager
                 .record_identity_scan(wallet.wallet_id, scan);
+        }
+
+        // 1c. Invitation-claim slot leases: live in-memory state on the
+        //     identity manager, read by every later slot acquisition.
+        if let Some(leases) = identity_slot_leases {
+            self.identity_manager
+                .apply_claim_lease_changeset(wallet.wallet_id, leases);
         }
 
         // 2a. DPNS name states (username marketplace): upserts land

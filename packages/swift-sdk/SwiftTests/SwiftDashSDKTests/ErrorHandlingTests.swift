@@ -505,6 +505,63 @@ final class ErrorHandlingTests: XCTestCase {
         ) else { return XCTFail("a prose payload must not be typed") }
     }
 
+    /// The identity-slot refusals keep pinned raw values and typed cases with
+    /// their JSON detail, so a host re-acquires on 82 by its case, not its text.
+    func testShouldPreserveIdentitySlotRefusalsFromFFI() {
+        let codes: [(PlatformWalletFFIResultCode, PlatformWalletResultCode, Int32)] = [
+            (PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_SLOT_NOT_HELD,
+             .errorIdentitySlotNotHeld, 81),
+            (PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_SLOT_TAKEN_ON_CHAIN,
+             .errorIdentitySlotTakenOnChain, 82),
+            (PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_SLOT_CLAIM_SUBMITTED,
+             .errorIdentitySlotClaimSubmitted, 83),
+        ]
+        for (ffi, code, raw) in codes {
+            XCTAssertEqual(PlatformWalletResultCode(ffi: ffi), code)
+            XCTAssertEqual(code.rawValue, raw)
+        }
+
+        guard case .identitySlotNotHeld(let notHeldIndex) = PlatformWalletError(
+            code: .errorIdentitySlotNotHeld, message: "{\"identityIndex\":3}"
+        ) else { return XCTFail("lost typed slot-not-held error") }
+        XCTAssertEqual(notHeldIndex, 3)
+
+        guard case .identitySlotClaimSubmitted(let submittedIndex) = PlatformWalletError(
+            code: .errorIdentitySlotClaimSubmitted, message: "{\"identityIndex\":5}"
+        ) else { return XCTFail("lost typed submitted-claim error") }
+        XCTAssertEqual(submittedIndex, 5)
+
+        let id = "8eTDkBhpQjHeqgbVeriwLeZr1tCa6yBGw76SckvD1cwc"
+        let taken = PlatformWalletError(
+            code: .errorIdentitySlotTakenOnChain,
+            message: "{\"identityIndex\":4,\"identityId\":\"\(id)\"}"
+        )
+        guard case .identitySlotTakenOnChain(let takenIndex, let owner) = taken
+        else { return XCTFail("lost typed slot-taken error") }
+        XCTAssertEqual(takenIndex, 4)
+        XCTAssertEqual(owner, id)
+        XCTAssertEqual(
+            taken.errorDescription,
+            "Identity index 4 already holds identity \(id), which this wallet now records. "
+                + "Nothing was funded."
+        )
+        XCTAssertEqual(ManagedPlatformWallet.identitySlotTakenRetryLimit, 5)
+    }
+
+    /// 82 always names its identity; a payload without one, or prose, degrades
+    /// to `.unknown` instead of inventing an index or an id.
+    func testShouldDegradeAnUndecodableIdentitySlotDetailToUnknown() {
+        guard case .unknown = PlatformWalletError(
+            code: .errorIdentitySlotTakenOnChain, message: "{\"identityIndex\":4}"
+        ) else { return XCTFail("a taken slot with no identity must not be typed") }
+        guard case .unknown = PlatformWalletError(
+            code: .errorIdentitySlotNotHeld, message: "not json"
+        ) else { return XCTFail("a prose payload must not be typed") }
+        guard case .unknown = PlatformWalletError(
+            code: .errorIdentitySlotClaimSubmitted, message: "not json"
+        ) else { return XCTFail("a prose payload must not be typed") }
+    }
+
     /// The FFI tri-state maps to `false` / `true` / `nil`.
     func testShouldDecodeWhoseInvitationClaimItWas() {
         func status(claimed: Bool, by: UInt8) -> ManagedPlatformWallet.InvitationClaimStatus {

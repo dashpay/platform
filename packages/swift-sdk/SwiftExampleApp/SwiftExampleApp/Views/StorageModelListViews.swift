@@ -1928,6 +1928,51 @@ struct LockedOutpointStorageListView: View {
     }
 }
 
+// MARK: - PersistentIdentitySlotLease
+
+/// The identity slots invitation claims hold before their identity lands,
+/// one row per invitation, written by the native wallet.
+struct IdentitySlotLeaseStorageListView: View {
+    let network: Network
+    @Query private var records: [PersistentIdentitySlotLease]
+
+    private var filtered: [PersistentIdentitySlotLease] {
+        records.filter { $0.networkRaw == network.rawValue }
+            .sorted { ($0.walletId.toHexString(), $0.identityIndex)
+                < ($1.walletId.toHexString(), $1.identityIndex) }
+    }
+
+    var body: some View {
+        let visible = filtered
+        List(visible) { record in
+            NavigationLink(destination: IdentitySlotLeaseStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Identity index \(record.identityIndex) · \(identitySlotLeasePhaseLabel(record.phase))")
+                        .font(.subheadline)
+                    Text(record.invitationOutPoint.toHexString())
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+            }
+        }
+        .navigationTitle("Identity Slot Leases (\(visible.count))")
+        .overlay {
+            if visible.isEmpty { ContentUnavailableView("No Records", systemImage: "person.badge.key") }
+        }
+    }
+}
+
+/// Display label of a stored lease phase code (the native wallet's
+/// `IDENTITY_SLOT_LEASE_PHASE_*`); an unknown code is shown as it is.
+func identitySlotLeasePhaseLabel(_ phase: UInt8) -> String {
+    switch phase {
+    case 0: return "reserved"
+    case 1: return "submitted"
+    default: return "phase \(phase)"
+    }
+}
+
 // MARK: - PersistentAssetLock
 
 /// Storage explorer surface for tracked asset locks. SwiftData-backed

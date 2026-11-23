@@ -234,25 +234,56 @@ struct ReclaimInvitationSheet: View {
                     )
                 case .register:
                     let signer = KeychainSigner(modelContainer: modelContext.container)
-                    let identityIndex = nextUnusedIdentityIndex()
-                    // Pre-broadcast local work — BEFORE the marker is set, so a
-                    // failure here leaves no in-flight marker.
-                    let keys = try wallet.prePersistIdentityKeysForRegistration(
-                        identityIndex: identityIndex,
-                        keyCount: Self.authKeyCount,
-                        network: network
-                    )
-                    try markInFlight()
-                    _ = try await wallet.resumeIdentityWithAssetLock(
-                        outPointTxid: txid,
-                        outPointVout: vout,
-                        identityIndex: identityIndex,
-                        identityPubkeys: keys,
-                        signer: signer,
-                        // Reclaim IS the explicitly authorized voucher-consume
-                        // path (see topUp arm above).
-                        consumeInvitationVoucher: true
-                    )
+                    // The wallet leases the new identity's slot; the voucher
+                    // registers there with the slot's token.
+                    var slot = try await wallet.acquireRegistrationSlot()
+                    var slotTakenRetries = 0
+                    var markedInFlight = false
+                    while true {
+                        let keys: [ManagedPlatformWallet.IdentityPubkey]
+                        do {
+                            // Pre-broadcast local work — BEFORE the marker is
+                            // set, so a failure here leaves no in-flight marker.
+                            keys = try wallet.prePersistIdentityKeysForRegistration(
+                                identityIndex: slot.identityIndex,
+                                keyCount: Self.authKeyCount,
+                                network: network
+                            )
+                            if !markedInFlight {
+                                try markInFlight()
+                                markedInFlight = true
+                            }
+                        } catch {
+                            // Abandoned before the consume: give the slot back.
+                            try? await wallet.releaseRegistrationSlot(slot)
+                            throw error
+                        }
+                        do {
+                            // A failure other than a taken slot keeps the
+                            // lease (in memory, until the app restarts): the
+                            // consume may have reached Platform, and the
+                            // voucher lock does not hold the index.
+                            _ = try await wallet.resumeIdentityWithAssetLock(
+                                outPointTxid: txid,
+                                outPointVout: vout,
+                                identityIndex: slot.identityIndex,
+                                slotToken: slot.token,
+                                identityPubkeys: keys,
+                                signer: signer,
+                                // Reclaim IS the explicitly authorized voucher-consume
+                                // path (see topUp arm above).
+                                consumeInvitationVoucher: true
+                            )
+                            break
+                        } catch PlatformWalletError.identitySlotTakenOnChain
+                            where slotTakenRetries < ManagedPlatformWallet.identitySlotTakenRetryLimit {
+                            // The keys at this slot belong to this wallet's own
+                            // identity: the wallet recorded it there and
+                            // released the lease; nothing was consumed.
+                            slotTakenRetries += 1
+                            slot = try await wallet.acquireRegistrationSlot()
+                        }
+                    }
                 }
 
                 // SwiftData is the UI source: flip the local row to Reclaimed.
@@ -324,14 +355,6 @@ struct ReclaimInvitationSheet: View {
         let voutBytes = raw.suffix(4)
         let vout = voutBytes.reversed().reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
         return (Data(txid), vout)
-    }
-
-    /// One past the highest used registration index on this wallet, else 0.
-    /// Matches `ClaimInvitationSheet.nextUnusedIdentityIndex`.
-    private func nextUnusedIdentityIndex() -> UInt32 {
-        let used = walletIdentities.map(\.identityIndex)
-        guard let highest = used.max() else { return 0 }
-        return highest == UInt32.max ? UInt32.max : highest + 1
     }
 
     /// The state a failed reclaim attempt resolves to.

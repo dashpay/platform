@@ -377,8 +377,9 @@ sealed class DashSdkError(
          * `ErrorShieldedBroadcastUnconfirmed` (native code 17) on the
          * shielded identity-create path. The broadcast outcome is AMBIGUOUS
          * — the identity may already be live on-chain — so [identityId]
-         * (written by the C ABI even on this outcome) MUST be retained and
-         * its derivation slot held (the coordinator's `Unconfirmed` phase).
+         * (written by the C ABI even on this outcome) MUST be retained. The
+         * wallet holds its derivation slot (across a restart too) while the
+         * create may still execute, so no new registration derives there.
          * Retrying would reuse keys for a possibly-live identity. Thrown by
          * `PlatformWalletManager.shieldedIdentityCreateFromPool` from the
          * tagged JNI payload (the id never rides in the message text).
@@ -875,6 +876,53 @@ sealed class DashSdkError(
         }
 
         /**
+         * `ErrorIdentitySlotNotHeld` (native code 81): a registration or an
+         * invitation claim named an identity index ([identityIndex]) its
+         * slot does not lease (never acquired, or released). Nothing was
+         * funded or sent. Acquire a slot and derive the keys at its index.
+         */
+        class IdentitySlotNotHeld(
+            val identityIndex: Int,
+            cause: Throwable? = null,
+        ) : PlatformWallet(
+            "Identity index $identityIndex is not leased to this operation.",
+            cause,
+        )
+
+        /**
+         * `ErrorIdentitySlotTakenOnChain` (native code 82): the identity keys
+         * derived at [identityIndex] already belong to identity [identityId]
+         * (base58) on Platform. The wallet recorded that identity in the slot
+         * and released the operation's lease; nothing was funded. Acquire a
+         * slot again and derive the keys at the new index, at most
+         * [org.dashfoundation.dashsdk.identity.IdentityRegistration.IDENTITY_SLOT_TAKEN_RETRY_LIMIT]
+         * times in a row.
+         */
+        class IdentitySlotTakenOnChain(
+            val identityIndex: Int,
+            val identityId: String,
+            cause: Throwable? = null,
+        ) : PlatformWallet(
+            "The keys at identity index $identityIndex already belong to identity $identityId.",
+            cause,
+        )
+
+        /**
+         * `ErrorIdentitySlotClaimSubmitted` (native code 83): the release of
+         * the invitation claim's slot [identityIndex] was refused because the
+         * claim may have reached Platform; only its outcome frees the slot.
+         * Retry the claim, which gets the same slot, instead of abandoning it.
+         */
+        class IdentitySlotClaimSubmitted(
+            val identityIndex: Int,
+            cause: Throwable? = null,
+        ) : PlatformWallet(
+            "The invitation claim at identity index $identityIndex may have reached Platform; " +
+                "its slot is freed only by the claim's outcome.",
+            cause,
+        )
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -1103,6 +1151,31 @@ sealed class DashSdkError(
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
             80 -> PlatformWallet.IdentityLookupFailed(message, cause) // ErrorIdentityLookupFailed
+            81 -> parseErrorDetail(message)?.let { detail ->
+                runCatching {
+                    PlatformWallet.IdentitySlotNotHeld(
+                        identityIndex = detail.requiredIndex("identityIndex"),
+                        cause = cause,
+                    )
+                }.getOrNull()
+            } ?: PlatformWallet.Generic(code, message, cause)
+            82 -> parseErrorDetail(message)?.let { detail ->
+                runCatching {
+                    PlatformWallet.IdentitySlotTakenOnChain(
+                        identityIndex = detail.requiredIndex("identityIndex"),
+                        identityId = requireNotNull(detail.optionalString("identityId")),
+                        cause = cause,
+                    )
+                }.getOrNull()
+            } ?: PlatformWallet.Generic(code, message, cause)
+            83 -> parseErrorDetail(message)?.let { detail ->
+                runCatching {
+                    PlatformWallet.IdentitySlotClaimSubmitted(
+                        identityIndex = detail.requiredIndex("identityIndex"),
+                        cause = cause,
+                    )
+                }.getOrNull()
+            } ?: PlatformWallet.Generic(code, message, cause)
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.
@@ -1121,6 +1194,10 @@ sealed class DashSdkError(
 
         private fun JSONObject.requiredULong(name: String): ULong =
             get(name).toString().toULong()
+
+        /** A `u32` identity index that fits an [Int]. */
+        private fun JSONObject.requiredIndex(name: String): Int =
+            get(name).toString().toInt().also { require(it >= 0) { "$name is negative" } }
 
         /** A string, or `null` when the key is JSON `null` or absent. */
         private fun JSONObject.optionalString(name: String): String? =

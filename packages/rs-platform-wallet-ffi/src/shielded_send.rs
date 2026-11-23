@@ -51,6 +51,7 @@ use dpp::shielded::{
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::ProtocolError;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
+use platform_wallet::wallet::identity::SlotHolder;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
 use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::{
@@ -892,10 +893,13 @@ fn map_asset_lock_funding_result(
 /// denomination + full key set) + a per-key proof-of-possession produced via
 /// `signer_identity_handle`. There is NO platform identity signature.
 ///
-/// `identity_index` is the DIP-9 identity-registration slot the new identity occupies. On a
-/// successful broadcast the wallet registers the proof-verified identity at this slot in its local
-/// `IdentityManager` (mirroring address-funded registration), which drives the host persister's
-/// identity-row emit. It carries no decision here — it is marshalled straight through to the wallet.
+/// `identity_index` and `slot_token` come from
+/// [`crate::identity_slot::platform_wallet_identity_slot_acquire_registration`], and the identity
+/// pubkeys are derived at that index. A slot the token does not lease is refused with
+/// `ErrorIdentitySlotNotHeld` before a note is spent; `ErrorIdentitySlotTakenOnChain` means an
+/// identity already holds these keys, now recorded in that slot: acquire another one. On a
+/// successful broadcast the wallet records the proof-verified identity in this slot, which drives
+/// the host persister's identity-row emit. Both are marshalled straight through to the wallet.
 ///
 /// On success the 32-byte new identity id (`double_sha256(sorted nullifiers)`) is written to
 /// `out_identity_id`. The id is deterministic in the spent notes, so the host can also predict it
@@ -903,8 +907,9 @@ fn map_asset_lock_funding_result(
 ///
 /// `out_identity_id` is ALSO written on the [`ErrorShieldedBroadcastUnconfirmed`] result code: the
 /// broadcast was accepted but its execution result couldn't be confirmed, so the derived id is
-/// handed back (the identity may already exist on chain) and the host must hold the slot rather than
-/// treat the registration as failed. On every other error code `out_identity_id` is left untouched.
+/// handed back (the identity may already exist on chain) and the wallet holds the slot for it,
+/// across a restart too, so the host need not keep its slot token; it must not treat the
+/// registration as failed. On every other error code `out_identity_id` is left untouched.
 ///
 /// [`ErrorShieldedBroadcastUnconfirmed`]: crate::error::PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed
 ///
@@ -941,6 +946,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     account: u32,
     identity_index: u32,
+    slot_token: u64,
     identity_pubkeys: *const IdentityPubkeyFFI,
     identity_pubkeys_count: usize,
     denomination: u64,
@@ -1031,6 +1037,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
                 seed.as_ref(),
                 account,
                 identity_index,
+                SlotHolder::Registration { token: slot_token },
                 public_keys,
                 denomination,
                 send_to_address_on_creation_failure,
@@ -2615,6 +2622,7 @@ mod tests {
                     identity_nonce_finalized: false,
                     identity_user_abandoned: true,
                     anchor_height: None,
+                    identity_index: None,
                 },
             )
             .expect("seed malformed durable metadata");

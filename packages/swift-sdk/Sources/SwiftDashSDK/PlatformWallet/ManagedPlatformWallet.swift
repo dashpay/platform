@@ -623,7 +623,12 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     ///   - inputs: contributing address rows describing each input
     ///     platform address + the credit amount to spend from it.
     ///   - output: optional refund output.
-    ///   - identityIndex: BIP-9 identity index in the HD tree.
+    ///   - slot: the lease from `acquireRegistrationSlot()`; the keys
+    ///     are derived at `slot.identityIndex`. A registration at an
+    ///     index its slot does not lease throws `.identitySlotNotHeld`;
+    ///     keys already registered to an identity on Platform throw
+    ///     `.identitySlotTakenOnChain` (acquire again and re-derive).
+    ///     Nothing is spent in either case.
     ///   - identityPubkeys: Already-derived authentication pubkeys
     ///     for the new identity (typically produced by
     ///     `prePersistIdentityKeysForRegistration`). The first row
@@ -641,7 +646,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     public func registerIdentityFromAddresses(
         inputs: [IdentityAddressInput],
         output: IdentityAddressOutput?,
-        identityIndex: UInt32,
+        slot: RegistrationSlot,
         identityPubkeys: [IdentityPubkey],
         identitySigner: KeychainSigner,
         addressSigner: KeychainSigner
@@ -672,6 +677,8 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         let handle = self.handle
         let identitySignerHandle = identitySigner.handle
         let addressSignerHandle = addressSigner.handle
+        let identityIndex = slot.identityIndex
+        let slotToken = slot.token
 
         let (idData, identityHandle): (Data, Handle) = try await Task.detached(
             priority: .userInitiated
@@ -764,6 +771,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
                             platform_wallet_register_identity_with_signer(
                                 handle,
                                 identityIndex,
+                                slotToken,
                                 ffiRowsPtr,
                                 UInt(ffiRowsCount),
                                 identitySignerHandle,
@@ -805,14 +813,14 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     public func registerIdentityFromAddresses(
         inputs: [IdentityAddressInput],
         output: IdentityAddressOutput?,
-        identityIndex: UInt32,
+        slot: RegistrationSlot,
         identityPubkeys: [IdentityPubkey],
         signer: KeychainSigner
     ) async throws -> CreatedIdentity {
         try await registerIdentityFromAddresses(
             inputs: inputs,
             output: output,
-            identityIndex: identityIndex,
+            slot: slot,
             identityPubkeys: identityPubkeys,
             identitySigner: signer,
             addressSigner: signer
@@ -3039,6 +3047,12 @@ extension ManagedPlatformWallet {
     /// returned as the claim's result when it carries exactly these keys, or
     /// reported as `.invitationClaimedByThisWallet` / `.assetLockAlreadyConsumed`
     /// as above when it does not.
+    ///
+    /// `identityIndex` must be the one `acquireInvitationClaimSlot(uri:)`
+    /// leased for this invitation (`.identitySlotNotHeld` otherwise). The
+    /// wallet marks the lease Submitted before sending. Keys already
+    /// registered to this wallet's own identity throw
+    /// `.identitySlotTakenOnChain`: acquire again and re-derive.
     ///
     /// Returns the freshly-registered invitee `ManagedIdentity`.
     public func claimInvitation(
@@ -5505,12 +5519,18 @@ extension ManagedPlatformWallet {
     /// `prePersistIdentityKeysForRegistration` BEFORE calling this —
     /// otherwise the IdentityCreate signature can't complete.
     ///
+    /// `slot` comes from `acquireRegistrationSlot()`: derive the keys at
+    /// `slot.identityIndex`. A registration at an index its slot does not
+    /// lease throws `.identitySlotNotHeld`; keys already registered to an
+    /// identity on Platform throw `.identitySlotTakenOnChain` (acquire again
+    /// and re-derive). Nothing is funded in either case.
+    ///
     /// Returns `(identityId, ManagedIdentity)` for the freshly
     /// registered identity.
     public func registerIdentityWithFunding(
         amountDuffs: UInt64,
         accountIndex: UInt32,
-        identityIndex: UInt32,
+        slot: RegistrationSlot,
         identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
         signer: KeychainSigner
     ) async throws -> (Identifier, ManagedIdentity) {
@@ -5520,6 +5540,8 @@ extension ManagedPlatformWallet {
         let handle = self.handle
         let signerHandle = signer.handle
         let pubkeys = identityPubkeys
+        let identityIndex = slot.identityIndex
+        let slotToken = slot.token
         // Create a `MnemonicResolver` owned for the lifetime of the
         // FFI call — Rust constructs a `MnemonicResolverCoreSigner`
         // from this handle to sign the asset-lock proof's
@@ -5561,6 +5583,7 @@ extension ManagedPlatformWallet {
                         amountDuffs,
                         accountIndex,
                         identityIndex,
+                        slotToken,
                         ffiRowsPtr,
                         UInt(ffiRowsCount),
                         signerHandle,
@@ -5591,7 +5614,7 @@ extension ManagedPlatformWallet {
     /// Resume identity registration from an existing tracked asset lock.
     ///
     /// Sibling to
-    /// [`registerIdentityWithFunding(amountDuffs:identityIndex:identityPubkeys:signer:)`]:
+    /// [`registerIdentityWithFunding(amountDuffs:accountIndex:slot:identityPubkeys:signer:)`]:
     /// the wallet-balance variant builds a fresh asset-lock transaction;
     /// this variant picks up a lock that's already tracked (status
     /// `InstantSendLocked` / `ChainLocked`) and drives whatever stages
@@ -5620,10 +5643,18 @@ extension ManagedPlatformWallet {
     /// shared in the invitation link). Defaults to `false`: generic resume
     /// surfaces are refused invitation locks by the Rust funding resolver.
     /// Only the invitation reclaim flow passes `true`.
+    ///
+    /// `slotToken` is read only with `consumeInvitationVoucher`: reclaiming a
+    /// voucher as a new identity registers at `identityIndex`, which the
+    /// token from `acquireRegistrationSlot()` must lease (`.identitySlotNotHeld`
+    /// otherwise, `.identitySlotTakenOnChain` when the keys are already
+    /// registered). Resuming a tracked registration lock needs no slot: pass
+    /// the lock's own index and leave the token at 0.
     public func resumeIdentityWithAssetLock(
         outPointTxid: Data,
         outPointVout: UInt32,
         identityIndex: UInt32,
+        slotToken: UInt64 = 0,
         identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
         signer: KeychainSigner,
         consumeInvitationVoucher: Bool = false
@@ -5689,6 +5720,7 @@ extension ManagedPlatformWallet {
                         handle,
                         &outPoint,
                         identityIndex,
+                        slotToken,
                         ffiRowsPtr,
                         UInt(ffiRowsCount),
                         signerHandle,
@@ -5714,7 +5746,7 @@ extension ManagedPlatformWallet {
 
     /// Top up an existing identity by building and broadcasting a **new
     /// Core asset lock** from the wallet's own balance — the top-up twin of
-    /// [`registerIdentityWithFunding(amountDuffs:accountIndex:identityIndex:identityPubkeys:signer:)`].
+    /// [`registerIdentityWithFunding(amountDuffs:accountIndex:slot:identityPubkeys:signer:)`].
     ///
     /// Simpler than registration: an `IdentityTopUp` creates no identity
     /// keys, so there is no per-identity-key `KeychainSigner` and no pubkey
@@ -5789,7 +5821,7 @@ extension ManagedPlatformWallet {
 
     /// Recover a stuck top-up by consuming an already-tracked Core asset
     /// lock — the top-up twin of
-    /// [`resumeIdentityWithAssetLock(outPointTxid:outPointVout:identityIndex:identityPubkeys:signer:)`].
+    /// [`resumeIdentityWithAssetLock(outPointTxid:outPointVout:identityIndex:slotToken:identityPubkeys:signer:consumeInvitationVoucher:)`].
     ///
     /// Use case is crash recovery: a prior `topUpIdentityWithFunding`
     /// confirmed its lock on Core but the `IdentityTopUp` never reached

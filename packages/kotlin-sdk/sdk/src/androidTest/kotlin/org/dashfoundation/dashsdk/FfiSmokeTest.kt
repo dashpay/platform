@@ -231,6 +231,42 @@ class FfiSmokeTest {
     }
 
     /**
+     * The invitation-claim slot leases need their store and their load: JNI
+     * wires the three lease slots only for a bridge that overrides both (an
+     * inherited no-op store would acknowledge a lease it never kept, an
+     * inherited empty load would free a slot a claim already took), and Rust
+     * attests the bit only where it is also declared. The Room handler keeps
+     * it.
+     */
+    @Test
+    fun identitySlotLeaseCapabilityNeedsBothOverrides() {
+        NativeLoader.ensureLoaded()
+        val bit = NativePersistenceBridge.CAPABILITY_IDENTITY_SLOT_LEASES
+        fun effective(bridge: NativePersistenceBridge): Boolean =
+            WalletManagerNative.nativeEffectivePersistenceCapabilityBits(bridge) and bit == bit
+
+        assertTrue("both overrides", effective(SlotLeaseBridge.Full()))
+        assertFalse("no lease store", effective(SlotLeaseBridge.WithoutStore()))
+        assertFalse("no lease load", effective(SlotLeaseBridge.WithoutLoad()))
+        assertFalse(
+            "both overrides, not declared",
+            effective(object : SlotLeaseBridge.Full() {
+                override fun persistenceCapabilitiesBits(): Long = 0L
+            }),
+        )
+
+        val db = DashDatabase.createInMemory(ApplicationProvider.getApplicationContext())
+        try {
+            assertTrue(
+                "the Room handler",
+                effective(PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)),
+            )
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
      * Rust↔Kotlin persistence-descriptor lockstep. The trampolines resolve
      * each bridge method by (name, descriptor) only when its slot first
      * fires — for the invitation upsert that would be mid-way through a
@@ -424,6 +460,40 @@ private abstract class ScanStateBridge : NativePersistenceBridge() {
 
         override fun onLoadPrivateContactScanState(walletId: ByteArray): Array<ByteArray> =
             arrayOf(ByteArray(0), ByteArray(0))
+    }
+}
+
+/**
+ * Bridges declaring the invitation-claim slot leases with some of the
+ * overrides they depend on, for
+ * [FfiSmokeTest.identitySlotLeaseCapabilityNeedsBothOverrides].
+ */
+private abstract class SlotLeaseBridge : NativePersistenceBridge() {
+    override fun persistenceCapabilitiesVersion(): Int = 1
+
+    override fun persistenceCapabilitiesBits(): Long =
+        CAPABILITY_IDENTITY_SLOT_LEASES or ATOMIC_CHANGESETS
+
+    open class Full : SlotLeaseBridge() {
+        override fun onPersistIdentitySlotLeases(
+            walletId: ByteArray,
+            leases: ByteArray,
+            released: ByteArray,
+        ): Int = 0
+
+        override fun onLoadIdentitySlotLeases(walletId: ByteArray): ByteArray = ByteArray(0)
+    }
+
+    class WithoutStore : SlotLeaseBridge() {
+        override fun onLoadIdentitySlotLeases(walletId: ByteArray): ByteArray = ByteArray(0)
+    }
+
+    class WithoutLoad : SlotLeaseBridge() {
+        override fun onPersistIdentitySlotLeases(
+            walletId: ByteArray,
+            leases: ByteArray,
+            released: ByteArray,
+        ): Int = 0
     }
 }
 

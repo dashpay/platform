@@ -29,9 +29,14 @@
 mod accessors;
 mod apply;
 mod lifecycle;
+mod slots;
+
+pub use slots::{SlotAcquisition, SlotHolder, SlotLease, SlotLeasePhase, SlotPlacement, SlotState};
 
 use super::managed_identity::ManagedIdentity;
-use crate::changeset::{IdentityManagerStartState, IdentityScanStateEntry};
+use crate::changeset::{
+    IdentityManagerStartState, IdentityScanStateEntry, IdentitySlotLeaseChangeSet,
+};
 use crate::wallet::platform_wallet::WalletId;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
@@ -114,6 +119,22 @@ pub struct IdentityManager {
     /// (`ClientStartState::retained_private_contact_scan_states`): each is held
     /// as it is added ([`Self::retain_private_payment_markers`]).
     retained_private_payment_markers: BTreeSet<Identifier>,
+
+    /// Slot leases, `slot_leases[wallet_id][identity_index]`: the slots a
+    /// registration or an invitation claim holds before its identity lands
+    /// (see [`slots`]).
+    slot_leases: BTreeMap<WalletId, BTreeMap<RegistrationIndex, SlotLease>>,
+
+    /// The token the next registration lease gets (see
+    /// [`SlotHolder::Registration`]). Registration leases live in memory
+    /// only, so the counter does not need to survive a restart.
+    next_registration_token: u64,
+
+    /// The slots identity creates from the shielded pool hold while they may
+    /// still execute, `shielded_create_holds[wallet_id]`: their saved records
+    /// keep the index durably, and these mirror them (see
+    /// [`Self::hold_for_shielded_create`]).
+    shielded_create_holds: BTreeMap<WalletId, BTreeSet<RegistrationIndex>>,
 }
 
 impl From<IdentityManagerStartState> for IdentityManager {
@@ -122,6 +143,7 @@ impl From<IdentityManagerStartState> for IdentityManager {
             out_of_wallet_identities,
             wallet_identities,
             scan_states,
+            claim_leases,
         } = state;
 
         // Rebuild the side-index from the two buckets — `IdentityManagerStartState`
@@ -143,13 +165,26 @@ impl From<IdentityManagerStartState> for IdentityManager {
             }
         }
 
-        Self {
+        let mut manager = Self {
             out_of_wallet_identities,
             wallet_identities,
             location_index,
             identity_scan_states: scan_states,
             retained_private_payment_markers: BTreeSet::new(),
+            slot_leases: BTreeMap::new(),
+            next_registration_token: 0,
+            shielded_create_holds: BTreeMap::new(),
+        };
+        for (wallet_id, leases) in claim_leases {
+            manager.apply_claim_lease_changeset(
+                wallet_id,
+                IdentitySlotLeaseChangeSet {
+                    leases,
+                    ..Default::default()
+                },
+            );
         }
+        manager
     }
 }
 

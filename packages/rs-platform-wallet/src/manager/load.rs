@@ -2161,6 +2161,7 @@ mod private_payment_hold_tests {
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
                     anchor_height: None,
+                    identity_index: None,
                 },
                 PrivateContactPayment {
                     sender: SENDER,

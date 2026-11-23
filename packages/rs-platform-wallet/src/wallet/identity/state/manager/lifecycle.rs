@@ -91,32 +91,10 @@ impl IdentityManager {
             return Err(PlatformWalletError::IdentityAlreadyExists(identity_id));
         }
 
-        let mut managed_identity = ManagedIdentity::new(identity, identity_index);
-        // Denormalize the bucket keys onto the value so callers that
-        // iterate values know which wallet + slot they came from
-        // without re-threading the keys.
-        managed_identity.wallet_id = Some(wallet_id);
-        // Held before anything can send or accept for it, when a persister
-        // kept its record marked.
-        if self.retained_private_payment_markers.remove(&identity_id) {
-            managed_identity.hold_for_retained_private_payment_marker();
-        }
-
-        self.wallet_identities
-            .entry(wallet_id)
-            .or_default()
-            .insert(identity_index, managed_identity);
-        // Keep the side-index invariant in lockstep with the bucket
-        // insert above.
-        self.location_index_insert(
-            identity_id,
-            IdentityLocation::InWallet {
-                wallet_id,
-                registration_index: identity_index,
-            },
-        );
-
-        Ok(())
+        // Through the one slot path, so an occupied slot is refused here as
+        // everywhere else instead of being overwritten.
+        self.place_in_slot_unstored(identity, identity_index, wallet_id)
+            .map(|_| ())
     }
 
     /// Hold every identity in `owners`, whose private contact request scan

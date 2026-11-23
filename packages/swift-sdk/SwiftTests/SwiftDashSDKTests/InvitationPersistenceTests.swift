@@ -78,6 +78,9 @@ final class InvitationPersistenceTests: XCTestCase {
             // Locked outpoints: the handler wires the persist/load/free trio
             // onto `PersistentLockedOutpoint`, so locks survive a restart.
             | PlatformWalletPersistenceCapabilities.outpointLocks
+            // Invitation-claim slot leases: the handler wires the
+            // persist/load/free trio onto `PersistentIdentitySlotLease`.
+            | PlatformWalletPersistenceCapabilities.identitySlotLeases
 
         XCTAssertEqual(
             capabilities.version,

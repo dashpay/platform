@@ -132,6 +132,11 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// Mirrors `PersistenceCapabilities::OUTPOINT_LOCKS`; Rust only honours
     /// the declaration when all three slots are wired.
     public static let outpointLocks: UInt64 = 1 << 16
+    /// Invitation-claim slot leases are stored and restored. Mirrors
+    /// `PersistenceCapabilities::IDENTITY_SLOT_LEASES`; Rust only honours the
+    /// declaration when the extension carries the three lease callbacks, and
+    /// refuses an invitation claim on a store without it.
+    public static let identitySlotLeases: UInt64 = 1 << 17
 
     public let version: UInt32
     public let bits: UInt64

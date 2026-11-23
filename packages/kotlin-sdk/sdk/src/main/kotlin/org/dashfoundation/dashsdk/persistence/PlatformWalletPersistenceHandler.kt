@@ -44,6 +44,7 @@ import org.dashfoundation.dashsdk.persistence.entities.DashpayIgnoredSenderEntit
 import org.dashfoundation.dashsdk.persistence.entities.DashpayProfileEntity
 import org.dashfoundation.dashsdk.persistence.entities.DpnsNameEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.dashfoundation.dashsdk.persistence.entities.IdentitySlotLeaseEntity
 import org.dashfoundation.dashsdk.persistence.entities.InvitationEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressesSyncStateEntity
@@ -157,7 +158,8 @@ class PlatformWalletPersistenceHandler(
             CAPABILITY_DPNS_NAME_STATES or
             CAPABILITY_TRACKED_ASSET_LOCKS or
             CAPABILITY_CORE_SWEEP_REMOVAL or
-            CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
+            CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE or
+            CAPABILITY_IDENTITY_SLOT_LEASES
 
     /**
      * The single-thread executor created when no [dispatcher] is injected.
@@ -864,6 +866,44 @@ class PlatformWalletPersistenceHandler(
             runBlockingResult {
                 database.privateContactScanStateDao().walletIdsWithPositions()
                     .fold(ByteArray(0)) { packed, id -> packed + id }
+            }
+        }
+
+    /**
+     * Port of `PlatformWalletPersistenceHandler.swift`'s
+     * `persistIdentitySlotLeases`: staged into the round, so a claim's
+     * identity and the release of its lease commit together, and a lease
+     * taken in a round that rolls back is not kept.
+     */
+    override fun onPersistIdentitySlotLeases(
+        walletId: ByteArray,
+        leases: ByteArray,
+        released: ByteArray,
+    ): Int = guarded {
+        val leaseRows = unpackIdentitySlotLeases(walletId, leases)
+        val releasedOutPoints = chunks(released, NativePersistenceBridge.IDENTITY_SLOT_LEASE_RELEASE_ENTRY_SIZE)
+        // Fail rather than skip: Rust treats an acknowledged lease as durable,
+        // so a lease dropped here would let a registration take a claim's slot
+        // after a restart. Outside a round there is no commit to fail with.
+        checkNotNull(openRound(walletId)) { "identity slot leases require a changeset round" }
+        stage(walletId) { db ->
+            checkNotNull(db.walletDao().getByWalletId(walletId)) {
+                "no wallet row to store identity slot leases under"
+            }
+            val dao = db.identitySlotLeaseDao()
+            leaseRows.forEach { dao.upsert(it) }
+            for (outPoint in releasedOutPoints) {
+                dao.delete(walletId, outPoint)
+            }
+        }
+        0
+    }
+
+    /** The stored claim leases of [walletId], packed as they were stored. */
+    override fun onLoadIdentitySlotLeases(walletId: ByteArray): ByteArray =
+        loadOrThrow {
+            runBlockingResult {
+                packIdentitySlotLeases(database.identitySlotLeaseDao().byWallet(walletId))
             }
         }
 
@@ -3723,6 +3763,8 @@ class PlatformWalletPersistenceHandler(
             // identity it names.
             database.privateContactScanStateDao().deleteUnmarkedPositionsByWallet(walletId)
             database.privateContactScanStateDao().deleteAddressesByWallet(walletId)
+            // Claim leases go with their wallet.
+            database.identitySlotLeaseDao().deleteByWallet(walletId)
 
             // The wallet row itself — cascades accounts → core / platform
             // addresses.
@@ -4211,6 +4253,9 @@ class PlatformWalletPersistenceHandler(
         internal const val CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long =
             NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
 
+        internal const val CAPABILITY_IDENTITY_SLOT_LEASES: Long =
+            NativePersistenceBridge.CAPABILITY_IDENTITY_SLOT_LEASES
+
         private const val TAG = "DashPersistence"
 
         /**
@@ -4698,6 +4743,40 @@ internal fun packPrivateAddresses(rows: List<PrivateShieldedAddressEntity>): Byt
     val buffer = java.nio.ByteBuffer.allocate(rows.size * NativePersistenceBridge.PRIVATE_ADDRESS_ENTRY_SIZE)
     for (row in rows) {
         buffer.put(row.ownerId).put(row.contactId).put(row.address)
+    }
+    return buffer.array()
+}
+
+/** Rows of [NativePersistenceBridge.onPersistIdentitySlotLeases]'s `leases`. */
+internal fun unpackIdentitySlotLeases(
+    walletId: ByteArray,
+    packed: ByteArray,
+): List<IdentitySlotLeaseEntity> =
+    chunks(packed, NativePersistenceBridge.IDENTITY_SLOT_LEASE_ENTRY_SIZE).map { row ->
+        IdentitySlotLeaseEntity(
+            walletId = walletId.copyOf(),
+            invitationOutPoint = row.copyOfRange(0, 36),
+            identityIndex = java.nio.ByteBuffer.wrap(row, 36, 4)
+                .order(java.nio.ByteOrder.LITTLE_ENDIAN).int,
+            phase = row[40].toInt() and 0xFF,
+        )
+    }
+
+/**
+ * [rows] packed as [NativePersistenceBridge.onLoadIdentitySlotLeases] hands
+ * them back. A stored row that cannot cross the ABI throws, which fails the
+ * load rather than handing back the rest without it: a dropped lease would
+ * free a slot a claim already took.
+ */
+internal fun packIdentitySlotLeases(rows: List<IdentitySlotLeaseEntity>): ByteArray {
+    require(rows.all { it.invitationOutPoint.size == 36 && it.phase in 0..0xFF }) {
+        "a stored identity slot lease has a malformed outpoint or phase"
+    }
+    val buffer = java.nio.ByteBuffer
+        .allocate(rows.size * NativePersistenceBridge.IDENTITY_SLOT_LEASE_ENTRY_SIZE)
+        .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+    for (row in rows) {
+        buffer.put(row.invitationOutPoint).putInt(row.identityIndex).put(row.phase.toByte())
     }
     return buffer.array()
 }

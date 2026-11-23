@@ -27,6 +27,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -35,10 +39,15 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.launch
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.navigation.IdentityDetail
 import org.dashfoundation.example.services.IdentityRegistrationController
 import org.dashfoundation.example.services.IdentityRegistrationController.Phase
+import org.dashfoundation.example.services.assetlock.IdentityAssetLockRecovery
+import org.dashfoundation.example.services.assetlock.RegistrationLockTopUp
+import org.dashfoundation.example.ui.components.ErrorAlertDialog
+import org.dashfoundation.example.ui.components.SubmitButton
 import org.dashfoundation.example.ui.wallet.toHexString
 
 /**
@@ -54,6 +63,7 @@ fun PendingRegistrationRow(
     navController: NavHostController,
 ) {
     val phase by controller.phase.collectAsStateWithLifecycle()
+    val identityIndex by controller.currentIdentityIndex.collectAsStateWithLifecycle()
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -69,7 +79,7 @@ fun PendingRegistrationRow(
     ) {
         ListItem(
             leadingContent = { PhaseIcon(phase) },
-            headlineContent = { Text("Identity #${controller.identityIndex}") },
+            headlineContent = { Text("Identity #$identityIndex") },
             supportingContent = { Text(phaseLabel(phase)) },
         )
     }
@@ -141,11 +151,14 @@ fun RegistrationProgressScreen(
                         navController.navigate(IdentityDetail(p.identityId.toHexString()))
                     }) { Text("View Identity") }
                 }
-                is Phase.Failed -> Text(
-                    p.message,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.testTag("registrationProgress.failed"),
-                )
+                is Phase.Failed -> {
+                    Text(
+                        p.message,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag("registrationProgress.failed"),
+                    )
+                    p.topUp?.let { RegistrationLockTopUpSection(controller.walletId, it) }
+                }
                 is Phase.Unconfirmed -> Text(
                     "Confirmation pending — the identity may already be live. " + p.message,
                     color = Color(0xFFB26A00),
@@ -155,6 +168,65 @@ fun RegistrationProgressScreen(
             }
         }
     }
+}
+
+/**
+ * A resumed registration lock whose slot holds another identity of this
+ * wallet: say which identity Rust recorded there and offer to top it up
+ * with the same lock (one Rust call on the lock's exact outpoint).
+ */
+@Composable
+private fun RegistrationLockTopUpSection(walletId: ByteArray, offer: RegistrationLockTopUp) {
+    val container = LocalAppContainer.current
+    val scope = rememberCoroutineScope()
+    var isSubmitting by remember(offer) { mutableStateOf(false) }
+    var newBalance by remember(offer) { mutableStateOf<Long?>(null) }
+    var error by remember(offer) { mutableStateOf<String?>(null) }
+
+    Text(
+        "Identity ${offer.identityIdBase58} already holds the keys at index " +
+            "${offer.identityIndex} and is now in this wallet. The asset lock is " +
+            "still unspent; it can top up that identity instead.",
+        style = MaterialTheme.typography.bodyMedium,
+        modifier = Modifier.testTag("registrationProgress.slotTaken"),
+    )
+    val balance = newBalance
+    if (balance != null) {
+        Text(
+            "Topped up. New balance: $balance credits",
+            modifier = Modifier.testTag("registrationProgress.topUpDone"),
+        )
+    } else {
+        SubmitButton(
+            text = "Top up this identity with the asset lock",
+            isLoading = isSubmitting,
+            modifier = Modifier.fillMaxWidth().testTag("registrationProgress.topUpWithLock"),
+        ) {
+            isSubmitting = true
+            scope.launch {
+                try {
+                    val mgr = container.walletManagerStore.activeManager.value
+                        ?: error("No wallet manager is active")
+                    val wallet = mgr.wallets.value.values
+                        .firstOrNull { it.walletId.contentEquals(walletId) }
+                        ?: error("The wallet of this registration is not loaded")
+                    newBalance = IdentityAssetLockRecovery.submitTopUpResume(offer.lock) {
+                        mgr.identityCredits.resumeTopUpWithExistingAssetLock(
+                            walletHandle = wallet.handle,
+                            identityId = offer.identityId,
+                            lock = it,
+                            coreSignerHandle = mgr.mnemonicResolverHandle,
+                        )
+                    }
+                } catch (e: Exception) {
+                    error = e.message ?: "Top up failed"
+                } finally {
+                    isSubmitting = false
+                }
+            }
+        }
+    }
+    ErrorAlertDialog(message = error, onDismiss = { error = null })
 }
 
 private enum class Step(val label: String) {

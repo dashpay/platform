@@ -162,6 +162,11 @@ final class IdentityRegistrationController: ObservableObject {
     /// attempt.
     private(set) var terminalAt: Date?
 
+    /// The error behind `.failed`, so the submitting view can branch on its
+    /// case (a slot taken on chain is retried at a new slot) rather than on
+    /// the message. `nil` in every other phase.
+    private(set) var failure: Error?
+
     /// Active registration task. Holds a reference so the
     /// coordinator's stash retains the work until completion;
     /// cancellation isn't wired today (the FFI call doesn't yet
@@ -221,6 +226,7 @@ final class IdentityRegistrationController: ObservableObject {
         // Clear any stage attribution carried over from a previous failed
         // attempt before this one runs.
         failureStage = nil
+        failure = nil
         lastSubmittedAt = Date()
         terminalAt = nil
         task = Task { [weak self] in
@@ -256,6 +262,7 @@ final class IdentityRegistrationController: ObservableObject {
                 }
                 await MainActor.run {
                     self?.failureStage = stage
+                    self?.failure = error
                     self?.terminalAt = Date()
                     self?.phase = .failed(error.localizedDescription)
                 }
