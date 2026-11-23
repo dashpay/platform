@@ -262,7 +262,9 @@ export function requireCurrentSchema(cfg, network = getNetwork()) {
 // `andUpcoming` also refuses while the masternodes are voting for a version the
 // SDK does not know. register.mjs asks for it: a registration is paid for once,
 // so it must not be sent by an SDK that an upgrade could overtake before the
-// confirmation is read.
+// confirmation is read. The votes are cleared when a version is locked in for
+// the next epoch, and the blocks that follow record them again, so they are
+// visible through the epoch that ends with the activation.
 export async function requireKnownProtocolVersion(sdk, mod, network = getNetwork(), { andUpcoming = false } = {}) {
   const state = await sdk.protocol.versionUpgradeState();
   const plain = state?.toJSON?.() ?? state;
