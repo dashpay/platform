@@ -820,6 +820,46 @@ pub(crate) fn reserve_token_notes<S: TokenPoolConnection>(
     max_notes: usize,
 ) -> Result<(Vec<TokenPoolNote>, TokenNoteReservation), PlatformWalletError> {
     store.with_token_pool_conn(|conn| {
+        let selected = select_token_notes(conn, id, token_id, amount, max_notes)?;
+        let marker = new_reservation_marker();
+        let tx = conn.transaction().map_err(storage("reserve"))?;
+        for note in &selected {
+            tx.execute(
+                "UPDATE shielded_token_pool_notes SET reserved_by = ?1 \
+                 WHERE wallet_id = ?2 AND account_index = ?3 AND token_id = ?4 AND nullifier = ?5",
+                params![
+                    marker.as_slice(),
+                    id.wallet_id.as_slice(),
+                    id.account_index,
+                    token_id.as_slice(),
+                    note.nullifier.as_slice()
+                ],
+            )
+            .map_err(storage("reserve"))?;
+        }
+        tx.commit().map_err(storage("reserve"))?;
+        in_flight().insert(marker);
+        let selected = selected
+            .into_iter()
+            .map(|note| TokenPoolNote {
+                reserved_by: Some(marker),
+                ..note
+            })
+            .collect();
+        Ok((selected, TokenNoteReservation { marker }))
+    })
+}
+
+/// The notes [`reserve_token_notes`] would reserve, refused as it refuses,
+/// without reserving them.
+pub(crate) fn select_token_notes(
+    conn: &Connection,
+    id: SubwalletId,
+    token_id: Identifier,
+    amount: u64,
+    max_notes: usize,
+) -> Result<Vec<TokenPoolNote>, PlatformWalletError> {
+    {
         let mut free = spendable_notes(conn, id, token_id)?;
         free.sort_by(|a, b| b.value.cmp(&a.value).then(a.position.cmp(&b.position)));
         let available = free
@@ -848,33 +888,8 @@ pub(crate) fn reserve_token_notes<S: TokenPoolConnection>(
                 max_notes,
             });
         }
-        let marker = new_reservation_marker();
-        let tx = conn.transaction().map_err(storage("reserve"))?;
-        for note in &selected {
-            tx.execute(
-                "UPDATE shielded_token_pool_notes SET reserved_by = ?1 \
-                 WHERE wallet_id = ?2 AND account_index = ?3 AND token_id = ?4 AND nullifier = ?5",
-                params![
-                    marker.as_slice(),
-                    id.wallet_id.as_slice(),
-                    id.account_index,
-                    token_id.as_slice(),
-                    note.nullifier.as_slice()
-                ],
-            )
-            .map_err(storage("reserve"))?;
-        }
-        tx.commit().map_err(storage("reserve"))?;
-        in_flight().insert(marker);
-        let selected = selected
-            .into_iter()
-            .map(|note| TokenPoolNote {
-                reserved_by: Some(marker),
-                ..note
-            })
-            .collect();
-        Ok((selected, TokenNoteReservation { marker }))
-    })
+        Ok(selected)
+    }
 }
 
 /// One reservation row as read: wallet id, account, token id, marker bytes

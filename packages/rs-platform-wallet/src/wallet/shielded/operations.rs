@@ -2262,6 +2262,76 @@ pub enum ShieldedTokenSpendOutcome {
     Submitted,
 }
 
+/// What a token pool spend would take from an account, from its local state
+/// alone ([`token_pool_spend_preview`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShieldedTokenSpendPreview {
+    /// The token notes it would spend.
+    pub token_notes: usize,
+    /// The credit pool notes that would pay its fee.
+    pub fee_notes: usize,
+    /// Its fee, in credits, paid from the credit pool.
+    pub fee: Credits,
+}
+
+/// What a token pool spend of `kind` moving `amount` of `token_id` would take
+/// from `id`'s notes, chosen as the spend chooses them, at
+/// `platform_version`: for a form to show the fee before sending. Reads the
+/// store only, reserves nothing, and refuses as the spend would refuse on
+/// these notes: a zero amount, too few tokens
+/// ([`PlatformWalletError::TokenShieldedInsufficientBalance`]), too few
+/// credits for the fee ([`PlatformWalletError::ShieldedInsufficientBalance`]),
+/// or more notes than fit ([`PlatformWalletError::ShieldedTooManyNotes`]).
+/// The spend itself may still be refused for what this does not read: the
+/// network, the token's configuration, the anchors.
+pub async fn token_pool_spend_preview<S>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    token_id: Identifier,
+    kind: TokenPoolSpendKind,
+    amount: TokenAmount,
+    platform_version: &PlatformVersion,
+) -> Result<ShieldedTokenSpendPreview, PlatformWalletError>
+where
+    S: ShieldedStore + TokenPoolConnection,
+{
+    ensure_positive_amount(amount)?;
+    let build = |e: ProtocolError| PlatformWalletError::ShieldedBuildError(e.to_string());
+    let max_token_notes = kind.max_token_notes(platform_version).map_err(build)?;
+    let store = store.read().await;
+    let token_notes = store.with_token_pool_conn(|conn| {
+        token_pool::select_token_notes(conn, id, token_id, amount, max_token_notes)
+    })?;
+    let token_actions = token_pool_spend_token_actions(token_notes.len());
+    let max_fee_notes = kind
+        .max_fee_notes(token_actions, platform_version)
+        .map_err(build)?;
+    let unspent = store
+        .get_unspent_notes(id)
+        .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+    let (selected, _, fee) = select_notes_with_fee(
+        &unspent,
+        0,
+        2,
+        ShieldedFeeKind::TokenPoolSpend {
+            kind,
+            token_actions,
+        },
+        platform_version,
+    )?;
+    if selected.len() > max_fee_notes {
+        return Err(PlatformWalletError::ShieldedTooManyNotes {
+            required_notes: selected.len(),
+            max_notes: max_fee_notes,
+        });
+    }
+    Ok(ShieldedTokenSpendPreview {
+        token_notes: token_notes.len(),
+        fee_notes: selected.len(),
+        fee,
+    })
+}
+
 /// The anchors `token_id`'s shielded pool records, read with a proof.
 async fn fetch_token_pool_anchor_set(
     sdk: &Arc<dash_sdk::Sdk>,
@@ -10370,6 +10440,55 @@ mod token_shielded_transfer_tests {
         unshield(&sdk, &store, 5)
             .await
             .expect_err("the store holds no witness of the fee note");
+        assert_nothing_held(&store, 1).await;
+    }
+
+    /// The preview picks the notes the spend would pick and prices them as
+    /// consensus does, refuses as the spend would, and reserves nothing.
+    #[tokio::test]
+    async fn should_preview_a_token_pool_spend_without_reserving() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = store_with(
+            &dir,
+            &[credit_note(1_000_000_000_000, 0)],
+            &[token_note(10, 0), token_note(3, 1)],
+        )
+        .await;
+        let platform_version = PlatformVersion::latest();
+        for kind in [
+            TokenPoolSpendKind::ShieldedTransfer,
+            TokenPoolSpendKind::Unshield,
+        ] {
+            let preview = token_pool_spend_preview(
+                &store,
+                subwallet(),
+                token_id(),
+                kind,
+                12,
+                platform_version,
+            )
+            .await
+            .expect("a preview");
+            assert_eq!((preview.token_notes, preview.fee_notes), (2, 1));
+            assert_eq!(preview.fee, kind.fee(2, 2, platform_version).expect("fee"));
+        }
+        let err = token_pool_spend_preview(
+            &store,
+            subwallet(),
+            token_id(),
+            TokenPoolSpendKind::Unshield,
+            14,
+            platform_version,
+        )
+        .await
+        .expect_err("13 tokens do not cover 14");
+        assert!(
+            matches!(
+                err,
+                PlatformWalletError::TokenShieldedInsufficientBalance { .. }
+            ),
+            "got {err:?}"
+        );
         assert_nothing_held(&store, 1).await;
     }
 }

@@ -17,9 +17,10 @@ use crate::error::PlatformWalletError;
 use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::manager::PlatformWalletManager;
 use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
+use crate::wallet::shielded::operations::token_pool_spend_preview;
 use crate::wallet::shielded::{
     NetworkShieldedCoordinator, ShieldedTokenPoolWatch, ShieldedTokenPurchaseOutcome,
-    ShieldedTokenSpendOutcome,
+    ShieldedTokenSpendOutcome, ShieldedTokenSpendPreview, SubwalletId, TokenPoolSpendKind,
 };
 use dpp::address_funds::OrchardAddress;
 
@@ -172,6 +173,36 @@ impl ShieldedTokenPurchaser {
             request_shielded_sync(&self.sync);
         }
         result
+    }
+}
+
+impl ShieldedTokenPurchaser {
+    /// What a token pool spend of `kind` moving `amount` of the token at
+    /// `token_contract_position` of `data_contract_id` would take from
+    /// `account`'s notes, from local state alone and reserving nothing
+    /// ([`token_pool_spend_preview`]), at the SDK's protocol version: the fee
+    /// a form shows before sending, or the refusal the spend would meet on
+    /// these notes.
+    pub async fn preview_spend(
+        &self,
+        account: u32,
+        data_contract_id: &Identifier,
+        token_contract_position: TokenContractPosition,
+        kind: TokenPoolSpendKind,
+        amount: TokenAmount,
+    ) -> Result<ShieldedTokenSpendPreview, PlatformWalletError> {
+        token_pool_spend_preview(
+            self.coordinator.store(),
+            SubwalletId::new(self.wallet.wallet_id(), account),
+            Identifier::from(calculate_token_id(
+                &data_contract_id.to_buffer(),
+                token_contract_position,
+            )),
+            kind,
+            amount,
+            self.wallet.sdk().version(),
+        )
+        .await
     }
 }
 
