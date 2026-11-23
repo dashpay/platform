@@ -42,7 +42,10 @@ use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::fee::Credits;
 use dpp::prelude::AssetLockProof;
 use dpp::shielded::builder::{build_shield_from_asset_lock_transition_with_signer, OrchardProver};
-use dpp::shielded::{compute_minimum_shielded_fee, max_shield_from_asset_lock_actions};
+use dpp::shielded::{
+    compute_minimum_shielded_fee, max_shield_from_asset_lock_actions,
+    max_shielded_actions_per_transition,
+};
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
@@ -76,7 +79,26 @@ use crate::PlatformWalletError;
 ///
 /// With `dummy_outputs == 0` this returns `2`, the historical single-output count.
 pub(crate) fn shield_from_asset_lock_num_actions(dummy_outputs: usize) -> usize {
-    (1 + dummy_outputs).max(2)
+    dummy_outputs.saturating_add(1).max(2)
+}
+
+/// Refuse a `ShieldFromAssetLock` batch of `num_actions` that no proof can carry: above
+/// [`max_shielded_actions_per_transition`] even the ChainLock proof's transition exceeds
+/// `max_state_transition_size`. The batch is never shrunk to fit (that would change the fee and
+/// the payout); it is refused before any Core funds are committed or any proof is awaited.
+pub(crate) fn ensure_shield_batch_fits(
+    num_actions: usize,
+    platform_version: &dpp::version::PlatformVersion,
+) -> Result<(), PlatformWalletError> {
+    let max_actions = max_shielded_actions_per_transition(platform_version);
+    if num_actions > usize::from(max_actions) {
+        return Err(PlatformWalletError::ShieldedBuildError(format!(
+            "a ShieldFromAssetLock of {num_actions} actions does not fit one transition at \
+             protocol version {} (at most {max_actions}); request fewer anonymity fillers",
+            platform_version.protocol_version
+        )));
+    }
+    Ok(())
 }
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
@@ -269,6 +291,9 @@ impl PlatformWallet {
         // prices the flat shielded fee from this count, so the wallet's fee
         // reservation below is derived from the SAME value (any mismatch is rejected).
         let num_actions = shield_from_asset_lock_num_actions(dummy_outputs);
+        // A batch no proof can carry is refused first: on every funding path (wallet balance,
+        // account or wallet drain, resume) nothing is funded, reserved or awaited for it.
+        ensure_shield_batch_fits(num_actions, self.sdk.version())?;
         // Step 1: pre-flight. Failing fast here avoids broadcasting
         // an unfundable asset-lock tx (or paying for an Orchard proof
         // build, ~30s, only to reject downstream).
@@ -713,6 +738,8 @@ impl PlatformWallet {
         num_actions: usize,
     ) -> Result<Credits, PlatformWalletError> {
         let pv = self.sdk.version();
+        // No fee is quoted for a batch consensus would reject (the wallet-drain preview).
+        ensure_shield_batch_fits(num_actions, pv)?;
         let albc_duffs = pv
             .dpp
             .state_transitions
