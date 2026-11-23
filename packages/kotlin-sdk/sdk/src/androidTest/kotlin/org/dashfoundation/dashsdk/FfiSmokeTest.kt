@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import org.dashfoundation.dashsdk.ffi.ContractUpdateNative
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.DashpayNative
+import org.dashfoundation.dashsdk.ffi.DpnsGiveUpNative
 import org.dashfoundation.dashsdk.ffi.IdentityNative
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.NativeLoader
@@ -33,6 +34,35 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class FfiSmokeTest {
+
+    /**
+     * The DPNS give-up exports bind with the descriptors
+     * `DpnsGiveUpNative` declares: bad input is refused at the JNI boundary
+     * (code 1), an unknown wallet handle is not found by Rust, and the pure
+     * main-name rule answers without a wallet.
+     */
+    @Test
+    fun dpnsGiveUpSymbolsBindAndRejectInvalidInput() {
+        NativeLoader.ensureLoaded()
+        val shortId = assertThrows(DashSDKException::class.java) {
+            DpnsGiveUpNative.choices(0L, ByteArray(31), "alice7")
+        }
+        assertEquals(1, shortId.code)
+        assertThrows(DashSDKException::class.java) {
+            DpnsGiveUpNative.choices(0L, ByteArray(32), "alice7")
+        }
+        val badMethod = assertThrows(DashSDKException::class.java) {
+            DpnsGiveUpNative.giveUp(0L, ByteArray(32), "alice7", ByteArray(32), 256, 1L)
+        }
+        assertEquals(1, badMethod.code)
+        val noSigner = assertThrows(DashSDKException::class.java) {
+            DpnsGiveUpNative.giveUp(0L, ByteArray(32), "alice7", ByteArray(32), 0, 0L)
+        }
+        assertEquals(1, noSigner.code)
+        assertTrue(DpnsGiveUpNative.clearsMainName("alice7.dash", "Alice7"))
+        assertFalse(DpnsGiveUpNative.clearsMainName("Keeper77", "Alice7"))
+        assertFalse(DpnsGiveUpNative.clearsMainName(null, "Alice7"))
+    }
 
     @Test
     fun documentEraseAndObserveBindsAndRejectsInvalidInput() {

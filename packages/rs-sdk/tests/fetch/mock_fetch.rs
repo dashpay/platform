@@ -828,11 +828,11 @@ async fn should_refuse_kept_values_as_stale_when_every_contract_absence_is_older
 }
 
 #[tokio::test]
-/// Given a removal page where each record individually fits under the client page budget but
-/// two records together exceed it, when I read the page with `fetch_with_kept_values`, then
-/// the single-record page succeeds and the two-record page fails with
-/// `DecodedValueBudgetExceeded` because the page shares one budget.
-async fn should_enforce_a_shared_decoded_value_budget_across_records_in_fetch_with_kept_values() {
+/// Given a removal page holding large legitimate non-zero-width typed arrays (past 300k decoded
+/// values) and a PV14 zero-width typed-array bomb removal record, when I read each with
+/// `fetch_with_kept_values`, then the legitimate page succeeds under proportional budgeting
+/// while the zero-width bomb fails immediately with `DecodedValueBudgetExceeded`.
+async fn should_enforce_proportional_decoded_value_budget_in_fetch_with_kept_values() {
     use dash_sdk::platform::contract_moderation::{
         ContractDocumentRemovals, ContractDocumentRemovalsPageQuery,
     };
@@ -850,6 +850,7 @@ async fn should_enforce_a_shared_decoded_value_budget_across_records_in_fetch_wi
     use std::collections::BTreeMap;
 
     let pv = PlatformVersion::latest();
+    let pv14 = PlatformVersion::get(14).expect("PV14 exists");
     let moderation = ContractModerationConfig {
         banlist: false,
         suspensions: false,
@@ -861,7 +862,8 @@ async fn should_enforce_a_shared_decoded_value_budget_across_records_in_fetch_wi
         .with_moderation(Some(moderation.clone()));
 
     // 3 kept objects × 50 typed boolean arrays × (1 array + 1024 bools) = 153,753 values per record.
-    // 1 record fits in 262,144; 2 records (307,506) exceed the shared page budget.
+    // 2 legitimate records total 307,506 decoded values (above the old 262,144 fixed cap) and must
+    // succeed under encoded-size-proportional budgeting.
     let groups = 3usize;
     let arrays_per_group = 50usize;
     let mut properties = Vec::with_capacity(groups);
@@ -900,7 +902,7 @@ async fn should_enforce_a_shared_decoded_value_budget_across_records_in_fetch_wi
         doc_props.insert(group_name, Value::Map(inner_values));
     }
 
-    let mut contract = mock_contract_with_moderation(Some(moderation));
+    let mut contract = mock_contract_with_moderation(Some(moderation.clone()));
     contract.set_id(Identifier::from([7u8; 32]));
     let post = DocumentType::try_from_schema(
         contract.id(),
@@ -938,39 +940,7 @@ async fn should_enforce_a_shared_decoded_value_budget_across_records_in_fetch_wi
         .insert("post".to_string(), post);
     let contract_id = contract.id();
 
-    // 1-record page fits in the shared budget.
-    let mut sdk_single = Sdk::new_mock();
-    bootstrap_mock_sdk_to_latest(&mut sdk_single).await;
-    let query_single = ContractDocumentRemovalsPageQuery::new(
-        contract_id,
-        "post".to_string(),
-        sdk_single.version(),
-    );
-    sdk_single
-        .mock()
-        .expect_fetch(
-            query_single.clone(),
-            Some(ContractDocumentRemovals(vec![mock_removal_entry(
-                3,
-                kept_fields.clone(),
-            )])),
-        )
-        .await
-        .unwrap();
-    sdk_single
-        .mock()
-        .expect_fetch(contract_id, Some(contract.clone()))
-        .await
-        .unwrap();
-    let single_page = query_single
-        .fetch_with_kept_values(&sdk_single)
-        .await
-        .expect("single record fits in page budget")
-        .expect("page present");
-    assert_eq!(single_page.removals.len(), 1);
-    assert_eq!(single_page.removals[0].1.len(), groups);
-
-    // 2-record page shares one budget and rejects with DecodedValueBudgetExceeded.
+    // 2 legitimate records (307,506 decoded values) succeed under proportional budgeting.
     let mut sdk_pair = Sdk::new_mock();
     bootstrap_mock_sdk_to_latest(&mut sdk_pair).await;
     let query_pair =
@@ -991,10 +961,118 @@ async fn should_enforce_a_shared_decoded_value_budget_across_records_in_fetch_wi
         .expect_fetch(contract_id, Some(contract))
         .await
         .unwrap();
-    let refused = query_pair
+    let legitimate_page = query_pair
         .fetch_with_kept_values(&sdk_pair)
         .await
-        .expect_err("two records exceeding shared page budget must fail");
+        .expect("legitimate non-zero-width records exceeding 262k values must succeed")
+        .expect("page present");
+    assert_eq!(legitimate_page.removals.len(), 2);
+    assert_eq!(legitimate_page.removals[0].1.len(), groups);
+    assert_eq!(legitimate_page.removals[1].1.len(), groups);
+
+    // A PV14 zero-width typed-array bomb removal record (~200 bytes claiming 61,500 values)
+    // fails immediately with DecodedValueBudgetExceeded.
+    let bomb_arrays = 60usize;
+    let mut bomb_inner_schema = Vec::with_capacity(bomb_arrays);
+    let mut bomb_inner_values = Vec::with_capacity(bomb_arrays);
+    for i in 0..bomb_arrays {
+        let field_name = format!("z{i:02}");
+        bomb_inner_schema.push((
+            Value::Text(field_name.clone()),
+            platform_value!({
+                "type": "array",
+                "maxItems": 1024,
+                "items": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 0,
+                    "maxItems": 0,
+                },
+                "position": i as u32,
+            }),
+        ));
+        bomb_inner_values.push((
+            Value::Text(field_name),
+            Value::Array(vec![Value::Bytes(vec![]); 1024]),
+        ));
+    }
+    let bomb_config = DataContractConfig::default_for_version(pv14)
+        .expect("pv14 config")
+        .with_moderation(Some(moderation.clone()));
+    let mut bomb_contract = mock_contract_with_moderation(Some(moderation));
+    bomb_contract.set_id(Identifier::from([8u8; 32]));
+    let bomb_post = DocumentType::try_from_schema(
+        bomb_contract.id(),
+        1,
+        bomb_config.version(),
+        "post",
+        platform_value!({
+            "type": "object",
+            "properties": {
+                "bag": {
+                    "type": "object",
+                    "properties": Value::Map(bomb_inner_schema),
+                    "additionalProperties": false,
+                    "position": 0u32,
+                }
+            },
+            "additionalProperties": false,
+            "moderatorAbilities": {
+                "delete": true,
+                "deleteKeepsFields": ["bag"],
+            },
+        }),
+        None,
+        &BTreeMap::new(),
+        &bomb_config,
+        true,
+        &mut vec![],
+        pv14,
+    )
+    .expect("PV14 zero-width post type parses");
+    let bomb_kept_fields = encode_kept_fields(
+        &Document::V0(DocumentV0 {
+            id: Identifier::from([5u8; 32]),
+            properties: BTreeMap::from([("bag".to_string(), Value::Map(bomb_inner_values))]),
+            ..Default::default()
+        }),
+        bomb_post.as_ref(),
+    )
+    .expect("encodes bomb");
+    bomb_contract
+        .document_types_mut()
+        .insert("post".to_string(), bomb_post);
+    let bomb_contract_id = bomb_contract.id();
+
+    let mut sdk_bomb = SdkBuilder::new_mock()
+        .with_version(pv14)
+        .build()
+        .expect("mock SDK at PV14");
+    let query_bomb = ContractDocumentRemovalsPageQuery::new(
+        bomb_contract_id,
+        "post".to_string(),
+        sdk_bomb.version(),
+    );
+    sdk_bomb
+        .mock()
+        .expect_fetch(
+            query_bomb.clone(),
+            Some(ContractDocumentRemovals(vec![mock_removal_entry(
+                5,
+                bomb_kept_fields,
+            )])),
+        )
+        .await
+        .unwrap();
+    sdk_bomb
+        .mock()
+        .expect_fetch(bomb_contract_id, Some(bomb_contract))
+        .await
+        .unwrap();
+    let refused = query_bomb
+        .fetch_with_kept_values(&sdk_bomb)
+        .await
+        .expect_err("zero-width bomb removal record must fail proportional decode budget");
     assert!(
         matches!(
             refused,

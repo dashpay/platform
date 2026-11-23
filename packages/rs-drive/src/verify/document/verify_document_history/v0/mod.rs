@@ -4,10 +4,7 @@ use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::verify::{with_proved_root_on_budget_exceeded, RootHash};
-use dpp::data_contract::document_type::{
-    DecodedValueBudget, DocumentPropertyType, DocumentTypeRef,
-    DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
-};
+use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
@@ -48,7 +45,6 @@ impl Drive {
             GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
 
         let mut documents: BTreeMap<u64, Document> = BTreeMap::new();
-        let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
         for (path, key, maybe_element) in proved_key_values.drain(..) {
             if path != expected_path {
                 return Err(Error::Proof(ProofError::CorruptedProof(
@@ -79,15 +75,10 @@ impl Drive {
                         .into_item_bytes()
                         .map_err(Error::from)
                         .and_then(|bytes| {
-                            Document::from_bytes_with_budget(
-                                &bytes,
-                                document_type,
-                                &mut budget,
-                                platform_version,
-                            )
-                            .map_err(|error| {
-                                with_proved_root_on_budget_exceeded(root_hash, error.into())
-                            })
+                            Document::from_bytes_bounded(&bytes, document_type, platform_version)
+                                .map_err(|error| {
+                                    with_proved_root_on_budget_exceeded(root_hash, error.into())
+                                })
                         })
                 })
                 .transpose()?;

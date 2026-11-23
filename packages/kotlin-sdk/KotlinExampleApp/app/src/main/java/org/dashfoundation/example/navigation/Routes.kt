@@ -105,6 +105,9 @@ import kotlinx.serialization.Serializable
 /** Pick the identity's main DPNS name (← `SelectMainNameView.swift`). */
 @Serializable data class SelectMainName(val identityIdHex: String)
 
+/** Delete or tombstone one owned DPNS name (← `GiveUpNameView.swift`). */
+@Serializable data class GiveUpName(val identityIdHex: String, val name: String)
+
 /** Browse, buy and manage DPNS marketplace names for one wallet identity. */
 @Serializable data class DpnsMarketplace(val identityIdHex: String)
 
@@ -453,6 +456,12 @@ import kotlinx.serialization.Serializable
  * `groups` map.
  */
 @Serializable data class GroupDetail(val contractIdHex: String, val position: Int)
+
+/**
+ * The entries of a private document type the device's wallets can open (protocol version 15,
+ * ← `PrivateDocumentEntriesView.swift`). Reached from a private type's detail screen.
+ */
+@Serializable data class PrivateDocumentEntries(val contractIdHex: String, val typeName: String)
 
 /** Query test-runner + environment snapshot (← `DiagnosticsView.swift`). */
 @Serializable object Diagnostics

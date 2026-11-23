@@ -110,6 +110,22 @@ impl DpnsNameGiveUpOutcome {
     }
 }
 
+/// Whether a host clears its main-name pick for an identity after the network confirmed that
+/// the identity gave up `given_up_name`: true exactly when `main_name` names the same DPNS
+/// name. Both may be a bare label (`"Alice"`) or a full name (`"alice.dash"`). They are
+/// compared by their DPNS normalized labels, so `"Alice"` and `"a11ce.DASH"` are one name. A
+/// pick whose label is empty (`""`, `".dash"`) names nothing.
+///
+/// The pick is the host's own preference, not wallet state. Kept after a give-up, it would
+/// become the main name again, unseen, if the identity ever registered the deleted name anew.
+/// Pure, so a host may read it before a give-up (to say the name is its main name); only
+/// clearing the pick waits for [`IdentityWallet::give_up_dpns_name`] to return success,
+/// never an error: a give-up that is not confirmed leaves the name, and the pick, as they were.
+pub fn give_up_clears_main_dpns_name(main_name: &str, given_up_name: &str) -> bool {
+    let main = normalize_dpns_label(main_name);
+    !main.is_empty() && main == normalize_dpns_label(given_up_name)
+}
+
 /// A name the wallet checked before giving it up: what the network accepts for it, and the
 /// `domain` document it read, raw and as marketplace state.
 pub(super) struct DpnsGiveUpTarget {

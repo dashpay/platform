@@ -45,7 +45,9 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | **Funded Core wallet** | all `Layer=Core` and `Layer=Cross` | A wallet with confirmed, mature, spendable UTXOs. Asset-lock funding needs InstantSend/ChainLock, so masternode sync must complete. |
 | **A registered identity with credit balance** | almost all `Layer=Platform` | Created via `ID-01`. Many transitions also need a specific **key purpose/security level** present on the identity. |
 | **A loaded data contract** (with a token + a document type) | `Domain=Token`, `Domain=Document`, group | Token actions are gated by the contract's on-chain permission rules. |
-| **A contested-name scenario** | `DPNS-05`, `VOTE-*` | Register a premium/contested name to create a live vote poll. |
+| **A contested-name scenario** | `DPNS-05`, `DPNS-11`, `VOTE-*` | Register a premium/contested name to create a live vote poll. `DPNS-11` needs one the vote has already awarded to the identity. |
+| **Network at protocol version 15** | `DPNS-09`..`DPNS-12` | Deleting or tombstoning a DPNS name is served from protocol version 15. Use a network already at it (a local or devnet network until testnet activates it). |
+| **Network still at protocol version 14** | `DPNS-13` | Any network proven at protocol version 14, where the give-up feature must be refused as not available yet. |
 | **Masternode / evonode voting key** | `VOTE-01`, `VOTE-12`, `VOTE-19`, `ID-02` (`VOTE-13`, `VOTE-20` also read any masternode's answer from a typed pro_tx_hash) | Two fixtures, one per signing path. **Stored-key path (every build, the only one in release builds):** a registered test masternode or evonode loaded on the device with its matching voting private key (Identities, Load Identity, type Masternode or Evonode, `ID-02`); the vote dialogs pick that identity (`<prefix>.voter`) and sign with the stored key through a signer made for that one vote. **Typed-credentials path (debug builds only):** a registered test masternode's wire-order pro_tx_hash and its matching voting private key, typed behind "Use typed test credentials (debug only)" (`<prefix>.useTypedCredentials`, fields `<prefix>.proTxHash` and `<prefix>.votingKey`); no loaded identity is needed, and a release build never offers or takes a typed key. Without either fixture the broadcast cannot be exercised; treat the rows as environment-limited. |
 | **Shielded pool: configured + bound + prover warmed + synced** | `Domain=Shielded` | `SH-01` sync + `SH-09` prover warm-up are preconditions for any shielded spend. |
 | **A second identity / contact** | credit transfer, token transfer, document transfer, DashPay | Needed as the counterparty/recipient. |
@@ -164,6 +166,11 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | DPNS-06 | Select main / primary name | Platform | Common | ✅ | | `SelectMainNameScreen` (dialog from `IdentityDetailScreen`). |
 | DPNS-07 | Search names by prefix | Platform | Common | ✅ | | `QueriesListScreen` (dpnsSearch) / `DpnsTestScreen`. |
 | DPNS-08 | Contested DPNS race between two on-device identities | Platform | Uncommon | ✅ | multiwallet, contested | A and B both register the same premium/contested name (`DPNS-05`) → produces a contest observable via `VOTE-02`/`VOTE-03`. |
+| DPNS-09 | Delete a name that is not contested (mirrors Swift `DPNS-09`) | Platform | Thorough | ✅ |  | Needs a **network at protocol version 15**. `IdentityDetailScreen` DPNS section → **Give Up Name…** under an owned name (`identity.dpnsName.<normalized>.giveUp`) → `GiveUpNameScreen` (`platform_wallet_dpns_name_give_up_choices`) offers both **Delete Name** (`giveUpName.delete`) and **Tombstone Name** (`giveUpName.tombstone`). Tap Delete Name → confirmation dialog → **Delete Name** (`giveUpName.confirmDelete`) → `platform_wallet_dpns_give_up_name` (method 0). **Pass:** the screen closes, the row leaves the list through persistence (no `dpns_names` row with `isOwned = 1` for the label), the name no longer resolves, and the name is shown available again (`DPNS-02`). *(Implemented; not yet run on an emulator.)* |
+| DPNS-10 | Tombstone a name (mirrors Swift `DPNS-10`) | Platform | Uncommon | ✅ |  | Same entry as `DPNS-09`, on a throwaway name. Tap **Tombstone Name** (`giveUpName.tombstone`) → dialog stating it is permanent → **Tombstone Permanently** (`giveUpName.confirmTombstone`) → `platform_wallet_dpns_give_up_name` (method 1). **Pass:** the screen closes, the row leaves the list through persistence, and registering the same label again (`DPNS-01`, any identity) is refused. Irreversible: use a name nobody needs. *(Implemented; not yet run on an emulator.)* |
+| DPNS-11 | Give up a contested name: only a tombstone is offered (mirrors Swift `DPNS-11`) | Platform | Uncommon | ✅ | contested | Needs a contested (premium) name the masternode vote already **awarded** to the identity, on a network at protocol version 15. Open **Give Up Name…** on it. **Pass:** only **Tombstone Name** is shown, with the notice that the network accepts only a tombstone for this name (`giveUpName.tombstoneOnlyNotice`); no Delete Name button. The offer comes from the FFI flags (`can_delete == false`), not from an app-side contested check. Tombstoning it then behaves as `DPNS-10`. *(Implemented; not yet run on an emulator.)* |
+| DPNS-12 | Give up the identity's main name (mirrors Swift `DPNS-12`) | Platform | Thorough | ✅ |  | Select a name as main (`DPNS-06`), then give it up (`DPNS-09`). **Pass:** before confirming, the screen says it is the main name (`giveUpName.mainNameNotice`); after success `identities.mainDpnsName` is null and the header shows the next fallback (alias or the short id). Whether the pick names the given-up name is Rust's rule (`platform_wallet_dpns_give_up_clears_main_name`). On a failed give-up (e.g. cancel the key unlock) the pick is unchanged. *(Implemented; not yet run on an emulator.)* |
+| DPNS-13 | Give-up on a network still at protocol version 14 (mirrors Swift `DPNS-13`) | Platform | Thorough | ✅ |  | On a network proven at protocol version 14, open **Give Up Name…** on any owned name. **Pass:** the screen shows "Not available on this network yet" (`giveUpName.notAvailable`) with the SDK's message (error code 70, `ProtocolVersionNotActive`), explains names can be deleted or tombstoned from protocol version 15, and offers no Delete or Tombstone button. Nothing is signed. *(Implemented; not yet run on an emulator.)* |
 
 ### 4.5 Voting / Contested Resources — `Domain=Voting`
 
@@ -195,7 +202,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | ID | Action | Layer | Tier | Status | Tags | Entry point & test notes |
 |---|---|---|---|---|---|---|
 | DC-01 | Register / load contract from network | Platform | Common | ✅ | | `RegisterContractSourceScreen` / `LocalDataContractsScreen` / `ContractsHomeScreen`. |
-| DC-02 | View contract / schema / doc types / history | Platform | Common | ✅ | | `DataContractDetailsScreen`, `DocumentTypeDetailsScreen`. |
+| DC-02 | View contract / schema / doc types / history | Platform | Common | ✅ | | `DataContractDetailsScreen`, `DocumentTypeDetailsScreen`. A private document type (protocol version 15) shows a **Private** badge on its row (`documentType.privateBadge`) and, on its detail screen, a **Private** section with its entry size and the **Read Entries** link (`documentType.privateSection`, `documentType.privateEntrySize`, `documentType.privateEntriesLink`; see `DOC-17`) in place of New Document and the document queries; the Settings builder's document type picker leaves it out. Mirrors the private badge part of Swift `DC-02`; the private part is not yet run on an emulator. |
 | DC-03 | Create data contract | Platform | Common | ✅ | | `QuickBasicTokenScreen` and *Settings builder → Data Contract Create* → `platform_wallet_create_data_contract_with_signer`. |
 | DC-04 | Update data contract, reviewed through a preview (mirrors Swift `DC-04`) | Platform | Thorough | ✅ | | Contracts → contract (owned by a wallet identity here) → **Update Contract** (`contractDetails.updateContract`) → `UpdateContractScreen`: fill the inputs by **Paste from Clipboard** (`updateContract.pasteButton`), **Import from File** (`updateContract.importButton`; both through Rust's `platform_wallet_split_contract_update_source`, message in `updateContract.sourceMessage`) or editing (`updateContract.documentsJson` / `tokensJson` / `groupsJson` / `keywords` / `description` / `configJson`) → **Review Changes** (`updateContract.reviewButton` → `platform_wallet_preview_data_contract_update`; the changes show in `updateContract.preview`, a configuration change with `updateContract.configFieldsChanged` and `updateContract.moderatorsAdded` / `.moderatorsRemoved`) → acknowledge a configuration change (`updateContract.acknowledgeConfigChange`) → **Update Contract** (`updateContract.submitButton`, enabled only when the review of the fields on screen reports a change) → `platform_wallet_update_data_contract_with_signer` bound to the reviewed version → success alert (`updateContract.success`) and the stored contract refreshed (an older fetched version is not stored; a failed refresh offers `updateContract.refreshRetryButton`). An unconfirmed broadcast shows `updateContract.unconfirmed` and keeps Update Contract off for the rest of the screen's life (`updateContract.unconfirmedHold`). Any edit clears the review. Secondary entry: *Settings builder → Data Contract Update* (contract id field + owner picker when the owner is not a wallet identity here). A list of groups each with an `id` is not re-keyed by position as Swift does; the wallet refuses it. Not yet run on an emulator. |
 
@@ -219,6 +226,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | DOC-14 | Aggregation — average of a numeric property | Platform | Uncommon | 🧪 | | Same screen (op selector → **Average**) → `dash_sdk_document_average` → `{grouped,averages:{hexKey:{count,sum:"<decimal>",average:"<decimal, 4 places>"\|null}}}`; a grouped empty key is a **(no value)** group, not the Total. The screen shows the average Rust computed and does not divide; an entry it cannot read is reported as an error, not left out. Parsing is unit-tested (`AverageResultParsingTest`), including a sum past 64 bits. |
 | DOC-15 | Document transfer / purchase across wallets | Platform | Uncommon | ✅ | multiwallet | A creates + lists a document (`DOC-02`/`DOC-06`); B transfers/purchases it (`DOC-05`/`DOC-07`). |
 | DOC-16 | Erase a deleted keep-history document's revisions | Platform | Thorough | 🧪 | | Route: **Browse Documents** → document → **Actions…** → **Erase Document…** (or the **Erase Document** catalog entry). The erase form calls the Rust wallet read/decide/select/submit/observe operation through `platform_wallet_document_erase_and_observe`. Rust loads the real contract, rejects ineligible types, skips ACTIVE/ABSENT, and submits nothing when the preflight/ownership read is unavailable. DELETED requires the newest retained revision's owner; ERASING accepts any submitting identity. Keys are selected in Rust using the actual requirement, contract bounds, expiry and supplied signer. A closing-read failure remains a submitted result with unavailable progress; outcome-unknown errors require reading history before any manual retry. Each call submits at most one chunk and never retries automatically. Display skipped/submitted reasons, remaining revisions and cautious progress wording. Needs an erasable keep-history type; not driven on a device or a live provider. |
+| DOC-17 | Read a private document type's entries | Platform | Uncommon | ✅ | read-only | Mirrors Swift `DOC-17`. Contracts → contract → a type with the **Private** badge → **Read Entries** (`documentType.privateEntriesLink`) → `PrivateDocumentEntriesScreen` → pick a wallet (`privateEntries.walletPicker`) → **Read** (`privateEntries.readButton`) → `ManagedPlatformWallet.privateDocuments.readPrivateDocumentEntries` → JNI `PrivateDocumentsNative.readPrivateDocumentEntries` → `platform_wallet_read_private_document_entries` (`rs-platform-wallet` `IdentityWallet::read_private_document_entries`: proved store pages, scanned with keys derived inside the manager's mnemonic resolver, each opened payload checked against the type's schema). Each tap reads at most 8 pages; **Read more** (`privateEntries.readMoreButton`) reads on from the cursor the last read returned until the status says the store was read to its end, and **Read from the start** starts over. When an identity's keys changed in between, the read starts over and its entries replace the list. Nothing is persisted. While the screen is open its window is secure (no screenshot, no recents thumbnail), and whenever the app leaves the foreground the entries are covered (`privateEntries.privacyCover`). Expect one row per entry the wallet's identities opened (**Received**) or recovered with their outgoing viewing key (**Recovered (outgoing)**), `privateEntries.entry.<position>.<received|sent>`, with position, append time, wallet identity and key, recipient, authentication mode, properties, and for an entry that names a sender a **Claimed sender … not verified** line. A payload the schema refuses shows **Payload refused** with the reason. Status (`privateEntries.status`): pages read, store size (**Unknown** until a page was read), next position, refused envelopes, read to the end; **Keys not scanned** (`privateEntries.unscannedKeys`) counts keys the wallet does not derive at their identity key slot. Empty states: `privateEntries.noIdentity`, `privateEntries.empty`, `privateEntries.notActive` (a network before protocol version 15), `privateEntries.error` (any other failure, verbatim). Needs a protocol version 15 network and a contract with a private type holding an entry sealed to or by one of the wallet's identities (DashPay's `privateContactRequest` after a private contact request, `DP` rows). Not yet run on an emulator, and not against a protocol version 15 network (none was available on 2026-11-23). |
 
 ### 4.8 Tokens — `Domain=Token`
 
@@ -321,8 +329,8 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 |---|---|---|
 | Essential | 21 | yes |
 | Common | 29 | yes |
-| Thorough | 49 | yes |
-| Uncommon | 25 | yes |
+| Thorough | 52 | yes |
+| Uncommon | 27 | yes |
 | Manual | 1 (`CORE-08`) | no — physical device |
 
 **By layer (automatable only):**
@@ -330,7 +338,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Layer | Count (approx.) |
 |---|---|
 | Core | 17 |
-| Platform | ~87 |
+| Platform | ~92 |
 | Cross | 7 |
 | Shielded | 16 |
 
@@ -343,10 +351,10 @@ Membership of each feature category across **all** sections (primary section mem
 - **Core / Wallet** — `CORE-01..23`
 - **Identity** — `ID-01..15`, `SH-11`
 - **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06..09`, `ID-06`, `ID-08`, `ID-11`
-- **DPNS** — `DPNS-01..08`
+- **DPNS** — `DPNS-01..13`
 - **Voting** — `VOTE-01..20`, `DPNS-05`, `DPNS-08`
 - **Contract** — `DC-01..04`
-- **Document** — `DOC-01..15`
+- **Document** — `DOC-01..17`
 - **Token** — `TOK-01..20`
 - **Shielded** — `SH-01..17`
 - **DashPay** — `DP-01..19` (`DP-12..19` = invitation create, claim, persistence, reclaim; funded run 2026-07-23)
@@ -358,9 +366,9 @@ Tags are cross-cutting modalities. A test may appear under multiple tags.
 
 - **multiwallet** — `CORE-14..23`, `ID-14`, `ID-15`, `TOK-17`, `DPNS-08`, `DP-11`, `DP-14`, `DP-19`, `DOC-15`, `SH-14`, `SH-15`, `SH-16`, `SYS-08`
 - **group** — `TOK-15`, `TOK-16`, `TOK-18`, `TOK-19`
-- **contested** — `DPNS-05`, `DPNS-08`, `VOTE-01..06`
+- **contested** — `DPNS-05`, `DPNS-08`, `DPNS-11`, `VOTE-01..06`
 - **withdrawal** — `ID-10`, `ADDR-04`, `SH-08`, `SH-16`
 - **regression** — `TOK-17`, `DP-10`
-- **read-only** — `SH-13`, `SYS-05`, `SYS-06`, `VOTE-02..06`, `VOTE-08`, `VOTE-10`, `VOTE-13`, `VOTE-14`, `VOTE-16`, `VOTE-20`, `TOK-18`, `TOK-19`
+- **read-only** — `DOC-17`, `SH-13`, `SYS-05`, `SYS-06`, `VOTE-02..06`, `VOTE-08`, `VOTE-10`, `VOTE-13`, `VOTE-14`, `VOTE-16`, `VOTE-20`, `TOK-18`, `TOK-19`
 - **masternode** — `VOTE-01`, `VOTE-12`, `VOTE-13`, `VOTE-19`, `VOTE-20`
 - **proposal** (decision proposals, yes/no and multiple choice, protocol version 15): `VOTE-08..20`
