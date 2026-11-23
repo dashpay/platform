@@ -110,9 +110,14 @@ public struct ShieldedTokenPoolBalance: Sendable, Hashable {
     /// How many of the pool's notes, from the first without a gap, were
     /// checked for this account; `nil` before the first scan reached it.
     public let scannedNoteCount: UInt64?
-    /// The pool's note count at the last chunk read; `nil` before any.
+    /// The highest note count a page of the pool's scans has proved; `nil`
+    /// before any. A scan answered by a lagging node never lowers it, and it
+    /// does not mean the scan covered it: `scannedNoteCount` is what was
+    /// checked.
     public let poolNoteCount: UInt64?
-    /// The height the last chunk read was proven at; `nil` before any.
+    /// The highest height a page of the pool's scans was proven at; `nil`
+    /// before any. It does not by itself certify that a scan reached the
+    /// pool's end.
     public let scannedHeight: UInt64?
     /// Why the last scan of the pool stopped early, if it did. The next
     /// chunk read clears it.

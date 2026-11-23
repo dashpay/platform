@@ -62,11 +62,14 @@ pub struct ShieldedTokenPoolBalanceFFI {
     pub scanned_note_count: u64,
     /// The scan has read a chunk of the pool.
     pub has_pool_note_count: bool,
-    /// The pool's note count at the last chunk read.
+    /// The highest note count a page of the pool's scans has proved. A page
+    /// answered by a lagging node never lowers it, and it does not mean a
+    /// scan covered it: `scanned_note_count` is what was checked.
     pub pool_note_count: u64,
     /// The scan has read a chunk of the pool.
     pub has_scanned_height: bool,
-    /// The height the last chunk read was proven at.
+    /// The highest height a page of the pool's scans was proven at. It does
+    /// not by itself certify that a scan reached the pool's end.
     pub scanned_height: u64,
     /// Why the last scan of the pool stopped early, NUL-terminated UTF-8;
     /// null when it did not (or when the reason could not be encoded).
