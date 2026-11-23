@@ -133,6 +133,10 @@ struct ContractUserModerationSheet: View {
             }
             .navigationTitle("Moderate Identity")
             .navigationBarTitleDisplayMode(.inline)
+            // The result and the picked moderator belong to the contract and
+            // the connection they were made on
+            .onChange(of: scope) { _, _ in clearResult() }
+            .onChange(of: appState.sdkGeneration) { _, _ in clearResult() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
@@ -140,6 +144,13 @@ struct ContractUserModerationSheet: View {
                 }
             }
         }
+    }
+
+    private func clearResult() {
+        moderatorSelection = ""
+        actionSelection = nil
+        result = nil
+        errorText = nil
     }
 
     private var actionBinding: Binding<ContractUserModerationAction> {

@@ -107,6 +107,18 @@ struct ContractDocumentModerationView: View {
         }
         .navigationTitle("Moderate \(documentTypeName)")
         .navigationBarTitleDisplayMode(.inline)
+        // Results and the picked moderator belong to the contract and the
+        // connection they were made on
+        .onChange(of: scope) { _, _ in clearResults() }
+        .onChange(of: appState.sdkGeneration) { _, _ in clearResults() }
+    }
+
+    private func clearResults() {
+        moderatorSelection = ""
+        errorText = nil
+        deletion = nil
+        fieldsChange = nil
+        proposal = nil
     }
 
     @ViewBuilder

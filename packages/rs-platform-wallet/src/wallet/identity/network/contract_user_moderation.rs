@@ -94,14 +94,9 @@ impl ContractUserModerationKind {
     }
 
     /// The ability a seated team needs to edit the kind's list, putting an identity on it or
-    /// taking one off, as [`ModerationAbility`] declares each list's: `Ban` for the banlist,
-    /// `Suspend` for the suspension list, `Warn` for the warning list.
+    /// taking one off: dpp's [`ContractModerationList::ability`], which Drive checks.
     pub fn ability(self) -> ModerationAbility {
-        match self.list() {
-            ContractModerationList::Banlist => ModerationAbility::Ban,
-            ContractModerationList::Suspensions => ModerationAbility::Suspend,
-            ContractModerationList::Warnings => ModerationAbility::Warn,
-        }
+        self.list().ability()
     }
 
     /// The transition's action of this kind against `identity_id`. A ban, a suspension and a
@@ -264,7 +259,8 @@ impl IdentityWallet {
     /// Reads the contract and, when it declares elected moderation, the team of its seated
     /// charter (`Sdk::fetch_moderation_team`), then answers with
     /// [`contract_moderation_offer`]. A host offers a moderation only to the identities named
-    /// here; Drive still checks it when it is sent.
+    /// here; Drive still checks it when it is sent. Like that function, it names roles, not
+    /// keys.
     ///
     /// # Errors
     /// * [`PlatformWalletError::ContractNotFound`] when Platform holds no such contract;
@@ -674,6 +670,11 @@ impl Authority<'_> {
 ///   document's deletion under its rule (`moderator_settled_deletion`, beside a
 ///   `deleteWithin` window);
 /// * only a seated team's members approve team actions.
+///
+/// It is role-based, not key-based: a candidate is named by how it moderates the contract,
+/// whether or not the wallet's signer holds a key it can sign with. A moderation needs a
+/// CRITICAL authentication key without contract bounds; a named identity without one fails
+/// when the moderation is sent, and a host shows that error where it was asked for.
 pub fn contract_moderation_offer(
     contract: &DataContract,
     seated_team: Option<&ModerationTeam>,

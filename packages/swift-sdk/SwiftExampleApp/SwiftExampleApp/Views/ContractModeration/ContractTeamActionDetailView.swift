@@ -106,7 +106,7 @@ struct ContractTeamActionDetailView: View {
                     approve(as: approver)
                 } label: {
                     HStack {
-                        if approvingAs == approver.identityIdBase58 { ProgressView().controlSize(.small) }
+                        if approvingAs == approver.id { ProgressView().controlSize(.small) }
                         Text("Approve as \(approver.offer.role.title) \(approver.identityIdBase58.prefix(8))…")
                     }
                     .frame(maxWidth: .infinity)
@@ -147,7 +147,7 @@ struct ContractTeamActionDetailView: View {
         }
         // Fresh `KeychainSigner` per approval, as `CreateDocumentView` does.
         let signer = KeychainSigner(modelContainer: modelContext.container)
-        approvingAs = approver.identityIdBase58
+        approvingAs = approver.id
         approvalError = nil
         approval = nil
         Task {
@@ -232,5 +232,7 @@ struct ContractTeamActionDetailView: View {
     /// exist on the new one, so nothing is read and the signers are cleared.
     private func listingReplaced() {
         loader.fail("The connection changed since this action was listed. Go back and list the actions again.")
+        approval = nil
+        approvalError = nil
     }
 }

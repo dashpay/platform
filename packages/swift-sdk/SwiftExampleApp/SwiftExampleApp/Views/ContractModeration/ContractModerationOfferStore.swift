@@ -9,13 +9,19 @@ import SwiftDashSDK
 /// The screens show a moderation control only for an identity this names,
 /// and only the actions Rust listed for it. Whether the target, document or
 /// team action admits the moderation is Platform's to answer when it is sent.
+///
+/// Rust names identities by role (owner, appointed, interim, seated team),
+/// not by key: a named identity whose Keychain holds no usable CRITICAL key
+/// still gets a control, and its moderation fails when sent with that error,
+/// which the screen shows inline.
 @MainActor
 final class ContractModerationOfferStore: ObservableObject {
-    /// One identity Rust named, with the wallet that holds it.
+    /// One identity Rust named, with the wallet that holds it. Two wallets
+    /// can hold the same identity, so the wallet is part of the id.
     struct Moderator: Identifiable, Hashable {
         let walletId: Data
         let offer: ContractIdentityModerationOffer
-        var id: String { offer.identityId }
+        var id: String { "\(offer.identityId).\(walletId.map { String(format: "%02x", $0) }.joined())" }
         var identityIdBase58: String { offer.identityId }
     }
 
@@ -29,14 +35,25 @@ final class ContractModerationOfferStore: ObservableObject {
     /// Bumped on every reload and clear, so an answer to a superseded one is
     /// dropped.
     private var generation = 0
+    /// The contract the answer shown is for.
+    private var answeredContractId: String?
 
     /// Ask each wallet of `walletIds` what its identities may do on
-    /// `contractId` (base58), and keep the merged answer.
+    /// `contractId` (base58), and keep the merged answer. A wallet whose
+    /// answer fails is skipped and its error shown; the others' answers
+    /// stand. When every wallet fails nothing is offered.
     func reload(contractId: String, walletIds: [Data], walletManager: PlatformWalletManager) async {
         generation += 1
         let mine = generation
         isLoading = true
         errorMessage = nil
+        // Another contract: the answer shown is not for it
+        if answeredContractId != contractId {
+            moderators = []
+            moderatorsTeam = nil
+            loadedOnce = false
+        }
+        answeredContractId = contractId
         guard let contractIdBytes = Data.identifier(fromBase58: contractId) else {
             moderators = []
             moderatorsTeam = nil
@@ -46,21 +63,22 @@ final class ContractModerationOfferStore: ObservableObject {
         }
         var named: [Moderator] = []
         var team: ContractModeratorsPotTeam?
-        do {
-            for walletId in walletIds {
-                guard let wallet = walletManager.wallet(for: walletId) else { continue }
+        var failures: [String] = []
+        for walletId in walletIds {
+            guard let wallet = walletManager.wallet(for: walletId) else { continue }
+            do {
                 let offer = try await wallet.contractModerationOffer(contractId: contractIdBytes)
                 team = team ?? offer.moderatorsTeam
                 named += offer.identities.map { Moderator(walletId: walletId, offer: $0) }
+            } catch {
+                failures.append(error.localizedDescription)
             }
-            guard mine == generation else { return }
-            moderators = named
-            moderatorsTeam = team
-        } catch {
-            guard mine == generation else { return }
-            moderators = []
-            moderatorsTeam = nil
-            errorMessage = error.localizedDescription
+        }
+        guard mine == generation else { return }
+        moderators = named
+        moderatorsTeam = team
+        if !failures.isEmpty {
+            errorMessage = Array(Set(failures)).sorted().joined(separator: "; ")
         }
         isLoading = false
         loadedOnce = true
@@ -69,6 +87,7 @@ final class ContractModerationOfferStore: ObservableObject {
     /// Drop the answer: it was read through a connection that was replaced.
     func clear() {
         generation += 1
+        answeredContractId = nil
         moderators = []
         moderatorsTeam = nil
         errorMessage = nil
@@ -208,8 +227,8 @@ struct ModeratorPicker: View {
         if moderators.count > 1 {
             Picker("Act as", selection: $selection) {
                 ForEach(moderators) { moderator in
-                    Text("\(label(moderator.identityIdBase58)) (\(moderator.offer.role.title))")
-                        .tag(moderator.identityIdBase58)
+                    Text("\(label(moderator.identityIdBase58)) (\(moderator.offer.role.title))\(walletSuffix(moderator))")
+                        .tag(moderator.id)
                 }
             }
             .accessibleFormPicker(identifier)
@@ -219,12 +238,23 @@ struct ModeratorPicker: View {
         }
     }
 
-    /// The picked moderator, or the first one Rust named.
+    /// The wallet a moderator signs through, when another wallet also holds
+    /// that identity; empty otherwise.
+    private func walletSuffix(_ moderator: ContractModerationOfferStore.Moderator) -> String {
+        let heldTwice = moderators.contains {
+            $0.identityIdBase58 == moderator.identityIdBase58 && $0.walletId != moderator.walletId
+        }
+        guard heldTwice else { return "" }
+        return " (wallet \(moderator.walletId.prefix(4).map { String(format: "%02x", $0) }.joined()))"
+    }
+
+    /// The picked moderator (its ``ContractModerationOfferStore/Moderator/id``),
+    /// or the first one Rust named.
     static func chosen(
         _ selection: String,
         among moderators: [ContractModerationOfferStore.Moderator]
     ) -> ContractModerationOfferStore.Moderator? {
-        moderators.first { $0.identityIdBase58 == selection } ?? moderators.first
+        moderators.first { $0.id == selection } ?? moderators.first
     }
 }
 

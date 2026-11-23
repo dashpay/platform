@@ -24,6 +24,11 @@ extension ManagedPlatformWallet {
     /// team of its seated charter. A host offers a moderation only to the
     /// identities this names; Platform still checks it when it is sent.
     ///
+    /// It names identities by role, not by key: a named identity whose
+    /// signer holds no CRITICAL authentication key without contract bounds
+    /// is still named, and its moderation throws when sent; show that error
+    /// where the moderation was asked for.
+    ///
     /// - Parameter contractId: The contract's 32-byte id.
     /// - Throws: `PlatformWalletError.invalidParameter` for an id that is not
     ///   32 bytes; `PlatformWalletError.notFound` when Platform holds no such

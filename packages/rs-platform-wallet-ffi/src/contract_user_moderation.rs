@@ -40,6 +40,15 @@
 //! (`rs_sdk_ffi::contract_document_removal_json`), so a host decodes them
 //! with the types it decodes the reads with. A team action's status is
 //! `"active"` or `"closed"`, as the team action reads name it.
+//!
+//! # Panics
+//!
+//! Each export runs its body under `catch_panic_to_code`, so a panic inside
+//! (`block_on_worker` re-raises a worker's) is a result, not an abort, where
+//! panics unwind. The offer read reports `ErrorWalletOperation`; a write
+//! reports `ErrorTransactionBroadcastUnconfirmed`, since it may have been
+//! broadcast before the panic. Every export checks and nulls `out_json`
+//! before any other check, so every error leaves it null.
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -326,6 +335,15 @@ pub(crate) fn team_action_signature_json(
     })
 }
 
+/// What a host should know after the offer read panicked: a read signs and sends nothing.
+const OFFER_PANIC_GUIDANCE: &str = "Nothing was signed or broadcast; ask again.";
+
+/// What a host should know after a moderation write panicked: the panic can strike after the
+/// transition was broadcast, so whether it took effect is unknown until the contract's
+/// moderation state is read again.
+const WRITE_PANIC_GUIDANCE: &str = "The moderation may or may not have been broadcast; read \
+     the contract's moderation state again before sending it once more.";
+
 /// Write `json` to `*out_json`, handing its ownership to the caller.
 ///
 /// # Safety
@@ -367,6 +385,11 @@ unsafe fn write_json(
 /// contract; `documentTypes` only the types on which an identity may do
 /// something. `deleteWithinSeconds` is absent when the type has no window,
 /// `settledDeletion` when the identity may propose no settled deletion.
+///
+/// It names identities by role, not by key: an identity named here whose
+/// signer holds no CRITICAL authentication key without contract bounds is
+/// still named, and its moderation fails when sent with that error, which
+/// the host shows.
 /// Release the string with `platform_wallet_string_free`. On any error
 /// `*out_json` is left null.
 ///
@@ -383,6 +406,28 @@ pub unsafe extern "C" fn platform_wallet_contract_moderation_offer(
     contract_id: *const u8,
     out_json: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
+    // `block_on_worker` re-raises a worker's panic here, inside the
+    // `extern "C"` frame, where it would abort the host.
+    catch_panic_to_code(
+        "platform_wallet_contract_moderation_offer",
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        OFFER_PANIC_GUIDANCE,
+        || unsafe { contract_moderation_offer_inner(wallet_handle, contract_id, out_json) },
+    )
+}
+
+/// The body of [`platform_wallet_contract_moderation_offer`], run inside its panic
+/// guard.
+///
+/// # Safety
+/// As [`platform_wallet_contract_moderation_offer`].
+unsafe fn contract_moderation_offer_inner(
+    wallet_handle: Handle,
+    contract_id: *const u8,
+    out_json: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    // The out slot is checked and nulled before anything else can
+    // return, so every error leaves it null.
     check_ptr!(out_json);
     *out_json = ptr::null_mut();
 
@@ -455,9 +500,52 @@ pub unsafe extern "C" fn platform_wallet_contract_user_moderate(
     signer_handle: *mut SignerHandle,
     out_json: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
-    check_ptr!(signer_handle);
+    // `block_on_worker` re-raises a worker's panic here, inside the
+    // `extern "C"` frame, where it would abort the host.
+    catch_panic_to_code(
+        "platform_wallet_contract_user_moderate",
+        PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        WRITE_PANIC_GUIDANCE,
+        || unsafe {
+            contract_user_moderate_inner(
+                wallet_handle,
+                moderator_identity_id,
+                contract_id,
+                target_identity_id,
+                action,
+                suspend_until_ms,
+                reason_text,
+                reason_document_id,
+                signer_handle,
+                out_json,
+            )
+        },
+    )
+}
+
+/// The body of [`platform_wallet_contract_user_moderate`], run inside its panic
+/// guard.
+///
+/// # Safety
+/// As [`platform_wallet_contract_user_moderate`].
+#[allow(clippy::too_many_arguments)]
+unsafe fn contract_user_moderate_inner(
+    wallet_handle: Handle,
+    moderator_identity_id: *const u8,
+    contract_id: *const u8,
+    target_identity_id: *const u8,
+    action: u8,
+    suspend_until_ms: *const u64,
+    reason_text: *const c_char,
+    reason_document_id: *const u8,
+    signer_handle: *mut SignerHandle,
+    out_json: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    // The out slot is checked and nulled before anything else can
+    // return, so every error leaves it null.
     check_ptr!(out_json);
     *out_json = ptr::null_mut();
+    check_ptr!(signer_handle);
 
     let moderator_id = unwrap_result_or_return!(read_identifier(moderator_identity_id));
     let contract_id = unwrap_result_or_return!(read_identifier(contract_id));
@@ -543,10 +631,51 @@ pub unsafe extern "C" fn platform_wallet_contract_document_delete(
     signer_handle: *mut SignerHandle,
     out_json: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
-    check_ptr!(document_type_name);
-    check_ptr!(signer_handle);
+    // `block_on_worker` re-raises a worker's panic here, inside the
+    // `extern "C"` frame, where it would abort the host.
+    catch_panic_to_code(
+        "platform_wallet_contract_document_delete",
+        PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        WRITE_PANIC_GUIDANCE,
+        || unsafe {
+            contract_document_delete_inner(
+                wallet_handle,
+                moderator_identity_id,
+                contract_id,
+                document_type_name,
+                document_id,
+                reason_text,
+                reason_document_id,
+                signer_handle,
+                out_json,
+            )
+        },
+    )
+}
+
+/// The body of [`platform_wallet_contract_document_delete`], run inside its panic
+/// guard.
+///
+/// # Safety
+/// As [`platform_wallet_contract_document_delete`].
+#[allow(clippy::too_many_arguments)]
+unsafe fn contract_document_delete_inner(
+    wallet_handle: Handle,
+    moderator_identity_id: *const u8,
+    contract_id: *const u8,
+    document_type_name: *const c_char,
+    document_id: *const u8,
+    reason_text: *const c_char,
+    reason_document_id: *const u8,
+    signer_handle: *mut SignerHandle,
+    out_json: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    // The out slot is checked and nulled before anything else can
+    // return, so every error leaves it null.
     check_ptr!(out_json);
     *out_json = ptr::null_mut();
+    check_ptr!(document_type_name);
+    check_ptr!(signer_handle);
 
     let moderator_id = unwrap_result_or_return!(read_identifier(moderator_identity_id));
     let contract_id = unwrap_result_or_return!(read_identifier(contract_id));
@@ -620,11 +749,50 @@ pub unsafe extern "C" fn platform_wallet_contract_document_restore(
     signer_handle: *mut SignerHandle,
     out_json: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
+    // `block_on_worker` re-raises a worker's panic here, inside the
+    // `extern "C"` frame, where it would abort the host.
+    catch_panic_to_code(
+        "platform_wallet_contract_document_restore",
+        PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        WRITE_PANIC_GUIDANCE,
+        || unsafe {
+            contract_document_restore_inner(
+                wallet_handle,
+                moderator_identity_id,
+                contract_id,
+                document_type_name,
+                document_bytes,
+                document_bytes_len,
+                signer_handle,
+                out_json,
+            )
+        },
+    )
+}
+
+/// The body of [`platform_wallet_contract_document_restore`], run inside its panic
+/// guard.
+///
+/// # Safety
+/// As [`platform_wallet_contract_document_restore`].
+#[allow(clippy::too_many_arguments)]
+unsafe fn contract_document_restore_inner(
+    wallet_handle: Handle,
+    moderator_identity_id: *const u8,
+    contract_id: *const u8,
+    document_type_name: *const c_char,
+    document_bytes: *const u8,
+    document_bytes_len: usize,
+    signer_handle: *mut SignerHandle,
+    out_json: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    // The out slot is checked and nulled before anything else can
+    // return, so every error leaves it null.
+    check_ptr!(out_json);
+    *out_json = ptr::null_mut();
     check_ptr!(document_type_name);
     check_ptr!(document_bytes);
     check_ptr!(signer_handle);
-    check_ptr!(out_json);
-    *out_json = ptr::null_mut();
 
     if document_bytes_len == 0 {
         return PlatformWalletFFIResult::err(
@@ -712,11 +880,54 @@ pub unsafe extern "C" fn platform_wallet_contract_document_change_fields(
     signer_handle: *mut SignerHandle,
     out_json: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
+    // `block_on_worker` re-raises a worker's panic here, inside the
+    // `extern "C"` frame, where it would abort the host.
+    catch_panic_to_code(
+        "platform_wallet_contract_document_change_fields",
+        PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        WRITE_PANIC_GUIDANCE,
+        || unsafe {
+            contract_document_change_fields_inner(
+                wallet_handle,
+                moderator_identity_id,
+                contract_id,
+                document_type_name,
+                document_id,
+                fields_json,
+                reason_text,
+                reason_document_id,
+                signer_handle,
+                out_json,
+            )
+        },
+    )
+}
+
+/// The body of [`platform_wallet_contract_document_change_fields`], run inside its panic
+/// guard.
+///
+/// # Safety
+/// As [`platform_wallet_contract_document_change_fields`].
+#[allow(clippy::too_many_arguments)]
+unsafe fn contract_document_change_fields_inner(
+    wallet_handle: Handle,
+    moderator_identity_id: *const u8,
+    contract_id: *const u8,
+    document_type_name: *const c_char,
+    document_id: *const u8,
+    fields_json: *const c_char,
+    reason_text: *const c_char,
+    reason_document_id: *const u8,
+    signer_handle: *mut SignerHandle,
+    out_json: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    // The out slot is checked and nulled before anything else can
+    // return, so every error leaves it null.
+    check_ptr!(out_json);
+    *out_json = ptr::null_mut();
     check_ptr!(document_type_name);
     check_ptr!(fields_json);
     check_ptr!(signer_handle);
-    check_ptr!(out_json);
-    *out_json = ptr::null_mut();
 
     let moderator_id = unwrap_result_or_return!(read_identifier(moderator_identity_id));
     let contract_id = unwrap_result_or_return!(read_identifier(contract_id));
@@ -793,10 +1004,51 @@ pub unsafe extern "C" fn platform_wallet_contract_document_propose_settled_delet
     signer_handle: *mut SignerHandle,
     out_json: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
-    check_ptr!(document_type_name);
-    check_ptr!(signer_handle);
+    // `block_on_worker` re-raises a worker's panic here, inside the
+    // `extern "C"` frame, where it would abort the host.
+    catch_panic_to_code(
+        "platform_wallet_contract_document_propose_settled_deletion",
+        PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        WRITE_PANIC_GUIDANCE,
+        || unsafe {
+            contract_document_propose_settled_deletion_inner(
+                wallet_handle,
+                moderator_identity_id,
+                contract_id,
+                document_type_name,
+                document_id,
+                reason_text,
+                reason_document_id,
+                signer_handle,
+                out_json,
+            )
+        },
+    )
+}
+
+/// The body of [`platform_wallet_contract_document_propose_settled_deletion`], run inside its panic
+/// guard.
+///
+/// # Safety
+/// As [`platform_wallet_contract_document_propose_settled_deletion`].
+#[allow(clippy::too_many_arguments)]
+unsafe fn contract_document_propose_settled_deletion_inner(
+    wallet_handle: Handle,
+    moderator_identity_id: *const u8,
+    contract_id: *const u8,
+    document_type_name: *const c_char,
+    document_id: *const u8,
+    reason_text: *const c_char,
+    reason_document_id: *const u8,
+    signer_handle: *mut SignerHandle,
+    out_json: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    // The out slot is checked and nulled before anything else can
+    // return, so every error leaves it null.
     check_ptr!(out_json);
     *out_json = ptr::null_mut();
+    check_ptr!(document_type_name);
+    check_ptr!(signer_handle);
 
     let moderator_id = unwrap_result_or_return!(read_identifier(moderator_identity_id));
     let contract_id = unwrap_result_or_return!(read_identifier(contract_id));
@@ -864,9 +1116,43 @@ pub unsafe extern "C" fn platform_wallet_contract_team_action_approve(
     signer_handle: *mut SignerHandle,
     out_json: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
-    check_ptr!(signer_handle);
+    // `block_on_worker` re-raises a worker's panic here, inside the
+    // `extern "C"` frame, where it would abort the host.
+    catch_panic_to_code(
+        "platform_wallet_contract_team_action_approve",
+        PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        WRITE_PANIC_GUIDANCE,
+        || unsafe {
+            contract_team_action_approve_inner(
+                wallet_handle,
+                moderator_identity_id,
+                contract_id,
+                action_id,
+                signer_handle,
+                out_json,
+            )
+        },
+    )
+}
+
+/// The body of [`platform_wallet_contract_team_action_approve`], run inside its panic
+/// guard.
+///
+/// # Safety
+/// As [`platform_wallet_contract_team_action_approve`].
+unsafe fn contract_team_action_approve_inner(
+    wallet_handle: Handle,
+    moderator_identity_id: *const u8,
+    contract_id: *const u8,
+    action_id: *const u8,
+    signer_handle: *mut SignerHandle,
+    out_json: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    // The out slot is checked and nulled before anything else can
+    // return, so every error leaves it null.
     check_ptr!(out_json);
     *out_json = ptr::null_mut();
+    check_ptr!(signer_handle);
 
     let moderator_id = unwrap_result_or_return!(read_identifier(moderator_identity_id));
     let contract_id = unwrap_result_or_return!(read_identifier(contract_id));
@@ -1306,6 +1592,107 @@ mod tests {
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
             );
             assert!(out_json.is_null());
+        }
+    }
+
+    /// The JSON out-param is nulled before any other pointer is checked, so
+    /// a null signer or document type name leaves it null as every other
+    /// error does.
+    #[test]
+    fn should_null_the_json_out_param_before_refusing_any_other_null_pointer() {
+        let id = [0u8; 32];
+        let name = CString::new("post").expect("name");
+        let fields = CString::new("{}").expect("fields");
+        let bytes = [1u8; 4];
+        // A stale, non-null value each call must overwrite; never read.
+        let stale = ptr::NonNull::<c_char>::dangling().as_ptr();
+        let calls: [&dyn Fn(*mut *mut c_char) -> PlatformWalletFFIResult; 6] = [
+            &|out| unsafe {
+                platform_wallet_contract_user_moderate(
+                    0,
+                    id.as_ptr(),
+                    id.as_ptr(),
+                    id.as_ptr(),
+                    0,
+                    ptr::null(),
+                    ptr::null(),
+                    ptr::null(),
+                    ptr::null_mut(),
+                    out,
+                )
+            },
+            &|out| unsafe {
+                platform_wallet_contract_document_delete(
+                    0,
+                    id.as_ptr(),
+                    id.as_ptr(),
+                    ptr::null(),
+                    id.as_ptr(),
+                    ptr::null(),
+                    ptr::null(),
+                    ptr::null_mut(),
+                    out,
+                )
+            },
+            &|out| unsafe {
+                platform_wallet_contract_document_restore(
+                    0,
+                    id.as_ptr(),
+                    id.as_ptr(),
+                    ptr::null(),
+                    bytes.as_ptr(),
+                    bytes.len(),
+                    ptr::null_mut(),
+                    out,
+                )
+            },
+            &|out| unsafe {
+                platform_wallet_contract_document_change_fields(
+                    0,
+                    id.as_ptr(),
+                    id.as_ptr(),
+                    name.as_ptr(),
+                    id.as_ptr(),
+                    fields.as_ptr(),
+                    ptr::null(),
+                    ptr::null(),
+                    ptr::null_mut(),
+                    out,
+                )
+            },
+            &|out| unsafe {
+                platform_wallet_contract_document_propose_settled_deletion(
+                    0,
+                    id.as_ptr(),
+                    id.as_ptr(),
+                    ptr::null(),
+                    id.as_ptr(),
+                    ptr::null(),
+                    ptr::null(),
+                    ptr::null_mut(),
+                    out,
+                )
+            },
+            &|out| unsafe {
+                platform_wallet_contract_team_action_approve(
+                    0,
+                    id.as_ptr(),
+                    id.as_ptr(),
+                    id.as_ptr(),
+                    ptr::null_mut(),
+                    out,
+                )
+            },
+        ];
+        for (index, call) in calls.iter().enumerate() {
+            let mut out_json = stale;
+            let result = call(&mut out_json);
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorNullPointer,
+                "call {index}"
+            );
+            assert!(out_json.is_null(), "call {index} left the out-param set");
         }
     }
 

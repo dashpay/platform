@@ -158,7 +158,19 @@ struct ContractDocumentRemovalsView: View {
         }
         // A replaced SDK: drop what was read through the old one and read
         // nothing through the new one; the hub's gate shows the notice instead
-        .onChange(of: appState.sdkGeneration) { _, _ in loader.clear() }
+        .onChange(of: appState.sdkGeneration) { _, _ in
+            loader.clear()
+            clearRestore()
+        }
+        .onChange(of: scope) { _, _ in clearRestore() }
+    }
+
+    /// Forget the restore shown and the one asked for: they belong to the
+    /// contract and connection they were made on.
+    private func clearRestore() {
+        restoreCandidate = nil
+        restoreResult = nil
+        restoreError = nil
     }
 
     /// A restore for a record that stands, of a document this app kept, when
