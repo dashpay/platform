@@ -2312,9 +2312,9 @@
         },
         "kotlin": {
           "sdk": "supported",
-          "example_app": "partial",
+          "example_app": "supported",
           "restart": "not_applicable",
-          "reason": "Sdk.contractModeration (ContractModeration.kt) bridges every read through ContractModerationNative, one JNI export per rs-sdk-ffi function, and decodes the JSON Rust writes (the removal records through rs-sdk's fetch_with_kept_values); KotlinExampleApp reaches them from Contracts -> contract -> Moderation and Fee Pots (contractModeration.link) with Swift's contractModeration.* identifiers as testTags. Partial until TEST_PLAN DC-05..DC-10 are run on an emulator against a protocol version 14 network. Not ported: the Platform Queries catalog entries for these reads. The reads keep nothing, so there is nothing to resume after a restart."
+          "reason": null
         }
       },
       "verification": [
@@ -2371,6 +2371,13 @@
           "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/contracts/moderation/ModerationSupportTest.kt",
           "id": "shouldDropAPageFromASupersededRead",
           "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*ModerationSupportTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "DC-08",
           "covers_restart": false
         }
       ]
