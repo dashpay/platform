@@ -53,6 +53,7 @@ import org.dashfoundation.example.navigation.TopUpIdentity
 import org.dashfoundation.example.navigation.TopUpIdentityFromCore
 import org.dashfoundation.example.navigation.TransferCredits
 import org.dashfoundation.example.navigation.TransferToAddress
+import org.dashfoundation.example.navigation.IdentityWithdrawals
 import org.dashfoundation.example.navigation.WithdrawCredits
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
@@ -286,6 +287,15 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
                     modifier = Modifier
                         .clickable { navController.navigate(WithdrawCredits(identityIdHex)) }
                         .testTag("identityDetail.withdraw"),
+                )
+                // Where this identity's withdrawals to Core stand, read from the
+                // withdrawals system contract (← IdentityDetailView's Withdrawals link).
+                ListItem(
+                    headlineContent = { Text("Withdrawals") },
+                    supportingContent = { Text("Where each withdrawal to Core stands") },
+                    modifier = Modifier
+                        .clickable { navController.navigate(IdentityWithdrawals(identityIdHex)) }
+                        .testTag("identity.withdrawals"),
                 )
             }
 

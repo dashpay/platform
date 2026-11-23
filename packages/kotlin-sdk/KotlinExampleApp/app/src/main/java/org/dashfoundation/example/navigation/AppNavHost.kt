@@ -18,12 +18,15 @@ import org.dashfoundation.example.ui.contracts.DocumentsScreen
 import org.dashfoundation.example.ui.contracts.GroveDBPathElementsScreen
 import org.dashfoundation.example.ui.contracts.GroupDetailScreen
 import org.dashfoundation.example.ui.contracts.LocalDataContractsScreen
+import org.dashfoundation.example.ui.contracts.PlatformBlocksScreen
 import org.dashfoundation.example.ui.contracts.PrivateDocumentEntriesScreen
 import org.dashfoundation.example.ui.contracts.RegisterContractSourceScreen
 import org.dashfoundation.example.ui.contracts.QueriesListScreen
 import org.dashfoundation.example.ui.contracts.QueryDetailScreen
 import org.dashfoundation.example.ui.contracts.SumAverageDocumentsScreen
+import org.dashfoundation.example.ui.contracts.TransitionStatusCheckScreen
 import org.dashfoundation.example.ui.contracts.UpdateContractScreen
+import org.dashfoundation.example.ui.contracts.moderation.ContractModerationEntryScreen
 import org.dashfoundation.example.ui.diagnostics.AddressBranchStateScreen
 import org.dashfoundation.example.ui.diagnostics.AddressQueriesScreen
 import org.dashfoundation.example.ui.diagnostics.AddressTrunkStateScreen
@@ -70,6 +73,7 @@ import org.dashfoundation.example.ui.credits.TransferCreditsScreen
 import org.dashfoundation.example.ui.credits.TransferIdentityToAddressScreen
 import org.dashfoundation.example.ui.credits.TransferPlatformAddressScreen
 import org.dashfoundation.example.ui.credits.WithdrawCreditsScreen
+import org.dashfoundation.example.ui.identity.IdentityWithdrawalsScreen
 import org.dashfoundation.example.ui.credits.WithdrawPlatformAddressScreen
 import org.dashfoundation.example.ui.transitions.StateTransitionsScreen
 import org.dashfoundation.example.ui.transitions.TransitionCategoryScreen
@@ -254,6 +258,10 @@ fun AppNavHost(
             WithdrawCreditsScreen(entry.toRoute<WithdrawCredits>().identityIdHex, navController)
         }
 
+        composable<IdentityWithdrawals> { entry ->
+            IdentityWithdrawalsScreen(entry.toRoute<IdentityWithdrawals>().identityIdHex, navController)
+        }
+
         // ── State-transition catalog ───────────────────────────────────
 
         composable<StateTransitions> { StateTransitionsScreen(navController) }
@@ -347,6 +355,11 @@ fun AppNavHost(
         composable<DocumentTypeDetail> { entry ->
             val route = entry.toRoute<DocumentTypeDetail>()
             DocumentTypeDetailsScreen(route.contractIdHex, route.typeName, navController)
+        }
+
+        composable<ContractModerationHub> { entry ->
+            val route = entry.toRoute<ContractModerationHub>()
+            ContractModerationEntryScreen(route.contractIdHex, navController)
         }
 
         composable<Documents> { entry ->
@@ -541,6 +554,10 @@ fun AppNavHost(
             val route = entry.toRoute<PrivateDocumentEntries>()
             PrivateDocumentEntriesScreen(route.contractIdHex, route.typeName, navController)
         }
+
+        composable<BlockExplorer> { PlatformBlocksScreen(navController) }
+
+        composable<TransitionStatusCheck> { TransitionStatusCheckScreen(navController) }
 
         composable<Diagnostics> { DiagnosticsScreen(navController) }
 

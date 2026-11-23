@@ -1,6 +1,11 @@
 package org.dashfoundation.example.ui.contracts
 
+import kotlinx.serialization.json.Json
 import org.dashfoundation.dashsdk.Sdk
+import org.dashfoundation.dashsdk.queries.NodeTransitionStatus
+import org.dashfoundation.dashsdk.queries.OwnerTransactionsInBlock
+import org.dashfoundation.dashsdk.queries.PlatformBlockList
+import org.dashfoundation.dashsdk.queries.TransitionStatusByHash
 import org.dashfoundation.example.ui.identity.decode32ByteHex
 
 /**
@@ -41,6 +46,18 @@ internal class QueryDefinition(
      * below protocol version 15.
      */
     val runsInDiagnostics: Boolean = true,
+    /**
+     * A note the form shows before anything is sent, as for the transition status reads,
+     * which send a hash to the app's nodes (`QueryDetailView.swift`'s `queryDetail.privacyNote`).
+     */
+    val privacyNote: String? = null,
+    /**
+     * True clears the result when an input is edited or the SDK replaced, and drops a read
+     * that completes after either: the block and transition status reads, whose answers would
+     * otherwise sit beside an edited height, identity or hash (`QueryDetailView.swift`'s
+     * `inputBoundQueries`).
+     */
+    val resultFollowsInputs: Boolean = false,
     val execute: suspend (Sdk, Map<String, String>) -> String?,
 )
 
@@ -781,6 +798,45 @@ internal val QUERY_REGISTRY: List<QueryDefinition> = listOf(
         )
     },
 
+    // Blocks (protocol version 15): the Block Explorer is the full flow; these rows return
+    // the JSON rs-sdk-ffi writes, decoded and written back
+    QueryDefinition(
+        name = "getBlocks",
+        label = "Get Blocks",
+        description = "Up to 10 consecutive blocks with every state transition and its " +
+            "result, proved by the block's quorum signature (protocol version 15).",
+        inputs = listOf(
+            QueryInput("startHeight", "Start Height", required = true, placeholder = "The first block's height, from 1"),
+            QueryInput("count", "Count", required = true, placeholder = "1 to 10"),
+        ),
+        runsInDiagnostics = false,
+        resultFollowsInputs = true,
+    ) { sdk, inputs ->
+        val blocks = sdk.blocks.getBlocks(
+            startHeight = requiredWholeNumber(inputs, "startHeight", "Start Height"),
+            count = requiredWholeNumber(inputs, "count", "Count").toIntOrThrow("Count"),
+        )
+        CatalogJson.encodeToString(PlatformBlockList.serializer(), blocks)
+    },
+    QueryDefinition(
+        name = "getOwnerTransactionsInBlock",
+        label = "Get Owner Transactions In Block",
+        description = "An identity's state transitions in one block: each proved, the list " +
+            "not proved complete (protocol version 15).",
+        inputs = listOf(
+            QueryInput("height", "Block Height", required = true),
+            QueryInput("ownerId", "Identity ID", required = true, placeholder = "Base58 identity id"),
+        ),
+        runsInDiagnostics = false,
+        resultFollowsInputs = true,
+    ) { sdk, inputs ->
+        val answer = sdk.blocks.getOwnerTransactionsInBlock(
+            height = requiredWholeNumber(inputs, "height", "Block Height"),
+            ownerId = inputs.getValue("ownerId"),
+        )
+        CatalogJson.encodeToString(OwnerTransactionsInBlock.serializer(), answer)
+    },
+
     // ── Token ─────────────────────────────────────────────────────────────
     QueryDefinition(
         name = "calculateTokenId",
@@ -1000,7 +1056,53 @@ internal val QUERY_REGISTRY: List<QueryDefinition> = listOf(
             keysJson = inputs["keys"]?.takeIf { it.isNotBlank() },
         )
     },
+    // Transition status (protocol version 15): the Transition Status Checker is the full flow
+    QueryDefinition(
+        name = "getRecentStateTransitionStatus",
+        label = "Get Recent State Transition Status (unproved)",
+        description = "Public transitions only: the hash goes to the app's nodes. What one " +
+            "node says of a transition hash: committed, pending or unknown. Unproved, one " +
+            "node's word (protocol version 15).",
+        inputs = listOf(
+            QueryInput("transitionHash", "State Transition Hash", required = true, placeholder = "64 hex characters"),
+        ),
+        runsInDiagnostics = false,
+        privacyNote = TransitionStatusPrivacy.NOTE,
+        resultFollowsInputs = true,
+    ) { sdk, inputs ->
+        val status = sdk.blocks.getRecentStateTransitionStatus(inputs.getValue("transitionHash"))
+        CatalogJson.encodeToString(NodeTransitionStatus.serializer(), status)
+    },
+    QueryDefinition(
+        name = "getStateTransitionStatusByHash",
+        label = "Check State Transition Status",
+        description = "Public transitions only: the hash goes to the app's nodes. A " +
+            "transition hash's status, proved by its block when the node says committed; " +
+            "otherwise the node's unproved word (protocol version 15).",
+        inputs = listOf(
+            QueryInput("transitionHash", "State Transition Hash", required = true, placeholder = "64 hex characters"),
+        ),
+        runsInDiagnostics = false,
+        privacyNote = TransitionStatusPrivacy.NOTE,
+        resultFollowsInputs = true,
+    ) { sdk, inputs ->
+        val status = sdk.blocks.getStateTransitionStatusByHash(inputs.getValue("transitionHash"))
+        CatalogJson.encodeToString(TransitionStatusByHash.serializer(), status)
+    },
 )
+
+/** Writes a decoded block or status answer back as the snake_case JSON rs-sdk-ffi wrote. */
+private val CatalogJson = Json
+
+/** The form input [key] read as a whole number, refused with its [label] otherwise. */
+private fun requiredWholeNumber(inputs: Map<String, String>, key: String, label: String): Long =
+    inputs[key]?.trim()?.toLongOrNull()?.takeIf { it >= 0 }
+        ?: throw IllegalArgumentException("$label must be a whole number")
+
+/** This whole number as an Int, refused with its [label] when it does not fit. */
+private fun Long.toIntOrThrow(label: String): Int =
+    takeIf { it <= Int.MAX_VALUE }?.toInt()
+        ?: throw IllegalArgumentException("$label must be a whole number")
 
 /**
  * A decision proposal listing page (yes/no or multiple choice) as text: its size, then one

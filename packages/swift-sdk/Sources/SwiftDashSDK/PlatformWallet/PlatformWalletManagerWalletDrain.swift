@@ -106,6 +106,165 @@ public struct WalletDrainOutcome: Sendable {
     }
 }
 
+/// What one `shieldedWalletDrainStatus` read produced.
+public enum WalletDrainStatusRead: Sendable, Equatable {
+    /// The read succeeded and reported this state.
+    case reported(WalletDrainOutcome.State)
+    /// The read threw. That is never evidence that nothing was sent.
+    case failed
+}
+
+/// The one thing a host offers for a stored drain operation id.
+public enum WalletDrainRecoveryAction: UInt8, Sendable, Equatable {
+    /// One of the host's attempts for this operation is running.
+    case inProgress = 0
+    /// Resume the asset lock the last status read named, by its exact outpoint.
+    case resume = 1
+    /// Read the status again. Sends nothing.
+    case checkAgain = 2
+}
+
+/// Where a tracked asset lock is listed, as far as wallet drains are concerned.
+public enum WalletDrainLockListing: UInt8, Sendable, Equatable {
+    /// Not decided here: the host's own rule for resumable locks applies.
+    case unaffected = 0
+    /// The host's stored-operation row owns this lock: list it nowhere else.
+    case hidden = 1
+    /// List it with the resumable locks, although it is only Built.
+    case offered = 2
+}
+
+/// The rules a host follows for the operation ids it stores for wallet
+/// drains ("Max" Core-to-shielded transfers). Every function is one call
+/// into Rust (`platform_wallet::wallet::shielded::wallet_drain_recovery`),
+/// which holds the rules, so the Swift and Kotlin apps cannot drift apart:
+/// the caller gathers the facts it owns and does what these return.
+///
+/// None of them reads a wallet or touches the network, and none throws. The
+/// FFI fails only for a raw value these typed arguments cannot produce; a
+/// failure returns the fail-closed answer the FFI documents.
+public enum WalletDrainRules {
+    /// Whether the host keeps the operation id it stored after `read`
+    /// (`true`) or removes it (`false`). `attemptOverlappedRead` says whether
+    /// one of the host's attempts for the id ran or started while that read
+    /// was in progress. Rust holds the rule; a failed call keeps the id.
+    public static func keepsStoredId(after read: WalletDrainStatusRead, attemptOverlappedRead: Bool) -> Bool {
+        let (succeeded, state) = ffiRead(read)
+        var keep = true
+        let result = platform_wallet_wallet_drain_marker_decision(
+            succeeded, state, attemptOverlappedRead, &keep)
+        return PlatformWalletResult(result).isSuccess ? keep : true
+    }
+
+    /// What the host offers for a stored operation id. `lastRead` is `nil`
+    /// before any status read has finished; `readNamedAssetLock` says
+    /// whether that read's outcome carried an outpoint. Rust holds the rule
+    /// and returns `.resume` only for a `pending` report that named a lock;
+    /// a failed call returns `.checkAgain`.
+    public static func recoveryAction(
+        attemptInFlight: Bool,
+        lastRead: WalletDrainStatusRead?,
+        readNamedAssetLock: Bool
+    ) -> WalletDrainRecoveryAction {
+        let (succeeded, state) = lastRead.map(ffiRead) ?? (false, 0)
+        var raw = WalletDrainRecoveryAction.checkAgain.rawValue
+        let result = platform_wallet_wallet_drain_recovery_action(
+            attemptInFlight, lastRead != nil, succeeded, state, readNamedAssetLock, &raw)
+        guard PlatformWalletResult(result).isSuccess else { return .checkAgain }
+        // An action this build does not know never offers a spend.
+        return WalletDrainRecoveryAction(rawValue: raw) ?? .checkAgain
+    }
+
+    /// Whether a returned drain attempt in `state` needs nothing more. An
+    /// attempt that is not finished is shown as failed, with the error its
+    /// call returned. Rust holds the rule; a failed call returns `false`.
+    public static func attemptFinished(_ state: WalletDrainOutcome.State) -> Bool {
+        var finished = false
+        let result = platform_wallet_wallet_drain_attempt_finished(state.rawValue, &finished)
+        return PlatformWalletResult(result).isSuccess ? finished : false
+    }
+
+    /// The state the host reports for an operation whose status read returned
+    /// `reported`. `hostCallActive` says whether one of the host's own drain
+    /// calls for the same operation id has not returned yet. Rust holds the
+    /// rule; a failed call or a state this build does not know returns
+    /// `.pending`.
+    public static func statusDuringHostCall(
+        _ reported: WalletDrainOutcome.State,
+        hostCallActive: Bool
+    ) -> WalletDrainOutcome.State {
+        var raw = WalletDrainOutcome.State.pending.rawValue
+        let result = platform_wallet_wallet_drain_status_during_host_call(
+            reported.rawValue, hostCallActive, &raw)
+        guard PlatformWalletResult(result).isSuccess else { return .pending }
+        return WalletDrainOutcome.State(rawValue: raw) ?? .pending
+    }
+
+    /// Whether a drain may be started after a preview with `status`. Rust
+    /// holds the rule; a failed call returns `false`.
+    public static func previewAllowsStart(_ status: WalletDrainPreview.Status) -> Bool {
+        var allowed = false
+        let result = platform_wallet_wallet_drain_preview_allows_start(status.rawValue, &allowed)
+        return PlatformWalletResult(result).isSuccess ? allowed : false
+    }
+
+    /// Whether a NEW drain is offered on `network`. Recovering an existing
+    /// one is offered on every network and does not ask this. Rust holds the
+    /// rule.
+    public static func startOffered(on network: Network) -> Bool {
+        platform_wallet_wallet_drain_start_offered(network.ffiValue)
+    }
+
+    /// Where the host lists a tracked asset lock with these stored values,
+    /// or `nil` when Rust refuses `fundingTypeRaw` or `statusRaw` as outside
+    /// the funding types and statuses it knows (a value that does not fit a
+    /// byte is refused the same way). `hasOperationId` says whether the lock
+    /// carries a valid operation id, `hostHoldsStoredId` whether the host
+    /// holds a stored operation id equal to it. Rust holds the rule.
+    public static func lockListingIfKnown(
+        fundingTypeRaw: Int,
+        statusRaw: Int,
+        hasOperationId: Bool,
+        hostHoldsStoredId: Bool
+    ) -> WalletDrainLockListing? {
+        guard let fundingType = UInt8(exactly: fundingTypeRaw),
+              let status = UInt8(exactly: statusRaw)
+        else { return nil }
+        var raw = WalletDrainLockListing.unaffected.rawValue
+        let result = platform_wallet_wallet_drain_lock_listing(
+            fundingType, status, hasOperationId, hostHoldsStoredId, &raw)
+        guard PlatformWalletResult(result).isSuccess else { return nil }
+        return WalletDrainLockListing(rawValue: raw) ?? .unaffected
+    }
+
+    /// `lockListingIfKnown`, with the FFI's fail-closed `.unaffected` for a
+    /// funding type or status Rust refuses.
+    public static func lockListing(
+        fundingTypeRaw: Int,
+        statusRaw: Int,
+        hasOperationId: Bool,
+        hostHoldsStoredId: Bool
+    ) -> WalletDrainLockListing {
+        lockListingIfKnown(
+            fundingTypeRaw: fundingTypeRaw,
+            statusRaw: statusRaw,
+            hasOperationId: hasOperationId,
+            hostHoldsStoredId: hostHoldsStoredId
+        ) ?? .unaffected
+    }
+
+    /// `read` as the FFI's `(read_succeeded, reported_state)` pair. The state
+    /// byte is ignored for a failed read.
+    private static func ffiRead(_ read: WalletDrainStatusRead) -> (Bool, UInt8) {
+        switch read {
+        case .reported(let state):
+            return (true, state.rawValue)
+        case .failed:
+            return (false, 0)
+        }
+    }
+}
+
 extension PlatformWalletManager {
     // MainActor-isolated, covering the interval before detached execution has
     // entered the Rust operation registry. Count duplicate UUID callers so one
@@ -225,14 +384,14 @@ extension PlatformWalletManager {
         return callActive ? Self.walletDrainStatusDuringActiveCall(native: native) : native
     }
 
-    /// Rust owns the operation lifecycle, so the native snapshot is the answer
-    /// as soon as a detached execution has entered the Rust registry: an exact
-    /// outpoint, a durable completion of a repeated UUID and a read failure all
-    /// pass through. Only the interval before that, where Rust still reports
-    /// `notSent`, is reported as pending without an outpoint, so an in-flight
-    /// dispatch is never mistaken for "never sent".
+    /// The native snapshot as reported while one of this host's drain calls
+    /// for the same operation id is active. Rust decides the state
+    /// (`WalletDrainRules.statusDuringHostCall`); when it keeps the native
+    /// state, the snapshot is returned unchanged, otherwise the answered state
+    /// is returned with the native outpoint.
     nonisolated static func walletDrainStatusDuringActiveCall(native: WalletDrainOutcome) -> WalletDrainOutcome {
-        native.state == .notSent ? WalletDrainOutcome(state: .pending, outpoint: nil) : native
+        let state = WalletDrainRules.statusDuringHostCall(native.state, hostCallActive: true)
+        return state == native.state ? native : WalletDrainOutcome(state: state, outpoint: native.outpoint)
     }
 
     private func walletDrainReadPreflight(walletId: Data) throws {

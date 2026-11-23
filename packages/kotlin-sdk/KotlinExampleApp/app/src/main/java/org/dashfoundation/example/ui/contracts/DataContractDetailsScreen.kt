@@ -70,6 +70,13 @@ fun DataContractDetailsScreen(
     val contract by contractFlow.collectAsStateWithLifecycle(initialValue = null)
 
     var showRawJson by rememberSaveable { mutableStateOf(false) }
+    // Update Contract is offered when a wallet identity here owns the contract
+    // (← `DataContractDetailsView.swift`'s `contractDetails.updateContract`)
+    val appState = org.dashfoundation.example.di.LocalAppState.current
+    val network by appState.currentNetwork.collectAsStateWithLifecycle()
+    val walletIdentities by container.database.identityDao()
+        .observeWalletOwnedByNetwork(network.ffiValue)
+        .collectAsStateWithLifecycle(initialValue = emptyList())
 
     Scaffold(
         topBar = {
@@ -213,6 +220,39 @@ fun DataContractDetailsScreen(
                                 .testTag("contractDetail.group.$position"),
                         )
                     }
+                }
+            }
+
+            // Contract moderation and fee pots (protocol version 14), offered for every
+            // contract: whether it is moderated and what its pots hold are the node's to answer
+            FormSection(title = "Moderation") {
+                ListItem(
+                    headlineContent = { Text("Moderation and Fee Pots") },
+                    modifier = Modifier
+                        .clickable {
+                            navController.navigate(
+                                org.dashfoundation.example.navigation.ContractModerationHub(contractIdHex),
+                            )
+                        }
+                        .testTag("contractModeration.link"),
+                )
+            }
+
+            val ownedHere = current.ownerId?.let { ownerId ->
+                walletIdentities.any { it.identityId.contentEquals(ownerId) }
+            } == true
+            if (ownedHere) {
+                FormSection(title = "Actions") {
+                    ListItem(
+                        headlineContent = { Text("Update Contract") },
+                        modifier = Modifier
+                            .clickable {
+                                navController.navigate(
+                                    org.dashfoundation.example.navigation.UpdateContract(contractIdHex),
+                                )
+                            }
+                            .testTag("contractDetails.updateContract"),
+                    )
                 }
             }
 

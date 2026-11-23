@@ -35,6 +35,10 @@ pub(crate) const DPNS_USERNAMES_MAX_PAGES: usize = 10;
 mod balance;
 mod contract;
 pub use contract::{ContractSectionChanges, DataContractUpdatePreview};
+mod contract_fee_claim;
+pub use contract_fee_claim::{
+    contract_fee_claim_eligibility, ContractFeeClaimEligibility, ModeratorsPotTeam,
+};
 mod contract_update_source;
 pub use contract_update_source::{split_contract_update_source, ContractUpdateSource};
 mod decision_proposal;
@@ -99,6 +103,15 @@ mod private_documents;
 pub use private_documents::{
     OpenedPrivateDocument, PrivateDocumentCursor, PrivateDocumentDirection,
     PrivateDocumentKeyPaths, PrivateDocumentRead,
+};
+// An entry of any private document type, sealed by one of the wallet's
+// identities with the keys the read above recovers it with.
+mod private_document_create;
+pub use private_document_create::{
+    private_document_create_fee, private_document_create_fee_for,
+    private_document_recipient_key_choices, NewPrivateDocumentEntry, PrivateDocumentEntryCreated,
+    PrivateDocumentRecipientKey, SealedPrivateDocumentEntry,
+    PRIVATE_DOCUMENT_CREATE_FEE_PREVIEW_ACTIONS,
 };
 mod profile;
 mod public_keys;

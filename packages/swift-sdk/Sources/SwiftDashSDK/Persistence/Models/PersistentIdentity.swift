@@ -537,12 +537,20 @@ extension PersistentIdentity {
         return true
     }
 
+    /// Marks the identity and the payment-address rows it owns for deletion.
+    /// Does not save. Throws, deleting nothing, when the owner's
+    /// payment-address rows cannot be read: they reference their owner by id
+    /// only, so no relationship cascade reaches them, and deleting the
+    /// identity without them would strand rows a later re-add of the same id
+    /// could read back.
     @discardableResult
     public static func remove(
         in context: ModelContext,
         identityId: Data
-    ) -> Bool {
+    ) throws -> Bool {
         guard let row = fetch(in: context, identityId: identityId) else { return false }
+        try PersistentDashpayPaymentAddresses.removeOwned(
+            in: context, networkRaw: row.networkRaw, ownerIdentityId: identityId)
         context.delete(row)
         return true
     }
@@ -569,6 +577,13 @@ extension PersistentIdentity {
     /// before the identity is deleted. The other relationships (public keys,
     /// documents, token balances, owned contracts, the owning wallet) have
     /// optional inverses and need no pre-deletion.
+    ///
+    /// The identity's DashPay payment-address rows
+    /// (`PersistentDashpayPaymentAddresses`) are not children: they are keyed
+    /// by owner identity id, no cascade reaches them, and this method leaves
+    /// them alone. A caller that deletes the identity removes them with
+    /// `PersistentDashpayPaymentAddresses.removeOwned`, as
+    /// `deleteChildrenFirst(_:in:)` and the persistence handler do.
     public func deleteChildrenWithRequiredInverse(in context: ModelContext) {
         for name in Array(dpnsNames) {
             context.delete(name)
@@ -592,20 +607,23 @@ extension PersistentIdentity {
 
     /// Deletes `identity` from `context` without hitting the SwiftData fatal
     /// described on `deleteChildrenWithRequiredInverse(in:)`: the children
-    /// with a non-optional inverse are deleted and saved first, then the
-    /// identity, whose cascade takes its public keys and documents, is
-    /// deleted and saved.
+    /// with a non-optional inverse, and the payment-address rows the identity
+    /// owns (keyed by owner id, so no cascade reaches them), are deleted and
+    /// saved first; then the identity, whose cascade takes its public keys
+    /// and documents, is deleted and saved.
     ///
-    /// On a failed save the context is rolled back, which drops every
+    /// On a failed read or save the context is rolled back, which drops every
     /// unsaved change in it, and the error is rethrown. A failure in the
-    /// second save leaves the identity row but not the children the first
-    /// save already removed.
+    /// second save leaves the identity row but not the children and
+    /// payment-address rows the first save already removed.
     public static func deleteChildrenFirst(
         _ identity: PersistentIdentity,
         in context: ModelContext
     ) throws {
         do {
             identity.deleteChildrenWithRequiredInverse(in: context)
+            try PersistentDashpayPaymentAddresses.removeOwned(
+                in: context, networkRaw: identity.networkRaw, ownerIdentityId: identity.identityId)
             try context.save()
             context.delete(identity)
             try context.save()

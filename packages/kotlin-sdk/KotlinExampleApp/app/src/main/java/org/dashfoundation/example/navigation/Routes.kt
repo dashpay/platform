@@ -140,6 +140,9 @@ import kotlinx.serialization.Serializable
 /** Withdraw credits identity → L1 address (← `WithdrawCreditsView.swift`). */
 @Serializable data class WithdrawCredits(val identityIdHex: String)
 
+/** Where an identity's withdrawals to Core stand (← `IdentityWithdrawalsView.swift`). */
+@Serializable data class IdentityWithdrawals(val identityIdHex: String)
+
 // ── State-transition catalog (← StateTransitions/PlatformStateTransitions) ──
 
 /** The transition catalog root (← `StateTransitionsView.swift`). */
@@ -279,6 +282,9 @@ import kotlinx.serialization.Serializable
 
 /** Document-type schema drill-in (← `DocumentTypeDetailsView.swift`). */
 @Serializable data class DocumentTypeDetail(val contractIdHex: String, val typeName: String)
+
+/** Contract moderation and fee pots of a saved contract (← `ContractModerationView.swift`). */
+@Serializable data class ContractModerationHub(val contractIdHex: String)
 
 /** Document query builder + results (query role of `DocumentsView.swift`). */
 @Serializable data class Documents(val contractIdHex: String, val typeName: String)
@@ -491,6 +497,19 @@ import kotlinx.serialization.Serializable
  * ← `PrivateDocumentEntriesView.swift`). Reached from a private type's detail screen.
  */
 @Serializable data class PrivateDocumentEntries(val contractIdHex: String, val typeName: String)
+
+/**
+ * Block explorer: blocks with their state transitions, and one identity's transitions in a
+ * block (← `PlatformBlocksView.swift`, protocol version 15). Reached from the Platform Queries
+ * list.
+ */
+@Serializable object BlockExplorer
+
+/**
+ * A state transition's status by hash, proved by its block (← `TransitionStatusCheckView.swift`,
+ * protocol version 15). Reached from the Platform Queries list.
+ */
+@Serializable object TransitionStatusCheck
 
 /** Query test-runner + environment snapshot (← `DiagnosticsView.swift`). */
 @Serializable object Diagnostics

@@ -70,6 +70,7 @@ import androidx.compose.ui.text.font.FontWeight
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.shielded.UnfinishedWalletDrainsList
 import org.dashfoundation.example.ui.theme.appStatusColors
 import org.dashfoundation.example.util.formatCredits
 import org.dashfoundation.example.util.formatDate
@@ -341,6 +342,20 @@ fun WalletDetailScreen(
                         Text("($transactionCount)")
                     }
                 }
+            }
+
+            // Saved Core to shielded Max transfers (← WalletDetailView's
+            // `UnfinishedWalletDrainsList`). Renders nothing when this
+            // wallet has none. Above the accounts, whose list is long: an
+            // unfinished transfer must not sit below the fold.
+            if (hasShielded) {
+                UnfinishedWalletDrainsList(
+                    walletIdHex = walletIdHex,
+                    walletId = walletId,
+                    network = network,
+                    manager = manager,
+                    navController = navController,
+                )
             }
 
             // Accounts (← the Accounts header + AccountListView).

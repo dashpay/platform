@@ -16,6 +16,8 @@
 
 mod address_history;
 mod address_private_key;
+mod contract_moderation;
+mod contract_update;
 mod credits;
 mod dashpay;
 mod decision_proposals;
@@ -24,21 +26,26 @@ mod dpns_marketplace;
 mod events;
 mod funding;
 mod identity;
+mod identity_removal;
+mod identity_withdrawals;
 mod masternode_voting_key;
 mod mnemonic;
 mod multiple_choice_proposals;
 mod parse_state_transition;
 mod persistence;
+mod platform_blocks;
 mod private_documents;
 mod pubkey_rows;
 mod queries;
 mod results;
 mod sdk;
+mod shielded_token_purchase;
 mod signer;
 mod support;
 mod tokens;
 mod transactions;
 mod tx_decode;
+mod wallet_drain;
 mod wallet_manager;
 
 use jni::sys::{jint, JNI_VERSION_1_6};
