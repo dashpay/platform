@@ -17,7 +17,6 @@ use std::path::PathBuf;
 use platform_wallet::changeset::{PersistenceError, PersistenceErrorKind};
 use platform_wallet_storage::sqlite::error::{AutoBackupOperation, WalletStorageError};
 use platform_wallet_storage::sqlite::util::safe_cast::SafeCastTarget;
-use platform_wallet_storage::InsecureAncestor;
 use rusqlite::ErrorCode;
 
 /// Classify a converted `PersistenceError` to its `PersistenceErrorKind`.
@@ -207,13 +206,6 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
             WalletStorageError::AutoBackupDirUnwritable {
                 dir: PathBuf::from("/nope"),
                 source: std::io::Error::other("io"),
-            },
-        ),
-        (
-            "InsecureParentDir",
-            WalletStorageError::InsecureParentDir {
-                ancestor: std::path::PathBuf::from("/opt/dash"),
-                reason: InsecureAncestor::WritableWithoutSticky { mode: 0o777 },
             },
         ),
         (

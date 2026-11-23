@@ -197,6 +197,25 @@ pub fn apply(
             ])?;
         }
     }
+    if !cs.outpoint_locks.is_empty() {
+        // A lock is a row of its own, never a `core_utxos` column: it can
+        // name a coin that has not arrived yet and outlives the coin's spend.
+        let mut lock_stmt = tx.prepare_cached(
+            "INSERT INTO core_locked_outpoints (wallet_id, outpoint) VALUES (?1, ?2) \
+             ON CONFLICT(wallet_id, outpoint) DO NOTHING",
+        )?;
+        let mut unlock_stmt = tx.prepare_cached(
+            "DELETE FROM core_locked_outpoints WHERE wallet_id = ?1 AND outpoint = ?2",
+        )?;
+        for (outpoint, locked) in &cs.outpoint_locks {
+            let key = blob::encode_outpoint(outpoint)?;
+            if *locked {
+                lock_stmt.execute(params![wallet_id.as_slice(), &key[..]])?;
+            } else {
+                unlock_stmt.execute(params![wallet_id.as_slice(), &key[..]])?;
+            }
+        }
+    }
     let chainlock_height = cs
         .last_applied_chain_lock
         .as_ref()
@@ -902,6 +921,11 @@ fn upsert_sync_state(
 ///   and checked against their typed txid and height columns.
 /// - **IS-locks** / **sync watermarks**: decoded bit-exact, fail-hard on a
 ///   corrupt blob.
+/// - **Locked outpoints** (`outpoint_locks`): every `core_locked_outpoints`
+///   row, as a lock, whether or not the wallet holds the coin. Each restored
+///   UTXO's `is_locked` follows it. Fail-hard on a malformed outpoint, like
+///   the UTXO reader: a dropped lock would hand a masternode collateral back
+///   to coin selection.
 ///
 /// # Deferred to the first post-load `sync` (safe re-warm)
 ///
@@ -943,7 +967,7 @@ pub fn load_state(
             if let Some(record_blob_len) = row.get::<_, Option<i64>>(3)? {
                 blob::check_size(record_blob_len)?;
                 let payload: Vec<u8> = row.get(4)?;
-                let record = blob::decode::<TransactionRecord>(&payload)?;
+                let record = decode_transaction_record(&payload)?;
                 effective_txid = record.txid;
                 effective_height = record.block_info().map(|block_info| block_info.height());
                 if let Err(mismatch) =
@@ -961,6 +985,24 @@ pub fn load_state(
                     .entry(effective_txid)
                     .or_insert(effective_height);
             }
+        }
+    }
+
+    // Locked outpoints, read before the coins so each restored coin carries
+    // its lock. The wallet re-derives every coin's flag from the lock set it
+    // is handed (`ManagedWalletInfo::lock_outpoint`), so these flags only
+    // keep this changeset consistent with itself. Same pre-read length gate
+    // as the `core_utxos.outpoint` read below.
+    {
+        let mut stmt = conn.prepare(
+            "SELECT length(outpoint), outpoint FROM core_locked_outpoints WHERE wallet_id = ?1",
+        )?;
+        let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+        while let Some(row) = rows.next()? {
+            blob::check_size(row.get::<_, i64>(0)?)?;
+            let op_bytes: Vec<u8> = row.get(1)?;
+            cs.outpoint_locks
+                .insert(blob::decode_outpoint(&op_bytes)?, true);
         }
     }
 
@@ -1013,7 +1055,7 @@ pub fn load_state(
                 is_coinbase: false,
                 is_confirmed: height.is_some(),
                 is_instantlocked: false,
-                is_locked: false,
+                is_locked: cs.outpoint_locks.get(&outpoint).copied().unwrap_or(false),
                 is_trusted: false,
             };
             cs.new_utxos.push(utxo);
@@ -1961,7 +2003,11 @@ mod tests {
         migrations::run_for_open(&mut conn, LoadPolicy::Recovery)
             .expect("Recovery must complete V021 past an undecodable kept record");
 
-        assert_eq!(schema_version(&conn), 21);
+        assert_eq!(
+            schema_version(&conn),
+            22,
+            "the upgrade runs on through the migrations after V021"
+        );
     }
 
     #[test]
@@ -2435,6 +2481,102 @@ mod tests {
             .expect("matching UTXO must be loaded");
         assert_eq!(loaded.height, 0);
         assert!(!loaded.is_confirmed);
+    }
+
+    #[test]
+    fn should_bulk_load_historical_asset_unlock_without_rekeying_under_both_policies() {
+        let wallet_id = [0x78; 32];
+        let conn = wallet_db(&wallet_id);
+        let rows = historical_asset_unlock_rows();
+        assert_ne!(rows[0].0, rows[0].2.transaction.txid());
+        for (txid, bytes, _) in &rows {
+            conn.execute(
+                "INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) \
+                 VALUES (?1, ?2, 0, ?3)",
+                params![wallet_id.as_slice(), txid.as_byte_array().as_slice(), bytes],
+            )
+            .unwrap();
+        }
+        for ctx in [LoadCtx::strict(), LoadCtx::recovery()] {
+            let (state, _) =
+                load_state(&conn, &wallet_id, dashcore::Network::Testnet, &ctx).unwrap();
+            assert_eq!(state.records.len(), rows.len());
+            for (txid, bytes, original) in &rows {
+                let loaded = state.records.iter().find(|r| r.txid == *txid).unwrap();
+                assert_eq!(loaded.transaction, original.transaction);
+                assert_eq!(blob::encode(loaded).unwrap(), *bytes);
+                let stored: Vec<u8> = conn
+                    .query_row(
+                        "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+                        params![wallet_id.as_slice(), txid.as_byte_array().as_slice()],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(
+                    stored, *bytes,
+                    "bulk read preserves historical identity and bytes"
+                );
+            }
+        }
+    }
+
+    fn assert_bulk_load_rejects_body_identity_mismatch(ctx: &LoadCtx) {
+        let wallet_id = [0x72; 32];
+        let conn = wallet_db(&wallet_id);
+        let record = transaction_record(TransactionContext::Mempool);
+        conn.execute(
+            "INSERT INTO core_transactions (wallet_id, txid, record_blob, finalized) \
+             VALUES (?1, ?2, ?3, 0)",
+            params![
+                wallet_id.as_slice(),
+                record.txid.as_byte_array().as_slice(),
+                blob::encode(&record).unwrap()
+            ],
+        )
+        .unwrap();
+        let (loaded, _) = load_state(&conn, &wallet_id, dashcore::Network::Testnet, ctx).unwrap();
+        assert_eq!(loaded.records[0].txid, record.txid);
+
+        for change_body in [true, false] {
+            let mut tampered = record.clone();
+            if change_body {
+                tampered.transaction.lock_time += 1;
+            } else {
+                tampered.txid = Txid::from_byte_array([0x73; 32]);
+            }
+            let payload = blob::encode(&tampered).unwrap();
+            conn.execute(
+                "UPDATE core_transactions SET txid = ?1, record_blob = ?2 WHERE wallet_id = ?3",
+                params![
+                    tampered.txid.as_byte_array().as_slice(),
+                    &payload,
+                    wallet_id.as_slice()
+                ],
+            )
+            .unwrap();
+            assert!(matches!(
+                load_state(&conn, &wallet_id, dashcore::Network::Testnet, ctx),
+                Err(WalletStorageError::BlobDecode { .. })
+            ));
+            let stored: Vec<u8> = conn
+                .query_row(
+                    "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1",
+                    params![wallet_id.as_slice()],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(stored, payload, "a failed read must not rewrite history");
+        }
+    }
+
+    #[test]
+    fn should_reject_bulk_history_body_identity_mismatch_in_strict_mode() {
+        assert_bulk_load_rejects_body_identity_mismatch(&LoadCtx::strict());
+    }
+
+    #[test]
+    fn should_reject_bulk_history_body_identity_mismatch_in_recovery_mode() {
+        assert_bulk_load_rejects_body_identity_mismatch(&LoadCtx::recovery());
     }
 
     #[test]

@@ -1,7 +1,10 @@
 package org.dashfoundation.dashsdk.errors
 
 import org.dashfoundation.dashsdk.ffi.DashSDKException
-import org.json.JSONObject
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 // Display text for the persister failures, whose native message is a nested
 // Rust error chain (operation, backend classification, the store's own
@@ -511,7 +514,16 @@ sealed class DashSdkError(
             cause,
         )
 
-        /** The purchasing identity cannot cover price plus the fee reserve. */
+        /**
+         * `ErrorInsufficientIdentityCredits` (native code 39). The identity
+         * cannot cover the required credits: a DPNS purchase's price plus its
+         * fee reserve, or an identity-funded shield's amount plus its
+         * admission fee floor. For a shield, [requiredCredits] minus the
+         * amount is that floor, not the fee that would be charged; the metered
+         * fee can be lower. An identity-funded shield reports this before
+         * signing or broadcasting; other operations can report it after
+         * Platform rejects a submitted transition.
+         */
         class InsufficientIdentityCredits(
             val identityId: String,
             val requiredCredits: ULong,
@@ -799,7 +811,32 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorShieldedIdentityCreateInputsConsumed` (native code 77). An
+         * `ErrorIdentityLookupFailed` (native code 80). Platform could not be
+         * asked for an identity the operation names (the lookup failed, which
+         * is not Platform's answer that it does not exist, code 7). Nothing
+         * was signed, reserved or broadcast, so the operation may be retried
+         * as it is and is never a possibly delivered one.
+         * ← Swift `PlatformWalletError.identityLookupFailed`.
+         */
+        class IdentityLookupFailed(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * `ErrorIdentityBalanceUnavailable` (native code 58). Platform
+         * returned no balance for a managed identity (not yet visible, or a
+         * lagging node). Nothing was signed or broadcast, so the read may be
+         * retried as it is.
+         * ← Swift `PlatformWalletError.identityBalanceUnavailable`.
+         */
+        class IdentityBalanceUnavailable(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * `ErrorShieldedIdentityCreateInputsConsumed` (native code 81). An
          * identity create from the shielded pool did not create its identity
          * and can never execute, as proven reads show: its notes are spent and
          * the identity is absent. The wallet keeps the notes reserved until a
@@ -953,7 +990,7 @@ sealed class DashSdkError(
             38 -> parseMarketplaceDetail(message)?.let { detail ->
                 runCatching {
                     PlatformWallet.DocumentPriceChanged(
-                        documentId = detail.getString("documentId"),
+                        documentId = detail.requiredString("documentId"),
                         expectedCredits = detail.requiredULong("expected"),
                         actualCredits = detail.requiredULong("actual"),
                         cause = cause,
@@ -963,7 +1000,7 @@ sealed class DashSdkError(
             39 -> parseMarketplaceDetail(message)?.let { detail ->
                 runCatching {
                     PlatformWallet.InsufficientIdentityCredits(
-                        identityId = detail.getString("identityId"),
+                        identityId = detail.requiredString("identityId"),
                         requiredCredits = detail.requiredULong("required"),
                         availableCredits = detail.requiredULong("available"),
                         cause = cause,
@@ -973,8 +1010,8 @@ sealed class DashSdkError(
             40 -> parseMarketplaceDetail(message)?.let { detail ->
                 runCatching {
                     PlatformWallet.ContestedNameNotTradable(
-                        label = detail.getString("label"),
-                        endsAtMs = detail.getLong("endsAtMs"),
+                        label = detail.requiredString("label"),
+                        endsAtMs = detail.requiredLong("endsAtMs"),
                         cause = cause,
                     )
                 }.getOrNull()
@@ -1010,6 +1047,7 @@ sealed class DashSdkError(
             55 -> PlatformWallet.ShieldedIdentityDebitPending(message, cause)
             56 -> PlatformWallet.ShieldedRecoveryCorrupted(message, cause)
             57 -> PlatformWallet.ShieldedRecoveryKeysRequired(message, cause)
+            58 -> PlatformWallet.IdentityBalanceUnavailable(message, cause) // ErrorIdentityBalanceUnavailable
             59 -> PlatformWallet.SpvProcessRestartRequired(message, cause) // ErrorSpvProcessRestartRequired
             // ErrorPrivateContactRequestNeedsPrivateReply: the explicitly
             // public accept or send refused a contact that went private.
@@ -1022,7 +1060,8 @@ sealed class DashSdkError(
             74 -> PlatformWallet.PrivateContactStoreNotRead(message, cause) // ErrorPrivateContactStoreNotRead
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
-            77 -> PlatformWallet.ShieldedIdentityCreateInputsConsumed(message, cause) // ErrorShieldedIdentityCreateInputsConsumed
+            80 -> PlatformWallet.IdentityLookupFailed(message, cause) // ErrorIdentityLookupFailed
+            81 -> PlatformWallet.ShieldedIdentityCreateInputsConsumed(message, cause) // ErrorShieldedIdentityCreateInputsConsumed
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.
@@ -1036,11 +1075,24 @@ sealed class DashSdkError(
         private fun isSigningKeyUnavailable(message: String): Boolean =
             message.contains(PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER)
 
-        private fun parseMarketplaceDetail(message: String): JSONObject? =
-            runCatching { JSONObject(message) }.getOrNull()
+        // kotlinx.serialization keeps each number's source text, so a `u64`
+        // above Long.MAX_VALUE still decodes exactly. Android's org.json
+        // turned such a token into a Double, whose text ("9.2E18") no longer
+        // parsed as ULong, and the typed error degraded to Generic.
+        private fun parseMarketplaceDetail(message: String): JsonObject? =
+            runCatching { Json.parseToJsonElement(message).jsonObject }.getOrNull()
 
-        private fun JSONObject.requiredULong(name: String): ULong =
-            get(name).toString().toULong()
+        private fun JsonObject.requiredString(name: String): String {
+            val value = getValue(name).jsonPrimitive
+            require(value.isString) { "$name is not a string" }
+            return value.content
+        }
+
+        private fun JsonObject.requiredULong(name: String): ULong =
+            getValue(name).jsonPrimitive.content.toULong()
+
+        private fun JsonObject.requiredLong(name: String): Long =
+            getValue(name).jsonPrimitive.content.toLong()
     }
 }
 
