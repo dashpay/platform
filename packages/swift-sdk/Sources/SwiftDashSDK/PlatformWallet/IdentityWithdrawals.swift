@@ -12,8 +12,9 @@ public enum WithdrawalStatus: UInt8, Sendable, Equatable, CaseIterable {
     /// Pooled into an asset unlock transaction, waiting for a quorum to sign.
     case pooled = 1
     /// Platform built the asset unlock transaction and queued it for a quorum
-    /// to sign and for broadcast to Core. This status proves neither has
-    /// happened yet.
+    /// to sign and for broadcast to Core. This status does not show whether
+    /// either has happened: it stays `broadcasted` after Core receives the
+    /// signed transaction.
     case broadcasted = 2
     /// Platform saw the transaction in a chain-locked Core block.
     case complete = 3

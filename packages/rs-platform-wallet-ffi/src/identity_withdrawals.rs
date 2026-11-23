@@ -44,8 +44,8 @@ pub struct IdentityWithdrawalFFI {
     pub core_fee_per_byte: u32,
     /// The withdrawals contract status code: 0 queued, 1 pooled,
     /// 2 broadcasted (Platform built the asset unlock transaction and queued
-    /// it for a quorum to sign and for broadcast to Core; this status proves
-    /// neither has happened yet), 3 complete (Platform saw the transaction in a chain-locked Core
+    /// it for a quorum to sign and for broadcast to Core; this status does not
+    /// show whether either has happened), 3 complete (Platform saw the transaction in a chain-locked Core
     /// block), 4 expired, 5 failed.
     pub status: u8,
     /// The status as Rust names it ("Queued", "Pooled", ...), NUL-terminated

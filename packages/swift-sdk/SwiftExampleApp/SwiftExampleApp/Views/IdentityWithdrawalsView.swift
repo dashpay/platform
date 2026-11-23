@@ -11,7 +11,7 @@
 // The Platform side of a withdrawal ends at "Complete": Platform saw the
 // asset unlock transaction in a chain-locked Core block. "Broadcasted" only
 // means Platform built the transaction and queued it for signing and
-// broadcast; it proves neither has happened yet. Platform state stores the
+// broadcast; it does not show whether either has happened. Platform state stores the
 // transaction's asset unlock index (and the Core height Platform requested
 // it at), not its transaction id, so the row shows the index rather than a
 // txid.
@@ -126,8 +126,8 @@ struct IdentityWithdrawalsView: View {
             Text(
                 "A withdrawal is queued, then pooled into an asset unlock transaction. "
                     + "Broadcasted means Platform built that transaction and queued it for a "
-                    + "quorum to sign and for broadcast to Core; it does not show that either "
-                    + "has happened yet. Complete means Platform saw it in a chain-locked Core block; that is "
+                    + "quorum to sign and for broadcast to Core; it does not show whether either "
+                    + "has happened. Complete means Platform saw it in a chain-locked Core block; that is "
                     + "where Platform's side ends. Expired means Core did not mine it in time "
                     + "and Platform signs it again. Failed means the payout is below Core's "
                     + "dust threshold, so Core never mines it.\n\n"

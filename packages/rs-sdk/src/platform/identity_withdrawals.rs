@@ -4,7 +4,8 @@
 //! contract, owned by the identity. Platform moves its `status` as the withdrawal travels to
 //! Core: queued; pooled into an asset unlock transaction; broadcasted, which Platform records
 //! when it builds that transaction and queues it for a quorum to sign and for broadcast to
-//! Core (the status proves neither has happened yet); then complete once Platform sees the
+//! Core (the status does not show whether either has happened: it stays broadcasted after
+//! Core receives the signed transaction); then complete once Platform sees the
 //! transaction in a chain-locked Core block, or expired when it does not and Platform builds
 //! it again. This module reads those documents, proved, and returns them as typed rows.
 //!
