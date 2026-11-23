@@ -126,7 +126,8 @@ pub struct ShieldedActivityFFI {
     pub entry_id: [u8; 32],
     /// Kind discriminant (see `ShieldedActivityKind::tag`):
     /// 0 Shield, 1 ShieldFromAssetLock, 2 Received, 3 Sent, 4 Unshield,
-    /// 5 Withdrawal, 6 IdentityCreate, 7 ShieldedSpend.
+    /// 5 Withdrawal, 6 IdentityCreate, 7 ShieldedSpend, 8 ShieldFromIdentity,
+    /// 9 IdentityTopUp, 10 TokenPurchase (its counterparty is the token id).
     pub kind_tag: u8,
     /// Direction: 0 In, 1 Out, 2 Self.
     pub direction: u8,

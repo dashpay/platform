@@ -185,9 +185,9 @@ impl Sdk {
                 self.accept_verified_metadata(method_name, &verified.1, Some(arrival))?;
                 Ok(verified)
             }
-            Err(KeyFetchFailure::Refused(error)) => {
-                Err(self.classify_verifier_error(*error, method_name, Some(&metadata), arrival))
-            }
+            Err(KeyFetchFailure::Refused(error)) => Err(self
+                .classify_refused_answer(*error, method_name, Some(&metadata), arrival)
+                .await),
             Err(KeyFetchFailure::Decided(error)) => Err(*error),
         }
     }

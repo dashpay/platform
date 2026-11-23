@@ -28,12 +28,13 @@ use platform_wallet_ffi::{
     platform_wallet_string_free, DecisionProposalEditFFI, DecisionProposalParamsFFI,
 };
 use rs_sdk_ffi::{
-    dash_sdk_decision_proposal_cast_vote, dash_sdk_decision_proposal_contract_id,
-    dash_sdk_decision_proposal_contract_id_bytes, dash_sdk_decision_proposal_document_type_name,
-    dash_sdk_decision_proposal_fetch, dash_sdk_decision_proposal_get_masternode_vote,
-    dash_sdk_decision_proposal_get_vote_poll_id, dash_sdk_decision_proposal_get_vote_poll_state,
-    dash_sdk_decision_proposal_list_by_created_at, dash_sdk_decision_proposal_list_by_end_date,
-    dash_sdk_decision_proposal_list_by_owner, DashSDKResult, SDKHandle, SignerHandle,
+    dash_sdk_decision_proposal_cast_vote, dash_sdk_decision_proposal_cast_vote_with_signer,
+    dash_sdk_decision_proposal_contract_id, dash_sdk_decision_proposal_contract_id_bytes,
+    dash_sdk_decision_proposal_document_type_name, dash_sdk_decision_proposal_fetch,
+    dash_sdk_decision_proposal_get_masternode_vote, dash_sdk_decision_proposal_get_vote_poll_id,
+    dash_sdk_decision_proposal_get_vote_poll_state, dash_sdk_decision_proposal_list_by_created_at,
+    dash_sdk_decision_proposal_list_by_end_date, dash_sdk_decision_proposal_list_by_owner,
+    DashSDKResult, SDKHandle, SignerHandle,
 };
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -91,6 +92,17 @@ pub(crate) fn c_ptr(value: &Option<CString>) -> *const c_char {
 /// Read a required 32-byte array; throws and returns `None` for a null array or any other
 /// length (the C functions read exactly 32 bytes through the pointer).
 pub(crate) fn read_bytes32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[u8; 32]> {
+    read_fixed_bytes::<32>(env, arr, field)
+}
+
+/// Read a required `N`-byte array; throws and returns `None` for a null array or any other
+/// length (the C functions read exactly `N` bytes through the pointer). The 20-byte
+/// masternode voting address of the `_with_signer` votes is read through this.
+pub(crate) fn read_fixed_bytes<const N: usize>(
+    env: &mut JNIEnv,
+    arr: &JByteArray,
+    field: &str,
+) -> Option<[u8; N]> {
     let bytes = match env.convert_byte_array(arr) {
         Ok(b) => b,
         Err(_) => {
@@ -99,13 +111,13 @@ pub(crate) fn read_bytes32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> O
             return None;
         }
     };
-    match <[u8; 32]>::try_from(bytes.as_slice()) {
+    match <[u8; N]>::try_from(bytes.as_slice()) {
         Ok(value) => Some(value),
         Err(_) => {
             throw_sdk_exception(
                 env,
                 1,
-                &format!("{field} must be 32 bytes, got {}", bytes.len()),
+                &format!("{field} must be {N} bytes, got {}", bytes.len()),
             );
             None
         }
@@ -711,6 +723,57 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DecisionProposalsNati
     })
 }
 
+/// Vote on a decision proposal for a masternode with the host's signer and wait for the
+/// response (`dash_sdk_decision_proposal_cast_vote_with_signer`): the vote of `castVote`,
+/// signed by `signerHandle` with the voting key Rust builds from `votingAddress`.
+///
+/// * `voteChoice` - as for `castVote`.
+/// * `voterProTxHash` - a 32-byte `byte[]`, the pro_tx_hash in wire order, as for `castVote`.
+/// * `votingAddress` - a 20-byte `byte[]`, the hash160 of the compressed voting public key
+///   (`MasternodeVotingKeyNative.votingAddressFromPrivateKey`).
+/// * `signerHandle` - a live `SignerHandle` (`PlatformWalletManager.signerHandle`) that the
+///   caller keeps alive for the call; rs-sdk-ffi refuses 0.
+///
+/// Returns nothing on success; throws on error.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DecisionProposalsNative_castVoteWithSigner(
+    mut env: JNIEnv,
+    _class: JClass,
+    sdk: jlong,
+    proposal_id: JString,
+    vote_choice: jint,
+    voter_pro_tx_hash: JByteArray,
+    voting_address: JByteArray,
+    signer_handle: jlong,
+) {
+    guard(&mut env, (), |env| {
+        let Some(id) = read_cstring(env, &proposal_id, "proposalId") else {
+            return;
+        };
+        let Some(choice) = to_unsigned(env, vote_choice.into(), "voteChoice") else {
+            return;
+        };
+        let Some(pro_tx_hash) = read_bytes32(env, &voter_pro_tx_hash, "voterProTxHash") else {
+            return;
+        };
+        let Some(address) = read_fixed_bytes::<20>(env, &voting_address, "votingAddress") else {
+            return;
+        };
+        let result = unsafe {
+            dash_sdk_decision_proposal_cast_vote_with_signer(
+                sdk as *const SDKHandle,
+                id.as_ptr(),
+                choice,
+                pro_tx_hash.as_ptr(),
+                address.as_ptr(),
+                signer_handle as *const SignerHandle,
+            )
+        };
+        // Success carries no payload; take_error throws and frees on error.
+        unsafe { take_error(env, &result) };
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     const DECISION_PROPOSALS_NATIVE_KT: &str = include_str!(concat!(
@@ -795,6 +858,28 @@ pub(crate) mod tests {
                 .map(String::from)
                 .to_vec(),
                 "String".to_string()
+            )
+        );
+    }
+
+    /// The signer vote takes the 20-byte voting address and the signer handle where the raw
+    /// vote takes the private key and the network.
+    #[test]
+    fn should_declare_the_signer_vote_as_the_export_takes_it() {
+        assert_eq!(
+            kotlin_signature("castVoteWithSigner"),
+            (
+                [
+                    "Long",      // sdk
+                    "String",    // proposal_id
+                    "Int",       // vote_choice
+                    "ByteArray", // voter_pro_tx_hash
+                    "ByteArray", // voting_address
+                    "Long",      // signer_handle
+                ]
+                .map(String::from)
+                .to_vec(),
+                "Unit".to_string()
             )
         );
     }

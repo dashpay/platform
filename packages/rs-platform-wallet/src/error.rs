@@ -865,6 +865,30 @@ pub enum PlatformWalletError {
     #[error("Address operation failed: {0}")]
     AddressOperation(String),
 
+    /// The balance history could not read a page of Platform's balance
+    /// changes at a consistent height: within the per-page retry bound,
+    /// every answer for one page was proved below a height the read had
+    /// already used, so it could hide a block (or a compacted range) the
+    /// earlier pages relied on. No partial history is returned; retry later.
+    ///
+    /// Only replies the SDK fetched and proof-verified count toward it: every
+    /// attempt got such a reply, and each was below the floor. An error from
+    /// the SDK itself (its own stale-node rejection, a transport failure, a
+    /// proof verification failure) is returned as that SDK error instead.
+    #[error(
+        "Balance history: all {attempts} attempts to read a page of address balance changes \
+         were below the required height {required_height} (last reply proved at height \
+         {proved_height}); retry later"
+    )]
+    BalanceHistoryInconsistentHeights {
+        /// How many times the page was asked for.
+        attempts: usize,
+        /// The floor every reply had to reach.
+        required_height: u64,
+        /// The height the last reply was proved at.
+        proved_height: u64,
+    },
+
     /// A caller passed an argument this API cannot act on — as opposed to a
     /// lookup that found nothing. Kept distinct from [`WalletNotFound`] so a
     /// host is told to fix its input rather than that the wallet is missing;
@@ -1234,6 +1258,50 @@ pub enum PlatformWalletError {
 
     #[error("Shielded sub-wallet not bound: call bind_shielded first")]
     ShieldedNotBound,
+
+    /// A shielded spend would need more notes than one transition can spend
+    /// while it still fits the protocol's size and action limits. Refused
+    /// before anything was reserved or proved. Covering the amount takes
+    /// fewer, larger notes: a shielded transfer to the wallet itself merges
+    /// them.
+    #[error(
+        "Shielded spend needs {required_notes} notes but one transition spends at most \
+         {max_notes}: merge notes with a shielded transfer to this wallet first"
+    )]
+    ShieldedTooManyNotes {
+        required_notes: usize,
+        max_notes: usize,
+    },
+
+    /// This SDK builds and signs at protocol version `sdk_version`, but a
+    /// verified answer shows the network runs `network_version`. A
+    /// transition whose signature binds what a protocol version binds (a
+    /// token pool transition paying from the credit pool) is refused by the
+    /// other, so it was refused before anything was reserved or proved.
+    #[error(
+        "This SDK builds at protocol version {sdk_version} but the network runs \
+         {network_version}; the transition would be refused"
+    )]
+    ShieldedProtocolVersionMismatch {
+        sdk_version: u32,
+        network_version: u32,
+    },
+
+    /// The token has no shielded pool (`hasShieldedPool` is off in its
+    /// configuration, which is fixed at creation), so nothing can be bought
+    /// into or moved through one. Refused before anything was reserved.
+    #[error("Token {token_id} has no shielded pool")]
+    TokenShieldedPoolDisabled { token_id: Identifier },
+
+    /// The token's configuration could not be read: its contract did not
+    /// fetch or verify, is not on Platform, or has no token at the position.
+    /// Unlike [`Self::TokenShieldedPoolDisabled`] this says nothing about the
+    /// token, and a retry may succeed. Refused before anything was reserved.
+    #[error("Configuration of token {token_id} could not be read: {reason}")]
+    TokenConfigurationUnavailable {
+        token_id: Identifier,
+        reason: String,
+    },
 }
 
 /// The SDK's invitation errors map onto the variants the wallet used before

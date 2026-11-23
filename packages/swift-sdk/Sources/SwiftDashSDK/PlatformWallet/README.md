@@ -593,6 +593,38 @@ do {
 
 ---
 
+## Shielded balances pushed by Rust
+
+Rust reads each wallet's shielded balance state at points such as a first
+bind, a scan ending (also when it fails), a spend, a rebind, a Clear or
+unregister, and emits an update when what it read differs from what it last
+emitted. Rust counts an update as emitted once it has called the host
+callback; it does not know whether the host accepted it, and it does not
+resend an unchanged state. An update carries the latest state Rust read, not
+every transition: a spend that reserves notes and releases them again before
+Rust next reads produces no update. `manager.shieldedBalances[walletId]`
+holds the latest `ShieldedBalanceUpdate` the manager accepted for each
+wallet. Its `revision` identifies an emitted state, not a ledger change; the
+manager accepts an update only when its revision is higher than the held
+one's, and drops updates once shutdown has started. Hosts show this and hold no
+balance of their own; do not add up `PersistentShieldedNote` rows or
+snapshot accounts.
+
+- `update.ordinaryBalance` is what the wallet holds (its ordinary accounts;
+  identity accounts left out), or `nil` when it is not a known balance: the
+  state is `unbound` or `restoreIncomplete`, or the ready ledger is not
+  established yet (a wallet restored without history reads 0 before its
+  first scan).
+- `update.accountBalance(account)` is what one account can spend, or `nil`
+  when the account is not bound or Rust did not establish its amount. Rust
+  sends that decision per account (`ShieldedBalanceAccount.established`);
+  the account's `source` is for diagnostics only. A screen that spends from
+  one account shows this.
+- `unbound` means Rust read nothing for the wallet; it is not a known zero.
+
+Stopping shielded sync and Clear do not touch the dictionary (Clear's outcome
+arrives as an update). Shutdown empties it and drops any update still queued.
+
 ## Local shielded balance snapshots
 
 After configuring and binding shielded state, call
@@ -680,6 +712,27 @@ Limits only ever go up, and at least one of the two must be given. The
 transition is signed by the identity's MASTER key or by a CRITICAL
 authentication key that carries no limits and no contract bounds. No identity
 revision is claimed.
+
+**Ask first what a raise would do:**
+```swift
+func previewIdentityKeyLimitsUpdate(
+    identityId: Identifier,
+    keyId: UInt32,
+    addBudget: UInt64? = nil,
+    expiresAt: UInt64? = nil,
+    signer: KeychainSigner
+) async throws -> IdentityKeyLimitsUpdatePreview
+```
+
+Signs and sends nothing. The result carries `signingKeyId`, the limits the key
+carries now (`currentTotalBudget` / `currentExpiresAt`) and the ones the update
+would set (`newTotalBudget` / `newExpiresAt`). With neither argument it answers
+whether the key can be raised at all; a refusal is thrown with Rust's reason as
+its `localizedDescription`. `updateIdentityKeyLimits` runs the same preview.
+`updateIdentityKeyLimits(asReviewed:signer:)` signs exactly
+what a preview showed, or throws before signing when the wallet's identity moved
+since. `refreshIdentity(identityId:)` folds a proved fetch of the identity into
+the wallet first, so a key added on another client is known.
 
 **Read what is left of a key's budget:**
 ```swift

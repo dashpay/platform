@@ -236,8 +236,13 @@ fn chained_result_to_js(
             .data_contract
             .document_type_for_name(&query.outer_document_type_name)
             .map_err(ProtocolError::from)?;
-        for entry in &chained.removed_outer_documents {
-            removed_outer_documents.push(&removal_entry_to_js(entry, outer_type, |id| {
+        let kept_values_list = chained.decode_removed_outer_kept_values(outer_type)?;
+        for (entry, kept_values) in chained
+            .removed_outer_documents
+            .iter()
+            .zip(kept_values_list.iter())
+        {
+            removed_outer_documents.push(&removal_entry_to_js(entry, kept_values, |id| {
                 IdentifierWasm::from(id).into()
             })?);
         }

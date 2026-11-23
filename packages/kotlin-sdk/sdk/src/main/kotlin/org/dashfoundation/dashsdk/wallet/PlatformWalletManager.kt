@@ -39,10 +39,13 @@ import org.json.JSONArray
 import org.dashfoundation.dashsdk.security.BiometricGate
 import org.dashfoundation.dashsdk.security.IdentityKeyPrivateKeyDeriver
 import org.dashfoundation.dashsdk.security.KeystoreSigner
+import org.dashfoundation.dashsdk.security.MasternodeVotingKeyNotStoredException
+import org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore
 import org.dashfoundation.dashsdk.security.MnemonicResolverAndPersister
 import org.dashfoundation.dashsdk.security.WalletStorage
 import org.dashfoundation.dashsdk.tokens.ContactRequestRef
 import org.dashfoundation.dashsdk.tokens.EstablishedContactRef
+import org.dashfoundation.dashsdk.voting.MasternodeVotingSigner
 import java.util.concurrent.atomic.AtomicLong
 
 /** Effective native persistence contract exposed for initialization diagnostics. */
@@ -287,6 +290,34 @@ class PlatformWalletManager(
     /** Hot stream of Rust-owned sync events for the services to reduce. */
     val syncEvents: SharedFlow<WalletSyncEvent> = _syncEvents.asSharedFlow()
 
+    private val _shieldedBalances =
+        MutableStateFlow<Map<String, ShieldedBalanceUpdate>>(emptyMap())
+
+    /**
+     * The latest shielded balance update of each wallet, by hex wallet id,
+     * as Rust announced it (`on_shielded_balance_changed_fn`). Rust sends an
+     * update whenever a wallet's balance state changes, so this is the
+     * balance to show: nothing reads or adds one up on the Kotlin side. A
+     * wallet without an entry has not been announced yet. A state, not an
+     * event stream, so a collector that starts late still sees the latest.
+     * Each update is the latest state Rust read, not one per ledger change.
+     * Emptied when the manager closes: a closed manager's balances are no
+     * longer anyone's.
+     */
+    val shieldedBalances: StateFlow<Map<String, ShieldedBalanceUpdate>> =
+        _shieldedBalances.asStateFlow()
+
+    /**
+     * Guards [shieldedBalances] together with [shieldedBalancesClosed]: an
+     * update is published and teardown empties the map under it, so an
+     * update that arrives while the manager closes cannot refill the map,
+     * also when the map was empty before and after.
+     */
+    private val shieldedBalancesLock = Any()
+
+    /** Set when teardown starts. Read and written under [shieldedBalancesLock]. */
+    private var shieldedBalancesClosed = false
+
     // ── Children (retained for the manager's lifetime) ────────────────
     //
     // NOTE: [persistenceHandler] is declared below, after [mnemonicResolver],
@@ -413,6 +444,37 @@ class PlatformWalletManager(
 
         override fun onShieldedTreeProgress(leavesCommitted: Long, totalTarget: Long) {
             _syncEvents.tryEmit(WalletSyncEvent.ShieldedTreeProgress(leavesCommitted, totalTarget))
+        }
+
+        override fun onShieldedBalanceChanged(
+            walletId: ByteArray,
+            revision: Long,
+            status: Int,
+            ordinarySpendableCredits: Long,
+            ordinaryBalanceEstablished: Boolean,
+            accounts: LongArray,
+        ) {
+            // Runs on a native thread: an exception must not travel back
+            // into Rust. An update that cannot be read is dropped, and the
+            // wallet keeps the last one that could.
+            val update = try {
+                decodeShieldedBalanceUpdate(
+                    walletId,
+                    revision,
+                    status,
+                    ordinarySpendableCredits,
+                    ordinaryBalanceEstablished,
+                    accounts,
+                )
+            } catch (e: IllegalStateException) {
+                android.util.Log.w("PlatformWalletManager", "Dropped a shielded balance update: ${e.message}")
+                return
+            }
+            synchronized(shieldedBalancesLock) {
+                if (!shieldedBalancesClosed) {
+                    _shieldedBalances.value = latestShieldedBalances(_shieldedBalances.value, update)
+                }
+            }
         }
     }
 
@@ -560,6 +622,71 @@ class PlatformWalletManager(
 
     /** `SignerHandle` for FFI calls that need signatures. */
     val signerHandle: Long get() = signer.nativeHandle
+
+    /**
+     * Runs [block] with a signer that can sign with the masternode voting key stored under
+     * [identifier], and with nothing else. Port of Swift `MasternodeVoteCall.run`
+     * (`MasternodeVoterSection.swift`), which builds a `KeychainSigner` for each vote, and of
+     * `KeychainSigner.withStoredMasternodeVotingKey(identityId:isolation:perform:)`
+     * (`FFI/KeychainSigner.swift`).
+     *
+     * A masternode vote is signed with the voting key Rust builds from the voting address
+     * (ECDSA_HASH160, data = the address), so the signer is asked for exactly those 20
+     * bytes. This creates a [KeystoreSigner] for this call only, on this manager's
+     * [walletStorage], bound to exactly that request: the voting address with key type
+     * ECDSA_HASH160 reads the identity's own voting entry ([MasternodeVotingKeyStore]), and
+     * every other key, wallet keys and platform addresses included, is refused. This
+     * manager's own signer never resolves the address to the voting key, so a vote cannot
+     * change what a concurrent wallet operation signs with. Pass the [MasternodeVotingSigner] to a signer vote, for example
+     * `sdk.decisionProposals.castVote(proposalId, choice, proTxHash, voter)`. When [block]
+     * returns or throws, votes still in flight are awaited and the dedicated signer is
+     * freed; the voter cannot be used afterwards.
+     *
+     * The manager's teardown waits for the whole call.
+     *
+     * @param identifier the identity's `IdentityEntity.votingPrivateKeyIdentifier`, as
+     *   [MasternodeVotingKeyStore.store] returned it.
+     * @throws MasternodeVotingKeyNotStoredException when no identity row names [identifier],
+     *   no readable voting key is stored under it, or it is not a voting key identifier.
+     * @throws IllegalStateException once the manager is closing; and whatever [block] throws.
+     */
+    suspend fun <T> withStoredMasternodeVotingKey(
+        identifier: String,
+        block: suspend (voter: MasternodeVotingSigner) -> T,
+    ): T = teardownGate.withOp {
+        val keys = MasternodeVotingKeyStore(walletStorage)
+        val votingAddress = try {
+            keys.votingAddressOf(identifier)
+        } catch (_: IllegalArgumentException) {
+            throw MasternodeVotingKeyNotStoredException()
+        }
+        // An entry no identity row names is not a loaded voter (a clear or an interrupted
+        // write left it), however readable it is.
+        if (!database.identityDao().existsByVotingPrivateKeyIdentifier(identifier) ||
+            !keys.isStored(identifier)
+        ) {
+            throw MasternodeVotingKeyNotStoredException()
+        }
+        // Bound to the one voting key: no fallback to wallet keys, no platform address
+        // derivation, and no invalidation hook (that bookkeeping is for wallet keys).
+        val dedicated = KeystoreSigner.forBoundKey(
+            walletStorage, network, biometricGate, database.platformAddressDao(),
+            KeystoreSigner.BoundKey(votingAddress, KeystoreSigner.KEY_TYPE_ECDSA_HASH160, identifier),
+        )
+        try {
+            val voter = MasternodeVotingSigner.create(votingAddress, dedicated)
+            try {
+                block(voter)
+            } finally {
+                withContext(NonCancellable) { voter.end() }
+            }
+        } finally {
+            dedicated.close()
+        }
+    }
+
+    /** This manager's own signer, for tests that check what it can sign. */
+    internal val signerForTesting: KeystoreSigner get() = signer
 
     /**
      * Re-derive the canonical identity-authentication private key for
@@ -2927,6 +3054,12 @@ class PlatformWalletManager(
     }
 
     private suspend fun closeInternal(bundle: Long) {
+        // The native emitter stops with the manager, so what it last sent
+        // would otherwise stay on screen for good.
+        synchronized(shieldedBalancesLock) {
+            shieldedBalancesClosed = true
+            _shieldedBalances.value = emptyMap()
+        }
         // Stop the progress poll loops + event fan-out scope before teardown
         // so no collector touches a destroyed handle.
         progressPollJob?.cancel()

@@ -127,6 +127,7 @@ impl ErrorWithCode for BasicError {
             Self::NonTransferableTokenPaymentMustBurnError(_) => 10280,
             Self::NonTransferableTokenTradeableError(_) => 10281,
             Self::DataContractCompiledMaxSizeExceededError(_) => 10282,
+            Self::ContractError(DataContractError::DecodedValueBudgetExceeded(_)) => 10283,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,

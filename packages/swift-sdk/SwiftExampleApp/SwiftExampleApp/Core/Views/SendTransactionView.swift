@@ -6,6 +6,8 @@ struct SendTransactionView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
+    /// Only to tell open recovery lists that an identity shield may have
+    /// saved a debit record.
     @EnvironmentObject var shieldedService: ShieldedService
     let wallet: PersistentWallet
 
@@ -52,11 +54,6 @@ struct SendTransactionView: View {
     /// credits".
     @Query private var syncStates: [PersistentPlatformAddressesSyncState]
 
-    /// This wallet's unspent account-0 shielded (Orchard) notes. Summed into
-    /// `shieldedBalance` below so the shielded source row reflects THIS
-    /// wallet's own pool, not the single-mirror `shieldedService`.
-    @Query private var shieldedNotes: [PersistentShieldedNote]
-
     init(wallet: PersistentWallet) {
         self.wallet = wallet
         _viewModel = StateObject(wrappedValue: SendViewModel(network: wallet.network ?? .testnet))
@@ -70,15 +67,6 @@ struct SendTransactionView: View {
                 $0.networkRaw == walletNetworkRaw
             }
         )
-        _shieldedNotes = Query(
-            filter: Self.shieldedSourcePredicate(walletId: walletId)
-        )
-    }
-
-    static func shieldedSourcePredicate(walletId: Data) -> Predicate<PersistentShieldedNote> {
-        #Predicate<PersistentShieldedNote> {
-            $0.walletId == walletId && $0.accountIndex == 0 && $0.isSpent == false
-        }
     }
 
     var body: some View {
@@ -90,308 +78,501 @@ struct SendTransactionView: View {
         let coreBalance = coreBalanceSnapshot()
         let sources = availableSources(coreBalance: coreBalance)
         return NavigationStack {
-            Form {
-                // Recipient
-                Section("Recipient") {
-                    HStack(spacing: 8) {
-                        TextField("Recipient Address", text: $viewModel.recipientAddress)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                        Button {
-                            showQRScanner = true
-                        } label: {
-                            Image(systemName: "qrcode.viewfinder")
-                                .font(.title3)
-                                .foregroundColor(.accentColor)
-                        }
-                        // `.borderless` is REQUIRED: the default button
-                        // style inside a Form makes the whole row tappable,
-                        // which would swallow taps on the text field.
-                        .buttonStyle(.borderless)
-                        .accessibilityLabel("Scan recipient address QR code")
-                    }
-
-                    if !viewModel.recipientAddress.isEmpty {
-                        AddressTypeBadge(type: viewModel.detectedAddressType)
-                    }
+            presentedForm(coreBalance: coreBalance, sources: sources)
+                // A swipe-dismissed and reopened sheet would allow a second send.
+                .interactiveDismissDisabled(viewModel.isSending)
+                .onAppear {
+                    // Resolve the version-locked address-funds limits once from
+                    // the wallet's current platform version (read Rust-side), the
+                    // same accessors the dedicated TransferPlatformAddressView
+                    // reads on appear. `minInputAmount` floors per-account
+                    // coverage scoring in `resolvePlatformSenderAccountIndex()`;
+                    // `platformMinOutputAmount` is pushed to the view model so
+                    // `canSend` can reject a sub-`min_output_amount` platform
+                    // transfer up front instead of after submit.
+                    resolvePlatformLimits()
+                    // Same push pattern for the consensus-pinned shielded fees:
+                    // the estimator needs the manager handle (it resolves the
+                    // network-tracked platform version), which the view model
+                    // deliberately doesn't hold.
+                    resolveShieldedFees()
                 }
-
-                // Amount
-                Section("Amount") {
-                    HStack {
-                        TextField("0.00000000", text: $viewModel.amountString)
-                            .keyboardType(.decimalPad)
-                        Text("DASH")
-                            .foregroundColor(.secondary)
-                    }
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        BalanceInfoRow(
-                            label: "Core:",
-                            amount: coreBalance,
-                            unit: .duffs,
-                            color: .green
-                        )
-                        BalanceInfoRow(
-                            label: "Shielded:",
-                            amount: shieldedBalance,
-                            unit: .credits,
-                            color: .purple
-                        )
-                        BalanceInfoRow(
-                            label: "Platform:",
-                            amount: platformBalance,
-                            unit: .credits,
-                            color: .blue
-                        )
-                    }
+                // Covers a recipient change and a balance that gates a source
+                // arriving later (the shielded balance comes from an async
+                // local read), so the selection always matches what is offered.
+                .onChange(of: sources, initial: true) { _, newSources in
+                    viewModel.reconcileSource(available: newSources)
                 }
-
-                // Additional recipients (Core → Core only). A standard
-                // L1 tx can pay any number of outputs in one transaction;
-                // the Rust coin-selector builds the multi-output tx, so
-                // this is purely extra address/amount input rows. Hidden
-                // for every other flow — shield / platform / unshield all
-                // remain single-recipient. The primary row above still
-                // drives `detectedFlow`, so this section only appears once
-                // that row resolves to a Core address with a Core source.
-                if viewModel.detectedFlow == .coreToCore {
-                    additionalRecipientsSection
+                .onChange(of: platformState.platformProtocolVersion) { _, _ in
+                    // The SDK learns the network's protocol version on a
+                    // detached task after `AppState` publishes it; estimates
+                    // resolved before that ratchet completed were computed at
+                    // the seed version. Re-resolve so the preview matches the
+                    // version the builders will read at submission time.
+                    resolveShieldedFees()
                 }
-
-                // Memo (shielded → shielded only). The on-chain note
-                // carries an optional 32-byte UTF-8 memo. Gate on the
-                // flow, not the recipient type: an Orchard recipient
-                // with a Platform source is the self-shield path, which
-                // has no memo parameter — showing the field there would
-                // silently drop the text. Count UTF-8 bytes (not
-                // characters) so the limit matches Rust.
-                if viewModel.detectedFlow == .shieldedToShielded {
-                    Section("Memo (optional)") {
-                        TextField("Note for the recipient", text: $viewModel.memoText)
-                            .textInputAutocapitalization(.sentences)
-                            .autocorrectionDisabled()
-                        HStack {
-                            Spacer()
-                            Text("\(viewModel.memoByteCount)/\(SendViewModel.memoByteLimit) bytes")
-                                .font(.caption)
-                                .foregroundColor(viewModel.isMemoOverLimit ? .red : .secondary)
-                        }
-                    }
+                // A manager swapped during an SDK rebuild: re-resolve against it
+                // so a sheet opened meanwhile recovers without being dismissed.
+                .onChange(of: ObjectIdentifier(walletManager)) { _, _ in
+                    resolveShieldedFees()
                 }
-
-                // Fund Source
-                if !sources.isEmpty {
-                    Section("Send From") {
-                        ForEach(sources) { source in
-                            Button {
-                                viewModel.selectedSource = source
-                                viewModel.updateFlow()
-                            } label: {
-                                HStack {
-                                    Image(systemName: source.iconName)
-                                        .foregroundColor(source.color)
-                                        .frame(width: 24)
-                                    Text(source.rawValue)
-                                        .foregroundColor(.primary)
-                                    Spacer()
-                                    Text(formatBalance(
-                                        balance(for: source, coreBalance: coreBalance),
-                                        unit: unit(for: source)
-                                    ))
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                    if viewModel.selectedSource == source {
-                                        Image(systemName: "checkmark")
-                                            .foregroundColor(.accentColor)
-                                    }
-                                }
-                            }
-                        }
-                    }
+                .sheet(isPresented: $showQRScanner) {
+                    qrScannerSheet
                 }
+        }
+    }
 
-                // Transaction Type
-                if let flow = viewModel.detectedFlow {
-                    Section("Transaction Type") {
-                        HStack {
-                            Image(systemName: flow.iconName)
-                                .foregroundColor(flowColor(for: flow))
-                            Text(flow.displayName)
-                                .fontWeight(.medium)
-                        }
+    // MARK: - Form
 
-                        if let fee = viewModel.estimatedFee {
-                            HStack {
-                                Text("Estimated Fee:")
-                                Spacer()
-                                Text("~\(formatBalance(fee, unit: feeUnit(for: flow)))")
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                }
-
-                // Per-output summary (Core → Core, multi-output only).
-                // `coreRecipients` is the same ordered, fully-validated
-                // list `executeSend` marshals, so the summary can't show
-                // a row the send wouldn't include. Only rendered with >1
-                // output — the single-output case is already covered by
-                // the "Transaction Type" / "Estimated Fee" section above.
-                if viewModel.detectedFlow == .coreToCore,
-                   let outputs = viewModel.coreRecipients, outputs.count > 1 {
-                    coreOutputsSummarySection(outputs: outputs)
-                }
-
-            }
+    /// The form with its title, toolbar, sending overlay and result alerts,
+    /// in the order `body` used to apply them. Split out of `body` so the
+    /// type-checker solves the modifier chain in two smaller pieces.
+    @ViewBuilder
+    private func presentedForm(coreBalance: UInt64, sources: [FundSource]) -> some View {
+        sendForm(coreBalance: coreBalance, sources: sources)
             .navigationTitle("Send Dash")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { dismiss() }
+            .toolbar { sendToolbar }
+            .disabled(viewModel.isSending)
+            .overlay { sendingOverlay }
+            .modifier(SendResultAlerts(viewModel: viewModel, onDone: { dismiss() }))
+    }
+
+    /// The send form's sections. `coreBalance` and `sources` are the
+    /// once-per-render snapshots taken at the top of `body`.
+    @ViewBuilder
+    private func sendForm(coreBalance: UInt64, sources: [FundSource]) -> some View {
+        Form {
+            // Recipient
+            recipientSection
+
+            // Amount
+            amountSection(coreBalance: coreBalance)
+
+            // Additional recipients (Core → Core only). A standard
+            // L1 tx can pay any number of outputs in one transaction;
+            // the Rust coin-selector builds the multi-output tx, so
+            // this is purely extra address/amount input rows. Hidden
+            // for every other flow — shield / platform / unshield all
+            // remain single-recipient. The primary row above still
+            // drives `detectedFlow`, so this section only appears once
+            // that row resolves to a Core address with a Core source.
+            if viewModel.detectedFlow == .coreToCore {
+                additionalRecipientsSection
+            }
+
+            // Memo (shielded → shielded only). The on-chain note
+            // carries an optional 32-byte UTF-8 memo. Gate on the
+            // flow, not the recipient type: an Orchard recipient
+            // with a Platform source is the self-shield path, which
+            // has no memo parameter — showing the field there would
+            // silently drop the text. Count UTF-8 bytes (not
+            // characters) so the limit matches Rust.
+            if viewModel.detectedFlow == .shieldedToShielded {
+                memoSection
+            }
+
+            // Fund Source
+            sendFromSection(sources: sources, coreBalance: coreBalance)
+
+            // Source identity (identity to shielded only).
+            if viewModel.detectedFlow == .identityToShielded {
+                identitySourceSection
+            }
+
+            // Transaction Type
+            if let flow = viewModel.detectedFlow {
+                transactionTypeSection(flow: flow)
+            }
+
+            // Per-output summary (Core → Core, multi-output only).
+            // `coreRecipients` is the same ordered, fully-validated
+            // list `executeSend` marshals, so the summary can't show
+            // a row the send wouldn't include. Only rendered with >1
+            // output — the single-output case is already covered by
+            // the "Transaction Type" / "Estimated Fee" section above.
+            if viewModel.detectedFlow == .coreToCore,
+               let outputs = viewModel.coreRecipients, outputs.count > 1 {
+                coreOutputsSummarySection(outputs: outputs)
+            }
+
+        }
+    }
+
+    // MARK: - Form sections
+
+    @ViewBuilder
+    private var recipientSection: some View {
+        Section("Recipient") {
+            HStack(spacing: 8) {
+                TextField("Recipient Address", text: $viewModel.recipientAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button {
+                    showQRScanner = true
+                } label: {
+                    Image(systemName: "qrcode.viewfinder")
+                        .font(.title3)
+                        .foregroundColor(.accentColor)
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Send") {
-                        // The estimator reads the SDK's live platform
-                        // version on every call, and the SDK can ratchet
-                        // that version from ANY proof-verified query's
-                        // response metadata without `AppState` publishing
-                        // again — so a read taken here, immediately
-                        // before `executeSend`, is the only one
-                        // guaranteed to agree with the version the
-                        // shielded builders carve their fee at.
-                        resolveShieldedFees()
-                        Task {
-                            guard let sdk = platformState.sdk else { return }
-                            // Look up the managed wallet by the
-                            // `PersistentWallet` we were handed,
-                            // not the "active" manager slot —
-                            // the Rust manager holds all wallets
-                            // and this view's `wallet` may not
-                            // be the one that was last created.
-                            let managed = walletManager.wallet(for: wallet.walletId)
-                            let platformAddressWallet = try? managed?.platformAddressWallet()
-                            // Pick the account that will FUND a platform →
-                            // platform transfer. The Rust Auto selector
-                            // resolves the source via
-                            // `platform_payment_managed_account_at_index`
-                            // (key class 0) and selects its inputs WITHIN
-                            // that single account — it does not span
-                            // accounts. `canSend` only gates on the
-                            // aggregate platform balance, so with multiple
-                            // key-class-0 Platform Payment accounts we must
-                            // choose an account whose OWN balance covers the
-                            // requested amount + fee; otherwise we'd enable a
-                            // send Rust rejects. The selection is factored
-                            // into the pure, unit-tested
-                            // `PlatformPaymentAccountSelection` helper.
-                            //
-                            // Only the platform → platform path needs this
-                            // coverage-aware pick; every other flow ignores
-                            // `senderAccountIndex`, so the prior
-                            // "first key-class-0 positive balance, else 0"
-                            // behaviour is preserved for them.
-                            let senderAccountIndex: UInt32
-                            if viewModel.detectedFlow == .platformToPlatform {
-                                guard let resolved = resolvePlatformSenderAccountIndex() else {
-                                    viewModel.error = "No single Platform Payment account has enough credits for this transfer."
-                                    return
-                                }
-                                senderAccountIndex = resolved
-                            } else {
-                                senderAccountIndex = addressBalances
-                                    .filter { $0.account?.keyClass == 0 }
-                                    .first(where: { $0.balance > 0 })?
-                                    .accountIndex ?? 0
+                // `.borderless` is REQUIRED: the default button
+                // style inside a Form makes the whole row tappable,
+                // which would swallow taps on the text field.
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Scan recipient address QR code")
+            }
+
+            if !viewModel.recipientAddress.isEmpty {
+                AddressTypeBadge(type: viewModel.detectedAddressType)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func amountSection(coreBalance: UInt64) -> some View {
+        Section("Amount") {
+            HStack {
+                TextField("0.00000000", text: $viewModel.amountString)
+                    .keyboardType(.decimalPad)
+                Text("DASH")
+                    .foregroundColor(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                BalanceInfoRow(
+                    label: "Core:",
+                    amount: coreBalance,
+                    unit: .duffs,
+                    color: .green
+                )
+                BalanceInfoRow(
+                    label: "Shielded:",
+                    amount: knownShieldedBalance,
+                    unit: .credits,
+                    color: .purple
+                )
+                BalanceInfoRow(
+                    label: "Platform:",
+                    amount: platformBalance,
+                    unit: .credits,
+                    color: .blue
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var memoSection: some View {
+        Section("Memo (optional)") {
+            TextField("Note for the recipient", text: $viewModel.memoText)
+                .textInputAutocapitalization(.sentences)
+                .autocorrectionDisabled()
+            HStack {
+                Spacer()
+                Text("\(viewModel.memoByteCount)/\(SendViewModel.memoByteLimit) bytes")
+                    .font(.caption)
+                    .foregroundColor(viewModel.isMemoOverLimit ? .red : .secondary)
+            }
+        }
+    }
+
+    /// The source picker when any source is available; otherwise only the
+    /// unavailable-choice notice, and nothing when there is no notice.
+    @ViewBuilder
+    private func sendFromSection(sources: [FundSource], coreBalance: UInt64) -> some View {
+        if !sources.isEmpty {
+            Section("Send From") {
+                ForEach(sources) { source in
+                    Button {
+                        viewModel.selectSource(source)
+                    } label: {
+                        HStack {
+                            Image(systemName: source.iconName)
+                                .foregroundColor(source.color)
+                                .frame(width: 24)
+                            Text(source.rawValue)
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Text(sourceBalanceText(source, coreBalance: coreBalance))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            if viewModel.selectedSource == source {
+                                Image(systemName: "checkmark")
+                                    .foregroundColor(.accentColor)
                             }
-                            // Input selection and surplus handling are owned
-                            // by the Rust Auto path (surplus stays on the
-                            // source addresses in the credit-balance model),
-                            // so there's no change address to pick here.
-                            let signer = KeychainSigner(
-                                modelContainer: modelContext.container
-                            )
-                            await viewModel.executeSend(
-                                sdk: sdk,
-                                walletManager: walletManager,
-                                shieldedService: shieldedService,
-                                platformState: platformState,
-                                wallet: wallet,
-                                platformWallet: managed,
-                                platformAddressWallet: platformAddressWallet,
-                                signer: signer,
-                                senderAccountIndex: senderAccountIndex,
-                                modelContext: modelContext
-                            )
                         }
                     }
-                    .disabled(!viewModel.canSend)
+                    .accessibilityIdentifier("send.source.\(source.rawValue.lowercased())")
+                }
+                if viewModel.chosenSourceUnavailable {
+                    // The explicit choice is never swapped for
+                    // another source; the user picks again.
+                    Text("\(viewModel.selectedSource.rawValue) is not available right now. Pick another source to send.")
+                        .font(.caption)
+                        .foregroundColor(.orange)
                 }
             }
+        } else if viewModel.chosenSourceUnavailable {
+            Section("Send From") {
+                Text("\(viewModel.selectedSource.rawValue) is not available right now, and no other source is.")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func transactionTypeSection(flow: SendFlow) -> some View {
+        Section("Transaction Type") {
+            HStack {
+                Image(systemName: flow.iconName)
+                    .foregroundColor(flowColor(for: flow))
+                Text(flow.displayName)
+                    .fontWeight(.medium)
+            }
+
+            if let fee = viewModel.estimatedFee {
+                HStack {
+                    // The identity shield's value is the exact
+                    // consensus floor, not an estimate.
+                    Text(flow == .identityToShielded ? "Minimum fee:" : "Estimated Fee:")
+                    Spacer()
+                    Text(flow == .identityToShielded
+                         ? feeText(fee, flow: flow)
+                         : "~\(feeText(fee, flow: flow))")
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    // MARK: - Toolbar, overlay and sheet
+
+    @ToolbarContentBuilder
+    private var sendToolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarLeading) {
+            Button("Cancel") { dismiss() }
+        }
+        ToolbarItem(placement: .navigationBarTrailing) {
+            Button("Send") {
+                sendTapped()
+            }
+            .disabled(!viewModel.canSend)
+        }
+    }
+
+    @ViewBuilder
+    private var sendingOverlay: some View {
+        if viewModel.isSending {
+            ProgressView("Sending...")
+                .padding()
+                .background(Color.gray.opacity(0.9))
+                .cornerRadius(10)
+        }
+    }
+
+    @ViewBuilder
+    private var qrScannerSheet: some View {
+        // Same network the view model was built with
+        // (`wallet.network ?? .testnet`) so the scanner validates
+        // against the wallet's chain. Assigning `recipientAddress`
+        // triggers the view model's `didSet` address-type
+        // detection; the amount is only adopted when the user
+        // hasn't already typed one.
+        QRScannerView(network: wallet.network ?? .testnet) { payment in
+            viewModel.recipientAddress = payment.address
+            if let amount = payment.amount, viewModel.amountString.isEmpty {
+                viewModel.amountString = amount
+            }
+        }
+    }
+
+    // MARK: - Send action
+
+    /// The "Send" button's action. Everything before the `Task` runs
+    /// synchronously at the tap.
+    private func sendTapped() {
+        // The estimator reads the SDK's live platform
+        // version on every call, and the SDK can ratchet
+        // that version from ANY proof-verified query's
+        // response metadata without `AppState` publishing
+        // again — so a read taken here, immediately
+        // before `executeSend`, is the only one
+        // guaranteed to agree with the version the
+        // shielded builders carve their fee at.
+        resolveShieldedFees()
+        // The route and recipient the user confirmed by
+        // tapping. The handler below is asynchronous;
+        // `executeSend` refuses if either changed in
+        // between.
+        let tappedFlow = viewModel.detectedFlow
+        let tappedRecipient = viewModel.recipientAddress
+        let tappedIdentityId = viewModel.selectedIdentityId
+        let tappedAmountText = viewModel.amountString
+        Task {
+            guard let sdk = platformState.sdk else { return }
+            // Look up the managed wallet by the
+            // `PersistentWallet` we were handed,
+            // not the "active" manager slot —
+            // the Rust manager holds all wallets
+            // and this view's `wallet` may not
+            // be the one that was last created.
+            let managed = walletManager.wallet(for: wallet.walletId)
+            let platformAddressWallet = try? managed?.platformAddressWallet()
+            // Pick the account that will FUND a platform →
+            // platform transfer. The Rust Auto selector
+            // resolves the source via
+            // `platform_payment_managed_account_at_index`
+            // (key class 0) and selects its inputs WITHIN
+            // that single account — it does not span
+            // accounts. `canSend` only gates on the
+            // aggregate platform balance, so with multiple
+            // key-class-0 Platform Payment accounts we must
+            // choose an account whose OWN balance covers the
+            // requested amount + fee; otherwise we'd enable a
+            // send Rust rejects. The selection is factored
+            // into the pure, unit-tested
+            // `PlatformPaymentAccountSelection` helper.
+            //
+            // Only the platform → platform path needs this
+            // coverage-aware pick; every other flow ignores
+            // `senderAccountIndex`, so the prior
+            // "first key-class-0 positive balance, else 0"
+            // behaviour is preserved for them.
+            let senderAccountIndex: UInt32
+            if viewModel.detectedFlow == .platformToPlatform {
+                guard let resolved = resolvePlatformSenderAccountIndex() else {
+                    viewModel.error = "No single Platform Payment account has enough credits for this transfer."
+                    return
+                }
+                senderAccountIndex = resolved
+            } else {
+                senderAccountIndex = addressBalances
+                    .filter { $0.account?.keyClass == 0 }
+                    .first(where: { $0.balance > 0 })?
+                    .accountIndex ?? 0
+            }
+            // Input selection and surplus handling are owned
+            // by the Rust Auto path (surplus stays on the
+            // source addresses in the credit-balance model),
+            // so there's no change address to pick here.
+            let signer = KeychainSigner(
+                modelContainer: modelContext.container
+            )
+            await viewModel.executeSend(
+                sdk: sdk,
+                walletManager: walletManager,
+                platformState: platformState,
+                wallet: wallet,
+                platformWallet: managed,
+                platformAddressWallet: platformAddressWallet,
+                signer: signer,
+                senderAccountIndex: senderAccountIndex,
+                modelContext: modelContext,
+                tappedFlow: tappedFlow,
+                tappedRecipient: tappedRecipient,
+                tappedIdentityId: tappedIdentityId,
+                tappedAmountText: tappedAmountText
+            )
+            // The wallet saves an identity debit before it
+            // broadcasts; open Shielded Activity lists for
+            // this wallet re-read the records.
+            if viewModel.identityDebitMayHaveBeenSaved {
+                shieldedService.noteRecoveryRecordsChanged(walletId: wallet.walletId)
+            }
+        }
+    }
+
+    // MARK: - Identity source (identity to shielded)
+
+    /// Picker over the wallet's identities with a positive balance. The
+    /// selection binds straight to the view model; the balance is pushed
+    /// by `syncSelectedIdentity()` so the Send gate tracks the live row.
+    @ViewBuilder
+    private var identitySourceSection: some View {
+        let identities = eligibleIdentities
+        Section {
+            Picker("Identity", selection: $viewModel.selectedIdentityId) {
+                Text("Select…")
+                    .tag(Optional<Data>.none)
+                    .accessibilityIdentifier("send.identitySource.none")
+                ForEach(identities, id: \.identityId) { identity in
+                    Text(identityOptionLabel(identity))
+                        .tag(Optional(identity.identityId))
+                        .accessibilityIdentifier("send.identitySource.identity.\(identity.identityIdBase58)")
+                }
+            }
+            .accessibleFormPicker("send.identitySourcePicker")
+            // The identity that pays is captured at the tap; no new pick
+            // while a send runs.
             .disabled(viewModel.isSending)
-            .overlay {
-                if viewModel.isSending {
-                    ProgressView("Sending...")
-                        .padding()
-                        .background(Color.gray.opacity(0.9))
-                        .cornerRadius(10)
-                }
+            if viewModel.identityShieldAmountTooPrecise {
+                Text("Use at most 11 decimal places: the smallest amount is 0.00000000001 DASH.")
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .accessibilityIdentifier("send.identitySource.amountProblem")
             }
-            .alert("Error", isPresented: .constant(viewModel.error != nil)) {
-                Button("OK") { viewModel.error = nil }
-            } message: {
-                if let error = viewModel.error {
-                    Text(error)
-                }
+            if viewModel.shieldedFeeEstimates[.shieldFromIdentity] == nil {
+                Text("The fee floor is not available yet, so Send stays disabled.")
+                    .font(.caption)
+                    .foregroundColor(.orange)
             }
-            .alert("Success", isPresented: .constant(viewModel.successMessage != nil)) {
-                Button("Done") { dismiss() }
-            } message: {
-                if let msg = viewModel.successMessage {
-                    Text(msg)
-                }
-            }
-            .onAppear {
-                // Resolve the version-locked address-funds limits once from
-                // the wallet's current platform version (read Rust-side), the
-                // same accessors the dedicated TransferPlatformAddressView
-                // reads on appear. `minInputAmount` floors per-account
-                // coverage scoring in `resolvePlatformSenderAccountIndex()`;
-                // `platformMinOutputAmount` is pushed to the view model so
-                // `canSend` can reject a sub-`min_output_amount` platform
-                // transfer up front instead of after submit.
-                resolvePlatformLimits()
-                // Same push pattern for the consensus-pinned shielded fees:
-                // the estimator needs the manager handle (it resolves the
-                // network-tracked platform version), which the view model
-                // deliberately doesn't hold.
-                resolveShieldedFees()
-            }
-            .onChange(of: viewModel.detectedAddressType) { _, _ in
-                autoSelectSource()
-            }
-            .onChange(of: platformState.platformProtocolVersion) { _, _ in
-                // The SDK learns the network's protocol version on a
-                // detached task after `AppState` publishes it; estimates
-                // resolved before that ratchet completed were computed at
-                // the seed version. Re-resolve so the preview matches the
-                // version the builders will read at submission time.
-                resolveShieldedFees()
-            }
-            .sheet(isPresented: $showQRScanner) {
-                // Same network the view model was built with
-                // (`wallet.network ?? .testnet`) so the scanner validates
-                // against the wallet's chain. Assigning `recipientAddress`
-                // triggers the view model's `didSet` address-type
-                // detection; the amount is only adopted when the user
-                // hasn't already typed one.
-                QRScannerView(network: wallet.network ?? .testnet) { payment in
-                    viewModel.recipientAddress = payment.address
-                    if let amount = payment.amount, viewModel.amountString.isEmpty {
-                        viewModel.amountString = amount
-                    }
-                }
-            }
+        } header: {
+            Text("Source Identity")
+        } footer: {
+            Text(
+                "The identity's transfer key signs. It must hold the amount "
+                + "plus the estimated fee. The note goes to this wallet's own "
+                + "shielded address, so enter that as the recipient."
+            )
+        }
+        .onAppear { syncSelectedIdentity() }
+        .onChange(of: viewModel.selectedIdentityId) { _, _ in syncSelectedIdentity() }
+        .onChange(of: identityBalancesById) { _, _ in syncSelectedIdentity() }
+    }
+
+    private func identityOptionLabel(_ identity: PersistentIdentity) -> String {
+        let balance = formatIdentityBalanceAsDash(identity.balance)
+        return "\(identity.displayName): \(balance)"
+    }
+
+    /// `PersistentIdentity.balance` is `Int64`; clamp a negative to zero
+    /// (same as `TransferCreditsView`).
+    private static func clampedBalance(_ identity: PersistentIdentity) -> UInt64 {
+        identity.balance < 0 ? 0 : UInt64(identity.balance)
+    }
+
+    /// This wallet's identities that can fund an identity shield.
+    private var eligibleIdentities: [PersistentIdentity] {
+        wallet.identities
+            .filter { Self.clampedBalance($0) > 0 }
+            .sorted { $0.identityIndex < $1.identityIndex }
+    }
+
+    /// Largest single identity balance: one identity funds the shield.
+    private var largestIdentityBalance: UInt64 {
+        eligibleIdentities.map(Self.clampedBalance).max() ?? 0
+    }
+
+    private var identityBalancesById: [Data: Int64] {
+        Dictionary(
+            wallet.identities.map { ($0.identityId, $0.balance) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    /// Push the selected identity's current balance into the view model,
+    /// and drop a selection whose identity no longer has a positive balance.
+    private func syncSelectedIdentity() {
+        guard let selectedId = viewModel.selectedIdentityId else {
+            viewModel.selectedIdentityBalance = 0
+            return
+        }
+        if let identity = eligibleIdentities.first(where: { $0.identityId == selectedId }) {
+            viewModel.selectedIdentityBalance = Self.clampedBalance(identity)
+        } else {
+            viewModel.selectedIdentityId = nil
+            viewModel.selectedIdentityBalance = 0
         }
     }
 
@@ -492,14 +673,20 @@ struct SendTransactionView: View {
             .reduce(0) { $0 + $1.confirmed }
     }
 
-    /// Account-0 shielded balance: sum of THIS wallet's unspent
-    /// `PersistentShieldedNote` values (Rust pushes note rows via the
-    /// shielded persister). Reads SwiftData rather than the
-    /// single-mirror `shieldedService.shieldedBalance`, so the shielded
-    /// send source is correct for a non-`firstWallet` wallet whose
-    /// engine binding is live but whose UI mirror is pointed elsewhere.
+    /// What a shielded send from this screen can spend: account 0's
+    /// spendable credits as Rust pushes them, because the send spends from
+    /// account 0. Read per wallet from `walletManager.shieldedBalances`
+    /// rather than the single-mirror `shieldedService.shieldedBalance`, so
+    /// it is correct for a non-`firstWallet` wallet. Not known yet counts
+    /// as 0, so the shielded source is not offered.
     private var shieldedBalance: UInt64 {
-        shieldedNotes.reduce(0) { $0 + $1.value }
+        knownShieldedBalance ?? 0
+    }
+
+    /// Account 0's spendable credits, or `nil` while not known yet. The
+    /// balance row shows nil as not known rather than as a zero.
+    private var knownShieldedBalance: UInt64? {
+        walletManager.spendableShieldedCredits(walletId: wallet.walletId, account: 0)
     }
 
     /// Mirrors `WalletDetailView.platformBalance`: BLAST-synced
@@ -507,8 +694,9 @@ struct SendTransactionView: View {
     /// landed; before that, fall back to summing identity credits
     /// so a freshly-restored wallet still shows something
     /// approximate.
+    /// Display only: the Platform send source uses `platformAddressBalance`.
     private var platformBalance: UInt64 {
-        let blastBalance = addressBalances.reduce(UInt64(0)) { $0 + $1.balance }
+        let blastBalance = platformAddressBalance
         let hasSynced = syncStates.first.map { $0.syncHeight > 0 || $0.syncTimestamp > 0 }
             ?? false
         if blastBalance > 0 || hasSynced {
@@ -562,7 +750,9 @@ struct SendTransactionView: View {
     /// lookup — no caching guard needed).
     private func resolveShieldedFees() {
         var fees: [PlatformWalletManager.ShieldedFeeKind: UInt64] = [:]
-        for kind: PlatformWalletManager.ShieldedFeeKind in [.transfer, .unshield, .withdrawal] {
+        for kind: PlatformWalletManager.ShieldedFeeKind in [
+            .transfer, .unshield, .withdrawal, .shieldFromIdentity,
+        ] {
             fees[kind] = try? walletManager.estimateShieldedFee(kind: kind, numActions: 2)
         }
         viewModel.shieldedFeeEstimates = fees
@@ -693,29 +883,30 @@ struct SendTransactionView: View {
     }
 
     private func availableSources(coreBalance: UInt64) -> [FundSource] {
-        viewModel.availableSources(
-            coreBalance: coreBalance,
-            shieldedBalance: shieldedBalance,
-            platformBalance: platformBalance
-        )
+        viewModel.availableSources(SendSourceBalances(
+            core: coreBalance,
+            shielded: shieldedBalance,
+            platformAddresses: platformAddressBalance,
+            largestIdentity: largestIdentityBalance
+        ))
+    }
+
+    /// Platform-address funds only, without `platformBalance`'s fallback to
+    /// identity credits: what the Platform send source can actually spend.
+    private var platformAddressBalance: UInt64 {
+        addressBalances.reduce(UInt64(0)) { $0 + $1.balance }
     }
 
     private func balance(for source: FundSource, coreBalance: UInt64) -> UInt64 {
         switch source {
         case .core: return coreBalance
         case .shielded: return shieldedBalance
-        case .platform: return platformBalance
-        }
-    }
-
-    /// Auto-select the first available source when address type changes.
-    /// Snapshots `coreBalance` once for the duration of this call so
-    /// the underlying FFI accessor isn't hit twice.
-    private func autoSelectSource() {
-        let coreBalance = coreBalanceSnapshot()
-        if let first = availableSources(coreBalance: coreBalance).first {
-            viewModel.selectedSource = first
-            viewModel.updateFlow()
+        case .platform: return platformAddressBalance
+        case .identity:
+            // The selected identity once one is picked, else the largest.
+            return viewModel.selectedIdentityId == nil
+                ? largestIdentityBalance
+                : viewModel.selectedIdentityBalance
         }
     }
 
@@ -730,6 +921,7 @@ struct SendTransactionView: View {
         case .shieldedToShielded: return .purple
         case .shieldedToPlatform: return .blue
         case .shieldedToCore: return .green
+        case .identityToShielded: return .purple
         }
     }
 
@@ -752,10 +944,25 @@ struct SendTransactionView: View {
         return String(format: "%.8f DASH", dash)
     }
 
+    /// Identity credits are shown exactly (one credit can decide whether an
+    /// identity shield fits); the other sources keep the screen's formatter.
+    private func sourceBalanceText(_ source: FundSource, coreBalance: UInt64) -> String {
+        let amount = balance(for: source, coreBalance: coreBalance)
+        if source == .identity { return formatCreditsAsDash(amount) }
+        return formatBalance(amount, unit: unit(for: source))
+    }
+
+    /// The identity shield's fee floor is shown exactly, since the Send gate
+    /// compares it to the balance credit for credit.
+    private func feeText(_ fee: UInt64, flow: SendFlow) -> String {
+        if flow == .identityToShielded { return formatCreditsAsDash(fee) }
+        return formatBalance(fee, unit: feeUnit(for: flow))
+    }
+
     private func unit(for source: FundSource) -> SendBalanceUnit {
         switch source {
         case .core: return .duffs
-        case .platform, .shielded: return .credits
+        case .platform, .shielded, .identity: return .credits
         }
     }
 
@@ -769,13 +976,54 @@ struct SendTransactionView: View {
         switch flow {
         case .coreToCore: return .duffs
         case .coreToShielded, .platformToPlatform, .platformToShielded,
-             .shieldedToShielded, .shieldedToPlatform, .shieldedToCore:
+             .shieldedToShielded, .shieldedToPlatform, .shieldedToCore,
+             .identityToShielded:
             return .credits
         }
     }
 }
 
 // MARK: - Subviews
+
+/// The send screen's four result alerts, in the order `body` used to
+/// apply them. `onDone` is the screen's `dismiss`, passed in so the
+/// alerts close the sheet exactly as before.
+private struct SendResultAlerts: ViewModifier {
+    @ObservedObject var viewModel: SendViewModel
+    let onDone: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .alert("Error", isPresented: .constant(viewModel.error != nil)) {
+                Button("OK") { viewModel.error = nil }
+            } message: {
+                if let error = viewModel.error {
+                    Text(error)
+                }
+            }
+            .alert("Success", isPresented: .constant(viewModel.successMessage != nil)) {
+                Button("Done") { onDone() }
+            } message: {
+                if let msg = viewModel.successMessage {
+                    Text(msg)
+                }
+            }
+            .alert("Submitted", isPresented: .constant(viewModel.submittedMessage != nil)) {
+                Button("Done") { onDone() }
+            } message: {
+                if let msg = viewModel.submittedMessage {
+                    Text(msg)
+                }
+            }
+            .alert("Not Confirmed Yet", isPresented: .constant(viewModel.unconfirmedMessage != nil)) {
+                Button("Done") { onDone() }
+            } message: {
+                if let msg = viewModel.unconfirmedMessage {
+                    Text(msg)
+                }
+            }
+    }
+}
 
 /// One extra Core output editor: an address field + amount field +
 /// remove control, with a per-row Core badge / inline invalid hint that
@@ -896,7 +1144,8 @@ enum SendBalanceUnit {
 
 private struct BalanceInfoRow: View {
     let label: String
-    let amount: UInt64
+    /// `nil` means the balance is not known yet.
+    let amount: UInt64?
     var unit: SendBalanceUnit = .duffs
     var color: Color = .primary
 
@@ -904,8 +1153,13 @@ private struct BalanceInfoRow: View {
         HStack {
             Text(label).font(.caption).foregroundColor(.secondary)
             Spacer()
-            Text(formatBalance(amount, unit: unit))
-                .font(.caption).foregroundColor(amount > 0 ? color : .secondary)
+            if let amount {
+                Text(formatBalance(amount, unit: unit))
+                    .font(.caption).foregroundColor(amount > 0 ? color : .secondary)
+            } else {
+                Text("Not known yet")
+                    .font(.caption).foregroundColor(.secondary)
+            }
         }
     }
 

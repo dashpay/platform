@@ -11,6 +11,8 @@ mod persistence_load;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
+#[cfg(feature = "shielded")]
+pub mod shielded_token_purchase;
 #[cfg(feature = "spv-context")]
 mod spv_quorums;
 #[cfg(feature = "spv-context")]
@@ -55,7 +57,9 @@ use crate::wallet::identity::network::DashPayPaymentHandler;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 #[cfg(feature = "shielded")]
-use crate::wallet::shielded::NetworkShieldedCoordinator;
+use crate::wallet::shielded::balance_emitter::spawn_balance_emitter;
+#[cfg(feature = "shielded")]
+use crate::wallet::shielded::{NetworkShieldedCoordinator, ShieldedBalanceUpdate};
 use crate::wallet::PlatformWallet;
 
 /// Registry key identifying each background worker the manager joins at
@@ -97,6 +101,17 @@ pub enum WalletWorker {
     /// budget, with the live handle re-parked on timeout so a destroy
     /// retry can re-join it.
     EventAdapter,
+    /// The shielded balance emitter task, which pushes each wallet's local
+    /// shielded balance state to the event handlers whenever it changes. Not
+    /// a registry worker: a tokio task spawned by `configure_shielded`,
+    /// cancelled and joined by [`shutdown`](PlatformWalletManager::shutdown)
+    /// under a bounded budget. Its handle stays owned until a join completes,
+    /// so a later `shutdown` on the same manager re-joins a straggler (an FFI
+    /// `destroy` removes the handle before it shuts down, so a repeated
+    /// destroy cannot; there the host context lives until `release_fn` runs,
+    /// after the straggler ends). It fires host callbacks, so a straggler is
+    /// reported non-clean.
+    ShieldedBalanceEmitter,
 }
 
 // `dash_async::RegistryKey` is a blanket impl over
@@ -138,6 +153,18 @@ pub(crate) const PAYMENT_ABORT_GRACE: Duration = Duration::from_secs(1);
 /// handle is re-parked so a destroy retry re-joins it, and the report
 /// carries [`WorkerStatus::Timeout`](dash_async::WorkerStatus::Timeout).
 const EVENT_ADAPTER_JOIN_BUDGET: Duration = Duration::from_secs(10);
+
+/// Deadline for joining the shielded balance emitter at shutdown. The emitter
+/// observes its cancellation at every await, including the wait for a store a
+/// scan holds, so only a host callback it is inside can hold it up; the bound
+/// keeps such a callback from hanging `destroy`. The handle stays in its slot
+/// until a join completes, so a timeout or a dropped `shutdown` future leaves
+/// it for a later `shutdown` on the same manager to re-join, and the report
+/// carries [`WorkerStatus::Timeout`](dash_async::WorkerStatus::Timeout). The
+/// FFI context of a straggler stays alive until `release_fn` runs, which is
+/// after the straggler ends.
+#[cfg(feature = "shielded")]
+const SHIELDED_BALANCE_EMITTER_JOIN_BUDGET: Duration = Duration::from_secs(10);
 
 /// RAII holder for a coordinator's `is_syncing` slot: clears the flag on
 /// drop, **including panic unwind out of a pass body**. Every pass must
@@ -456,6 +483,20 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     #[cfg(feature = "shielded")]
     pub(super) shielded_coordinator:
         Arc<RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>>,
+    /// Cancellation token + join handle of the shielded balance emitter
+    /// `configure_shielded` spawns for the coordinator. The token is never
+    /// replaced: [`shutdown`](Self::shutdown) cancels it for good, and
+    /// `configure_shielded` spawns nothing once it is cancelled. A spawn
+    /// stores its handle under the same mutex `shutdown` takes it from after
+    /// cancelling, so no emitter can start behind a shutdown.
+    #[cfg(feature = "shielded")]
+    pub(super) shielded_balance_emitter_cancel: CancellationToken,
+    #[cfg(feature = "shielded")]
+    pub(super) shielded_balance_emitter_join: tokio::sync::Mutex<Option<JoinHandle<()>>>,
+    /// Notified when `shutdown` starts waiting for the emitter's join, so a
+    /// test can drop a `shutdown` future at exactly that point.
+    #[cfg(all(test, feature = "shielded"))]
+    pub(crate) shielded_balance_emitter_join_reached: Notify,
     /// Shared `PlatformEventManager` — held on the manager so
     /// `configure_shielded` can install a per-chunk progress handler
     /// onto the freshly-created `NetworkShieldedCoordinator` that
@@ -715,6 +756,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             shielded_sync_manager: shielded_sync,
             #[cfg(feature = "shielded")]
             shielded_coordinator,
+            #[cfg(feature = "shielded")]
+            shielded_balance_emitter_cancel: CancellationToken::new(),
+            #[cfg(feature = "shielded")]
+            shielded_balance_emitter_join: tokio::sync::Mutex::new(None),
+            #[cfg(all(test, feature = "shielded"))]
+            shielded_balance_emitter_join_reached: Notify::new(),
             #[cfg(any(test, feature = "shielded"))]
             event_manager,
             persister,
@@ -1021,6 +1068,27 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .on_shielded_tree_progress(leaves_committed, total_target);
             },
         )));
+        // Push every wallet's local balance state to the event handlers
+        // whenever it changes (`on_shielded_balance_changed`). Spawned under
+        // the join mutex and only while shutdown has not cancelled the
+        // token, so `shutdown` always finds the handle it has to join.
+        {
+            let mut join = self.shielded_balance_emitter_join.lock().await;
+            if self.shielded_balance_emitter_cancel.is_cancelled() {
+                tracing::warn!(
+                    "shielded configured after shutdown; no balance updates are emitted"
+                );
+            } else {
+                let event_manager_for_balance = Arc::clone(&self.event_manager);
+                *join = Some(spawn_balance_emitter(
+                    Arc::clone(&coordinator),
+                    Arc::new(move |update: &ShieldedBalanceUpdate| {
+                        event_manager_for_balance.on_shielded_balance_changed(update);
+                    }),
+                    self.shielded_balance_emitter_cancel.clone(),
+                ));
+            }
+        }
         *slot = Some(Arc::clone(&coordinator));
         drop(slot);
         self.restore_private_contact_payment_holds(&coordinator)
@@ -1438,6 +1506,52 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         }
 
         report.per_worker.insert(WalletWorker::Spv, spv_status);
+
+        // The shielded balance emitter fires host callbacks, so it is
+        // cancelled and joined here: once it has joined, no balance update
+        // is delivered again. Cancelling first also stops a
+        // `configure_shielded` racing this shutdown from spawning a new one.
+        #[cfg(feature = "shielded")]
+        {
+            self.shielded_balance_emitter_cancel.cancel();
+            let emitter_status = {
+                let mut slot = self.shielded_balance_emitter_join.lock().await;
+                // Joined in place: the handle leaves the slot only once the
+                // join completed. A timed-out join, or a caller that drops
+                // this future mid-join while a host callback is still
+                // running, leaves it there for the next shutdown to join.
+                match slot.as_mut() {
+                    None => WorkerStatus::NotRunning,
+                    Some(handle) => {
+                        #[cfg(test)]
+                        self.shielded_balance_emitter_join_reached.notify_one();
+                        match tokio::time::timeout(SHIELDED_BALANCE_EMITTER_JOIN_BUDGET, handle)
+                            .await
+                        {
+                            Ok(joined) => {
+                                *slot = None;
+                                match joined {
+                                    Ok(()) => WorkerStatus::Ok,
+                                    Err(e) if e.is_panic() => WorkerStatus::Panicked(e.to_string()),
+                                    Err(e) => WorkerStatus::Stopped(Some(e.to_string())),
+                                }
+                            }
+                            Err(_) => {
+                                tracing::warn!(
+                                    "shielded balance emitter did not join within {:?}; kept for a \
+                                     later shutdown",
+                                    SHIELDED_BALANCE_EMITTER_JOIN_BUDGET
+                                );
+                                WorkerStatus::Timeout
+                            }
+                        }
+                    }
+                }
+            };
+            report
+                .per_worker
+                .insert(WalletWorker::ShieldedBalanceEmitter, emitter_status);
+        }
         report.per_worker.insert(
             WalletWorker::DashPayPayments,
             if payments_drained {
@@ -1513,6 +1627,9 @@ impl<P: PlatformWalletPersistence + 'static> Drop for PlatformWalletManager<P> {
         // persister for. Aborting stops it at whatever await it is parked on,
         // dropping a claimed batch mid-commit.
         self.event_adapter_cancel.cancel();
+        // The balance emitter exits at its next await once cancelled.
+        #[cfg(feature = "shielded")]
+        self.shielded_balance_emitter_cancel.cancel();
     }
 }
 

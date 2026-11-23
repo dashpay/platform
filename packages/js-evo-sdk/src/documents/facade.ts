@@ -73,6 +73,10 @@ export class DocumentsFacade {
     return w.getCompositeDocumentsWithProofInfo(query);
   }
 
+  /**
+   * A document's history. Below Platform protocol version 15 only a `startAtMs` query is
+   * served, and the result has no `lifecycle`.
+   */
   async history(query: wasm.DocumentHistoryQuery): Promise<wasm.DocumentHistoryResult> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDocumentHistory(query);

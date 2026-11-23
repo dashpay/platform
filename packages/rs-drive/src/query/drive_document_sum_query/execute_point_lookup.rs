@@ -75,7 +75,7 @@ impl DriveDocumentSumQuery<'_> {
         Ok(vec![SumEntry {
             in_key: None,
             key: vec![],
-            sum: Some(sum),
+            sum: Some(i128::from(sum)),
         }])
     }
 

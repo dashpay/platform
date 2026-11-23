@@ -179,82 +179,7 @@ where
         query: Q,
         request_settings: Option<RequestSettings>,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
-        let mut settings = sdk.query_settings();
-        let mut owned_rich: <Self as Fetch>::Query = query.query(&settings)?;
-        // INTENTIONAL(#3711): For the common case `Self::Query = Self::Request`,
-        // the blanket `Query<T> for T` impl turns the `query.query(settings)` step into a
-        // pure clone of the same owned request. Real but micro-cost (~63 impls hit
-        // this path). Specializing via a `fn encode_request_owned()` default method on
-        // `Fetch` would eliminate the clone — deferred as future-perf work; trait shape
-        // is intentionally uniform for now.
-        let requirement = owned_rich.protocol_requirement(&settings)?;
-        if requirement.is_some() {
-            sdk.ensure_network_serves(requirement, request_settings)
-                .await?;
-            // Asking the network for its version may have raised the version requests are
-            // encoded with: encode the request again at it.
-            settings = sdk.query_settings();
-            owned_rich = query.query(&settings)?;
-        }
-        let required_protocol_version = requirement.map(|requirement| requirement.protocol_version);
-        let owned_wire: <Self as Fetch>::Request = owned_rich.query(&settings)?;
-        check_before_sending::<<Self as Fetch>::Query, Self>(
-            &owned_rich,
-            settings.protocol_version,
-        )?;
-        let rich = &owned_rich;
-        let wire = &owned_wire;
-
-        let fut = |settings: RequestSettings| async move {
-            let ExecutionResponse {
-                address,
-                retries,
-                inner: response,
-            } = wire
-                .clone()
-                .execute(sdk, settings)
-                .await
-                .map_err(|execution_error| execution_error.inner_into())?;
-
-            let object_type = std::any::type_name::<Self>().to_string();
-            tracing::trace!(request = ?wire, response = ?response, ?address, retries, object_type, "fetched object from platform");
-
-            let (object, response_metadata, proof): (Option<Self>, ResponseMetadata, Proof) = sdk
-                .parse_proof_with_metadata_and_proof::<<Self as Fetch>::Query, Self>(
-                    rich.clone(),
-                    response,
-                    wire.method_name(),
-                )
-                .await
-                .and_then(|parsed| {
-                    sdk.ensure_answer_serves(required_protocol_version, &parsed.1)?;
-                    Ok(parsed)
-                })
-                .map_err(|e| ExecutionError {
-                    possibly_accepted: false,
-                    inner: e,
-                    address: Some(address.clone()),
-                    retries,
-                })?;
-
-            match object {
-                Some(item) => Ok((item.into(), response_metadata, proof)),
-                None => Ok((None, response_metadata, proof)),
-            }
-            .map(|x| ExecutionResponse {
-                inner: x,
-                address,
-                retries,
-            })
-        };
-
-        let retry_settings = sdk
-            .dapi_client_settings
-            .override_by(request_settings.unwrap_or_default());
-
-        retry(sdk.address_list(), retry_settings, fut)
-            .await
-            .into_inner()
+        fetch_proved::<Self, Q>(sdk, query, request_settings).await
     }
 
     /// Fetch single object from Platform.
@@ -303,6 +228,88 @@ where
     {
         Self::fetch(sdk, id).await
     }
+}
+
+/// The default [`Fetch::fetch_with_metadata_and_proof`], for an implementation that overrides
+/// it to prepare its query first.
+pub(super) async fn fetch_proved<T: Fetch + Send, Q: Query<<T as Fetch>::Query>>(
+    sdk: &Sdk,
+    query: Q,
+    request_settings: Option<RequestSettings>,
+) -> Result<(Option<T>, ResponseMetadata, Proof), Error> {
+    let mut settings = sdk.query_settings();
+    let mut owned_rich: <T as Fetch>::Query = query.query(&settings)?;
+    // INTENTIONAL(#3711): For the common case `T::Query = T::Request`,
+    // the blanket `Query<T> for T` impl turns the `query.query(settings)` step into a
+    // pure clone of the same owned request. Real but micro-cost (~63 impls hit
+    // this path). Specializing via a `fn encode_request_owned()` default method on
+    // `Fetch` would eliminate the clone — deferred as future-perf work; trait shape
+    // is intentionally uniform for now.
+    let requirement = owned_rich.protocol_requirement(&settings)?;
+    if requirement.is_some() {
+        sdk.ensure_network_serves(requirement, request_settings)
+            .await?;
+        // Asking the network for its version may have raised the version requests are
+        // encoded with: encode the request again at it.
+        settings = sdk.query_settings();
+        owned_rich = query.query(&settings)?;
+    }
+    let required_protocol_version = requirement.map(|requirement| requirement.protocol_version);
+    let owned_wire: <T as Fetch>::Request = owned_rich.query(&settings)?;
+    check_before_sending::<<T as Fetch>::Query, T>(&owned_rich, settings.protocol_version)?;
+    let rich = &owned_rich;
+    let wire = &owned_wire;
+
+    let fut = |settings: RequestSettings| async move {
+        let ExecutionResponse {
+            address,
+            retries,
+            inner: response,
+        } = wire
+            .clone()
+            .execute(sdk, settings)
+            .await
+            .map_err(|execution_error| execution_error.inner_into())?;
+
+        let object_type = std::any::type_name::<T>().to_string();
+        tracing::trace!(request = ?wire, response = ?response, ?address, retries, object_type, "fetched object from platform");
+
+        let (object, response_metadata, proof): (Option<T>, ResponseMetadata, Proof) = sdk
+            .parse_proof_with_metadata_and_proof::<<T as Fetch>::Query, T>(
+                rich.clone(),
+                response,
+                wire.method_name(),
+            )
+            .await
+            .and_then(|parsed| {
+                sdk.ensure_answer_serves(required_protocol_version, &parsed.1)?;
+                Ok(parsed)
+            })
+            .map_err(|e| ExecutionError {
+                possibly_accepted: false,
+                inner: e,
+                address: Some(address.clone()),
+                retries,
+            })?;
+
+        match object {
+            Some(item) => Ok((item.into(), response_metadata, proof)),
+            None => Ok((None, response_metadata, proof)),
+        }
+        .map(|x| ExecutionResponse {
+            inner: x,
+            address,
+            retries,
+        })
+    };
+
+    let retry_settings = sdk
+        .dapi_client_settings
+        .override_by(request_settings.unwrap_or_default());
+
+    retry(sdk.address_list(), retry_settings, fut)
+        .await
+        .into_inner()
 }
 
 /// Refuse, before it is sent, a request that no node serves, or that `O` cannot be
@@ -375,16 +382,6 @@ impl Fetch for drive_proof_verifier::types::IdentityBalanceAndRevision {
 impl Fetch for drive_proof_verifier::types::DataContractHistory {
     type Query = platform_proto::GetDataContractHistoryRequest;
     type Request = platform_proto::GetDataContractHistoryRequest;
-}
-
-impl Fetch for drive_proof_verifier::types::DocumentHistoryProofInfo {
-    type Query = platform_proto::GetDocumentHistoryRequest;
-    type Request = platform_proto::GetDocumentHistoryRequest;
-}
-
-impl Fetch for drive_proof_verifier::types::DocumentHistory {
-    type Query = platform_proto::GetDocumentHistoryRequest;
-    type Request = platform_proto::GetDocumentHistoryRequest;
 }
 
 impl Fetch for ExtendedEpochInfo {

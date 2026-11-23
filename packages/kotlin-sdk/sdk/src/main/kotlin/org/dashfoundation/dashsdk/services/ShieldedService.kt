@@ -2,21 +2,35 @@ package org.dashfoundation.dashsdk.services
 
 import androidx.room.withTransaction
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
+import org.dashfoundation.dashsdk.wallet.ShieldedBalanceUpdate
+import org.dashfoundation.dashsdk.wallet.ShieldedLocalBalanceSnapshot
+import org.dashfoundation.dashsdk.wallet.ShieldedLocalBalanceState
 import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
+import org.dashfoundation.dashsdk.wallet.shieldedBalanceKey
 
 /**
  * Reactive view of the Rust-owned shielded (Orchard) sync loop — port of
@@ -28,9 +42,10 @@ import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
  *
  * State is a single [ShieldedSyncState] StateFlow (isSyncing, totalScanned,
  * totalNewNotes, syncCountSinceLaunch) fed by the manager's completion +
- * progress events (`on_shielded_sync_*` callbacks). [shieldedBalance] is a
- * Room `Flow` summing unspent notes for the bound wallet — the analogue of
- * Swift's CoreContentView unspent scan. Cumulative counters accumulate
+ * progress events (`on_shielded_sync_*` callbacks). Balances are the ones
+ * Rust announces ([PlatformWalletManager.shieldedBalances]): [localBalance],
+ * [ordinaryBalance] and [accountBalance] pass them on per wallet, and nothing
+ * here reads or adds up a balance. Cumulative counters accumulate
  * across passes since [bind], mirroring Swift's `totalScanned` /
  * `totalNewNotes` / `syncCountSinceLaunch`.
  *
@@ -48,8 +63,8 @@ import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
  * union of all wallets' viewing keys and routes note hits to each
  * wallet's own persister (SH-14/15/16 cross-wallet flows). Per-wallet
  * receive addresses and balances are read on demand
- * ([PlatformWalletManager.shieldedDefaultAddress], per-wallet Room
- * queries) rather than from this singleton mirror.
+ * ([PlatformWalletManager.shieldedDefaultAddress], [localBalance]) rather
+ * than from this singleton mirror.
  */
 class ShieldedService(private val database: DashDatabase) {
 
@@ -57,9 +72,12 @@ class ShieldedService(private val database: DashDatabase) {
      * Rolling shielded sync state — the Kotlin analogue of Swift's
      * `@Published` shielded scalars.
      *
+     * Carries no balance: a sync result's balance goes stale between
+     * passes (a send, a failed scan, a rebind, a Clear), so the one balance
+     * the service publishes is the one Rust announces, through
+     * [shieldedBalance], [ordinaryBalance] and [accountBalance].
+     *
      * @param isSyncing a pass is currently in flight.
-     * @param shieldedBalance last observed unspent balance (credits); the
-     *   authoritative live value is [shieldedBalance] (the Room Flow).
      * @param lastNewNotes new notes in the most recent pass.
      * @param lastNewlySpent notes newly spent in the most recent pass.
      * @param totalScanned cumulative encrypted notes scanned since [bind].
@@ -70,7 +88,6 @@ class ShieldedService(private val database: DashDatabase) {
      */
     data class ShieldedSyncState(
         val isSyncing: Boolean = false,
-        val shieldedBalance: Long = 0,
         val lastNewNotes: Int = 0,
         val lastNewlySpent: Int = 0,
         val totalScanned: Long = 0,
@@ -104,6 +121,28 @@ class ShieldedService(private val database: DashDatabase) {
      */
     private var boundDbPath: String? = null
     private var eventJob: Job? = null
+
+    /** Orders [bind] and [unbind]; see [BindingTurns]. */
+    private val bindingTurns = BindingTurns()
+
+    /** See [withLedgerLifecycle]. */
+    private val ledgerLifecycle = Mutex()
+
+    /** A Room wipe a Clear still owes. Touched only inside [withLedgerLifecycle]. */
+    private val pendingHostWipe = PendingHostWipe()
+
+    /**
+     * Run [step] with no other ledger lifecycle step in flight. Two things
+     * take it: a bind's native calls, which restore the wallet's stored
+     * notes and watermark from Room into Rust, and a Clear from its Rust
+     * reset to the end of its Room wipe. So a bind cannot restore rows into
+     * the store a Clear just emptied and then lose them to that Clear's
+     * wipe, which would leave Rust holding notes Room no longer has. A bind
+     * that arrives during a Clear waits and then restores from the wiped
+     * tables.
+     */
+    internal suspend fun <T> withLedgerLifecycle(step: suspend () -> T): T =
+        ledgerLifecycle.withLock { step() }
     private var pollJob: Job? = null
 
     private val _boundAccounts = MutableStateFlow<List<Int>>(emptyList())
@@ -111,14 +150,68 @@ class ShieldedService(private val database: DashDatabase) {
     /** ZIP-32 account indices bound for the current wallet (Swift `boundAccounts`). */
     val boundAccounts: StateFlow<List<Int>> = _boundAccounts.asStateFlow()
 
-    private val _shieldedBalance = MutableStateFlow<Flow<Long>>(emptyFlow())
+    private val _shieldedBalance = MutableStateFlow<Flow<Long?>>(emptyFlow())
 
     /**
-     * Live unspent shielded balance (credits) for the bound wallet, summed
-     * from `shielded_notes` where `isSpent = 0` — Swift's CoreContentView
-     * balance scan. Empty until [bind].
+     * The bound wallet's shielded balance (credits): [ordinaryBalance] of the
+     * bound wallet. Empty until [bind].
+     *
+     * The inner flow emits `Long?`. Null means the balance is not known (not
+     * announced yet, restoration incomplete, or its amount has no evidence
+     * behind it); it is not zero, and a collector should show it as unknown.
+     * Earlier versions emitted a non-null `Long` summed from the stored
+     * notes.
      */
-    val shieldedBalance: StateFlow<Flow<Long>> = _shieldedBalance.asStateFlow()
+    val shieldedBalance: StateFlow<Flow<Long?>> = _shieldedBalance.asStateFlow()
+
+    /**
+     * Where the balance updates come from: the bound manager's
+     * [PlatformWalletManager.shieldedBalances], or nothing while no manager
+     * is bound. A flow of flows so that a collector follows a rebind to
+     * another manager (another network).
+     */
+    internal val balanceUpdates =
+        MutableStateFlow<Flow<Map<String, ShieldedBalanceUpdate>>>(flowOf(emptyMap()))
+
+    /**
+     * [walletId]'s local shielded balances as Rust last announced them, or
+     * null while there are no numbers: the wallet was not announced yet, it
+     * is not bound, or its restoration is incomplete. Rust announces the
+     * state whenever it has changed (after a scan ends, a spend reserves or
+     * releases notes, a bind, a Clear), so a collector needs no refresh of
+     * its own. An update is the latest state Rust read, not one per change:
+     * notes reserved and released again before Rust reads produce none.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun localBalance(walletId: ByteArray): Flow<ShieldedLocalBalanceSnapshot?> {
+        val key = shieldedBalanceKey(walletId)
+        return balanceUpdates
+            .flatMapLatest { it }
+            // No buffer between the sources and the collector: a value of
+            // the source that was switched away from must not be handed
+            // over after the switch.
+            .buffer(Channel.RENDEZVOUS)
+            .map { updates -> (updates[key]?.state as? ShieldedLocalBalanceState.Ready)?.snapshot }
+            .distinctUntilChanged()
+    }
+
+    /**
+     * [walletId]'s shielded balance (credits): spendable credits of its
+     * ordinary accounts, which leaves out identity accounts. The number is
+     * Rust's ([ShieldedLocalBalanceSnapshot.ordinaryBalance]); null while it
+     * is not known, which is not zero.
+     */
+    fun ordinaryBalance(walletId: ByteArray): Flow<Long?> =
+        localBalance(walletId).map { it?.ordinaryBalance }.distinctUntilChanged()
+
+    /**
+     * Credits a send from [account] of [walletId] can spend now, as Rust
+     * reports them for that account ([ShieldedLocalBalanceSnapshot.accountBalance]);
+     * null while not known or when the account is not bound. A screen that
+     * sends from one account shows this, not the wallet's total.
+     */
+    fun accountBalance(walletId: ByteArray, account: Int): Flow<Long?> =
+        localBalance(walletId).map { it?.accountBalance(account) }.distinctUntilChanged()
 
     /** Whether shielded support is compiled into the native library. */
     val isAvailable: Boolean get() = Sdk.hasShielded()
@@ -180,7 +273,29 @@ class ShieldedService(private val database: DashDatabase) {
         dbPath: String,
         accounts: List<Int> = listOf(0),
     ) {
-        if (!isAvailable) return
+        bindTurn(manager, walletId, dbPath, accounts)
+    }
+
+    /**
+     * [bind], returning its turn when this bind is still the service's latest
+     * as it ends, and null otherwise. A bind suspends in its native calls;
+     * when another bind or an [unbind] took a later turn meanwhile, this one
+     * stops without attaching its subscriptions, so it cannot point the
+     * service back at a manager that was replaced.
+     *
+     * [onlyIf] is checked under the lock that starts the turn: when it is
+     * false nothing is installed and null is returned. [clearLocalState]
+     * uses it so that its re-bind starts only while the manager it cleared
+     * is still the bound one, with no gap between that check and the bind.
+     */
+    private suspend fun bindTurn(
+        manager: PlatformWalletManager,
+        walletId: ByteArray,
+        dbPath: String,
+        accounts: List<Int>,
+        onlyIf: () -> Boolean = { true },
+    ): Long? {
+        if (!isAvailable) return null
         val sortedAccounts = accounts.distinct().sorted()
 
         // Cancel the prior subscriptions and zero the published mirror, but —
@@ -195,25 +310,48 @@ class ShieldedService(private val database: DashDatabase) {
         // service permanently unbound with no path back, disabling Clear while
         // the coordinator kept syncing. That was the on-device "Clear disabled
         // when needed" defect.
-        eventJob?.cancel()
-        eventJob = null
-        pollJob?.cancel()
-        pollJob = null
-        this.manager = manager
-        this.boundWalletId = walletId.copyOf()
-        this.boundDbPath = dbPath
-        _boundAccounts.value = sortedAccounts
-        _canResume.value = true
-        _isBound.value = false
-        _state.value = ShieldedSyncState()
-        _shieldedBalance.value = database.shieldedDao()
-            .observeUnspentNotesByWallet(walletId)
-            .map { notes -> notes.sumOf { it.value } }
+        val turn = bindingTurns.beginIf(onlyIf) { stillThisTurn ->
+            eventJob?.cancel()
+            eventJob = null
+            pollJob?.cancel()
+            pollJob = null
+            this.manager = manager
+            this.boundWalletId = walletId.copyOf()
+            this.boundDbPath = dbPath
+            // Each write below can wake a collector on this thread, and a
+            // collector may call unbind() or bind() from there, taking a
+            // later turn inside this one. What that turn published must
+            // stand, so the rest of this install is skipped once it
+            // happened.
+            if (stillThisTurn()) _boundAccounts.value = sortedAccounts
+            if (stillThisTurn()) _canResume.value = true
+            if (stillThisTurn()) _isBound.value = false
+            if (stillThisTurn()) _state.value = ShieldedSyncState()
+            if (stillThisTurn()) balanceUpdates.value = manager.shieldedBalances
+            if (stillThisTurn()) _shieldedBalance.value = ordinaryBalance(walletId)
+        } ?: return null
 
+        var bound = false
         try {
-            manager.configureShielded(dbPath)
-            manager.bindShielded(walletId, sortedAccounts)
-            _isBound.value = true
+            val ran = withLedgerLifecycle {
+                // A later bind may have gone through here while this one
+                // waited for its turn at the ledger. Its registration (its
+                // accounts) is the one that must stand, so this bind leaves
+                // the native side alone.
+                if (bindingTurns.isLatest(turn)) {
+                    // A Clear whose Room wipe failed left rows behind that
+                    // the reset tree no longer matches. The wipe goes first;
+                    // if it fails again this bind fails and restores nothing.
+                    pendingHostWipe.commit()
+                    manager.configureShielded(dbPath)
+                    manager.bindShielded(walletId, sortedAccounts)
+                    true
+                } else {
+                    false
+                }
+            }
+            if (!ran) return null
+            bound = true
         } catch (e: Exception) {
             // Stay resumable: credentials are retained above, so a later
             // bind() retry (or the Clear→re-bind path) picks up cleanly.
@@ -228,26 +366,49 @@ class ShieldedService(private val database: DashDatabase) {
         // subscribing so a later successful retry / the running loop's events
         // update the mirror). Harmless when unbound: the coordinator emits no
         // events for an unregistered wallet and the balance flow just reflects
-        // whatever rows persist.
-        eventJob = scope.launch {
-            manager.syncEvents.collect { event -> reduce(walletId, event) }
+        // whatever rows persist. Only the latest bind attaches them: one
+        // that a later bind or an unbind overtook while it was suspended
+        // above leaves the service as the later turn set it.
+        val finished = bindingTurns.finish(turn) { stillThisTurn ->
+            _isBound.value = bound
+            // A collector of [isBound] may have answered that write with an
+            // unbind or a bind on this thread. The jobs below belong to this
+            // turn and are not started for a service that has moved on.
+            if (!stillThisTurn()) return@finish
+            // Both jobs write [state] only while this bind is the latest
+            // turn: cancelling a job does not stop a write it has already
+            // reached, and that write must not land on the state an unbind
+            // or a later bind has reset.
+            eventJob = scope.launch {
+                manager.syncEvents.collect { event ->
+                    bindingTurns.finish(turn) { reduce(walletId, event) }
+                }
+            }
+            pollJob = scope.launch { pollSyncing(manager, turn) }
         }
+        return turn.takeIf { finished }
+    }
 
-        pollJob = scope.launch {
-            while (true) {
-                // Poll the PASS-IN-FLIGHT flag, not the loop-alive flag. The
-                // background loop stays alive (isShieldedSyncRunning == true)
-                // for its whole lifetime, so polling that pinned "Syncing…" on
-                // forever and left the Clear button's `!isSyncing` gate never
-                // satisfiable. Swift polls `isShieldedSyncing()` here for the
-                // same reason.
-                val syncing = runCatching { manager.isShieldedSyncing() }
-                    .getOrDefault(false)
+    /**
+     * Mirror whether a sync pass is in flight into [state], once a second,
+     * for as long as [turn] is the latest binding turn.
+     */
+    private suspend fun pollSyncing(manager: PlatformWalletManager, turn: Long) {
+        while (true) {
+            // Poll the PASS-IN-FLIGHT flag, not the loop-alive flag. The
+            // background loop stays alive (isShieldedSyncRunning == true)
+            // for its whole lifetime, so polling that pinned "Syncing…" on
+            // forever and left the Clear button's `!isSyncing` gate never
+            // satisfiable. Swift polls `isShieldedSyncing()` here for the
+            // same reason.
+            val syncing = runCatching { manager.isShieldedSyncing() }
+                .getOrDefault(false)
+            bindingTurns.finish(turn) {
                 if (syncing != _state.value.isSyncing) {
                     _state.update { it.copy(isSyncing = syncing) }
                 }
-                kotlinx.coroutines.delay(POLL_INTERVAL_MS)
             }
+            kotlinx.coroutines.delay(POLL_INTERVAL_MS)
         }
     }
 
@@ -263,8 +424,11 @@ class ShieldedService(private val database: DashDatabase) {
      * shielded sync pass trial-decrypts against the union of all wallets'
      * viewing keys and routes note hits to each wallet's own persister.
      * Per-wallet receive addresses and balances are then read on demand
-     * ([PlatformWalletManager.shieldedDefaultAddress], per-wallet Room
-     * queries) rather than from this singleton mirror.
+     * rather than from this singleton mirror: the address from
+     * [PlatformWalletManager.shieldedDefaultAddress], a wallet's balance from
+     * [ordinaryBalance] and one account's from [accountBalance]. Do not sum
+     * a wallet's stored notes for a balance: they include the notes of
+     * identity accounts, which an ordinary send cannot spend.
      *
      * Best-effort and independent per wallet: a missing mnemonic /
      * declined keystore read for one wallet logs and returns `false`
@@ -297,8 +461,11 @@ class ShieldedService(private val database: DashDatabase) {
         val sortedAccounts = accounts.distinct().sorted()
         val walletIdHex4 = walletId.take(4).joinToString("") { "%02x".format(it) }
         return try {
-            manager.configureShielded(dbPath)
-            manager.bindShielded(walletId, sortedAccounts)
+            withLedgerLifecycle {
+                pendingHostWipe.commit()
+                manager.configureShielded(dbPath)
+                manager.bindShielded(walletId, sortedAccounts)
+            }
             android.util.Log.i(
                 TAG,
                 "Shielded engine-bound: walletId=$walletIdHex4… accounts=$sortedAccounts",
@@ -328,7 +495,6 @@ class ShieldedService(private val database: DashDatabase) {
                 if (!event.success) return
                 _state.update { s ->
                     s.copy(
-                        shieldedBalance = event.balance,
                         lastNewNotes = event.newNotes,
                         lastNewlySpent = event.newlySpent,
                         totalScanned = s.totalScanned + event.totalScanned,
@@ -369,6 +535,10 @@ class ShieldedService(private val database: DashDatabase) {
      * re-bind (see [bind]).
      */
     fun unbind() {
+        bindingTurns.begin { _ -> unbindNow() }
+    }
+
+    private fun unbindNow() {
         eventJob?.cancel()
         eventJob = null
         pollJob?.cancel()
@@ -377,7 +547,11 @@ class ShieldedService(private val database: DashDatabase) {
         boundWalletId = null
         boundDbPath = null
         _boundAccounts.value = emptyList()
-        _shieldedBalance.value = emptyFlow()
+        // Not an empty flow: a collector that follows this to its next
+        // inner flow must receive "not known", or it keeps showing the
+        // balance of the wallet that was unbound.
+        _shieldedBalance.value = flowOf(null)
+        balanceUpdates.value = flowOf(emptyMap())
         _state.value = ShieldedSyncState()
         _isBound.value = false
         _canResume.value = false
@@ -432,13 +606,17 @@ class ShieldedService(private val database: DashDatabase) {
      * No-op when unbound.
      */
     suspend fun clearLocalState(db: DashDatabase = database) {
-        val walletId = boundWalletId ?: return
-        // Snapshot bind credentials up front so the re-bind at the end is
-        // driven off a stable set (bind() retains credentials across its own
-        // re-entry, but snapshotting keeps this flow independent of that).
-        val mgr = manager
-        val dbPath = boundDbPath
-        val accounts = _boundAccounts.value.ifEmpty { listOf(0) }
+        // The binding this Clear is for: its turn and its credentials, read
+        // together. A bind or unbind that begins later makes the turn stale,
+        // which is how the steps below know the service's mirror has moved
+        // on (to another wallet or another manager) and must not be touched.
+        val binding = bindingTurns.read {
+            ClearedBinding(boundWalletId, manager, boundDbPath, _boundAccounts.value)
+        }
+        val startTurn = binding.first
+        val walletId = binding.second.walletId ?: return
+        val mgr = binding.second.manager
+        val dbPath = binding.second.dbPath
 
         // A bound service must have a manager (both are set together in
         // bind, cleared together in unbind). If it doesn't, the Rust-side
@@ -455,10 +633,111 @@ class ShieldedService(private val database: DashDatabase) {
         // wipe below must not run unless the tree was truly reset, else the
         // host drops its rows while the shared tree stays populated and the
         // next resync gate-skips every position. Fail-closed by propagation.
+        //
+        // The reset and the Room wipe run as one ledger lifecycle step: no
+        // bind can restore the still-present rows into the emptied store in
+        // between (see [withLedgerLifecycle]).
         val walletIdHex = walletId.joinToString("") { "%02x".format(it) }
         android.util.Log.i(TAG, "Shielded clear: resetting Rust store for $walletIdHex")
+        withLedgerLifecycle {
+            // Once the reset has started, the wipe must follow even if the
+            // caller (a screen that was left) is cancelled: a reset whose
+            // wipe never ran would let the next bind restore the old
+            // watermark into the emptied tree.
+            withContext(NonCancellable) { resetAndWipe(mgr, db) }
+        }
+
+        // The counters belong to the binding that was cleared. If a later
+        // bind took over meanwhile, they are that binding's now.
+        bindingTurns.finish(startTurn) {
+            _state.update { it.copy(totalScanned = 0, totalNewNotes = 0) }
+        }
+
+        // Re-bind + restart so the cold rebuild runs now, not just after a
+        // relaunch. bind() re-runs configureShielded (idempotent same-path)
+        // + bindShielded (re-registers on the now-empty coordinator; its
+        // restore_for_wallet finds no watermark → starts at index 0).
+        //
+        // The reset dropped every registration on `mgr`, so the binding the
+        // service has NOW is the one to bind again, with its own wallet and
+        // accounts: the one this Clear started with, or one made on the same
+        // manager while the Clear was suspended. Each attempt reads the
+        // binding with its turn and starts only if that turn is still the
+        // latest, under the lock that starts the bind, so a bind that slips
+        // in between is never overwritten with what was read before it; the
+        // next attempt reads that newer binding instead. If the service
+        // follows another manager (another network) or was unbound, the
+        // mirror is left alone.
+        if (dbPath == null) {
+            android.util.Log.w(TAG, "Shielded clear: no dbPath retained; skipping re-bind (will resync on relaunch)")
+            return
+        }
+        for (attempt in 0 until CLEAR_REBIND_ATTEMPTS) {
+            val (readTurn, current) = bindingTurns.read {
+                ClearedBinding(boundWalletId, manager, boundDbPath, _boundAccounts.value)
+            }
+            val currentWallet = current.walletId
+            if (current.manager !== mgr || currentWallet == null) break
+            val rebound = bindTurn(
+                mgr,
+                currentWallet,
+                current.dbPath ?: dbPath,
+                current.accounts.ifEmpty { listOf(0) },
+            ) { bindingTurns.isLatest(readTurn) }
+            if (rebound != null) break
+        }
+
+        // Fleet recovery: clearShieldedStorage dropped EVERY wallet's
+        // coordinator registration, and a mirror bind restores only one.
+        // Re-register every other loaded wallet so the next pass scans the
+        // whole fleet (SH-14/15/16 survive an SH-12 run without a
+        // relaunch), and restart the sync loop the reset stopped. This does
+        // not depend on who bound the mirror: a bind that overtook the
+        // re-bind above registers one wallet and restarts nothing, so the
+        // rest is still this Clear's to do. [bindEngine] writes nothing to
+        // the service. Skipped only when the service left this manager.
+        val mirrorNow = bindingTurns.read { boundWalletId.takeIf { manager === mgr } }.second
+        if (bindingTurns.read { manager !== mgr }.second) {
+            android.util.Log.i(TAG, "Shielded clear: the service left this manager; no fleet recovery")
+            return
+        }
+        engineBindOtherWallets(
+            allWalletIds = mgr.wallets.value.keys,
+            mirrorWalletId = mirrorNow?.joinToString("") { "%02x".format(it) }.orEmpty(),
+        ) { otherKey ->
+            // Checked before each wallet: once the service has left this
+            // manager (an unbind, another network), the rest of its fleet
+            // is no longer this Clear's to register.
+            if (bindingTurns.read { manager === mgr }.second) {
+                mgr.wallets.value[otherKey]?.let { other ->
+                    bindEngine(mgr, other.walletId, dbPath)
+                }
+            }
+        }
+        val stillOnManager = bindingTurns.read { manager === mgr }.second
+        val notRunning = runCatching { !mgr.isShieldedSyncRunning() }.getOrDefault(false)
+        if (isAvailable && notRunning && stillOnManager) {
+            runCatching { mgr.startShieldedSync() }.onFailure {
+                android.util.Log.w(TAG, "restart shielded sync after clear failed: ${it.message}", it)
+            }
+        }
+    }
+
+    /**
+     * The two halves of a Clear that must not be separated: the Rust reset,
+     * then the Room wipe. Called inside [withLedgerLifecycle].
+     */
+    private suspend fun resetAndWipe(mgr: PlatformWalletManager, db: DashDatabase) {
         mgr.clearShieldedStorage()
         android.util.Log.i(TAG, "Shielded clear: Rust store reset OK; wiping Room rows")
+        // From here the Room wipe is owed. If it fails now, no bind restores
+        // anything until it has gone through (see [PendingHostWipe]).
+        pendingHostWipe.owe { wipeNetworkRows(mgr, db) }
+        pendingHostWipe.commit()
+    }
+
+    /** Delete the shielded Room rows of every wallet on [mgr]'s network. */
+    private suspend fun wipeNetworkRows(mgr: PlatformWalletManager, db: DashDatabase) {
 
         // Wipe every wallet on THIS network, but NOT other networks'. `mgr`
         // is network-scoped and its shielded tree
@@ -483,38 +762,6 @@ class ShieldedService(private val database: DashDatabase) {
                 db.shieldedDao().deleteSyncStatesByWallet(wid)
             }
         }
-        _state.update { it.copy(shieldedBalance = 0, totalScanned = 0, totalNewNotes = 0) }
-
-        // Re-bind + restart so the cold rebuild runs now, not just after a
-        // relaunch. bind() re-runs configureShielded (idempotent same-path)
-        // + bindShielded (re-registers on the now-empty coordinator; its
-        // restore_for_wallet finds no watermark → starts at index 0).
-        if (dbPath != null) {
-            bind(mgr, walletId, dbPath, accounts)
-            // Fleet recovery: clearShieldedStorage dropped EVERY wallet's
-            // coordinator registration, and the mirror bind above restores
-            // only one. Re-register every other loaded wallet so the next
-            // pass scans the whole fleet (SH-14/15/16 survive an SH-12 run
-            // without a relaunch). Runs regardless of the mirror bind's
-            // outcome — bind() swallows its errors, and one wallet's
-            // failure must not dark the others (iOS best-effort lesson).
-            engineBindOtherWallets(
-                allWalletIds = mgr.wallets.value.keys,
-                mirrorWalletId = walletIdHex,
-            ) { otherKey ->
-                mgr.wallets.value[otherKey]?.let { other ->
-                    bindEngine(mgr, other.walletId, dbPath)
-                }
-            }
-            val notRunning = runCatching { !mgr.isShieldedSyncRunning() }.getOrDefault(false)
-            if (isAvailable && notRunning) {
-                runCatching { mgr.startShieldedSync() }.onFailure {
-                    android.util.Log.w(TAG, "restart shielded sync after clear failed: ${it.message}", it)
-                }
-            }
-        } else {
-            android.util.Log.w(TAG, "Shielded clear: no dbPath retained; skipping re-bind (will resync on relaunch)")
-        }
     }
 
     /** Tear down the service scope permanently. */
@@ -525,5 +772,121 @@ class ShieldedService(private val database: DashDatabase) {
     private companion object {
         const val TAG = "ShieldedService"
         const val POLL_INTERVAL_MS = 1_000L
+
+        /** Times a Clear re-reads the binding when a bind slips in before its re-bind. */
+        const val CLEAR_REBIND_ATTEMPTS = 3
     }
+}
+
+/**
+ * A host persistence wipe that a Clear owes after its Rust reset went
+ * through. Until the wipe commits, the stored notes and watermarks describe a
+ * tree that no longer exists, and restoring them would make the next scan
+ * skip what the tree has lost. So every step that restores from the store
+ * commits the owed wipe first and fails if it cannot.
+ *
+ * Kept in memory: a wipe still owed when the process dies is not remembered
+ * across the restart.
+ */
+internal class PendingHostWipe {
+    private var owed: (suspend () -> Unit)? = null
+
+    /** Whether a wipe is owed. */
+    val isOwed: Boolean get() = owed != null
+
+    /** Record [wipe] as owed, replacing an earlier one. */
+    fun owe(wipe: suspend () -> Unit) {
+        owed = wipe
+    }
+
+    /**
+     * Run the owed wipe, if any, and forget it once it has succeeded. A
+     * failure leaves it owed and is thrown to the caller.
+     */
+    suspend fun commit() {
+        val wipe = owed ?: return
+        wipe()
+        owed = null
+    }
+}
+
+/** What [ShieldedService.clearLocalState] reads of the binding it clears. */
+private class ClearedBinding(
+    val walletId: ByteArray?,
+    val manager: PlatformWalletManager?,
+    val dbPath: String?,
+    val accounts: List<Int>,
+)
+
+/**
+ * Orders the binds and unbinds of one [ShieldedService]. Each takes a turn.
+ * What a turn installs at its start runs under one lock, so two turns never
+ * interleave their writes, and what a bind attaches at its end runs only if
+ * no later turn began meanwhile. A bind suspends between the two (it calls
+ * into native code), which is where a later bind or an unbind can overtake
+ * it.
+ */
+internal class BindingTurns {
+    private var latest = 0L
+
+    /**
+     * Take the next turn and run [install] as its first step. No other
+     * thread's turn interleaves with it. [install] is handed a check that
+     * says whether its turn is still the latest: an observer it wakes can
+     * take a later turn on this same thread (the lock is reentrant), and
+     * [install] must not write over what that turn set.
+     */
+    fun begin(install: (stillThisTurn: () -> Boolean) -> Unit): Long = synchronized(this) {
+        // Fixed before [install] runs, so this call returns its own turn
+        // whatever a nested turn does to [latest].
+        val turn = latest + 1
+        latest = turn
+        install { latest == turn }
+        turn
+    }
+
+    /**
+     * [begin], but only if [allowed] holds. [allowed] is read under the same
+     * lock, so no other turn can begin between the check and this one; when
+     * it is false no turn is taken and null is returned.
+     */
+    fun beginIf(
+        allowed: () -> Boolean,
+        install: (stillThisTurn: () -> Boolean) -> Unit,
+    ): Long? = synchronized(this) {
+        if (!allowed()) {
+            null
+        } else {
+            val turn = latest + 1
+            latest = turn
+            install { latest == turn }
+            turn
+        }
+    }
+
+    /** Whether no turn began after [turn]. */
+    fun isLatest(turn: Long): Boolean = synchronized(this) { turn == latest }
+
+    /**
+     * The latest turn together with what [read] returns, read in one step so
+     * the value is the one that turn installed.
+     */
+    fun <T> read(read: () -> T): Pair<Long, T> = synchronized(this) { latest to read() }
+
+    /**
+     * Run [finish] if [turn] is still the latest, and say whether it was and
+     * still is once [finish] returned. [finish] runs under the same lock as
+     * every turn's first step and is handed the same check as an install:
+     * a collector it wakes can take a later turn on this thread, after which
+     * it must write nothing more.
+     */
+    fun finish(turn: Long, finish: (stillThisTurn: () -> Boolean) -> Unit): Boolean =
+        synchronized(this) {
+            if (turn != latest) {
+                false
+            } else {
+                finish { latest == turn }
+                latest == turn
+            }
+        }
 }

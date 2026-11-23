@@ -80,9 +80,6 @@ use tracing::{debug, info, trace, warn};
 /// (`pending_unknown`). Cross-checked at the push site below.
 const PENDING_UNKNOWN_WARN_THRESHOLD: usize = 1000;
 
-/// Server limit for compacted address balance changes per request.
-const COMPACTED_BATCH_LIMIT: usize = 25;
-
 #[cfg(all(test, feature = "mocks"))]
 mod signed_trunk_tests;
 
@@ -245,18 +242,7 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
     }
 
     fn depth_limits(platform_version: &PlatformVersion) -> (u8, u8) {
-        (
-            platform_version
-                .drive
-                .methods
-                .address_funds
-                .address_funds_query_min_depth,
-            platform_version
-                .drive
-                .methods
-                .address_funds
-                .address_funds_query_max_depth,
-        )
+        address_query_depth_limits(platform_version)
     }
 
     async fn after_branch_iteration(
@@ -627,6 +613,17 @@ async fn incremental_catch_up<P: AddressProvider>(
 
     // Phase 2b — Compacted (historical) catch-up (conditional)
     if need_compacted {
+        // Server limit for compacted address balance changes per request,
+        // from the version table the query handler and the proof verifier
+        // both read: 25, the constant used here before, in every shipped
+        // protocol version.
+        let compacted_batch_limit = usize::from(
+            sdk.version()
+                .drive_abci
+                .query
+                .address_funds_queries
+                .recent_compacted_address_balance_changes_max_ranges,
+        );
         loop {
             let request = GetRecentCompactedAddressBalanceChangesRequest {
                 version: Some(
@@ -695,7 +692,7 @@ async fn incremental_catch_up<P: AddressProvider>(
                 }
             }
 
-            if entry_count < COMPACTED_BATCH_LIMIT {
+            if entry_count < compacted_batch_limit {
                 break;
             }
         }
@@ -1226,6 +1223,31 @@ fn get_last_recent_block_from_proof(proof: &Proof) -> Result<Option<u64>, Error>
     Ok(max_height)
 }
 
+// ── Branch query depth ───────────────────────────────────────────────
+
+/// The `(min, max)` depth an address branch query may ask for under
+/// `platform_version`.
+fn address_query_depth_limits(platform_version: &PlatformVersion) -> (u8, u8) {
+    let address_funds = &platform_version.drive.methods.address_funds;
+    (
+        address_funds.address_funds_query_min_depth,
+        address_funds.address_funds_query_max_depth,
+    )
+}
+
+/// The depth to ask for when querying the branch under a leaf boundary of
+/// the address tree that holds about `estimated_count` elements.
+///
+/// This is the depth the address sync's full tree scan picks for a leaf it
+/// queries directly (`trunk_branch_sync::direct_leaf_query_depth`, the
+/// same function `get_privacy_adjusted_leaves` uses) under the address
+/// branch query limits of `platform_version`. A count of 0 (unknown) gives
+/// the minimum depth.
+pub fn address_branch_query_depth(estimated_count: u64, platform_version: &PlatformVersion) -> u8 {
+    let (min_depth, max_depth) = address_query_depth_limits(platform_version);
+    trunk_branch_sync::direct_leaf_query_depth(estimated_count, min_depth, max_depth)
+}
+
 // ── Branch query helper (address-specific) ───────────────────────────
 
 /// Execute a single address branch query with retry logic.
@@ -1435,6 +1457,44 @@ mod tests {
         );
         assert_eq!(config.min_privacy_count, 32);
         assert_eq!(config.max_iterations, 50);
+    }
+
+    #[test]
+    fn should_clamp_a_small_or_unknown_branch_count_to_the_minimum_depth() {
+        let platform_version = PlatformVersion::latest();
+        let (min_depth, _) = address_query_depth_limits(platform_version);
+
+        assert_eq!(address_branch_query_depth(0, platform_version), min_depth);
+        assert_eq!(address_branch_query_depth(1, platform_version), min_depth);
+        assert_eq!(address_branch_query_depth(12, platform_version), min_depth);
+    }
+
+    #[test]
+    fn should_clamp_a_large_branch_count_to_the_maximum_depth() {
+        let platform_version = PlatformVersion::latest();
+        let (_, max_depth) = address_query_depth_limits(platform_version);
+
+        assert_eq!(
+            address_branch_query_depth(1_000_000, platform_version),
+            max_depth
+        );
+        assert_eq!(
+            address_branch_query_depth(u64::MAX, platform_version),
+            max_depth
+        );
+    }
+
+    #[test]
+    fn should_pick_the_tree_depth_of_a_mid_sized_branch() {
+        let platform_version = PlatformVersion::latest();
+        let (min_depth, max_depth) = address_query_depth_limits(platform_version);
+        // An AVL tree of 33 to 53 elements is at most 7 levels deep, which
+        // lies inside the limits, so no clamp applies.
+        assert!(min_depth < 7 && 7 < max_depth);
+
+        assert_eq!(address_branch_query_depth(33, platform_version), 7);
+        assert_eq!(address_branch_query_depth(53, platform_version), 7);
+        assert_eq!(address_branch_query_depth(54, platform_version), 8);
     }
 
     #[test]

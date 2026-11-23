@@ -272,12 +272,9 @@ public final class SDK: @unchecked Sendable {
   ///
   /// `platformVersion`:
   /// - `0` (default) — let the Rust SDK seed at the per-network minimum
-  ///   protocol version (mainnet 11, testnet/devnet/regtest 12) with
-  ///   auto-detect on, ratcheting up as the network reports newer
-  ///   versions. The per-network floor encodes the V0/V1 `getDocuments`
-  ///   wire format (mainnet floor 11 = V0 until mainnet upgrades;
-  ///   testnet floor 12 = V1), so this picks the right wire without a
-  ///   Swift-side network→version map.
+  ///   protocol version (14 on every network) with auto-detect on,
+  ///   ratcheting up as the network reports newer versions, so no
+  ///   Swift-side network→version map is needed.
   /// - non-zero — pin the SDK to this exact `PlatformVersion`.
   public init(
     network: Network,

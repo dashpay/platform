@@ -6,12 +6,25 @@
 //! ranked index-key ceilings and the prefix-overlap rule are generation 3's,
 //! reused from that module rather than copied.
 //!
+//! Under full validation it also refuses typed-array properties whose element
+//! encodes to zero bytes (a byte array pinned to `minItems: 0, maxItems: 0`),
+//! which generation 3 admits. Like every generation, it stores an object's members
+//! in the schema's map order and reads no member's position.
+//!
 //! The generation reuses the complete current parser body with a generation-owned
 //! admission flag. Earlier generations retain their refusal of deletable history.
 
 use crate::data_contract::config::DataContractConfig;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::DocumentType;
+#[cfg(feature = "validation")]
+use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
@@ -47,7 +60,7 @@ fn try_from_schema_generation_4(
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentTypeV2, ProtocolError> {
-    super::v3::try_from_schema_generation_3(
+    let v2 = super::v3::try_from_schema_generation_3(
         data_contract_id,
         data_contract_system_version,
         contract_config_version,
@@ -60,7 +73,45 @@ fn try_from_schema_generation_4(
         validation_operations,
         &PARSER_GENERATION,
         platform_version,
-    )
+    )?;
+
+    #[cfg(feature = "validation")]
+    if full_validation {
+        validate_typed_array_non_zero_element_width(&v2, name)?;
+    }
+
+    Ok(v2)
+}
+
+/// Every typed array property's element must encode to at least one byte.
+/// A fixed-size byte array pinned to zero bytes (`minItems: 0, maxItems: 0`)
+/// writes neither a length prefix nor any payload bytes, so a two-byte count
+/// decodes into `maxItems` (up to `max_typed_array_items`) separate values.
+/// Read off the flattened properties, which reach a typed array nested in an
+/// object too.
+///
+/// Full validation only, like `validate_typed_array_max_items`: a contract
+/// registered at protocol version 14 may hold one and must stay readable.
+#[cfg(feature = "validation")]
+fn validate_typed_array_non_zero_element_width(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    for (path, property) in document_type.flattened_properties() {
+        let DocumentPropertyType::TypedArray(typed_array) = &property.property_type else {
+            continue;
+        };
+        if typed_array.has_zero_encoded_width_element() {
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "typed array property \"{path}\" of document type \"{name}\" declares a \
+                     zero-width byte array element (minItems: 0, maxItems: 0): elements of a \
+                     typed array must encode to at least one byte",
+                )),
+            ));
+        }
+    }
+    Ok(())
 }
 
 impl DocumentType {
@@ -107,3 +158,6 @@ mod keep_history_tests;
 
 #[cfg(test)]
 mod nested_member_order_tests;
+
+#[cfg(all(test, feature = "validation"))]
+mod typed_array_element_width_tests;

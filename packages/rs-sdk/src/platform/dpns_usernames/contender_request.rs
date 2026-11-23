@@ -6,7 +6,9 @@
 //! the request was made. Bindings read both from here rather than decoding
 //! the document themselves.
 
-use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::document_type::{
+    DecodedValueBudget, DocumentTypeRef, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
+};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
@@ -37,20 +39,33 @@ impl ContenderRequest {
         document_type: Option<DocumentTypeRef>,
         platform_version: &PlatformVersion,
     ) -> Self {
+        let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
+        Self::decode_with_budget(contender, document_type, &mut budget, platform_version)
+    }
+
+    /// Decode `contender`'s document against `document_type` while charging a shared
+    /// decoded-value `budget`.
+    pub fn decode_with_budget(
+        contender: &ContenderWithSerializedDocument,
+        document_type: Option<DocumentTypeRef>,
+        budget: &mut DecodedValueBudget,
+        platform_version: &PlatformVersion,
+    ) -> Self {
         let Some(document_type) = document_type else {
             return Self::default();
         };
-        let decoded = match contender.try_to_contender(document_type, platform_version) {
-            Ok(decoded) => decoded,
-            Err(error) => {
-                debug!(
-                    contender = %contender.identity_id_ref(),
-                    %error,
-                    "contender document did not decode; its request is left empty"
-                );
-                return Self::default();
-            }
-        };
+        let decoded =
+            match contender.try_to_contender_with_budget(document_type, budget, platform_version) {
+                Ok(decoded) => decoded,
+                Err(error) => {
+                    debug!(
+                        contender = %contender.identity_id_ref(),
+                        %error,
+                        "contender document did not decode; its request is left empty"
+                    );
+                    return Self::default();
+                }
+            };
         Self::from_document(decoded.document().as_ref())
     }
 
@@ -81,16 +96,34 @@ pub struct ContestRequests {
 }
 
 impl ContestRequests {
-    /// Decode each contender's document once (see [`ContenderRequest::decode`])
-    /// and derive the contest's requested labels from the results.
+    /// Decode each contender's document once under a shared page decoded-value
+    /// budget (see [`ContenderRequest::decode_with_budget`]) and derive the
+    /// contest's requested labels from the results.
     pub fn decode<'a>(
         contenders: impl IntoIterator<Item = &'a ContenderWithSerializedDocument>,
         document_type: Option<DocumentTypeRef>,
         platform_version: &PlatformVersion,
     ) -> Self {
+        let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
+        Self::decode_with_budget(contenders, document_type, &mut budget, platform_version)
+    }
+
+    fn decode_with_budget<'a>(
+        contenders: impl IntoIterator<Item = &'a ContenderWithSerializedDocument>,
+        document_type: Option<DocumentTypeRef>,
+        budget: &mut DecodedValueBudget,
+        platform_version: &PlatformVersion,
+    ) -> Self {
         let requests: Vec<ContenderRequest> = contenders
             .into_iter()
-            .map(|contender| ContenderRequest::decode(contender, document_type, platform_version))
+            .map(|contender| {
+                ContenderRequest::decode_with_budget(
+                    contender,
+                    document_type,
+                    budget,
+                    platform_version,
+                )
+            })
             .collect();
         let requested_labels = requested_labels(&requests);
         Self {
@@ -317,5 +350,148 @@ mod tests {
     #[test]
     fn should_list_no_labels_when_none_decoded() {
         assert!(requested_labels(&[request(None)]).is_empty());
+    }
+
+    #[test]
+    fn should_stop_decoding_contender_requests_when_shared_budget_is_exhausted() {
+        use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+        use dpp::data_contract::DataContract;
+        use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+        use dpp::platform_value::platform_value;
+
+        let contenders = [
+            serialized(domain_document("pizza", Some(CREATED_AT_MS))),
+            serialized(domain_document("Pizza", Some(CREATED_AT_MS + 1))),
+        ];
+        let platform_version = PlatformVersion::latest();
+        let contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("DPNS system contract");
+        let document_type = contract.document_type_for_name("domain").ok();
+
+        // Measure one domain document's budget cost.
+        let mut measure_budget = DecodedValueBudget::new(1_000);
+        let first = ContenderRequest::decode_with_budget(
+            &contenders[0],
+            document_type,
+            &mut measure_budget,
+            platform_version,
+        );
+        assert_eq!(first.label.as_deref(), Some("pizza"));
+        let per_doc = 1_000 - measure_budget.remaining();
+        assert!(per_doc > 0);
+
+        // Route through ContestRequests' own loop with a tight shared budget sized for one
+        // contender: the second request becomes empty and only the first label is collected.
+        let mut tight_budget = DecodedValueBudget::new(per_doc);
+        let contest = ContestRequests::decode_with_budget(
+            &contenders,
+            document_type,
+            &mut tight_budget,
+            platform_version,
+        );
+        assert_eq!(contest.requests.len(), 2);
+        assert_eq!(contest.requests[0].label.as_deref(), Some("pizza"));
+        assert_eq!(contest.requests[1], ContenderRequest::default());
+        assert_eq!(contest.requested_labels, vec!["pizza"]);
+
+        // Also exercise the public `ContestRequests::decode` entry point against its default
+        // page budget (`DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET = 262_144`): 5 contenders at
+        // 61,501 decoded values each fit 4 contenders (246,004) and exhaust the budget on #5.
+        let pv14 = PlatformVersion::get(14).expect("PV14 exists");
+        let field_count = 60usize;
+        let mut schema_props = vec![(
+            Value::Text("label".to_string()),
+            platform_value!({
+                "type": "string",
+                "maxLength": 32,
+                "position": 0u32,
+            }),
+        )];
+        let mut base_doc_props = BTreeMap::new();
+        for i in 0..field_count {
+            let name = format!("f{i:02}");
+            schema_props.push((
+                Value::Text(name.clone()),
+                platform_value!({
+                    "type": "array",
+                    "maxItems": 1024,
+                    "items": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 0,
+                        "maxItems": 0,
+                    },
+                    "position": (i + 1) as u32,
+                }),
+            ));
+            base_doc_props.insert(name, Value::Array(vec![Value::Bytes(vec![]); 1024]));
+        }
+        let oversized_contract = DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Identifier::new([0x31; 32]),
+                "version": 1u32,
+                "ownerId": Identifier::new([0x32; 32]),
+                "config": {
+                    "$formatVersion": "1",
+                    "canBeDeleted": false,
+                    "readonly": false,
+                    "keepsHistory": false,
+                    "documentsKeepHistoryContractDefault": false,
+                    "documentsMutableContractDefault": true,
+                    "documentsCanBeDeletedContractDefault": true,
+                    "requiresIdentityEncryptionBoundedKey": Value::Null,
+                    "requiresIdentityDecryptionBoundedKey": Value::Null,
+                    "sizedIntegerTypes": true,
+                },
+                "documentSchemas": {
+                    "domain": {
+                        "type": "object",
+                        "properties": Value::Map(schema_props),
+                        "additionalProperties": false,
+                    }
+                }
+            }),
+            true,
+            pv14,
+        )
+        .expect("PV14 contract validates");
+        let oversized_type = oversized_contract
+            .document_type_for_name("domain")
+            .expect("domain type");
+        let oversized_contenders: Vec<ContenderWithSerializedDocument> = (0u8..5)
+            .map(|i| {
+                let mut props = base_doc_props.clone();
+                props.insert("label".to_string(), Value::Text(format!("name{i}")));
+                let owner_id = Identifier::new([i + 1; 32]);
+                let doc = Document::V0(DocumentV0 {
+                    id: Identifier::new([i + 10; 32]),
+                    owner_id,
+                    properties: props,
+                    created_at: Some(CREATED_AT_MS + i as u64),
+                    ..Default::default()
+                });
+                let bytes = doc
+                    .serialize(oversized_type, &oversized_contract, platform_version)
+                    .expect("serialize contender doc");
+                ContenderWithSerializedDocument::V0(ContenderWithSerializedDocumentV0 {
+                    identity_id: owner_id,
+                    serialized_document: Some(bytes),
+                    vote_tally: Some(1),
+                })
+            })
+            .collect();
+
+        let public_contest = ContestRequests::decode(
+            &oversized_contenders,
+            Some(oversized_type),
+            platform_version,
+        );
+        assert_eq!(public_contest.requests.len(), 5);
+        assert_eq!(
+            public_contest.requested_labels,
+            vec!["name0", "name1", "name2", "name3"]
+        );
+        assert_eq!(public_contest.requests[4], ContenderRequest::default());
     }
 }

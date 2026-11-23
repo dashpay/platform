@@ -11,12 +11,19 @@ import SwiftDashSDK
 /// broadcast. It picks a loaded contract + document type using the same
 /// accessible navigationLink pickers the Document builders use, takes a
 /// required numeric `sum property`, optional `where` / `group_by` JSON, calls
-/// the wrapper for the chosen operation, and renders the total (and per-group
-/// rows when grouped) or the platform error (e.g. "requires a summable index").
+/// the wrapper for the chosen operation, and renders the total (ungrouped) or
+/// the per-group rows (grouped) or the platform error (e.g. "requires a
+/// summable index").
 ///
-/// The average FFI returns the raw `(count, sum)` pair un-divided; computing
-/// the displayed average (`sum / count`) is presentation and happens here, not
-/// in the wrapper.
+/// Whether a result is grouped is the SDK's `isGrouped`, which the FFI reports;
+/// the view never infers it from the keys. In a grouped result the empty key is
+/// a real group (documents missing an optional range property) and is listed
+/// as "(no value)", not shown as a total.
+///
+/// Sums arrive as `Int128` (a 128-bit sum tree, protocol version 15, can hold
+/// more than `Int64`) and are shown whole. The average is computed in Rust,
+/// exactly, as a decimal string with 4 places; the view shows that string and
+/// never divides.
 struct SumAverageDocumentsView: View {
     /// Which aggregation the view runs.
     private enum Operation: String, CaseIterable, Identifiable {
@@ -187,30 +194,27 @@ struct SumAverageDocumentsView: View {
 
     @ViewBuilder
     private func sumResultSections(_ result: DocumentSumResult) -> some View {
-        Section("Total") {
-            HStack {
-                Text("Sum")
-                Spacer()
-                Text(result.total.map(String.init) ?? "—")
-                    .fontWeight(.bold)
-                    .foregroundColor(.primary)
-                    .accessibilityIdentifier("sumAverageDocuments.total")
-            }
-        }
-
         if result.isGrouped {
             Section("Per-group sums") {
                 ForEach(groupedSumRows(result), id: \.key) { row in
                     HStack {
-                        Text(row.key)
-                            .font(.system(.footnote, design: .monospaced))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                        groupKeyLabel(row.key)
                         Spacer()
                         Text(String(row.value))
                             .fontWeight(.semibold)
                     }
-                    .accessibilityIdentifier("sumAverageDocuments.groupRow.\(row.key)")
+                    .accessibilityIdentifier(groupRowIdentifier(row.key))
+                }
+            }
+        } else {
+            Section("Total") {
+                HStack {
+                    Text("Sum")
+                    Spacer()
+                    Text(result.total.map { String($0) } ?? "—")
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                        .accessibilityIdentifier("sumAverageDocuments.total")
                 }
             }
         }
@@ -218,52 +222,73 @@ struct SumAverageDocumentsView: View {
 
     @ViewBuilder
     private func averageResultSections(_ result: DocumentAverageResult) -> some View {
-        Section("Total") {
-            HStack {
-                Text("Average")
-                Spacer()
-                Text(formatAverage(result.total))
-                    .fontWeight(.bold)
-                    .foregroundColor(.primary)
-                    .accessibilityIdentifier("sumAverageDocuments.average")
-            }
-            if let entry = result.total {
-                HStack {
-                    Text("Count")
-                    Spacer()
-                    Text(String(entry.count))
-                        .foregroundColor(.secondary)
-                }
-                HStack {
-                    Text("Sum")
-                    Spacer()
-                    Text(String(entry.sum))
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-
         if result.isGrouped {
             Section("Per-group averages") {
                 ForEach(groupedAverageRows(result), id: \.key) { row in
                     HStack {
-                        Text(row.key)
-                            .font(.system(.footnote, design: .monospaced))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                        groupKeyLabel(row.key)
                         Spacer()
                         VStack(alignment: .trailing, spacing: 2) {
-                            Text(formatAverage(row.entry))
+                            Text(row.entry.average ?? "—")
                                 .fontWeight(.semibold)
-                            Text("n=\(row.entry.count), Σ=\(row.entry.sum)")
+                            Text("n=\(String(row.entry.count)), Σ=\(String(row.entry.sum))")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                         }
                     }
-                    .accessibilityIdentifier("sumAverageDocuments.groupRow.\(row.key)")
+                    .accessibilityIdentifier(groupRowIdentifier(row.key))
+                }
+            }
+        } else {
+            Section("Total") {
+                HStack {
+                    Text("Average")
+                    Spacer()
+                    Text(result.total?.average ?? "—")
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                        .accessibilityIdentifier("sumAverageDocuments.average")
+                }
+                if let entry = result.total {
+                    HStack {
+                        Text("Count")
+                        Spacer()
+                        Text(String(entry.count))
+                            .foregroundColor(.secondary)
+                    }
+                    HStack {
+                        Text("Sum")
+                        Spacer()
+                        Text(String(entry.sum))
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
         }
+    }
+
+    /// The label of a group row: the hex key, or "(no value)" for the empty
+    /// key, which in a grouped result holds the documents missing the grouped
+    /// property.
+    @ViewBuilder
+    private func groupKeyLabel(_ key: String) -> some View {
+        if key.isEmpty {
+            Text("(no value)")
+                .font(.footnote)
+                .italic()
+                .foregroundColor(.secondary)
+        } else {
+            Text(key)
+                .font(.system(.footnote, design: .monospaced))
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+    }
+
+    /// Stable accessibility identifier of a group row; the empty key gets
+    /// `groupRow.empty` so it is not the bare `groupRow.` prefix.
+    private func groupRowIdentifier(_ key: String) -> String {
+        key.isEmpty ? "sumAverageDocuments.groupRow.empty" : "sumAverageDocuments.groupRow.\(key)"
     }
 
     // MARK: - Derived state
@@ -283,35 +308,29 @@ struct SumAverageDocumentsView: View {
 
     private func documentTypeNames(for contract: PersistentDataContract) -> [String] {
         if let types = contract.documentTypes, !types.isEmpty {
-            return types.map { $0.name }.sorted()
+            // A private type (protocol version 15) refuses document queries: its
+            // store holds encrypted entries, read from the type's detail
+            // screen.
+            return types.filter { !$0.isPrivate }.map { $0.name }.sorted()
         }
         return contract.documentTypesList.sorted()
     }
 
-    /// Per-group sum rows, sorted by hex key for a stable render. Excludes the
-    /// empty-string aggregate entry (shown in the Total section).
-    private func groupedSumRows(_ result: DocumentSumResult) -> [(key: String, value: Int64)] {
+    /// Per-group sum rows of a grouped result, sorted by hex key for a stable
+    /// render. Includes the empty key, which is a group here, not a total.
+    private func groupedSumRows(_ result: DocumentSumResult) -> [(key: String, value: Int128)] {
         result.sums
-            .filter { !$0.key.isEmpty }
             .map { (key: $0.key, value: $0.value) }
             .sorted { $0.key < $1.key }
     }
 
-    /// Per-group average rows, sorted by hex key for a stable render. Excludes
-    /// the empty-string aggregate entry (shown in the Total section).
+    /// Per-group average rows of a grouped result, sorted by hex key for a
+    /// stable render. Includes the empty key, which is a group here, not a
+    /// total.
     private func groupedAverageRows(_ result: DocumentAverageResult) -> [(key: String, entry: DocumentAverageEntry)] {
         result.averages
-            .filter { !$0.key.isEmpty }
             .map { (key: $0.key, entry: $0.value) }
             .sorted { $0.key < $1.key }
-    }
-
-    /// Render an average entry's computed `sum / count`. The FFI returns the
-    /// raw `(count, sum)` pair; the division (presentation) happens here. A
-    /// `nil` entry or a zero `count` (no matched documents) renders as `—`.
-    private func formatAverage(_ entry: DocumentAverageEntry?) -> String {
-        guard let avg = entry?.average else { return "—" }
-        return String(format: "%.4f", avg)
     }
 
     // MARK: - Actions

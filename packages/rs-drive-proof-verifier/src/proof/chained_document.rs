@@ -26,17 +26,22 @@
 //! be built from a trusted node's unproven wire by the SDK if it
 //! chooses, but the canonical path proves.
 
-use crate::error::MapGroveDbError;
-use crate::verify::{document_query_proof_bytes, verify_tenderdash_proof};
+use crate::verify::{document_query_proof_bytes, verify_tenderdash_proof, MapProvedBudgetError};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
+use dpp::data_contract::document_type::{
+    DecodedValueBudget, DocumentTypeRef, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
+};
 use dpp::document::Document;
+use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use drive::drive::contract::moderation::types::ContractDocumentRemovalEntry;
 use drive::query::DriveDocumentQuery;
 use drive::verify::RootHash;
+use std::collections::BTreeMap;
 
 /// The verified result of a chained document query, both halves in
 /// inner-proof order.
@@ -64,6 +69,42 @@ pub struct ChainedDocuments {
     /// order. Only a `moderatedDocument` join property reports any; there a
     /// join value with neither a document nor a record is an invalid proof.
     pub removed_outer_documents: Vec<ContractDocumentRemovalEntry>,
+}
+
+impl ChainedDocuments {
+    /// Decodes the kept field values of every removed outer document under
+    /// `outer_document_type`, enforcing [`DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET`]
+    /// across all live documents and removal records returned together in this response.
+    pub fn decode_removed_outer_kept_values(
+        &self,
+        outer_document_type: DocumentTypeRef,
+    ) -> Result<Vec<BTreeMap<String, Value>>, ProtocolError> {
+        let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
+        self.decode_removed_outer_kept_values_with_budget(outer_document_type, &mut budget)
+    }
+
+    /// Like [`Self::decode_removed_outer_kept_values`], charging every retained
+    /// document and decoded kept field against a shared `budget`.
+    pub fn decode_removed_outer_kept_values_with_budget(
+        &self,
+        outer_document_type: DocumentTypeRef,
+        budget: &mut DecodedValueBudget,
+    ) -> Result<Vec<BTreeMap<String, Value>>, ProtocolError> {
+        budget
+            .charge_documents(&self.inner_documents)
+            .map_err(ProtocolError::DataContractError)?;
+        budget
+            .charge_documents(&self.outer_documents)
+            .map_err(ProtocolError::DataContractError)?;
+        self.removed_outer_documents
+            .iter()
+            .map(|entry| {
+                entry
+                    .removal
+                    .kept_values_with_budget(outer_document_type, budget)
+            })
+            .collect()
+    }
 }
 
 /// Verify a chained query's single merged proof and bind its root hash
@@ -97,7 +138,7 @@ pub fn verify_chained_documents_proof(
             document_query_proof_bytes(proof, mtd, platform_version)?,
             platform_version,
         )
-        .map_drive_error(proof, mtd)?;
+        .map_proved_budget_error(proof, mtd, provider)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -154,5 +195,112 @@ where
         // here" — surface it as Some(empty) rather than None so callers
         // can tell it apart from a missing object.
         Ok((Some(chained), mtd.clone(), proof.clone()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::data_contract::config::moderation::{
+        encode_kept_fields, ContractDocumentRemoval, ContractModerationConfig, ContractModerators,
+    };
+    use dpp::data_contract::config::DataContractConfig;
+    use dpp::data_contract::document_type::DocumentType;
+    use dpp::data_contract::errors::DataContractError;
+    use dpp::document::DocumentV0;
+    use dpp::identifier::Identifier;
+    use dpp::platform_value::platform_value;
+
+    #[test]
+    fn should_share_decoded_value_budget_between_live_outer_documents_and_removed_kept_fields() {
+        let pv = PlatformVersion::latest();
+        let config = DataContractConfig::default_for_version(pv)
+            .expect("default config")
+            .with_moderation(Some(ContractModerationConfig {
+                banlist: false,
+                suspensions: false,
+                moderators: ContractModerators::ContractOwner,
+                warnings: false,
+            }));
+        let outer_type = DocumentType::try_from_schema(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "post",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "tags": {
+                        "type": "array",
+                        "maxItems": 32,
+                        "items": { "type": "string", "maxLength": 16 },
+                        "position": 0,
+                    },
+                },
+                "additionalProperties": false,
+                "moderatorAbilities": {
+                    "delete": true,
+                    "deleteKeepsFields": ["tags"],
+                },
+            }),
+            None,
+            &BTreeMap::new(),
+            &config,
+            true,
+            &mut vec![],
+            pv,
+        )
+        .expect("post type parses");
+
+        let make_doc = |seed: u8, n: usize| {
+            Document::V0(DocumentV0 {
+                id: Identifier::new([seed; 32]),
+                owner_id: Identifier::new([2; 32]),
+                properties: BTreeMap::from([(
+                    "tags".to_string(),
+                    Value::Array((0..n).map(|i| Value::Text(format!("t{i}"))).collect()),
+                )]),
+                ..Default::default()
+            })
+        };
+
+        // Live outer doc holds 1 array + 10 strings = 11 decoded values.
+        let live_outer = make_doc(3, 10);
+        // Removed outer doc keeps 1 array + 10 strings = 11 decoded values.
+        let removed_doc = make_doc(4, 10);
+        let kept_fields = encode_kept_fields(&removed_doc, outer_type.as_ref()).expect("encodes");
+
+        let chained = ChainedDocuments {
+            inner_documents: vec![],
+            outer_documents: vec![live_outer],
+            missing_outer_ids: vec![],
+            removed_outer_documents: vec![ContractDocumentRemovalEntry {
+                document_id: Identifier::new([4; 32]),
+                removal: ContractDocumentRemoval {
+                    kept_fields,
+                    ..Default::default()
+                },
+            }],
+        };
+
+        // Combined total is 22 decoded values: exact budget succeeds, 1 short fails.
+        let mut exact = DecodedValueBudget::new(22);
+        let decoded = chained
+            .decode_removed_outer_kept_values_with_budget(outer_type.as_ref(), &mut exact)
+            .expect("combined live + removed fits exact budget");
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(exact.remaining(), 0);
+
+        let mut tight = DecodedValueBudget::new(21);
+        let error = chained
+            .decode_removed_outer_kept_values_with_budget(outer_type.as_ref(), &mut tight)
+            .expect_err("live + removed exceeding shared budget must fail");
+        assert!(
+            matches!(
+                error,
+                ProtocolError::DataContractError(DataContractError::DecodedValueBudgetExceeded(_))
+            ),
+            "unexpected error: {error}"
+        );
     }
 }

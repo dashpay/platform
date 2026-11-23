@@ -166,6 +166,52 @@ Before a document query is sent, the result type checks that it can be verified 
 to it (`FromProof::check_request`), at the version the request is encoded with. A query no node
 serves, or none of whose answers can be verified as that type, is refused without being sent.
 
+## A network newer than the SDK
+
+A protocol upgrade can store and prove state in forms a build from before it cannot read: a
+new stored contract format, a new GroveDB element type, a new proof layout. [Updating Apps for
+Protocol Version 15](protocol-version-15-upgrade.md) lists what protocol version 15 changes
+this way. On a network that runs a version newer than the build knows, the SDK verifies with
+the newest rules it has. Answers those rules still read verify as before, and the others fail
+alike from every node.
+
+The SDK records the version of every verified answer, known to the build or not
+(`ProtocolVersionInfo::newer_protocol_available`). Once a verified answer has shown the network
+running a version the build does not know, a fresh answer the SDK could not read that names
+such a version is not held against its node (`StaleNodeError::NewerProtocolVersion`): the request
+moves to another node, and none is banned, so the requests the build still reads keep their
+nodes. A request whose every attempt ends this way fails with `Error::Config`, which names the
+version verified answers have shown and the newest one the build knows, and says the SDK has
+to be updated.
+
+Only a failure to read what a proof holds counts: its GroveDB proof envelope, its GroveDB
+proof, the state it proves, or an object decoded from it. A response that does not decode
+around the proof, such as one with a quorum hash of the wrong length, does not count. A GroveDB proof that does not verify counts whatever
+reason GroveDB gives, a hash that does not match included: each protocol version selects its
+GroveDB version, which decides the proof layout and what a node's hash covers, so the build
+cannot tell an honest proof of a newer version from a forged one. An answer without a proof,
+or one whose signature is refused, is its node's fault on any network, and that node is banned.
+
+The version an unverified answer names is a reason to ask, not evidence. When an answer the SDK
+could not read names a version the build does not know, and no verified answer has shown one,
+the SDK first asks the network for its version, with the probe described under [Requests only
+newer nodes serve](#requests-only-newer-nodes-serve). Here the probe is one attempt that bans
+no node, without the epoch query that may follow it there, and a pinned SDK asks too. An
+earlier probe's hold does not stand in for the question, since a hold can outlast its epoch:
+each such answer is asked about until a verified answer shows the newer version. Calls that
+get such an answer while one of them asks wait for that probe and decide from what it showed,
+so none bans a node before it is known, and none asks again. When the probe shows a version
+the build knows, or fails, the node is banned as for any unusable proof. That is also the
+outcome in the block around an activation when the probe is answered by a node one block
+behind: the next such answer asks again. A node is also banned when its unread answer names a
+version the build knows, since that node is behind its network or the answer is unusable for
+another reason, and when the answer is outside the height or time tolerance.
+
+A request version a protocol upgrade retired is refused by the nodes themselves, with
+`INVALID_ARGUMENT`: every node at that protocol version refuses it alike, so the request fails
+at once and no node is banned. A request version above the ones a node serves stays retryable
+on another node, which may be newer.
+
 ## Errors
 
 | Situation | Rust (`dash-sdk`) | JS (`wasm-sdk`, `evo-sdk`) | FFI (Swift, Kotlin) | Retried elsewhere / node banned |
@@ -173,8 +219,13 @@ serves, or none of whose answers can be verified as that type, is refused withou
 | The network is not proven to serve what the request needs | `Error::ProtocolVersionNotActive { method, required, feature, network, pinned, cause }` | kind `ProtocolVersionNotActive` | `ProtocolError`, or `NetworkError` when learning the network's version failed for a reason that can pass | no / no |
 | No node can answer the request as the requested result type: refused before sending, or a fresh verified answer cannot be returned as that type (several documents for a single-document fetch, a total that overflows) | `Error::InvalidRequest` | kind `InvalidArgument` | `InvalidParameter` | no / no |
 | An answer to a request that needs a version, signed below it | `StaleNodeError::BehindProtocolUpgrade` | kind `StaleNode` | `NetworkError` | yes / yes |
-| A document answer signed below the SDK's version, before the network is proven at it | `StaleNodeError::ProtocolVersion` per attempt; the request fails with `Error::Config` once no attempt is left | kind `Config` | `ProtocolError` | yes / no |
+| A document answer signed below the SDK's version, before the network is proven at it | `StaleNodeError::ProtocolVersion` per attempt; a request whose every attempt ended this way fails with `Error::Config` once no attempt is left | kind `Config`; when another attempt failed otherwise, `StaleNode`, or `DapiClientError` if no node was left to ask | `ProtocolError`; `NetworkError` when another attempt failed otherwise | yes / no |
 | A document answer signed below the SDK's version, once the network is proven at it | `Error::Proof` | kind `Proof` | `ProtocolError` (its message names both versions) | yes / yes |
+| A fresh answer the SDK could not read that names a version the build does not know, once the network is proven at such a version (one outside the height or time tolerance fails as stale, and its node is banned) | `StaleNodeError::NewerProtocolVersion` per attempt; a request whose every attempt ended this way fails with `Error::Config` once no attempt is left | kind `Config`; when another attempt failed otherwise, `StaleNode`, or `DapiClientError` if no node was left to ask | `ProtocolError`; `NetworkError` when another attempt failed otherwise | yes / no |
+
+The FFI column is what the shared error mapping reports. A call that maps errors itself
+reports its own code: DPNS name resolution in the Swift and Kotlin SDKs reports an internal
+error for any failure, this one included.
 
 `ProtocolVersionNotActive` names the method and, for a document query, the feature that needs
 the version, for example `get_documents needs Platform protocol version 14 for time-range

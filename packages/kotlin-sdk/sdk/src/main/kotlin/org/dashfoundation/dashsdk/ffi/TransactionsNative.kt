@@ -240,4 +240,34 @@ internal object TransactionsNative {
         votingPrivateKey: ByteArray,
         networkOrd: Int,
     )
+
+    /**
+     * Cast a masternode contested-resource vote signed by [signerHandle] and
+     * wait for the response. Bridges
+     * `dash_sdk_contested_resource_cast_vote_with_signer` (Swift
+     * `SDK.castContestedResourceVote(..., votingAddress:, signer:)` in
+     * `PlatformQueryExtensions.swift`). Rust builds the ECDSA_HASH160 voting
+     * key from [votingAddress] and asks the signer to sign with it, so the
+     * signer is asked for the 20 address bytes with key type 2.
+     *
+     * @param voteChoice as for [castContestedResourceVote].
+     * @param contenderIdentityId as for [castContestedResourceVote].
+     * @param voterProTxHash 32-byte masternode pro_tx_hash in wire order.
+     * @param votingAddress 20-byte voting address (hash160 of the compressed
+     *   voting public key).
+     * @param signerHandle a live signer handle the caller keeps alive for the
+     *   call (`PlatformWalletManager.signerHandle`).
+     */
+    external fun castContestedResourceVoteWithSigner(
+        sdkHandle: Long,
+        contractId: String,
+        documentType: String,
+        indexName: String,
+        indexValuesJson: String,
+        voteChoice: Int,
+        contenderIdentityId: String?,
+        voterProTxHash: ByteArray,
+        votingAddress: ByteArray,
+        signerHandle: Long,
+    )
 }
