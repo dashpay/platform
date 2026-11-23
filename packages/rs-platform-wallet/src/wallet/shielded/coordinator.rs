@@ -1365,8 +1365,10 @@ impl NetworkShieldedCoordinator {
                 // registration. A complete scan can establish each live account's
                 // ledger independently. Do not mark host hydration complete here:
                 // a later bind must still be able to restore host-only metadata.
-                // Successful Clear purges the source with the subwallet, and a
-                // newly added/unscanned account cannot inherit another's coverage.
+                // Successful Clear purges the source with the subwallet, a failed
+                // one forgets it (it predates the tree that Clear may have reset),
+                // and a newly added/unscanned account cannot inherit another's
+                // coverage.
                 if !hydrated && balance.source != ShieldedBalanceSource::ScannedThisSession {
                     return Ok(ShieldedLocalBalanceState::RestoreIncomplete);
                 }
@@ -1678,6 +1680,16 @@ impl NetworkShieldedCoordinator {
                         ))
                     });
                 }
+            }
+            // A failed Clear keeps the notes, and may have reset the tree
+            // already (always, when it is the purge that failed). An account
+            // whose scan completed in this session would otherwise keep its
+            // pre-Clear amount reported as known: hydration is dropped below,
+            // but a completed scan stands in for it. So the scan evidence
+            // goes with the hydration, under the same store guard as the
+            // reset it predates.
+            if first_err.is_some() {
+                store.forget_scan_evidence();
             }
         }
         // Hydration and snapshot validity go regardless of the outcome.

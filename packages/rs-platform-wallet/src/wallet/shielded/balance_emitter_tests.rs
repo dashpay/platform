@@ -615,6 +615,40 @@ async fn should_emit_restore_incomplete_after_a_clear_that_fails() {
     emitter.stop().await;
 }
 
+/// The same failed Clear for a wallet whose ledger rests on a scan completed
+/// in this session, with no hydration behind it. Its state used to stay
+/// `Ready` with the pre-Clear amount, so nothing was emitted and the host
+/// kept showing that amount as known.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_emit_restore_incomplete_after_a_failed_clear_of_a_scanned_wallet() {
+    let path = tree_path();
+    let coordinator = coordinator(&path);
+    let wallet = [13; 32];
+    let id = SubwalletId::new(wallet, 0);
+    register(&coordinator, wallet, &[0]).await;
+    {
+        let mut store = coordinator.store().write().await;
+        store.save_note(id, &note(1, 900)).expect("save");
+        store.set_last_synced_note_index(id, 1).expect("scanned");
+    }
+    let mut emitter = Emitter::start(&coordinator);
+    assert_eq!(ordinary_credits(&emitter.next().await), 900);
+
+    // A real SQLite schema error makes the purge fail after the tree reset.
+    let conn = rusqlite::Connection::open(&path).expect("open db");
+    conn.execute_batch("ALTER TABLE shielded_pending_spends RENAME TO unavailable_pending_spends;")
+        .expect("break schema");
+    assert!(coordinator.clear().await.is_err());
+    conn.execute_batch("ALTER TABLE unavailable_pending_spends RENAME TO shielded_pending_spends;")
+        .expect("restore schema");
+    drop(conn);
+
+    let update = emitter.next().await;
+    assert_eq!(update.state, ShieldedLocalBalanceState::RestoreIncomplete);
+    emitter.assert_quiet().await;
+    emitter.stop().await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn should_not_emit_again_when_the_state_did_not_change() {
     let coordinator = coordinator(&tree_path());
