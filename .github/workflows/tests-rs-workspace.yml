@@ -284,15 +284,18 @@ jobs:
           done
           # The published wasm-sdk must not ship dash-sdk's mock transport.
           # `-e features,normal` skips the dev-dependency that turns mocks on
-          # for wasm-sdk's own tests.
-          if cargo tree -p wasm-sdk --target wasm32-unknown-unknown -e features,normal -i dash-sdk --locked | grep -q 'dash-sdk feature "mocks"'; then
+          # for wasm-sdk's own tests. Each query is a standalone assignment so a
+          # cargo failure stops the step instead of reading as a pass.
+          sdk_features=$(cargo tree -p wasm-sdk --target wasm32-unknown-unknown -e features,normal -i dash-sdk --locked)
+          if grep -q 'dash-sdk feature "mocks"' <<<"$sdk_features"; then
             echo "::error::dash-sdk/mocks is enabled in wasm-sdk's default wasm32 build"
             exit 1
           fi
           # wasm-sdk turns on secp256k1's lowmemory tables (~1.1 MB of the
           # download). `-i` fails if a second secp256k1-sys version appears and
           # the feature lands on the copy that isn't used.
-          if ! cargo tree -p wasm-sdk --target wasm32-unknown-unknown -e features,normal -i secp256k1-sys --locked | grep -q 'secp256k1-sys feature "lowmemory"'; then
+          secp_features=$(cargo tree -p wasm-sdk --target wasm32-unknown-unknown -e features,normal -i secp256k1-sys --locked)
+          if ! grep -q 'secp256k1-sys feature "lowmemory"' <<<"$secp_features"; then
             echo "::error::secp256k1-sys/lowmemory is not enabled in wasm-sdk's wasm32 build"
             exit 1
           fi
