@@ -87,6 +87,22 @@ class MasternodeVoterSectionTest {
         assertArrayEquals(identityId, ByteArray(32) { it.toByte() }) // input untouched
     }
 
+    /**
+     * A dialog keys its answer and messages on the masternode shown, so a voter withdrawn for
+     * the same masternode (a refusal, a check it waits for) keeps what the dialog shows.
+     */
+    @Test
+    fun shouldShowTheSameMasternodeWhetherOrNotItsVoterIsPublished() {
+        val selected = identity(1)
+        val published = answerTargetOf(publish(selected = selected))
+
+        assertEquals(published, shownAnswerTarget(selected, usesTypedInput = false, typedVoter = null))
+        assertNull(shownAnswerTarget(null, usesTypedInput = false, typedVoter = null))
+        val typed = publish(selected = selected, allowsTyped = true, useTyped = true, proTxHash = proTxHashHex)
+        assertEquals(answerTargetOf(typed), shownAnswerTarget(selected, usesTypedInput = true, typedVoter = typed))
+        assertNull(shownAnswerTarget(selected, usesTypedInput = true, typedVoter = null))
+    }
+
     @Test
     fun shouldDecodeOnlyExactly64HexCharacters() {
         assertEquals(32, decodeTyped32Bytes("  $proTxHashHex\n")?.size)
