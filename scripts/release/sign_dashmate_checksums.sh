@@ -46,27 +46,27 @@ REPO="dashpay/platform"
 
 for i in "$@"
 do
-case ${i} in
+  case ${i} in
     -h|--help)
-        echo "$cmd_usage"
-        exit 0
-    ;;
+      echo "$cmd_usage"
+      exit 0
+      ;;
     --tag=*)
       TAG="${i#*=}"
-    ;;
+      ;;
     --key=*)
       KEY="${i#*=}"
-    ;;
+      ;;
     --upload)
       UPLOAD=true
-    ;;
+      ;;
     --repo=*)
       REPO="${i#*=}"
-    ;;
+      ;;
     *)
       usage_error "unknown option ${i}"
-    ;;
-esac
+      ;;
+  esac
 done
 
 # Matched as one string, so a value spanning lines cannot pass on one of them.
