@@ -133,7 +133,7 @@ fun KeyLimitsSection(
 
     FormSection(title = "Limits") {
         if (total != null) {
-            LabeledContent("Total budget", KeyLimitsFormatting.dash(total))
+            LabeledContent("Last-synced budget", KeyLimitsFormatting.dash(total))
             val reading = remaining?.takeIf { it.first == total }
             when {
                 loadingRemaining -> Row(verticalAlignment = Alignment.CenterVertically) {

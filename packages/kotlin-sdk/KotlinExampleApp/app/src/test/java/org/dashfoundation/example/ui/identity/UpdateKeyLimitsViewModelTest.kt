@@ -303,6 +303,35 @@ class UpdateKeyLimitsViewModelTest {
     }
 
     @Test
+    fun shouldDropARestoredExpiryEditTheScreenNoLongerOffers() = runTest(dispatcher) {
+        // A draft saved while the key's expiry was pickable, with Extend expiry on.
+        val saved = SavedStateHandle(
+            mapOf(
+                "keyLimits.addBudgetText" to "0.00000000005",
+                "keyLimits.extendExpiry" to true,
+                "keyLimits.pickedExpiry" to 1_800_000_000_000L,
+            ),
+        )
+        val state = UpdateKeyLimitsViewModel(saved)
+        // Another client raised the expiry past the picker's range meanwhile.
+        val wallet = FakeWallet(
+            answer = { add ->
+                IdentityKeyLimitsUpdatePreview(identityId, 2, 0, 1_000uL, ULong.MAX_VALUE, add?.let { 1_000uL + it }, null)
+            },
+        )
+        state.load { Result.success(wallet) }
+        advanceUntilIdle()
+
+        assertFalse(state.expiryPickable)
+        assertFalse(state.extendExpiry)
+        assertTrue(state.restoredExpiryDropped)
+        assertNull(state.inputs.expiresAt)
+        // The budget-only top-up is previewed and offered.
+        assertEquals(listOf("refresh", "preview:null", "preview:5"), wallet.calls)
+        assertTrue(state.canSubmit)
+    }
+
+    @Test
     fun shouldRefuseEveryCallOnceTheWalletWasReloaded() = runTest(dispatcher) {
         val wallet = FakeWallet(walletHandle = 1L, answer = ::preview)
         val state = UpdateKeyLimitsViewModel(SavedStateHandle())

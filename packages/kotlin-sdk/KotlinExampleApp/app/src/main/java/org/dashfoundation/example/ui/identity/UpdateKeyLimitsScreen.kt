@@ -198,6 +198,13 @@ class UpdateKeyLimitsViewModel(private val saved: SavedStateHandle) : ViewModel(
     var pickedExpiryMillis by mutableStateOf(saved.get<Long>(PICKED_EXPIRY))
         private set
 
+    /**
+     * A restored Extend expiry edit was dropped because the key's expiry, read from Platform
+     * on opening, is now past what the picker can show.
+     */
+    var restoredExpiryDropped by mutableStateOf(false)
+        private set
+
     /** The last submission's error text (Rust's), with the lock reason. */
     var submitError by mutableStateOf(saved.get<String>(SUBMIT_ERROR))
         private set
@@ -246,12 +253,15 @@ class UpdateKeyLimitsViewModel(private val saved: SavedStateHandle) : ViewModel(
             val text = addBudgetText.trim()
             val parsed = if (text.isEmpty()) null else KeyLimitsFormatting.credits(text)
             val picked = pickedExpiryMillis
-            val expiry = if (extendExpiry && picked != null) KeyLimitsFormatting.millis(picked) else null
+            // The same availability check as the Extend expiry control: an expiry edit the
+            // screen no longer offers is never sent.
+            val extending = extendExpiry && expiryPickable
+            val expiry = if (extending && picked != null) KeyLimitsFormatting.millis(picked) else null
             return Inputs(
                 addBudget = parsed,
                 expiresAt = expiry,
                 budgetTextInvalid = text.isNotEmpty() && parsed == null,
-                expiryUnrepresentable = extendExpiry && expiry == null,
+                expiryUnrepresentable = extending && expiry == null,
             )
         }
 
@@ -308,7 +318,14 @@ class UpdateKeyLimitsViewModel(private val saved: SavedStateHandle) : ViewModel(
             } catch (e: Exception) {
                 Gate.Refused(e.message ?: e.toString())
             }
-            if (gate is Gate.Ready) schedulePreview(debounce = false)
+            if (gate is Gate.Ready) {
+                if (extendExpiry && !expiryPickable) {
+                    extendExpiry = false
+                    saved[EXTEND_EXPIRY] = false
+                    restoredExpiryDropped = true
+                }
+                schedulePreview(debounce = false)
+            }
         }
     }
 
@@ -602,7 +619,8 @@ private fun ChangeSection(opening: IdentityKeyLimitsUpdatePreview, state: Update
         if (opening.currentExpiresAt != null && !state.expiryPickable) {
             Text(
                 "This key's expiry is past what the date picker can show (year 9999), so only " +
-                    "its budget can be changed here.",
+                    "its budget can be changed here." +
+                    if (state.restoredExpiryDropped) " The expiry change you had started was dropped." else "",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

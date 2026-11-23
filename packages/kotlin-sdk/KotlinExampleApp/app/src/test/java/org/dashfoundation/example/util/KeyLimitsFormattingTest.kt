@@ -103,10 +103,10 @@ class KeyLimitsFormattingTest {
     @Test
     fun shouldLabelTheSyncedTotalAndThePlatformRemainingApart() {
         assertEquals(
-            "Budget 0.01 DASH · 0.004 DASH left on Platform",
+            "Last-synced budget 0.01 DASH · 0.004 DASH left on Platform",
             KeyLimitsFormatting.budget(1_000_000_000uL, 400_000_000uL),
         )
-        assertEquals("Budget 0.01 DASH", KeyLimitsFormatting.budget(1_000_000_000uL, null))
+        assertEquals("Last-synced budget 0.01 DASH", KeyLimitsFormatting.budget(1_000_000_000uL, null))
     }
 
     @Test

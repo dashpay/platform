@@ -131,16 +131,17 @@ object KeyLimitsFormatting {
     private val UTC: TimeZone = TimeZone.getTimeZone("UTC")
 
     /**
-     * "Budget 0.01 DASH · 0.004 DASH left on Platform", or "Budget 0.01 DASH" without a
+     * "Last-synced budget 0.01 DASH · 0.004 DASH left on Platform", or "Last-synced budget
+     * 0.01 DASH" without a
      * remaining figure. The total is the key row as last synced and the remaining figure is a
      * separate Platform read, which can be from a different block (a raise on another
      * client), so they are labelled apart rather than shown as "x of y".
      */
     fun budget(total: ULong, remaining: ULong?): String =
         if (remaining == null) {
-            "Budget ${dash(total)}"
+            "Last-synced budget ${dash(total)}"
         } else {
-            "Budget ${dash(total)} · ${dash(remaining)} left on Platform"
+            "Last-synced budget ${dash(total)} · ${dash(remaining)} left on Platform"
         }
 
     /**
