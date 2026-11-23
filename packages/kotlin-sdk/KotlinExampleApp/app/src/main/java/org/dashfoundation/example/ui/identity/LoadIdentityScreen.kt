@@ -429,7 +429,8 @@ fun LoadIdentityScreen(navController: NavHostController) {
                             balance = balance,
                             alias = trimmedAlias,
                             pickedType = type,
-                            typePicked = typePickedForSave(typePicked, type, rowId, idBytes),
+                            typePicked = typePicked,
+                            newRowType = newRowTypeFor(type, rowId, idBytes),
                             votingKey = votingKey,
                             votingKeyCheck = votingKeyCheck,
                             masternodeProTxHash = masternodeProTxHash,
@@ -869,19 +870,17 @@ internal suspend fun loadTargetProTxHash(dao: IdentityDao, typedId: ByteArray, n
         ?: wireOrderProTxHash(typedId)
 
 /**
- * Whether the load writes [type] as the row's type. Always when the user picked it. Also when
- * a masternode or evonode load stores a row other than the typed id's ([rowId] differs from
- * [typedId], such as a shared masternode's new voter identity after a key rotation): the form's
- * type then came from the typed id's stored row, the same masternode, so the new row is saved
- * as that type and is offered for voting, never as User. Otherwise the stored row's type is
- * kept.
+ * The type a NEW row gets when the user picked none: when a masternode or evonode load stores a
+ * row other than the typed id's ([rowId] differs from [typedId], such as a shared masternode's
+ * new voter identity after a key rotation), the form's [type], which came from the typed id's
+ * stored row of the same masternode, so the new row is offered for voting, never saved as User.
+ * Null otherwise. An existing row's type changes only when the user picked one.
  */
-internal fun typePickedForSave(
-    typePicked: Boolean,
+internal fun newRowTypeFor(
     type: LoadIdentityType,
     rowId: ByteArray,
     typedId: ByteArray,
-): Boolean = typePicked || (type.isMasternode && !rowId.contentEquals(typedId))
+): LoadIdentityType? = type.takeIf { it.isMasternode && !rowId.contentEquals(typedId) }
 
 /** What [checkEnteredVotingKey] decided for an entered voting key. */
 internal sealed interface EnteredVotingKeyCheck {
@@ -1054,11 +1053,12 @@ internal suspend fun saveLoadedIdentity(
     votingKeyCheck: MasternodeVotingKeyCheck? = null,
     masternodeProTxHash: ByteArray? = null,
     masternodeRole: MasternodeVotingLoadedIdentity.Role? = null,
+    newRowType: LoadIdentityType? = null,
     nowMillis: Long = System.currentTimeMillis(),
 ): LoadSaveResult {
     saveLoadedFields(
         dao, identityId, networkRaw, balance, alias, pickedType, typePicked, masternodeProTxHash,
-        masternodeRole, nowMillis,
+        masternodeRole, newRowType, nowMillis,
     )
         ?.let { return it }
     if (votingKey == null) {
@@ -1112,6 +1112,7 @@ private suspend fun saveLoadedFields(
     typePicked: Boolean,
     masternodeProTxHash: ByteArray?,
     masternodeRole: MasternodeVotingLoadedIdentity.Role?,
+    newRowType: LoadIdentityType?,
     nowMillis: Long,
 ): LoadSaveResult.Failed? {
     val existing = dao.getByIdentityId(identityId)
@@ -1126,7 +1127,12 @@ private suspend fun saveLoadedFields(
             // LoadIdentityScreen header.
             isLocal = true,
             alias = alias,
-            identityType = identityTypeToSave(null, pickedType, typePicked),
+            // A type the user did not pick defaults to [newRowType] for a new row only.
+            identityType = if (!typePicked && newRowType != null) {
+                newRowType.rawValue
+            } else {
+                identityTypeToSave(null, pickedType, typePicked)
+            },
             networkRaw = networkRaw,
             // Written with the row, so an interrupted load never leaves it without one.
             masternodeProTxHash = masternodeProTxHash,

@@ -522,6 +522,7 @@ class LoadIdentityVotingKeyTest {
         votingKeyCheck: MasternodeVotingKeyCheck? = null,
         masternodeProTxHash: ByteArray? = null,
         masternodeRole: MasternodeVotingLoadedIdentity.Role? = null,
+        newRowType: LoadIdentityType? = null,
     ): LoadSaveResult = saveLoadedIdentity(
         dao = dao,
         entries = entries,
@@ -535,6 +536,7 @@ class LoadIdentityVotingKeyTest {
         votingKeyCheck = votingKeyCheck,
         masternodeProTxHash = masternodeProTxHash,
         masternodeRole = masternodeRole,
+        newRowType = newRowType,
     )
 
     private fun row(
@@ -1083,20 +1085,30 @@ class LoadIdentityVotingKeyTest {
 
     /**
      * A rotated shared masternode reloaded by the id its detail screen shows stores the new
-     * voter identity under another id: it is saved with the masternode's type (the form's,
-     * inferred from the typed row), so the picker offers it, never as User.
+     * voter identity under another id: a new row is saved with the masternode's type (the
+     * form's, inferred from the typed row), so the picker offers it, never as User; an existing
+     * row keeps its own type unless the user picked one.
      */
     @Test
     fun shouldSaveAReplacementVoterRowWithItsMasternodesType() = runBlocking {
         val typedId = ByteArray(32) { 6 }
-        assertTrue(typePickedForSave(false, LoadIdentityType.EVONODE, identityId, typedId))
-        assertFalse(typePickedForSave(false, LoadIdentityType.EVONODE, typedId, typedId))
-        assertFalse(typePickedForSave(false, LoadIdentityType.USER, identityId, typedId))
+        assertEquals(LoadIdentityType.EVONODE, newRowTypeFor(LoadIdentityType.EVONODE, identityId, typedId))
+        assertNull(newRowTypeFor(LoadIdentityType.EVONODE, typedId, typedId))
+        assertNull(newRowTypeFor(LoadIdentityType.USER, identityId, typedId))
 
         save(
             pickedType = LoadIdentityType.EVONODE,
-            typePicked = typePickedForSave(false, LoadIdentityType.EVONODE, identityId, typedId),
+            typePicked = false,
             masternodeRole = MasternodeVotingLoadedIdentity.Role.VOTER,
+            newRowType = newRowTypeFor(LoadIdentityType.EVONODE, identityId, typedId),
+        )
+        assertEquals("Evonode", dao.getByIdentityId(identityId)!!.identityType)
+
+        // Reloading through another row's id that infers Masternode leaves this row's type.
+        save(
+            pickedType = LoadIdentityType.MASTERNODE,
+            typePicked = false,
+            newRowType = newRowTypeFor(LoadIdentityType.MASTERNODE, identityId, typedId),
         )
         assertEquals("Evonode", dao.getByIdentityId(identityId)!!.identityType)
     }
