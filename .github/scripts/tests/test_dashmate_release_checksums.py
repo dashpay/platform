@@ -343,6 +343,47 @@ class ReleaseChecksumsTests(unittest.TestCase):
         self.assertEqual(self.gh_calls(), [ASSETS_CALL, 'release upload v5.1.0 SHA256SUMS --clobber'])
         self.assertEqual((self.tmp / 'uploaded/SHA256SUMS').read_bytes(), (self.tmp / 'SHA256SUMS').read_bytes())
 
+    def test_should_record_which_sha256sums_it_attached(self):
+        self.generated()
+        sums = sha256((self.tmp / 'SHA256SUMS').read_bytes())
+        attached = {'id': 4242, 'name': 'SHA256SUMS', 'state': 'uploaded',
+                    'uploader': {'login': 'github-actions[bot]'}, 'digest': 'sha256:' + sums}
+
+        result = self.run_step('Record the attached SHA256SUMS', assets=[attached])
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.tmp / 'receipt').read_text(), f'4242 {sums}\n')
+        self.assertEqual(self.gh_calls(), [ASSETS_CALL])
+        # kept with the run, under the name the signing script reads, and replaced by each run of the job
+        checksums = job('release-dashmate-checksums')
+        order = [checksums.index('- name: ' + step) for step in [
+            'Attach SHA256SUMS to the release', 'Record the attached SHA256SUMS',
+            'Upload the record of the attached SHA256SUMS']]
+        self.assertEqual(order, sorted(order))
+        upload = step_with('Upload the record of the attached SHA256SUMS')
+        self.assertEqual((upload['path'], upload['overwrite'], upload['if-no-files-found']), ('receipt', 'true', 'error'))
+        self.assertEqual(upload['name'], 'dashmate-checksums-receipt-${{ github.sha }}')
+        script = (ROOT / 'scripts/release/sign_dashmate_checksums.sh').read_text()
+        self.assertIn('"dashmate-checksums-receipt-${RUN_SHA}"', script)
+
+    def test_should_refuse_to_record_a_sha256sums_it_did_not_attach(self):
+        self.generated()
+        sums = sha256((self.tmp / 'SHA256SUMS').read_bytes())
+        attached = {'id': 4242, 'name': 'SHA256SUMS', 'state': 'uploaded',
+                    'uploader': {'login': 'github-actions[bot]'}, 'digest': 'sha256:' + sums}
+        cases = {
+            'no SHA256SUMS on the release': [],
+            'another file': [dict(attached, digest='sha256:' + 'f' * 64)],
+            'an upload that did not finish': [dict(attached, state='open')],
+            'no digest yet': [dict(attached, digest=None)],
+        }
+        for case, assets in cases.items():
+            with self.subTest(case):
+                result = self.run_step('Record the attached SHA256SUMS', assets=assets)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('::error::', result.stdout)
+                self.assertFalse((self.tmp / 'receipt').exists())
+
     def test_should_never_replace_a_signed_sha256sums(self):
         published = self.generated()
         for signature in ['SHA256SUMS.asc', 'SHA256SUMS.sig']:
@@ -410,11 +451,11 @@ class ReleaseChecksumsTests(unittest.TestCase):
     def test_should_publish_checksums_from_a_job_that_runs_no_repository_code(self):
         checksums = job('release-dashmate-checksums')
         uses = re.findall(r'uses: (\S+)', checksums)
-        self.assertEqual(len(uses), 1)
+        # first-party, pinned: one to download the legs' records, one to keep the job's own
+        self.assertEqual(len(uses), 2)
         self.assertRegex(uses[0], r'^actions/download-artifact@[0-9a-f]{40}$')
+        self.assertRegex(uses[1], r'^actions/upload-artifact@[0-9a-f]{40}$')
         self.assertNotIn('checkout', checksums)
-        # every leg must have attached its packages, whatever happened to the build jobs
-        self.assertIn("needs.release-dashmate-packages.result == 'success'", checksums)
         self.assertIn('!cancelled()', checksums)
 
 

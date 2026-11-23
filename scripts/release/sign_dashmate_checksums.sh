@@ -99,10 +99,10 @@ hash_of() {
   "${sha256[@]}" "$1" | cut -d' ' -f1
 }
 
-# One line per asset: name, state, uploader, digest.
+# One line per asset: name, state, uploader, digest, id.
 release_assets() {
   gh api --paginate "repos/${REPO}/releases/${RELEASE_ID}/assets?per_page=100" \
-    --jq '.[] | [.name, .state, .uploader.login, (.digest // "")] | @tsv'
+    --jq '.[] | [.name, .state, .uploader.login, (.digest // ""), .id] | @tsv'
 }
 
 # A signature already on the release means another maintainer signed it, or the release was
@@ -115,21 +115,21 @@ refuse_if_signed() {
   fi
 }
 
-# The fields of SHA256SUMS in a release_assets listing: state, uploader, digest.
+# The fields of SHA256SUMS in a release_assets listing: state, uploader, digest, id.
 sums_asset() {
-  echo "$1" | awk -F'\t' '$1 == "SHA256SUMS" {print $2 "\t" $3 "\t" $4}'
+  echo "$1" | awk -F'\t' '$1 == "SHA256SUMS" {print $2 "\t" $3 "\t" $4 "\t" $5}'
 }
 
 # Every release.yml run of the tag must be over: a running attempt can still replace packages
-# or SHA256SUMS. Prints the newest run's id.
+# or SHA256SUMS. Prints the newest run's id and commit.
 finished_run() {
   local runs unfinished
   runs="$(gh api --paginate "repos/${REPO}/actions/workflows/release.yml/runs?event=release&branch=${TAG}&per_page=100" \
-    --jq '.workflow_runs[] | [.id, .status] | @tsv')" || fail "could not list the release.yml runs of ${TAG}"
+    --jq '.workflow_runs[] | [.id, .status, .head_sha] | @tsv')" || fail "could not list the release.yml runs of ${TAG}"
   [ -n "${runs}" ] || fail "found no release.yml run for ${TAG}"
   unfinished="$(echo "${runs}" | awk -F'\t' '$2 != "completed" {print $1 " (" $2 ")"}' | paste -sd ' ' -)"
   [ -z "${unfinished}" ] || fail "release.yml for ${TAG} is still running: ${unfinished}; sign once no attempt is in progress"
-  echo "${runs}" | head -n 1 | cut -f1
+  echo "${runs}" | head -n 1 | cut -f1,3
 }
 
 # The digests GitHub reports for the release's dashmate assets must be exactly SHA256SUMS.
@@ -171,10 +171,13 @@ SUMS="$(sums_asset "${ASSETS}")"
 SUMS_STATE="$(echo "${SUMS}" | cut -f1)"
 SUMS_UPLOADER="$(echo "${SUMS}" | cut -f2)"
 SUMS_DIGEST="$(echo "${SUMS}" | cut -f3)"
+SUMS_ID="$(echo "${SUMS}" | cut -f4)"
 [ "${SUMS_STATE}" = uploaded ] || fail "SHA256SUMS on ${TAG} is not fully uploaded (state ${SUMS_STATE})"
 [ "${SUMS_UPLOADER}" = 'github-actions[bot]' ] || fail "SHA256SUMS on ${TAG} was uploaded by ${SUMS_UPLOADER}, not by the release workflow"
 
-RUN_ID="$(finished_run)" || exit 1
+RUN="$(finished_run)" || exit 1
+RUN_ID="$(echo "${RUN}" | cut -f1)"
+RUN_SHA="$(echo "${RUN}" | cut -f2)"
 CHECKSUMS_JOB="$(gh api --paginate "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" \
   --jq '.jobs[] | select(.name == "Release Dashmate checksums") | (.conclusion // "none")')" \
   || fail "could not list the jobs of release.yml run ${RUN_ID}"
@@ -184,6 +187,21 @@ WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dashmate-sign.XXXXXX")"
 trap 'rm -rf "${WORK_DIR}"' EXIT
 DIR="${WORK_DIR}/release"
 mkdir "${DIR}"
+
+# The checksums job keeps with its run the id and sha256 of the SHA256SUMS it attached. Only that
+# asset is signed: an asset uploaded any other way, by the same bot or not, is refused.
+gh run download "${RUN_ID}" --repo "${REPO}" --name "dashmate-checksums-receipt-${RUN_SHA}" \
+  --dir "${WORK_DIR}/receipt" > /dev/null \
+  || fail "release.yml run ${RUN_ID} has no record of the SHA256SUMS its Release Dashmate checksums job attached; re-run that job"
+read -r RECEIPT_ID RECEIPT_SUM < "${WORK_DIR}/receipt/receipt" || fail "the record of run ${RUN_ID} is empty"
+id_pattern='^[0-9]+$'
+sum_pattern='^[0-9a-f]{64}$'
+if ! [[ "${RECEIPT_ID}" =~ ${id_pattern} ]] || ! [[ "${RECEIPT_SUM}" =~ ${sum_pattern} ]]; then
+  fail "the record of run ${RUN_ID} is not '<asset id> <sha256>'"
+fi
+if [ "${SUMS_ID}" != "${RECEIPT_ID}" ] || [ "${SUMS_DIGEST}" != "sha256:${RECEIPT_SUM}" ]; then
+  fail "SHA256SUMS on ${TAG} (asset ${SUMS_ID}, ${SUMS_DIGEST:-no digest}) is not the file the Release Dashmate checksums job of run ${RUN_ID} attached (asset ${RECEIPT_ID}, sha256:${RECEIPT_SUM})"
+fi
 
 echo "Downloading the dashmate packages and SHA256SUMS of ${TAG} into ${DIR}"
 gh release download "${TAG}" --repo "${REPO}" --pattern 'dashmate*' --pattern SHA256SUMS --dir "${DIR}" \
@@ -226,8 +244,10 @@ fi
 finished_run > /dev/null
 ASSETS="$(release_assets)" || fail "could not list the assets of ${TAG}"
 refuse_if_signed "${ASSETS}"
-[ "$(sums_asset "${ASSETS}" | cut -f3)" = "${SIGNED_DIGEST}" ] \
-  || fail "SHA256SUMS on ${TAG} changed while it was being signed; run this again"
+SUMS="$(sums_asset "${ASSETS}")"
+if [ "$(echo "${SUMS}" | cut -f3)" != "${SIGNED_DIGEST}" ] || [ "$(echo "${SUMS}" | cut -f4)" != "${RECEIPT_ID}" ]; then
+  fail "SHA256SUMS on ${TAG} changed while it was being signed; run this again"
+fi
 check_published_packages "${ASSETS}" "${DIR}/SHA256SUMS"
 
 gh release upload "${TAG}" "${DIR}/SHA256SUMS.asc" --repo "${REPO}" || fail "could not attach SHA256SUMS.asc to ${TAG}"

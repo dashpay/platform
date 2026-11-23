@@ -625,3 +625,29 @@ jobs:
             exit 1
           fi
           gh release upload "${TAG}" SHA256SUMS --clobber
+
+      # Which SHA256SUMS this job attached, kept with the run: the asset's id and
+      # sha256. The signing script signs only the release asset this names.
+      - name: Record the attached SHA256SUMS
+        run: |
+          set -euo pipefail
+          sum="$(shasum -a 256 SHA256SUMS | cut -d' ' -f1)"
+          asset="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?per_page=100" \
+            --jq '.[] | select(.name == "SHA256SUMS") | [.id, .state, (.digest // "")] | @tsv')"
+          id="$(echo "${asset}" | cut -f1)"
+          if [ -z "${id}" ] || [ "$(echo "${asset}" | cut -f2)" != uploaded ] \
+            || [ "$(echo "${asset}" | cut -f3)" != "sha256:${sum}" ]; then
+            echo "::error::${TAG} does not serve the SHA256SUMS this job uploaded (${asset:-no SHA256SUMS}); re-run this job."
+            exit 1
+          fi
+          printf '%s %s\n' "${id}" "${sum}" > receipt
+          cat receipt
+
+      - name: Upload the record of the attached SHA256SUMS
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dashmate-checksums-receipt-${{ github.sha }}
+          path: receipt
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: true
