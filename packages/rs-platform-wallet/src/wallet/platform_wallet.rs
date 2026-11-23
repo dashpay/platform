@@ -3512,8 +3512,8 @@ impl PlatformWallet {
     ///   the DashPay contract the connected network runs must already have
     ///   the field. Removing an address needs neither;
     /// - a shielded address that is one of this wallet's own must be the
-    ///   address of the identity's dedicated account, prepared in this
-    ///   session with [`Self::prepare_shielded_identity_address`]. Without
+    ///   default address of the identity's dedicated account, prepared in
+    ///   this session with [`Self::prepare_shielded_identity_address`]. Without
     ///   the `shielded` feature, or before the wallet's shielded accounts
     ///   are bound, no shielded address can be set at all, since the wallet
     ///   could not tell whether it is its own.

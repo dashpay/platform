@@ -366,6 +366,34 @@ mod tests {
         );
     }
 
+    /// A Platform address is spelled with the Bech32m checksum only. The same
+    /// payload under the legacy Bech32 checksum is not an address, so one
+    /// stored address has one spelling.
+    #[test]
+    fn should_refuse_a_platform_address_with_a_legacy_bech32_checksum() {
+        let hrp = bech32::Hrp::parse("tdash").expect("a valid prefix");
+        let mut payload = vec![PlatformAddress::P2PKH_TYPE];
+        payload.extend_from_slice(&HASH);
+        let legacy = bech32::encode::<bech32::Bech32>(hrp, &payload).expect("encodes");
+        let current = bech32::encode::<bech32::Bech32m>(hrp, &payload).expect("encodes");
+
+        assert!(profile_payment_address_from_string(
+            ProfilePaymentAddressKind::Platform,
+            &legacy,
+            Network::Testnet
+        )
+        .is_err());
+        assert_eq!(
+            profile_payment_address_from_string(
+                ProfilePaymentAddressKind::Platform,
+                &current,
+                Network::Testnet
+            )
+            .expect("the Bech32m spelling"),
+            PlatformAddress::P2pkh(HASH).to_bytes()
+        );
+    }
+
     #[cfg(feature = "shielded")]
     #[test]
     fn should_round_trip_a_shielded_address_and_refuse_another_network() {
@@ -398,6 +426,18 @@ mod tests {
             ProfilePaymentAddressKind::Shielded,
             &text,
             Network::Mainnet
+        )
+        .is_err());
+
+        // The same payload under the legacy Bech32 checksum is refused.
+        let hrp = bech32::Hrp::parse("tdash").expect("a valid prefix");
+        let mut payload = vec![OrchardAddress::ORCHARD_TYPE];
+        payload.extend_from_slice(&raw);
+        let legacy = bech32::encode::<bech32::Bech32>(hrp, &payload).expect("encodes");
+        assert!(profile_payment_address_from_string(
+            ProfilePaymentAddressKind::Shielded,
+            &legacy,
+            Network::Testnet
         )
         .is_err());
     }

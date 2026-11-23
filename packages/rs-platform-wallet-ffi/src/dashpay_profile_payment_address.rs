@@ -66,11 +66,13 @@ pub unsafe extern "C" fn platform_wallet_dashpay_profile_payment_address_support
     check_ptr!(out_support);
     *out_support = DashPayPaymentAddressSupportFFI::default();
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.dashpay().payment_address_support().await })
-    });
-    let result = unwrap_option_or_return!(option);
+    // Only the handle lookup runs under the registry lock. The fetch below
+    // can wait on the network, and holding the lock across it would stall
+    // every other wallet handle being opened or released meanwhile.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity = unwrap_option_or_return!(option);
+    let result = block_on_worker(async move { identity.dashpay().payment_address_support().await });
     let support = unwrap_result_or_return!(result);
     *out_support = DashPayPaymentAddressSupportFFI {
         core: support.core,

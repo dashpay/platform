@@ -319,6 +319,9 @@ fn ensure_unique_owners(owner_ids: &[Identifier]) -> Result<(), Error> {
 /// the stored avatar fills the gap, and that would leave a hash of a different
 /// image under the avatar: one of the two hashes alone, and a changed
 /// `avatar_url` without both.
+///
+/// Also refuses an update that removes the profile's last property (for
+/// example the only payment address of a profile that has nothing else).
 fn replacement_document(
     existing: &Document,
     fields: ProfileFields,
@@ -345,6 +348,16 @@ fn replacement_document(
         dashpay_contract,
         fields.overlay(existing.properties().clone()),
     )?;
+    // The profile schema needs at least one property, so removing the last
+    // one cannot be written. Refused here, before anything is signed, with
+    // what to do instead.
+    if properties.is_empty() {
+        return Err(Error::Generic(
+            "this update would remove the profile's last field, and a profile needs at least \
+             one; set another field in the same update"
+                .to_string(),
+        ));
+    }
     let revision = existing.revision().unwrap_or(INITIAL_REVISION) + 1;
     Ok(profile_document(
         existing.id(),
@@ -604,6 +617,39 @@ mod tests {
                 "{one_hash:?}"
             );
         }
+    }
+
+    /// A profile holding only a payment address cannot have it removed on
+    /// its own: the document would be left without a property. Removing it
+    /// while setting another field is fine.
+    #[test]
+    fn should_refuse_an_update_that_removes_the_last_profile_field() {
+        let existing = profile_document(
+            Identifier::new([0xD1; 32]),
+            Identifier::new([0x0E; 32]),
+            BTreeMap::from([("shieldedAddress".to_string(), Value::Bytes(vec![3; 43]))]),
+            Some(1),
+        );
+        let replace =
+            |fields: ProfileFields| replacement_document(&existing, fields, &dashpay_contract());
+
+        let refused = replace(ProfileFields {
+            shielded_address: PaymentAddressUpdate::Remove,
+            ..Default::default()
+        });
+        assert!(
+            matches!(refused, Err(Error::Generic(ref message)) if message.contains("last field")),
+            "{refused:?}"
+        );
+
+        let replaced = replace(ProfileFields {
+            display_name: Some("Alice".into()),
+            shielded_address: PaymentAddressUpdate::Remove,
+            ..Default::default()
+        })
+        .expect("another field keeps the profile non-empty");
+        assert_eq!(replaced.properties().len(), 1);
+        assert_eq!(text(replaced.properties(), "displayName"), Some("Alice"));
     }
 
     /// A changed avatar URL must not keep the old hashes under it, but the

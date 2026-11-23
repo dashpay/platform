@@ -5447,6 +5447,7 @@ version = "5.1.0-dev.3"
 dependencies = [
  "arc-swap",
  "async-trait",
+ "bech32",
  "bimap",
  "bs58",
  "dash-async",

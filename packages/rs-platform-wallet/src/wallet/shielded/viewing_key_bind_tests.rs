@@ -2635,7 +2635,7 @@ fn publication_refusal(result: Result<(), crate::PlatformWalletError>) -> String
 }
 
 #[tokio::test]
-async fn should_publish_only_the_prepared_account_among_this_wallets_shielded_addresses() {
+async fn should_publish_only_the_prepared_default_address_among_this_wallets_shielded_addresses() {
     let (wallet, seed, id, coordinator) = tip_race_fixture("profile_publication").await;
     wallet
         .bind_shielded(&seed, &[0, 1], &coordinator)
@@ -2696,12 +2696,20 @@ async fn should_publish_only_the_prepared_account_among_this_wallets_shielded_ad
         .await
         .unwrap();
 
-    // The prepared account at any external diversifier, and any address of
-    // another wallet, whose owner alone can tell what it is.
+    // Another external address of the identity's own account: those are the
+    // addresses it gives to contacts.
+    let message = publication_refusal(
+        wallet
+            .check_shielded_address_publication(&id, &own.address_at(17).to_raw_address_bytes())
+            .await,
+    );
+    assert!(message.contains("reserved for contacts"), "{message}");
+
+    // The prepared default address, and any address of another wallet,
+    // whose owner alone can tell what it is.
     let external = OrchardKeySet::from_seed(&[9; 64], Network::Testnet, 0).unwrap();
     for address in [
         prepared,
-        own.address_at(17).to_raw_address_bytes(),
         external.default_address.to_raw_address_bytes(),
         external.address_at(17).to_raw_address_bytes(),
         external
