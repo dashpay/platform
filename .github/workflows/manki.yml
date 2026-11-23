@@ -29,7 +29,7 @@ jobs:
         with:
           node-version: '24'
       - name: Manki Review
-        uses: manki-review/manki@v7.7.4
+        uses: manki-review/manki@v7.7.5
         with:
           claude_code_oauth_token: ${{ secrets.MANKI_CLAUDE_CODE_OAUTH_TOKEN }}
           # The repository variable MANKI_OPENAI_LOGIN picks the OpenAI login: `subscription` uses the
