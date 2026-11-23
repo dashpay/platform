@@ -5,8 +5,8 @@
 //! blocks merged into one entry per address, expired by Drive after about a
 //! week). Both queries are network-wide; this module pages through them,
 //! keeps only the changes that touch an address of this wallet, reconciles
-//! the two zones so no block shows in both, and orders them newest first so
-//! a host can render them as they come.
+//! the two zones so every block shows exactly once, and orders them newest
+//! first so a host can render them as they come.
 
 use std::cmp::Reverse;
 use std::collections::BTreeSet;
@@ -94,7 +94,8 @@ pub struct AddressBalanceHistory {
     /// The wallet's network: the one every address here is displayed on.
     pub network: Network,
     /// Changes in Platform's recent (not yet compacted) zone, newest block
-    /// first, then by address.
+    /// first, then by address. With compacted history, a block that a
+    /// compacted range covers is left out here: the range shows it.
     pub recent: Vec<AddressBalanceChangeEntry>,
     /// Compacted changes, newest range first (by range end, then range
     /// start), then by address. Empty unless compacted history was asked for.
@@ -108,12 +109,14 @@ impl PlatformAddressWallet {
     /// `include_compacted` is set.
     ///
     /// Both zones are paged from height 0 (see `fetch_pages_from_genesis`),
-    /// so the result is the whole of each zone, not one server page. The
-    /// recent zone is fetched first and the compacted zone is reconciled
-    /// against it (see `drop_ranges_compacted_after_recent_fetch`), so a
-    /// block compacted between the two fetches shows once, in `recent`.
-    /// Drive expires compacted ranges after about a week, so the history is
-    /// bounded.
+    /// so the result is the whole of each zone, not one server page. With
+    /// compacted history the recent zone is read first, the compacted zone
+    /// must be proved at or above it (else both are read again, a bounded
+    /// number of times, then
+    /// [`PlatformWalletError::BalanceHistoryInconsistentHeights`]), every
+    /// compacted range is kept and a recent block a range covers shows only
+    /// in that range (see `wallet_balance_history`). Drive expires compacted
+    /// ranges after about a week, so the history is bounded.
     pub async fn balance_history(
         &self,
         include_compacted: bool,
@@ -132,24 +135,32 @@ impl PlatformAddressWallet {
             &wallet_addresses,
             include_compacted,
             |start_height| async move {
-                let page = RecentAddressBalanceChanges::fetch(
+                let (page, metadata) = RecentAddressBalanceChanges::fetch_with_metadata(
                     sdk,
                     RecentAddressBalanceChangesQuery::new(start_height),
+                    None,
                 )
                 .await?;
-                Ok(page
-                    .map(RecentAddressBalanceChanges::into_inner)
-                    .unwrap_or_default())
+                Ok(ProvedPage {
+                    items: page
+                        .map(RecentAddressBalanceChanges::into_inner)
+                        .unwrap_or_default(),
+                    proved_height: metadata.height,
+                })
             },
             |start_block_height| async move {
-                let page = RecentCompactedAddressBalanceChanges::fetch(
+                let (page, metadata) = RecentCompactedAddressBalanceChanges::fetch_with_metadata(
                     sdk,
                     RecentCompactedAddressBalanceChangesQuery::new(start_block_height),
+                    None,
                 )
                 .await?;
-                Ok(page
-                    .map(RecentCompactedAddressBalanceChanges::into_inner)
-                    .unwrap_or_default())
+                Ok(ProvedPage {
+                    items: page
+                        .map(RecentCompactedAddressBalanceChanges::into_inner)
+                        .unwrap_or_default(),
+                    proved_height: metadata.height,
+                })
             },
         )
         .await?;
@@ -188,17 +199,39 @@ impl PlatformAddressWallet {
     }
 }
 
-/// The wallet rows of both zones, sorted: `fetch_recent_page` and
-/// `fetch_compacted_page` fetch one network-wide page at a start height.
+/// How many times [`wallet_balance_history`] reads both zones before giving
+/// up on consistent heights. The SDK accepts an answer up to one block
+/// behind the newest one it has seen, so a compacted read can come from a
+/// node one block behind the recent read; a fresh read usually reaches a
+/// node that has caught up (or the same node a block later), so a few
+/// attempts suffice while still bounding a load against a lagging network.
+const BALANCE_HISTORY_READ_ATTEMPTS: usize = 3;
+
+/// One page of a height-keyed query and the block height its proof was
+/// verified at.
+struct ProvedPage<T> {
+    items: Vec<T>,
+    proved_height: BlockHeight,
+}
+
+/// The wallet rows of both zones, reconciled and sorted:
+/// `fetch_recent_page` and `fetch_compacted_page` fetch one network-wide
+/// page at a start height, with its proved height.
 ///
-/// The recent zone is paged to the end FIRST; the compacted zone is paged
-/// only when `include_compacted` is set, and then reconciled against the
-/// lowest height the recent fetch saw.
+/// The recent zone is paged to the end first; it is the whole answer unless
+/// `include_compacted` is set. Otherwise the compacted zone is paged next,
+/// and the read is accepted only when every compacted page was proved at or
+/// above every recent page ([`compacted_read_is_consistent`]); else both
+/// zones are read again, up to [`BALANCE_HISTORY_READ_ATTEMPTS`] times,
+/// after which the call fails with
+/// [`PlatformWalletError::BalanceHistoryInconsistentHeights`]. An accepted
+/// read keeps every compacted row and drops the recent rows whose block a
+/// compacted range covers ([`drop_recent_rows_covered_by_ranges`]).
 async fn wallet_balance_history<RF, RFut, CF, CFut>(
     wallet_addresses: &BTreeSet<PlatformAddress>,
     include_compacted: bool,
-    fetch_recent_page: RF,
-    fetch_compacted_page: CF,
+    mut fetch_recent_page: RF,
+    mut fetch_compacted_page: CF,
 ) -> Result<
     (
         Vec<AddressBalanceChangeEntry>,
@@ -208,23 +241,28 @@ async fn wallet_balance_history<RF, RFut, CF, CFut>(
 >
 where
     RF: FnMut(BlockHeight) -> RFut,
-    RFut: Future<Output = Result<Vec<BlockAddressBalanceChanges>, PlatformWalletError>>,
+    RFut: Future<Output = Result<ProvedPage<BlockAddressBalanceChanges>, PlatformWalletError>>,
     CF: FnMut(BlockHeight) -> CFut,
-    CFut: Future<Output = Result<Vec<CompactedBlockAddressBalanceChanges>, PlatformWalletError>>,
+    CFut: Future<
+        Output = Result<ProvedPage<CompactedBlockAddressBalanceChanges>, PlatformWalletError>,
+    >,
 {
-    let recent_zone = fetch_pages_from_genesis(
-        fetch_recent_page,
-        |block: &BlockAddressBalanceChanges| (block.block_height, block.block_height),
-        |block: BlockAddressBalanceChanges| wallet_rows_of_block(block, wallet_addresses),
-    )
-    .await?;
-    let mut recent = recent_zone.rows;
-    sort_recent_newest_first(&mut recent);
+    let mut last_heights = (0, 0);
+    for _ in 0..BALANCE_HISTORY_READ_ATTEMPTS {
+        let recent_zone = fetch_pages_from_genesis(
+            &mut fetch_recent_page,
+            |block: &BlockAddressBalanceChanges| (block.block_height, block.block_height),
+            |block: BlockAddressBalanceChanges| wallet_rows_of_block(block, wallet_addresses),
+        )
+        .await?;
+        if !include_compacted {
+            let mut recent = recent_zone.rows;
+            sort_recent_newest_first(&mut recent);
+            return Ok((recent, Vec::new()));
+        }
 
-    let mut compacted = Vec::new();
-    if include_compacted {
         let compacted_zone = fetch_pages_from_genesis(
-            fetch_compacted_page,
+            &mut fetch_compacted_page,
             |range: &CompactedBlockAddressBalanceChanges| {
                 (range.start_block_height, range.end_block_height)
             },
@@ -233,36 +271,59 @@ where
             },
         )
         .await?;
-        compacted = drop_ranges_compacted_after_recent_fetch(
-            compacted_zone.rows,
-            recent_zone.lowest_height,
-        );
+        if !compacted_read_is_consistent(
+            recent_zone.highest_proved_height,
+            compacted_zone.lowest_proved_height,
+        ) {
+            last_heights = (
+                recent_zone.highest_proved_height,
+                compacted_zone.lowest_proved_height,
+            );
+            continue;
+        }
+
+        let mut recent = drop_recent_rows_covered_by_ranges(recent_zone.rows, compacted_zone.spans);
+        sort_recent_newest_first(&mut recent);
+        let mut compacted = compacted_zone.rows;
         sort_compacted_newest_first(&mut compacted);
+        return Ok((recent, compacted));
     }
-    Ok((recent, compacted))
+    let (recent_height, compacted_height) = last_heights;
+    Err(PlatformWalletError::BalanceHistoryInconsistentHeights {
+        attempts: BALANCE_HISTORY_READ_ATTEMPTS,
+        recent_height,
+        compacted_height,
+    })
 }
 
-/// The rows a paged zone kept, and the lowest height of every item the zone
-/// returned before any row was filtered out.
+/// What a paged zone kept, and what it saw before the wallet filter.
 #[derive(Debug, PartialEq, Eq)]
 struct PagedZone<R> {
     rows: Vec<R>,
-    /// `None` when the zone returned nothing.
-    lowest_height: Option<BlockHeight>,
+    /// The first and last block height of every item the zone returned,
+    /// network-wide (before the wallet filter).
+    spans: Vec<(BlockHeight, BlockHeight)>,
+    /// The lowest height any of the zone's pages was proved at.
+    lowest_proved_height: BlockHeight,
+    /// The highest height any of the zone's pages was proved at.
+    highest_proved_height: BlockHeight,
 }
 
 /// Fetch every page of a height-keyed query, starting at height 0, keeping
 /// only what `keep` returns for each item.
 ///
 /// `fetch_page(start)` returns the items at or after `start`, oldest first,
-/// up to the server's page limit; `height_span_of` gives an item's first and
-/// last block height. Each page is passed through `keep` as it arrives and
-/// dropped before the next one is fetched, so memory holds one page plus the
-/// kept rows. The cursor advances from the full page, kept or not: the next
-/// page starts one block after the page's highest last height. Paging stops
-/// on an empty page, or when a page would not move the cursor forward (a
-/// server that ignores the start height, or a height at `u64::MAX`); such a
-/// page holds nothing past what was already read and is dropped.
+/// up to the server's page limit, with the height its proof was verified
+/// at; `height_span_of` gives an item's first and last block height. Each
+/// page is passed through `keep` as it arrives and dropped before the next
+/// one is fetched, so memory holds one page plus the kept rows and the
+/// items' height spans. The cursor advances from the full page, kept or
+/// not: the next page starts one block after the page's highest last
+/// height. Paging stops on an empty page, or when a page would not move the
+/// cursor forward (a server that ignores the start height, or a height at
+/// `u64::MAX`); such a page holds nothing past what was already read and its
+/// items are dropped. The proved heights count every page fetched, including
+/// the one that ends the paging.
 async fn fetch_pages_from_genesis<T, R, F, Fut>(
     mut fetch_page: F,
     height_span_of: impl Fn(&T) -> (BlockHeight, BlockHeight),
@@ -270,76 +331,91 @@ async fn fetch_pages_from_genesis<T, R, F, Fut>(
 ) -> Result<PagedZone<R>, PlatformWalletError>
 where
     F: FnMut(BlockHeight) -> Fut,
-    Fut: Future<Output = Result<Vec<T>, PlatformWalletError>>,
+    Fut: Future<Output = Result<ProvedPage<T>, PlatformWalletError>>,
 {
     let mut cursor: BlockHeight = 0;
+    let first = fetch_page(cursor).await?;
     let mut zone = PagedZone {
         rows: Vec::new(),
-        lowest_height: None,
+        spans: Vec::new(),
+        lowest_proved_height: first.proved_height,
+        highest_proved_height: first.proved_height,
     };
-    loop {
-        let page = fetch_page(cursor).await?;
-        let Some((page_lowest, page_highest)) = page.iter().map(&height_span_of).fold(
-            None,
-            |span: Option<(BlockHeight, BlockHeight)>, (first, last)| {
-                Some(match span {
-                    None => (first, last),
-                    Some((lowest, highest)) => (lowest.min(first), highest.max(last)),
-                })
-            },
-        ) else {
-            break;
-        };
+    let mut page = first.items;
+    // An empty page ends the paging.
+    while let Some(page_highest) = page.iter().map(|item| height_span_of(item).1).max() {
         let next_cursor = page_highest.saturating_add(1);
         if next_cursor <= cursor {
             break;
         }
-        zone.lowest_height = Some(
-            zone.lowest_height
-                .map_or(page_lowest, |lowest| lowest.min(page_lowest)),
-        );
         for item in page {
+            zone.spans.push(height_span_of(&item));
             zone.rows.extend(keep(item));
         }
         cursor = next_cursor;
+
+        let next = fetch_page(cursor).await?;
+        zone.lowest_proved_height = zone.lowest_proved_height.min(next.proved_height);
+        zone.highest_proved_height = zone.highest_proved_height.max(next.proved_height);
+        page = next.items;
     }
     Ok(zone)
 }
 
-/// Drop every compacted row whose range starts at or after
-/// `lowest_recent_height`, the lowest block height the recent fetch returned
-/// network-wide (`None` when the recent zone was empty: every row is kept).
+/// Whether a compacted read can be combined with a recent read: every
+/// compacted page (`compacted_lowest_proved_height`) was proved at or above
+/// every recent page (`recent_highest_proved_height`).
 ///
-/// Drive compacts by draining the WHOLE recent zone, together with the
-/// block being executed, into one new range in one batch
-/// (`compact_address_balances_with_current_block_v0`), so a new range
-/// starts at the lowest height the recent zone held at that moment. Hence:
-/// - a range created before the recent fetch ends below every block that
-///   fetch saw (those blocks were stored after it), so it starts below
-///   `lowest_recent_height` and is kept;
-/// - a range created after the recent fetch drained the blocks that fetch
-///   returned (it starts at `lowest_recent_height`, or above for a later
-///   compaction), so its changes are already in the recent rows and it is
-///   dropped.
+/// Drive moves blocks out of the recent zone only by compacting them into a
+/// new range in one batch (`compact_address_balances_with_current_block_v0`,
+/// which also merges the block being executed straight into that range).
+/// A compaction that removed blocks before or while the recent zone was
+/// read happened at a height no higher than the recent read, so a compacted
+/// read proved at or above it holds that range. A compacted read from a
+/// lagging node (the SDK accepts one block behind) may not.
+fn compacted_read_is_consistent(
+    recent_highest_proved_height: BlockHeight,
+    compacted_lowest_proved_height: BlockHeight,
+) -> bool {
+    compacted_lowest_proved_height >= recent_highest_proved_height
+}
+
+/// Drop every recent row whose block lies inside one of `range_spans`, the
+/// `[start, end]` spans of every compacted range returned (network-wide,
+/// whether or not a range holds a wallet row).
 ///
-/// Because the recent zone is fetched first, a block compacted after the
-/// recent fetch was in that fetch, so dropping these ranges leaves no gap.
-/// The recent fetch is only atomic per page: a compaction between two of
-/// its pages drains blocks stored after the earlier page, which are then in
-/// neither zone. Drive compacts before the recent zone reaches
-/// `max_blocks_before_compaction` (64) blocks and a recent page holds up to
-/// 100, so the fetch is one page plus the empty page that ends it, and that
-/// window is the one round trip between them.
-fn drop_ranges_compacted_after_recent_fetch(
-    compacted: Vec<CompactedAddressBalanceChangeEntry>,
-    lowest_recent_height: Option<BlockHeight>,
-) -> Vec<CompactedAddressBalanceChangeEntry> {
-    let Some(lowest_recent_height) = lowest_recent_height else {
-        return compacted;
-    };
-    compacted
+/// A block inside a compacted range has all its changes merged into that
+/// range, so the range already shows the row (merged with the range's other
+/// blocks); keeping it in the recent rows too would show it twice. Every
+/// compacted range is kept, so no block is lost, including the block whose
+/// execution triggered the compaction, which Drive writes only into the
+/// range. The cost is per-block detail for superseded recent blocks.
+fn drop_recent_rows_covered_by_ranges(
+    recent: Vec<AddressBalanceChangeEntry>,
+    mut range_spans: Vec<(BlockHeight, BlockHeight)>,
+) -> Vec<AddressBalanceChangeEntry> {
+    if range_spans.is_empty() {
+        return recent;
+    }
+    range_spans.sort_unstable();
+    // Merge overlapping or touching spans so one lookup decides each row.
+    let mut coverage: Vec<(BlockHeight, BlockHeight)> = Vec::with_capacity(range_spans.len());
+    for (start, end) in range_spans {
+        match coverage.last_mut() {
+            Some((_, last_end)) if start <= last_end.saturating_add(1) => {
+                *last_end = (*last_end).max(end);
+            }
+            _ => coverage.push((start, end)),
+        }
+    }
+    recent
         .into_iter()
-        .filter(|entry| entry.start_block_height < lowest_recent_height)
+        .filter(|entry| {
+            let height = entry.block_height;
+            let after = coverage.partition_point(|(start, _)| *start <= height);
+            let covering = after.checked_sub(1).and_then(|index| coverage.get(index));
+            !matches!(covering, Some((_, end)) if height <= *end)
+        })
         .collect()
 }
 
@@ -416,7 +492,7 @@ fn sort_compacted_newest_first(entries: &mut [CompactedAddressBalanceChangeEntry
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::collections::{BTreeMap, BTreeSet};
     use std::sync::Arc;
 
@@ -435,11 +511,11 @@ mod tests {
     use tokio::sync::RwLock;
 
     use super::{
-        drop_ranges_compacted_after_recent_fetch, fetch_pages_from_genesis,
+        compacted_read_is_consistent, drop_recent_rows_covered_by_ranges, fetch_pages_from_genesis,
         sort_compacted_newest_first, sort_recent_newest_first, wallet_balance_history,
         wallet_rows_of_block, wallet_rows_of_range, AddressBalanceChange,
         AddressBalanceChangeEntry, CompactedAddressBalanceChange,
-        CompactedAddressBalanceChangeEntry, PagedZone,
+        CompactedAddressBalanceChangeEntry, PagedZone, ProvedPage, BALANCE_HISTORY_READ_ATTEMPTS,
     };
     use crate::error::PlatformWalletError;
     use crate::test_support::platform_address_wallet_in;
@@ -540,14 +616,39 @@ mod tests {
         }
     }
 
-    /// Fake one-page server: `pages` answers the start heights it lists and
-    /// any other start height with an empty page.
-    fn page_at<T: Clone>(pages: &[(BlockHeight, Vec<T>)], start: BlockHeight) -> Vec<T> {
-        pages
-            .iter()
-            .find(|(page_start, _)| *page_start == start)
-            .map(|(_, page)| page.clone())
-            .unwrap_or_default()
+    /// A wallet (`address(1)`) row of block `block_height` that added
+    /// `credits`.
+    fn recent_row(block_height: BlockHeight, credits: u64) -> AddressBalanceChangeEntry {
+        AddressBalanceChangeEntry {
+            block_height,
+            address: address(1),
+            change: AddressBalanceChange::Added(credits),
+        }
+    }
+
+    /// A page of `items` proved at `proved_height`.
+    fn proved<T>(items: Vec<T>, proved_height: BlockHeight) -> ProvedPage<T> {
+        ProvedPage {
+            items,
+            proved_height,
+        }
+    }
+
+    /// Fake server proved at `proved_height`: `pages` answers the start
+    /// heights it lists and any other start height with an empty page.
+    fn page_at<T: Clone>(
+        pages: &[(BlockHeight, Vec<T>)],
+        start: BlockHeight,
+        proved_height: BlockHeight,
+    ) -> ProvedPage<T> {
+        proved(
+            pages
+                .iter()
+                .find(|(page_start, _)| *page_start == start)
+                .map(|(_, page)| page.clone())
+                .unwrap_or_default(),
+            proved_height,
+        )
     }
 
     #[test]
@@ -664,9 +765,9 @@ mod tests {
                 requested.borrow_mut().push(start);
                 async move {
                     Ok::<_, PlatformWalletError>(match start {
-                        0 => vec![3u64, 5],
-                        6 => vec![9],
-                        _ => Vec::new(),
+                        0 => proved(vec![3u64, 5], 20),
+                        6 => proved(vec![9], 21),
+                        _ => proved(Vec::new(), 19),
                     })
                 }
             },
@@ -680,7 +781,10 @@ mod tests {
             zone,
             PagedZone {
                 rows: vec![3, 5, 9],
-                lowest_height: Some(3),
+                spans: vec![(3, 3), (5, 5), (9, 9)],
+                // The empty page that ends the paging counts too.
+                lowest_proved_height: 19,
+                highest_proved_height: 21,
             }
         );
         assert_eq!(*requested.borrow(), vec![0, 6, 10]);
@@ -694,9 +798,9 @@ mod tests {
                 requested.borrow_mut().push(start);
                 async move {
                     Ok::<_, PlatformWalletError>(match start {
-                        0 => vec![3u64, 5],
-                        6 => vec![9],
-                        _ => Vec::new(),
+                        0 => proved(vec![3u64, 5], 10),
+                        6 => proved(vec![9], 10),
+                        _ => proved(Vec::new(), 10),
                     })
                 }
             },
@@ -714,28 +818,9 @@ mod tests {
         .expect("fake pages never fail");
 
         assert_eq!(zone.rows, vec![9]);
-        // The lowest height counts the page whose items were all dropped.
-        assert_eq!(zone.lowest_height, Some(3));
+        // The spans count the page whose items were all dropped.
+        assert_eq!(zone.spans, vec![(3, 3), (5, 5), (9, 9)]);
         assert_eq!(*requested.borrow(), vec![0, 6, 10]);
-    }
-
-    #[tokio::test]
-    async fn should_report_no_lowest_height_for_an_empty_zone() {
-        let zone = fetch_pages_from_genesis(
-            |_start: BlockHeight| async move { Ok::<_, PlatformWalletError>(Vec::<u64>::new()) },
-            |height: &u64| (*height, *height),
-            |height: u64| vec![height],
-        )
-        .await
-        .expect("fake pages never fail");
-
-        assert_eq!(
-            zone,
-            PagedZone {
-                rows: Vec::new(),
-                lowest_height: None,
-            }
-        );
     }
 
     #[tokio::test]
@@ -746,7 +831,7 @@ mod tests {
         let zone = fetch_pages_from_genesis(
             |start: BlockHeight| {
                 requested.borrow_mut().push(start);
-                async move { Ok::<_, PlatformWalletError>(vec![2u64, 4]) }
+                async move { Ok::<_, PlatformWalletError>(proved(vec![2u64, 4], 10)) }
             },
             |height: &u64| (*height, *height),
             |height: u64| vec![height],
@@ -755,7 +840,7 @@ mod tests {
         .expect("fake pages never fail");
 
         assert_eq!(zone.rows, vec![2, 4]);
-        assert_eq!(zone.lowest_height, Some(2));
+        assert_eq!(zone.spans, vec![(2, 2), (4, 4)]);
         assert_eq!(*requested.borrow(), vec![0, 5]);
     }
 
@@ -765,7 +850,7 @@ mod tests {
         let zone = fetch_pages_from_genesis(
             |start: BlockHeight| {
                 requested.borrow_mut().push(start);
-                async move { Ok::<_, PlatformWalletError>(vec![u64::MAX]) }
+                async move { Ok::<_, PlatformWalletError>(proved(vec![u64::MAX], 10)) }
             },
             |height: &u64| (*height, *height),
             |height: u64| vec![height],
@@ -785,8 +870,8 @@ mod tests {
                 requested.borrow_mut().push(start);
                 async move {
                     Ok::<_, PlatformWalletError>(match start {
-                        0 => vec![(1u64, 5u64), (6, 9)],
-                        _ => Vec::new(),
+                        0 => proved(vec![(1u64, 5u64), (6, 9)], 10),
+                        _ => proved(Vec::new(), 10),
                     })
                 }
             },
@@ -797,7 +882,7 @@ mod tests {
         .expect("fake pages never fail");
 
         assert_eq!(zone.rows, vec![(1, 5), (6, 9)]);
-        assert_eq!(zone.lowest_height, Some(1));
+        assert_eq!(zone.spans, vec![(1, 5), (6, 9)]);
         assert_eq!(*requested.borrow(), vec![0, 10]);
     }
 
@@ -805,7 +890,7 @@ mod tests {
     async fn should_return_the_page_error() {
         let result = fetch_pages_from_genesis(
             |_start: BlockHeight| async move {
-                Err::<Vec<u64>, _>(PlatformWalletError::AddressSync("offline".to_string()))
+                Err::<ProvedPage<u64>, _>(PlatformWalletError::AddressSync("offline".to_string()))
             },
             |height: &u64| (*height, *height),
             |height: u64| vec![height],
@@ -816,90 +901,259 @@ mod tests {
     }
 
     #[test]
-    fn should_drop_a_compacted_range_starting_at_or_after_the_lowest_recent_height() {
-        let compacted = vec![compacted_row(20, 30, 1), compacted_row(25, 40, 2)];
+    fn should_drop_recent_rows_inside_any_compacted_range_and_keep_the_rest() {
+        let recent = vec![
+            recent_row(4, 1),
+            recent_row(5, 2),
+            recent_row(9, 3),
+            recent_row(10, 4),
+            recent_row(13, 5),
+            recent_row(20, 6),
+        ];
+        // (1, 4) and (5, 9) touch; (10, 12) is separate; 13 and 20 are past
+        // every range.
+        let spans = vec![(10, 12), (1, 4), (5, 9)];
 
-        let kept = drop_ranges_compacted_after_recent_fetch(compacted, Some(20));
+        let kept = drop_recent_rows_covered_by_ranges(recent, spans);
 
-        assert!(kept.is_empty());
+        assert_eq!(kept, vec![recent_row(13, 5), recent_row(20, 6)]);
     }
 
     #[test]
-    fn should_keep_a_compacted_range_entirely_before_the_lowest_recent_height() {
-        let compacted = vec![compacted_row(1, 19, 1), compacted_row(20, 30, 2)];
+    fn should_keep_every_recent_row_without_compacted_ranges() {
+        let recent = vec![recent_row(4, 1), recent_row(10, 2)];
 
-        let kept = drop_ranges_compacted_after_recent_fetch(compacted, Some(20));
+        let kept = drop_recent_rows_covered_by_ranges(recent.clone(), Vec::new());
 
-        assert_eq!(kept, vec![compacted_row(1, 19, 1)]);
+        assert_eq!(kept, recent);
     }
 
     #[test]
-    fn should_keep_every_compacted_range_when_the_recent_zone_is_empty() {
-        let compacted = vec![compacted_row(1, 19, 1), compacted_row(20, 30, 2)];
-
-        let kept = drop_ranges_compacted_after_recent_fetch(compacted.clone(), None);
-
-        assert_eq!(kept, compacted);
+    fn should_accept_a_compacted_read_only_at_or_above_the_recent_read() {
+        assert!(compacted_read_is_consistent(12, 12));
+        assert!(compacted_read_is_consistent(12, 13));
+        assert!(!compacted_read_is_consistent(12, 11));
     }
 
     #[tokio::test]
-    async fn should_drop_compacted_ranges_by_network_wide_recent_heights() {
+    async fn should_show_a_top_up_in_the_compaction_block_once_in_its_range() {
         let wallet = BTreeSet::from([address(1)]);
-        // The recent zone's lowest block (10) has no change of this wallet.
+        // The recent read, proved at 11, holds blocks 10 and 11.
         let recent_pages = vec![(
             0,
             vec![
-                recent_block(10, [(address(2), CreditOperation::AddToCredits(7))]),
-                recent_block(12, [(address(1), CreditOperation::AddToCredits(5))]),
+                recent_block(10, [(address(1), CreditOperation::AddToCredits(5))]),
+                recent_block(11, [(address(2), CreditOperation::AddToCredits(9))]),
             ],
         )];
-        // (3, 9) was compacted before the recent fetch; (10, 12) after it,
-        // from the very blocks the recent fetch returned.
+        // Block 12 triggered a compaction: Drive merged 10, 11 and 12's own
+        // top-up of 7 into range (10, 12) and never wrote 12 to the recent
+        // zone. The compacted read is proved at 12.
         let compacted_pages = vec![(
             0,
-            vec![
-                compacted_range(
-                    3,
-                    9,
-                    [(address(1), BlockAwareCreditOperation::SetCredits(40))],
-                ),
-                compacted_range(
-                    10,
-                    12,
-                    [(
+            vec![compacted_range(
+                10,
+                12,
+                [
+                    (
                         address(1),
+                        BlockAwareCreditOperation::AddToCreditsOperations(BTreeMap::from([
+                            (10, 5),
+                            (12, 7),
+                        ])),
+                    ),
+                    (
+                        address(2),
                         BlockAwareCreditOperation::AddToCreditsOperations(BTreeMap::from([(
-                            12, 5,
+                            11, 9,
                         )])),
-                    )],
-                ),
-            ],
+                    ),
+                ],
+            )],
         )];
 
         let (recent, compacted) = wallet_balance_history(
             &wallet,
             true,
             |start| {
-                let page = page_at(&recent_pages, start);
+                let page = page_at(&recent_pages, start, 11);
                 async move { Ok(page) }
             },
             |start| {
-                let page = page_at(&compacted_pages, start);
+                let page = page_at(&compacted_pages, start, 12);
                 async move { Ok(page) }
             },
         )
         .await
-        .expect("fake pages never fail");
+        .expect("consistent fake reads");
 
+        // Block 10 is covered by the range, so it shows only there.
+        assert!(recent.is_empty());
         assert_eq!(
-            recent,
-            vec![AddressBalanceChangeEntry {
-                block_height: 12,
+            compacted,
+            vec![CompactedAddressBalanceChangeEntry {
+                start_block_height: 10,
+                end_block_height: 12,
                 address: address(1),
-                change: AddressBalanceChange::Added(5),
+                change: CompactedAddressBalanceChange::Additions(vec![(12, 7), (10, 5)]),
             }]
         );
+    }
+
+    #[tokio::test]
+    async fn should_keep_a_range_below_the_recent_zone_and_recent_rows_outside_every_range() {
+        let wallet = BTreeSet::from([address(1)]);
+        let recent_pages = vec![(
+            0,
+            vec![
+                recent_block(10, [(address(1), CreditOperation::AddToCredits(5))]),
+                recent_block(12, [(address(1), CreditOperation::AddToCredits(6))]),
+            ],
+        )];
+        let compacted_pages = vec![(
+            0,
+            vec![compacted_range(
+                3,
+                9,
+                [(address(1), BlockAwareCreditOperation::SetCredits(40))],
+            )],
+        )];
+
+        let (recent, compacted) = wallet_balance_history(
+            &wallet,
+            true,
+            |start| {
+                let page = page_at(&recent_pages, start, 12);
+                async move { Ok(page) }
+            },
+            |start| {
+                let page = page_at(&compacted_pages, start, 12);
+                async move { Ok(page) }
+            },
+        )
+        .await
+        .expect("consistent fake reads");
+
+        assert_eq!(recent, vec![recent_row(12, 6), recent_row(10, 5)]);
         assert_eq!(compacted, vec![compacted_row(3, 9, 40)]);
+    }
+
+    #[tokio::test]
+    async fn should_read_again_when_the_compacted_read_is_proved_below_the_recent_read() {
+        let wallet = BTreeSet::from([address(1)]);
+        let recent_reads = Cell::new(0usize);
+        let compacted_reads = Cell::new(0usize);
+
+        let (recent, _) = wallet_balance_history(
+            &wallet,
+            true,
+            |start| {
+                if start == 0 {
+                    recent_reads.set(recent_reads.get() + 1);
+                }
+                let page = page_at(
+                    &[(
+                        0,
+                        vec![recent_block(
+                            12,
+                            [(address(1), CreditOperation::AddToCredits(6))],
+                        )],
+                    )],
+                    start,
+                    12,
+                );
+                async move { Ok(page) }
+            },
+            |start| {
+                if start == 0 {
+                    compacted_reads.set(compacted_reads.get() + 1);
+                }
+                // The first compacted read comes from a node a block behind.
+                let proved_height = if compacted_reads.get() == 1 { 11 } else { 12 };
+                let page =
+                    page_at::<CompactedBlockAddressBalanceChanges>(&[], start, proved_height);
+                async move { Ok(page) }
+            },
+        )
+        .await
+        .expect("the second read is consistent");
+
+        assert_eq!(recent_reads.get(), 2);
+        assert_eq!(compacted_reads.get(), 2);
+        assert_eq!(recent, vec![recent_row(12, 6)]);
+    }
+
+    #[tokio::test]
+    async fn should_fail_when_no_read_reaches_consistent_heights() {
+        let wallet = BTreeSet::from([address(1)]);
+        let recent_reads = Cell::new(0usize);
+
+        let result = wallet_balance_history(
+            &wallet,
+            true,
+            |start| {
+                if start == 0 {
+                    recent_reads.set(recent_reads.get() + 1);
+                }
+                let page = page_at::<BlockAddressBalanceChanges>(&[], start, 12);
+                async move { Ok(page) }
+            },
+            |start| {
+                let page = page_at::<CompactedBlockAddressBalanceChanges>(&[], start, 11);
+                async move { Ok(page) }
+            },
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(PlatformWalletError::BalanceHistoryInconsistentHeights {
+                attempts: BALANCE_HISTORY_READ_ATTEMPTS,
+                recent_height: 12,
+                compacted_height: 11,
+            })
+        ));
+        assert_eq!(recent_reads.get(), BALANCE_HISTORY_READ_ATTEMPTS);
+    }
+
+    #[tokio::test]
+    async fn should_cover_recent_rows_by_every_range_including_ranges_without_wallet_rows() {
+        let wallet = BTreeSet::from([address(1)]);
+        let recent_pages = vec![(
+            0,
+            vec![recent_block(
+                12,
+                [(address(1), CreditOperation::AddToCredits(6))],
+            )],
+        )];
+        // The covering range holds no change of this wallet: coverage is
+        // taken from every range returned, not from the wallet's rows.
+        let compacted_pages = vec![(
+            0,
+            vec![compacted_range(
+                10,
+                12,
+                [(address(2), BlockAwareCreditOperation::SetCredits(3))],
+            )],
+        )];
+
+        let (recent, compacted) = wallet_balance_history(
+            &wallet,
+            true,
+            |start| {
+                let page = page_at(&recent_pages, start, 12);
+                async move { Ok(page) }
+            },
+            |start| {
+                let page = page_at(&compacted_pages, start, 12);
+                async move { Ok(page) }
+            },
+        )
+        .await
+        .expect("consistent fake reads");
+
+        assert!(recent.is_empty());
+        assert!(compacted.is_empty());
     }
 
     #[tokio::test]
@@ -912,11 +1166,11 @@ mod tests {
             true,
             |start| {
                 calls.borrow_mut().push(("recent", start));
-                async move { Ok(Vec::new()) }
+                async move { Ok(proved(Vec::new(), 10)) }
             },
             |start| {
                 calls.borrow_mut().push(("compacted", start));
-                async move { Ok(Vec::new()) }
+                async move { Ok(proved(Vec::new(), 10)) }
             },
         )
         .await
@@ -928,21 +1182,32 @@ mod tests {
     #[tokio::test]
     async fn should_not_fetch_the_compacted_zone_unless_asked() {
         let wallet = BTreeSet::from([address(1)]);
-        let compacted_fetched = RefCell::new(false);
+        let compacted_fetched = Cell::new(false);
+        let recent_pages = vec![(
+            0,
+            vec![recent_block(
+                12,
+                [(address(1), CreditOperation::AddToCredits(6))],
+            )],
+        )];
 
-        let (_, compacted) = wallet_balance_history(
+        let (recent, compacted) = wallet_balance_history(
             &wallet,
             false,
-            |_start| async move { Ok(Vec::new()) },
+            |start| {
+                let page = page_at(&recent_pages, start, 12);
+                async move { Ok(page) }
+            },
             |_start| {
-                *compacted_fetched.borrow_mut() = true;
-                async move { Ok(Vec::new()) }
+                compacted_fetched.set(true);
+                async move { Ok(proved(Vec::new(), 12)) }
             },
         )
         .await
         .expect("fake pages never fail");
 
-        assert!(!*compacted_fetched.borrow());
+        assert!(!compacted_fetched.get());
+        assert_eq!(recent, vec![recent_row(12, 6)]);
         assert!(compacted.is_empty());
     }
 

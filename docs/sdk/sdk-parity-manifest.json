@@ -2389,7 +2389,15 @@
           "host": "shared",
           "kind": "unit",
           "file": "packages/rs-platform-wallet/src/wallet/platform_addresses/balance_history.rs",
-          "id": "should_drop_compacted_ranges_by_network_wide_recent_heights",
+          "id": "should_show_a_top_up_in_the_compaction_block_once_in_its_range",
+          "command": "cargo test -p platform-wallet --lib balance_history",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/platform_addresses/balance_history.rs",
+          "id": "should_fail_when_no_read_reaches_consistent_heights",
           "command": "cargo test -p platform-wallet --lib balance_history",
           "covers_restart": false
         },

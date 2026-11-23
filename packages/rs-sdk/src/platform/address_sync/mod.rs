@@ -1231,7 +1231,7 @@ fn address_query_depth_limits(platform_version: &PlatformVersion) -> (u8, u8) {
 /// the address tree that holds about `estimated_count` elements.
 ///
 /// This is the depth the address sync's full tree scan picks for a leaf it
-/// queries directly ([`trunk_branch_sync::direct_leaf_query_depth`], the
+/// queries directly (`trunk_branch_sync::direct_leaf_query_depth`, the
 /// same function `get_privacy_adjusted_leaves` uses) under the address
 /// branch query limits of `platform_version`. A count of 0 (unknown) gives
 /// the minimum depth.

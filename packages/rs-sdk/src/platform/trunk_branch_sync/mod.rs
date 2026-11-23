@@ -297,7 +297,11 @@ pub async fn run_full_tree_scan<Ops: TrunkBranchSyncOps>(
 /// `count` elements directly: the deepest an AVL tree of that many elements
 /// can be, clamped to `[min_query_depth, max_query_depth]`. A count of 0
 /// (unknown) gives `min_query_depth`.
-pub fn direct_leaf_query_depth(count: u64, min_query_depth: u8, max_query_depth: u8) -> u8 {
+///
+/// Crate-internal: `clamp` panics when `min_query_depth > max_query_depth`,
+/// and both callers pass a platform version's address-funds depth limits.
+/// `address_sync::address_branch_query_depth` is the public form.
+pub(crate) fn direct_leaf_query_depth(count: u64, min_query_depth: u8, max_query_depth: u8) -> u8 {
     calculate_max_tree_depth_from_count(count).clamp(min_query_depth, max_query_depth)
 }
 

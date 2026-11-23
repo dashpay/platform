@@ -32,6 +32,10 @@ struct PlatformAddressBalanceHistoryView: View {
     @State private var isLoadingCompacted = false
     @State private var compactedError: String?
 
+    /// One load at a time: the first load, Load older and pull to refresh
+    /// all replace the same sections.
+    private var isBusy: Bool { isLoadingRecent || isLoadingCompacted }
+
     var body: some View {
         NavigationStack {
             List {
@@ -118,7 +122,7 @@ struct PlatformAddressBalanceHistoryView: View {
                         Text(isLoadingCompacted ? "Loading older history…" : "Load older history")
                     }
                 }
-                .disabled(isLoadingCompacted)
+                .disabled(isBusy)
                 .accessibilityIdentifier("balanceHistory.loadOlder")
             }
         } header: {
@@ -231,7 +235,7 @@ struct PlatformAddressBalanceHistoryView: View {
 
     /// First load: the recent zone only.
     private func loadRecent() async {
-        guard !isLoadingRecent, !isLoadingCompacted else { return }
+        guard !isBusy else { return }
         isLoadingRecent = true
         defer {
             isLoadingRecent = false
@@ -249,7 +253,7 @@ struct PlatformAddressBalanceHistoryView: View {
     /// "Load older history": both zones from one call, replacing both
     /// sections, so no row shows in both.
     private func loadOlder() async {
-        guard !isLoadingRecent, !isLoadingCompacted else { return }
+        guard !isBusy else { return }
         isLoadingCompacted = true
         defer { isLoadingCompacted = false }
         do {
