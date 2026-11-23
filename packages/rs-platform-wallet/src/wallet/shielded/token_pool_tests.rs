@@ -961,6 +961,30 @@ async fn should_refuse_to_unwatch_a_pool_while_a_spend_holds_its_notes() {
         5
     );
 
+    // Another spend used the held note: the hold still links the sweep to
+    // the activity it settles, so the pool stays watched.
+    tables
+        .read()
+        .await
+        .with_token_pool_conn(|conn| {
+            conn.execute("UPDATE shielded_token_pool_notes SET spent = 1", [])
+                .expect("mark spent");
+            Ok(())
+        })
+        .expect("spent");
+    let err = tables
+        .read()
+        .await
+        .with_token_pool_conn(|conn| remove_watch(conn, WALLET, token().token_id))
+        .expect_err("a spent note is still held");
+    assert!(
+        matches!(
+            err,
+            PlatformWalletError::TokenShieldedPoolSpendPending { .. }
+        ),
+        "got {err:?}"
+    );
+
     reservation.release(&*tables.read().await);
     tables
         .read()
