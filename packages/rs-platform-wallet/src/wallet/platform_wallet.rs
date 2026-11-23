@@ -65,7 +65,7 @@ use {
     },
     crate::{
         AutoAcceptProofSource, ContactCryptoProvider, ContactRequest, EstablishedContact,
-        PaymentStarted,
+        NewPrivateDocumentEntry, PaymentStarted, PrivateDocumentEntryCreated,
     },
     dash_sdk::dapi_grpc::platform::v0::ResponseMetadata,
     dash_sdk::platform::dashpay::PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
@@ -2552,6 +2552,81 @@ impl PlatformWallet {
             &prover,
         )
         .await
+    }
+
+    /// Create `new`, an entry of any private document type, from one of this
+    /// wallet's identities, paying for it from `account`'s shielded notes
+    /// (`PrivateDocumentCreateFromShieldedPool`, type 29): nothing on chain
+    /// names the sender or the recipient. The entry is sealed by `crypto`,
+    /// which keeps the sender's encryption key
+    /// ([`IdentityWallet::seal_private_document_entry`], which says what is
+    /// refused before anything is paid), then appended as a DashPay private
+    /// contact request is paid for: notes reserved, the transition saved for
+    /// a redrive before it is broadcast, and the spend settled by its proved
+    /// result. `seed` supplies the transient spend authority (see
+    /// [`shielded_transfer_to`](Self::shielded_transfer_to)).
+    ///
+    /// Holds the wallet generation's lifecycle gate from the liveness check
+    /// until the spend returns, so a removal waits for it. A wallet removed
+    /// or re-created since this handle was taken is refused with
+    /// [`PlatformWalletError::WalletRemovedBeforeSend`], with nothing
+    /// recorded or paid. A caller must not hold the gate.
+    ///
+    /// Errors follow the other note spends: once the transition may have
+    /// reached a node and its result is not proved, the error says the
+    /// spend is unconfirmed, and the entry may already be in the store: do
+    /// not create it again.
+    #[cfg(feature = "shielded")]
+    pub async fn create_private_document_entry<C, P>(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        seed: &[u8],
+        account: u32,
+        new: &NewPrivateDocumentEntry,
+        crypto: &C,
+        prover: P,
+    ) -> Result<PrivateDocumentEntryCreated, PlatformWalletError>
+    where
+        C: ContactCryptoProvider + Sync,
+        P: OrchardProver,
+    {
+        let removed = || PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id));
+        // A stale handle is refused before the seal, which would read its
+        // wallet as not found, or a re-created one's identities; the check
+        // under the gate below is the one that holds for the spend.
+        if !self.core().is_current_generation().await {
+            return Err(removed());
+        }
+        let sealed = self
+            .identity
+            .seal_private_document_entry(crypto, new)
+            .await?;
+        // Taken before the wallet manager lock the liveness check reads, as
+        // the teardown takes them, and held until the spend returns.
+        let _lifecycle = self.core().generation_payment_guard().await;
+        if !self.core().is_current_generation().await {
+            return Err(removed());
+        }
+        let keyset = self.derive_spend_keyset(seed, account).await?;
+        private_document_create_from_pool_with_metadata(
+            &self.sdk,
+            coordinator.store(),
+            Some(&self.persister),
+            self.wallet_id,
+            &keyset,
+            account,
+            new.data_contract_id,
+            &new.document_type_name,
+            vec![sealed.entry],
+            None,
+            &PaymentStarted::default(),
+            &prover,
+        )
+        .await?;
+        Ok(PrivateDocumentEntryCreated {
+            commitment: sealed.commitment,
+            sender_key_id: sealed.sender_key_id,
+        })
     }
 
     /// Withdraw from `account`'s notes to a Core L1 address

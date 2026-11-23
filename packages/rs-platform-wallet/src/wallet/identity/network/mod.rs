@@ -100,6 +100,15 @@ pub use private_documents::{
     OpenedPrivateDocument, PrivateDocumentCursor, PrivateDocumentDirection,
     PrivateDocumentKeyPaths, PrivateDocumentRead,
 };
+// An entry of any private document type, sealed by one of the wallet's
+// identities with the keys the read above recovers it with.
+mod private_document_create;
+pub use private_document_create::{
+    private_document_create_fee, private_document_create_fee_for,
+    private_document_recipient_key_choices, NewPrivateDocumentEntry, PrivateDocumentEntryCreated,
+    PrivateDocumentRecipientKey, SealedPrivateDocumentEntry,
+    PRIVATE_DOCUMENT_CREATE_FEE_PREVIEW_ACTIONS,
+};
 mod profile;
 mod public_keys;
 pub use public_keys::{fetch_identity_public_keys, FetchedIdentityPublicKeys};
@@ -127,9 +136,9 @@ pub use dashpay_view::DashPayView;
 pub use discovery::IdentityDiscoveryOptions;
 pub use dpns::{ContestContender, ContestVoteState, ContestWinner};
 pub use dpns_marketplace::{
-    DepartedDpnsName, DpnsDomainState, DpnsMarketplaceSyncSummary, DpnsNameGiveUpChoices,
-    DpnsNameGiveUpMethod, DpnsNameGiveUpOutcome, DpnsNameGivenUp, DpnsNameHistoryEvent,
-    DpnsNameHistoryEventKind, DpnsPriceChange, FailedDpnsDeparture,
+    give_up_clears_main_dpns_name, DepartedDpnsName, DpnsDomainState, DpnsMarketplaceSyncSummary,
+    DpnsNameGiveUpChoices, DpnsNameGiveUpMethod, DpnsNameGiveUpOutcome, DpnsNameGivenUp,
+    DpnsNameHistoryEvent, DpnsNameHistoryEventKind, DpnsPriceChange, FailedDpnsDeparture,
     DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS,
 };
 pub use identity_handle::{

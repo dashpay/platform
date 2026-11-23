@@ -29,13 +29,14 @@ use dash_sdk::platform::private_document_scan::{
     read_private_document_payload, PrivateDocumentPage, PrivateDocumentScanKeys,
     RejectedPrivateDocumentEntry, MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
 };
+use dash_sdk::platform::private_document_seal::is_private_document_key;
 use dash_sdk::platform::{ContextProvider, Fetch};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::DataContract;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose};
+use dpp::identity::{Identity, IdentityPublicKey, KeyID, Purpose};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 use dpp::secp256k1::{PublicKey, SecretKey};
@@ -172,12 +173,12 @@ pub(super) struct AddedIdentity {
 /// Whether `key` is one a private document entry can be sealed to, which a
 /// wallet scans a private type's store with: an `ECDSA_SECP256K1` `DECRYPTION`
 /// or `ENCRYPTION` key, disabled ones included, as an entry sealed before a
-/// key was disabled still opens with it. The rule of this read, for every
+/// key was disabled still opens with it ([`is_private_document_key`], the rule
+/// a generic create seals to as well). The rule of this read, for every
 /// private type: not the policy for the contact requests DashPay seals, which
 /// may change on its own.
 fn scanning_key(key: &IdentityPublicKey) -> bool {
-    key.key_type() == KeyType::ECDSA_SECP256K1
-        && matches!(key.purpose(), Purpose::DECRYPTION | Purpose::ENCRYPTION)
+    is_private_document_key(key)
 }
 
 /// The public key data of each key of the wallet's identities an entry may be
@@ -757,7 +758,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use crate::changeset::{
         ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
@@ -777,7 +778,7 @@ mod tests {
     use dpp::data_contract::TokenConfiguration;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
-    use dpp::identity::SecurityLevel;
+    use dpp::identity::{KeyType, SecurityLevel};
     use dpp::platform_value::string_encoding::Encoding;
     use dpp::platform_value::{to_value, BinaryData};
     use dpp::secp256k1::PublicKey;
@@ -792,23 +793,24 @@ mod tests {
     use serde_json::json;
     use std::sync::{Arc, Mutex};
 
-    const ALICE_PHRASE: &str = "abandon abandon abandon abandon abandon abandon abandon abandon \
+    pub(crate) const ALICE_PHRASE: &str =
+        "abandon abandon abandon abandon abandon abandon abandon abandon \
                                 abandon abandon abandon about";
-    const BOB_PHRASE: &str =
+    pub(crate) const BOB_PHRASE: &str =
         "legal winner thank year wave sausage worth useful legal winner thank yellow";
-    const ALICE: [u8; 32] = [0xA1; 32];
+    pub(crate) const ALICE: [u8; 32] = [0xA1; 32];
     const CAROL: [u8; 32] = [0xC2; 32];
     const DAVE: [u8; 32] = [0xD3; 32];
-    const CONTRACT_ID: [u8; 32] = [7; 32];
-    const TYPE_NAME: &str = "secret";
-    const ENTRY_SIZE: usize = 400;
+    pub(crate) const CONTRACT_ID: [u8; 32] = [7; 32];
+    pub(crate) const TYPE_NAME: &str = "secret";
+    pub(crate) const ENTRY_SIZE: usize = 400;
     const BLOCK_TIME_MS: u64 = 1_700_000_000_000;
     const SIGNING_KEY_ID: KeyID = 0;
-    const ENCRYPTION_KEY_ID: KeyID = 1;
-    const DECRYPTION_KEY_ID: KeyID = 2;
+    pub(crate) const ENCRYPTION_KEY_ID: KeyID = 1;
+    pub(crate) const DECRYPTION_KEY_ID: KeyID = 2;
 
     /// A backend that keeps nothing.
-    struct NoPersistence;
+    pub(crate) struct NoPersistence;
 
     impl PlatformWalletPersistence for NoPersistence {
         fn store(
@@ -884,7 +886,7 @@ mod tests {
 
     /// The test contract, version 1: the private `secret` type, a required
     /// `text` and an optional `count`, and the public `note` type.
-    fn contract() -> DataContract {
+    pub(crate) fn contract() -> DataContract {
         contract_at(1)
     }
 
@@ -952,14 +954,14 @@ mod tests {
         .expect("the contract registers")
     }
 
-    fn seed(phrase: &str) -> [u8; 64] {
+    pub(crate) fn seed(phrase: &str) -> [u8; 64] {
         *Mnemonic::from_phrase(phrase)
             .expect("test mnemonic")
             .to_seed("")
     }
 
     /// The secret key `key_id` of identity index 0 of `phrase`'s seed.
-    fn identity_secret_key(phrase: &str, key_id: KeyID) -> SecretKey {
+    pub(crate) fn identity_secret_key(phrase: &str, key_id: KeyID) -> SecretKey {
         let wallet = key_wallet::wallet::Wallet::from_seed_bytes(
             seed(phrase),
             Network::Testnet,
@@ -982,7 +984,7 @@ mod tests {
     /// The identity `id` whose keys are those of identity index 0 of
     /// `phrase`'s seed: its signing key 0 and, with `scanning_keys`, its
     /// encryption key 1 and decryption key 2.
-    fn identity(phrase: &str, id: [u8; 32], scanning_keys: bool) -> Identity {
+    pub(crate) fn identity(phrase: &str, id: [u8; 32], scanning_keys: bool) -> Identity {
         let key = |key_id: KeyID, purpose: Purpose, security_level: SecurityLevel| {
             IdentityPublicKey::V0(IdentityPublicKeyV0 {
                 id: key_id,
@@ -1027,7 +1029,7 @@ mod tests {
     /// A wallet of `phrase` holding `own` at identity index 0, on a mock SDK
     /// whose context provider holds the test contract, which a fetch of it
     /// also answers.
-    async fn wallet(
+    pub(crate) async fn wallet(
         phrase: &str,
         own: &Identity,
     ) -> (PlatformWalletManager<NoPersistence>, Arc<PlatformWallet>) {
@@ -1102,7 +1104,12 @@ mod tests {
 
     /// `wallet`'s mock answers the page of the test store from `start` with
     /// `entries`, of a store of `total` entries in chunks of two.
-    async fn serve_page(wallet: &PlatformWallet, start: u64, entries: Vec<Vec<u8>>, total: u64) {
+    pub(crate) async fn serve_page(
+        wallet: &PlatformWallet,
+        start: u64,
+        entries: Vec<Vec<u8>>,
+        total: u64,
+    ) {
         let mut sdk = (*wallet.identity().sdk).clone();
         let page = PrivateDocumentEntries {
             chunk_power: Some(1),

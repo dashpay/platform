@@ -45,6 +45,7 @@ import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.ContestDetail
 import org.dashfoundation.example.navigation.DashPayHome
 import org.dashfoundation.example.navigation.DpnsMarketplace
+import org.dashfoundation.example.navigation.GiveUpName
 import org.dashfoundation.example.navigation.KeysList
 import org.dashfoundation.example.navigation.RegisterName
 import org.dashfoundation.example.navigation.SelectMainName
@@ -116,6 +117,7 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
 
     val sdk by appState.sdk.collectAsStateWithLifecycle()
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
+    val hasLoadedWallet = identity?.walletId?.let { manager?.wallet(forWalletId = it) != null } == true
     var contestedNamesState by remember { mutableStateOf<ContestedNamesState>(ContestedNamesState.Loading) }
     var contestedNamesRetry by remember { mutableStateOf(0) }
 
@@ -293,7 +295,21 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
                     LabeledContent(
                         label = if (isMain) "${name.label} ★" else name.label,
                         value = name.parentDomainName,
+                        modifier = Modifier.testTag("identity.dpnsName.${name.normalizedLabel}"),
                     )
+                    // Giving up signs through the loaded wallet (← IdentityDetailView's
+                    // "Give Up Name…" swipe action). The row leaves only when
+                    // persistence drops it after Platform confirmed the name gone.
+                    if (hasLoadedWallet) {
+                        TextButton(
+                            onClick = { navController.navigate(GiveUpName(identityIdHex, name.label)) },
+                            modifier = Modifier.testTag(
+                                "identity.dpnsName.${name.normalizedLabel}.giveUp",
+                            ),
+                        ) {
+                            Text("Give Up Name…", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
                 }
                 when (val contested = contestedNamesState) {
                     ContestedNamesState.Loading -> {

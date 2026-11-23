@@ -1,14 +1,19 @@
 use crate::error::proof::ProofError;
 use crate::error::Error;
-use crate::query::composite_document_query::{PresentTrio, ProvedTrio};
+use crate::query::composite_document_query::{
+    CompositeDecodeMode, PresentTrio, ProvedTrio, MAX_COMPOSITE_CLONED_DECODED_VALUES,
+};
 use crate::query::{CompositeDocumentsResult, DriveDocumentQuery};
 use crate::verify::{with_proved_root_on_budget_exceeded, RootHash};
-use dpp::data_contract::document_type::{
-    DecodedValueBudget, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
-};
-use dpp::document::Document;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::DecodedValueBudget;
+use dpp::document::{Document, DocumentV0Getters};
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use grovedb::GroveDb;
+use std::collections::BTreeSet;
 
 impl DriveDocumentQuery<'_> {
     /// v0 of the composite proof verification — see the versioned
@@ -55,15 +60,20 @@ impl DriveDocumentQuery<'_> {
         let direction = page_path_query.query.query.left_to_right;
         let (bootstrap_root, page_trios) =
             GroveDb::verify_subset_query(proof, &page_path_query, grove_version)?;
-        let mut bootstrap_budget =
-            DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
         let bootstrap_page = Self::decode_document_trios(
             self,
             present(page_trios),
-            Some(&mut bootstrap_budget),
+            CompositeDecodeMode::Bounded,
             platform_version,
         )
         .map_err(|error| with_proved_root_on_budget_exceeded(bootstrap_root, error))?;
+
+        let mut bootstrap_clone_budget =
+            DecodedValueBudget::new(MAX_COMPOSITE_CLONED_DECODED_VALUES);
+        let mut bootstrap_seen: BTreeSet<(Identifier, &str, Identifier)> = BTreeSet::new();
+        for document in &bootstrap_page {
+            bootstrap_seen.insert((self.contract.id(), self.document_type.name(), document.id()));
+        }
 
         // Derive every sub-query in order. A sub-query that feeds a later
         // binding is itself bootstrapped by a subset pass, so the later
@@ -96,15 +106,35 @@ impl DriveDocumentQuery<'_> {
                                 .to_string(),
                         )));
                     }
-                    self.decode_sub_query_document_trios(
-                        sub_query,
-                        &values,
-                        direction,
-                        present(trios),
-                        Some(&mut bootstrap_budget),
-                        platform_version,
-                    )
-                    .map_err(|error| with_proved_root_on_budget_exceeded(sub_root, error))?
+                    let decoded = self
+                        .decode_sub_query_document_trios(
+                            sub_query,
+                            &values,
+                            direction,
+                            present(trios),
+                            CompositeDecodeMode::Bounded,
+                            platform_version,
+                        )
+                        .map_err(|error| with_proved_root_on_budget_exceeded(sub_root, error))?;
+                    for document in &decoded {
+                        if !bootstrap_seen.insert((
+                            sub_query.contract.id(),
+                            sub_query.document_type.name(),
+                            document.id(),
+                        )) {
+                            bootstrap_clone_budget
+                                .charge_document(document)
+                                .map_err(|error| {
+                                    with_proved_root_on_budget_exceeded(
+                                        sub_root,
+                                        Error::Protocol(Box::new(
+                                            ProtocolError::DataContractError(error),
+                                        )),
+                                    )
+                                })?;
+                        }
+                    }
+                    decoded
                 };
                 bootstrap_sub_documents[index] = Some(documents);
             }
@@ -125,8 +155,6 @@ impl DriveDocumentQuery<'_> {
         )?;
         let (root_hash, proved_trios) = GroveDb::verify_query(proof, &merged_query, grove_version)?;
 
-        let mut authoritative_budget =
-            DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
         let result = self
             .assemble_from_trios(
                 &derived,
@@ -135,7 +163,7 @@ impl DriveDocumentQuery<'_> {
                 &removal_path_queries,
                 proved_trios,
                 sum_bearing_items_are_documents,
-                Some(&mut authoritative_budget),
+                CompositeDecodeMode::Bounded,
                 platform_version,
             )
             .map_err(|error| with_proved_root_on_budget_exceeded(root_hash, error))?;

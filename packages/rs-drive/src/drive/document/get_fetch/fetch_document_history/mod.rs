@@ -392,6 +392,7 @@ mod after_time_tests {
 mod tests {
     use super::*;
     use crate::drive::document::paths::DOCUMENT_HISTORY_TREE_KEY;
+    use crate::error::proof::ProofError;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
@@ -553,9 +554,8 @@ mod tests {
         let latest = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(None);
 
-        // 60 zero-width typed arrays × 1024 elements = 61,500 decoded values per revision:
-        // 1 revision fits comfortably under DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET (262,144),
-        // while 5 revisions (307,500 decoded values) exceed the shared page ceiling.
+        // 60 zero-width typed arrays × 1024 elements = 61,500 decoded values from a few hundred
+        // encoded bytes: even a single revision exceeds its encoded-size-proportional budget.
         let field_count = 60usize;
         let mut properties = Vec::with_capacity(field_count);
         let mut doc_properties = BTreeMap::new();
@@ -673,7 +673,15 @@ mod tests {
                 .expect("update revision");
         }
 
-        // A 1-revision page fits inside the client page budget.
+        let expected_root = drive
+            .grove
+            .root_hash(None, &latest.drive.grove_version)
+            .value
+            .expect("root hash");
+
+        // Even a 1-revision page carrying a PV14 zero-width typed-array bomb is refused by
+        // client proof verification under proportional budgeting, returning the reconstructed
+        // root hash so callers can authenticate it as an honest refusal rather than a node fault.
         let one_rev_query = DocumentHistoryDriveQuery {
             contract_id: contract.id().to_buffer(),
             document_type_name: "note".to_string(),
@@ -684,15 +692,21 @@ mod tests {
         let one_rev_proof = drive
             .prove_document_history(&one_rev_query, document_type, None, latest)
             .expect("prove 1-revision history");
-        let (expected_root, verified_one) =
+        let one_rev_error =
             Drive::verify_document_history(&one_rev_query, &one_rev_proof, document_type, latest)
-                .expect("single-revision history page fits in client budget");
-        assert_eq!(verified_one.entries.len(), 1);
+                .expect_err("single zero-width bomb revision must exceed proportional budget");
+        assert!(
+            matches!(
+                one_rev_error,
+                Error::Proof(ProofError::DecodedValueBudgetExceeded { root_hash, .. })
+                    if root_hash == expected_root
+            ),
+            "expected ProofError::DecodedValueBudgetExceeded with matching root, got: {one_rev_error:?}"
+        );
 
-        // A 5-revision page can be fetched serialized (header-only validation) and proved
-        // without materializing properties on the node, while client proof verification
-        // refuses it with the reconstructed root hash so callers can authenticate it as an
-        // honest refusal rather than a node fault.
+        // A 5-revision page can still be fetched serialized (header-only validation) and proved
+        // without materializing properties on the node, while client proof verification refuses
+        // it with the reconstructed root hash.
         let five_rev_query = DocumentHistoryDriveQuery {
             contract_id: contract.id().to_buffer(),
             document_type_name: "note".to_string(),
@@ -712,14 +726,12 @@ mod tests {
             .expect("prove 5-revision history");
         let error =
             Drive::verify_document_history(&five_rev_query, &five_rev_proof, document_type, latest)
-                .expect_err("five-revision page must exceed shared client decoded-value budget");
+                .expect_err("five-revision bomb page must exceed proportional decode budget");
         assert!(
             matches!(
                 error,
-                Error::Proof(crate::error::proof::ProofError::DecodedValueBudgetExceeded {
-                    root_hash,
-                    ..
-                }) if root_hash == expected_root
+                Error::Proof(ProofError::DecodedValueBudgetExceeded { root_hash, .. })
+                    if root_hash == expected_root
             ),
             "expected ProofError::DecodedValueBudgetExceeded with matching root, got: {error:?}"
         );
