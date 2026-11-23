@@ -529,8 +529,10 @@ struct MasternodeVoterSection: View {
             guard !Task.isCancelled else { return }
             let message = "The voting key could not be checked: \(error.localizedDescription)"
             // A row whose masternode is not known yet cannot vote either way.
-            checkFailure = (identityId, knownProTxHash == nil ? .notResolved(message) : .checkFailed(message))
-            completed = knownProTxHash != nil
+            // A thrown error is not a verdict (a failed Platform fetch comes
+            // back as an undetermined verdict instead): the pick stays
+            // unchecked, so the key is not offered.
+            checkFailure = (identityId, knownProTxHash == nil ? .notResolved(message) : .notFinished(message))
             return
         }
         // A superseded check (the pick changed, then maybe changed back, so a
@@ -585,7 +587,7 @@ struct MasternodeVoterSection: View {
             if checkFailure?.identityId == identityId { checkFailure = nil }
             completed = true
         } catch {
-            checkFailure = (identityId, .notSaved(
+            checkFailure = (identityId, .notFinished(
                 "The voting key check could not be saved: \(error.localizedDescription)"
             ))
         }
@@ -647,17 +649,14 @@ private struct VotingKeyCheckTrigger: Equatable {
 /// Why the check of the picked identity's stored voting key did not happen
 /// or was not saved.
 private enum VotingKeyCheckFailure: Equatable {
-    /// The stored key was read, but the check could not run or its result
-    /// could not be saved.
-    case checkFailed(String)
     /// The stored key could not be read, so it cannot sign either.
     case keyUnreadable(String)
     /// The row records no pro_tx_hash, and Rust's load rule did not resolve
     /// it as a masternode's owner identity, so it cannot vote.
     case notResolved(String)
-    /// The check ran but its result could not be saved, so the key is not
-    /// offered until it is checked again.
-    case notSaved(String)
+    /// The check did not finish (the call failed) or its result could not
+    /// be saved, so the key is not offered until it is checked again.
+    case notFinished(String)
 }
 
 private struct VotingKeyCheckStatus: View {
@@ -674,7 +673,7 @@ private struct VotingKeyCheckStatus: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-        } else if case .notSaved(let message) = failure {
+        } else if case .notFinished(let message) = failure {
             Text(message + " Close and reopen this sheet to check the voting key again.")
                 .font(.caption)
                 .foregroundColor(.red)
@@ -690,10 +689,6 @@ private struct VotingKeyCheckStatus: View {
             Text("This voting key cannot vote for this masternode: \(message) Load the identity again with its voting key under Identities, Load Identity.")
                 .font(.caption)
                 .foregroundColor(.red)
-        } else if case .checkFailed(let message) = failure {
-            Text(message + " You can still vote with it.")
-                .font(.caption)
-                .foregroundColor(.secondary)
         } else if case .undetermined(let message) = check {
             Text(message + " You can still vote with it; it is checked again when you pick this identity.")
                 .font(.caption)
