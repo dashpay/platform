@@ -2,6 +2,7 @@ package org.dashfoundation.example.ui.voting
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import org.dashfoundation.dashsdk.persistence.DashDatabase
@@ -76,7 +77,16 @@ class MasternodeVoterKeyCheckTest {
     @Test
     fun shouldLabelARefusedCandidate() {
         val identity = row(identifierA).copy(alias = "mn")
-        assertEquals("mn (Masternode, voting key does not match)", voterLabel(identity, listOf(identity), refused = true))
+        assertEquals(
+            "mn (Masternode, voting key does not match)",
+            voterLabel(identity, listOf(identity), StoredVoterDecision.REFUSED),
+        )
+        // A key this device cannot read is not reported as a Platform refusal.
+        assertEquals(
+            "mn (Masternode, voting key cannot be read)",
+            voterLabel(identity, listOf(identity), StoredVoterDecision.UNREADABLE),
+        )
+        assertEquals("mn (Masternode)", voterLabel(identity, listOf(identity), StoredVoterDecision.CASTABLE))
         assertEquals("mn (Masternode)", voterLabel(identity, listOf(identity)))
     }
 
@@ -208,28 +218,83 @@ class MasternodeVoterKeyCheckTest {
         yield()
         assertNull(db.identityDao().getByIdentityId(identityId)!!.votingKeyCheckRaw)
 
-        assertEquals(PickedVotingKeyCheck.Recorded(MasternodeVotingKeyCheck.Valid), checkPicked())
+        assertEquals(PickedVotingKeyCheck.Recorded(MasternodeVotingKeyCheck.Valid, recorded), checkPicked())
         assertEquals(addressA, checkedWith.last().second)
         assertEquals(recorded, db.identityDao().getByIdentityId(identityId)!!.recordedVotingKey)
     }
 
     /**
-     * Recovery: a load that stored key B and died before recording its check leaves the row
-     * naming B with the old key's record; the next pick checks B and records the answer.
+     * Recovery across a relaunch: a load stored key B over A in a file-backed database and the
+     * process died before recording B's check. The database is reopened, the picker's own
+     * projection of the recovered row ([voterRows]) gives the identifier and the decision, and
+     * the next pick checks B's address and records the answer.
      */
     @Test
     fun shouldCheckAReplacedKeyOnTheNextPickAfterALoadDiedBeforeRecording() = runBlocking {
-        db.identityDao().upsert(
+        val context = RuntimeEnvironment.getApplication()
+        context.deleteDatabase(DashDatabase.DATABASE_NAME)
+        val before = DashDatabase.create(context)
+        before.identityDao().upsert(
             row(identifierA, MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressA)),
         )
         // The replacement's row write, then the process dies before the record write.
-        db.identityDao().replaceVotingPrivateKeyIdentifier(identityId, testnet, identifierA, identifierB, 0L)
-        val recordedB = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressB)
-        rules.outcome = MasternodeVotingKeyCheckOutcome(storeKey = true, record = recordedB)
+        before.identityDao().replaceVotingPrivateKeyIdentifier(identityId, testnet, identifierA, identifierB, 0L)
+        before.close()
 
-        assertEquals(PickedVotingKeyCheck.Recorded(MasternodeVotingKeyCheck.Valid), checkPicked(identifier = identifierB))
-        assertEquals(addressB, checkedWith.single().second)
-        assertEquals(recordedB, db.identityDao().getByIdentityId(identityId)!!.recordedVotingKey)
+        val reopened = DashDatabase.create(context)
+        try {
+            val recovered = voterRows(reopened.identityDao().observeByNetwork(testnet).first()).single()
+            assertEquals(identifierB, recovered.state.identifier)
+            // The record left by A does not count for B: Rust is asked with B's address, and
+            // the key is held until it is checked.
+            rules.use = MasternodeRecordedVotingKeyUse(canVote = true, checkBeforeUse = true)
+            assertEquals(StoredVoterDecision.AWAITING_CHECK, storedVoterDecision(recovered.state, null, rules))
+            assertEquals(addressB, rules.usedWith.last().second)
+
+            val recordedB = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressB)
+            rules.outcome = MasternodeVotingKeyCheckOutcome(storeKey = true, record = recordedB)
+            assertEquals(
+                PickedVotingKeyCheck.Recorded(MasternodeVotingKeyCheck.Valid, recordedB),
+                checkPicked(identifier = recovered.state.identifier!!, database = reopened),
+            )
+            assertEquals(addressB, checkedWith.single().second)
+            assertEquals(recordedB, reopened.identityDao().getByIdentityId(identityId)!!.recordedVotingKey)
+        } finally {
+            reopened.close()
+            context.deleteDatabase(DashDatabase.DATABASE_NAME)
+        }
+    }
+
+    /** A check started again for a re-picked key holds it until that check finishes. */
+    @Test
+    fun shouldHoldAReCheckedKeyUntilTheNewCheckFinishes() {
+        val state = voterKeyState(row(identifierA))
+        rules.use = awaitingCheck
+
+        assertEquals(
+            StoredVoterDecision.AWAITING_CHECK,
+            storedVoterDecision(state, PickedKeyCheckState(identifierA, finished = false), rules),
+        )
+    }
+
+    /**
+     * A refusal learned in this dialog (saved or not) is weighed in place of the row's record,
+     * so returning to the key does not check it again or let an inconclusive retry clear it.
+     */
+    @Test
+    fun shouldNotCheckAwayARefusalLearnedInThisDialog() = runBlocking {
+        db.identityDao().upsert(row(identifierA))
+        val refusal = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Invalid("rotated"), addressA)
+        rules.use = refusedUse
+
+        assertEquals(PickedVotingKeyCheck.NotNeeded, checkPicked(known = refusal))
+        assertTrue(checkedWith.isEmpty())
+        assertEquals(refusal to addressA, rules.usedWith.single())
+        // And the picker keeps it refused.
+        assertEquals(
+            StoredVoterDecision.REFUSED,
+            storedVoterDecision(voterKeyState(row(identifierA)), PickedKeyCheckState(identifierA, refusal), rules),
+        )
     }
 
     // ── Status line ──────────────────────────────────────────────────────
@@ -266,12 +331,15 @@ class MasternodeVoterKeyCheckTest {
         answer: suspend () -> MasternodeVotingKeyCheck = { MasternodeVotingKeyCheck.Valid },
         stillCurrent: () -> Boolean = { true },
         identifier: String = identifierA,
+        known: MasternodeRecordedVotingKey? = null,
+        database: DashDatabase = db,
     ): PickedVotingKeyCheck = checkPickedVotingKeyIfNeeded(
-        database = db,
+        database = database,
         identityId = identityId,
         networkRaw = testnet,
         identifier = identifier,
         rules = rules,
+        known = known,
         check = { proTxHash, address ->
             checkedWith += proTxHash to address
             answer()
@@ -297,7 +365,7 @@ class MasternodeVoterKeyCheckTest {
         val recorded = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressA)
         rules.outcome = MasternodeVotingKeyCheckOutcome(storeKey = true, record = recorded)
 
-        assertEquals(PickedVotingKeyCheck.Recorded(MasternodeVotingKeyCheck.Valid), checkPicked())
+        assertEquals(PickedVotingKeyCheck.Recorded(MasternodeVotingKeyCheck.Valid, recorded), checkPicked())
 
         assertArrayEquals(identityId.reversedArray(), checkedWith.single().first)
         assertEquals(addressA, checkedWith.single().second)

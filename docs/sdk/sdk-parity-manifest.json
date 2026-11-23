@@ -3148,6 +3148,14 @@
           "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/voting/MasternodeVoterKeyCheckTest.kt",
           "id": "shouldCheckAndRecordOnTheNextPickAfterACheckWasCutShort",
           "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/voting/MasternodeVoterKeyCheckTest.kt",
+          "id": "shouldCheckAReplacedKeyOnTheNextPickAfterALoadDiedBeforeRecording",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
           "covers_restart": true
         },
         {
