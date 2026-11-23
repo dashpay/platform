@@ -324,8 +324,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorPublicContactRequestUnconfirmed = 76
     /// The balance history could not read a page of Platform's address
     /// balance changes at a height consistent with the pages it had already
-    /// read, within Rust's per-page retry bound. No history was returned;
-    /// the read can be made again later.
+    /// read, within Rust's per-page retry bound: every attempt got a
+    /// successfully fetched, proof-verified reply below that height. No
+    /// history was returned; the read can be made again later. SDK errors
+    /// (stale-node rejection, transport or proof failures) are not this code.
     case errorBalanceHistoryInconsistentHeights = 83
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
@@ -755,8 +757,11 @@ public enum PlatformWalletError: LocalizedError {
     /// `ManagedPlatformAddressWallet.balanceHistory(includeCompacted:)` kept
     /// getting a page of Platform's address balance changes proved below a
     /// height it had already read, within Rust's per-page retry bound, so it
-    /// returned no history rather than a partial one. Nothing changed; load
-    /// the history again later.
+    /// returned no history rather than a partial one. Every attempt got a
+    /// successfully fetched, proof-verified reply below that height; errors
+    /// from the SDK itself (its own stale-node rejection, transport or proof
+    /// failures) keep their existing mapping. Nothing changed; load the
+    /// history again later.
     case balanceHistoryInconsistentHeights(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition never

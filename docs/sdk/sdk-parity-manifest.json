@@ -2553,6 +2553,14 @@
           "host": "shared",
           "kind": "unit",
           "file": "packages/rs-platform-wallet-ffi/src/platform_addresses/balance_history.rs",
+          "id": "should_hold_the_given_floor_and_report_the_reached_height_through_the_export",
+          "command": "cargo test -p platform-wallet-ffi --lib balance_history",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/platform_addresses/balance_history.rs",
           "id": "should_marshal_and_free_both_sections_with_rust_encoded_addresses",
           "command": "cargo test -p platform-wallet-ffi --lib balance_history",
           "covers_restart": false

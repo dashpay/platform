@@ -24,7 +24,11 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 /// read and the `out_proved_height` of the history already shown for every
 /// later read, so no page older than what is shown is used. A read that
 /// cannot get a page at its floor fails with
-/// `ErrorBalanceHistoryInconsistentHeights` (83).
+/// `ErrorBalanceHistoryInconsistentHeights` (83). 83 means only that every
+/// wallet attempt for one page got a successfully fetched, proof-verified
+/// reply proved below the floor. Errors from the SDK itself (its own
+/// stale-node rejection, transport failures, proof verification failures)
+/// are not 83: they keep their existing mapping.
 ///
 /// On success `out_recent` / `out_recent_count` and `out_compacted` /
 /// `out_compacted_count` hold heap arrays (null with a count of 0 when
@@ -191,6 +195,18 @@ mod tests {
     };
 
     use super::*;
+    use crate::runtime::runtime;
+    use crate::test_fixtures::{mock_manager_over, noop_persister};
+    use dash_sdk::platform::query::{
+        RecentAddressBalanceChangesQuery, RecentCompactedAddressBalanceChangesQuery,
+    };
+    use dash_sdk::query_types::{
+        BlockAddressBalanceChanges, RecentAddressBalanceChanges,
+        RecentCompactedAddressBalanceChanges,
+    };
+    use dpp::balances::credits::CreditOperation;
+    use key_wallet::account::account_collection::PlatformPaymentAccountKey;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
     #[test]
     fn should_marshal_and_free_both_sections_with_rust_encoded_addresses() {
@@ -326,5 +342,125 @@ mod tests {
         assert_eq!(compacted_count, 0);
         assert_eq!(proved_height, 0);
         unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    /// Calls the export on `handle` with `min_proved_height`, returning the
+    /// result, both arrays (freed) as `(block_height, credits)` recent rows
+    /// and a compacted count, and the proved height it wrote.
+    fn call_balance_history(
+        handle: Handle,
+        min_proved_height: u64,
+    ) -> (PlatformWalletFFIResult, Vec<(u64, u64)>, usize, u64) {
+        let mut recent: *mut AddressBalanceChangeEntryFFI = std::ptr::null_mut();
+        let mut recent_count = 0usize;
+        let mut compacted: *mut CompactedAddressBalanceChangeEntryFFI = std::ptr::null_mut();
+        let mut compacted_count = 0usize;
+        let mut proved_height = u64::MAX;
+        let result = unsafe {
+            platform_address_wallet_balance_history(
+                handle,
+                true,
+                min_proved_height,
+                &mut recent,
+                &mut recent_count,
+                &mut compacted,
+                &mut compacted_count,
+                &mut proved_height,
+            )
+        };
+        let rows = if recent.is_null() {
+            Vec::new()
+        } else {
+            unsafe { std::slice::from_raw_parts(recent, recent_count) }
+                .iter()
+                .map(|entry| (entry.block_height, entry.credits))
+                .collect()
+        };
+        unsafe {
+            platform_address_wallet_free_balance_history(
+                recent,
+                recent_count,
+                compacted,
+                compacted_count,
+            )
+        };
+        (result, rows, compacted_count, proved_height)
+    }
+
+    /// The export holds the floor it is given and reports the height it
+    /// reached, through a real handle over a wallet whose SDK is a mock that
+    /// answers both zones at height 20: a floor of 25 refuses every reply
+    /// with code 83, and a floor of 15 returns the wallet's row with 20.
+    #[test]
+    fn should_hold_the_given_floor_and_report_the_reached_height_through_the_export() {
+        const REPLY_HEIGHT: u64 = 20;
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_network(dashcore::Network::Testnet)
+            .build()
+            .expect("mock sdk");
+        // The manager keeps a clone of `sdk`; the clones share the mock.
+        let manager = mock_manager_over(sdk.clone(), noop_persister());
+        let wallet = runtime()
+            .block_on(manager.create_wallet_from_mnemonic(
+                "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+                dashcore::Network::Testnet,
+                WalletAccountCreationOptions::Default,
+                None,
+            ))
+            .expect("the wallet is created");
+        let address =
+            runtime()
+                .block_on(wallet.platform().next_unused_receive_address(
+                    PlatformPaymentAccountKey {
+                        account: 0,
+                        key_class: 0,
+                    },
+                ))
+                .expect("an address of platform payment account 0");
+        runtime().block_on(async {
+            sdk.mock()
+                .expect_fetch(
+                    RecentAddressBalanceChangesQuery::new(0),
+                    Some(RecentAddressBalanceChanges(vec![
+                        BlockAddressBalanceChanges {
+                            block_height: 18,
+                            changes: [(address, CreditOperation::AddToCredits(500))]
+                                .into_iter()
+                                .collect(),
+                        },
+                    ])),
+                )
+                .await
+                .expect("register the recent page");
+            sdk.mock()
+                .expect_fetch(
+                    RecentCompactedAddressBalanceChangesQuery::new(0),
+                    Some(RecentCompactedAddressBalanceChanges(Vec::new())),
+                )
+                .await
+                .expect("register the compacted page");
+        });
+        sdk.mock().set_response_height(REPLY_HEIGHT);
+        // What `platform_wallet_get_platform` registers for a host.
+        let handle = PLATFORM_ADDRESS_WALLET_STORAGE.insert(wallet.platform().clone());
+
+        let (mut refused, rows, compacted_count, proved_height) = call_balance_history(handle, 25);
+        assert_eq!(
+            refused.code,
+            PlatformWalletFFIResultCode::ErrorBalanceHistoryInconsistentHeights
+        );
+        assert!(rows.is_empty());
+        assert_eq!(compacted_count, 0);
+        assert_eq!(proved_height, 0);
+        unsafe { platform_wallet_ffi_result_free(&mut refused) };
+
+        let (mut read, rows, compacted_count, proved_height) = call_balance_history(handle, 15);
+        assert_eq!(read.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(rows, vec![(18, 500)]);
+        assert_eq!(compacted_count, 0);
+        assert_eq!(proved_height, REPLY_HEIGHT);
+        unsafe { platform_wallet_ffi_result_free(&mut read) };
+
+        PLATFORM_ADDRESS_WALLET_STORAGE.remove(handle);
     }
 }

@@ -183,7 +183,11 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     /// (0 for a first read): the read starts its height floor there, so it
     /// never uses a page older than what is on screen. A read that cannot
     /// get a page at its floor throws
-    /// `PlatformWalletError.balanceHistoryInconsistentHeights`.
+    /// `PlatformWalletError.balanceHistoryInconsistentHeights` (code 83):
+    /// every attempt for one page got a successfully fetched,
+    /// proof-verified reply, each below the floor. Errors from the SDK itself
+    /// (its own stale-node rejection, transport or proof failures) keep
+    /// their existing mapping.
     ///
     /// Paging, the wallet-address filter, the height floor and its retries,
     /// the reconciliation of the two zones (a recent block a compacted range

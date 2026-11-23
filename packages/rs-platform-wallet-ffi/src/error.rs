@@ -775,7 +775,10 @@ pub enum PlatformWalletFFIResultCode {
     /// balance history read kept getting one page of Platform's address
     /// balance changes proved below a height it had already used, within its
     /// per-page retry bound, so it returned no history rather than a partial
-    /// one. Nothing was changed; the read can be made again later. 83: open
+    /// one. Nothing was changed; the read can be made again later. Only
+    /// replies the SDK fetched and proof-verified count: an SDK error (its
+    /// own stale-node rejection, a transport or proof failure) keeps its
+    /// existing mapping. 83: open
     /// branches hold 77 to 82 (see `ERROR_CODE_REGISTRY.md`).
     ErrorBalanceHistoryInconsistentHeights = 83,
 

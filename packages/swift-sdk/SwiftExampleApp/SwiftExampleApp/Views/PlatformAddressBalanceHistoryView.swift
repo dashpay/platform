@@ -28,6 +28,10 @@ struct PlatformAddressBalanceHistoryView: View {
     @State private var hasLoadedRecent = false
     @State private var isLoadingRecent = false
     @State private var recentError: String?
+    /// Whether a load has succeeded, so `recent` holds rows Rust returned. A
+    /// failed refresh then keeps showing them under its error; only a first
+    /// load that fails shows the error alone.
+    @State private var hasShownRecent = false
 
     /// `nil` until the user asks for older history.
     @State private var compacted: [ManagedPlatformAddressWallet.CompactedBalanceHistoryEntry]?
@@ -70,7 +74,8 @@ struct PlatformAddressBalanceHistoryView: View {
     @ViewBuilder
     private var recentSection: some View {
         Section {
-            if let recentError {
+            if let recentError, !hasShownRecent {
+                // Nothing loaded yet: the error alone.
                 errorRow(recentError, identifier: "balanceHistory.recent.error")
             } else if !hasLoadedRecent || (isLoadingRecent && recent.isEmpty) {
                 HStack {
@@ -79,15 +84,21 @@ struct PlatformAddressBalanceHistoryView: View {
                         .foregroundColor(.secondary)
                 }
                 .accessibilityIdentifier("balanceHistory.recent.loading")
-            } else if recent.isEmpty {
-                Text("No balance changes in recent blocks.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .accessibilityIdentifier("balanceHistory.recent.empty")
             } else {
-                ForEach(Array(recent.enumerated()), id: \.offset) { index, entry in
-                    recentRow(entry)
-                        .accessibilityIdentifier("balanceHistory.recent.row.\(index)")
+                if recent.isEmpty {
+                    Text("No balance changes in recent blocks.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .accessibilityIdentifier("balanceHistory.recent.empty")
+                } else {
+                    ForEach(Array(recent.enumerated()), id: \.offset) { index, entry in
+                        recentRow(entry)
+                            .accessibilityIdentifier("balanceHistory.recent.row.\(index)")
+                    }
+                }
+                // A failed refresh keeps the last good rows, as Older does.
+                if let recentError {
+                    errorRow(recentError, identifier: "balanceHistory.recent.error")
                 }
             }
         } header: {
@@ -253,6 +264,7 @@ struct PlatformAddressBalanceHistoryView: View {
                 includeCompacted: false, minProvedHeight: shownProvedHeight)
             recent = history.recent
             shownProvedHeight = history.provedHeight
+            hasShownRecent = true
             recentError = nil
         } catch {
             recentError = error.localizedDescription
@@ -271,6 +283,7 @@ struct PlatformAddressBalanceHistoryView: View {
             recent = history.recent
             compacted = history.compacted
             shownProvedHeight = history.provedHeight
+            hasShownRecent = true
             hasLoadedRecent = true
             recentError = nil
             compactedError = nil
