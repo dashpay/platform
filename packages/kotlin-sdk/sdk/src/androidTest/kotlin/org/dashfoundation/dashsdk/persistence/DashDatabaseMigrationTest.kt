@@ -835,13 +835,14 @@ class DashDatabaseMigrationTest {
 
         db.query(
             "SELECT votingPrivateKeyIdentifier, votingKeyCheckRaw, votingKeyCheckMessage, " +
-                "votingKeyCheckAddress FROM identities WHERE identityId = x'04'",
+                "votingKeyCheckAddress, votingKeyCheckRevision FROM identities WHERE identityId = x'04'",
         ).use { c ->
             assertTrue(c.moveToFirst())
             assertEquals("mnvoting.x", c.getString(0))
             assertTrue("nothing is recorded before the migration", c.isNull(1))
             assertTrue(c.isNull(2))
             assertTrue(c.isNull(3))
+            assertTrue("no check is counted before the migration", c.isNull(4))
         }
         db.close()
     }
