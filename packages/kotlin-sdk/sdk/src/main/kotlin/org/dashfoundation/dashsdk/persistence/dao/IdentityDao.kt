@@ -108,6 +108,10 @@ interface IdentityDao {
      * [expectedIdentifier] (null for none), so a key association changed by another write
      * since it was read is never overwritten. Returns the number of rows changed: 0 when the
      * row is gone or names another key.
+     *
+     * The low-level row write of `MasternodeVotingKeyStore.assignToIdentity`, which also
+     * writes the key and runs both under the voting key lock. Use that instead: changing the
+     * association here alone can name a key that is not stored, or race a clear.
      */
     @Query(
         "UPDATE identities SET votingPrivateKeyIdentifier = :newIdentifier, " +
@@ -170,6 +174,10 @@ interface IdentityDao {
     /** StorageExplorer row count. */
     @Query("SELECT COUNT(*) FROM identities")
     fun count(): Flow<Long>
+
+    /** Whether any identity row names the voting key [identifier]. */
+    @Query("SELECT EXISTS(SELECT 1 FROM identities WHERE votingPrivateKeyIdentifier = :identifier)")
+    suspend fun existsByVotingPrivateKeyIdentifier(identifier: String): Boolean
 
     /** StorageExplorer network-scoped row count. */
     @Query("SELECT COUNT(*) FROM identities WHERE networkRaw = :networkRaw")

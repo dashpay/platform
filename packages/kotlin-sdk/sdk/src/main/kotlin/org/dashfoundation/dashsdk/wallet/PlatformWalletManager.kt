@@ -646,8 +646,8 @@ class PlatformWalletManager(
      *
      * @param identifier the identity's `IdentityEntity.votingPrivateKeyIdentifier`, as
      *   [MasternodeVotingKeyStore.store] returned it.
-     * @throws MasternodeVotingKeyNotStoredException when no readable voting key is stored
-     *   under [identifier], or [identifier] is not a voting key identifier.
+     * @throws MasternodeVotingKeyNotStoredException when no identity row names [identifier],
+     *   no readable voting key is stored under it, or it is not a voting key identifier.
      * @throws IllegalStateException once the manager is closing; and whatever [block] throws.
      */
     suspend fun <T> withStoredMasternodeVotingKey(
@@ -660,14 +660,18 @@ class PlatformWalletManager(
         } catch (_: IllegalArgumentException) {
             throw MasternodeVotingKeyNotStoredException()
         }
-        if (!keys.isStored(identifier)) throw MasternodeVotingKeyNotStoredException()
+        // An entry no identity row names is not a loaded voter (a clear or an interrupted
+        // write left it), however readable it is.
+        if (!database.identityDao().existsByVotingPrivateKeyIdentifier(identifier) ||
+            !keys.isStored(identifier)
+        ) {
+            throw MasternodeVotingKeyNotStoredException()
+        }
         // Bound to the one voting key: no fallback to wallet keys, no platform address
         // derivation, and no invalidation hook (that bookkeeping is for wallet keys).
-        val dedicated = KeystoreSigner(
+        val dedicated = KeystoreSigner.forBoundKey(
             walletStorage, network, biometricGate, database.platformAddressDao(),
-            onlyKey = KeystoreSigner.BoundKey(
-                votingAddress, KeystoreSigner.KEY_TYPE_ECDSA_HASH160, identifier,
-            ),
+            KeystoreSigner.BoundKey(votingAddress, KeystoreSigner.KEY_TYPE_ECDSA_HASH160, identifier),
         )
         try {
             val voter = MasternodeVotingSigner.create(votingAddress, dedicated)

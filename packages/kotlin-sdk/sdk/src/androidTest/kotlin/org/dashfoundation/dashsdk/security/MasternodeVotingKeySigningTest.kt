@@ -8,6 +8,7 @@ import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.config.SdkConfig
 import org.dashfoundation.dashsdk.ffi.SignerNative
 import org.dashfoundation.dashsdk.persistence.DashDatabase
+import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.voting.MasternodeVotingSigner
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.junit.After
@@ -80,7 +81,7 @@ class MasternodeVotingKeySigningTest {
 
     @Test
     fun shouldSignWithTheStoredKeyOnlyThroughTheVotesOwnSigner() = runBlocking<Unit> {
-        val identifier = keys.store(identityId, keyOne)
+        val identifier = loadMasternodeWithKeyOne()
         val votingAddress = keys.votingAddressOf(identifier)
         assertEquals(keyOneVotingAddressHex, votingAddress.joinToString("") { "%02x".format(it) })
         assertArrayEquals(identityId, keys.identityIdOf(identifier))
@@ -135,6 +136,19 @@ class MasternodeVotingKeySigningTest {
         }
     }
 
+    /** A readable entry that no identity row names is not a voter. */
+    @Test
+    fun shouldRefuseAStoredKeyThatNoIdentityRowNames() = runBlocking<Unit> {
+        val identifier = keys.store(identityId, keyOne)
+        assertTrue(keys.isStored(identifier))
+        sdk = Sdk.create(SdkConfig(network = Network.TESTNET))
+        PlatformWalletManager(sdk, Network.TESTNET, database, storage).use { manager ->
+            assertThrows(MasternodeVotingKeyNotStoredException::class.java) {
+                runBlocking { manager.withStoredMasternodeVotingKey(identifier) { } }
+            }
+        }
+    }
+
     @Test
     fun shouldRefuseAnIdentityWithNoStoredKey() = runBlocking<Unit> {
         sdk = Sdk.create(SdkConfig(network = Network.TESTNET))
@@ -144,6 +158,16 @@ class MasternodeVotingKeySigningTest {
                 runBlocking { manager.withStoredMasternodeVotingKey(identifier) { } }
             }
         }
+    }
+
+    /** Loads the fixture masternode row and assigns it the secret-1 voting key. */
+    private suspend fun loadMasternodeWithKeyOne(): String {
+        database.identityDao().upsert(
+            IdentityEntity(identityId = identityId, identityType = "Masternode", networkRaw = 1),
+        )
+        val assignment = keys.assignToIdentity(database.identityDao(), identityId, keyOne, null)
+        assertTrue(assignment.toString(), assignment is VotingKeyAssignment.Assigned)
+        return (assignment as VotingKeyAssignment.Assigned).identifier
     }
 
     @Test

@@ -48,6 +48,7 @@ import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.persistence.dao.IdentityDao
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore
+import org.dashfoundation.dashsdk.security.VotingKeyAssignment
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.IdentityDetail
@@ -562,18 +563,24 @@ internal sealed interface LoadSaveResult {
     data class ConfirmReplacement(val storedIdentifier: String) : LoadSaveResult
 }
 
-/** The voting key entries a load writes; [StoredVotingKeyEntries] in the app. */
+/** The voting key persistence a load uses; [StoredVotingKeyEntries] in the app. */
 internal interface VotingKeyEntries {
-    /** The identifier [store] would return for [votingKey] and [identityId]. */
+    /** The identifier [assign] would record for [votingKey] and [identityId]. */
     fun identifierFor(identityId: ByteArray, votingKey: ByteArray): String
 
-    /** Write [identityId]'s voting entry from [votingKey] and return its identifier. */
-    suspend fun store(identityId: ByteArray, votingKey: ByteArray): String
+    /** [MasternodeVotingKeyStore.assignToIdentity]: store, record and sweep, under the lock. */
+    suspend fun assign(
+        dao: IdentityDao,
+        identityId: ByteArray,
+        votingKey: ByteArray,
+        expectedIdentifier: String?,
+        nowMillis: Long,
+    ): VotingKeyAssignment
 
-    /** Delete the entry [identifier]. */
-    suspend fun delete(identifier: String)
+    /** [MasternodeVotingKeyStore.withVotingKeyLock]. */
+    suspend fun <T> withLock(block: suspend () -> T): T
 
-    /** Delete every entry of [identityId] except [keep] (null: all of them). */
+    /** Delete every entry of [identityId] except [keep] (null: all of them). Lock held. */
     suspend fun deleteOtherEntriesOf(identityId: ByteArray, keep: String?)
 }
 
@@ -582,10 +589,17 @@ internal class StoredVotingKeyEntries(private val keys: MasternodeVotingKeyStore
     override fun identifierFor(identityId: ByteArray, votingKey: ByteArray): String =
         MasternodeVotingKeyStore.identifierFor(identityId, keys.votingAddress(votingKey))
 
-    override suspend fun store(identityId: ByteArray, votingKey: ByteArray): String =
-        keys.store(identityId, votingKey)
+    override suspend fun assign(
+        dao: IdentityDao,
+        identityId: ByteArray,
+        votingKey: ByteArray,
+        expectedIdentifier: String?,
+        nowMillis: Long,
+    ): VotingKeyAssignment =
+        keys.assignToIdentity(dao, identityId, votingKey, expectedIdentifier, nowMillis)
 
-    override suspend fun delete(identifier: String) = keys.delete(identifier)
+    override suspend fun <T> withLock(block: suspend () -> T): T =
+        MasternodeVotingKeyStore.withVotingKeyLock(block)
 
     override suspend fun deleteOtherEntriesOf(identityId: ByteArray, keep: String?) =
         keys.deleteOtherEntriesOf(identityId, keep)
@@ -595,16 +609,13 @@ internal class StoredVotingKeyEntries(private val keys: MasternodeVotingKeyStore
  * Save a fetched identity and, when [votingKey] is given, its voting key.
  *
  * The row is inserted when absent; otherwise only the fields a load owns change on the
- * current row, which must be on [networkRaw]. The voting key association then changes only
- * through a conditional update against the identifier the row names now, so a write made
- * meanwhile is never overwritten: the entry just written is discarded unless the row names
- * it, and the load reports the change. After a successful save, any other voting entry of
- * the identity (left by an earlier replacement whose cleanup failed) is deleted; when that
- * fails the result is [LoadSaveResult.SavedWithWarning] and the next load tries again.
- *
- * The row writes, the key write and the sweep run as one
- * [MasternodeVotingKeyStore.withVotingKeyLock] section, so a confirmed replacement or a
- * clear cannot interleave with them. [votingKey] stays the caller's to zero.
+ * current row, which must be on [networkRaw]; neither touches the voting key association.
+ * A voting key is then stored and recorded by [MasternodeVotingKeyStore.assignToIdentity]
+ * against the identifier the row names now, so a write made meanwhile is never overwritten:
+ * the load reports the change instead. After a successful save, any other voting entry of
+ * the identity (left by an earlier replacement whose cleanup failed) is deleted, under the
+ * voting key lock; when that fails the result is [LoadSaveResult.SavedWithWarning] and the
+ * next load tries again. [votingKey] stays the caller's to zero.
  */
 internal suspend fun saveLoadedIdentity(
     dao: IdentityDao,
@@ -617,32 +628,54 @@ internal suspend fun saveLoadedIdentity(
     typePicked: Boolean,
     votingKey: ByteArray?,
     nowMillis: Long = System.currentTimeMillis(),
-): LoadSaveResult = MasternodeVotingKeyStore.withVotingKeyLock {
-    val result = saveLoadedIdentityRow(
-        dao, entries, identityId, networkRaw, balance, alias, pickedType, typePicked, votingKey,
-        nowMillis,
-    )
-    when {
-        result != LoadSaveResult.Saved -> result
-        sweepStaleEntries(
-            entries, identityId, dao.getByIdentityId(identityId)?.votingPrivateKeyIdentifier,
-        ) -> result
-        else -> LoadSaveResult.SavedWithWarning(STALE_VOTING_KEY_NOT_REMOVED_MESSAGE)
+): LoadSaveResult {
+    saveLoadedFields(dao, identityId, networkRaw, balance, alias, pickedType, typePicked, nowMillis)
+        ?.let { return it }
+    if (votingKey == null) {
+        return if (removeStaleEntries(dao, entries, identityId)) {
+            LoadSaveResult.Saved
+        } else {
+            LoadSaveResult.SavedWithWarning(STALE_VOTING_KEY_NOT_REMOVED_MESSAGE)
+        }
+    }
+
+    // The association as it is now, after the identity's own fields were saved; the
+    // assignment below only records the key while the row still names it.
+    val current = dao.getByIdentityId(identityId)
+        ?: return LoadSaveResult.Failed(IDENTITY_CHANGED_MESSAGE)
+    val entered = entries.identifierFor(identityId, votingKey)
+    val expected = when (val outcome = decideVotingKeyOutcome(current.votingPrivateKeyIdentifier, entered)) {
+        // Written again from the entered bytes: repairs an entry that no longer reads.
+        VotingKeyOutcome.AlreadyStored -> current.votingPrivateKeyIdentifier
+        VotingKeyOutcome.StoreNew -> null
+        is VotingKeyOutcome.Conflicting ->
+            return LoadSaveResult.ConfirmReplacement(outcome.storedIdentifier)
+    }
+    val assignment = assignOrFail(entries, dao, identityId, votingKey, expected, nowMillis) { reason ->
+        return LoadSaveResult.Failed(votingKeyNotStoredMessage(reason))
+    }
+    return when (assignment) {
+        is VotingKeyAssignment.Assigned ->
+            if (assignment.otherEntriesRemoved) {
+                LoadSaveResult.Saved
+            } else {
+                LoadSaveResult.SavedWithWarning(STALE_VOTING_KEY_NOT_REMOVED_MESSAGE)
+            }
+        is VotingKeyAssignment.Changed -> LoadSaveResult.Failed(IDENTITY_CHANGED_MESSAGE)
     }
 }
 
-private suspend fun saveLoadedIdentityRow(
+/** Insert or update the identity's own fields; null on success, else the failure. */
+private suspend fun saveLoadedFields(
     dao: IdentityDao,
-    entries: VotingKeyEntries,
     identityId: ByteArray,
     networkRaw: Int,
     balance: Long,
     alias: String?,
     pickedType: LoadIdentityType,
     typePicked: Boolean,
-    votingKey: ByteArray?,
     nowMillis: Long,
-): LoadSaveResult {
+): LoadSaveResult.Failed? {
     val existing = dao.getByIdentityId(identityId)
     if (existing != null && existing.networkRaw != networkRaw) {
         return LoadSaveResult.Failed(networkMismatchMessage(existing.networkRaw))
@@ -659,69 +692,33 @@ private suspend fun saveLoadedIdentityRow(
             networkRaw = networkRaw,
         ),
     ) != -1L
-    if (!inserted) {
-        // Either the row was there, or another write inserted it after the read above.
-        val current = existing ?: dao.getByIdentityId(identityId)
-            ?: return LoadSaveResult.Failed(IDENTITY_CHANGED_MESSAGE)
-        if (current.networkRaw != networkRaw) {
-            return LoadSaveResult.Failed(networkMismatchMessage(current.networkRaw))
-        }
-        val changed = dao.updateLoadedFields(
-            identityId = identityId,
-            networkRaw = networkRaw,
-            balance = balance,
-            alias = alias,
-            isLocal = true,
-            identityType = identityTypeToSave(current.identityType, pickedType, typePicked),
-            nowMillis = nowMillis,
-        )
-        if (changed == 0) return LoadSaveResult.Failed(IDENTITY_CHANGED_MESSAGE)
-    }
-    if (votingKey == null) return LoadSaveResult.Saved
-
-    // The association as it is now, after the identity's own fields were saved.
-    val current = dao.getByIdentityId(identityId)
+    if (inserted) return null
+    // Either the row was there, or another write inserted it after the read above.
+    val current = existing ?: dao.getByIdentityId(identityId)
         ?: return LoadSaveResult.Failed(IDENTITY_CHANGED_MESSAGE)
-    val entered = entries.identifierFor(identityId, votingKey)
-    return when (val outcome = decideVotingKeyOutcome(current.votingPrivateKeyIdentifier, entered)) {
-        VotingKeyOutcome.AlreadyStored -> {
-            // Written again from the entered bytes: repairs an entry that no longer reads.
-            val stored = storeEntry(entries, identityId, votingKey) { reason ->
-                return LoadSaveResult.Failed(votingKeyNotStoredMessage(reason))
-            }
-            if (dao.getByIdentityId(identityId)?.votingPrivateKeyIdentifier == stored) {
-                LoadSaveResult.Saved
-            } else {
-                discardUnlessNamed(dao, entries, identityId, stored)
-                LoadSaveResult.Failed(IDENTITY_CHANGED_MESSAGE)
-            }
-        }
-        VotingKeyOutcome.StoreNew -> {
-            val stored = storeEntry(entries, identityId, votingKey) { reason ->
-                return LoadSaveResult.Failed(votingKeyNotStoredMessage(reason))
-            }
-            if (dao.replaceVotingPrivateKeyIdentifier(identityId, null, stored, nowMillis) == 1) {
-                LoadSaveResult.Saved
-            } else {
-                discardUnlessNamed(dao, entries, identityId, stored)
-                LoadSaveResult.Failed(IDENTITY_CHANGED_MESSAGE)
-            }
-        }
-        is VotingKeyOutcome.Conflicting -> LoadSaveResult.ConfirmReplacement(outcome.storedIdentifier)
+    if (current.networkRaw != networkRaw) {
+        return LoadSaveResult.Failed(networkMismatchMessage(current.networkRaw))
     }
+    val changed = dao.updateLoadedFields(
+        identityId = identityId,
+        networkRaw = networkRaw,
+        balance = balance,
+        alias = alias,
+        isLocal = true,
+        identityType = identityTypeToSave(current.identityType, pickedType, typePicked),
+        nowMillis = nowMillis,
+    )
+    return if (changed == 0) LoadSaveResult.Failed(IDENTITY_CHANGED_MESSAGE) else null
 }
 
 /**
  * Replace the identity's voting key with [votingKey] after the user confirmed replacing
- * [expectedIdentifier], the key the question showed: store the new entry, point the row at it
- * only while the row still names [expectedIdentifier], then delete the identity's other
- * entries, the replaced one among them; when that fails, the result says so and the next
- * load deletes them. When the row
- * changed meanwhile, the new entry is discarded unless the row names it, the current
- * association is kept, and the result says to load again, which asks again. An entry's name
- * contains its identity's id, so the replaced entry is only this row's. The whole replacement
- * is one [MasternodeVotingKeyStore.withVotingKeyLock] section. [votingKey] stays the caller's
- * to zero.
+ * [expectedIdentifier], the key the question showed, through
+ * [MasternodeVotingKeyStore.assignToIdentity]: the new entry is recorded only while the row
+ * still names [expectedIdentifier], and the identity's other entries, the replaced one among
+ * them, are deleted; when that deletion fails, the result says so and the next load deletes
+ * them. When the row changed meanwhile, the current association is kept and the result says
+ * to load again, which asks again. [votingKey] stays the caller's to zero.
  */
 internal suspend fun replaceVotingKey(
     dao: IdentityDao,
@@ -730,77 +727,59 @@ internal suspend fun replaceVotingKey(
     expectedIdentifier: String,
     votingKey: ByteArray,
     nowMillis: Long = System.currentTimeMillis(),
-): LoadSaveResult = MasternodeVotingKeyStore.withVotingKeyLock {
-    replaceVotingKeyLocked(dao, entries, identityId, expectedIdentifier, votingKey, nowMillis)
+): LoadSaveResult {
+    val assignment =
+        assignOrFail(entries, dao, identityId, votingKey, expectedIdentifier, nowMillis) { reason ->
+            return LoadSaveResult.Failed(votingKeyNotReplacedMessage(reason))
+        }
+    return when (assignment) {
+        is VotingKeyAssignment.Assigned ->
+            if (assignment.otherEntriesRemoved) {
+                LoadSaveResult.Saved
+            } else {
+                LoadSaveResult.SavedWithWarning(PREVIOUS_VOTING_KEY_NOT_REMOVED_MESSAGE)
+            }
+        is VotingKeyAssignment.Changed -> LoadSaveResult.Failed(VOTING_KEY_CHANGED_MESSAGE)
+    }
 }
 
-private suspend fun replaceVotingKeyLocked(
+/**
+ * Delete every voting entry of [identityId] but the one its row names, looking the row up and
+ * deleting in one voting key lock section. Returns false when the lookup or the deletion
+ * failed (nothing is deleted when the lookup fails); cancellation propagates.
+ */
+private suspend fun removeStaleEntries(
     dao: IdentityDao,
     entries: VotingKeyEntries,
     identityId: ByteArray,
-    expectedIdentifier: String,
+): Boolean = entries.withLock {
+    try {
+        val keep = dao.getByIdentityId(identityId)?.votingPrivateKeyIdentifier
+        entries.deleteOtherEntriesOf(identityId, keep)
+        true
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        false
+    }
+}
+
+/**
+ * [VotingKeyEntries.assign]; when the key cannot be written (a failure other than
+ * cancellation, which propagates), hand [onFailure] the reason.
+ */
+private suspend inline fun assignOrFail(
+    entries: VotingKeyEntries,
+    dao: IdentityDao,
+    identityId: ByteArray,
     votingKey: ByteArray,
+    expectedIdentifier: String?,
     nowMillis: Long,
-): LoadSaveResult {
-    val stored = storeEntry(entries, identityId, votingKey) { reason ->
-        return LoadSaveResult.Failed(votingKeyNotReplacedMessage(reason))
-    }
-    if (dao.replaceVotingPrivateKeyIdentifier(identityId, expectedIdentifier, stored, nowMillis) == 0) {
-        discardUnlessNamed(dao, entries, identityId, stored)
-        return LoadSaveResult.Failed(VOTING_KEY_CHANGED_MESSAGE)
-    }
-    // The update succeeded, so the row names [stored]; the sweep deletes the replaced entry
-    // with any other leftover of this identity. If it fails, the next load sweeps again.
-    return if (sweepStaleEntries(entries, identityId, keep = stored)) {
-        LoadSaveResult.Saved
-    } else {
-        LoadSaveResult.SavedWithWarning(PREVIOUS_VOTING_KEY_NOT_REMOVED_MESSAGE)
-    }
-}
-
-/**
- * Delete every voting entry of [identityId] but [keep], the one its row names. Returns false
- * when that failed (other than by cancellation, which propagates). Callers hold the voting
- * key lock, so [keep] stays the row's identifier for the whole sweep.
- */
-private suspend fun sweepStaleEntries(
-    entries: VotingKeyEntries,
-    identityId: ByteArray,
-    keep: String?,
-): Boolean = try {
-    entries.deleteOtherEntriesOf(identityId, keep)
-    true
-} catch (e: CancellationException) {
-    throw e
-} catch (_: Exception) {
-    false
-}
-
-/**
- * Write [identityId]'s voting entry; on a failure other than cancellation, hand [onFailure]
- * the reason. Cancellation always propagates.
- */
-private suspend inline fun storeEntry(
-    entries: VotingKeyEntries,
-    identityId: ByteArray,
-    votingKey: ByteArray,
     onFailure: (reason: String?) -> Nothing,
-): String = try {
-    entries.store(identityId, votingKey)
+): VotingKeyAssignment = try {
+    entries.assign(dao, identityId, votingKey, expectedIdentifier, nowMillis)
 } catch (e: CancellationException) {
     throw e
 } catch (e: Exception) {
     onFailure(e.message)
-}
-
-/** Delete [identifier] unless the identity's row names it now. */
-private suspend fun discardUnlessNamed(
-    dao: IdentityDao,
-    entries: VotingKeyEntries,
-    identityId: ByteArray,
-    identifier: String,
-) {
-    if (dao.getByIdentityId(identityId)?.votingPrivateKeyIdentifier != identifier) {
-        entries.delete(identifier)
-    }
 }

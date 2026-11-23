@@ -5,12 +5,13 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withTimeout
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.dao.IdentityDao
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
 import org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore
+import org.dashfoundation.dashsdk.security.VotingKeyAssignment
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -387,25 +388,72 @@ class LoadIdentityVotingKeyTest {
             release.await()
         }
 
-        val replacement = async(Dispatchers.IO) {
-            replaceVotingKey(dao, entries, identityId, identifierOf(keyA), keyB)
-        }
-        storing.await()
-        val reload = async(Dispatchers.IO) {
-            save(alias = "again", pickedType = LoadIdentityType.USER, typePicked = false)
-        }
-        // The reload waits on the voting key lock while the replacement holds it.
-        assertNull(withTimeoutOrNull(300) { reload.await() })
-        assertTrue(identifierOf(keyB) in entries.live)
+        try {
+            val replacement = async(Dispatchers.IO) {
+                replaceVotingKey(dao, entries, identityId, identifierOf(keyA), keyB)
+            }
+            storing.await()
+            val reloadWaiting = CompletableDeferred<Unit>()
+            entries.onLockRequested = { reloadWaiting.complete(Unit) }
+            val reload = async(Dispatchers.IO) {
+                save(alias = "again", pickedType = LoadIdentityType.USER, typePicked = false)
+            }
+            // The reload asks for the voting key lock the replacement holds, and has swept nothing.
+            withTimeout(10_000) { reloadWaiting.await() }
+            assertTrue(identifierOf(keyB) in entries.live)
 
-        release.complete(Unit)
-        assertEquals(LoadSaveResult.Saved, replacement.await())
-        assertEquals(LoadSaveResult.Saved, reload.await())
-        assertEquals(identifierOf(keyB), dao.getByIdentityId(identityId)!!.votingPrivateKeyIdentifier)
-        assertEquals(setOf(identifierOf(keyB)), entries.live)
+            release.complete(Unit)
+            assertEquals(LoadSaveResult.Saved, replacement.await())
+            assertEquals(LoadSaveResult.Saved, reload.await())
+            assertEquals(identifierOf(keyB), dao.getByIdentityId(identityId)!!.votingPrivateKeyIdentifier)
+            assertEquals(setOf(identifierOf(keyB)), entries.live)
+        } finally {
+            // Never leave the paused operation waiting, even when an assertion failed.
+            release.complete(Unit)
+        }
+    }
+
+    /** S3: a cleanup lookup that throws leaves the entries alone and only warns. */
+    @Test
+    fun shouldWarnAndDeleteNothingWhenTheCleanupLookupFails() = runBlocking<Unit> {
+        val stale = identifierOf(ByteArray(32) { 0x0d })
+        dao.upsert(row(type = "Masternode", votingIdentifier = identifierOf(keyA)))
+        entries.live += setOf(identifierOf(keyA), stale)
+        // The save's own read is the first lookup; the cleanup's is the second.
+        val failingDao = ThrowingLookupDao(dao, failOnCall = 2)
+
+        val result = saveLoadedIdentity(
+            dao = failingDao,
+            entries = entries,
+            identityId = identityId,
+            networkRaw = testnet,
+            balance = 42L,
+            alias = "again",
+            pickedType = LoadIdentityType.USER,
+            typePicked = false,
+            votingKey = null,
+        )
+
+        assertEquals(LoadSaveResult.SavedWithWarning(STALE_VOTING_KEY_NOT_REMOVED_MESSAGE), result)
+        assertEquals(setOf(identifierOf(keyA), stale), entries.live)
+        assertEquals("again", dao.getByIdentityId(identityId)!!.alias)
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
+
+    /** An [IdentityDao] whose [failOnCall]-th `getByIdentityId` throws. */
+    private class ThrowingLookupDao(
+        private val real: IdentityDao,
+        private val failOnCall: Int,
+    ) : IdentityDao by real {
+        private var calls = 0
+
+        override suspend fun getByIdentityId(identityId: ByteArray): IdentityEntity? {
+            calls += 1
+            if (calls == failOnCall) throw IllegalStateException("database unavailable")
+            return real.getByIdentityId(identityId)
+        }
+    }
 
     private suspend fun save(
         alias: String? = null,
@@ -453,21 +501,52 @@ class LoadIdentityVotingKeyTest {
         var sweepFailure: Exception? = null
         var onStore: (suspend () -> Unit)? = null
 
+        /** Called just before asking for the voting key lock. */
+        var onLockRequested: (() -> Unit)? = null
+
         override fun identifierFor(identityId: ByteArray, votingKey: ByteArray): String =
             MasternodeVotingKeyStore.identifierFor(identityId, votingKey.copyOf(20))
 
-        override suspend fun store(identityId: ByteArray, votingKey: ByteArray): String {
+        /**
+         * What `MasternodeVotingKeyStore.assignToIdentity` does, over [live] instead of
+         * secure storage, under the real voting key lock. The SDK's own tests cover the real
+         * operation.
+         */
+        override suspend fun assign(
+            dao: IdentityDao,
+            identityId: ByteArray,
+            votingKey: ByteArray,
+            expectedIdentifier: String?,
+            nowMillis: Long,
+        ): VotingKeyAssignment = withLock {
             failure?.let { throw it }
             val identifier = identifierFor(identityId, votingKey)
             storedIdentifiers += identifier
             live += identifier
             onStore?.invoke()
-            return identifier
+            if (dao.replaceVotingPrivateKeyIdentifier(identityId, expectedIdentifier, identifier, nowMillis) == 0) {
+                val current = dao.getByIdentityId(identityId)?.votingPrivateKeyIdentifier
+                if (current != identifier) {
+                    deletedIdentifiers += identifier
+                    live -= identifier
+                }
+                VotingKeyAssignment.Changed(current)
+            } else {
+                val swept = try {
+                    deleteOtherEntriesOf(identityId, identifier)
+                    true
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    false
+                }
+                VotingKeyAssignment.Assigned(identifier, otherEntriesRemoved = swept)
+            }
         }
 
-        override suspend fun delete(identifier: String) {
-            deletedIdentifiers += identifier
-            live -= identifier
+        override suspend fun <T> withLock(block: suspend () -> T): T {
+            onLockRequested?.invoke()
+            return MasternodeVotingKeyStore.withVotingKeyLock(block)
         }
 
         override suspend fun deleteOtherEntriesOf(identityId: ByteArray, keep: String?) {

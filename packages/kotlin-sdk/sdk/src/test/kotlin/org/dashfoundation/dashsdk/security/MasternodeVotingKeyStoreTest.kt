@@ -2,6 +2,9 @@ package org.dashfoundation.dashsdk.security
 
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.runBlocking
+import org.dashfoundation.dashsdk.persistence.DashDatabase
+import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -31,11 +34,83 @@ class MasternodeVotingKeyStoreTest {
     private val identityIdHex = identityId.joinToString("") { "%02x".format(it) }
     private val identifier = "mnvoting.$identityIdHex.$addressHex"
 
+    private lateinit var db: DashDatabase
+
+    /** A store whose voting address of a key is its first 20 bytes (no native library). */
+    private lateinit var assigning: MasternodeVotingKeyStore
+
     @Before
     fun setUp() = runBlocking {
         storage = WalletStorage(ApplicationProvider.getApplicationContext(), PlaintextIdentityKeysKeystore())
         storage.deleteAll()
         store = MasternodeVotingKeyStore(storage)
+        assigning = MasternodeVotingKeyStore.forTesting(storage) { key -> key.copyOf(20) }
+        db = DashDatabase.createInMemory(ApplicationProvider.getApplicationContext())
+    }
+
+    @After
+    fun tearDown() {
+        db.close()
+    }
+
+    private fun keyWithAddress(byte: Int) = ByteArray(32) { byte.toByte() }
+
+    private fun identifierOfKey(byte: Int) =
+        MasternodeVotingKeyStore.identifierFor(identityId, ByteArray(20) { byte.toByte() })
+
+    private suspend fun insertRow(votingIdentifier: String?) {
+        db.identityDao().upsert(
+            IdentityEntity(
+                identityId = identityId,
+                identityType = "Masternode",
+                votingPrivateKeyIdentifier = votingIdentifier,
+                networkRaw = 1,
+            ),
+        )
+    }
+
+    @Test
+    fun shouldStoreRecordAndSweepWhenTheRowNamesTheExpectedKey() = runBlocking<Unit> {
+        insertRow(votingIdentifier = identifierOfKey(1))
+        storage.storePrivateKey(identifierOfKey(1), keyWithAddress(1))
+        storage.storePrivateKey(identifierOfKey(3), keyWithAddress(3))
+
+        val assignment = assigning.assignToIdentity(
+            db.identityDao(), identityId, keyWithAddress(2), expectedIdentifier = identifierOfKey(1),
+        )
+
+        assertEquals(VotingKeyAssignment.Assigned(identifierOfKey(2), otherEntriesRemoved = true), assignment)
+        assertEquals(identifierOfKey(2), db.identityDao().getByIdentityId(identityId)?.votingPrivateKeyIdentifier)
+        assertTrue(storage.hasPrivateKey(identifierOfKey(2)))
+        assertFalse(storage.hasPrivateKey(identifierOfKey(1)))
+        assertFalse(storage.hasPrivateKey(identifierOfKey(3)))
+        assertTrue(db.identityDao().existsByVotingPrivateKeyIdentifier(identifierOfKey(2)))
+        assertFalse(db.identityDao().existsByVotingPrivateKeyIdentifier(identifierOfKey(1)))
+    }
+
+    @Test
+    fun shouldRecordNothingAndDeleteTheNewKeyWhenTheRowNamesAnother() = runBlocking<Unit> {
+        insertRow(votingIdentifier = identifierOfKey(1))
+        storage.storePrivateKey(identifierOfKey(1), keyWithAddress(1))
+
+        val assignment = assigning.assignToIdentity(
+            db.identityDao(), identityId, keyWithAddress(2), expectedIdentifier = null,
+        )
+
+        assertEquals(VotingKeyAssignment.Changed(identifierOfKey(1)), assignment)
+        assertEquals(identifierOfKey(1), db.identityDao().getByIdentityId(identityId)?.votingPrivateKeyIdentifier)
+        assertTrue(storage.hasPrivateKey(identifierOfKey(1)))
+        assertFalse(storage.hasPrivateKey(identifierOfKey(2)))
+    }
+
+    @Test
+    fun shouldRecordNothingAndDeleteTheNewKeyWhenTheRowIsGone() = runBlocking<Unit> {
+        val assignment = assigning.assignToIdentity(
+            db.identityDao(), identityId, keyWithAddress(2), expectedIdentifier = null,
+        )
+
+        assertEquals(VotingKeyAssignment.Changed(null), assignment)
+        assertFalse(storage.hasPrivateKey(identifierOfKey(2)))
     }
 
     @Test

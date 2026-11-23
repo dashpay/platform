@@ -3,14 +3,16 @@ package org.dashfoundation.dashsdk.services
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.joinAll
+import java.util.concurrent.CountDownLatch
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withTimeout
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore
 import org.dashfoundation.dashsdk.security.PlaintextIdentityKeysKeystore
+import org.dashfoundation.dashsdk.security.VotingKeyAssignment
 import org.dashfoundation.dashsdk.security.WalletStorage
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -54,6 +56,7 @@ class DataManagerTest {
 
     @After
     fun tearDown() {
+        MasternodeVotingKeyStore.onLockContendedForTesting = null
         db.close()
     }
 
@@ -106,37 +109,91 @@ class DataManagerTest {
     }
 
     /**
-     * B1: a clear started while an import has stored its key but not yet recorded it waits
-     * for the import, then deletes both the key and the row.
+     * An import ([MasternodeVotingKeyStore.assignToIdentity], the public operation) that
+     * holds the voting key lock when a clear starts: the clear waits on the lock, then
+     * deletes both the key the import recorded and its row.
      */
     @Test
-    fun shouldNotMissAKeyAnImportStoresDuringAClear() = runBlocking<Unit> {
+    fun shouldClearAKeyAnImportRecordsWhileTheClearWaits() = runBlocking<Unit> {
         val importedId = ByteArray(32) { 6 }
-        val importedIdentifier = MasternodeVotingKeyStore.identifierFor(importedId, ByteArray(20) { 8 })
         db.identityDao().upsert(IdentityEntity(identityId = importedId, identityType = "Masternode", networkRaw = 1))
-        val storing = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-        val import = launch(Dispatchers.IO) {
-            MasternodeVotingKeyStore.withVotingKeyLock {
-                storage.storePrivateKey(importedIdentifier, ByteArray(32) { 1 })
-                storing.complete(Unit)
-                release.await()
-                db.identityDao().replaceVotingPrivateKeyIdentifier(importedId, null, importedIdentifier, 0)
-            }
+        val importing = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        // Pauses the import inside its critical section, where it forms the address.
+        val keys = MasternodeVotingKeyStore.forTesting(storage) { key ->
+            importing.countDown()
+            release.await()
+            key.copyOf(20)
         }
-        storing.await()
+        val clearWaiting = CompletableDeferred<Unit>()
 
-        val clear = launch(Dispatchers.IO) { manager.clear(DataManager.Category.IDENTITIES) }
-        // The clear waits on the voting key lock while the import holds it.
-        assertNull(withTimeoutOrNull(300) { clear.join() })
-        assertTrue(storage.hasPrivateKey(votingIdentifier))
+        try {
+            val import = async(Dispatchers.IO) {
+                keys.assignToIdentity(db.identityDao(), importedId, ByteArray(32) { 1 }, null)
+            }
+            importing.await()
+            MasternodeVotingKeyStore.onLockContendedForTesting = { clearWaiting.complete(Unit) }
+            val clear = launch(Dispatchers.IO) { manager.clear(DataManager.Category.IDENTITIES) }
+            // Bounded, so a lock that never contends fails the test instead of hanging it.
+            withTimeout(10_000) { clearWaiting.await() }
+            // The clear reached the lock and is waiting: nothing is cleared yet.
+            assertTrue(storage.hasPrivateKey(votingIdentifier))
+            assertEquals(votingIdentifier, db.identityDao().getByIdentityId(identityId)?.votingPrivateKeyIdentifier)
 
-        release.complete(Unit)
-        joinAll(import, clear)
-        assertNull(db.identityDao().getByIdentityId(importedId))
-        assertFalse(storage.hasPrivateKey(importedIdentifier))
-        assertNull(db.identityDao().getByIdentityId(identityId))
-        assertFalse(storage.hasPrivateKey(votingIdentifier))
+            release.countDown()
+            val assignment = import.await() as VotingKeyAssignment.Assigned
+            clear.join()
+            assertNull(db.identityDao().getByIdentityId(importedId))
+            assertFalse(storage.hasPrivateKey(assignment.identifier))
+            assertNull(db.identityDao().getByIdentityId(identityId))
+            assertFalse(storage.hasPrivateKey(votingIdentifier))
+        } finally {
+            // Never leave the paused operation waiting, even when an assertion failed.
+            release.countDown()
+        }
+    }
+
+    /**
+     * A clear that holds the voting key lock when an import starts: the import waits, then
+     * finds its row gone, records nothing and deletes the key it wrote.
+     */
+    @Test
+    fun shouldLeaveNoKeyWhenAnImportWaitsForAClear() = runBlocking<Unit> {
+        val importedId = ByteArray(32) { 6 }
+        db.identityDao().upsert(IdentityEntity(identityId = importedId, identityType = "Masternode", networkRaw = 1))
+        val clearing = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val pausedClear = DataManager(db) {
+            clearing.complete(Unit)
+            release.await()
+            MasternodeVotingKeyStore(storage).deleteAll()
+        }
+        val keys = MasternodeVotingKeyStore.forTesting(storage) { key -> key.copyOf(20) }
+        val importWaiting = CompletableDeferred<Unit>()
+
+        try {
+            val clear = launch(Dispatchers.IO) { pausedClear.clear(DataManager.Category.IDENTITIES) }
+            clearing.await()
+            MasternodeVotingKeyStore.onLockContendedForTesting = { importWaiting.complete(Unit) }
+            val import = async(Dispatchers.IO) {
+                keys.assignToIdentity(db.identityDao(), importedId, ByteArray(32) { 1 }, null)
+            }
+            // Bounded, so a lock that never contends fails the test instead of hanging it.
+            withTimeout(10_000) { importWaiting.await() }
+            val importedIdentifier = MasternodeVotingKeyStore.identifierFor(importedId, ByteArray(20) { 1 })
+            // The import reached the lock and is waiting: it has written nothing.
+            assertFalse(storage.hasPrivateKey(importedIdentifier))
+
+            release.complete(Unit)
+            clear.join()
+            assertEquals(VotingKeyAssignment.Changed(null), import.await())
+            assertNull(db.identityDao().getByIdentityId(importedId))
+            assertFalse(storage.hasPrivateKey(importedIdentifier))
+            assertFalse(storage.hasPrivateKey(votingIdentifier))
+        } finally {
+            // Never leave the paused operation waiting, even when an assertion failed.
+            release.complete(Unit)
+        }
     }
 
     @Test
