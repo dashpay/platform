@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **47**
+Capabilities tracked: **50**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 28 | 17 | 1 | 1 |
-| Swift | Example app | 6 | 31 | 1 | 9 |
-| Kotlin | SDK | 23 | 17 | 6 | 1 |
-| Kotlin | Example app | 7 | 24 | 6 | 10 |
+| Swift | SDK | 31 | 17 | 1 | 1 |
+| Swift | Example app | 6 | 34 | 1 | 9 |
+| Kotlin | SDK | 25 | 17 | 7 | 1 |
+| Kotlin | Example app | 7 | 26 | 7 | 10 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 17 | 28 |
-| Kotlin | 6 | 11 | 30 |
+| Swift | 2 | 19 | 29 |
+| Kotlin | 6 | 13 | 31 |
 
 ## Capability status
 
@@ -64,7 +64,10 @@ Capabilities tracked: **47**
 | `system.block_and_transition_status_reads` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `voting.masternode_vote_stored_key` | supported / partial / not_applicable | partial / partial / not_applicable |
 | `identity.load_masternode_voting_key` | supported / partial / not_applicable | partial / partial / not_applicable |
+| `identity.load_shared_masternode_for_voting` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
 | `addresses.balance_history` | supported / partial / not_applicable | supported / partial / not_applicable |
+| `shielded.shield_from_identity` | supported / partial / required | supported / partial / required |
+| `shielded.identity_top_up_from_pool` | supported / partial / required | supported / partial / required |
 | `shielded.token_purchase_from_pool` | partial / partial / required | partial / partial / required |
 | `identity.withdrawal_status` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `identity.key_limits_update` | supported / partial / required | supported / partial / required |

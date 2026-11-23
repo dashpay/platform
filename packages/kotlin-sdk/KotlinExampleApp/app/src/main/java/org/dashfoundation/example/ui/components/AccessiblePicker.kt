@@ -33,6 +33,7 @@ fun <T> AccessiblePicker(
     modifier: Modifier = Modifier,
     testTag: String? = null,
     enabled: Boolean = true,
+    optionTestTag: ((T) -> String)? = null,
     onSelected: (T) -> Unit,
 ) {
     var expanded by remember(enabled) { mutableStateOf(false) }
@@ -68,6 +69,7 @@ fun <T> AccessiblePicker(
                         onSelected(option)
                         expanded = false
                     },
+                    modifier = optionTestTag?.let { Modifier.testTag(it(option)) } ?: Modifier,
                 )
             }
         }
