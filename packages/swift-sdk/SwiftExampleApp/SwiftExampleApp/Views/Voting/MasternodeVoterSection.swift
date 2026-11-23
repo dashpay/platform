@@ -197,6 +197,9 @@ struct MasternodeVoterSection: View {
     /// A stored key Rust says to check before use is published only once the
     /// check for the current pick and record has run.
     @State private var checkedTrigger: VotingKeyCheckTrigger?
+    /// Counts picks, so each pick of an identity, also of one picked before,
+    /// needs its own check.
+    @State private var pickGeneration = 0
     /// Why the last check of the picked identity's key did not happen or was
     /// not saved, by identity.
     @State private var checkFailure: (identityId: Data, failure: VotingKeyCheckFailure)?
@@ -264,7 +267,10 @@ struct MasternodeVoterSection: View {
         // A network switch changes which identities are eligible even when
         // the id list compares equal; re-check the selection.
         .onChange(of: appState.currentNetwork) { _, _ in selectDefaultIfNeeded() }
-        .onChange(of: selectedIdentityId) { _, _ in publish() }
+        .onChange(of: selectedIdentityId) { _, _ in
+            pickGeneration &+= 1
+            publish()
+        }
         // The picked row's verdict can change while the sheet is open (this
         // section's own check, or another window loading the identity again):
         // publish again so the sheet's voter follows it.
@@ -405,6 +411,7 @@ struct MasternodeVoterSection: View {
     private var currentTrigger: VotingKeyCheckTrigger {
         let selected = votingIdentities.first { $0.identityId == selectedIdentityId }
         return VotingKeyCheckTrigger(
+            pickGeneration: pickGeneration,
             identityId: selectedIdentityId,
             checkRaw: selected?.votingKeyCheckRaw,
             checkAddress: selected?.votingKeyCheckAddress,
@@ -435,10 +442,14 @@ struct MasternodeVoterSection: View {
     /// recorded with the key's verdict.
     private func checkSelectedVotingKeyIfNeeded() async {
         let trigger = currentTrigger
-        // Whatever the check found, or if it did not need to run, the pick
-        // and record it ran for are checked; a superseded run marks nothing.
+        // The pick and record are marked checked only when no check was
+        // needed, Platform could not answer (Rust lets such a key vote), or
+        // the check's result was saved. A result that could not be tied to the
+        // key or saved, such as a refusal, leaves the key unpublished, and a
+        // superseded run marks nothing.
+        var completed = false
         defer {
-            if !Task.isCancelled { checkedTrigger = trigger }
+            if completed && !Task.isCancelled { checkedTrigger = trigger }
         }
         guard let identityId = selectedIdentityId,
               let identity = votingIdentities.first(where: { $0.identityId == identityId }),
@@ -475,7 +486,10 @@ struct MasternodeVoterSection: View {
             storedVotingAddress: checkedAddress
         )
         let knownProTxHash = identity.masternodeProTxHash
-        guard keyUse.checkBeforeUse || knownProTxHash == nil else { return }
+        guard keyUse.checkBeforeUse || knownProTxHash == nil else {
+            completed = true
+            return
+        }
         checkingIdentityId = identityId
         defer {
             if checkingIdentityId == identityId { checkingIdentityId = nil }
@@ -516,6 +530,7 @@ struct MasternodeVoterSection: View {
             let message = "The voting key could not be checked: \(error.localizedDescription)"
             // A row whose masternode is not known yet cannot vote either way.
             checkFailure = (identityId, knownProTxHash == nil ? .notResolved(message) : .checkFailed(message))
+            completed = knownProTxHash != nil
             return
         }
         // A superseded check (the pick changed, then maybe changed back, so a
@@ -568,8 +583,9 @@ struct MasternodeVoterSection: View {
         do {
             try modelContext.save()
             if checkFailure?.identityId == identityId { checkFailure = nil }
+            completed = true
         } catch {
-            checkFailure = (identityId, .checkFailed(
+            checkFailure = (identityId, .notSaved(
                 "The voting key check could not be saved: \(error.localizedDescription)"
             ))
         }
@@ -619,6 +635,7 @@ struct MasternodeVoterSection: View {
 /// A pick and what its row records for its voting key: a check runs again
 /// when any of them changes.
 private struct VotingKeyCheckTrigger: Equatable {
+    let pickGeneration: Int
     let identityId: Data?
     let checkRaw: String?
     let checkAddress: Data?
@@ -638,6 +655,9 @@ private enum VotingKeyCheckFailure: Equatable {
     /// The row records no pro_tx_hash, and Rust's load rule did not resolve
     /// it as a masternode's owner identity, so it cannot vote.
     case notResolved(String)
+    /// The check ran but its result could not be saved, so the key is not
+    /// offered until it is checked again.
+    case notSaved(String)
 }
 
 private struct VotingKeyCheckStatus: View {
@@ -654,6 +674,10 @@ private struct VotingKeyCheckStatus: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
+        } else if case .notSaved(let message) = failure {
+            Text(message + " Close and reopen this sheet to check the voting key again.")
+                .font(.caption)
+                .foregroundColor(.red)
         } else if case .notResolved(let message) = failure {
             Text(message + " Load the masternode again with its ProTxHash and voting key under Identities, Load Identity.")
                 .font(.caption)

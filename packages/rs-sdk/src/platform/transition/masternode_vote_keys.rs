@@ -1127,19 +1127,28 @@ mod tests {
 
     // ---- which identity a host loads to vote --------------------------------
 
-    /// The masternode's owner identity: its id is the pro_tx_hash.
+    /// A key as Platform gives an owner identity (`get_owner_identity_withdrawal_key`,
+    /// `get_owner_identity_owner_key`): read-only and critical. Platform puts the withdrawal
+    /// key at slot 0 and the owner key at slot 1, also when there is no withdrawal key.
+    fn platform_owner_identity_key(id: u32, purpose: Purpose) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            purpose,
+            security_level: SecurityLevel::CRITICAL,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            read_only: true,
+            data: BinaryData::new(OTHER_ADDRESS.to_vec()),
+            disabled_at: None,
+        })
+    }
+
+    /// The masternode's owner identity: its id is the pro_tx_hash, and it holds its owner key
+    /// at slot 1, as `create_owner_identity` v2 gives a masternode with no single payout
+    /// address.
     fn owner_identity() -> Identity {
         let mut public_keys = BTreeMap::new();
-        public_keys.insert(
-            0,
-            key(
-                0,
-                Purpose::OWNER,
-                KeyType::ECDSA_HASH160,
-                OTHER_ADDRESS,
-                None,
-            ),
-        );
+        public_keys.insert(1, platform_owner_identity_key(1, Purpose::OWNER));
         Identity::V0(IdentityV0 {
             id: Identifier::new(pro_tx_hash().to_byte_array()),
             public_keys,
@@ -1363,13 +1372,7 @@ mod tests {
     /// added) is still an owner.
     #[test]
     fn should_load_an_owner_identity_holding_only_a_withdrawal_key() {
-        let owner = identity_with(vec![key(
-            0,
-            Purpose::TRANSFER,
-            KeyType::ECDSA_HASH160,
-            OTHER_ADDRESS,
-            None,
-        )]);
+        let owner = identity_with(vec![platform_owner_identity_key(0, Purpose::TRANSFER)]);
         let (identity, _) = loaded(masternode_voting_load(pro_tx_hash(), Some(owner), None));
         assert!(matches!(identity, MasternodeVotingIdentity::Owner { .. }));
     }
@@ -1454,20 +1457,8 @@ mod tests {
         let (owner, _) = loaded(masternode_voting_load(
             pro_tx_hash(),
             Some(at_pro_tx_hash(vec![
-                key(
-                    0,
-                    Purpose::OWNER,
-                    KeyType::ECDSA_HASH160,
-                    OTHER_ADDRESS,
-                    None,
-                ),
-                key(
-                    1,
-                    Purpose::TRANSFER,
-                    KeyType::ECDSA_HASH160,
-                    OTHER_ADDRESS,
-                    None,
-                ),
+                platform_owner_identity_key(0, Purpose::TRANSFER),
+                platform_owner_identity_key(1, Purpose::OWNER),
             ])),
             None,
         ));
