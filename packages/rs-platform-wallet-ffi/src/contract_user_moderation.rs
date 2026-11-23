@@ -48,9 +48,13 @@
 //! panics unwind. The offer read reports `ErrorWalletOperation`; a write
 //! reports `ErrorTransactionBroadcastUnconfirmed`, since it may have been
 //! broadcast before the panic. Every export checks and nulls `out_json`
-//! before any other check, so every error leaves it null.
+//! before any other check, so every error leaves it null, then refuses a
+//! null 32-byte id (every one but the optional `reason_document_id`) with
+//! `ErrorNullPointer`. A result that cannot be written as JSON is an
+//! `ErrorSerialization`.
 
 use std::ffi::{CStr, CString};
+use std::fmt::Display;
 use std::os::raw::c_char;
 use std::ptr;
 use std::slice;
@@ -247,19 +251,21 @@ pub(crate) fn moderated_user_status_json(status: &ModeratedUserStatus) -> JsonVa
     })
 }
 
-/// A kept value that does not serialize, as the wallet's error.
-fn removal_json_error(error: serde_json::Error) -> PlatformWalletError {
-    PlatformWalletError::InvalidIdentityData(format!("cannot write the removal record: {error}"))
+/// A JSON value that could not be written, as a serialization failure.
+fn serialization_error(what: &str, error: impl Display) -> PlatformWalletFFIResult {
+    PlatformWalletFFIResult::err(
+        PlatformWalletFFIResultCode::ErrorSerialization,
+        format!("cannot write {what}: {error}"),
+    )
 }
 
 /// What a deletion left: the record, in one removals-page entry's shape,
-/// when the type keeps one, and the document as it was (base64) when it was
-/// read before the deletion.
+/// when the type keeps one, and the document as it was (base64).
 pub(crate) fn document_deletion_json(
     contract_id: &Identifier,
     document_type_name: &str,
     deletion: &ContractDocumentDeletion,
-) -> Result<JsonValue, PlatformWalletError> {
+) -> Result<JsonValue, PlatformWalletFFIResult> {
     let mut object = Map::new();
     object.insert("contractId".to_string(), json!(base58(contract_id)));
     object.insert("documentTypeName".to_string(), json!(document_type_name));
@@ -271,15 +277,13 @@ pub(crate) fn document_deletion_json(
         object.insert(
             "removal".to_string(),
             contract_document_removal_json(deletion.document_id, removal, kept_values)
-                .map_err(removal_json_error)?,
+                .map_err(|error| serialization_error("the removal record", error))?,
         );
     }
-    if let Some(bytes) = &deletion.document_bytes {
-        object.insert(
-            "documentBytes".to_string(),
-            json!(encode(bytes, Encoding::Base64)),
-        );
-    }
+    object.insert(
+        "documentBytes".to_string(),
+        json!(encode(&deletion.document_bytes, Encoding::Base64)),
+    );
     Ok(JsonValue::Object(object))
 }
 
@@ -288,7 +292,7 @@ pub(crate) fn document_restore_json(
     contract_id: &Identifier,
     document_type_name: &str,
     restore: &ContractDocumentRestore,
-) -> Result<JsonValue, PlatformWalletError> {
+) -> Result<JsonValue, PlatformWalletFFIResult> {
     Ok(json!({
         "contractId": base58(contract_id),
         "documentTypeName": document_type_name,
@@ -298,7 +302,7 @@ pub(crate) fn document_restore_json(
             &restore.removal,
             &restore.kept_values,
         )
-        .map_err(removal_json_error)?,
+        .map_err(|error| serialization_error("the removal record", error))?,
     }))
 }
 
@@ -308,13 +312,11 @@ pub(crate) fn document_fields_change_json(
     contract_id: &Identifier,
     document_type_name: &str,
     document: &Document,
-) -> Result<JsonValue, PlatformWalletError> {
-    let document: JsonValue = serde_json::from_str(&confirmed_document_to_json(document)?)
-        .map_err(|error| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "cannot write the changed document: {error}"
-            ))
-        })?;
+) -> Result<JsonValue, PlatformWalletFFIResult> {
+    let document = confirmed_document_to_json(document)
+        .map_err(|error| serialization_error("the changed document", error))?;
+    let document: JsonValue = serde_json::from_str(&document)
+        .map_err(|error| serialization_error("the changed document", error))?;
     Ok(json!({
         "contractId": base58(contract_id),
         "documentTypeName": document_type_name,
@@ -430,6 +432,7 @@ unsafe fn contract_moderation_offer_inner(
     // return, so every error leaves it null.
     check_ptr!(out_json);
     *out_json = ptr::null_mut();
+    check_ptr!(contract_id);
 
     let contract_id = unwrap_result_or_return!(read_identifier(contract_id));
 
@@ -545,6 +548,9 @@ unsafe fn contract_user_moderate_inner(
     // return, so every error leaves it null.
     check_ptr!(out_json);
     *out_json = ptr::null_mut();
+    check_ptr!(moderator_identity_id);
+    check_ptr!(contract_id);
+    check_ptr!(target_identity_id);
     check_ptr!(signer_handle);
 
     let moderator_id = unwrap_result_or_return!(read_identifier(moderator_identity_id));
@@ -596,18 +602,22 @@ unsafe fn contract_user_moderate_inner(
 /// in the shape of one entry of `dash_sdk_contract_moderation_get_document_removals`,
 /// absent on a type whose deletions keep no record; `documentBytes` is the
 /// document as it was just before the deletion, serialized under its type,
-/// which `platform_wallet_contract_document_restore` takes back, absent
-/// when the document could not be read first. Release the string with
-/// `platform_wallet_string_free`. On any error `*out_json` is left null.
+/// which `platform_wallet_contract_document_restore` takes back. Release
+/// the string with `platform_wallet_string_free`. On any error `*out_json`
+/// is left null.
 ///
 /// # Errors
-/// - `NotFound` when Platform holds no contract `contract_id`;
+/// - `ErrorNullPointer` for a null id, type name, signer or `out_json`;
+/// - `NotFound` when Platform holds no contract `contract_id`, or the read
+///   before the deletion proves no document `document_id`: nothing is
+///   signed or broadcast;
 /// - `ErrorInvalidParameter` when the contract has no such type;
 /// - `ErrorIdentityNotFound` when the wallet holds no signing identity
 ///   `moderator_identity_id`;
+/// - `ErrorSerialization` when the result cannot be written as JSON;
 /// - a refusal by Platform carries its `consensus_code`: a type moderators
 ///   may not delete from, a signer that does not moderate the contract, a
-///   protected owner, a document that does not exist, one past the type's
+///   protected owner, a document gone since the read, one past the type's
 ///   window.
 ///
 /// # Safety
@@ -674,6 +684,9 @@ unsafe fn contract_document_delete_inner(
     // return, so every error leaves it null.
     check_ptr!(out_json);
     *out_json = ptr::null_mut();
+    check_ptr!(moderator_identity_id);
+    check_ptr!(contract_id);
+    check_ptr!(document_id);
     check_ptr!(document_type_name);
     check_ptr!(signer_handle);
 
@@ -683,26 +696,31 @@ unsafe fn contract_document_delete_inner(
     let document_id = unwrap_result_or_return!(read_identifier(document_id));
     let reason = unwrap_result_or_return!(read_reason(reason_text, reason_document_id));
     let signer_addr = signer_handle as usize;
+    let name = document_type_name.clone();
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity_wallet = wallet.identity().clone();
         block_on_worker(async move {
             let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-            let deletion = identity_wallet
+            identity_wallet
                 .delete_contract_document_with_signer(
                     &moderator_id,
                     &contract_id,
-                    &document_type_name,
+                    &name,
                     &document_id,
                     reason,
                     signer,
                 )
-                .await?;
-            document_deletion_json(&contract_id, &document_type_name, &deletion)
+                .await
         })
     });
     let result = unwrap_option_or_return!(option);
-    let json = unwrap_result_or_return!(result);
+    let deletion = unwrap_result_or_return!(result);
+    let json = unwrap_result_or_return!(document_deletion_json(
+        &contract_id,
+        &document_type_name,
+        &deletion
+    ));
 
     unwrap_result_or_return!(write_json(json, out_json));
     PlatformWalletFFIResult::ok()
@@ -790,6 +808,8 @@ unsafe fn contract_document_restore_inner(
     // return, so every error leaves it null.
     check_ptr!(out_json);
     *out_json = ptr::null_mut();
+    check_ptr!(moderator_identity_id);
+    check_ptr!(contract_id);
     check_ptr!(document_type_name);
     check_ptr!(document_bytes);
     check_ptr!(signer_handle);
@@ -805,25 +825,30 @@ unsafe fn contract_document_restore_inner(
     let document_type_name = unwrap_result_or_return!(read_str(document_type_name));
     let document_bytes = slice::from_raw_parts(document_bytes, document_bytes_len).to_vec();
     let signer_addr = signer_handle as usize;
+    let name = document_type_name.clone();
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity_wallet = wallet.identity().clone();
         block_on_worker(async move {
             let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-            let restore = identity_wallet
+            identity_wallet
                 .restore_contract_document_with_signer(
                     &moderator_id,
                     &contract_id,
-                    &document_type_name,
+                    &name,
                     &document_bytes,
                     signer,
                 )
-                .await?;
-            document_restore_json(&contract_id, &document_type_name, &restore)
+                .await
         })
     });
     let result = unwrap_option_or_return!(option);
-    let json = unwrap_result_or_return!(result);
+    let restore = unwrap_result_or_return!(result);
+    let json = unwrap_result_or_return!(document_restore_json(
+        &contract_id,
+        &document_type_name,
+        &restore
+    ));
 
     unwrap_result_or_return!(write_json(json, out_json));
     PlatformWalletFFIResult::ok()
@@ -925,6 +950,9 @@ unsafe fn contract_document_change_fields_inner(
     // return, so every error leaves it null.
     check_ptr!(out_json);
     *out_json = ptr::null_mut();
+    check_ptr!(moderator_identity_id);
+    check_ptr!(contract_id);
+    check_ptr!(document_id);
     check_ptr!(document_type_name);
     check_ptr!(fields_json);
     check_ptr!(signer_handle);
@@ -936,27 +964,32 @@ unsafe fn contract_document_change_fields_inner(
     let fields_json = unwrap_result_or_return!(read_str(fields_json));
     let reason = unwrap_result_or_return!(read_reason(reason_text, reason_document_id));
     let signer_addr = signer_handle as usize;
+    let name = document_type_name.clone();
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity_wallet = wallet.identity().clone();
         block_on_worker(async move {
             let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-            let document = identity_wallet
+            identity_wallet
                 .change_contract_document_fields_with_signer(
                     &moderator_id,
                     &contract_id,
-                    &document_type_name,
+                    &name,
                     &document_id,
                     &fields_json,
                     reason,
                     signer,
                 )
-                .await?;
-            document_fields_change_json(&contract_id, &document_type_name, &document)
+                .await
         })
     });
     let result = unwrap_option_or_return!(option);
-    let json = unwrap_result_or_return!(result);
+    let document = unwrap_result_or_return!(result);
+    let json = unwrap_result_or_return!(document_fields_change_json(
+        &contract_id,
+        &document_type_name,
+        &document
+    ));
 
     unwrap_result_or_return!(write_json(json, out_json));
     PlatformWalletFFIResult::ok()
@@ -1047,6 +1080,9 @@ unsafe fn contract_document_propose_settled_deletion_inner(
     // return, so every error leaves it null.
     check_ptr!(out_json);
     *out_json = ptr::null_mut();
+    check_ptr!(moderator_identity_id);
+    check_ptr!(contract_id);
+    check_ptr!(document_id);
     check_ptr!(document_type_name);
     check_ptr!(signer_handle);
 
@@ -1152,6 +1188,9 @@ unsafe fn contract_team_action_approve_inner(
     // return, so every error leaves it null.
     check_ptr!(out_json);
     *out_json = ptr::null_mut();
+    check_ptr!(moderator_identity_id);
+    check_ptr!(contract_id);
+    check_ptr!(action_id);
     check_ptr!(signer_handle);
 
     let moderator_id = unwrap_result_or_return!(read_identifier(moderator_identity_id));
@@ -1369,7 +1408,7 @@ mod tests {
         let deletion = ContractDocumentDeletion {
             document_id: id(3),
             removal: Some((removal(), kept.clone())),
-            document_bytes: Some(vec![1, 2, 3]),
+            document_bytes: vec![1, 2, 3],
         };
         let json = document_deletion_json(&id(1), "post", &deletion).expect("writes");
         assert_eq!(json["contractId"], base58(&id(1)));
@@ -1387,12 +1426,12 @@ mod tests {
             &ContractDocumentDeletion {
                 document_id: id(3),
                 removal: None,
-                document_bytes: None,
+                document_bytes: vec![4],
             },
         )
         .expect("writes");
         assert!(unrecorded.get("removal").is_none());
-        assert!(unrecorded.get("documentBytes").is_none());
+        assert_eq!(unrecorded["documentBytes"], "BA==");
 
         let restore = document_restore_json(
             &id(1),
@@ -1432,12 +1471,12 @@ mod tests {
     }
 
     /// Every pointer and the action byte are checked before the wallet is
-    /// looked up, and the JSON out-param is left null on the way out.
+    /// looked up, and the JSON out-param is left null on the way out (each
+    /// null id: `should_refuse_each_null_id_pointer_as_a_null_pointer`).
     #[test]
     fn should_refuse_null_pointers_and_a_bad_action_before_the_wallet_is_looked_up() {
         let id = [0u8; 32];
         let name = CString::new("post").expect("name");
-        let fields = CString::new("{}").expect("fields");
         let bytes = [1u8; 4];
         let mut out_json: *mut c_char = ptr::null_mut();
         // A dangling but non-null signer: every call below returns before
@@ -1512,54 +1551,6 @@ mod tests {
                 ),
             ] {
                 assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
-            }
-            for result in [
-                platform_wallet_contract_moderation_offer(0, ptr::null(), &mut out_json),
-                platform_wallet_contract_user_moderate(
-                    0,
-                    id.as_ptr(),
-                    id.as_ptr(),
-                    ptr::null(),
-                    0,
-                    ptr::null(),
-                    ptr::null(),
-                    ptr::null(),
-                    signer,
-                    &mut out_json,
-                ),
-                platform_wallet_contract_document_delete(
-                    0,
-                    id.as_ptr(),
-                    id.as_ptr(),
-                    name.as_ptr(),
-                    ptr::null(),
-                    ptr::null(),
-                    ptr::null(),
-                    signer,
-                    &mut out_json,
-                ),
-                platform_wallet_contract_document_change_fields(
-                    0,
-                    ptr::null(),
-                    id.as_ptr(),
-                    name.as_ptr(),
-                    id.as_ptr(),
-                    fields.as_ptr(),
-                    ptr::null(),
-                    ptr::null(),
-                    signer,
-                    &mut out_json,
-                ),
-                platform_wallet_contract_team_action_approve(
-                    0,
-                    id.as_ptr(),
-                    id.as_ptr(),
-                    ptr::null(),
-                    signer,
-                    &mut out_json,
-                ),
-            ] {
-                assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
             }
             let bad_action = platform_wallet_contract_user_moderate(
                 0,
@@ -1694,6 +1685,144 @@ mod tests {
             );
             assert!(out_json.is_null(), "call {index} left the out-param set");
         }
+    }
+
+    /// Every 32-byte id pointer but the optional reason document id is
+    /// refused with `ErrorNullPointer` when null, before it is read and
+    /// before the wallet is looked up, and leaves the JSON out-param null.
+    #[test]
+    fn should_refuse_each_null_id_pointer_as_a_null_pointer() {
+        let id = [1u8; 32];
+        let name = CString::new("post").expect("name");
+        let fields = CString::new("{}").expect("fields");
+        let bytes = [1u8; 4];
+        // A dangling but non-null signer: every call below returns before
+        // the signer is read.
+        let signer = ptr::NonNull::<SignerHandle>::dangling().as_ptr();
+        let stale = ptr::NonNull::<c_char>::dangling().as_ptr();
+        // Each export with its id pointers in order (moderator, contract,
+        // then target, document or action), any of which may be null.
+        type Call<'a> = &'a dyn Fn([*const u8; 3], *mut *mut c_char) -> PlatformWalletFFIResult;
+        let calls: [(&str, usize, Call); 7] = [
+            ("offer", 1, &|ids, out| unsafe {
+                platform_wallet_contract_moderation_offer(0, ids[0], out)
+            }),
+            ("moderate", 3, &|ids, out| unsafe {
+                platform_wallet_contract_user_moderate(
+                    0,
+                    ids[0],
+                    ids[1],
+                    ids[2],
+                    0,
+                    ptr::null(),
+                    ptr::null(),
+                    ptr::null(),
+                    signer,
+                    out,
+                )
+            }),
+            ("delete", 3, &|ids, out| unsafe {
+                platform_wallet_contract_document_delete(
+                    0,
+                    ids[0],
+                    ids[1],
+                    name.as_ptr(),
+                    ids[2],
+                    ptr::null(),
+                    ptr::null(),
+                    signer,
+                    out,
+                )
+            }),
+            ("restore", 2, &|ids, out| unsafe {
+                platform_wallet_contract_document_restore(
+                    0,
+                    ids[0],
+                    ids[1],
+                    name.as_ptr(),
+                    bytes.as_ptr(),
+                    bytes.len(),
+                    signer,
+                    out,
+                )
+            }),
+            ("change fields", 3, &|ids, out| unsafe {
+                platform_wallet_contract_document_change_fields(
+                    0,
+                    ids[0],
+                    ids[1],
+                    name.as_ptr(),
+                    ids[2],
+                    fields.as_ptr(),
+                    ptr::null(),
+                    ptr::null(),
+                    signer,
+                    out,
+                )
+            }),
+            ("propose", 3, &|ids, out| unsafe {
+                platform_wallet_contract_document_propose_settled_deletion(
+                    0,
+                    ids[0],
+                    ids[1],
+                    name.as_ptr(),
+                    ids[2],
+                    ptr::null(),
+                    ptr::null(),
+                    signer,
+                    out,
+                )
+            }),
+            ("approve", 3, &|ids, out| unsafe {
+                platform_wallet_contract_team_action_approve(0, ids[0], ids[1], ids[2], signer, out)
+            }),
+        ];
+        for (export, id_count, call) in calls {
+            for null_at in 0..id_count {
+                let mut ids = [id.as_ptr(); 3];
+                ids[null_at] = ptr::null();
+                let mut out_json = stale;
+                let result = call(ids, &mut out_json);
+                assert_eq!(
+                    result.code,
+                    PlatformWalletFFIResultCode::ErrorNullPointer,
+                    "{export}: id {null_at}"
+                );
+                assert!(out_json.is_null(), "{export}: id {null_at}");
+            }
+            // Every id given and the reason document id null: past the
+            // pointer checks, to the wallet lookup of handle 0.
+            let mut out_json = stale;
+            let result = call([id.as_ptr(); 3], &mut out_json);
+            assert_ne!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorNullPointer,
+                "{export}"
+            );
+            assert!(out_json.is_null(), "{export}");
+        }
+    }
+
+    /// A result that cannot be written as JSON reads as a serialization
+    /// failure, not an unknown error.
+    #[test]
+    fn should_report_a_result_it_cannot_write_as_a_serialization_error() {
+        let error = serde_json::from_str::<JsonValue>("{").expect_err("not JSON");
+        let result = serialization_error("the removal record", error);
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorSerialization);
+    }
+
+    /// A deletion whose read proves the document absent reaches the host as
+    /// `NotFound`, as a missing contract does.
+    #[test]
+    fn should_report_a_missing_document_as_not_found() {
+        let result: PlatformWalletFFIResult = PlatformWalletError::DocumentNotFound {
+            contract_id: id(1),
+            document_type_name: "post".to_string(),
+            document_id: id(3),
+        }
+        .into();
+        assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
     }
 
     /// Platform refuses a ban of an identity already banned; the host gets

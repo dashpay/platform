@@ -32,6 +32,9 @@ struct ContractDocumentModerationView: View {
     @State private var running: Operation?
     @State private var errorText: String?
     @State private var deletion: ContractDocumentDeletion?
+    /// Whether the archive kept the deleted document's bytes: the result of
+    /// ``ModeratedDocumentArchive/save(_:contractId:documentTypeName:documentId:)``.
+    @State private var keptForRestore = false
     @State private var fieldsChange: ContractDocumentFieldsChange?
     @State private var proposal: ContractTeamActionSignature?
 
@@ -206,9 +209,9 @@ struct ContractDocumentModerationView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                Text(deletion.documentData != nil
-                     ? "The document as it was is kept on this device for a restore."
-                     : "The document could not be read first, so it cannot be restored from here.")
+                Text(keptForRestore
+                     ? "The document as it was is kept on this device for restore."
+                     : "The document's bytes could not be kept on this device, so a restore will not be possible from this device.")
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
@@ -307,14 +310,14 @@ struct ContractDocumentModerationView: View {
                 reason: reason,
                 signer: signer
             )
-            if let data = result.documentData {
-                ModeratedDocumentArchive.save(
-                    data,
+            keptForRestore = result.documentData.map {
+                ModeratedDocumentArchive.standard.save(
+                    $0,
                     contractId: contractIdBase58,
                     documentTypeName: documentTypeName,
                     documentId: result.documentId
                 )
-            }
+            } ?? false
             deletion = result
         }
     }

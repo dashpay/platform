@@ -107,7 +107,8 @@ extension ManagedPlatformWallet {
     /// as it was just before, which ``restoreContractDocument`` takes back.
     ///
     /// - Throws: as ``moderateContractUser``; `PlatformWalletError.notFound`
-    ///   when Platform holds no such contract.
+    ///   when Platform holds no such contract, or the read before the
+    ///   deletion proves no such document (nothing is signed or broadcast).
     public func deleteContractDocument(
         moderatorIdentityId: Identifier,
         contractId: Identifier,

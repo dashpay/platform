@@ -165,7 +165,8 @@ pub struct DocumentTypeModerationOffer {
     /// (`moderatorAbilities.delete`, and for a seated team `deleteDocuments` on the type).
     pub delete: bool,
     /// The window in seconds after a document's last modification within which a moderator
-    /// deletes it alone (`moderatorAbilities.deleteWithin`); `None` when there is no limit.
+    /// deletes it alone (`moderatorAbilities.deleteWithin`); `None` when there is no limit, or
+    /// when [`Self::delete`] is not offered.
     pub delete_within_seconds: Option<u32>,
     /// Restore a document of the type a moderator deleted, within a week of its deletion:
     /// the type's deletions keep removal records (`moderatorAbilities.deleteKeepsRecord`) and
@@ -236,9 +237,8 @@ pub struct ContractDocumentDeletion {
     /// (`moderatorAbilities.deleteKeepsRecord: false`), whose proof shows the document gone.
     pub removal: Option<(ContractDocumentRemoval, BTreeMap<String, Value>)>,
     /// The document as it was just before the deletion, serialized under its type
-    /// (`Document::serialize`): what a restore takes back, byte for byte. `None` when it could
-    /// not be read before the deletion was sent.
-    pub document_bytes: Option<Vec<u8>>,
+    /// (`Document::serialize`): what a restore takes back, byte for byte.
+    pub document_bytes: Vec<u8>,
 }
 
 /// The removal record a restore marked, as its proof shows it.
@@ -331,18 +331,26 @@ impl IdentityWallet {
     /// wallet holds.
     ///
     /// Reads the contract, and the document as it stands, which it returns serialized so the
-    /// caller can keep it for a restore (the removal record holds only its hash). Then rs-sdk
-    /// signs, broadcasts and waits for the proved removal record, whose kept values are read
-    /// under the document type, or, on a type that keeps no record, the proved absence.
+    /// caller can keep it for a restore (the removal record holds only its hash). A document
+    /// that read proves absent is refused there, before anything is signed: sent, the deletion
+    /// would only be a paid refusal. Then rs-sdk signs, broadcasts and waits for the proved
+    /// removal record, whose kept values are read under the document type, or, on a type that
+    /// keeps no record, the proved absence.
+    ///
+    /// The read and the broadcast are not atomic. A document deleted between them is refused
+    /// by Platform with its consensus error, as before; one created between them under the id
+    /// read as absent is not deleted, and the moderator asks again. Both are accepted: the
+    /// window is one round trip, and neither loses anything.
     ///
     /// # Errors
     /// * [`PlatformWalletError::ContractNotFound`] when Platform holds no such contract;
     /// * [`PlatformWalletError::InvalidParameter`] when the contract has no such type;
     /// * [`PlatformWalletError::IdentityNotFound`] when this wallet holds no signing identity
     ///   `moderator_identity_id`;
+    /// * [`PlatformWalletError::DocumentNotFound`] when the read proves the document absent;
     /// * [`PlatformWalletError::Sdk`] for SDK and Platform failures, Platform's refusals with
     ///   their consensus error: a type moderators may not delete from, a signer that does not
-    ///   moderate the contract, a protected owner, a document that does not exist, one past
+    ///   moderate the contract, a protected owner, a document gone since the read, one past
     ///   the type's window (`DocumentModerationWindowElapsedError`).
     #[allow(clippy::too_many_arguments)]
     pub async fn delete_contract_document_with_signer<S>(
@@ -367,14 +375,16 @@ impl IdentityWallet {
                 ))
             })?
             .with_document_id(document_id);
-        let document_bytes = match Document::fetch(&self.sdk, query).await? {
-            Some(document) => Some(
-                document
-                    .serialize(document_type, &contract, self.sdk.version())
-                    .map_err(dash_sdk::Error::from)?,
-            ),
-            None => None,
-        };
+        let document = Document::fetch(&self.sdk, query).await?.ok_or_else(|| {
+            PlatformWalletError::DocumentNotFound {
+                contract_id: *contract_id,
+                document_type_name: document_type_name.to_string(),
+                document_id: *document_id,
+            }
+        })?;
+        let document_bytes = document
+            .serialize(document_type, &contract, self.sdk.version())
+            .map_err(dash_sdk::Error::from)?;
 
         let removal = moderator
             .delete_contract_document(
@@ -752,7 +762,12 @@ fn identity_offer(
                 } else {
                     BTreeSet::new()
                 };
-            let delete_within_seconds = document_type.documents_can_be_deleted_by_moderators_for();
+            // The window bounds a deletion, so it is offered only beside one
+            let delete_within_seconds = if deletes {
+                document_type.documents_can_be_deleted_by_moderators_for()
+            } else {
+                None
+            };
             let settled_deletion = if seated && deletes && delete_within_seconds.is_some() {
                 document_type.moderator_settled_deletion()
             } else {
@@ -784,11 +799,12 @@ mod tests {
     use super::super::signing_key::tests::{lock_checking_signer, wallet_with_signing_keys_on};
     use super::*;
     use crate::wallet::persister::NoPlatformPersistence;
-    use dash_sdk::dapi_grpc::platform::v0::GetDocumentsRequest;
+    use dash_sdk::dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, GetDocumentsRequest};
     use dash_sdk::error::StateTransitionBroadcastError;
     use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
     use dash_sdk::platform::Query;
     use dash_sdk::query_types::IdentityContractNonceFetcher;
+    use dash_sdk::Sdk;
     use dpp::consensus::state::contract_moderation::ContractUserAlreadyBannedError;
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
@@ -796,8 +812,10 @@ mod tests {
     use dpp::data_contract::config::moderation::ContractModerators;
     use dpp::data_contract::config::DataContractConfig;
     use dpp::data_contract::DataContractFactory;
+    use dpp::document::DocumentV0;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::platform_value::platform_value;
+    use dpp::platform_value::string_encoding::Encoding;
     use dpp::state_transition::contract_user_moderation_transition::methods::ContractUserModerationTransitionMethodsV0;
     use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationTransition;
     use dpp::version::PlatformVersion;
@@ -866,6 +884,41 @@ mod tests {
                     "text": { "type": "string", "maxLength": 50, "position": 0 },
                 },
                 "additionalProperties": false,
+            },
+        })
+    }
+
+    /// A `post` whose moderators change its `flag` text, its `curator` identifier and its
+    /// `digest` bytes.
+    fn changeable_schemas() -> Value {
+        platform_value!({
+            "post": {
+                "type": "object",
+                "properties": {
+                    "text": { "type": "string", "maxLength": 50, "position": 0 },
+                    "flag": { "type": "string", "maxLength": 20, "position": 1 },
+                    "curator": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 2,
+                    },
+                    "digest": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 4,
+                        "maxItems": 4,
+                        "position": 3,
+                    },
+                },
+                "additionalProperties": false,
+                "required": ["$createdAt", "$updatedAt"],
+                "moderatorAbilities": {
+                    "delete": true,
+                    "changeFields": ["flag", "curator", "digest"],
+                },
             },
         })
     }
@@ -1073,6 +1126,36 @@ mod tests {
         );
         assert!(post.settled_deletion.is_some());
         assert!(member.approve_team_actions);
+    }
+
+    /// A seated team that may change a type's fields but not delete its documents is offered
+    /// no deletion window: the window bounds a deletion it can not make.
+    #[test]
+    fn should_offer_no_deletion_window_to_a_team_that_may_not_delete() {
+        let contract = contract_of(
+            id(OWNER),
+            Some(elected(
+                InterimModerators::ContractOwner,
+                &[ModerationAbility::ChangeDocumentFields],
+            )),
+            settled_schemas(),
+        );
+        // `post` has a window, and its moderators may delete within it
+        assert_eq!(
+            contract
+                .document_type_for_name("post")
+                .expect("post")
+                .documents_can_be_deleted_by_moderators_for(),
+            Some(86400)
+        );
+        let team = seated(5, &[6]);
+        let offer = contract_moderation_offer(&contract, Some(&team), [id(6)]);
+        let post = of(&offer, 6).document_types.get("post").expect("post");
+        assert!(!post.delete);
+        assert_eq!(post.delete_within_seconds, None);
+        assert!(!post.restore);
+        assert_eq!(post.settled_deletion, None);
+        assert_eq!(post.changeable_fields, BTreeSet::from(["flag".to_string()]));
     }
 
     /// A seated team passed for a contract that is not elected is not read.
@@ -1304,22 +1387,50 @@ mod tests {
         );
     }
 
-    /// A ban reads the moderator's next contract nonce (the contract is resolved first for
-    /// the proof) and broadcasts the ban signed with the moderator's first CRITICAL key. The
-    /// mock answers no broadcast, so the ban fails after sending it.
-    #[tokio::test]
-    async fn should_broadcast_the_ban_signed_by_the_moderator() {
-        let contract = contract_of(
-            owner(),
-            Some(lists(ContractModerators::ContractOwner)),
-            schemas(),
-        );
-        let contract_id = contract.id();
-        let mut sdk = proposals_sdk();
-        sdk.mock()
-            .expect_fetch(contract_id, Some(contract))
+    /// The broadcast of `action` on `contract_id` as rs-sdk builds it for the wallet's
+    /// signing identity (`owner()`): signed with its first CRITICAL key at the nonce after
+    /// [`STORED_NONCE`].
+    async fn moderation_broadcast(
+        identity: &IdentityWallet,
+        contract_id: Identifier,
+        action: ContractUserModerationAction,
+    ) -> BroadcastStateTransitionRequest {
+        let moderator = identity
+            .wallet_signing_identity(&owner())
             .await
-            .expect("expects the contract read");
+            .expect("the moderator");
+        let first_key_id = *moderator
+            .public_keys()
+            .keys()
+            .next()
+            .expect("the moderator's first key");
+        ContractUserModerationTransition::try_from_identity_with_signer(
+            &moderator,
+            &first_key_id,
+            contract_id,
+            action,
+            STORED_NONCE + 1,
+            0,
+            &FixedSignatureSigner,
+            PlatformVersion::latest(),
+            None,
+        )
+        .await
+        .expect("the moderation")
+        .broadcast_request_for_state_transition()
+        .expect("serializes")
+    }
+
+    /// [`proposals_sdk`] answering a read of `contract` when given, and of the moderator's
+    /// contract nonce on `contract_id` with [`STORED_NONCE`]. It answers no broadcast.
+    async fn moderation_sdk(contract_id: Identifier, contract: Option<DataContract>) -> Sdk {
+        let mut sdk = proposals_sdk();
+        if let Some(contract) = contract {
+            sdk.mock()
+                .expect_fetch(contract_id, Some(contract))
+                .await
+                .expect("expects the contract read");
+        }
         sdk.mock()
             .expect_fetch(
                 (owner(), contract_id),
@@ -1327,6 +1438,47 @@ mod tests {
             )
             .await
             .expect("expects the nonce read");
+        sdk
+    }
+
+    /// The moderator-owned contract over [`schemas`].
+    fn owned_contract() -> DataContract {
+        contract_of(
+            owner(),
+            Some(lists(ContractModerators::ContractOwner)),
+            schemas(),
+        )
+    }
+
+    /// A `post` as it stands on Platform, owned by someone else.
+    fn stored_post() -> Document {
+        DocumentV0 {
+            id: id(3),
+            owner_id: id(2),
+            properties: BTreeMap::from([("text".to_string(), Value::Text("hello".to_string()))]),
+            revision: Some(1),
+            created_at: Some(1_700_000_000_000),
+            updated_at: Some(1_700_000_000_000),
+            ..Default::default()
+        }
+        .into()
+    }
+
+    /// The query a deletion reads the `post` [`stored_post`] names with.
+    fn post_query(contract: &DataContract) -> DocumentQuery {
+        DocumentQuery::new(Arc::new(contract.clone()), "post")
+            .expect("the post type")
+            .with_document_id(&id(3))
+    }
+
+    /// A ban reads the moderator's next contract nonce (the contract is resolved first for
+    /// the proof) and broadcasts the ban signed with the moderator's first CRITICAL key. The
+    /// mock answers no broadcast, so the ban fails after sending it.
+    #[tokio::test]
+    async fn should_broadcast_the_ban_signed_by_the_moderator() {
+        let contract = owned_contract();
+        let contract_id = contract.id();
+        let mut sdk = moderation_sdk(contract_id, Some(contract)).await;
         let wallet =
             wallet_with_signing_keys_on(sdk.clone(), Arc::new(NoPlatformPersistence)).await;
         let reason = ContractModerationReason::from_text("spam");
@@ -1346,35 +1498,15 @@ mod tests {
             .expect_err("the mock answers no broadcast");
         assert!(matches!(error, PlatformWalletError::Sdk(_)), "{error:?}");
 
-        let moderator = wallet
-            .identity()
-            .wallet_signing_identity(&owner())
-            .await
-            .expect("the moderator");
-        let first_key_id = *moderator
-            .public_keys()
-            .keys()
-            .next()
-            .expect("the moderator's first key");
-        let ban = ContractUserModerationTransition::try_from_identity_with_signer(
-            &moderator,
-            &first_key_id,
+        let broadcast = moderation_broadcast(
+            wallet.identity(),
             contract_id,
             ContractUserModerationAction::Ban {
                 identity_id: id(2),
                 reason,
             },
-            STORED_NONCE + 1,
-            0,
-            &FixedSignatureSigner,
-            PlatformVersion::latest(),
-            None,
         )
-        .await
-        .expect("the ban");
-        let broadcast = ban
-            .broadcast_request_for_state_transition()
-            .expect("serializes");
+        .await;
         assert!(
             sdk.mock().request_count(&broadcast).await > 0,
             "the ban must be broadcast at nonce {}",
@@ -1382,38 +1514,71 @@ mod tests {
         );
     }
 
-    /// A deletion reads the contract and the document as it stands (kept for a restore) before
-    /// it reads the moderator's nonce and broadcasts; a document Platform does not hold is
-    /// still sent, for Platform to refuse. The mock answers no broadcast.
+    /// A deletion reads the contract and the document as it stands (kept for a restore), then
+    /// reads the moderator's nonce and broadcasts the deletion. The mock answers no broadcast.
     #[tokio::test]
     async fn should_read_the_document_before_deleting_it() {
-        let contract = contract_of(
-            owner(),
-            Some(lists(ContractModerators::ContractOwner)),
-            schemas(),
-        );
+        let contract = owned_contract();
         let contract_id = contract.id();
-        let document_query = DocumentQuery::new(Arc::new(contract.clone()), "post")
-            .expect("the post type")
-            .with_document_id(&id(3));
+        let document_query = post_query(&contract);
+        let mut sdk = moderation_sdk(contract_id, Some(contract)).await;
+        sdk.mock()
+            .expect_fetch(document_query.clone(), Some(stored_post()))
+            .await
+            .expect("expects the document read");
+        let wallet =
+            wallet_with_signing_keys_on(sdk.clone(), Arc::new(NoPlatformPersistence)).await;
+        let reason = ContractModerationReason::from_text("spam");
+
+        let error = wallet
+            .identity()
+            .delete_contract_document_with_signer(
+                &owner(),
+                &contract_id,
+                "post",
+                &id(3),
+                reason.clone(),
+                &FixedSignatureSigner,
+            )
+            .await
+            .expect_err("the mock answers no broadcast");
+        assert!(matches!(error, PlatformWalletError::Sdk(_)), "{error:?}");
+        let request: GetDocumentsRequest =
+            Query::<GetDocumentsRequest>::query(&document_query, &sdk.query_settings())
+                .expect("encodes");
+        assert_eq!(sdk.mock().request_count(&request).await, 1);
+
+        let broadcast = moderation_broadcast(
+            wallet.identity(),
+            contract_id,
+            ContractUserModerationAction::DeleteDocument {
+                document_type_name: "post".to_string(),
+                document_id: id(3),
+                reason,
+            },
+        )
+        .await;
+        assert!(sdk.mock().request_count(&broadcast).await > 0);
+    }
+
+    /// A document the read proves absent is refused before the nonce is read or anything is
+    /// signed: sent, the deletion would only be a paid refusal. The mock answers no nonce
+    /// read, so reaching it would fail with an SDK error instead.
+    #[tokio::test]
+    async fn should_refuse_to_delete_a_document_the_read_proves_absent() {
+        let contract = owned_contract();
+        let contract_id = contract.id();
+        let document_query = post_query(&contract);
         let mut sdk = proposals_sdk();
         sdk.mock()
             .expect_fetch(contract_id, Some(contract))
             .await
             .expect("expects the contract read");
         sdk.mock()
-            .expect_fetch(document_query.clone(), None::<Document>)
+            .expect_fetch(document_query, None::<Document>)
             .await
             .expect("expects the document read");
-        sdk.mock()
-            .expect_fetch(
-                (owner(), contract_id),
-                Some(IdentityContractNonceFetcher(STORED_NONCE)),
-            )
-            .await
-            .expect("expects the nonce read");
-        let wallet =
-            wallet_with_signing_keys_on(sdk.clone(), Arc::new(NoPlatformPersistence)).await;
+        let wallet = wallet_with_signing_keys_on(sdk, Arc::new(NoPlatformPersistence)).await;
 
         let error = wallet
             .identity()
@@ -1426,12 +1591,200 @@ mod tests {
                 &FixedSignatureSigner,
             )
             .await
+            .expect_err("no such document");
+        assert!(
+            matches!(
+                error,
+                PlatformWalletError::DocumentNotFound {
+                    contract_id: missing_contract,
+                    ref document_type_name,
+                    document_id,
+                } if missing_contract == contract_id
+                    && document_type_name == "post"
+                    && document_id == id(3)
+            ),
+            "{error:?}"
+        );
+    }
+
+    /// A field change reads its fields as a document create reads its properties, under the
+    /// document type of the contract it reads: a base58 identifier and a hex byte array are
+    /// coerced, a `null` kept as the removal of the field, and each value signed in its
+    /// canonical form. The mock answers no broadcast.
+    #[tokio::test]
+    async fn should_broadcast_the_field_change_with_its_fields_read_under_the_type() {
+        let contract = contract_of(
+            owner(),
+            Some(lists(ContractModerators::ContractOwner)),
+            changeable_schemas(),
+        );
+        let contract_id = contract.id();
+        let mut sdk = moderation_sdk(contract_id, Some(contract)).await;
+        let wallet =
+            wallet_with_signing_keys_on(sdk.clone(), Arc::new(NoPlatformPersistence)).await;
+        let reason = ContractModerationReason::from_text("mislabelled");
+        let fields_json = format!(
+            "{{\"curator\": \"{}\", \"digest\": \"deadbeef\", \"flag\": null}}",
+            id(7).to_string(Encoding::Base58)
+        );
+
+        let error = wallet
+            .identity()
+            .change_contract_document_fields_with_signer(
+                &owner(),
+                &contract_id,
+                "post",
+                &id(3),
+                &fields_json,
+                reason.clone(),
+                &FixedSignatureSigner,
+            )
+            .await
             .expect_err("the mock answers no broadcast");
         assert!(matches!(error, PlatformWalletError::Sdk(_)), "{error:?}");
-        let request: GetDocumentsRequest =
-            Query::<GetDocumentsRequest>::query(&document_query, &sdk.query_settings())
-                .expect("encodes");
-        assert_eq!(sdk.mock().request_count(&request).await, 1);
+
+        let fields = BTreeMap::from([
+            ("curator".to_string(), Value::Identifier(id(7).to_buffer())),
+            (
+                "digest".to_string(),
+                Value::Bytes(vec![0xde, 0xad, 0xbe, 0xef]),
+            ),
+            ("flag".to_string(), Value::Null),
+        ])
+        .into_iter()
+        .map(|(name, value)| {
+            (
+                name,
+                ContractUserModerationAction::canonical_field_value(value),
+            )
+        })
+        .collect();
+        let broadcast = moderation_broadcast(
+            wallet.identity(),
+            contract_id,
+            ContractUserModerationAction::ChangeDocumentFields {
+                document_type_name: "post".to_string(),
+                document_id: id(3),
+                fields,
+                reason,
+            },
+        )
+        .await;
+        assert!(
+            sdk.mock().request_count(&broadcast).await > 0,
+            "the change must be broadcast with the coerced fields"
+        );
+    }
+
+    /// A restore decodes the kept bytes under the document type of the contract it reads and
+    /// broadcasts them, byte for byte, as the restored document. The mock answers no
+    /// broadcast.
+    #[tokio::test]
+    async fn should_broadcast_the_restore_of_the_kept_document() {
+        let contract = owned_contract();
+        let contract_id = contract.id();
+        let document_bytes = stored_post()
+            .serialize(
+                contract.document_type_for_name("post").expect("post"),
+                &contract,
+                PlatformVersion::latest(),
+            )
+            .expect("serializes");
+        let mut sdk = moderation_sdk(contract_id, Some(contract)).await;
+        let wallet =
+            wallet_with_signing_keys_on(sdk.clone(), Arc::new(NoPlatformPersistence)).await;
+
+        let error = wallet
+            .identity()
+            .restore_contract_document_with_signer(
+                &owner(),
+                &contract_id,
+                "post",
+                &document_bytes,
+                &FixedSignatureSigner,
+            )
+            .await
+            .expect_err("the mock answers no broadcast");
+        assert!(matches!(error, PlatformWalletError::Sdk(_)), "{error:?}");
+
+        let broadcast = moderation_broadcast(
+            wallet.identity(),
+            contract_id,
+            ContractUserModerationAction::RestoreDocument {
+                document_type_name: "post".to_string(),
+                document: document_bytes.into(),
+            },
+        )
+        .await;
+        assert!(sdk.mock().request_count(&broadcast).await > 0);
+    }
+
+    /// A settled deletion's proposal is verified by the signer's approval of the team action,
+    /// so it reads no contract: only the moderator's nonce, then the broadcast. The mock
+    /// answers no broadcast.
+    #[tokio::test]
+    async fn should_broadcast_the_proposal_of_a_settled_deletion() {
+        let contract_id = id(0xEE);
+        let mut sdk = moderation_sdk(contract_id, None).await;
+        let wallet =
+            wallet_with_signing_keys_on(sdk.clone(), Arc::new(NoPlatformPersistence)).await;
+        let reason = ContractModerationReason::from_text("spam").with_reason_document(id(8));
+
+        let error = wallet
+            .identity()
+            .propose_settled_contract_document_deletion_with_signer(
+                &owner(),
+                &contract_id,
+                "post",
+                &id(3),
+                reason.clone(),
+                &FixedSignatureSigner,
+            )
+            .await
+            .expect_err("the mock answers no broadcast");
+        assert!(matches!(error, PlatformWalletError::Sdk(_)), "{error:?}");
+
+        let broadcast = moderation_broadcast(
+            wallet.identity(),
+            contract_id,
+            ContractUserModerationAction::DeleteSettledDocument {
+                document_type_name: "post".to_string(),
+                document_id: id(3),
+                reason,
+            },
+        )
+        .await;
+        assert!(sdk.mock().request_count(&broadcast).await > 0);
+    }
+
+    /// An approval reads no contract either: only the moderator's nonce, then the broadcast.
+    /// The mock answers no broadcast.
+    #[tokio::test]
+    async fn should_broadcast_the_approval_of_a_team_action() {
+        let contract_id = id(0xEE);
+        let mut sdk = moderation_sdk(contract_id, None).await;
+        let wallet =
+            wallet_with_signing_keys_on(sdk.clone(), Arc::new(NoPlatformPersistence)).await;
+
+        let error = wallet
+            .identity()
+            .approve_contract_team_action_with_signer(
+                &owner(),
+                &contract_id,
+                &id(4),
+                &FixedSignatureSigner,
+            )
+            .await
+            .expect_err("the mock answers no broadcast");
+        assert!(matches!(error, PlatformWalletError::Sdk(_)), "{error:?}");
+
+        let broadcast = moderation_broadcast(
+            wallet.identity(),
+            contract_id,
+            ContractUserModerationAction::ApproveTeamAction { action_id: id(4) },
+        )
+        .await;
+        assert!(sdk.mock().request_count(&broadcast).await > 0);
     }
 
     /// A type the contract does not have is refused before anything is signed.

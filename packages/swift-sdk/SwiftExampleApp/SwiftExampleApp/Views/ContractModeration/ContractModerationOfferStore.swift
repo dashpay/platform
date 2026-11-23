@@ -1,3 +1,4 @@
+import CryptoKit
 import SwiftUI
 import SwiftDashSDK
 
@@ -124,30 +125,98 @@ final class ContractModerationOfferStore: ObservableObject {
 /// The documents this app deleted as a moderator, as they were just before
 /// (`ContractDocumentDeletion.documentData`), kept on this device so a
 /// moderator can restore one: Platform keeps only the document's hash.
-/// Stored in `UserDefaults` by contract, type and document id, and dropped
-/// once the document is restored.
-enum ModeratedDocumentArchive {
-    private static func key(contractId: String, documentTypeName: String, documentId: String) -> String {
-        "contractModeration.deletedDocument.\(contractId).\(documentTypeName).\(documentId)"
+///
+/// One file per document in its own folder under Application Support, named
+/// by the SHA-256 of its contract, type and document id, and dropped once the
+/// document is restored. Only the newest ``capacity`` files are kept: saving
+/// one more evicts the oldest. That bound is storage housekeeping for this
+/// app, not a rule about restores, which Platform alone decides.
+struct ModeratedDocumentArchive {
+    /// The folder the files live in.
+    let directory: URL
+    /// How many documents are kept at most.
+    let capacity: Int
+
+    /// The archive the app uses: `ModeratedDocuments` under Application
+    /// Support, the newest 200 documents.
+    static let standard = ModeratedDocumentArchive(
+        directory: URL.applicationSupportDirectory.appending(path: "ModeratedDocuments", directoryHint: .isDirectory),
+        capacity: 200
+    )
+
+    /// The file the document named by these ids is kept in.
+    func fileURL(contractId: String, documentTypeName: String, documentId: String) -> URL {
+        // NUL cannot appear in a base58 id or a document type name, so the
+        // joined string names exactly one triple
+        let name = [contractId, documentTypeName, documentId].joined(separator: "\u{0}")
+        let digest = SHA256.hash(data: Data(name.utf8))
+        let hex = digest.map { String(format: "%02x", $0) }.joined()
+        return directory.appending(path: "\(hex).document", directoryHint: .notDirectory)
     }
 
-    static func save(_ data: Data, contractId: String, documentTypeName: String, documentId: String) {
-        UserDefaults.standard.set(
-            data,
-            forKey: key(contractId: contractId, documentTypeName: documentTypeName, documentId: documentId)
+    /// Keep `data` for the document these ids name, written atomically and
+    /// read back. Returns whether it is now kept; `false` when it could not
+    /// be written or did not read back the same, in which case no file is
+    /// left for it.
+    @discardableResult
+    func save(_ data: Data, contractId: String, documentTypeName: String, documentId: String) -> Bool {
+        let url = fileURL(contractId: contractId, documentTypeName: documentTypeName, documentId: documentId)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try data.write(to: url, options: .atomic)
+            guard try Data(contentsOf: url) == data else {
+                try? FileManager.default.removeItem(at: url)
+                return false
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: url)
+            return false
+        }
+        evictOldest(keeping: url)
+        return true
+    }
+
+    /// The document these ids name as it was kept, `nil` when none is.
+    func load(contractId: String, documentTypeName: String, documentId: String) -> Data? {
+        try? Data(contentsOf: fileURL(contractId: contractId, documentTypeName: documentTypeName, documentId: documentId))
+    }
+
+    /// Whether a document is kept for these ids, without reading it.
+    func contains(contractId: String, documentTypeName: String, documentId: String) -> Bool {
+        FileManager.default.fileExists(
+            atPath: fileURL(contractId: contractId, documentTypeName: documentTypeName, documentId: documentId).path
         )
     }
 
-    static func load(contractId: String, documentTypeName: String, documentId: String) -> Data? {
-        UserDefaults.standard.data(
-            forKey: key(contractId: contractId, documentTypeName: documentTypeName, documentId: documentId)
+    /// Drop the document these ids name.
+    func remove(contractId: String, documentTypeName: String, documentId: String) {
+        try? FileManager.default.removeItem(
+            at: fileURL(contractId: contractId, documentTypeName: documentTypeName, documentId: documentId)
         )
     }
 
-    static func remove(contractId: String, documentTypeName: String, documentId: String) {
-        UserDefaults.standard.removeObject(
-            forKey: key(contractId: contractId, documentTypeName: documentTypeName, documentId: documentId)
-        )
+    /// Remove the oldest files past ``capacity``, never `kept`, the file
+    /// just saved. Oldest by modification date, then by name.
+    private func evictOldest(keeping kept: URL) {
+        let keys: [URLResourceKey] = [.contentModificationDateKey]
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: keys,
+            options: [.skipsHiddenFiles]
+        ), files.count > capacity else { return }
+        let dated = files.map { url -> (url: URL, date: Date) in
+            let date = (try? url.resourceValues(forKeys: Set(keys)).contentModificationDate) ?? .distantPast
+            return (url, date)
+        }
+        let oldestFirst = dated.sorted {
+            $0.date != $1.date ? $0.date < $1.date : $0.url.lastPathComponent < $1.url.lastPathComponent
+        }
+        var excess = files.count - capacity
+        for file in oldestFirst where excess > 0 {
+            guard file.url.standardizedFileURL != kept.standardizedFileURL else { continue }
+            try? FileManager.default.removeItem(at: file.url)
+            excess -= 1
+        }
     }
 }
 

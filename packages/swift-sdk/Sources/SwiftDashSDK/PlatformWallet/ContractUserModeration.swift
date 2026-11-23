@@ -170,8 +170,9 @@ public struct ContractDocumentDeletion: Codable, Sendable, Equatable {
     /// whose deletions keep no record.
     public let removal: ContractDocumentRemovalEntry?
     /// The document as it was just before the deletion, serialized under its
-    /// type, base64: what a restore takes back. `nil` when it could not be
-    /// read first.
+    /// type, base64: what a restore takes back. The wallet always writes it
+    /// (a document it cannot read is refused before the deletion is sent);
+    /// optional so JSON without it still decodes.
     public let documentBytes: String?
 
     /// ``documentBytes`` decoded, `nil` when absent or not base64.

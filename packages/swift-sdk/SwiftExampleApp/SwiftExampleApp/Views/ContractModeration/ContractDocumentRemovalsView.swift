@@ -179,11 +179,11 @@ struct ContractDocumentRemovalsView: View {
     private func restoreButton(for removal: ContractDocumentRemovalEntry) -> some View {
         if removal.restoredBy == nil,
            !offers.restorers(of: documentTypeName).isEmpty,
-           ModeratedDocumentArchive.load(
+           ModeratedDocumentArchive.standard.contains(
                contractId: contractId,
                documentTypeName: documentTypeName,
                documentId: removal.documentId
-           ) != nil {
+           ) {
             Button {
                 restoreCandidate = removal
             } label: {
@@ -205,7 +205,7 @@ struct ContractDocumentRemovalsView: View {
         guard let wallet = walletManager.wallet(for: moderator.walletId),
               let moderatorId = Data.identifier(fromBase58: moderator.identityIdBase58),
               let contractIdBytes = Data.identifier(fromBase58: contractId),
-              let bytes = ModeratedDocumentArchive.load(
+              let bytes = ModeratedDocumentArchive.standard.load(
                   contractId: contractId,
                   documentTypeName: documentTypeName,
                   documentId: removal.documentId
@@ -229,7 +229,7 @@ struct ContractDocumentRemovalsView: View {
                     documentBytes: bytes,
                     signer: signer
                 )
-                ModeratedDocumentArchive.remove(
+                ModeratedDocumentArchive.standard.remove(
                     contractId: contractIdBase58,
                     documentTypeName: typeName,
                     documentId: restored.documentId
