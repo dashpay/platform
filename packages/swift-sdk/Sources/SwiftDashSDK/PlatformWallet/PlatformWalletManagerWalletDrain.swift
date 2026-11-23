@@ -184,6 +184,22 @@ public enum WalletDrainRules {
         return PlatformWalletResult(result).isSuccess ? finished : false
     }
 
+    /// The state the host reports for an operation whose status read returned
+    /// `reported`. `hostCallActive` says whether one of the host's own drain
+    /// calls for the same operation id has not returned yet. Rust holds the
+    /// rule; a failed call or a state this build does not know returns
+    /// `.pending`.
+    public static func statusDuringHostCall(
+        _ reported: WalletDrainOutcome.State,
+        hostCallActive: Bool
+    ) -> WalletDrainOutcome.State {
+        var raw = WalletDrainOutcome.State.pending.rawValue
+        let result = platform_wallet_wallet_drain_status_during_host_call(
+            reported.rawValue, hostCallActive, &raw)
+        guard PlatformWalletResult(result).isSuccess else { return .pending }
+        return WalletDrainOutcome.State(rawValue: raw) ?? .pending
+    }
+
     /// Whether a drain may be started after a preview with `status`. Rust
     /// holds the rule; a failed call returns `false`.
     public static func previewAllowsStart(_ status: WalletDrainPreview.Status) -> Bool {
@@ -368,14 +384,14 @@ extension PlatformWalletManager {
         return callActive ? Self.walletDrainStatusDuringActiveCall(native: native) : native
     }
 
-    /// Rust owns the operation lifecycle, so the native snapshot is the answer
-    /// as soon as a detached execution has entered the Rust registry: an exact
-    /// outpoint, a durable completion of a repeated UUID and a read failure all
-    /// pass through. Only the interval before that, where Rust still reports
-    /// `notSent`, is reported as pending without an outpoint, so an in-flight
-    /// dispatch is never mistaken for "never sent".
+    /// The native snapshot as reported while one of this host's drain calls
+    /// for the same operation id is active. Rust decides the state
+    /// (`WalletDrainRules.statusDuringHostCall`); when it keeps the native
+    /// state, the snapshot is returned unchanged, otherwise the answered state
+    /// is returned with the native outpoint.
     nonisolated static func walletDrainStatusDuringActiveCall(native: WalletDrainOutcome) -> WalletDrainOutcome {
-        native.state == .notSent ? WalletDrainOutcome(state: .pending, outpoint: nil) : native
+        let state = WalletDrainRules.statusDuringHostCall(native.state, hostCallActive: true)
+        return state == native.state ? native : WalletDrainOutcome(state: state, outpoint: native.outpoint)
     }
 
     private func walletDrainReadPreflight(walletId: Data) throws {

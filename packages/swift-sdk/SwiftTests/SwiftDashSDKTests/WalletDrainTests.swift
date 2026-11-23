@@ -150,6 +150,24 @@ final class WalletDrainTests: XCTestCase {
         XCTAssertFalse(WalletDrainRules.attemptFinished(.notSent))
     }
 
+    func testShouldReportNotSentAsPendingOnlyWhileAHostCallIsActive() {
+        let cases: [(WalletDrainOutcome.State, Bool, WalletDrainOutcome.State)] = [
+            (.notSent, false, .notSent),
+            (.notSent, true, .pending),
+            (.pending, false, .pending),
+            (.pending, true, .pending),
+            (.completed, false, .completed),
+            (.completed, true, .completed),
+        ]
+        for (reported, active, expected) in cases {
+            XCTAssertEqual(
+                WalletDrainRules.statusDuringHostCall(reported, hostCallActive: active),
+                expected,
+                "\(reported), host call active: \(active)"
+            )
+        }
+    }
+
     func testShouldRefuseAStartOnlyWhenThePreviewHasNothingToShield() {
         XCTAssertTrue(WalletDrainRules.previewAllowsStart(.ready))
         XCTAssertTrue(WalletDrainRules.previewAllowsStart(.inputLimitMayBeExceeded))
