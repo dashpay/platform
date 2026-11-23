@@ -1872,13 +1872,17 @@ fn token_pool_paid_signing_version(
 /// tracked nor shown until a token pool note sync exists; spending it (a token
 /// shielded transfer or unshield) needs that sync too.
 ///
-/// Before any note is reserved or anything is asked of the network beyond the
-/// checks themselves, it refuses: a token count basic structure refuses; a
-/// network or SDK that does not serve type 28 (protocol version 14); an SDK
-/// whose version is not the network's ([`token_pool_paid_signing_version`]);
-/// a token without a shielded pool, or whose configuration cannot be read
-/// ([`ensure_token_has_shielded_pool`]); a purchase needing more notes than
-/// one transition can spend ([`max_token_purchase_fee_notes`]).
+/// Before any note is reserved it refuses: a token count basic structure
+/// refuses; a network or SDK that does not serve type 28 (protocol version
+/// 14); a token without a shielded pool, or whose configuration cannot be
+/// read ([`ensure_token_has_shielded_pool`]); an SDK whose version is not the
+/// network's ([`token_pool_paid_signing_version`]); a purchase needing more
+/// notes than one transition can spend ([`max_token_purchase_fee_notes`]).
+/// Every network read it makes (the activation check, the contract, the
+/// recorded anchor set) comes before the version check, as each verified
+/// answer can raise the network version the SDK knows: from the check on, only
+/// local work remains before the transition is built and signed at the
+/// version it chose.
 ///
 /// Waits for the token pool's state at the proof's block: type 28 proves the
 /// affected state only, so the strict wait would reject every success. That
@@ -1904,11 +1908,14 @@ pub async fn token_purchase_from_pool<S: ShieldedStore, P: OrchardProver>(
     // serves it, then build and sign at the network's version.
     sdk.ensure_protocol_requirement(token_purchase_from_shielded_pool_requirement())
         .await?;
+    ensure_token_has_shielded_pool(sdk, data_contract_id, token_contract_position).await?;
+    // Read before the notes are chosen: a spend's anchor must be one of these,
+    // and nothing after the version check below may ask the network.
+    let (recorded_anchors, anchors_height) = fetch_recorded_anchor_set(sdk).await?;
     let platform_version = token_pool_paid_signing_version(
         sdk.version(),
         sdk.protocol_version_info().verified_version,
     )?;
-    ensure_token_has_shielded_pool(sdk, data_contract_id, token_contract_position).await?;
     let max_notes = max_token_purchase_fee_notes(platform_version)
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
@@ -1941,8 +1948,9 @@ pub async fn token_purchase_from_pool<S: ShieldedStore, P: OrchardProver>(
 
     let mut pending_entry = None;
     let result = async {
-        let (spends, anchor, anchor_height) =
-            extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
+        let (spends, anchor) =
+            select_recorded_spends(&*store.read().await, &selected_notes, &recorded_anchors)?;
+        let anchor_height = anchors_height;
         let anchor_bytes = anchor.to_bytes();
 
         let (state_transition, fee_used) = build_token_purchase_from_shielded_pool_transition(
@@ -3764,9 +3772,7 @@ async fn extract_spends_and_recorded_anchor<S: ShieldedStore>(
     // Fetch the recorded anchor set OUTSIDE the store lock so the network
     // round-trip doesn't serialize with other store users, and so the lock is
     // held only for the mutually-consistent depth/witness probe below.
-    let (dash_sdk::query_types::ShieldedAnchors(recorded_anchors), metadata) =
-        dash_sdk::query_types::ShieldedAnchors::fetch_current_with_metadata(sdk).await?;
-    let recorded: HashSet<[u8; 32]> = recorded_anchors.into_iter().collect();
+    let (recorded, height) = fetch_recorded_anchor_set(sdk).await?;
 
     // Hold a single read lock across the whole probe so the checkpoint depths
     // and the per-note witnesses stay mutually consistent: a concurrent sync
@@ -3774,7 +3780,16 @@ async fn extract_spends_and_recorded_anchor<S: ShieldedStore>(
     // under us.
     let store = store.read().await;
     select_recorded_spends(&*store, notes, &recorded)
-        .map(|(spends, anchor)| (spends, anchor, metadata.height))
+        .map(|(spends, anchor)| (spends, anchor, height))
+}
+
+/// Platform's recorded anchor set, with the proved height it was read at.
+async fn fetch_recorded_anchor_set(
+    sdk: &Arc<dash_sdk::Sdk>,
+) -> Result<(HashSet<[u8; 32]>, u64), PlatformWalletError> {
+    let (dash_sdk::query_types::ShieldedAnchors(recorded_anchors), metadata) =
+        dash_sdk::query_types::ShieldedAnchors::fetch_current_with_metadata(sdk).await?;
+    Ok((recorded_anchors.into_iter().collect(), metadata.height))
 }
 
 /// Pick the shallowest checkpoint depth whose tree root is in `recorded`,
@@ -9304,6 +9319,7 @@ mod token_purchase_from_pool_tests {
     use dpp::shielded::SerializedAction;
     use dpp::state_transition::token_purchase_from_shielded_pool_transition::v0::TokenPurchaseFromShieldedPoolTransitionV0;
     use dpp::state_transition::token_purchase_from_shielded_pool_transition::TokenPurchaseFromShieldedPoolTransition;
+    use drive_proof_verifier::types::{NoParamQuery, ShieldedAnchors};
     use grovedb_commitment_tree::ProvingKey;
     use std::collections::BTreeMap;
 
@@ -9381,12 +9397,23 @@ mod token_purchase_from_pool_tests {
     }
 
     /// A mock SDK pinned at `version` that answers the token's contract with
-    /// `contract` (none: the fetch fails) and, given one, takes
+    /// `contract` (none: the fetch fails), answers the recorded anchor set
+    /// with an anchor no note's witness reaches, and, given one, takes
     /// `verified_network` as the network's verified version.
     async fn sdk_with(
         version: &'static PlatformVersion,
         contract: Option<DataContract>,
         verified_network: Option<u32>,
+    ) -> Arc<dash_sdk::Sdk> {
+        sdk_answering(version, contract, verified_network, true).await
+    }
+
+    /// [`sdk_with`], answering the recorded anchor set only when `anchors`.
+    async fn sdk_answering(
+        version: &'static PlatformVersion,
+        contract: Option<DataContract>,
+        verified_network: Option<u32>,
+        anchors: bool,
     ) -> Arc<dash_sdk::Sdk> {
         let mut sdk = SdkBuilder::new_mock()
             .with_network(Network::Testnet)
@@ -9402,6 +9429,12 @@ mod token_purchase_from_pool_tests {
                 .expect_fetch(Identifier::from(CONTRACT_ID), Some(contract))
                 .await
                 .expect("contract expectation");
+        }
+        if anchors {
+            sdk.mock()
+                .expect_fetch(NoParamQuery {}, Some(ShieldedAnchors(vec![[0xEE; 32]])))
+                .await
+                .expect("anchor set expectation");
         }
         Arc::new(sdk)
     }
@@ -9507,9 +9540,9 @@ mod token_purchase_from_pool_tests {
         assert_nothing_held(&store, &[short]).await;
     }
 
-    /// A purchase that fails before its record is saved (here the recorded
-    /// anchor set cannot be read) releases the notes it reserved and records
-    /// no activity.
+    /// A purchase that fails before its record is saved (here no witness of
+    /// the reserved note reaches a recorded anchor) releases the notes it
+    /// reserved and records no activity.
     #[tokio::test]
     async fn should_release_the_notes_of_a_token_purchase_that_fails_before_its_broadcast() {
         let sdk = pool_sdk().await;
@@ -9518,7 +9551,7 @@ mod token_purchase_from_pool_tests {
 
         purchase(&sdk, &store, 1_000_000)
             .await
-            .expect_err("the mock SDK has no recorded anchors to read");
+            .expect_err("the in-memory store holds no witnesses");
         assert_nothing_held(&store, &[funded]).await;
     }
 
@@ -9532,7 +9565,7 @@ mod token_purchase_from_pool_tests {
 
         let err = purchase(&sdk, &store, 0)
             .await
-            .expect_err("the mock SDK has no recorded anchors to read");
+            .expect_err("the in-memory store holds no witnesses");
         assert!(
             !matches!(err, PlatformWalletError::InvalidParameter(_)),
             "a zero price is allowed: {err:?}"
@@ -9570,7 +9603,7 @@ mod token_purchase_from_pool_tests {
 
         let err = purchase_count(&sdk, &store, MAX_DISTRIBUTION_PARAM, 1_000)
             .await
-            .expect_err("the mock SDK has no recorded anchors to read");
+            .expect_err("the in-memory store holds no witnesses");
         assert!(
             !matches!(err, PlatformWalletError::InvalidParameter(_)),
             "the largest count is allowed: {err:?}"
@@ -9595,7 +9628,7 @@ mod token_purchase_from_pool_tests {
         let store = store_with(&three).await;
         let err = purchase(&sdk, &store, 2 * value)
             .await
-            .expect_err("the mock SDK has no recorded anchors to read");
+            .expect_err("the in-memory store holds no witnesses");
         assert!(
             !matches!(err, PlatformWalletError::ShieldedTooManyNotes { .. }),
             "three notes fit: {err:?}"
@@ -9675,6 +9708,45 @@ mod token_purchase_from_pool_tests {
             );
             assert_nothing_held(&store, &[funded]).await;
         }
+    }
+
+    /// Every network read comes before the signing version check, as each
+    /// verified answer can raise the network version the SDK knows: with the
+    /// versions apart, a purchase whose anchor read fails reports that
+    /// failure, not the mismatch, and so reaches the check only after it.
+    /// Either way nothing is reserved, recorded or saved.
+    #[tokio::test]
+    async fn should_check_the_signing_version_after_every_network_read() {
+        let v14 = PlatformVersion::get(14).expect("protocol version 14");
+        let funded = note(1_000_000_000_000, 0);
+
+        let unread = sdk_answering(v14, Some(token_contract(true)), Some(15), false).await;
+        let store = store_with(std::slice::from_ref(&funded)).await;
+        let err = purchase(&unread, &store, 1_000)
+            .await
+            .expect_err("the anchor set does not read");
+        assert!(
+            matches!(err, PlatformWalletError::Sdk(_)),
+            "the anchor read runs before the version check: {err:?}"
+        );
+        assert_nothing_held(&store, std::slice::from_ref(&funded)).await;
+
+        let read = sdk_with(v14, Some(token_contract(true)), Some(15)).await;
+        let store = store_with(std::slice::from_ref(&funded)).await;
+        let err = purchase(&read, &store, 1_000)
+            .await
+            .expect_err("the versions differ after the reads");
+        assert!(
+            matches!(
+                err,
+                PlatformWalletError::ShieldedProtocolVersionMismatch {
+                    sdk_version: 14,
+                    network_version: 15,
+                }
+            ),
+            "got {err:?}"
+        );
+        assert_nothing_held(&store, &[funded]).await;
     }
 
     /// The signing version is the SDK's when a verified answer shows the
