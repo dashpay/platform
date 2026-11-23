@@ -15,12 +15,13 @@ A release goes through the seven steps of **Release flow** in order. A **stable*
 ### 1. Cut the release PR
 
 1. Confirm the target version and base branch with the user, and resolve the version the params will produce (dry-check with the [derivation rules](#-t-derivation-rules-from-bump_versionjs-when--v-is-not-given)).
-2. **Stable only:** work out now whether it will be the newest stable version. Steps 3 and 6 depend on it.
+2. **Stable only:** work out now whether it will be the newest stable version. Steps 3 and 6 depend on it. The newest stable version is the highest-numbered stable release published on GitHub; tags alone don't count, since a tag can exist without a release:
    ```sh
-   git fetch origin --tags
-   git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1
+   gh api --paginate 'repos/dashpay/platform/releases?per_page=100' \
+     --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
+     | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1.2,1n -k2,2n -k3,3n | tail -n 1
    ```
-   It is the newest stable version when it sorts above the tag this prints. A `5.0.4` cut after `5.1.0` is not. Run the same check again right before step 3 and step 6, since another release may come out in between.
+   It will be the newest stable version when it is numerically above the version this prints. A `5.0.4` cut after `5.1.0` is not. Run the same check again right before step 3, and step 6 runs it in its preflight, since another release may come out in between.
 3. Verify the [preconditions](#preconditions--check-before-running). If the tree is dirty, surface it and ask how to handle it; never fold stray files into the release.
 4. Run `yarn release -v=<target-version>`, only after the user's go: it pushes `release_<version>` and opens a PR against the branch you ran it from.
 5. Fix the [offset package versions](#known-gotcha-offset-package-versions-fix-on-the-pr) on the release branch and push.
@@ -114,9 +115,15 @@ scripts/release/sign_dashmate_checksums.sh --tag=v<version> --key=<full fingerpr
 
 First run the tag check from step 3: `v<version>` must still name the merge commit; if not, stop and ask the user. Merge the release **tag**, not the moving dev-branch tip, and push the merge commit straight to `master`. `master` has only ever moved by merge commits, never by a reset (`git log --first-parent origin/master`), and it cannot be force-pushed (`allow_force_pushes: false`; `required_linear_history: false` allows the merge commit), so a wrong merge stays. Run it in a temporary worktree:
 
+The preflight, all before asking for the go:
+
 ```sh
-git fetch origin --force --tags master
-git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1   # must print v<version>
+git fetch --no-tags origin master "+refs/tags/v<version>:refs/tags/v<version>"
+# the newest stable check from step 1: must print v<version>
+gh api --paginate 'repos/dashpay/platform/releases?per_page=100' \
+  --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
+  | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1.2,1n -k2,2n -k3,3n | tail -n 1
+git rev-parse "v<version>^{commit}"   # must print the merge commit
 git merge-base --is-ancestor v<version> origin/master && echo "v<version> is already in master"
 gh api repos/dashpay/platform/rulesets/501248 --jq .current_user_can_bypass   # must print "always"
 worktree="$(mktemp -d)" && echo "${worktree}"
@@ -125,7 +132,7 @@ git -C "${worktree:?}" merge --no-ff -m "Merge tag 'v<version>' into master" v<v
 git -C "${worktree:?}" diff --quiet v<version> HEAD && echo "the merge has exactly the tree of v<version>"
 ```
 
-Stop, and skip the rest of this step, if the first check prints another tag or the second says the tag is already in `master`. If the merge conflicts or the tree differs from the tag's, run `git -C <worktree> merge --abort`, remove the worktree and ask the user; don't push. Otherwise, after the user's go, push and remove the worktree, using the path printed above (a shell variable does not survive into a later command):
+Stop, and skip the rest of this step, if the newest stable check prints another version or the tag is already in `master`; stop and ask the user if the tag names another commit. If the merge conflicts or the tree differs from the tag's, run `git -C <worktree> merge --abort`, remove the worktree and ask the user; don't push. Otherwise, after the user's go, run the newest stable check once more, since another stable release may have come out while the user decided; push only if it still prints `v<version>`. Then remove the worktree. Use the path printed above: a shell variable does not survive into a later command.
 
 ```sh
 git -C <worktree> push origin HEAD:master
