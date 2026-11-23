@@ -2310,7 +2310,11 @@ class PlatformWalletManager(
      * Throws [DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed] once the
      * purchase may have reached a node and its result is not known: it may
      * already be on chain or may still execute, so the caller must NOT
-     * retry. Every other error means nothing was sent.
+     * retry. That is the error Rust reports this case with. A caller should
+     * read [DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed] and
+     * [DashSdkError.StateTransitionResultUnconfirmed] the same way, as the
+     * example app does for every shielded operation: they also say a result
+     * is not known. Any other error means nothing was sent.
      *
      * @param walletId the 32-byte wallet id.
      * @param contractId the 32-byte id of the token's data contract.
