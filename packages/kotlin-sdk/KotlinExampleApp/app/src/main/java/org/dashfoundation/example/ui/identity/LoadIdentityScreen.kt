@@ -57,6 +57,7 @@ import org.dashfoundation.dashsdk.voting.MasternodeVotingKeyRecords
 import org.dashfoundation.dashsdk.voting.MasternodeVotingKeyRules
 import org.dashfoundation.dashsdk.voting.MasternodeVotingKeySlot
 import org.dashfoundation.dashsdk.voting.MasternodeVotingLoad
+import org.dashfoundation.dashsdk.voting.MasternodeVotingLoadedIdentity
 import org.dashfoundation.dashsdk.voting.recordedVotingKey
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
@@ -321,6 +322,7 @@ fun LoadIdentityScreen(navController: NavHostController) {
                         val rowId: ByteArray
                         val json: String
                         var masternodeProTxHash: ByteArray? = null
+                        var masternodeRole: MasternodeVotingLoadedIdentity.Role? = null
                         var loadedVotingKeyCheck: MasternodeVotingKeyCheck? = null
                         if (type.isMasternode) {
                             // The typed id may be a stored shared masternode's voter identity
@@ -363,6 +365,7 @@ fun LoadIdentityScreen(navController: NavHostController) {
                                     rowId = load.identity.identityId
                                     json = load.identity.identityJson
                                     masternodeProTxHash = proTxHash
+                                    masternodeRole = load.identity.role
                                     loadedVotingKeyCheck = load.identity.votingKeyCheck
                                 }
                             }
@@ -421,6 +424,7 @@ fun LoadIdentityScreen(navController: NavHostController) {
                             votingKey = votingKey,
                             votingKeyCheck = votingKeyCheck,
                             masternodeProTxHash = masternodeProTxHash,
+                            masternodeRole = masternodeRole,
                         )
                         when (result) {
                             LoadSaveResult.Saved -> showIdentity(rowId)
@@ -745,6 +749,19 @@ internal interface VotingKeyEntries {
         identifier: String,
         check: MasternodeVotingKeyCheck,
     ): MasternodeVotingKeyCheckOutcome?
+
+    /**
+     * [MasternodeVotingKeyRecords.recordSiblings]: after the key [loadedIdentifier] names was
+     * stored for [loadedIdentityId] and checked, write on the other rows for the same
+     * masternode what Rust says for their keys.
+     */
+    suspend fun recordSiblings(
+        networkRaw: Int,
+        proTxHash: ByteArray,
+        loadedIdentityId: ByteArray,
+        loadedIdentifier: String,
+        check: MasternodeVotingKeyCheck,
+    )
 }
 
 /** [VotingKeyEntries] over [MasternodeVotingKeyStore] and the identities of [database]. */
@@ -776,6 +793,58 @@ internal class StoredVotingKeyEntries(
     ): MasternodeVotingKeyCheckOutcome? = MasternodeVotingKeyRecords.record(
         database, identityId, networkRaw, identifier, check,
     )
+
+    override suspend fun recordSiblings(
+        networkRaw: Int,
+        proTxHash: ByteArray,
+        loadedIdentityId: ByteArray,
+        loadedIdentifier: String,
+        check: MasternodeVotingKeyCheck,
+    ) {
+        MasternodeVotingKeyRecords.recordSiblings(
+            database, networkRaw, proTxHash, loadedIdentityId, loadedIdentifier, check,
+        )
+    }
+}
+
+/**
+ * Once the loaded key is in its slot, have Rust say what to record for the other voting keys
+ * this device stores for the same masternode (a rotation gives each voting address its own
+ * voter identity, so each has its own row), as Swift `LoadIdentityView.swift` does after #6145.
+ * Returns what the load must say when those rows could not be read or written, else null.
+ */
+private suspend fun recordSiblingVotingKeys(
+    entries: VotingKeyEntries,
+    networkRaw: Int,
+    proTxHash: ByteArray?,
+    loadedIdentityId: ByteArray,
+    loadedIdentifier: String,
+    check: MasternodeVotingKeyCheck?,
+): String? {
+    if (proTxHash == null || check == null) return null
+    return try {
+        entries.recordSiblings(networkRaw, proTxHash, loadedIdentityId, loadedIdentifier, check)
+        null
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        siblingVotingKeysNotMarkedMessage(e.message)
+    }
+}
+
+/** Shown when the other voting keys stored for the masternode could not be marked. */
+internal fun siblingVotingKeysNotMarkedMessage(reason: String?): String =
+    "Other voting keys stored for this masternode could not be read, so they were not marked " +
+        "to be checked again: ${reason ?: "unknown error"}. Load the identity again to retry."
+
+/** [result] with [note] about the masternode's other voting keys, when there is one. */
+private fun withSiblingNote(result: LoadSaveResult, note: String?): LoadSaveResult {
+    note ?: return result
+    return when (result) {
+        LoadSaveResult.Saved -> LoadSaveResult.SavedWithWarning("The identity was loaded. $note")
+        is LoadSaveResult.SavedWithWarning -> LoadSaveResult.SavedWithWarning("${result.message} $note")
+        else -> result
+    }
 }
 
 /**
@@ -951,10 +1020,12 @@ internal suspend fun saveLoadedIdentity(
     votingKey: ByteArray?,
     votingKeyCheck: MasternodeVotingKeyCheck? = null,
     masternodeProTxHash: ByteArray? = null,
+    masternodeRole: MasternodeVotingLoadedIdentity.Role? = null,
     nowMillis: Long = System.currentTimeMillis(),
 ): LoadSaveResult {
     saveLoadedFields(
-        dao, identityId, networkRaw, balance, alias, pickedType, typePicked, masternodeProTxHash, nowMillis,
+        dao, identityId, networkRaw, balance, alias, pickedType, typePicked, masternodeProTxHash,
+        masternodeRole, nowMillis,
     )
         ?.let { return it }
     if (votingKey == null) {
@@ -981,10 +1052,16 @@ internal suspend fun saveLoadedIdentity(
             val note = recordStoredVotingKeyCheck(
                 entries, identityId, networkRaw, assignment.identifier, votingKeyCheck,
             )
-            withVotingKeyNote(
-                savedAfterCleanup(entries, identityId, STALE_VOTING_KEY_NOT_REMOVED_MESSAGE),
-                lead = "The identity was loaded and its voting key was stored.",
-                note = note,
+            val siblingNote = recordSiblingVotingKeys(
+                entries, networkRaw, masternodeProTxHash, identityId, assignment.identifier, votingKeyCheck,
+            )
+            withSiblingNote(
+                withVotingKeyNote(
+                    savedAfterCleanup(entries, identityId, STALE_VOTING_KEY_NOT_REMOVED_MESSAGE),
+                    lead = "The identity was loaded and its voting key was stored.",
+                    note = note,
+                ),
+                siblingNote,
             )
         }
         is VotingKeyAssignment.Changed -> LoadSaveResult.Failed(IDENTITY_CHANGED_MESSAGE)
@@ -1001,6 +1078,7 @@ private suspend fun saveLoadedFields(
     pickedType: LoadIdentityType,
     typePicked: Boolean,
     masternodeProTxHash: ByteArray?,
+    masternodeRole: MasternodeVotingLoadedIdentity.Role?,
     nowMillis: Long,
 ): LoadSaveResult.Failed? {
     val existing = dao.getByIdentityId(identityId)
@@ -1019,6 +1097,7 @@ private suspend fun saveLoadedFields(
             networkRaw = networkRaw,
             // Written with the row, so an interrupted load never leaves it without one.
             masternodeProTxHash = masternodeProTxHash,
+            masternodeRoleRaw = masternodeRole?.raw,
         ),
     ) != -1L
     if (inserted) return null
@@ -1038,8 +1117,10 @@ private suspend fun saveLoadedFields(
         // since [current] was read.
         identityType = if (typePicked) pickedType.rawValue else null,
         // Null keeps the recorded pro_tx_hash.
-        masternodeProTxHash = masternodeProTxHash,
         nowMillis = nowMillis,
+        masternodeProTxHash = masternodeProTxHash,
+        // Null keeps the recorded role, as for the pro_tx_hash.
+        masternodeRoleRaw = masternodeRole?.raw,
     )
     return if (changed == 0) LoadSaveResult.Failed(IDENTITY_CHANGED_MESSAGE) else null
 }

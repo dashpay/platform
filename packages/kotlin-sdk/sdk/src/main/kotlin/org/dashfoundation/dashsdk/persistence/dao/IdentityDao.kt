@@ -96,6 +96,7 @@ interface IdentityDao {
             "alias = COALESCE(:alias, alias), " +
             "isLocal = :isLocal, identityType = COALESCE(:identityType, identityType), " +
             "masternodeProTxHash = COALESCE(:masternodeProTxHash, masternodeProTxHash), " +
+            "masternodeRoleRaw = COALESCE(:masternodeRoleRaw, masternodeRoleRaw), " +
             "lastUpdated = :nowMillis " +
             "WHERE identityId = :identityId AND networkRaw = :networkRaw"
     )
@@ -108,6 +109,7 @@ interface IdentityDao {
         identityType: String?,
         nowMillis: Long,
         masternodeProTxHash: ByteArray? = null,
+        masternodeRoleRaw: String? = null,
     ): Int
 
     /**
@@ -156,6 +158,24 @@ interface IdentityDao {
         message: String?,
         address: ByteArray,
     ): Int
+
+    /**
+     * The rows on [networkRaw] that record [proTxHash] as the masternode they vote for: one per
+     * voting key a rotation left on this device (Swift's `masternodeProTxHash == target` fetch).
+     */
+    @Query("SELECT * FROM identities WHERE networkRaw = :networkRaw AND masternodeProTxHash = :proTxHash")
+    suspend fun getByMasternodeProTxHash(networkRaw: Int, proTxHash: ByteArray): List<IdentityEntity>
+
+    /**
+     * Record the pro_tx_hash and role Rust's load rule resolved for a row stored before they
+     * were recorded, only while the row is on [networkRaw] and still records no pro_tx_hash.
+     * Returns the number of rows changed.
+     */
+    @Query(
+        "UPDATE identities SET masternodeProTxHash = :proTxHash, masternodeRoleRaw = :roleRaw " +
+            "WHERE identityId = :identityId AND networkRaw = :networkRaw AND masternodeProTxHash IS NULL"
+    )
+    suspend fun recordResolvedMasternode(identityId: ByteArray, networkRaw: Int, proTxHash: ByteArray, roleRaw: String): Int
 
     /** Mirror of `PersistentIdentity.updateBalance(in:identityId:balance:)`. */
     @Query(

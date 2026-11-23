@@ -214,9 +214,11 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * `identities.masternodeProTxHash` column, the wire-order pro_tx_hash a
  * masternode or evonode row votes for, kept apart from its identity id since
  * a masternode without an owner identity is stored under its voter identity
- * (Swift `PersistentIdentity.masternodeProTxHash`). NULL for every
- * pre-existing row, which could only have been loaded at its owner identity,
- * so its votes keep naming its id reversed until it is loaded again.
+ * (Swift `PersistentIdentity.masternodeProTxHash`), and the nullable
+ * `identities.masternodeRoleRaw` column, which of the masternode's
+ * identities the load rule returned (`"owner"` or `"voter"`). Both NULL for
+ * every pre-existing row: such a row is resolved through the load rule when
+ * it is next picked to vote.
  */
 @Database(
     version = 19,
@@ -828,6 +830,7 @@ abstract class DashDatabase : RoomDatabase() {
         val MIGRATION_18_19: Migration = object : Migration(18, 19) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `identities` ADD COLUMN `masternodeProTxHash` BLOB")
+                db.execSQL("ALTER TABLE `identities` ADD COLUMN `masternodeRoleRaw` TEXT")
             }
         }
 

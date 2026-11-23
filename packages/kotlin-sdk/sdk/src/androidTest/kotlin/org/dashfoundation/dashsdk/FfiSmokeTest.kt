@@ -472,6 +472,16 @@ class FfiSmokeTest {
         assertEquals(1, code { MasternodeVotingKeyNative.loadForVoting(0L, proTxHash, ByteArray(19)) })
         assertEquals(1, code { MasternodeVotingKeyNative.loadForVoting(0L, proTxHash, null) })
         assertEquals(1, code { MasternodeVotingKeyNative.loadForVoting(0L, proTxHash, address) })
+
+        // The sibling rule: a valid record of another key becomes undetermined; nothing else
+        // changes. Bad input is refused at the JNI boundary.
+        val sibling = MasternodeVotingKeyNative.siblingVotingKeyRecord(0, address, 1, otherAddress)
+        assertTrue(sibling!!, sibling.contains("\"check\":3"))
+        assertTrue(sibling, sibling.contains("04".repeat(20)))
+        val unchanged = MasternodeVotingKeyNative.siblingVotingKeyRecord(0, address, 1, address)
+        assertTrue(unchanged!!, unchanged.contains("\"record\":null"))
+        assertEquals(1, code { MasternodeVotingKeyNative.siblingVotingKeyRecord(3, address, 0, null) })
+        assertEquals(1, code { MasternodeVotingKeyNative.siblingVotingKeyRecord(0, ByteArray(19), 0, null) })
     }
 
     @Test

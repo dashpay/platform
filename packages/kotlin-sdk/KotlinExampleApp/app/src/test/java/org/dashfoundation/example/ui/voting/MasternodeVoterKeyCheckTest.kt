@@ -15,6 +15,8 @@ import org.dashfoundation.dashsdk.voting.MasternodeVotingKeyCheck
 import org.dashfoundation.dashsdk.voting.MasternodeVotingKeyCheckOutcome
 import org.dashfoundation.dashsdk.voting.MasternodeVotingKeyRules
 import org.dashfoundation.dashsdk.voting.MasternodeVotingKeySlot
+import org.dashfoundation.dashsdk.voting.MasternodeVotingLoad
+import org.dashfoundation.dashsdk.voting.MasternodeVotingLoadedIdentity
 import org.dashfoundation.dashsdk.voting.recordedVotingKey
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -293,6 +295,85 @@ class MasternodeVoterKeyCheckTest {
         assertEquals(refusal, effectiveRecord(voterKeyState(row(identifierA, undetermined)), unsaved))
     }
 
+    // ── A row stored before its pro_tx_hash was recorded (#6145) ────────
+
+    @Test
+    fun shouldHoldARowWhoseMasternodeIsNotKnownYet() {
+        rules.use = proven
+        assertEquals(
+            StoredVoterDecision.UNRESOLVED,
+            storedVoterDecision(voterKeyState(row(identifierA, resolved = false)), null, rules),
+        )
+    }
+
+    /**
+     * Picking it asks Rust's load rule about its id read as the pro_tx_hash; only an owner
+     * identity with that id and a verdict resolves it, and the pro_tx_hash, the role and the
+     * check are recorded.
+     */
+    @Test
+    fun shouldResolveALegacyRowAsTheOwnerIdentityOfItsId() = runBlocking {
+        db.identityDao().upsert(row(identifierA, resolved = false))
+        val recorded = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressA)
+        rules.outcome = MasternodeVotingKeyCheckOutcome(storeKey = true, record = recorded)
+        val asked = mutableListOf<ByteArray>()
+
+        val result = checkPickedVotingKeyIfNeeded(
+            database = db,
+            identityId = identityId,
+            networkRaw = testnet,
+            identifier = identifierA,
+            rules = rules,
+            check = { _, _ -> error("a legacy row is resolved through the load rule") },
+            resolve = { proTxHash, _ ->
+                asked += proTxHash
+                MasternodeVotingLoad.Loaded(
+                    MasternodeVotingLoadedIdentity(
+                        MasternodeVotingLoadedIdentity.Role.OWNER, identityId, "{}", MasternodeVotingKeyCheck.Valid,
+                    ),
+                )
+            },
+            stillCurrent = { true },
+        )
+
+        assertEquals(PickedVotingKeyCheck.Recorded(MasternodeVotingKeyCheck.Valid, recorded), result)
+        assertArrayEquals(identityId.reversedArray(), asked.single())
+        val stored = db.identityDao().getByIdentityId(identityId)!!
+        assertArrayEquals(identityId.reversedArray(), stored.masternodeProTxHash)
+        assertEquals("owner", stored.masternodeRoleRaw)
+        assertEquals(recorded, stored.recordedVotingKey)
+    }
+
+    /** A voter identity, another id, or a refusal does not resolve it, and nothing is written. */
+    @Test
+    fun shouldNotResolveALegacyRowRustDoesNotLoadAsItsOwner() = runBlocking {
+        db.identityDao().upsert(row(identifierA, resolved = false))
+        suspend fun resolveWith(load: MasternodeVotingLoad) = checkPickedVotingKeyIfNeeded(
+            database = db,
+            identityId = identityId,
+            networkRaw = testnet,
+            identifier = identifierA,
+            rules = rules,
+            check = { _, _ -> error("unused") },
+            resolve = { _, _ -> load },
+            stillCurrent = { true },
+        )
+        val voter = MasternodeVotingLoadedIdentity(
+            MasternodeVotingLoadedIdentity.Role.VOTER, identityId, "{}", MasternodeVotingKeyCheck.Valid,
+        )
+        val otherOwner = MasternodeVotingLoadedIdentity(
+            MasternodeVotingLoadedIdentity.Role.OWNER, ByteArray(32) { 9 }, "{}", MasternodeVotingKeyCheck.Valid,
+        )
+
+        assertTrue(resolveWith(MasternodeVotingLoad.Loaded(voter)) is PickedVotingKeyCheck.NotResolved)
+        assertTrue(resolveWith(MasternodeVotingLoad.Loaded(otherOwner)) is PickedVotingKeyCheck.NotResolved)
+        assertEquals(
+            PickedVotingKeyCheck.NotResolved("not a masternode"),
+            resolveWith(MasternodeVotingLoad.Refused("not a masternode")),
+        )
+        assertNull(db.identityDao().getByIdentityId(identityId)!!.masternodeProTxHash)
+    }
+
     /** A check started again for a re-picked key holds it until that check finishes. */
     @Test
     fun shouldHoldAReCheckedKeyUntilTheNewCheckFinishes() {
@@ -490,6 +571,7 @@ class MasternodeVoterKeyCheckTest {
         identifier: String?,
         recorded: MasternodeRecordedVotingKey? = null,
         id: Int = 0,
+        resolved: Boolean = true,
     ): IdentityEntity {
         val raw = when (recorded?.check) {
             null -> null
@@ -510,6 +592,12 @@ class MasternodeVoterKeyCheckTest {
             votingKeyCheckRaw = raw,
             votingKeyCheckMessage = message,
             votingKeyCheckAddress = recorded?.votingAddress?.bytes,
+            // A row loaded through the load rule records its pro_tx_hash (the owner's here).
+            masternodeProTxHash = if (resolved) {
+                (if (id == 0) identityId else ByteArray(32) { id.toByte() }).reversedArray()
+            } else {
+                null
+            },
         )
     }
 
@@ -538,5 +626,11 @@ class MasternodeVoterKeyCheckTest {
             usedWith += recorded to storedVotingAddress
             return use
         }
+
+        override fun siblingRecord(
+            loaded: MasternodeVotingKeyCheck,
+            loadedAddress: MasternodeVotingKeyAddress,
+            sibling: MasternodeRecordedVotingKey?,
+        ): MasternodeRecordedVotingKey? = null
     }
 }

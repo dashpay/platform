@@ -9,6 +9,8 @@ import org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Before
@@ -174,10 +176,90 @@ class MasternodeVotingKeyChecksTest {
     }
 
     @Test
-    fun shouldVoteWithTheRecordedProTxHashElseTheIdReversed() {
-        val proTxHash = ByteArray(32) { 0x5a }
-        assertArrayEquals(proTxHash, row(identifierA).copy(masternodeProTxHash = proTxHash).votingProTxHash)
-        assertArrayEquals(identityId.reversedArray(), row(identifierA).votingProTxHash)
+    fun shouldReadTheRecordedRoleAndRefuseAVoterAsARecipient() {
+        assertEquals(null, row(identifierA).masternodeRole)
+        assertEquals(MasternodeVotingLoadedIdentity.Role.OWNER, row(identifierA).copy(masternodeRoleRaw = "owner").masternodeRole)
+        assertTrue(row(identifierA).copy(masternodeRoleRaw = "voter").isVotingOnlyIdentity)
+        assertFalse(row(identifierA).copy(masternodeRoleRaw = "owner").isVotingOnlyIdentity)
+        assertFalse(row(identifierA).copy(masternodeRoleRaw = "something newer").isVotingOnlyIdentity)
+    }
+
+    /** The JSON `siblingVotingKeyRecord` writes; an undetermined record carries the recheck note. */
+    @Test
+    fun shouldDecodeASiblingRecord() {
+        assertNull(MasternodeVotingKeyCheckCodec.decodeSiblingRecord("""{"record":null}"""))
+        assertEquals(
+            MasternodeRecordedVotingKey(
+                MasternodeVotingKeyCheck.Undetermined(MasternodeVotingKeyCheckCodec.CHECK_AGAIN_AFTER_ANOTHER_KEY_MESSAGE),
+                addressA,
+            ),
+            MasternodeVotingKeyCheckCodec.decodeSiblingRecord(
+                """{"record":{"check":3,"votingAddress":"${"0a".repeat(20)}"}}""",
+            ),
+        )
+    }
+
+    /**
+     * The sibling write: every other row on the network for the same pro_tx_hash is given to
+     * Rust with its own record, and what Rust returns is written; the loaded row and rows on
+     * another network or for another masternode are left alone.
+     */
+    @Test
+    fun shouldRecordWhatRustSaysForTheOtherKeysOfTheMasternode() = runBlocking {
+        val proTxHash = ByteArray(32) { (0x40 + it).toByte() }
+        val siblingId = ByteArray(32) { 6 }
+        val siblingIdentifier = MasternodeVotingKeyStore.identifierFor(siblingId, addressB.bytes)
+        db.identityDao().upsert(row(identifierA).copy(masternodeProTxHash = proTxHash))
+        db.identityDao().upsert(
+            row(siblingIdentifier).copy(
+                identityId = siblingId,
+                masternodeProTxHash = proTxHash,
+                votingKeyCheckRaw = "valid",
+                votingKeyCheckAddress = addressB.bytes,
+            ),
+        )
+        db.identityDao().upsert(
+            row(null).copy(identityId = ByteArray(32) { 7 }, masternodeProTxHash = ByteArray(32) { 1 }),
+        )
+        val recheck = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Undetermined("again"), addressB)
+        val rules = SiblingRules(recheck)
+
+        val written = MasternodeVotingKeyRecords.recordSiblings(
+            db, testnet, proTxHash, identityId, identifierA, MasternodeVotingKeyCheck.Valid, rules,
+        )
+
+        assertEquals(1, written)
+        assertEquals(
+            listOf(MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressB)),
+            rules.asked,
+        )
+        assertEquals(recheck, db.identityDao().getByIdentityId(siblingId)!!.recordedVotingKey)
+        assertNull(db.identityDao().getByIdentityId(identityId)!!.votingKeyCheckRaw)
+    }
+
+    /** Answers [answer] for every sibling and records what it was given. */
+    private class SiblingRules(val answer: MasternodeRecordedVotingKey?) : MasternodeVotingKeyRules {
+        val asked = mutableListOf<MasternodeRecordedVotingKey?>()
+
+        override fun outcome(
+            check: MasternodeVotingKeyCheck,
+            votingAddress: MasternodeVotingKeyAddress,
+            slot: MasternodeVotingKeySlot,
+        ): MasternodeVotingKeyCheckOutcome = error("unused")
+
+        override fun use(
+            recorded: MasternodeRecordedVotingKey?,
+            storedVotingAddress: MasternodeVotingKeyAddress?,
+        ): MasternodeRecordedVotingKeyUse = error("unused")
+
+        override fun siblingRecord(
+            loaded: MasternodeVotingKeyCheck,
+            loadedAddress: MasternodeVotingKeyAddress,
+            sibling: MasternodeRecordedVotingKey?,
+        ): MasternodeRecordedVotingKey? {
+            asked += sibling
+            return answer
+        }
     }
 
     /** The C enum values the JNI exports read, as `rs-sdk-ffi`'s `voting_key_check.rs` declares. */
@@ -359,5 +441,11 @@ class MasternodeVotingKeyChecksTest {
             usedWith += recorded to storedVotingAddress
             return MasternodeRecordedVotingKeyUse(canVote = true, checkBeforeUse = true)
         }
+
+        override fun siblingRecord(
+            loaded: MasternodeVotingKeyCheck,
+            loadedAddress: MasternodeVotingKeyAddress,
+            sibling: MasternodeRecordedVotingKey?,
+        ): MasternodeRecordedVotingKey? = error("unused")
     }
 }

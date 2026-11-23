@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 19,
-    "identityHash": "b1eee114ee9bf58af09f780e656d568a",
+    "identityHash": "a81efd68510b01ebd1ad1cad891256d0",
     "entities": [
       {
         "tableName": "wallets",
@@ -1005,7 +1005,7 @@
       },
       {
         "tableName": "identities",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`identityId` BLOB NOT NULL, `balance` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `isLocal` INTEGER NOT NULL, `alias` TEXT, `dpnsName` TEXT, `mainDpnsName` TEXT, `identityType` TEXT NOT NULL, `votingPrivateKeyIdentifier` TEXT, `ownerPrivateKeyIdentifier` TEXT, `payoutPrivateKeyIdentifier` TEXT, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, `lastSyncedAt` INTEGER, `networkRaw` INTEGER NOT NULL, `walletId` BLOB, `identityIndex` INTEGER NOT NULL, `votingKeyCheckRaw` TEXT, `votingKeyCheckMessage` TEXT, `votingKeyCheckAddress` BLOB, `masternodeProTxHash` BLOB, PRIMARY KEY(`identityId`), FOREIGN KEY(`walletId`) REFERENCES `wallets`(`walletId`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`identityId` BLOB NOT NULL, `balance` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `isLocal` INTEGER NOT NULL, `alias` TEXT, `dpnsName` TEXT, `mainDpnsName` TEXT, `identityType` TEXT NOT NULL, `votingPrivateKeyIdentifier` TEXT, `ownerPrivateKeyIdentifier` TEXT, `payoutPrivateKeyIdentifier` TEXT, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, `lastSyncedAt` INTEGER, `networkRaw` INTEGER NOT NULL, `walletId` BLOB, `identityIndex` INTEGER NOT NULL, `votingKeyCheckRaw` TEXT, `votingKeyCheckMessage` TEXT, `votingKeyCheckAddress` BLOB, `masternodeProTxHash` BLOB, `masternodeRoleRaw` TEXT, PRIMARY KEY(`identityId`), FOREIGN KEY(`walletId`) REFERENCES `wallets`(`walletId`) ON UPDATE NO ACTION ON DELETE SET NULL )",
         "fields": [
           {
             "fieldPath": "identityId",
@@ -1120,6 +1120,11 @@
             "fieldPath": "masternodeProTxHash",
             "columnName": "masternodeProTxHash",
             "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "masternodeRoleRaw",
+            "columnName": "masternodeRoleRaw",
+            "affinity": "TEXT"
           }
         ],
         "primaryKey": {
@@ -4372,7 +4377,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b1eee114ee9bf58af09f780e656d568a')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'a81efd68510b01ebd1ad1cad891256d0')"
     ]
   }
 }

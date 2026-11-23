@@ -1,7 +1,6 @@
 package org.dashfoundation.example.ui.voting
 
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
-import org.dashfoundation.dashsdk.voting.votingProTxHash
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -32,6 +31,8 @@ class MasternodeVoterSectionTest {
         alias = alias,
         mainDpnsName = mainDpnsName,
         dpnsName = dpnsName,
+        // A row loaded through the load rule records the pro_tx_hash its votes name.
+        masternodeProTxHash = ByteArray(32) { (0x40 + it).toByte() },
     )
 
     @Test
@@ -84,9 +85,6 @@ class MasternodeVoterSectionTest {
         val wire = wireOrderProTxHash(identityId)
 
         assertArrayEquals(ByteArray(32) { (31 - it).toByte() }, wire)
-        // A row without a recorded pro_tx_hash (loaded before it was recorded) votes as its id
-        // reversed, which is all a row loaded at its owner identity could be.
-        assertArrayEquals(wire, identity(0).copy(identityId = identityId).votingProTxHash)
         assertArrayEquals(identityId, ByteArray(32) { it.toByte() }) // input untouched
     }
 
@@ -109,6 +107,23 @@ class MasternodeVoterSectionTest {
         )
         assertArrayEquals(proTxHash, voter!!.wireOrderProTxHash)
         assertArrayEquals(voterRow.identityId, (voter as MasternodeVoter.StoredKey).identityId)
+    }
+
+    /** #6145: a row with no recorded pro_tx_hash is never published on its id reversed. */
+    @Test
+    fun shouldNotPublishARowWhoseMasternodeIsNotKnownYet() {
+        val legacy = identity(1).copy(masternodeProTxHash = null)
+        assertNull(
+            publishVoter(
+                selected = legacy,
+                allowsTypedProTxHash = false,
+                useTypedProTxHash = false,
+                proTxHashText = "",
+                debugBuild = false,
+                useTypedCredentials = false,
+                votingKeyText = "",
+            ),
+        )
     }
 
     @Test
@@ -147,7 +162,7 @@ class MasternodeVoterSectionTest {
 
         val voter = publish(selected = selected)
 
-        assertEquals(MasternodeVoter.StoredKey(selected.identityId, selected.votingProTxHash, selected.votingPrivateKeyIdentifier!!), voter)
+        assertEquals(MasternodeVoter.StoredKey(selected.identityId, selected.masternodeProTxHash!!, selected.votingPrivateKeyIdentifier!!), voter)
         assertNull(publish(selected = null))
     }
 
@@ -161,7 +176,7 @@ class MasternodeVoterSectionTest {
 
         assertTrue(typed is MasternodeVoter.TypedProTxHash)
         assertArrayEquals(decodeTyped32Bytes(proTxHashHex), typed!!.wireOrderProTxHash)
-        assertEquals(MasternodeVoter.StoredKey(selected.identityId, selected.votingProTxHash, selected.votingPrivateKeyIdentifier!!), refused)
+        assertEquals(MasternodeVoter.StoredKey(selected.identityId, selected.masternodeProTxHash!!, selected.votingPrivateKeyIdentifier!!), refused)
         assertNull(malformed)
     }
 
@@ -177,7 +192,7 @@ class MasternodeVoterSectionTest {
             key = keyHex,
         )
 
-        assertEquals(MasternodeVoter.StoredKey(selected.identityId, selected.votingProTxHash, selected.votingPrivateKeyIdentifier!!), voter)
+        assertEquals(MasternodeVoter.StoredKey(selected.identityId, selected.masternodeProTxHash!!, selected.votingPrivateKeyIdentifier!!), voter)
     }
 
     @Test

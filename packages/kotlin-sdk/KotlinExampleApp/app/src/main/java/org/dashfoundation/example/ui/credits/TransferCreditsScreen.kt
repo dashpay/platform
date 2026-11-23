@@ -1,5 +1,7 @@
 package org.dashfoundation.example.ui.credits
 
+import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.dashfoundation.dashsdk.voting.isVotingOnlyIdentity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -145,6 +147,11 @@ fun TransferCreditsScreen(identityIdHex: String, navController: NavHostControlle
                 val generation = ++submitGeneration
                 scope.launch {
                     try {
+                        // A recipient this device knows as a masternode's voter identity holds
+                        // only a voting key, so credits sent to it could not be spent (Swift
+                        // `TransitionDetailView`, after #6145).
+                        votingOnlyRecipientRefusal(container.database.identityDao().getByIdentityId(toId))
+                            ?.let { throw IllegalArgumentException(it) }
                         mgr.identityCredits.transfer(
                             walletHandle = w.handle,
                             fromIdentityId = idBytes,
@@ -165,3 +172,16 @@ fun TransferCreditsScreen(identityIdHex: String, navController: NavHostControlle
 
     ErrorAlertDialog(message = error, onDismiss = { error = null })
 }
+
+/**
+ * Why credits cannot go to [recipient], the stored row of the typed recipient id: a masternode's
+ * voter identity holds only a voting key, so credits sent to it could not be spent. Null for any
+ * other recipient, stored or not.
+ */
+internal fun votingOnlyRecipientRefusal(recipient: IdentityEntity?): String? =
+    if (recipient?.isVotingOnlyIdentity == true) {
+        "The recipient is a masternode's voter identity, which holds only a voting key, so " +
+            "credits sent to it could not be spent."
+    } else {
+        null
+    }

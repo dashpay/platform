@@ -867,13 +867,14 @@ class DashDatabaseMigrationTest {
         val db = helper.runMigrationsAndValidate(dbName, 19, true, DashDatabase.MIGRATION_18_19)
 
         db.query(
-            "SELECT votingPrivateKeyIdentifier, votingKeyCheckRaw, masternodeProTxHash " +
-                "FROM identities WHERE identityId = x'04'",
+            "SELECT votingPrivateKeyIdentifier, votingKeyCheckRaw, masternodeProTxHash, " +
+                "masternodeRoleRaw FROM identities WHERE identityId = x'04'",
         ).use { c ->
             assertTrue(c.moveToFirst())
             assertEquals("mnvoting.x", c.getString(0))
             assertEquals("valid", c.getString(1))
             assertTrue("no pro_tx_hash is recorded before the migration", c.isNull(2))
+            assertTrue("no role is recorded before the migration", c.isNull(3))
         }
         db.close()
     }

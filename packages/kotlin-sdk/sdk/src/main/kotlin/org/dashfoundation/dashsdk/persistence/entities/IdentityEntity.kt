@@ -89,6 +89,13 @@ data class IdentityEntity(
      * Swift `PersistentIdentity.masternodeProTxHash`.
      */
     val masternodeProTxHash: ByteArray? = null,
+    /**
+     * Which of the masternode's identities Rust's load rule returned for this row: `"owner"` or
+     * `"voter"`; null for a row not loaded through it. A voter identity holds only a voting key.
+     * Read through `org.dashfoundation.dashsdk.voting.masternodeRole`. Swift
+     * `PersistentIdentity.masternodeRoleRaw`.
+     */
+    val masternodeRoleRaw: String? = null,
 ) {
     override fun equals(other: Any?): Boolean =
         other is IdentityEntity && identityId.contentEquals(other.identityId)

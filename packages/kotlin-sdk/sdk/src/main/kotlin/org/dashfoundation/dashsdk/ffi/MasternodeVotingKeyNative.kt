@@ -93,4 +93,20 @@ internal object MasternodeVotingKeyNative {
         wireOrderProTxHash: ByteArray,
         votingAddress: ByteArray?,
     ): String?
+
+    /**
+     * What a host records for another voting key it stores for the same masternode as a key it
+     * just loaded and checked. Bridges `dash_sdk_masternode_sibling_voting_key_record` (Swift
+     * `MasternodeVotingKeyCheck.siblingRecord(votingAddress:sibling:)`).
+     *
+     * @param loadedVerdict 0 Valid, 1 Invalid, 2 Undetermined: the loaded key's verdict.
+     * @param siblingCheck 0 none, 1 Valid, 2 Invalid, 3 Undetermined: the other key's record.
+     * @return `{"record":null|{"check":1|2|3,"votingAddress":hex}}`; null leaves it unchanged.
+     */
+    external fun siblingVotingKeyRecord(
+        loadedVerdict: Int,
+        loadedAddress: ByteArray,
+        siblingCheck: Int,
+        siblingVotingAddress: ByteArray?,
+    ): String?
 }

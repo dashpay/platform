@@ -45,7 +45,8 @@ import org.dashfoundation.dashsdk.voting.MasternodeVotingKeySlot
 import org.dashfoundation.dashsdk.voting.MasternodeVotingSigner
 import org.dashfoundation.dashsdk.voting.recordedVotingKey
 import org.dashfoundation.dashsdk.voting.storedVotingKeyAddress
-import org.dashfoundation.dashsdk.voting.votingProTxHash
+import org.dashfoundation.dashsdk.voting.MasternodeVotingLoad
+import org.dashfoundation.dashsdk.voting.MasternodeVotingLoadedIdentity
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.example.BuildConfig
 import org.dashfoundation.example.di.AppContainer
@@ -77,7 +78,7 @@ sealed interface MasternodeVoter {
     /**
      * A masternode or evonode identity loaded on this device with its voting key (Load
      * Identity), the pro_tx_hash (wire order) its row records for the masternode
-     * (`IdentityEntity.votingProTxHash`), and the identifier of the stored key the section
+     * (`IdentityEntity.masternodeProTxHash`), and the identifier of the stored key the section
      * decided on ([votingKeyIdentifier]). The id and the pro_tx_hash differ for a masternode
      * stored under its voter identity (a shared masternode, #6099). The vote signs with that
      * key only, so a key replaced after the pick is never used unchecked. The key stays in
@@ -150,7 +151,8 @@ sealed interface MasternodeVoter {
  * `rs-sdk-ffi/src/voting/masternode_vote.rs`). Load Identity converts the typed pro_tx_hash once
  * with it and stores the result on the row (Swift
  * `MasternodeVoter.wireOrderProTxHash(displayOrder:)`); votes read the row's
- * `IdentityEntity.votingProTxHash`.
+ * `IdentityEntity.masternodeProTxHash`, and a row stored before it was recorded is resolved
+ * through Rust's load rule when picked ([checkPickedVotingKeyIfNeeded]).
  */
 fun wireOrderProTxHash(displayOrderProTxHash: ByteArray): ByteArray = displayOrderProTxHash.reversedArray()
 
@@ -226,6 +228,8 @@ internal data class VoterKeyState(
     val identifier: String?,
     val storedAddress: MasternodeVotingKeyAddress?,
     val recorded: MasternodeRecordedVotingKey?,
+    /** The recorded wire-order pro_tx_hash, as hex; null until the masternode is known. */
+    val proTxHashHex: String? = null,
 )
 
 /** [VoterKeyState] of [identity]'s row. */
@@ -233,6 +237,7 @@ internal fun voterKeyState(identity: IdentityEntity): VoterKeyState = VoterKeySt
     identifier = identity.votingPrivateKeyIdentifier,
     storedAddress = identity.storedVotingKeyAddress,
     recorded = identity.recordedVotingKey,
+    proTxHashHex = identity.masternodeProTxHash?.toHex(),
 )
 
 /**
@@ -288,6 +293,12 @@ internal enum class StoredVoterDecision {
 
     /** The stored identifier cannot be read, so no key can be found to sign. */
     UNREADABLE,
+
+    /**
+     * The row records no pro_tx_hash (stored before it was recorded), so the masternode its
+     * votes would name is not known until the pick resolves it through Rust's load rule.
+     */
+    UNRESOLVED,
 }
 
 /**
@@ -309,6 +320,8 @@ internal fun storedVoterDecision(
     val keyUse = rules.use(effectiveRecord(state, picked), address)
     return when {
         !keyUse.canVote -> StoredVoterDecision.REFUSED
+        // Never derived from the row's id: Rust's load rule resolves it when picked.
+        state.proTxHashHex == null -> StoredVoterDecision.UNRESOLVED
         keyUse.checkBeforeUse && sameKey?.finished != true -> StoredVoterDecision.AWAITING_CHECK
         else -> StoredVoterDecision.CASTABLE
     }
@@ -353,6 +366,12 @@ internal sealed interface PickedVotingKeyCheck {
         val message: String,
         val unsaved: MasternodeRecordedVotingKey? = null,
     ) : PickedVotingKeyCheck
+
+    /**
+     * A row with no recorded pro_tx_hash could not be resolved as the owner identity of the
+     * masternode its id names: it cannot vote until it is loaded again. [message] says why.
+     */
+    data class NotResolved(val message: String) : PickedVotingKeyCheck
 }
 
 /**
@@ -371,6 +390,11 @@ internal sealed interface PickedVotingKeyCheck {
  *   checked away by a retry that learns nothing.
  * @param check the Platform check (`Voting.checkMasternodeVotingKey`) of the wire-order
  *   pro_tx_hash and the address.
+ * @param resolve Rust's load rule (`Voting.loadMasternodeForVoting`), for a row stored before
+ *   its pro_tx_hash was recorded: the only pro_tx_hash it can be the owner identity of is its
+ *   id as Platform names it, and Rust decides whether it is (Swift, after #6145). The resolved
+ *   pro_tx_hash and role are recorded with the answer; anything else is
+ *   [PickedVotingKeyCheck.NotResolved].
  * @param stillCurrent whether the answer may still be recorded: the same SDK and network.
  */
 internal suspend fun checkPickedVotingKeyIfNeeded(
@@ -381,6 +405,8 @@ internal suspend fun checkPickedVotingKeyIfNeeded(
     rules: MasternodeVotingKeyRules,
     known: MasternodeRecordedVotingKey? = null,
     check: suspend (wireOrderProTxHash: ByteArray, address: MasternodeVotingKeyAddress) -> MasternodeVotingKeyCheck,
+    resolve: suspend (wireOrderProTxHash: ByteArray, address: MasternodeVotingKeyAddress) -> MasternodeVotingLoad =
+        { _, _ -> MasternodeVotingLoad.Refused("This masternode is not known yet.") },
     stillCurrent: () -> Boolean,
 ): PickedVotingKeyCheck {
     val row = database.identityDao().getByIdentityId(identityId)
@@ -389,18 +415,59 @@ internal suspend fun checkPickedVotingKeyIfNeeded(
     // An identifier this build cannot read names no key to check; the picker shows it as such.
     val address = row.storedVotingKeyAddress ?: return PickedVotingKeyCheck.Dropped
     val recorded = known?.takeIf { it.votingAddress == address } ?: row.recordedVotingKey
-    if (!rules.use(recorded, address).checkBeforeUse) return PickedVotingKeyCheck.NotNeeded
+    val knownProTxHash = row.masternodeProTxHash
+    if (knownProTxHash != null && !rules.use(recorded, address).checkBeforeUse) {
+        return PickedVotingKeyCheck.NotNeeded
+    }
+    // Set when Rust's load rule resolved a row with no recorded pro_tx_hash as the owner
+    // identity of the pro_tx_hash its id names.
+    var resolvedProTxHash: ByteArray? = null
     val answer = try {
-        check(row.votingProTxHash, address)
+        if (knownProTxHash != null) {
+            check(knownProTxHash, address)
+        } else {
+            val candidate = wireOrderProTxHash(identityId)
+            val load = resolve(candidate, address)
+            val loaded = (load as? MasternodeVotingLoad.Loaded)?.identity
+            val loadedCheck = loaded?.votingKeyCheck
+            if (loaded == null || loaded.role != MasternodeVotingLoadedIdentity.Role.OWNER ||
+                !loaded.identityId.contentEquals(identityId) || loadedCheck == null
+            ) {
+                return PickedVotingKeyCheck.NotResolved(
+                    (load as? MasternodeVotingLoad.Refused)?.message
+                        ?: "Platform does not hold this identity as the owner identity of a masternode with this voting key.",
+                )
+            }
+            resolvedProTxHash = candidate
+            loadedCheck
+        }
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        // Nothing was learned about the key; the row is left as it was.
-        return PickedVotingKeyCheck.Failed("The voting key could not be checked: ${e.message}")
+        // Nothing was learned about the key; the row is left as it was. A row whose
+        // masternode is not known yet cannot vote either way.
+        val message = "The voting key could not be checked: ${e.message}"
+        return if (knownProTxHash == null) {
+            PickedVotingKeyCheck.NotResolved(message)
+        } else {
+            PickedVotingKeyCheck.Failed(message)
+        }
     }
     // A superseded check (the pick changed) is not recorded: it could finish out of order.
     currentCoroutineContext().ensureActive()
     if (!stillCurrent()) return PickedVotingKeyCheck.Dropped
+    resolvedProTxHash?.let { proTxHash ->
+        val written = try {
+            database.identityDao().recordResolvedMasternode(
+                identityId, networkRaw, proTxHash, MasternodeVotingLoadedIdentity.Role.OWNER.raw,
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return PickedVotingKeyCheck.NotResolved("The masternode could not be saved: ${e.message}")
+        }
+        if (written == 0) return PickedVotingKeyCheck.Dropped
+    }
     val outcome = try {
         MasternodeVotingKeyRecords.record(database, identityId, networkRaw, identifier, answer, rules)
     } catch (e: CancellationException) {
@@ -464,7 +531,9 @@ internal fun publishVoter(
     if (!selectedCastable) return null
     val identity = selected ?: return null
     val identifier = identity.votingPrivateKeyIdentifier ?: return null
-    return MasternodeVoter.StoredKey(identity.identityId, identity.votingProTxHash, identifier)
+    // Votes name the recorded pro_tx_hash only, never one derived from the row's id.
+    val proTxHash = identity.masternodeProTxHash ?: return null
+    return MasternodeVoter.StoredKey(identity.identityId, proTxHash, identifier)
 }
 
 // ── Casting ──────────────────────────────────────────────────────────
@@ -630,6 +699,8 @@ fun MasternodeVoterSection(
     // knows of each identity's key from a finished check, by identity hex.
     var checkingIdentityHex by remember { mutableStateOf<String?>(null) }
     var checkFailure by remember { mutableStateOf<Pair<String, String>?>(null) }
+    // Why a row with no recorded pro_tx_hash could not be resolved, by identity hex.
+    var notResolved by remember { mutableStateOf<Pair<String, String>?>(null) }
     var pickedChecks by remember { mutableStateOf<Map<String, PickedKeyCheckState>>(emptyMap()) }
 
     var selectedIdentityHex by rememberSaveable { mutableStateOf<String?>(null) }
@@ -716,6 +787,7 @@ fun MasternodeVoterSection(
                 rules = rules,
                 known = knownNow,
                 check = { proTxHash, address -> sdk.voting.checkMasternodeVotingKey(proTxHash, address) },
+                resolve = { proTxHash, address -> sdk.voting.loadMasternodeForVoting(proTxHash, address) },
                 stillCurrent = {
                     appState.sdk.value === sdk && appState.currentNetwork.value == networkAtStart
                 },
@@ -750,6 +822,7 @@ fun MasternodeVoterSection(
                 if (checkFailure?.first == hex) checkFailure = null
                 pickedChecks = pickedChecks + (hex to (previous ?: PickedKeyCheckState(identifier)).copy(finished = true))
             }
+            is PickedVotingKeyCheck.NotResolved -> notResolved = hex to result.message
             PickedVotingKeyCheck.Dropped -> Unit
         }
     }
@@ -803,6 +876,7 @@ fun MasternodeVoterSection(
                     keyUse = shownState?.storedAddress?.let { rules.use(shownState.recorded, it) },
                     isChecking = checkingIdentityHex == selectedHex,
                     failure = checkFailure?.takeIf { it.first == selectedHex }?.second,
+                    notResolved = notResolved?.takeIf { it.first == selectedHex }?.second,
                     modifier = Modifier.testTag("$testTagPrefix.voterKeyCheck"),
                 )
             }
@@ -898,9 +972,10 @@ private fun VotingKeyCheckStatus(
     keyUse: MasternodeRecordedVotingKeyUse?,
     isChecking: Boolean,
     failure: String?,
+    notResolved: String?,
     modifier: Modifier = Modifier,
 ) {
-    when (val text = votingKeyCheckStatusText(state, keyUse, isChecking, failure)) {
+    when (val text = votingKeyCheckStatusText(state, keyUse, isChecking, failure, notResolved)) {
         null -> Unit
         else -> Row(
             modifier = modifier,
@@ -932,10 +1007,16 @@ internal fun votingKeyCheckStatusText(
     keyUse: MasternodeRecordedVotingKeyUse?,
     isChecking: Boolean,
     failure: String?,
+    notResolved: String? = null,
 ): Pair<String, Boolean>? {
     if (isChecking) return "Checking the voting key..." to false
     if (state?.identifier != null && state.storedAddress == null) {
         return UNREADABLE_VOTING_KEY_IDENTIFIER_MESSAGE to true
+    }
+    // A row whose masternode is not known yet cannot vote (Swift `.notResolved`).
+    if (notResolved != null && state?.proTxHashHex == null) {
+        return "$notResolved Load the masternode again with its ProTxHash and voting key under " +
+            "Identities, Load Identity." to true
     }
     val recorded = state?.recorded?.check
     return when {

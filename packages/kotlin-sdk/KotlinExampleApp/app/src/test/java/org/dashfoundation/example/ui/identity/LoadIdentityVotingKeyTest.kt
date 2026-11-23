@@ -20,6 +20,8 @@ import org.dashfoundation.dashsdk.voting.MasternodeVotingKeyCheckOutcome
 import org.dashfoundation.dashsdk.voting.MasternodeVotingKeyRecords
 import org.dashfoundation.dashsdk.voting.MasternodeVotingKeyRules
 import org.dashfoundation.dashsdk.voting.MasternodeVotingKeySlot
+import org.dashfoundation.dashsdk.voting.isVotingOnlyIdentity
+import org.dashfoundation.dashsdk.voting.MasternodeVotingLoadedIdentity
 import org.dashfoundation.dashsdk.voting.recordedVotingKey
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -519,6 +521,7 @@ class LoadIdentityVotingKeyTest {
         votingKey: ByteArray? = null,
         votingKeyCheck: MasternodeVotingKeyCheck? = null,
         masternodeProTxHash: ByteArray? = null,
+        masternodeRole: MasternodeVotingLoadedIdentity.Role? = null,
     ): LoadSaveResult = saveLoadedIdentity(
         dao = dao,
         entries = entries,
@@ -531,6 +534,7 @@ class LoadIdentityVotingKeyTest {
         votingKey = votingKey,
         votingKeyCheck = votingKeyCheck,
         masternodeProTxHash = masternodeProTxHash,
+        masternodeRole = masternodeRole,
     )
 
     private fun row(
@@ -630,6 +634,23 @@ class LoadIdentityVotingKeyTest {
 
         /** When set, recording a check throws it. */
         var recordFailure: Exception? = null
+
+        /** When set, recording the siblings throws it. */
+        var siblingFailure: Exception? = null
+
+        /** The SDK's real sibling write over the in-memory database, with [rules]' answer. */
+        override suspend fun recordSiblings(
+            networkRaw: Int,
+            proTxHash: ByteArray,
+            loadedIdentityId: ByteArray,
+            loadedIdentifier: String,
+            check: MasternodeVotingKeyCheck,
+        ) {
+            siblingFailure?.let { throw it }
+            MasternodeVotingKeyRecords.recordSiblings(
+                db, networkRaw, proTxHash, loadedIdentityId, loadedIdentifier, check, rules,
+            )
+        }
     }
 
     /**
@@ -653,6 +674,15 @@ class LoadIdentityVotingKeyTest {
             recorded: MasternodeRecordedVotingKey?,
             storedVotingAddress: MasternodeVotingKeyAddress?,
         ): MasternodeRecordedVotingKeyUse = error("not used by Load Identity")
+
+        /** What [siblingRecord] returns for each sibling; null leaves it unchanged. */
+        var siblingAnswer: MasternodeRecordedVotingKey? = null
+
+        override fun siblingRecord(
+            loaded: MasternodeVotingKeyCheck,
+            loadedAddress: MasternodeVotingKeyAddress,
+            sibling: MasternodeRecordedVotingKey?,
+        ): MasternodeRecordedVotingKey? = siblingAnswer
     }
 
     // ── Checking the entered key against Platform (#6086) ───────────────
@@ -929,6 +959,81 @@ class LoadIdentityVotingKeyTest {
         assertTrue(proTxHash.contentEquals(loadTargetProTxHash(dao, typedId, testnet)))
         // A row on another network says nothing about this one.
         assertTrue(typedId.reversedArray().contentEquals(loadTargetProTxHash(dao, typedId, mainnet)))
+    }
+
+    /** #6145: the role Rust's load rule returned is recorded with the row's own fields. */
+    @Test
+    fun shouldRecordWhichIdentityTheLoadRuleReturned() = runBlocking {
+        val proTxHash = ByteArray(32) { (0x40 + it).toByte() }
+        save(
+            pickedType = LoadIdentityType.MASTERNODE,
+            typePicked = true,
+            masternodeProTxHash = proTxHash,
+            masternodeRole = MasternodeVotingLoadedIdentity.Role.VOTER,
+        )
+
+        val stored = dao.getByIdentityId(identityId)!!
+        assertEquals("voter", stored.masternodeRoleRaw)
+        assertTrue(stored.isVotingOnlyIdentity)
+        // A reload without a role keeps it.
+        save(pickedType = LoadIdentityType.MASTERNODE, typePicked = true)
+        assertEquals("voter", dao.getByIdentityId(identityId)!!.masternodeRoleRaw)
+    }
+
+    /**
+     * #6145: once the loaded key is stored, the other rows for the same masternode get what
+     * Rust's sibling rule says (a rotated-out key is marked to be checked again).
+     */
+    @Test
+    fun shouldMarkAnotherStoredKeyOfTheSameMasternodeToBeCheckedAgain() = runBlocking {
+        val proTxHash = ByteArray(32) { (0x40 + it).toByte() }
+        val siblingId = ByteArray(32) { 6 }
+        val siblingIdentifier = MasternodeVotingKeyStore.identifierFor(siblingId, keyB.copyOf(20))
+        dao.upsert(
+            IdentityEntity(
+                identityId = siblingId,
+                identityType = "Masternode",
+                votingPrivateKeyIdentifier = siblingIdentifier,
+                networkRaw = testnet,
+                votingKeyCheckRaw = "valid",
+                votingKeyCheckAddress = addressOf(keyB).bytes,
+                masternodeProTxHash = proTxHash,
+            ),
+        )
+        val recheck = MasternodeRecordedVotingKey(
+            MasternodeVotingKeyCheck.Undetermined("Another voting key was loaded"),
+            addressOf(keyB),
+        )
+        rules.siblingAnswer = recheck
+
+        val result = save(
+            pickedType = LoadIdentityType.MASTERNODE,
+            typePicked = true,
+            votingKey = keyA,
+            votingKeyCheck = MasternodeVotingKeyCheck.Valid,
+            masternodeProTxHash = proTxHash,
+        )
+
+        assertEquals(LoadSaveResult.Saved, result)
+        assertEquals(recheck, dao.getByIdentityId(siblingId)!!.recordedVotingKey)
+    }
+
+    @Test
+    fun shouldSayWhenTheOtherKeysOfTheMasternodeCouldNotBeMarked() = runBlocking {
+        entries.siblingFailure = IllegalStateException("disk full")
+
+        val result = save(
+            pickedType = LoadIdentityType.MASTERNODE,
+            typePicked = true,
+            votingKey = keyA,
+            votingKeyCheck = MasternodeVotingKeyCheck.Valid,
+            masternodeProTxHash = ByteArray(32) { 1 },
+        )
+
+        assertEquals(
+            LoadSaveResult.SavedWithWarning("The identity was loaded. " + siblingVotingKeysNotMarkedMessage("disk full")),
+            result,
+        )
     }
 
     @Test

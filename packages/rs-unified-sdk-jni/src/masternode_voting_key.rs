@@ -13,9 +13,11 @@
 //! * `recordedVotingKeyUse` -> `dash_sdk_masternode_recorded_voting_key_use`
 //!   (Swift `MasternodeRecordedVotingKeyUse.init(recorded:storedVotingAddress:)`),
 //! * `loadForVoting` -> `dash_sdk_masternode_load_for_voting`
-//!   (Swift `SDK.loadMasternodeForVoting(proTxHash:votingAddress:)`).
+//!   (Swift `SDK.loadMasternodeForVoting(proTxHash:votingAddress:)`),
+//! * `siblingVotingKeyRecord` -> `dash_sdk_masternode_sibling_voting_key_record`
+//!   (Swift `MasternodeVotingKeyCheck.siblingRecord(votingAddress:sibling:)`).
 //!
-//! rs-sdk decides every verdict and rule (`masternode_vote_keys.rs`); the last four exports
+//! rs-sdk decides every verdict and rule (`masternode_vote_keys.rs`); the last five exports
 //! only read JVM values into the C types, call the function and write its result as compact
 //! JSON. An enum value the C side does not declare is refused (code 1), never cast.
 //!
@@ -35,7 +37,7 @@ use jni::sys::{jbyteArray, jint, jlong, jstring};
 use jni::JNIEnv;
 use rs_sdk_ffi::{
     dash_sdk_masternode_check_voting_key, dash_sdk_masternode_load_for_voting,
-    dash_sdk_masternode_recorded_voting_key_use,
+    dash_sdk_masternode_recorded_voting_key_use, dash_sdk_masternode_sibling_voting_key_record,
     dash_sdk_masternode_voting_address_from_private_key,
     dash_sdk_masternode_voting_key_check_outcome, dash_sdk_private_key_bytes_from_text,
     dash_sdk_string_free, DashSDKMasternodeVotingLoad, DashSDKMasternodeVotingLoadKind,
@@ -253,14 +255,60 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_MasternodeVotingKeyNa
 }
 
 fn outcome_json(store_key: bool, record: DashSDKRecordedVotingKey) -> String {
-    let record = match record.check {
+    json!({ "storeKey": store_key, "record": record_value(record) }).to_string()
+}
+
+/// A C record as JSON: null for `None` (leave the record unchanged), else its check and
+/// address.
+fn record_value(record: DashSDKRecordedVotingKey) -> serde_json::Value {
+    match record.check {
         DashSDKRecordedVotingKeyCheck::None => serde_json::Value::Null,
         check => json!({
             "check": check as i32,
             "votingAddress": to_hex(&record.voting_address.bytes),
         }),
-    };
-    json!({ "storeKey": store_key, "record": record }).to_string()
+    }
+}
+
+/// What a host records for another voting key it stores for the same masternode as a key it
+/// just loaded and checked: `dash_sdk_masternode_sibling_voting_key_record`, which calls rs-sdk's
+/// `sibling_voting_key_record` (a valid record of a different key becomes undetermined, so it
+/// is checked again before it votes; nothing else changes).
+///
+/// `loadedVerdict` is the C verdict (0..2) of the loaded key, `loadedAddress` its 20-byte
+/// address; `siblingCheck` and `siblingVotingAddress` the record held for the other key, as for
+/// `votingKeyCheckOutcome`.
+///
+/// Returns `{"record":null|{"check":1|2|3,"votingAddress":hex}}`: null leaves the other key's
+/// record unchanged. Null after throwing code 1 for an undeclared enum value or an address of
+/// the wrong length.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_MasternodeVotingKeyNative_siblingVotingKeyRecord(
+    mut env: JNIEnv,
+    _class: JClass,
+    loaded_verdict: jint,
+    loaded_address: JByteArray,
+    sibling_check: jint,
+    sibling_voting_address: JByteArray,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(verdict) = verdict_from(env, loaded_verdict) else {
+            return ptr::null_mut();
+        };
+        let Some(address) = read_fixed_bytes::<20>(env, &loaded_address, "loadedAddress") else {
+            return ptr::null_mut();
+        };
+        let Some(sibling) = recorded_from(env, sibling_check, &sibling_voting_address, "sibling")
+        else {
+            return ptr::null_mut();
+        };
+        let record = dash_sdk_masternode_sibling_voting_key_record(
+            verdict,
+            DashSDKVotingAddress { bytes: address },
+            sibling,
+        );
+        new_jstring(env, json!({ "record": record_value(record) }).to_string())
+    })
 }
 
 /// How a host may use a stored voting key, from the record it holds:
@@ -628,6 +676,18 @@ mod tests {
                     "Long".to_string(),       // sdk
                     "ByteArray".to_string(),  // wire_order_pro_tx_hash
                     "ByteArray?".to_string(), // voting_address
+                ],
+                "String?".to_string()
+            )
+        );
+        assert_eq!(
+            kotlin_signature_in(MASTERNODE_VOTING_KEY_NATIVE_KT, "siblingVotingKeyRecord"),
+            (
+                vec![
+                    "Int".to_string(),        // loaded_verdict
+                    "ByteArray".to_string(),  // loaded_address
+                    "Int".to_string(),        // sibling_check
+                    "ByteArray?".to_string(), // sibling_voting_address
                 ],
                 "String?".to_string()
             )
