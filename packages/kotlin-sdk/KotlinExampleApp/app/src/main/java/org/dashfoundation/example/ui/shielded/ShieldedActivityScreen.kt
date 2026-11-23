@@ -33,13 +33,17 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedActivityEntity
 import org.dashfoundation.dashsdk.wallet.ShieldedIdentityDebitRecoveryRecord
 import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
+import org.dashfoundation.example.ui.tokens.displayLabel
 import org.dashfoundation.example.util.hexToBytes
+import org.dashfoundation.example.util.toHex
 
 /**
  * Shielded activity timeline for a wallet — port of `ShieldedActivityView.swift`.
@@ -69,12 +73,17 @@ fun ShieldedActivityScreen(walletIdHex: String, navController: NavHostController
     val history = remember(activity) { activity.filter { it.status != 0 } }
 
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
-    val identities by container.database.identityDao()
-        .observeByWallet(walletId)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+    // Projected to plain values: Room entities compare by id only, so a
+    // renamed identity would not recompose.
+    val identityLabels by remember(walletIdHex) {
+        container.database.identityDao().observeByWallet(walletId)
+            .map { rows -> rows.associate { it.identityId.toHex() to it.displayLabel() } }
+    }.collectAsStateWithLifecycle(initialValue = emptyMap())
     val syncState by container.shieldedService.state.collectAsStateWithLifecycle()
     val canResume by container.shieldedService.canResume.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+    // A build without shielded support has no sync export to call.
+    val hasShielded = remember { Sdk.hasShielded() }
 
     // Another wallet's or manager's records never show here: the state is
     // keyed by both. A newer read cancels the one in flight (the effect's
@@ -94,6 +103,11 @@ fun ShieldedActivityScreen(walletIdHex: String, navController: NavHostController
     }
     LaunchedEffect(manager, walletIdHex, readEpoch) {
         val activeManager = manager ?: return@LaunchedEffect
+        // Without shielded support there are no records and no export to read them.
+        if (!hasShielded) {
+            recovery = recovery.applySuccess(emptyList())
+            return@LaunchedEffect
+        }
         recovery = try {
             recovery.applySuccess(activeManager.shieldedIdentityDebitRecoveryRecords(walletId))
         } catch (e: CancellationException) {
@@ -131,9 +145,9 @@ fun ShieldedActivityScreen(walletIdHex: String, navController: NavHostController
             item {
                 IdentityShieldRecoverySection(
                     state = recovery,
-                    identities = identities,
+                    identityLabels = identityLabels,
                     isChecking = isChecking || syncState.isSyncing,
-                    canCheck = canResume && manager != null,
+                    canCheck = hasShielded && canResume && manager != null,
                     isAbandoning = isAbandoning,
                     checkStatus = checkStatus,
                     onCheckNow = {

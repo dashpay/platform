@@ -24,9 +24,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.wallet.ShieldedIdentityDebitRecoveryRecord
-import org.dashfoundation.example.util.formatCredits
 
 /**
  * "In-Progress Identity Shields": the durable Type 21 records Rust keeps,
@@ -39,7 +37,7 @@ import org.dashfoundation.example.util.formatCredits
 @Composable
 internal fun IdentityShieldRecoverySection(
     state: RecoveryReadState<ShieldedIdentityDebitRecoveryRecord>,
-    identities: List<IdentityEntity>,
+    identityLabels: Map<String, String>,
     isChecking: Boolean,
     canCheck: Boolean,
     isAbandoning: Boolean,
@@ -59,7 +57,7 @@ internal fun IdentityShieldRecoverySection(
             state.records.forEach { record ->
                 RecordRow(
                     record = record,
-                    identities = identities,
+                    identityLabels = identityLabels,
                     isAbandoning = isAbandoning,
                     onStop = { pendingStop = record },
                 )
@@ -118,7 +116,7 @@ internal fun IdentityShieldRecoverySection(
 @Composable
 private fun RecordRow(
     record: ShieldedIdentityDebitRecoveryRecord,
-    identities: List<IdentityEntity>,
+    identityLabels: Map<String, String>,
     isAbandoning: Boolean,
     onStop: () -> Unit,
 ) {
@@ -129,14 +127,14 @@ private fun RecordRow(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    IdentityShieldRecoveryDisplay.identityLabel(record.identityId, identities),
+                    IdentityShieldRecoveryDisplay.identityLabel(record.identityId, identityLabels),
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
                 record.amount?.let {
-                    Text(formatCredits(it), fontWeight = FontWeight.SemiBold)
+                    Text(formatCreditsExact(it), fontWeight = FontWeight.SemiBold)
                 }
             }
             Text(

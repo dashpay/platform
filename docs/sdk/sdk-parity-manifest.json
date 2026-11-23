@@ -3386,7 +3386,7 @@
           "sdk": "supported",
           "example_app": "partial",
           "restart": "required",
-          "reason": "PlatformWalletManager.shieldedShieldFromIdentity, shieldedIdentityDebitRecoveryRecords and abandonShieldedIdentityDebit bridge the FFI through JNI (FfiSmokeTest and ShieldedIdentityFlowsFfiTest bind them); code 58 maps to IdentityBalanceUnavailable. KotlinExampleApp's Send flow offers Send From > Identity for the wallet's own shielded address, reports a returned shield as submitted and one that may have gone through as not confirmed, and Shielded Activity lists In-Progress Identity Shields, read from Rust on open, on resume and after each shielded sync of the wallet, with Check Now and Stop Retrying after the warning (TEST_PLAN SH-21, SH-23; ShieldedIdentityFlowsTest). Unlike Swift the Send button does not compare amount plus fee with the identity's local balance; the wallet refuses a shortfall against the proved balance before saving anything. Partial because no emulator, network or process-death run is recorded; the records live only in Rust's store, whose reopen is covered by the shared test."
+          "reason": "PlatformWalletManager.shieldedShieldFromIdentity, shieldedIdentityDebitRecoveryRecords and abandonShieldedIdentityDebit bridge the FFI through JNI (FfiSmokeTest and ShieldedIdentityFlowsFfiTest bind them); code 58 maps to IdentityBalanceUnavailable. KotlinExampleApp's Send flow offers Send From > Identity for the wallet's own shielded address, runs the shield on an application-scoped coordinator so a rotation or tab switch can neither drop its outcome nor start a second one, reports a returned shield as submitted and one that may have gone through as not confirmed, and Shielded Activity lists In-Progress Identity Shields, read from Rust on open, on resume and after each shielded sync of the wallet, with Check Now and Stop Retrying after the warning (TEST_PLAN SH-21, SH-23; ShieldedIdentityFlowsTest). Unlike Swift the Send button does not compare amount plus fee with the identity's local balance; the wallet refuses a shortfall against the proved balance before saving anything. Partial because no emulator, network or process-death run is recorded; the records live only in Rust's store, whose reopen is covered by the shared test."
         }
       },
       "verification": [
@@ -3462,7 +3462,7 @@
           "host": "kotlin",
           "kind": "device",
           "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/ShieldedIdentityFlowsFfiTest.kt",
-          "id": "shouldListNoRecordsAndRefuseUnfundedRequestsAsNothingSent",
+          "id": "shouldListNoRecordsAndRefuseAnUnmanagedIdentityWithoutARecord",
           "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
           "covers_restart": false
         },
@@ -3494,8 +3494,8 @@
         "kotlin": {
           "sdk": "supported",
           "example_app": "partial",
-          "restart": "tested",
-          "reason": "PlatformWalletManager.shieldedIdentityTopUpFromPool bridges the FFI through JNI (FfiSmokeTest and ShieldedIdentityFlowsFfiTest bind it), and ShieldedDao.observePendingIdentityTopUps lists an identity's pending kind 9 rows, which a restart keeps (ShieldedIdentityTopUpActivityPersistenceTest). KotlinExampleApp's TopUpIdentityScreen offers Shielded Balance when account 0's spendable balance Rust announces is known and above zero, shows the minimum fee, keeps Back disabled while proving, reports a returned top-up as submitted and one that may have gone through without a retry, and lists Pending Shielded Top-Ups with Check Now (TEST_PLAN SH-22, SH-23; ShieldedIdentityFlowsTest). Unlike Swift the submit button does not compare amount plus fee with the balance; the wallet refuses a shortfall before building anything. Partial because no emulator or network run is recorded."
+          "restart": "required",
+          "reason": "PlatformWalletManager.shieldedIdentityTopUpFromPool bridges the FFI through JNI (FfiSmokeTest and ShieldedIdentityFlowsFfiTest bind it). KotlinExampleApp's TopUpIdentityScreen offers Shielded Balance when account 0's spendable balance Rust announces is known and above zero, keeps that source selected with submission off while it is unavailable, shows the minimum fee, and runs the payment on an application-scoped coordinator so a rotation or tab switch can neither drop its outcome nor start a second one; a returned top-up reads submitted and one that may have gone through offers no retry (TEST_PLAN SH-22, SH-23; ShieldedIdentityFlowsTest, ShieldedIdentityPaymentCoordinatorTest). Unlike Swift the submit button does not compare amount plus fee with the balance; the wallet refuses a shortfall before building anything. Restart is required: Pending Shielded Top-Ups reads the kind 9 activity projection (ShieldedDao.observePendingIdentityTopUps), not the wallet's retry record, and the two can disagree across a crash at the write boundary (#6058, which also covers Swift's TopUpIdentityView); no test or recorded run reopens both stores. Partial because no emulator or network run is recorded either."
         }
       },
       "verification": [
@@ -3549,7 +3549,7 @@
           "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/ShieldedIdentityTopUpActivityPersistenceTest.kt",
           "id": "shouldListAPendingShieldedTopUpOfTheIdentityAfterARestart",
           "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
-          "covers_restart": true
+          "covers_restart": false
         },
         {
           "host": "kotlin",
@@ -3563,7 +3563,7 @@
           "host": "kotlin",
           "kind": "device",
           "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/ShieldedIdentityFlowsFfiTest.kt",
-          "id": "shouldListNoRecordsAndRefuseUnfundedRequestsAsNothingSent",
+          "id": "shouldListNoRecordsAndRefuseAnUnmanagedIdentityWithoutARecord",
           "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
           "covers_restart": false
         }

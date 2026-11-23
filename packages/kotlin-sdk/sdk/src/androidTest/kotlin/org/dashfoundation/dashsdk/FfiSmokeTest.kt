@@ -29,6 +29,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -442,6 +443,8 @@ class FfiSmokeTest {
     @Test
     fun identityShieldAndShieldedTopUpSymbolsBindAndRejectInvalidInput() {
         NativeLoader.ensureLoaded()
+        // The four exports exist only in a build with shielded support.
+        assumeTrue("the native library has no shielded support", Sdk.hasShielded())
         val id = ByteArray(32) { 7 }
         val shortId = ByteArray(31)
         fun code(block: () -> Unit): Int = assertThrows(DashSDKException::class.java) { block() }.code

@@ -49,6 +49,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.credits.FundingInput
@@ -63,9 +64,11 @@ import org.dashfoundation.example.ui.components.SubmitButton
 import org.dashfoundation.example.ui.shielded.CheckNowStatus
 import org.dashfoundation.example.ui.shielded.CheckNowStatusLine
 import org.dashfoundation.example.ui.shielded.ShieldedTopUpMessages
-import org.dashfoundation.example.ui.shielded.ShieldedTopUpOutcome
-import org.dashfoundation.example.util.formatCredits
+import org.dashfoundation.example.ui.shielded.ShieldedPaymentOutcome
+import org.dashfoundation.example.ui.wallet.formatCreditsExact
+import org.dashfoundation.example.services.shielded.ShieldedIdentityPaymentCoordinator
 import org.dashfoundation.example.util.hexToBytes
+import org.dashfoundation.example.util.toHex
 import org.dashfoundation.example.util.parseDashToCredits
 
 /** Where a top-up is paid from. ← Swift `TopUpIdentityView.FundingSelection`. */
@@ -73,6 +76,13 @@ private enum class TopUpFunding(val label: String, val tag: String) {
     PLATFORM_ADDRESSES("Platform Addresses", "topup.fundingSource.platform"),
     SHIELDED("Shielded Balance", "topup.fundingSource.shielded"),
 }
+
+/**
+ * The identity as this screen shows it, copied out of Room: entities compare
+ * by id only, so a balance update would not recompose. A missing row has no
+ * balance rather than a zero one.
+ */
+private data class TopUpIdentityInfo(val label: String?, val balance: Long, val walletIdHex: String?)
 
 /** The shielded account a top-up spends from, as in Swift. */
 private const val SHIELDED_TOP_UP_ACCOUNT = 0
@@ -107,10 +117,13 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
-    val identity by container.database.identityDao()
-        .observeByIdentityId(idBytes)
-        .collectAsStateWithLifecycle(initialValue = null)
-    val identityWalletId = identity?.walletId
+    val identity by remember(identityIdHex) {
+        container.database.identityDao().observeByIdentityId(idBytes).map { row ->
+            row?.let { TopUpIdentityInfo(it.mainDpnsName, it.balance, it.walletId?.toHex()) }
+        }
+    }.collectAsStateWithLifecycle(initialValue = null)
+    val walletIdKey = identity?.walletIdHex
+    val identityWalletId = remember(walletIdKey) { walletIdKey?.hexToBytes() }
     val wallet = rememberManagedWalletFor(identityWalletId)
 
     var funding by rememberSaveable { mutableStateOf(TopUpFunding.PLATFORM_ADDRESSES) }
@@ -119,14 +132,12 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
     var error by remember { mutableStateOf<String?>(null) }
     var isSubmitting by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf(false) }
-    var shieldedOutcome by remember { mutableStateOf<ShieldedTopUpOutcome?>(null) }
     var checkStatus by remember { mutableStateOf<CheckNowStatus>(CheckNowStatus.Idle) }
     var isChecking by remember { mutableStateOf(false) }
 
     // Account 0's spendable shielded credits, as Rust announces them. Null
     // until known: an unknown balance never offers the shielded source.
     val hasShielded = remember { Sdk.hasShielded() }
-    val walletIdKey = identityWalletId?.joinToString("") { "%02x".format(it) }
     val shieldedSpendable by remember(walletIdKey, hasShielded) {
         if (identityWalletId != null && hasShielded) {
             container.shieldedService.accountBalance(identityWalletId, SHIELDED_TOP_UP_ACCOUNT)
@@ -161,13 +172,30 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
         }
     }
 
-    // A shielded selection the wallet can no longer fund is dropped, unless a
-    // submission still runs (← recheckShieldedSelection).
-    LaunchedEffect(offersShielded, isSubmitting) {
-        if (!isSubmitting && !offersShielded && funding == TopUpFunding.SHIELDED) {
-            funding = TopUpFunding.PLATFORM_ADDRESSES
-        }
+    // A shielded top-up runs on the application scope: a rotation or a tab
+    // switch while it proves neither drops its outcome nor allows a second
+    // one for this identity.
+    val paymentCoordinator = container.shieldedIdentityPaymentCoordinator
+    val paymentStates by paymentCoordinator.states.collectAsStateWithLifecycle()
+    val paymentKey = walletIdKey?.let {
+        ShieldedIdentityPaymentCoordinator.Key(
+            ShieldedIdentityPaymentCoordinator.Kind.TOP_UP_FROM_POOL,
+            it,
+            identityIdHex.lowercase(),
+        )
     }
+    val paymentState = paymentKey?.let { paymentStates[it] }
+    val topUpRunning = paymentState is ShieldedIdentityPaymentCoordinator.State.InFlight
+    // A running top-up keeps its source selected whatever the balance says.
+    LaunchedEffect(topUpRunning) {
+        if (topUpRunning) funding = TopUpFunding.SHIELDED
+    }
+    val isBusy = isSubmitting || topUpRunning
+
+    // A shielded selection the wallet cannot fund right now stays selected
+    // with submission off; the user switches source explicitly, so an amount
+    // meant for the pool never pays from Platform addresses.
+    val shieldedUnavailableWhileSelected = funding == TopUpFunding.SHIELDED && !offersShielded
 
     val amount = amountText.toLongOrNull()
     val shieldedAmount = parseDashToCredits(shieldedAmountText)
@@ -181,14 +209,14 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
 
     // The proof takes tens of seconds; leaving would drop its outcome and
     // allow a second top-up (← interactiveDismissDisabled).
-    BackHandler(enabled = isSubmitting) {}
+    BackHandler(enabled = isBusy) {}
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Top Up Identity") },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }, enabled = !isSubmitting) {
+                    IconButton(onClick = { navController.popBackStack() }, enabled = !isBusy) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -205,8 +233,11 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             FormSection(title = "Identity") {
-                LabeledContent("Identity", identity?.mainDpnsName ?: identityIdHex.take(16) + "…")
-                LabeledContent("Current balance", "${identity?.balance ?: 0} credits")
+                LabeledContent("Identity", identity?.label ?: identityIdHex.take(16) + "…")
+                LabeledContent(
+                    "Current balance",
+                    identity?.let { formatCreditsExact(it.balance) } ?: "Unknown",
+                )
             }
 
             val pendingSection: @Composable () -> Unit = {
@@ -214,7 +245,8 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
                     rows = pendingShieldedTopUps,
                     isChecking = isChecking,
                     checkStatus = checkStatus,
-                    canCheck = manager != null,
+                    // A build without shielded support has no sync export.
+                    canCheck = hasShielded && manager != null,
                     onCheckNow = {
                         val m = manager ?: return@PendingShieldedTopUpsSection
                         isChecking = true
@@ -235,34 +267,46 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
                 )
             }
 
-            val outcome = shieldedOutcome
-            if (outcome != null) {
+            val finished = paymentState as? ShieldedIdentityPaymentCoordinator.State.Done
+            if (finished != null && finished.outcome !is ShieldedPaymentOutcome.Failed && paymentKey != null) {
                 // Replaces the form so the user cannot resubmit straight away.
                 ShieldedOutcomeSection(
-                    outcome = outcome,
+                    outcome = finished.outcome,
+                    amount = finished.amount,
                     pendingListedBelow = pendingShieldedTopUps.isNotEmpty(),
-                    identityBalance = identity?.balance ?: 0L,
-                    onDone = { navController.popBackStack() },
+                    identityBalance = identity?.balance,
+                    onDone = {
+                        paymentCoordinator.acknowledge(paymentKey)
+                        navController.popBackStack()
+                    },
                 )
-                if (outcome is ShieldedTopUpOutcome.MayHaveGoneThrough) pendingSection()
+                if (finished.outcome == ShieldedPaymentOutcome.MayHaveGoneThrough) pendingSection()
                 return@Column
             }
 
             pendingSection()
 
             FormSection(title = "Funding") {
-                if (offersShielded) {
+                if (offersShielded || funding == TopUpFunding.SHIELDED) {
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                         TopUpFunding.entries.forEachIndexed { index, source ->
                             SegmentedButton(
                                 selected = funding == source,
                                 onClick = { funding = source },
-                                enabled = !isSubmitting,
+                                enabled = !isBusy,
                                 shape = SegmentedButtonDefaults.itemShape(index, TopUpFunding.entries.size),
                                 modifier = Modifier.testTag(source.tag),
                             ) { Text(source.label) }
                         }
                     }
+                }
+                if (shieldedUnavailableWhileSelected && !topUpRunning) {
+                    Text(
+                        "Shielded Balance is not available right now, so Top Up is off " +
+                            "until it is, or pick another source.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
                 if (hasShielded && shieldedSpendable == null) {
                     Text(
@@ -300,7 +344,7 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
                             onValueChange = { shieldedAmountText = it },
                             label = { Text("Amount (DASH)") },
                             singleLine = true,
-                            enabled = !isSubmitting,
+                            enabled = !isBusy,
                             isError = shieldedAmountText.isNotBlank() && shieldedAmount == null,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.fillMaxWidth().testTag("topup.shielded.amount"),
@@ -316,11 +360,11 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
                         }
                         LabeledContent(
                             "Spendable shielded",
-                            shieldedSpendable?.let { formatCredits(it) } ?: "Unknown",
+                            shieldedSpendable?.let { formatCreditsExact(it) } ?: "Unknown",
                         )
                         LabeledContent(
                             "Fee",
-                            shieldedTopUpFee?.let { "at least " + formatCredits(it) } ?: "Not available",
+                            shieldedTopUpFee?.let { "at least " + formatCreditsExact(it) } ?: "Not available",
                             modifier = Modifier.testTag("topup.shielded.fee"),
                         )
                         Text(
@@ -335,12 +379,12 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
             SubmitButton(
                 text = when {
                     done -> "Topped Up"
-                    isSubmitting && funding == TopUpFunding.SHIELDED ->
+                    topUpRunning ->
                         "Building proof, this takes tens of seconds…"
                     else -> "Top Up Balance"
                 },
-                isLoading = isSubmitting,
-                enabled = canSubmit && !done && !isSubmitting,
+                isLoading = isBusy,
+                enabled = canSubmit && !done && !isBusy,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(
@@ -384,6 +428,7 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
                         // Captured at the tap, so later edits cannot change
                         // what is sent (← ShieldedTopUpRequest.capture).
                         val walletId = identityWalletId ?: return@SubmitButton
+                        val key = paymentKey ?: return@SubmitButton
                         val credits = shieldedAmount ?: return@SubmitButton
                         // Set before the async call so a second tap cannot
                         // start another top-up.
@@ -400,20 +445,26 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
                                         "so nothing was sent."
                                     return@launch
                                 }
-                                val result = try {
-                                    mgr.shieldedIdentityTopUpFromPool(
-                                        walletId = walletId,
-                                        identityId = idBytes,
-                                        amount = credits,
-                                        account = SHIELDED_TOP_UP_ACCOUNT,
-                                    )
-                                    ShieldedTopUpMessages.outcome(credits, null)
-                                } catch (t: Throwable) {
-                                    ShieldedTopUpMessages.outcome(credits, t)
+                                // The call and its outcome belong to the
+                                // coordinator, not to this screen.
+                                val started = paymentCoordinator.start(key, credits) {
+                                    try {
+                                        mgr.shieldedIdentityTopUpFromPool(
+                                            walletId = walletId,
+                                            identityId = idBytes,
+                                            amount = credits,
+                                            account = SHIELDED_TOP_UP_ACCOUNT,
+                                        )
+                                        ShieldedTopUpMessages.outcome(null)
+                                    } catch (e: Exception) {
+                                        ShieldedTopUpMessages.outcome(e)
+                                    }
                                 }
-                                result
-                                    .onSuccess { shieldedOutcome = it }
-                                    .onFailure { error = it.message }
+                                if (!started) {
+                                    error = "A top-up of this identity from the shielded pool is " +
+                                        "still running, or its outcome was not shown yet. " +
+                                        "Nothing new was sent."
+                                }
                             } finally {
                                 isSubmitting = false
                             }
@@ -429,6 +480,16 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
         title = "Could not top up identity",
         onDismiss = { error = null },
     )
+    // A refused or failed shielded top-up, held by the coordinator until shown.
+    val failed = (paymentState as? ShieldedIdentityPaymentCoordinator.State.Done)
+        ?.outcome as? ShieldedPaymentOutcome.Failed
+    if (failed != null && paymentKey != null) {
+        ErrorAlertDialog(
+            message = failed.message,
+            title = "Could not top up identity",
+            onDismiss = { paymentCoordinator.acknowledge(paymentKey) },
+        )
+    }
 }
 
 /**
@@ -439,9 +500,10 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
  */
 @Composable
 private fun ShieldedOutcomeSection(
-    outcome: ShieldedTopUpOutcome,
+    outcome: ShieldedPaymentOutcome,
+    amount: Long,
     pendingListedBelow: Boolean,
-    identityBalance: Long,
+    identityBalance: Long?,
     onDone: () -> Unit,
 ) {
     FormSection(title = "Result") {
@@ -450,21 +512,22 @@ private fun ShieldedOutcomeSection(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             when (outcome) {
-                is ShieldedTopUpOutcome.Completed -> {
+                is ShieldedPaymentOutcome.Failed -> Unit
+                ShieldedPaymentOutcome.Submitted -> {
                     Text(
                         "Top-up submitted",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.primary,
                     )
-                    Text(ShieldedTopUpMessages.completedText(outcome.amount))
+                    Text(ShieldedTopUpMessages.completedText(amount))
                 }
-                is ShieldedTopUpOutcome.MayHaveGoneThrough -> {
+                ShieldedPaymentOutcome.MayHaveGoneThrough -> {
                     Text(
                         "May have gone through",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.tertiary,
                     )
-                    Text(ShieldedTopUpMessages.unconfirmedText(outcome.amount, pendingListedBelow))
+                    Text(ShieldedTopUpMessages.unconfirmedText(amount, pendingListedBelow))
                 }
             }
             Row {
@@ -472,7 +535,10 @@ private fun ShieldedOutcomeSection(
                     "Last saved identity balance: ",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Text(formatCredits(identityBalance), fontWeight = FontWeight.Medium)
+                Text(
+                    identityBalance?.let { formatCreditsExact(it) } ?: "Unknown",
+                    fontWeight = FontWeight.Medium,
+                )
             }
             OutlinedButton(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text("Done") }
         }
@@ -497,7 +563,7 @@ private fun PendingShieldedTopUpsSection(
         rows.forEach { row ->
             LabeledContent(
                 "Top-up from shielded pool",
-                formatCredits(row.amount),
+                formatCreditsExact(row.amount),
                 modifier = Modifier.testTag("topup.shielded.pendingRow"),
             )
         }

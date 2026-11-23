@@ -1,13 +1,12 @@
 package org.dashfoundation.example.ui.shielded
 
+import java.math.BigDecimal
 import kotlinx.coroutines.CancellationException
 import org.dashfoundation.dashsdk.errors.DashSdkError
-import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.wallet.ShieldedIdentityDebitRecoveryRecord
 import org.dashfoundation.dashsdk.wallet.ShieldedIdentityDebitRecoveryStatus
-import org.dashfoundation.example.ui.tokens.displayLabel
+import org.dashfoundation.example.ui.wallet.formatCreditsExact
 import org.dashfoundation.example.ui.wallet.shieldedOperationMayHaveGoneThrough
-import org.dashfoundation.example.util.formatCredits
 import org.dashfoundation.example.util.toHex
 
 // The two transitions between an identity's credit balance and the wallet's
@@ -25,17 +24,24 @@ import org.dashfoundation.example.util.toHex
 // the proved balance before anything is saved or sent; the recovery record's
 // status is Rust's; this file only words what Rust reported.
 
-/** What became of one identity shield (Type 21) call. */
-internal sealed interface IdentityShieldOutcome {
+/**
+ * What became of one identity shield (Type 21) or shielded top-up (Type 22)
+ * call. Amounts are shown exactly: one credit is 0.00000000001 DASH, never 0.
+ */
+sealed interface ShieldedPaymentOutcome {
     /** The call returned: submitted, not yet confirmed by the scan. */
-    data object Submitted : IdentityShieldOutcome
+    data object Submitted : ShieldedPaymentOutcome
 
-    /** It may be on chain. Never retried; listed under In-Progress Identity Shields. */
-    data object MayHaveGoneThrough : IdentityShieldOutcome
+    /** It may be on chain. Never retried; listed by the recovery views. */
+    data object MayHaveGoneThrough : ShieldedPaymentOutcome
 
     /** Refused or failed; [message] is shown in the error dialog. */
-    data class Failed(val message: String) : IdentityShieldOutcome
+    data class Failed(val message: String) : ShieldedPaymentOutcome
 }
+
+/** Exact DASH text for [credits] (11 decimals, nothing rounded away). */
+internal fun formatCreditsExact(credits: ULong): String =
+    BigDecimal(credits.toString()).movePointLeft(11).stripTrailingZeros().toPlainString() + " DASH"
 
 /** Wording for the identity shield (Type 21). ← Swift `SendViewModel`'s identity shield messages. */
 internal object IdentityShieldMessages {
@@ -62,7 +68,11 @@ internal object IdentityShieldMessages {
     const val IDENTITY_CHANGED =
         "The source identity changed after Send was tapped. Review it and tap Send again."
 
-    const val FEE_FLOOR_UNAVAILABLE = "The fee floor is not available yet, so Send stays disabled."
+    const val ALREADY_RUNNING =
+        "A shield from this identity is still running, or its outcome was not shown yet. " +
+            "Nothing new was sent."
+
+    const val FEE_FLOOR_UNAVAILABLE ="The fee floor is not available yet, so Send stays disabled."
 
     const val FOOTER =
         "The identity's transfer key signs. It must hold the amount plus the " +
@@ -78,8 +88,8 @@ internal object IdentityShieldMessages {
         is DashSdkError.PlatformWallet.ShieldedIdentityDebitPending -> DEBIT_PENDING
         is DashSdkError.PlatformWallet.InsufficientIdentityCredits ->
             "The identity's balance on Platform is too low for this shield: it needs " +
-                "${formatCredits(error.requiredCredits)} including the fee and has " +
-                "${formatCredits(error.availableCredits)}. Nothing was sent."
+                "${formatCreditsExact(error.requiredCredits)} including the fee and has " +
+                "${formatCreditsExact(error.availableCredits)}. Nothing was sent."
         is DashSdkError.PlatformWallet.IdentityBalanceUnavailable ->
             "The identity's balance could not be read from Platform, so the shield " +
                 "was not attempted. Nothing was sent."
@@ -97,11 +107,11 @@ internal object IdentityShieldMessages {
      * wallet proved the identity's balance at a block, and the activity row
      * stays pending until the scan sees the note.
      */
-    fun outcome(error: Throwable?): IdentityShieldOutcome = when {
-        error == null -> IdentityShieldOutcome.Submitted
+    fun outcome(error: Throwable?): ShieldedPaymentOutcome = when {
+        error == null -> ShieldedPaymentOutcome.Submitted
         error is CancellationException -> throw error
-        shieldedOperationMayHaveGoneThrough(error) -> IdentityShieldOutcome.MayHaveGoneThrough
-        else -> IdentityShieldOutcome.Failed(
+        shieldedOperationMayHaveGoneThrough(error) -> ShieldedPaymentOutcome.MayHaveGoneThrough
+        else -> ShieldedPaymentOutcome.Failed(
             refusal(error) ?: error.message ?: "Failed to shield from the identity.",
         )
     }
@@ -178,12 +188,14 @@ internal object IdentityShieldRecoveryDisplay {
         }
     }
 
-    /** The identity's label from the wallet's rows when known, else a short id. */
-    fun identityLabel(identityId: ByteArray?, identities: List<IdentityEntity>): String {
+    /**
+     * The identity's label from the wallet's rows ([labels], keyed by
+     * lowercase hex id) when known, else a short id.
+     */
+    fun identityLabel(identityId: ByteArray?, labels: Map<String, String>): String {
         if (identityId == null) return "Unknown identity"
-        identities.firstOrNull { it.identityId.contentEquals(identityId) }
-            ?.let { return it.displayLabel() }
-        return identityId.toHex().take(12) + "…"
+        val hex = identityId.toHex()
+        return labels[hex] ?: (hex.take(12) + "…")
     }
 
     /** A record is identified by its account and activity id within a wallet. */
@@ -209,15 +221,6 @@ internal data class RecoveryReadState<R>(
     val isKnownEmpty: Boolean get() = loaded && failureMessage == null && records.isEmpty()
 }
 
-/** What a top-up from the shielded pool (Type 22) came to. ← Swift `ShieldedTopUpOutcome`. */
-internal sealed interface ShieldedTopUpOutcome {
-    val amount: Long
-
-    data class Completed(override val amount: Long) : ShieldedTopUpOutcome
-
-    data class MayHaveGoneThrough(override val amount: Long) : ShieldedTopUpOutcome
-}
-
 /** Wording for a top-up from the shielded pool (Type 22). ← Swift `ShieldedTopUpSubmitCheck`. */
 internal object ShieldedTopUpMessages {
     const val FEE_NOTE =
@@ -234,7 +237,7 @@ internal object ShieldedTopUpMessages {
 
     /** The proof covers the spent notes, not that this transition added the amount. */
     fun completedText(amount: Long): String =
-        "The spent notes were confirmed. Requested: ${formatCredits(amount)}."
+        "The spent notes were confirmed. Requested: ${formatCreditsExact(amount)}."
 
     /**
      * [pendingListedBelow]: this identity has pending top-ups shown under the
@@ -242,7 +245,7 @@ internal object ShieldedTopUpMessages {
      * same amount), and without any the text promises no entry.
      */
     fun unconfirmedText(amount: Long, pendingListedBelow: Boolean): String {
-        val warning = "The top-up of ${formatCredits(amount)} could not be confirmed. " +
+        val warning = "The top-up of ${formatCreditsExact(amount)} could not be confirmed. " +
             "Do not retry: it may already be on chain. The wallet checks it on each " +
             "shielded sync."
         return if (pendingListedBelow) {
@@ -264,18 +267,14 @@ internal object ShieldedTopUpMessages {
     }
 
     /**
-     * The outcome of a `shieldedIdentityTopUpFromPool` call for [amount] that
-     * threw [error], or returned when [error] is null: [ShieldedTopUpOutcome],
-     * or the message to show for a failure.
+     * The outcome of a `shieldedIdentityTopUpFromPool` call that threw
+     * [error], or returned when [error] is null.
      */
-    fun outcome(amount: Long, error: Throwable?): Result<ShieldedTopUpOutcome> = when {
-        error == null -> Result.success(ShieldedTopUpOutcome.Completed(amount))
+    fun outcome(error: Throwable?): ShieldedPaymentOutcome = when {
+        error == null -> ShieldedPaymentOutcome.Submitted
         error is CancellationException -> throw error
-        shieldedOperationMayHaveGoneThrough(error) ->
-            Result.success(ShieldedTopUpOutcome.MayHaveGoneThrough(amount))
-        else -> Result.failure(
-            IllegalStateException(refusal(error) ?: error.message ?: "Top up failed", error),
-        )
+        shieldedOperationMayHaveGoneThrough(error) -> ShieldedPaymentOutcome.MayHaveGoneThrough
+        else -> ShieldedPaymentOutcome.Failed(refusal(error) ?: error.message ?: "Top up failed")
     }
 }
 
@@ -286,13 +285,17 @@ internal object ShieldedTopUpMessages {
 internal sealed interface CheckNowStatus {
     data object Idle : CheckNowStatus
     data object Checking : CheckNowStatus
+    /** `syncShieldedNow` returned; not proof that this wallet was scanned. */
     data object Finished : CheckNowStatus
     data class Failed(val message: String) : CheckNowStatus
 
     val text: String?
         get() = when (this) {
             Idle, Checking -> null
-            Finished -> "Sync finished. The list shows the wallet's current records."
+            // The sync call does not say whether this wallet's scan
+            // succeeded, so this claims only that one was asked for.
+            Finished -> "Sync requested. The list shows the wallet's records as they " +
+                "are now; this screen cannot tell whether the scan for this wallet succeeded."
             is Failed -> "Check failed: $message"
         }
 

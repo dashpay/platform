@@ -52,6 +52,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import org.dashfoundation.example.services.shielded.ShieldedIdentityPaymentCoordinator
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.funding.ShieldedProver
@@ -65,7 +66,7 @@ import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
 import org.dashfoundation.example.ui.shielded.IdentityShieldMessages
-import org.dashfoundation.example.ui.shielded.IdentityShieldOutcome
+import org.dashfoundation.example.ui.shielded.ShieldedPaymentOutcome
 import org.dashfoundation.example.ui.tokens.displayLabel
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.DashAddress
@@ -115,6 +116,19 @@ private class AdditionalRecipient {
     var address by mutableStateOf("")
     var amountText by mutableStateOf("")
 }
+
+/**
+ * One of the wallet's identities as the Identity source shows it, copied out
+ * of Room: entities compare by id only, so a balance update would not
+ * recompose a list of them.
+ */
+private data class IdentitySourceOption(
+    val idHex: String,
+    val base58: String,
+    val label: String,
+    val balance: Long,
+    val index: Int,
+)
 
 /**
  * Maximum UTF-8 byte length of a shielded memo (the 32-byte payload of the
@@ -185,10 +199,6 @@ fun SendTransactionScreen(
     var isSending by remember { mutableStateOf(false) }
     var sentTxidHex by remember { mutableStateOf<String?>(null) }
     var successMessage by remember { mutableStateOf<String?>(null) }
-    // Identity shield (type 21) outcomes, never shown as a success
-    // (← SendViewModel.submittedMessage / unconfirmedMessage).
-    var submittedMessage by remember { mutableStateOf<String?>(null) }
-    var unconfirmedMessage by remember { mutableStateOf<String?>(null) }
     // The identity an identity shield debits (its id is public, not key
     // material) (← SendViewModel.selectedIdentityId).
     var selectedIdentityHex by rememberSaveable { mutableStateOf<String?>(null) }
@@ -245,12 +255,37 @@ fun SendTransactionScreen(
     // This wallet's identities with a balance: one of them funds an identity
     // shield (← SendTransactionView.eligibleIdentities).
     val walletIdentities by remember(walletIdHex) {
-        container.database.identityDao().observeByWallet(walletId)
+        container.database.identityDao().observeByWallet(walletId).map { rows ->
+            rows.map {
+                IdentitySourceOption(
+                    idHex = it.identityId.toHex(),
+                    base58 = Base58.encode(it.identityId),
+                    label = it.displayLabel(),
+                    balance = it.balance,
+                    index = it.identityIndex,
+                )
+            }
+        }
     }.collectAsStateWithLifecycle(initialValue = emptyList())
     val eligibleIdentities = remember(walletIdentities) {
-        walletIdentities.filter { it.balance > 0 }.sortedBy { it.identityIndex }
+        walletIdentities.filter { it.balance > 0 }.sortedBy { it.index }
     }
-    val selectedIdentity = eligibleIdentities.firstOrNull { it.identityId.toHex() == selectedIdentityHex }
+    val selectedIdentity = eligibleIdentities.firstOrNull { it.idHex == selectedIdentityHex }
+
+    // An identity shield runs on the application scope, so a rotation or a
+    // tab switch while it proves neither drops its outcome nor allows a
+    // second one; this screen shows what the coordinator holds for the
+    // wallet (← SendViewModel.isSending, which the view model outlives).
+    val paymentCoordinator = container.shieldedIdentityPaymentCoordinator
+    val paymentStates by paymentCoordinator.states.collectAsStateWithLifecycle()
+    val walletKeyHex = remember(walletIdHex) { walletId.toHex() }
+    val identityShieldStates = paymentStates.filterKeys {
+        it.kind == ShieldedIdentityPaymentCoordinator.Kind.SHIELD_FROM_IDENTITY &&
+            it.walletIdHex == walletKeyHex
+    }
+    val identityShieldRunning =
+        identityShieldStates.values.any { it is ShieldedIdentityPaymentCoordinator.State.InFlight }
+    val isBusy = isSending || identityShieldRunning
 
     // ── Address detection + flow routing (← SendViewModel.detectAddressType /
     //    updateFlow) ────────────────────────────────────────────────────
@@ -460,14 +495,14 @@ fun SendTransactionScreen(
 
     // A shielded spend proves for tens of seconds; leaving the screen would
     // drop its result and allow a second one (← interactiveDismissDisabled).
-    BackHandler(enabled = isSending) {}
+    BackHandler(enabled = isBusy) {}
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Send Dash") },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }, enabled = !isSending) {
+                    IconButton(onClick = { navController.popBackStack() }, enabled = !isBusy) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -648,20 +683,20 @@ fun SendTransactionScreen(
                 FormSection(title = "Source Identity") {
                     AccessiblePicker(
                         label = "Identity",
-                        options = listOf<String?>(null) + eligibleIdentities.map { it.identityId.toHex() },
-                        selected = selectedIdentity?.identityId?.toHex(),
+                        options = listOf<String?>(null) + eligibleIdentities.map { it.idHex },
+                        selected = selectedIdentity?.idHex,
                         optionLabel = { hex ->
-                            eligibleIdentities.firstOrNull { it.identityId.toHex() == hex }
-                                ?.let { "${it.displayLabel()}: ${formatCredits(it.balance)}" }
+                            eligibleIdentities.firstOrNull { it.idHex == hex }
+                                ?.let { "${it.label}: ${formatCreditsExact(it.balance)}" }
                                 ?: "Select…"
                         },
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                         testTag = "send.identitySourcePicker",
                         // The identity that pays is captured at the tap.
-                        enabled = !isSending,
+                        enabled = !isBusy,
                         optionTestTag = { hex ->
-                            eligibleIdentities.firstOrNull { it.identityId.toHex() == hex }
-                                ?.let { "send.identitySource.identity.${Base58.encode(it.identityId)}" }
+                            eligibleIdentities.firstOrNull { it.idHex == hex }
+                                ?.let { "send.identitySource.identity.${it.base58}" }
                                 ?: "send.identitySource.none"
                         },
                     ) { selectedIdentityHex = it }
@@ -721,7 +756,7 @@ fun SendTransactionScreen(
                         FundSource.SHIELDED ->
                             shieldedSpendable?.let { formatCredits(it) } ?: "—"
                         FundSource.IDENTITY ->
-                            selectedIdentity?.let { formatCredits(it.balance) } ?: "Unknown"
+                            selectedIdentity?.let { formatCreditsExact(it.balance) } ?: "Unknown"
                     },
                 )
                 // Multi-output batch total (← the iOS "Outputs" summary's
@@ -771,8 +806,8 @@ fun SendTransactionScreen(
 
             SubmitButton(
                 text = "Send",
-                isLoading = isSending,
-                enabled = canSend && !isSending,
+                isLoading = isBusy,
+                enabled = canSend && !isBusy,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("send.submitButton"),
@@ -929,24 +964,27 @@ fun SendTransactionScreen(
                                     return@launch
                                 }
                                 // Signed with the identity's TRANSFER key by
-                                // the manager's identity signer.
-                                val outcome = try {
-                                    activeManager.shieldedShieldFromIdentity(
-                                        walletId = walletId,
-                                        identityId = identityHex.hexToBytes(),
-                                        amount = credits,
-                                    )
-                                    IdentityShieldMessages.outcome(null)
-                                } catch (t: Throwable) {
-                                    IdentityShieldMessages.outcome(t)
+                                // the manager's identity signer. The call and
+                                // its outcome belong to the coordinator, not
+                                // to this screen.
+                                val key = ShieldedIdentityPaymentCoordinator.Key(
+                                    ShieldedIdentityPaymentCoordinator.Kind.SHIELD_FROM_IDENTITY,
+                                    walletKeyHex,
+                                    identityHex,
+                                )
+                                val started = paymentCoordinator.start(key, credits) {
+                                    try {
+                                        activeManager.shieldedShieldFromIdentity(
+                                            walletId = walletId,
+                                            identityId = identityHex.hexToBytes(),
+                                            amount = credits,
+                                        )
+                                        IdentityShieldMessages.outcome(null)
+                                    } catch (e: Exception) {
+                                        IdentityShieldMessages.outcome(e)
+                                    }
                                 }
-                                when (outcome) {
-                                    IdentityShieldOutcome.Submitted ->
-                                        submittedMessage = IdentityShieldMessages.SUBMITTED
-                                    IdentityShieldOutcome.MayHaveGoneThrough ->
-                                        unconfirmedMessage = IdentityShieldMessages.MAY_HAVE_GONE_THROUGH
-                                    is IdentityShieldOutcome.Failed -> error = outcome.message
-                                }
+                                if (!started) error = IdentityShieldMessages.ALREADY_RUNNING
                             }
                         }
                     } catch (t: Throwable) {
@@ -1021,42 +1059,41 @@ fun SendTransactionScreen(
     // An identity shield is never reported as a success: a returned call is
     // submitted, and one that may have gone through is not confirmed yet
     // (← SendTransactionView's "Submitted" / "Not Confirmed Yet" alerts).
-    submittedMessage?.let { message ->
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = {
-                submittedMessage = null
-                navController.popBackStack()
-            },
-            title = { Text("Submitted") },
-            text = { Text(message, modifier = Modifier.testTag("send.submittedMessage")) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        submittedMessage = null
-                        navController.popBackStack()
+    identityShieldStates.entries
+        .firstOrNull { it.value is ShieldedIdentityPaymentCoordinator.State.Done }
+        ?.let { (key, state) ->
+            val outcome = (state as ShieldedIdentityPaymentCoordinator.State.Done).outcome
+            if (outcome is ShieldedPaymentOutcome.Failed) {
+                ErrorAlertDialog(
+                    message = outcome.message,
+                    onDismiss = { paymentCoordinator.acknowledge(key) },
+                )
+            } else {
+                val submitted = outcome == ShieldedPaymentOutcome.Submitted
+                val close = {
+                    paymentCoordinator.acknowledge(key)
+                    navController.popBackStack()
+                    Unit
+                }
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = close,
+                    title = { Text(if (submitted) "Submitted" else "Not Confirmed Yet") },
+                    text = {
+                        Text(
+                            if (submitted) {
+                                IdentityShieldMessages.SUBMITTED
+                            } else {
+                                IdentityShieldMessages.MAY_HAVE_GONE_THROUGH
+                            },
+                            modifier = Modifier.testTag(
+                                if (submitted) "send.submittedMessage" else "send.unconfirmedMessage",
+                            ),
+                        )
                     },
-                ) { Text("Done") }
-            },
-        )
-    }
-    unconfirmedMessage?.let { message ->
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = {
-                unconfirmedMessage = null
-                navController.popBackStack()
-            },
-            title = { Text("Not Confirmed Yet") },
-            text = { Text(message, modifier = Modifier.testTag("send.unconfirmedMessage")) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        unconfirmedMessage = null
-                        navController.popBackStack()
-                    },
-                ) { Text("Done") }
-            },
-        )
-    }
+                    confirmButton = { TextButton(onClick = close) { Text("Done") } },
+                )
+            }
+        }
 
     ErrorAlertDialog(message = error, onDismiss = { error = null })
 }

@@ -2,7 +2,6 @@ package org.dashfoundation.example.ui.shielded
 
 import kotlinx.coroutines.CancellationException
 import org.dashfoundation.dashsdk.errors.DashSdkError
-import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.wallet.ShieldedIdentityDebitRecoveryStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -23,7 +22,7 @@ class ShieldedIdentityFlowsTest {
 
     @Test
     fun `should report a returned identity shield as submitted, never as complete`() {
-        assertEquals(IdentityShieldOutcome.Submitted, IdentityShieldMessages.outcome(null))
+        assertEquals(ShieldedPaymentOutcome.Submitted, IdentityShieldMessages.outcome(null))
         assertTrue(IdentityShieldMessages.SUBMITTED.contains("submitted"))
         assertTrue(IdentityShieldMessages.SUBMITTED.contains("pending"))
     }
@@ -34,7 +33,7 @@ class ShieldedIdentityFlowsTest {
             DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed("not proved"),
             DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed("not confirmed"),
         )) {
-            assertEquals(IdentityShieldOutcome.MayHaveGoneThrough, IdentityShieldMessages.outcome(error))
+            assertEquals(ShieldedPaymentOutcome.MayHaveGoneThrough, IdentityShieldMessages.outcome(error))
         }
         assertTrue(IdentityShieldMessages.MAY_HAVE_GONE_THROUGH.contains("Do not retry"))
         assertTrue(IdentityShieldMessages.MAY_HAVE_GONE_THROUGH.contains("In-Progress Identity Shields"))
@@ -45,7 +44,7 @@ class ShieldedIdentityFlowsTest {
         val pending = IdentityShieldMessages.outcome(
             DashSdkError.PlatformWallet.ShieldedIdentityDebitPending("unresolved"),
         )
-        assertEquals(IdentityShieldOutcome.Failed(IdentityShieldMessages.DEBIT_PENDING), pending)
+        assertEquals(ShieldedPaymentOutcome.Failed(IdentityShieldMessages.DEBIT_PENDING), pending)
 
         val tooLow = IdentityShieldMessages.outcome(
             DashSdkError.PlatformWallet.InsufficientIdentityCredits(
@@ -53,10 +52,10 @@ class ShieldedIdentityFlowsTest {
                 requiredCredits = 150_000_000_000uL,
                 availableCredits = 100_000_000_000uL,
             ),
-        ) as IdentityShieldOutcome.Failed
+        ) as ShieldedPaymentOutcome.Failed
         assertTrue(tooLow.message.contains("too low"))
-        assertTrue(tooLow.message.contains("1.5 DASH"))
-        assertTrue(tooLow.message.contains("1 DASH"))
+        assertTrue(tooLow.message, tooLow.message.contains("needs 1.5 DASH"))
+        assertTrue(tooLow.message, tooLow.message.contains("has 1 DASH"))
         assertTrue(tooLow.message.endsWith("Nothing was sent."))
 
         for (error in listOf(
@@ -64,7 +63,7 @@ class ShieldedIdentityFlowsTest {
             DashSdkError.PlatformWallet.ProtocolVersionNotActive("pv 13"),
             DashSdkError.PlatformWallet.SdkPinnedBelowProtocolVersion("pinned"),
         )) {
-            val outcome = IdentityShieldMessages.outcome(error) as IdentityShieldOutcome.Failed
+            val outcome = IdentityShieldMessages.outcome(error) as ShieldedPaymentOutcome.Failed
             assertTrue(outcome.message, outcome.message.endsWith("Nothing was sent."))
         }
     }
@@ -72,7 +71,7 @@ class ShieldedIdentityFlowsTest {
     @Test
     fun `should show any other failure's own message`() {
         val outcome = IdentityShieldMessages.outcome(IllegalStateException("signer missing"))
-        assertEquals(IdentityShieldOutcome.Failed("signer missing"), outcome)
+        assertEquals(ShieldedPaymentOutcome.Failed("signer missing"), outcome)
     }
 
     @Test
@@ -83,7 +82,7 @@ class ShieldedIdentityFlowsTest {
         } catch (_: CancellationException) {
         }
         try {
-            ShieldedTopUpMessages.outcome(1, CancellationException("left"))
+            ShieldedTopUpMessages.outcome(CancellationException("left"))
             fail("expected the cancellation to be rethrown")
         } catch (_: CancellationException) {
         }
@@ -130,10 +129,10 @@ class ShieldedIdentityFlowsTest {
     @Test
     fun `should name a record's identity from the wallet's rows or a short id`() {
         val id = ByteArray(32) { 0x0a }
-        val alice = IdentityEntity(identityId = id, networkRaw = 1, mainDpnsName = "alice.dash")
-        assertEquals("alice.dash", IdentityShieldRecoveryDisplay.identityLabel(id, listOf(alice)))
-        assertEquals("0a0a0a0a0a0a…", IdentityShieldRecoveryDisplay.identityLabel(id, emptyList()))
-        assertEquals("Unknown identity", IdentityShieldRecoveryDisplay.identityLabel(null, listOf(alice)))
+        val labels = mapOf("0a".repeat(32) to "alice.dash")
+        assertEquals("alice.dash", IdentityShieldRecoveryDisplay.identityLabel(id, labels))
+        assertEquals("0a0a0a0a0a0a…", IdentityShieldRecoveryDisplay.identityLabel(id, emptyMap()))
+        assertEquals("Unknown identity", IdentityShieldRecoveryDisplay.identityLabel(null, labels))
     }
 
     @Test
@@ -152,27 +151,43 @@ class ShieldedIdentityFlowsTest {
 
     @Test
     fun `should report a returned shielded top-up as submitted with the requested amount`() {
-        val outcome = ShieldedTopUpMessages.outcome(50_000_000_000, null).getOrThrow()
-        assertEquals(ShieldedTopUpOutcome.Completed(50_000_000_000), outcome)
+        assertEquals(ShieldedPaymentOutcome.Submitted, ShieldedTopUpMessages.outcome(null))
         assertEquals(
             "The spent notes were confirmed. Requested: 0.5 DASH.",
-            ShieldedTopUpMessages.completedText(outcome.amount),
+            ShieldedTopUpMessages.completedText(50_000_000_000),
         )
+    }
+
+    @Test
+    fun `should show a one-credit amount exactly, never as zero`() {
+        assertEquals(
+            "The spent notes were confirmed. Requested: 0.00000000001 DASH.",
+            ShieldedTopUpMessages.completedText(1),
+        )
+        assertTrue(
+            ShieldedTopUpMessages.unconfirmedText(1, pendingListedBelow = false)
+                .startsWith("The top-up of 0.00000000001 DASH could not be confirmed."),
+        )
+        assertEquals("0.00000000001 DASH", formatCreditsExact(1uL))
+        val tooLow = IdentityShieldMessages.outcome(
+            DashSdkError.PlatformWallet.InsufficientIdentityCredits("7y3Q", 100_000_000_001uL, 1uL),
+        ) as ShieldedPaymentOutcome.Failed
+        assertTrue(tooLow.message, tooLow.message.contains("needs 1.00000000001 DASH"))
+        assertTrue(tooLow.message, tooLow.message.contains("has 0.00000000001 DASH"))
     }
 
     @Test
     fun `should not offer a retry for a shielded top-up that may have gone through`() {
         val outcome = ShieldedTopUpMessages.outcome(
-            50_000_000_000,
             DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed("not proved"),
-        ).getOrThrow()
-        assertEquals(ShieldedTopUpOutcome.MayHaveGoneThrough(50_000_000_000), outcome)
+        )
+        assertEquals(ShieldedPaymentOutcome.MayHaveGoneThrough, outcome)
 
-        val withPending = ShieldedTopUpMessages.unconfirmedText(outcome.amount, pendingListedBelow = true)
+        val withPending = ShieldedTopUpMessages.unconfirmedText(50_000_000_000, pendingListedBelow = true)
         assertTrue(withPending.contains("Do not retry"))
         assertTrue(withPending.endsWith("Pending top-ups for this identity are listed below."))
         assertFalse(
-            ShieldedTopUpMessages.unconfirmedText(outcome.amount, pendingListedBelow = false)
+            ShieldedTopUpMessages.unconfirmedText(50_000_000_000, pendingListedBelow = false)
                 .contains("listed below"),
         )
     }
@@ -180,14 +195,14 @@ class ShieldedIdentityFlowsTest {
     @Test
     fun `should word a shielded top-up refused below its protocol version`() {
         val refused = ShieldedTopUpMessages.outcome(
-            1,
             DashSdkError.PlatformWallet.ProtocolVersionNotActive("pv 13"),
-        ).exceptionOrNull()
-        assertTrue(refused!!.message!!.endsWith("Nothing was sent."))
+        ) as ShieldedPaymentOutcome.Failed
+        assertTrue(refused.message.endsWith("Nothing was sent."))
 
-        val other = ShieldedTopUpMessages.outcome(1, IllegalStateException("not enough notes"))
-            .exceptionOrNull()
-        assertEquals("not enough notes", other!!.message)
+        assertEquals(
+            ShieldedPaymentOutcome.Failed("not enough notes"),
+            ShieldedTopUpMessages.outcome(IllegalStateException("not enough notes")),
+        )
     }
 
     @Test
@@ -195,6 +210,10 @@ class ShieldedIdentityFlowsTest {
         assertNull(CheckNowStatus.Idle.text)
         assertNull(CheckNowStatus.Checking.text)
         assertFalse(CheckNowStatus.Finished.isFailure)
+        // The sync call cannot say this wallet was scanned, so the line never
+        // claims the records are current.
+        assertTrue(CheckNowStatus.Finished.text!!.startsWith("Sync requested."))
+        assertTrue(CheckNowStatus.Finished.text!!.contains("cannot tell whether the scan"))
         assertEquals("Check failed: offline", CheckNowStatus.Failed("offline").text)
         assertTrue(CheckNowStatus.Failed("offline").isFailure)
     }

@@ -12,7 +12,6 @@ import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.security.WalletStorage
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Assume.assumeTrue
@@ -24,13 +23,15 @@ import org.junit.runner.RunWith
  * The JNI surface KotlinExampleApp uses to shield from an identity's
  * balance (type 21), list and stop its durable records, and top up an
  * identity from the shielded pool (type 22), against the real library: the
- * record listing marshals through a real manager, and a request the wallet
- * refuses before saving anything leaves no record and is never reported as
- * one that may have gone through. `FfiSmokeTest` checks that the four
- * exports bind and refuse arguments they cannot read.
+ * record listing marshals through a real manager, and a shield from an
+ * identity the wallet does not manage is refused locally (before any network
+ * call) with no record saved. `FfiSmokeTest` checks that the four exports
+ * bind and refuse arguments they cannot read.
  *
  * Not covered here: a shield or top-up Platform accepts, which needs a
- * funded identity or shielded balance (TEST_PLAN SH-21 to SH-23).
+ * funded identity or shielded balance (TEST_PLAN SH-21 to SH-23), and a
+ * top-up's refusals, which come after the wallet asks the network whether
+ * the transition is active.
  */
 @RunWith(AndroidJUnit4::class)
 class ShieldedIdentityFlowsFfiTest {
@@ -53,11 +54,11 @@ class ShieldedIdentityFlowsFfiTest {
      * Through a real manager and a real (unfunded) wallet: both fee kinds
      * the screens show are positive, the wallet has no records to list, an
      * unknown record cannot be stopped, and a shield from an identity the
-     * wallet does not manage and a top-up with no notes are refused without
-     * leaving a record or an activity row.
+     * wallet does not manage is refused as not found, without leaving a
+     * record or an activity row.
      */
     @Test
-    fun shouldListNoRecordsAndRefuseUnfundedRequestsAsNothingSent() = runBlocking {
+    fun shouldListNoRecordsAndRefuseAnUnmanagedIdentityWithoutARecord() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val db = DashDatabase.createInMemory(context)
         val sdk = Sdk.create(SdkConfig(network = Network.TESTNET))
@@ -89,29 +90,17 @@ class ShieldedIdentityFlowsFfiTest {
                 } catch (_: DashSdkError) {
                 }
 
-                fun assertNotUnconfirmed(e: DashSdkError) = assertFalse(
-                    "a refusal that sent nothing is not a spend that may have gone through: $e",
-                    e is DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed ||
-                        e is DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed,
-                )
                 try {
                     manager.shieldedShieldFromIdentity(id, identityId, 1_000L)
                     fail("a shield from an identity the wallet does not manage must be refused")
                 } catch (e: DashSdkError) {
-                    assertNotUnconfirmed(e)
+                    assertTrue("refused as an identity the wallet does not hold: $e", e is DashSdkError.NotFound)
                 }
                 assertEquals(
                     "the refused shield saved no record",
                     emptyList<Any>(),
                     manager.shieldedIdentityDebitRecoveryRecords(id),
                 )
-
-                try {
-                    manager.shieldedIdentityTopUpFromPool(id, identityId, 1_000L)
-                    fail("a top-up from a pool with no notes must be refused")
-                } catch (e: DashSdkError) {
-                    assertNotUnconfirmed(e)
-                }
                 assertEquals(
                     "nothing was recorded for the refused requests",
                     0,

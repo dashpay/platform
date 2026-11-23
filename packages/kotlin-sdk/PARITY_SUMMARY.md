@@ -18,7 +18,7 @@ Capabilities tracked: **46**
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
 | Swift | 2 | 16 | 28 |
-| Kotlin | 7 | 11 | 28 |
+| Kotlin | 6 | 12 | 28 |
 
 ## Capability status
 
@@ -66,7 +66,7 @@ Capabilities tracked: **46**
 | `identity.load_masternode_voting_key` | supported / partial / not_applicable | partial / partial / not_applicable |
 | `addresses.balance_history` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `shielded.shield_from_identity` | supported / partial / required | supported / partial / required |
-| `shielded.identity_top_up_from_pool` | supported / partial / required | supported / partial / tested |
+| `shielded.identity_top_up_from_pool` | supported / partial / required | supported / partial / required |
 | `shielded.token_purchase_from_pool` | partial / partial / required | partial / partial / required |
 | `identity.withdrawal_status` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `shielded.token_pool_balances` | partial / partial / required | unsupported / unsupported / not_applicable |
