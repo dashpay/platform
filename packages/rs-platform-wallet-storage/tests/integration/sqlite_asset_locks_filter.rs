@@ -41,6 +41,7 @@ fn entry(op: OutPoint, status: AssetLockStatus) -> AssetLockEntry {
         operation_id: None,
         shielded_recipient: None,
         identity_recipient: None,
+        platform_address_recipients: None,
         amount_duffs: 1000,
         status,
         proof: None,

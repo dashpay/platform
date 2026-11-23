@@ -932,6 +932,7 @@ mod tests {
                     proof: None,
                     shielded_recipient: None,
                     identity_recipient: recorded,
+                    platform_address_recipients: None,
                 },
             );
         out_point

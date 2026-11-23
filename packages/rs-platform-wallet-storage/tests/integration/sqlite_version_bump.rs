@@ -367,6 +367,7 @@ fn asset_lock_changeset() -> AssetLockChangeSet {
             operation_id: None,
             shielded_recipient: None,
             identity_recipient: None,
+            platform_address_recipients: None,
             amount_duffs: 1,
             status: AssetLockStatus::Built,
             proof: None,

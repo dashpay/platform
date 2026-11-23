@@ -19,6 +19,7 @@ pub mod identity_manager_start_state;
 pub mod identity_scan_state;
 pub mod merge;
 pub mod persistence_capabilities;
+pub mod platform_address_recipients;
 pub mod platform_address_sync_start_state;
 #[cfg(any(feature = "bls", feature = "eddsa"))]
 pub mod provider_key_account;
@@ -61,6 +62,10 @@ pub use identity_manager_start_state::IdentityManagerStartState;
 pub use identity_scan_state::IdentityScanStateEntry;
 pub use merge::Merge;
 pub use persistence_capabilities::{PersistenceCapabilities, PERSISTENCE_CAPABILITIES_VERSION};
+pub use platform_address_recipients::{
+    PlatformAddressRecipients, PlatformAddressRecipientsDecodeError,
+    PlatformAddressRecipientsEncodeError, PLATFORM_ADDRESS_RECIPIENTS_MAX_SIZE,
+};
 pub use platform_address_sync_start_state::PlatformAddressSyncStartState;
 #[cfg(feature = "shielded")]
 pub use shielded_changeset::ShieldedChangeSet;

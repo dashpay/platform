@@ -126,6 +126,7 @@ impl AssetLockEntryWire {
             operation_id: None,
             shielded_recipient: None,
             identity_recipient: None,
+            platform_address_recipients: None,
         })
     }
 }
@@ -445,6 +446,7 @@ fn decode_row(
         operation_id: entry.operation_id,
         shielded_recipient: entry.shielded_recipient,
         identity_recipient: entry.identity_recipient,
+        platform_address_recipients: entry.platform_address_recipients.clone(),
     };
     Ok((account_index, outpoint, tracked))
 }
@@ -692,6 +694,7 @@ mod tests {
             operation_id: None,
             shielded_recipient: None,
             identity_recipient: None,
+            platform_address_recipients: None,
             amount_duffs: 1000,
             status,
             proof,
@@ -732,6 +735,7 @@ mod tests {
                 operation_id: tracked.operation_id,
                 shielded_recipient: tracked.shielded_recipient,
                 identity_recipient: tracked.identity_recipient,
+                platform_address_recipients: tracked.platform_address_recipients.clone(),
             })
             .expect("stored asset lock must load back")
     }
@@ -924,6 +928,7 @@ mod tests {
             operation_id: None,
             shielded_recipient: None,
             identity_recipient: None,
+            platform_address_recipients: None,
             amount_duffs: 1000,
             status: AssetLockStatus::Built,
             proof: None,

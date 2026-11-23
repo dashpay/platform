@@ -12,7 +12,7 @@ use dashcore::{OutPoint, Transaction};
 use dpp::prelude::AssetLockProof;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
-use crate::changeset::{AssetLockEntry, ShieldedRecipientRaw};
+use crate::changeset::{AssetLockEntry, PlatformAddressRecipients, ShieldedRecipientRaw};
 use dpp::prelude::Identifier;
 
 /// Asset lock status on Core chain.
@@ -165,6 +165,15 @@ pub struct TrackedAssetLock {
     /// [`Self::is_unassigned_identity_top_up`]), not while its Platform
     /// consumption is unknown.
     pub identity_recipient: Option<Identifier>,
+    /// The Platform addresses an external Platform-address funding
+    /// (`fund_from_asset_lock_external`) was built to pay, recorded with the
+    /// row before the lock is dispatched and immutable afterwards. A resume
+    /// pays exactly these recipients or is refused, so a lock built to pay a
+    /// third party is never consumed into the wallet. `None` for every other
+    /// funding, for an owned Platform-address funding, and for a
+    /// Platform-address lock tracked before recipients were recorded or
+    /// rebuilt from the chain (those are treated as owned, as before).
+    pub platform_address_recipients: Option<PlatformAddressRecipients>,
 }
 
 impl TrackedAssetLock {
@@ -204,6 +213,7 @@ impl From<&TrackedAssetLock> for AssetLockEntry {
             proof: lock.proof.clone(),
             shielded_recipient: lock.shielded_recipient,
             identity_recipient: lock.identity_recipient,
+            platform_address_recipients: lock.platform_address_recipients.clone(),
         }
     }
 }

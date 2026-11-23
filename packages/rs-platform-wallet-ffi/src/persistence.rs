@@ -7496,6 +7496,7 @@ fn build_unused_asset_locks(
             operation_id: None,
             shielded_recipient: None,
             identity_recipient: None,
+            platform_address_recipients: None,
             status,
             proof,
         };
@@ -11871,6 +11872,7 @@ mod tests {
                 operation_id,
                 shielded_recipient: None,
                 identity_recipient: None,
+                platform_address_recipients: None,
             };
             let (entries, _storage) = build_asset_lock_entries(&[&entry]);
             let wallet = WalletRestoreEntryFFI {
@@ -11996,6 +11998,7 @@ mod tests {
             operation_id: None,
             shielded_recipient: Some(raw),
             identity_recipient: None,
+            platform_address_recipients: None,
         };
         let (entries, _storage) = build_asset_lock_entries(&[&entry]);
         let wallet = WalletRestoreEntryFFI {
@@ -12253,6 +12256,7 @@ mod tests {
             operation_id: None,
             shielded_recipient: None,
             identity_recipient: Some(identity),
+            platform_address_recipients: None,
         };
         let (entries, _storage) = build_asset_lock_entries(&[&entry]);
         let wallet = WalletRestoreEntryFFI {
@@ -15211,6 +15215,7 @@ mod tests {
             operation_id: None,
             shielded_recipient: None,
             identity_recipient: None,
+            platform_address_recipients: None,
         };
         let out_point = entry.out_point;
         let host = Arc::new(Host {

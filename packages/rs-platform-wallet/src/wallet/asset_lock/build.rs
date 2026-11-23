@@ -1652,6 +1652,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             proof: None,
             shielded_recipient,
             identity_recipient,
+            platform_address_recipients: None,
         };
         if let Some(operation) = operation {
             operation.retain_checkpoint(tracked.clone());
@@ -2634,6 +2635,9 @@ mod tests {
                                     proof: entry.proof.clone(),
                                     shielded_recipient: entry.shielded_recipient,
                                     identity_recipient: entry.identity_recipient,
+                                    platform_address_recipients: entry
+                                        .platform_address_recipients
+                                        .clone(),
                                 },
                             );
                     }
@@ -3306,7 +3310,7 @@ mod tests {
             )
             .await;
 
-            let error = fund_unbound_top_up(&manager, &signer, recipient)
+            let error = fund_unbound_top_up(&manager, &signer, recipient.clone())
                 .await
                 .expect_err("the lock must be refused");
 
@@ -4311,7 +4315,7 @@ mod tests {
                     0,
                     funding_type,
                     0,
-                    recipient,
+                    recipient.clone(),
                     &signer,
                     None,
                     None,
