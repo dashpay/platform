@@ -313,6 +313,19 @@ fn is_token_pool_spend(kind: &super::activity::ShieldedActivityKind) -> bool {
     )
 }
 
+/// Whether the token pool scan that found `orphan` orphaned was proven at a
+/// protocol version that binds a token bundle to its fee bundle (from
+/// version 15). That pool's own scan decides, not the highest version the SDK
+/// has seen: a scan proven at a binding version saw every block in which the
+/// spend's token bundle could still have landed with another fee bundle. A
+/// scan with no version recorded binds nothing.
+fn scan_binds_token_fee_bundles(orphan: &super::token_pool::OrphanedReservation) -> bool {
+    orphan
+        .scanned_protocol_version
+        .and_then(|version| PlatformVersion::get(version).ok())
+        .is_some_and(|version| version.dpp.methods.token_pool_paid_fee_binding.is_some())
+}
+
 /// Exclusive handle on one wallet's shielded install transaction,
 /// returned by
 /// [`begin_install`](NetworkShieldedCoordinator::begin_install).
@@ -1115,8 +1128,9 @@ impl NetworkShieldedCoordinator {
     /// read, or the store retained a damaged record of a wallet it could not
     /// load, nothing of that wallet is judged.
     ///
-    /// Where the network's verified protocol version binds a token bundle to
-    /// its fee bundle (from protocol version 15), such a spend can never
+    /// Where the token pool's own scan was proven at a protocol version that
+    /// binds a token bundle to its fee bundle (from protocol version 15,
+    /// [`scan_binds_token_fee_bundles`]), such a spend can never
     /// execute: its fee bundle can no longer land, and its token bundle
     /// cannot land without it. Its activity row, if still pending, is marked
     /// failed, and only then are its notes released; an interruption in
@@ -1145,7 +1159,6 @@ impl NetworkShieldedCoordinator {
         if scanned.is_empty() {
             return;
         }
-        let binds = self.network_binds_token_fee_bundles();
         let (orphaned, pending_rows) = {
             let store = self.store.read().await;
             let mut owners = BTreeSet::new();
@@ -1166,6 +1179,7 @@ impl NetworkShieldedCoordinator {
                 }
             }
             let orphaned = match store.with_token_pool_conn(|conn| {
+                let scanned_from = super::token_pool::raise_sweep_height(conn, scanned_from)?;
                 super::token_pool::orphaned_reservations(
                     conn,
                     &owners,
@@ -1182,6 +1196,7 @@ impl NetworkShieldedCoordinator {
             };
             let pending_rows: Vec<(SubwalletId, [u8; 32])> = orphaned
                 .iter()
+                .filter(|orphan| scan_binds_token_fee_bundles(orphan))
                 .filter(|orphan| {
                     store
                         .get_activity_by_entry_id(orphan.id, &orphan.marker)
@@ -1200,7 +1215,7 @@ impl NetworkShieldedCoordinator {
             return;
         }
         // Rows first: a pending row is failed before its notes come back.
-        if binds && !pending_rows.is_empty() {
+        if !pending_rows.is_empty() {
             let persisters = self.persisters.read().await;
             for (id, entry_id) in &pending_rows {
                 super::operations::record_activity_status_by_id(
@@ -1216,7 +1231,7 @@ impl NetworkShieldedCoordinator {
         }
         let releases: Vec<&super::token_pool::OrphanedReservation> = orphaned
             .iter()
-            .filter(|orphan| binds || !orphan.fee_anchor_pruned)
+            .filter(|orphan| scan_binds_token_fee_bundles(orphan) || !orphan.fee_anchor_pruned)
             .collect();
         if releases.is_empty() {
             return;
@@ -1233,18 +1248,6 @@ impl NetworkShieldedCoordinator {
                 tracing::warn!(error = %e, "releasing orphaned token note reservations failed")
             }
         }
-    }
-
-    /// Whether the network's verified protocol version binds a token pool
-    /// transition's token bundle to its fee bundle, so the fee bundle no
-    /// longer landing settles the transition. `false` while the version is not
-    /// known.
-    fn network_binds_token_fee_bundles(&self) -> bool {
-        self.sdk
-            .protocol_version_info()
-            .verified_version
-            .and_then(|version| PlatformVersion::get(version).ok())
-            .is_some_and(|version| version.dpp.methods.token_pool_paid_fee_binding.is_some())
     }
 
     /// Refuse a wallet with no registered account.
@@ -4081,8 +4084,9 @@ mod tests {
         ] {
             let dir = temp_dir(&format!("token_transfer_settle_{network}_{sent}"));
             let sdk = dash_sdk::Sdk::new_mock();
-            sdk.mock_verified_protocol_version(network)
-                .expect("a mock SDK");
+            // The SDK has seen 15 throughout: only the token pool's own scan
+            // decides.
+            sdk.mock_verified_protocol_version(15).expect("a mock SDK");
             let coordinator = coordinator_with_one_wallet_on(&dir, sdk).await;
             let id = SubwalletId::new([0x11; 32], 0);
             let subwallets: Vec<(SubwalletId, AccountViewingKeys)> = coordinator
@@ -4118,8 +4122,9 @@ mod tests {
                         insert_watch(conn, id.wallet_id, &token)?;
                         conn.execute(
                             "INSERT INTO shielded_token_pool_scans \
-                             (token_id, pool_note_count, scanned_height) VALUES (?1, 1, 10)",
-                            rusqlite::params![token.token_id.as_slice()],
+                             (token_id, pool_note_count, scanned_height, \
+                              scanned_protocol_version) VALUES (?1, 1, 10, ?2)",
+                            rusqlite::params![token.token_id.as_slice(), network],
                         )
                         .expect("scan row");
                         insert_note_for_test(

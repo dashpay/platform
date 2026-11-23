@@ -111,6 +111,7 @@ impl TokenPoolNoteSource for TestPool {
             notes: notes.get(start..end).map(<[_]>::to_vec).unwrap_or_default(),
             total_count: notes.len() as u64,
             height: 100 + notes.len() as u64,
+            protocol_version: 15,
         })
     }
 
@@ -602,6 +603,7 @@ fn sweep_all(
     scanned_from: u64,
     live: &BTreeSet<[u8; 32]>,
 ) -> Result<BTreeSet<(SubwalletId, [u8; 32])>, PlatformWalletError> {
+    let scanned_from = raise_sweep_height(conn, scanned_from)?;
     let orphaned = orphaned_reservations(conn, owners, scanned, scanned_from, live)?;
     release_reservations(conn, &orphaned)?;
     Ok(orphaned
@@ -920,6 +922,16 @@ async fn should_keep_reservations_until_the_token_scan_reaches_the_credit_scan()
         sweep_from(100).is_empty(),
         "a token scan one block behind the credit scan keeps its holds"
     );
+    assert!(
+        sweep_from(99).is_empty(),
+        "a later credit scan answered from below keeps the height reached"
+    );
+    store
+        .with_token_pool_conn(|conn| {
+            record_scan(conn, token().token_id, 100);
+            Ok(())
+        })
+        .expect("scan");
     assert_eq!(sweep_from(99), BTreeSet::from([(id, [0xD3; 32])]));
 }
 

@@ -143,6 +143,8 @@ pub struct TokenPoolChunk {
     pub total_count: u64,
     /// The height the answer was proven at.
     pub height: u64,
+    /// The protocol version of the block the answer was proven at.
+    pub protocol_version: u32,
 }
 
 /// Where a token pool scan reads its chunks from: the SDK, or a test double.
@@ -191,6 +193,7 @@ impl TokenPoolNoteSource for dash_sdk::Sdk {
             notes,
             total_count,
             height: metadata.height,
+            protocol_version: metadata.protocol_version,
         })
     }
 
@@ -283,8 +286,27 @@ pub(super) fn create_tables(conn: &Connection) -> rusqlite::Result<()> {
             PRIMARY KEY (wallet_id, account_index, token_id, nullifier)
         );
         CREATE INDEX IF NOT EXISTS shielded_token_pool_notes_by_nullifier
-            ON shielded_token_pool_notes (token_id, nullifier);",
+            ON shielded_token_pool_notes (token_id, nullifier);
+        CREATE TABLE IF NOT EXISTS shielded_token_pool_sweep (
+            id           INTEGER NOT NULL PRIMARY KEY CHECK (id = 0),
+            credit_height INTEGER NOT NULL
+        );",
     )?;
+    // The protocol version of the block a pool's last chunk was proven at;
+    // added to a table made before it was kept.
+    let scan_columns = conn
+        .prepare("PRAGMA table_info(shielded_token_pool_scans)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if !scan_columns
+        .iter()
+        .any(|column| column == "scanned_protocol_version")
+    {
+        conn.execute(
+            "ALTER TABLE shielded_token_pool_scans ADD COLUMN scanned_protocol_version INTEGER",
+            [],
+        )?;
+    }
     // The spend in flight holding a note ([`TokenNoteReservation`]), and
     // whether the credit pool pruned the anchor of that spend's fee bundle
     // after it was saved ([`mark_fee_anchor_pruned`]); added to a table made
@@ -429,6 +451,7 @@ pub(super) fn purge_all(conn: &mut Connection) -> rusqlite::Result<()> {
         "shielded_token_pool_watermarks",
         "shielded_token_pool_leaves",
         "shielded_token_pool_notes",
+        "shielded_token_pool_sweep",
     ] {
         tx.execute(&format!("DELETE FROM {table}"), [])?;
     }
@@ -886,9 +909,17 @@ pub(crate) fn reserve_token_notes<S: TokenPoolConnection>(
 }
 
 /// One reservation row as read: wallet id, account, token id, marker bytes,
-/// whether its spend's fee anchor was pruned, and the height the token pool's
-/// last scan read up to.
-type HeldReservation = (Vec<u8>, u32, Vec<u8>, Vec<u8>, bool, Option<i64>);
+/// whether its spend's fee anchor was pruned, and the height and protocol
+/// version the token pool's last scan read at.
+type HeldReservation = (
+    Vec<u8>,
+    u32,
+    Vec<u8>,
+    Vec<u8>,
+    bool,
+    Option<i64>,
+    Option<u32>,
+);
 
 /// A reservation the sweep found orphaned ([`orphaned_reservations`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -903,6 +934,40 @@ pub(crate) struct OrphanedReservation {
     /// spend may have been sent. Otherwise a spend with no record left either
     /// settled from its fee notes or was never saved, so never sent.
     pub fee_anchor_pruned: bool,
+    /// The protocol version of the block the token pool's last scan was
+    /// proven at. Protocol versions only rise, so a scan at a version that
+    /// binds a token bundle to its fee bundle saw every block in which an
+    /// unbound spend could still execute.
+    pub scanned_protocol_version: Option<u32>,
+}
+
+/// The height the sweep requires a token pool's scan to have reached: the
+/// highest height a credit pool scan has read, `credit_height` or one kept
+/// from an earlier pass. A saved record a credit scan dropped stays dropped,
+/// so the height that dropped it is kept, across restarts, until a token pool
+/// scan reaches it: a later credit scan answered from a lower height does not
+/// lower it.
+pub(crate) fn raise_sweep_height(
+    conn: &Connection,
+    credit_height: u64,
+) -> Result<u64, PlatformWalletError> {
+    let credit_height = to_sql_u64(credit_height, "credit scan height")?;
+    conn.execute(
+        "INSERT INTO shielded_token_pool_sweep (id, credit_height) VALUES (0, ?1) \
+         ON CONFLICT(id) DO UPDATE SET credit_height = MAX(credit_height, excluded.credit_height)",
+        params![credit_height],
+    )
+    .map_err(storage("raise sweep height"))?;
+    let height: i64 = conn
+        .query_row(
+            "SELECT credit_height FROM shielded_token_pool_sweep WHERE id = 0",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(storage("read sweep height"))?;
+    u64::try_from(height).map_err(|_| {
+        PlatformWalletError::ShieldedStoreError(format!("sweep height {height} is negative"))
+    })
 }
 
 /// The reservations of `owners` in the pools of `scanned` (the pools this
@@ -910,10 +975,11 @@ pub(crate) struct OrphanedReservation {
 /// record in `live_records` holds, whether or not the scan has seen their
 /// notes spent: their spend is not being built or settled in this process
 /// and has no record left, so its fee bundle can no longer land or it never
-/// left the wallet. Only a pool whose scan reached `scanned_from` counts: the
-/// credit pool scan that drops a landed spend's record read up to that
-/// height, so a token pool scan answered from below it may not show that
-/// spend's token notes spent yet. Only the reservations of `owners`, the
+/// left the wallet. Only a pool whose scan reached `scanned_from` counts, the
+/// height [`raise_sweep_height`] returns: a credit pool scan that dropped a
+/// landed spend's record read up to at most that height, so a token pool
+/// scan answered from below it may not show that spend's token notes spent
+/// yet. Only the reservations of `owners`, the
 /// accounts whose saved records `live_records` holds, are judged: an account
 /// not registered now has records nobody read.
 ///
@@ -931,7 +997,8 @@ pub(crate) fn orphaned_reservations(
     let mut statement = conn
         .prepare(
             "SELECT DISTINCT n.wallet_id, n.account_index, n.token_id, n.reserved_by, \
-             n.fee_anchor_pruned, s.scanned_height FROM shielded_token_pool_notes n \
+             n.fee_anchor_pruned, s.scanned_height, s.scanned_protocol_version \
+             FROM shielded_token_pool_notes n \
              LEFT JOIN shielded_token_pool_scans s ON s.token_id = n.token_id \
              WHERE n.reserved_by IS NOT NULL",
         )
@@ -945,13 +1012,23 @@ pub(crate) fn orphaned_reservations(
                 row.get(3)?,
                 row.get::<_, i64>(4)? != 0,
                 row.get(5)?,
+                row.get(6)?,
             ))
         })
         .map_err(storage("read reservations"))?
         .collect::<rusqlite::Result<_>>()
         .map_err(storage("read reservations"))?;
     let mut orphaned = BTreeSet::new();
-    for (wallet_id, account_index, token_id, marker, fee_anchor_pruned, scanned_height) in held {
+    for (
+        wallet_id,
+        account_index,
+        token_id,
+        marker,
+        fee_anchor_pruned,
+        scanned_height,
+        scanned_protocol_version,
+    ) in held
+    {
         let id = SubwalletId::new(bytes32(wallet_id, "wallet id")?, account_index);
         let token_id = Identifier::from(bytes32(token_id, "token id")?);
         let marker = bytes32(marker, "reservation")?;
@@ -970,6 +1047,7 @@ pub(crate) fn orphaned_reservations(
             id,
             marker,
             fee_anchor_pruned,
+            scanned_protocol_version,
         });
     }
     Ok(orphaned)
@@ -1299,13 +1377,16 @@ fn apply_chunk(
     }
     tx.execute(
         "INSERT INTO shielded_token_pool_scans \
-         (token_id, pool_note_count, scanned_height, last_error) VALUES (?1, ?2, ?3, NULL) \
+         (token_id, pool_note_count, scanned_height, scanned_protocol_version, last_error) \
+         VALUES (?1, ?2, ?3, ?4, NULL) \
          ON CONFLICT(token_id) DO UPDATE SET pool_note_count = excluded.pool_note_count, \
-         scanned_height = excluded.scanned_height, last_error = NULL",
+         scanned_height = excluded.scanned_height, \
+         scanned_protocol_version = excluded.scanned_protocol_version, last_error = NULL",
         params![
             token.as_slice(),
             to_sql_u64(chunk.total_count, "pool note count")?,
-            height
+            height,
+            chunk.protocol_version
         ],
     )
     .map_err(storage("record scan"))?;
