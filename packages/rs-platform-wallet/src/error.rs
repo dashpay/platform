@@ -1089,13 +1089,13 @@ pub enum PlatformWalletError {
     /// different fee, than the plan: the wallet's notes changed since it was made (a sync
     /// added or spent one, or another spend reserved one), or the spend is priced at another
     /// protocol version than the plan. Nothing is built or broadcast and no note stays
-    /// reserved; plan again and confirm the new fee. A `fresh_note_count` of 0 means the notes
-    /// no longer make any selection for the spend (spent, too few, or too many for one
-    /// transition), so there is no fresh fee to quote.
-    #[error("{}", describe_plan_change(*.fresh_fee, *.fresh_note_count))]
+    /// reserved; plan again and confirm the new fee. `fresh_selection` is the selection the
+    /// notes make now, only when the spend actually ran one; `None` when it has none to quote:
+    /// the notes no longer make any selection, or the protocol version or the fee moved, which
+    /// a new plan prices from a selection of its own.
+    #[error("{}", describe_plan_change(.fresh_selection.as_ref()))]
     ShieldedPlanChanged {
-        fresh_fee: u64,
-        fresh_note_count: usize,
+        fresh_selection: Option<ShieldedFreshSelection>,
     },
 
     /// The notes cover the spend only with more notes than one shielded transition can spend
@@ -1403,18 +1403,25 @@ impl PlatformWalletError {
     }
 }
 
-/// [`PlatformWalletError::ShieldedPlanChanged`]'s message: the fresh selection when there is
-/// one, never a quote of 0 notes for a fee of 0.
-fn describe_plan_change(fresh_fee: u64, fresh_note_count: usize) -> String {
-    if fresh_note_count == 0 {
-        "Shielded spend plan changed: the planned notes no longer cover the spend in one \
-         transition; plan the spend again"
-            .to_string()
-    } else {
-        format!(
-            "Shielded spend plan changed: the notes now select {fresh_note_count} notes for a \
-             fee of {fresh_fee}; plan the spend again"
-        )
+/// The selection a planned spend's notes make now, when it no longer matches the plan: what a
+/// new plan of the same spend would select, at the same protocol version.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShieldedFreshSelection {
+    pub fee: u64,
+    pub note_count: usize,
+}
+
+/// [`PlatformWalletError::ShieldedPlanChanged`]'s message: the fresh selection when the spend
+/// ran one, never a quote it did not select.
+fn describe_plan_change(fresh_selection: Option<&ShieldedFreshSelection>) -> String {
+    match fresh_selection {
+        Some(ShieldedFreshSelection { fee, note_count }) => format!(
+            "Shielded spend plan changed: the notes now select {note_count} notes for a fee of \
+             {fee}; plan the spend again"
+        ),
+        None => "Shielded spend plan changed: the notes, the protocol version or the fee no \
+                 longer match the plan; plan the spend again"
+            .to_string(),
     }
 }
 

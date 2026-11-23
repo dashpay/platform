@@ -5,7 +5,7 @@
 //! actions and the overall transaction fee).
 
 use super::store::ShieldedNote;
-use crate::error::PlatformWalletError;
+use crate::error::{PlatformWalletError, ShieldedFreshSelection};
 use dpp::consensus::basic::state_transition::StateTransitionNotActiveError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
@@ -561,8 +561,10 @@ pub(crate) fn ensure_plan_holds(
     nullifiers.sort_unstable();
     if spend_digest(kind, amount, fee, &nullifiers, platform_version) != *expected {
         return Err(PlatformWalletError::ShieldedPlanChanged {
-            fresh_fee: fee,
-            fresh_note_count: nullifiers.len(),
+            fresh_selection: Some(ShieldedFreshSelection {
+                fee,
+                note_count: nullifiers.len(),
+            }),
         });
     }
     Ok(())
@@ -1213,8 +1215,7 @@ mod tests {
             matches!(
                 err,
                 PlatformWalletError::ShieldedPlanChanged {
-                    fresh_note_count: 1,
-                    ..
+                    fresh_selection: Some(ShieldedFreshSelection { note_count: 1, .. }),
                 }
             ),
             "got {err:?}"

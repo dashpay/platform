@@ -3565,9 +3565,12 @@ mod tests {
 
     #[test]
     fn should_keep_a_changed_plan_at_its_own_code() {
+        use platform_wallet::ShieldedFreshSelection;
         let changed = || PlatformWalletError::ShieldedPlanChanged {
-            fresh_fee: 225_000_000,
-            fresh_note_count: 5,
+            fresh_selection: Some(ShieldedFreshSelection {
+                fee: 225_000_000,
+                note_count: 5,
+            }),
         };
         let result = map_spend_result(Err(changed()), "shielded transfer");
         assert_eq!(
