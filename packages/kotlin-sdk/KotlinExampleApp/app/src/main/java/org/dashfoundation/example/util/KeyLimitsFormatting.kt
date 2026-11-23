@@ -130,9 +130,27 @@ object KeyLimitsFormatting {
 
     private val UTC: TimeZone = TimeZone.getTimeZone("UTC")
 
-    /** "0.004 of 0.01 DASH left" or, without a remaining figure, "0.01 DASH". */
+    /**
+     * "Budget 0.01 DASH · 0.004 DASH left on Platform", or "Budget 0.01 DASH" without a
+     * remaining figure. The total is the key row as last synced and the remaining figure is a
+     * separate Platform read, which can be from a different block (a raise on another
+     * client), so they are labelled apart rather than shown as "x of y".
+     */
     fun budget(total: ULong, remaining: ULong?): String =
-        if (remaining == null) dash(total) else "${dashNumber(remaining)} of ${dash(total)} left"
+        if (remaining == null) {
+            "Budget ${dash(total)}"
+        } else {
+            "Budget ${dash(total)} · ${dash(remaining)} left on Platform"
+        }
+
+    /**
+     * The latest instant the expiry date picker offers: 9999-12-31 23:59:59.999 UTC. An expiry
+     * past it (Platform imposes no such bound) is shown, but not offered for editing here.
+     */
+    const val MAX_PICKABLE_MILLIS: Long = 253_402_300_799_999L
+
+    /** The years the expiry date picker offers. */
+    val PICKABLE_YEARS: IntRange = 1970..9999
 
     /**
      * Whether the key has expired at [nowMillis]. The expiry instant itself is already
@@ -142,12 +160,16 @@ object KeyLimitsFormatting {
     fun isExpired(expiresAt: ULong, nowMillis: Long): Boolean =
         nowMillis >= 0 && nowMillis.toULong() >= expiresAt
 
-    /** The expiry as an absolute local date and time. */
+    /**
+     * The expiry as an absolute local date and time, or for an expiry past year 9999 its
+     * milliseconds, which a calendar date cannot show.
+     */
     fun expiryDate(
         expiresAt: ULong,
         locale: Locale = Locale.getDefault(),
         zone: TimeZone = TimeZone.getDefault(),
     ): String {
+        if (expiresAt > MAX_PICKABLE_MILLIS.toULong()) return "$expiresAt ms after 1970"
         val formatter = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, locale)
         formatter.timeZone = zone
         return formatter.format(Date(expiresAt.toLong()))
@@ -155,7 +177,14 @@ object KeyLimitsFormatting {
 
     /** "Expires in 3 hours" or "Expired 2 days ago". */
     fun expiryRelative(expiresAt: ULong, nowMillis: Long): String {
-        val relative = relative(expiresAt.toLong() - nowMillis)
+        val now = nowMillis.coerceAtLeast(0).toULong()
+        // Unsigned difference, saturated to Long: an expiry past Long.MAX_VALUE stays future.
+        val delta = if (expiresAt >= now) {
+            (expiresAt - now).coerceAtMost(Long.MAX_VALUE.toULong()).toLong()
+        } else {
+            -(now - expiresAt).toLong()
+        }
+        val relative = relative(delta)
         return if (isExpired(expiresAt, nowMillis)) "Expired $relative" else "Expires $relative"
     }
 

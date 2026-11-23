@@ -1,5 +1,6 @@
 package org.dashfoundation.example.ui.identity
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -84,14 +85,26 @@ interface KeyLimitsWallet {
     suspend fun update(reviewed: IdentityKeyLimitsUpdatePreview)
 }
 
-/** [KeyLimitsWallet] over [manager]'s identity updates and signer, for [wallet]. */
+/**
+ * [KeyLimitsWallet] over [manager]'s identity updates (signed by the manager's own signer),
+ * for [wallet]; a failure when [wallet] was already closed (its handle throws), so the
+ * screens show the wallet as unavailable instead of crashing.
+ */
 fun keyLimitsWallet(
     manager: PlatformWalletManager,
     wallet: ManagedPlatformWallet,
     identityId: ByteArray,
     keyId: Int,
+): Result<KeyLimitsWallet> = runCatching { wallet.handle }.map { handle ->
+    keyLimitsWalletFor(manager, handle, identityId, keyId)
+}
+
+private fun keyLimitsWalletFor(
+    manager: PlatformWalletManager,
+    handle: Long,
+    identityId: ByteArray,
+    keyId: Int,
 ): KeyLimitsWallet {
-    val handle = wallet.handle
     val id = identityId.copyOf()
     return object : KeyLimitsWallet {
         override val walletHandle: Long = handle
@@ -105,11 +118,10 @@ fun keyLimitsWallet(
                 keyId = keyId,
                 addBudget = addBudget,
                 expiresAt = expiresAt,
-                signerHandle = manager.signerHandle,
             )
 
         override suspend fun update(reviewed: IdentityKeyLimitsUpdatePreview) =
-            manager.identityUpdates.updateKeyLimitsAsReviewed(handle, reviewed, manager.signerHandle)
+            manager.identityUpdates.updateKeyLimitsAsReviewed(handle, reviewed)
     }
 }
 
@@ -129,10 +141,12 @@ fun keyLimitsWallet(
  * copied here. Every failure locks the screen; closing and reopening it starts again from a
  * proved refresh. Rust classifying the outcome for both hosts is issue #6063.
  *
- * The form, the lock and whether a submission was in flight live in [saved], so they
- * survive the process being killed while the screen is in the back stack. A submission in
- * flight when the process died comes back as a locked screen whose outcome is unknown.
- * Nothing here is key material: ids, limits and Rust's messages.
+ * The form, the lock, whether a submission was in flight and whether one succeeded live in
+ * [saved], so they survive the process being killed while the screen is in the back stack.
+ * A submission in flight when the process died comes back as a locked screen whose outcome
+ * is unknown; one that succeeded comes back finished (the screen closes), never as a form
+ * holding the increment already applied. Nothing here is key material: ids, limits and
+ * Rust's messages.
  */
 class UpdateKeyLimitsViewModel(private val saved: SavedStateHandle) : ViewModel() {
 
@@ -200,8 +214,22 @@ class UpdateKeyLimitsViewModel(private val saved: SavedStateHandle) : ViewModel(
     /** Bumped when a submission starts: a preview started before it may not publish. */
     private var previewEpoch = 0
 
+    /**
+     * The key's current expiry is within what the date picker can show (year 9999), so
+     * Extend expiry can be offered. Platform imposes no such bound.
+     */
+    val expiryPickable: Boolean
+        get() {
+            val expiresAt = (gate as? Gate.Ready)?.opening?.currentExpiresAt ?: return false
+            return expiresAt <= KeyLimitsFormatting.MAX_PICKABLE_MILLIS.toULong()
+        }
+
     init {
-        if (saved.get<Boolean>(SUBMISSION_IN_FLIGHT) == true) {
+        if (saved.get<Boolean>(SUCCEEDED) == true) {
+            // Confirmed before the process died: close, never offer the increment again.
+            finished = true
+            locked = true
+        } else if (saved.get<Boolean>(SUBMISSION_IN_FLIGHT) == true) {
             // The process died while an update was being sent: it may have landed.
             lock(
                 "The app was closed while this update was being sent. It may have landed. " +
@@ -267,10 +295,12 @@ class UpdateKeyLimitsViewModel(private val saved: SavedStateHandle) : ViewModel(
             gate = try {
                 val opening = resolved.preview(null, null)
                 val expiresAt = opening.currentExpiresAt
-                if (expiresAt != null && pickedExpiryMillis == null) {
-                    // A starting point for the picker only; Rust judges the pick.
-                    val base = maxOf(expiresAt.coerceAtMost(Long.MAX_VALUE.toULong()).toLong(), System.currentTimeMillis())
-                    setPickedExpiry(base + THIRTY_DAYS_MILLIS)
+                val maxPickable = KeyLimitsFormatting.MAX_PICKABLE_MILLIS
+                if (expiresAt != null && expiresAt <= maxPickable.toULong() && pickedExpiryMillis == null) {
+                    // A starting point for the picker only, kept within what it can show;
+                    // Rust judges the pick.
+                    val base = maxOf(expiresAt.toLong(), System.currentTimeMillis())
+                    setPickedExpiry(minOf(base, maxPickable - THIRTY_DAYS_MILLIS) + THIRTY_DAYS_MILLIS)
                 }
                 Gate.Ready(opening)
             } catch (e: CancellationException) {
@@ -376,7 +406,13 @@ class UpdateKeyLimitsViewModel(private val saved: SavedStateHandle) : ViewModel(
         viewModelScope.launch {
             try {
                 resolved.update(reviewed)
+                // Recorded before the screen closes: a state saved in between restores as
+                // finished, not as a form offering the applied increment again.
+                saved[SUCCEEDED] = true
+                saved[ADD_BUDGET_TEXT] = ""
+                saved[EXTEND_EXPIRY] = false
                 saved[SUBMISSION_IN_FLIGHT] = false
+                locked = true
                 isSubmitting = false
                 // The wallet already stored the proved key row through the persister. No
                 // second fetch: a node one block behind could answer with the old limits.
@@ -418,6 +454,7 @@ class UpdateKeyLimitsViewModel(private val saved: SavedStateHandle) : ViewModel(
         private const val SUBMIT_CONSENSUS_CODE = "keyLimits.submitConsensusCode"
         private const val LOCKED = "keyLimits.locked"
         private const val SUBMISSION_IN_FLIGHT = "keyLimits.submissionInFlight"
+        private const val SUCCEEDED = "keyLimits.succeeded"
     }
 }
 
@@ -453,7 +490,7 @@ fun UpdateKeyLimitsScreen(
                 IllegalStateException("Identity has no wallet linkage; cannot sign a key limits update."),
             )
             mgr == null || w == null -> Result.failure(IllegalStateException("Wallet not loaded in the wallet manager."))
-            else -> Result.success(keyLimitsWallet(mgr, w, idBytes, keyId))
+            else -> keyLimitsWallet(mgr, w, idBytes, keyId)
         }
     }
     // Wait for the identity row and its wallet before the one opening load.
@@ -466,6 +503,9 @@ fun UpdateKeyLimitsScreen(
     LaunchedEffect(state.finished) {
         if (state.finished) navController.popBackStack()
     }
+    // The native write cannot be cancelled once sent: leaving would drop its outcome, so
+    // system Back is held while it runs, as the toolbar arrow is.
+    BackHandler(enabled = state.isSubmitting) {}
 
     Scaffold(
         topBar = {
@@ -498,6 +538,15 @@ fun UpdateKeyLimitsScreen(
                 is UpdateKeyLimitsViewModel.Gate.Refused -> FormSection(title = "Key #$keyId limits cannot be raised") {
                     ErrorText(gate.reason, "keyLimits.update.error")
                 }
+                is UpdateKeyLimitsViewModel.Gate.Ready -> Unit
+            }
+            // A restored lock (a submission whose outcome is unknown) is shown whatever the
+            // opening refresh answers; under Ready it is part of the submit section.
+            if (state.gate !is UpdateKeyLimitsViewModel.Gate.Ready && state.submitError != null) {
+                FormSection { SubmitErrorText(state) }
+            }
+            when (val gate = state.gate) {
+                UpdateKeyLimitsViewModel.Gate.Loading, is UpdateKeyLimitsViewModel.Gate.Refused -> Unit
                 is UpdateKeyLimitsViewModel.Gate.Ready -> {
                     // Current limits and signer from the same preview as the new ones when
                     // there is one for what the form shows, so "now" and "after" agree.
@@ -550,7 +599,15 @@ private fun ChangeSection(opening: IdentityKeyLimitsUpdatePreview, state: Update
                 modifier = Modifier.fillMaxWidth().testTag("keyLimits.update.addBudget"),
             )
         }
-        if (opening.currentExpiresAt != null) {
+        if (opening.currentExpiresAt != null && !state.expiryPickable) {
+            Text(
+                "This key's expiry is past what the date picker can show (year 9999), so only " +
+                    "its budget can be changed here.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (opening.currentExpiresAt != null && state.expiryPickable) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Text("Extend expiry", modifier = Modifier.weight(1f))
                 Switch(
@@ -590,6 +647,7 @@ private fun ChangeSection(opening: IdentityKeyLimitsUpdatePreview, state: Update
     if (showDatePicker && picked != null) {
         val pickerState = rememberDatePickerState(
             initialSelectedDateMillis = KeyLimitsFormatting.dateUtcMillis(picked),
+            yearRange = KeyLimitsFormatting.PICKABLE_YEARS,
         )
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
@@ -676,20 +734,24 @@ private fun SubmitSection(state: UpdateKeyLimitsViewModel) {
             }
             Text("Update Limits")
         }
-        state.submitError?.let { message ->
-            Column(
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier.testTag("keyLimits.update.submitError"),
-            ) {
-                Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-                state.submitConsensusCode?.let {
-                    Text(
-                        "Consensus error $it",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+        SubmitErrorText(state)
+    }
+}
+
+@Composable
+private fun SubmitErrorText(state: UpdateKeyLimitsViewModel) {
+    val message = state.submitError ?: return
+    Column(
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.testTag("keyLimits.update.submitError"),
+    ) {
+        Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+        state.submitConsensusCode?.let {
+            Text(
+                "Consensus error $it",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

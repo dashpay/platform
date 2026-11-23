@@ -101,9 +101,29 @@ class KeyLimitsFormattingTest {
     }
 
     @Test
-    fun shouldShowRemainingOfTotalWhenKnown() {
-        assertEquals("0.004 of 0.01 DASH left", KeyLimitsFormatting.budget(1_000_000_000uL, 400_000_000uL))
-        assertEquals("0.01 DASH", KeyLimitsFormatting.budget(1_000_000_000uL, null))
+    fun shouldLabelTheSyncedTotalAndThePlatformRemainingApart() {
+        assertEquals(
+            "Budget 0.01 DASH · 0.004 DASH left on Platform",
+            KeyLimitsFormatting.budget(1_000_000_000uL, 400_000_000uL),
+        )
+        assertEquals("Budget 0.01 DASH", KeyLimitsFormatting.budget(1_000_000_000uL, null))
+    }
+
+    @Test
+    fun shouldShowAnExpiryPastTheCalendarAsFutureMilliseconds() {
+        val far = ULong.MAX_VALUE
+        assertEquals("$far ms after 1970", KeyLimitsFormatting.expiryDate(far))
+        assertTrue(KeyLimitsFormatting.expiryRelative(far, 1_700_000_000_000).startsWith("Expires in "))
+        assertTrue(KeyLimitsFormatting.expiryRelative((Long.MAX_VALUE.toULong() + 1uL), 0).startsWith("Expires in "))
+        // The last pickable instant still renders as a date.
+        assertEquals(
+            "Dec 31, 9999, 11:59 PM",
+            KeyLimitsFormatting.expiryDate(
+                KeyLimitsFormatting.MAX_PICKABLE_MILLIS.toULong(),
+                Locale.US,
+                TimeZone.getTimeZone("UTC"),
+            ).replace('\u202F', ' '),
+        )
     }
 
     @Test

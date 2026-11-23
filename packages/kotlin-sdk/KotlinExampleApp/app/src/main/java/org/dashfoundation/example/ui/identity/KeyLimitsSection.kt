@@ -44,8 +44,10 @@ private sealed interface UpdateLimitsGate {
 
 /**
  * The key detail screen's **Limits** section: port of `KeyDetailView.limitsSection` in
- * `KeyDetailView.swift`. Shows the key's total budget, what Platform says is left of it
- * (fetched for the total shown, and again when the total changes), and its expiry. The
+ * `KeyDetailView.swift`. Shows the key's total budget as the key row last synced it, what
+ * Platform says is left of it (a separate read, fetched again when the total changes, so it
+ * is labelled apart: the two can come from different blocks until #6064 reads both from one
+ * proof), and its expiry. The
  * **Update Limits** button (`keyLimits.update.open`) is enabled only when Rust's no-change
  * preview answers, and otherwise disabled with Rust's reason
  * (`keyLimits.update.unavailableReason`). The first time, the wallet's copy of the identity
@@ -104,7 +106,11 @@ fun KeyLimitsSection(
             return@LaunchedEffect
         }
         gate = null
-        val calls = keyLimitsWallet(mgr, w, identityId, key.keyId)
+        val calls = keyLimitsWallet(mgr, w, identityId, key.keyId).getOrElse {
+            // The wallet was closed while this screen opened.
+            gate = UpdateLimitsGate.Refused("Wallet not loaded; this identity's keys cannot sign here.")
+            return@LaunchedEffect
+        }
         if (!walletRefreshed) {
             walletRefreshed = true
             try {
@@ -131,16 +137,16 @@ fun KeyLimitsSection(
             val reading = remaining?.takeIf { it.first == total }
             when {
                 loadingRemaining -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Remaining", modifier = Modifier.weight(1f))
+                    Text("Remaining on Platform", modifier = Modifier.weight(1f))
                     CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                 }
                 reading?.second != null -> LabeledContent(
-                    "Remaining",
+                    "Remaining on Platform",
                     KeyLimitsFormatting.dash(reading.second!!),
                     valueColor = if (reading.second == 0uL) MaterialTheme.colorScheme.error else null,
                 )
-                remainingError != null -> LabeledContent("Remaining", "Unavailable")
-                else -> LabeledContent("Remaining", "Unknown")
+                remainingError != null -> LabeledContent("Remaining on Platform", "Unavailable")
+                else -> LabeledContent("Remaining on Platform", "Unknown")
             }
             remainingError?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)

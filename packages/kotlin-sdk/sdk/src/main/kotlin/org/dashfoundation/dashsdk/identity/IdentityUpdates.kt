@@ -1,6 +1,7 @@
 package org.dashfoundation.dashsdk.identity
 
 import org.dashfoundation.dashsdk.wallet.op
+import org.dashfoundation.dashsdk.wallet.opReturningCompletedResult
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -184,6 +185,12 @@ data class IdentityPubkey(
  */
 class IdentityUpdates internal constructor(
     private val gate: org.dashfoundation.dashsdk.wallet.TeardownGate? = null,
+    /**
+     * The owning manager's signer handle, read inside [gate] by the key limits calls: the
+     * manager closes that signer only after the gate has drained, so a call holding the gate
+     * can never borrow a freed signer. Null for a facade without a manager.
+     */
+    private val managerSignerHandle: (() -> Long)? = null,
 ) {
 
     /**
@@ -296,11 +303,16 @@ class IdentityUpdates internal constructor(
      * answers whether the key can be raised at all and by which key; with a change it also
      * returns the absolute limits the update would set. Every rule is Rust's: a missing,
      * disabled or unlimited key, a change that is not a raise (a zero top-up, an expiry that
-     * is not later), a key the change would leave expired, and a signer at [signerHandle]
-     * holding no MASTER key and no CRITICAL authentication key without limits or contract
-     * bounds are refused with Rust's reason as a [org.dashfoundation.dashsdk.errors.DashSdkError].
+     * is not later), a key the change would leave expired, and a manager signer holding no
+     * MASTER key and no CRITICAL authentication key without limits or contract bounds are
+     * refused with Rust's reason as a [org.dashfoundation.dashsdk.errors.DashSdkError].
      * The answer comes from the identity as the wallet at [walletHandle] holds it; call
      * [refreshIdentity] first to start from Platform.
+     *
+     * Signed by the owning manager's signer, borrowed inside the teardown gate (not a handle
+     * the caller passes, which another owner could close mid-call). [identityId] is copied
+     * once before the call, so the returned preview names exactly the identity Rust answered
+     * for even if the caller reuses its buffer.
      */
     suspend fun previewKeyLimitsUpdate(
         walletHandle: Long,
@@ -308,24 +320,24 @@ class IdentityUpdates internal constructor(
         keyId: Int,
         addBudget: ULong? = null,
         expiresAt: ULong? = null,
-        signerHandle: Long,
-    ): IdentityKeyLimitsUpdatePreview = gate.op {
-        require(identityId.size == 32) {
-            "identityId must be 32 bytes, got ${identityId.size}"
+    ): IdentityKeyLimitsUpdatePreview {
+        val id = identityId.copyOf()
+        require(id.size == 32) { "identityId must be 32 bytes, got ${id.size}" }
+        return gate.op {
+            val slots = mapNativeErrors {
+                IdentityKeyLimitsNative.previewKeyLimitsUpdate(
+                    walletHandle,
+                    id,
+                    keyId,
+                    addBudget != null,
+                    (addBudget ?: 0uL).toLong(),
+                    expiresAt != null,
+                    (expiresAt ?: 0uL).toLong(),
+                    ownSignerHandle(),
+                )
+            }
+            IdentityKeyLimitsUpdatePreview.fromSlots(id, keyId, slots)
         }
-        val slots = mapNativeErrors {
-            IdentityKeyLimitsNative.previewKeyLimitsUpdate(
-                walletHandle,
-                identityId,
-                keyId,
-                addBudget != null,
-                (addBudget ?: 0uL).toLong(),
-                expiresAt != null,
-                (expiresAt ?: 0uL).toLong(),
-                signerHandle,
-            )
-        }
-        IdentityKeyLimitsUpdatePreview.fromSlots(identityId, keyId, slots)
     }
 
     /**
@@ -338,20 +350,28 @@ class IdentityUpdates internal constructor(
      * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed]
      * means the update may have landed; do not send it again. Room learns of the raised
      * limits through the persistence changeset.
+     *
+     * Signed by the owning manager's signer, borrowed inside the teardown gate. If the caller
+     * is cancelled after the native call completed, the call still returns normally instead
+     * of throwing (see `opReturningCompletedResult`), so a landed update is never reported as
+     * a cancellation that a caller might send again.
      */
     suspend fun updateKeyLimitsAsReviewed(
         walletHandle: Long,
         reviewed: IdentityKeyLimitsUpdatePreview,
-        signerHandle: Long,
-    ) = gate.op {
-        mapNativeErrors {
-            IdentityKeyLimitsNative.updateKeyLimitsAsReviewed(
-                walletHandle,
-                reviewed.identityId,
-                reviewed.keyId,
-                reviewed.toSlots(),
-                signerHandle,
-            )
+    ) {
+        val identityId = reviewed.identityId
+        val slots = reviewed.toSlots()
+        gate.opReturningCompletedResult {
+            mapNativeErrors {
+                IdentityKeyLimitsNative.updateKeyLimitsAsReviewed(
+                    walletHandle,
+                    identityId,
+                    reviewed.keyId,
+                    slots,
+                    ownSignerHandle(),
+                )
+            }
         }
     }
 
@@ -363,10 +383,13 @@ class IdentityUpdates internal constructor(
      * reach Room through the persister; as for every refresh, a failed store is logged by
      * Rust, not thrown, so success means the wallet's copy is current.
      */
-    suspend fun refreshIdentity(walletHandle: Long, identityId: ByteArray) = gate.op {
-        require(identityId.size == 32) {
-            "identityId must be 32 bytes, got ${identityId.size}"
-        }
-        mapNativeErrors { IdentityKeyLimitsNative.refreshIdentity(walletHandle, identityId) }
+    suspend fun refreshIdentity(walletHandle: Long, identityId: ByteArray) {
+        val id = identityId.copyOf()
+        require(id.size == 32) { "identityId must be 32 bytes, got ${id.size}" }
+        gate.op { mapNativeErrors { IdentityKeyLimitsNative.refreshIdentity(walletHandle, id) } }
     }
+
+    /** The manager's signer handle; call only inside [gate]. */
+    private fun ownSignerHandle(): Long =
+        checkNotNull(managerSignerHandle) { "this IdentityUpdates has no manager signer" }()
 }

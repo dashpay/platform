@@ -191,7 +191,9 @@ class UpdateKeyLimitsViewModelTest {
         wallet.updateResult.complete(Unit)
         advanceUntilIdle()
         assertTrue(state.finished)
-        assertFalse(state.locked)
+        // Nothing more is offered once it landed, even before the screen closes.
+        assertTrue(state.locked)
+        assertFalse(state.canSubmit)
     }
 
     @Test
@@ -251,6 +253,53 @@ class UpdateKeyLimitsViewModelTest {
         restored.submit()
         advanceUntilIdle()
         assertTrue(reopened.submitted.isEmpty())
+    }
+
+    @Test
+    fun shouldComeBackFinishedNotAsTheAppliedIncrementWhenSavedAfterSuccess() = runTest(dispatcher) {
+        val wallet = FakeWallet(answer = ::preview)
+        val saved = SavedStateHandle()
+        val state = UpdateKeyLimitsViewModel(saved)
+        state.load { Result.success(wallet) }
+        advanceUntilIdle()
+        state.onAddBudgetText("0.00000000005")
+        advanceUntilIdle()
+        state.submit()
+        advanceUntilIdle()
+        assertTrue(state.finished)
+
+        // The state is saved after the confirmation but before the screen closed.
+        val restored = UpdateKeyLimitsViewModel(SavedStateHandle(saved.keys().associateWith { saved.get<Any?>(it) }))
+        assertTrue(restored.finished)
+        assertTrue(restored.locked)
+        assertEquals("", restored.addBudgetText)
+        val reopened = FakeWallet(answer = ::preview)
+        restored.load { Result.success(reopened) }
+        advanceUntilIdle()
+        restored.onAddBudgetText("0.00000000005")
+        advanceUntilIdle()
+        restored.submit()
+        advanceUntilIdle()
+        assertFalse(restored.canSubmit)
+        assertTrue(reopened.submitted.isEmpty())
+    }
+
+    @Test
+    fun shouldNotOfferTheDatePickerForAnExpiryPastItsRange() = runTest(dispatcher) {
+        fun opening(expiresAt: ULong) = IdentityKeyLimitsUpdatePreview(identityId, 2, 0, null, expiresAt, null, null)
+        val far = UpdateKeyLimitsViewModel(SavedStateHandle())
+        far.load { Result.success(FakeWallet(answer = { opening(ULong.MAX_VALUE) })) }
+        advanceUntilIdle()
+        assertFalse(far.expiryPickable)
+        assertNull(far.pickedExpiryMillis)
+
+        // An expiry near the end of the range seeds the picker within it.
+        val edge = UpdateKeyLimitsViewModel(SavedStateHandle())
+        val last = org.dashfoundation.example.util.KeyLimitsFormatting.MAX_PICKABLE_MILLIS
+        edge.load { Result.success(FakeWallet(answer = { opening(last.toULong()) })) }
+        advanceUntilIdle()
+        assertTrue(edge.expiryPickable)
+        assertTrue(edge.pickedExpiryMillis!! <= last)
     }
 
     @Test
