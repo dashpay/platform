@@ -74,9 +74,9 @@ export class DocumentsFacade {
   }
 
   /**
-   * A document's history. A query without a selector reads all of it, as `startAtMs: 0`
-   * does. Below Platform protocol version 15 only a `startAtMs` query is served, and the
-   * result has no `lifecycle`.
+   * A page of a document's history, at most `limit` entries. A query without a selector
+   * starts at the first retained revision, as `startAtMs: 0` does. Below Platform protocol
+   * version 15 only a `startAtMs` query is served, and the result has no `lifecycle`.
    */
   async history(query: wasm.DocumentHistoryQuery): Promise<wasm.DocumentHistoryResult> {
     const w = await this.sdk.getWasmSdkConnected();

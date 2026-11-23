@@ -126,9 +126,9 @@ As long as its nodes are not banned by one of the failures above:
     entry again.
   - `offset` is gone. A query that still passes it is refused as an unknown field.
   - A query takes at most one selector: `startAtMs`, `startAfter`, `startAtRevision` or
-    `revision`. Without one it reads the whole history, as `startAtMs: 0` does. The last
-    three need protocol version 15 and are refused before sending below it
-    (`ProtocolVersionNotActive`).
+    `revision`. Without one it reads from the first retained revision, as `startAtMs: 0`
+    does, one page of at most `limit` entries. The last three need protocol version 15 and
+    are refused before sending below it (`ProtocolVersionNotActive`).
 - **wasm-sdk contract moderation status.** `getContractModerationStatus` and its
   `WithProofInfo` variant, called without `lists`, are refused below protocol version 14
   before the contract is looked up (a protocol version error), rather than reporting the

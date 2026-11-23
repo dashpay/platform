@@ -214,8 +214,8 @@ export interface DocumentHistoryQuery {
   documentId: IdentifierLike
 
   /**
-   * Inclusive lower time bound. Supply at most one selector; a query without one reads the
-   * whole history, as `startAtMs: 0` does.
+   * Inclusive lower time bound. Supply at most one selector. A query without one reads a
+   * page from the first retained revision, as `startAtMs: 0` does, up to `limit` entries.
    *
    * Every selector is an exact u64: a `number` is accepted only up to
    * `Number.MAX_SAFE_INTEGER`, and anything larger must be a `bigint`, since
@@ -339,7 +339,8 @@ fn parse_document_history_query(
     } else if let Some(revision) = input.revision {
         DocumentHistoryFilter::Revision(revision)
     } else {
-        // No selector reads the whole history, which every protocol version serves.
+        // No selector reads from the first retained revision, a page every protocol
+        // version serves.
         DocumentHistoryFilter::StartAtTime(0)
     };
     Ok(DocumentHistoryQuery {
@@ -1873,10 +1874,10 @@ mod history_wasm_tests {
         query.unchecked_into()
     }
 
-    /// A query that names no selector reads the document's whole history, from its first
-    /// retained revision, as `startAtMs: 0` does.
+    /// A query that names no selector reads a page from the document's first retained
+    /// revision, as `startAtMs: 0` does.
     #[wasm_bindgen_test]
-    fn should_read_the_whole_history_when_no_selector_is_given() {
+    fn should_start_at_the_first_retained_revision_when_no_selector_is_given() {
         let input = js_sys::JSON::parse(
             r#"{"dataContractId":"GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec","documentTypeName":"note","documentId":"4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah"}"#,
         )
