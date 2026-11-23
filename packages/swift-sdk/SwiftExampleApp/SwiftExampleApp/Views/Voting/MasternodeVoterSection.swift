@@ -16,9 +16,10 @@ enum MasternodeVoter: Equatable {
     /// The two differ for a masternode stored under its voter identity. The
     /// key stays in the Keychain and signs through `KeychainSigner`.
     case storedKey(identityId: Data, proTxHash: Data)
-    /// A pro_tx_hash (wire order) typed into the sheet, with no key: enough
-    /// to read any masternode's answer, never to cast. Available in every
-    /// build.
+    /// A pro_tx_hash (wire order) with no usable key: enough to read the
+    /// masternode's answer, never to cast. Typed into the sheet (every
+    /// build), or a loaded masternode's recorded pro_tx_hash while its
+    /// voting key is unreadable or still being checked.
     case typedProTxHash(Data)
     #if DEBUG
     /// Debug builds only: a pro_tx_hash (wire order) and a voting private key
@@ -624,9 +625,15 @@ struct MasternodeVoterSection: View {
         // once when no check is needed.
         guard let selected = votingIdentities.first(where: { $0.identityId == selectedIdentityId }),
               !Self.isRefused(selected),
-              let proTxHash = selected.masternodeProTxHash,
-              checkedTrigger == currentTrigger else {
+              let proTxHash = selected.masternodeProTxHash else {
             voter = nil
+            return
+        }
+        guard checkedTrigger == currentTrigger else {
+            // Until then the masternode's answer can still be read: its
+            // recorded pro_tx_hash is published without a key, which casts
+            // nothing.
+            voter = .typedProTxHash(proTxHash)
             return
         }
         voter = .storedKey(identityId: selected.identityId, proTxHash: proTxHash)
