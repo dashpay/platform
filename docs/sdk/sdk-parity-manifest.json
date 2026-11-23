@@ -2591,10 +2591,10 @@
           "reason": "SDK.getBlocks, getOwnerTransactionsInBlock, getRecentStateTransitionStatus and getStateTransitionStatusByHash decode the FFI's JSON one to one, with the proved flag Rust sets. The example app reaches them from the Platform Queries catalog and from two views, the Block Explorer (blocks, a block's transitions, an identity's transitions in it) and the Transition Status Checker (proved in a block, otherwise the node's unproved word), but no gate has run them against a protocol version 15 network yet: TEST_PLAN SYS-09..12 are the manual gates still to run. No write result screen links to the status checker, since none has the transition hash at hand. The reads keep nothing, so there is nothing to resume after a restart."
         },
         "kotlin": {
-          "sdk": "partial",
+          "sdk": "supported",
           "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "Sdk.blocks (PlatformBlocks.kt) wraps the four reads through rs-unified-sdk-jni's PlatformBlocksNative, one JNI export per FFI function, and decodes the FFI's JSON one to one with the proved flag Rust sets (JVM decoding tests; PlatformBlocksFfiTest, which checks the symbols, descriptors and argument refusals on a device, has not been run yet). KotlinExampleApp reaches them from the Platform Queries catalog and from two screens, the Block Explorer (blocks, a block's transitions, an identity's transitions in it) and the Transition Status Checker, but no gate has run them against a protocol version 15 network yet: TEST_PLAN SYS-10..13 are the manual gates still to run. The reads keep nothing, so there is nothing to resume after a restart."
+          "reason": "Sdk.blocks (PlatformBlocks.kt) wraps the four reads through rs-unified-sdk-jni's PlatformBlocksNative, one JNI export per FFI function, and decodes the FFI's JSON one to one with the proved flag Rust sets (JVM decoding tests; PlatformBlocksFfiTest checks the symbols, descriptors and argument refusals on a device and passed on an API 35 arm64 emulator on 2026-11-23). KotlinExampleApp reaches them from the Platform Queries catalog and from two screens, the Block Explorer (blocks, a block's transitions, an identity's transitions in it) and the Transition Status Checker, but no gate has run them against a protocol version 15 network yet: TEST_PLAN SYS-10..13 are the manual gates still to run. The reads keep nothing, so there is nothing to resume after a restart."
         }
       },
       "verification": [

@@ -10,7 +10,7 @@ Capabilities tracked: **41**
 | --- | --- | ---: | ---: | ---: | ---: |
 | Swift | SDK | 25 | 14 | 1 | 1 |
 | Swift | Example app | 6 | 25 | 1 | 9 |
-| Kotlin | SDK | 18 | 18 | 4 | 1 |
+| Kotlin | SDK | 19 | 17 | 4 | 1 |
 | Kotlin | Example app | 7 | 20 | 4 | 10 |
 
 ## Restart coverage
@@ -59,7 +59,7 @@ Capabilities tracked: **41**
 | `shielded.core_wallet_drain` | supported / partial / tested | unsupported / unsupported / not_applicable |
 | `network.adaptive_quorum_source` | supported / supported / tested | supported / supported / tested |
 | `contracts.moderation_reads` | supported / supported / not_applicable | supported / supported / not_applicable |
-| `system.block_and_transition_status_reads` | supported / partial / not_applicable | partial / partial / not_applicable |
+| `system.block_and_transition_status_reads` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `voting.masternode_vote_stored_key` | supported / partial / not_applicable | partial / partial / not_applicable |
 | `identity.load_masternode_voting_key` | supported / partial / not_applicable | partial / partial / not_applicable |
 | `addresses.balance_history` | supported / partial / not_applicable | supported / partial / not_applicable |
