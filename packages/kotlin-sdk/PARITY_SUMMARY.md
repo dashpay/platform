@@ -10,8 +10,8 @@ Capabilities tracked: **40**
 | --- | --- | ---: | ---: | ---: | ---: |
 | Swift | SDK | 25 | 13 | 1 | 1 |
 | Swift | Example app | 6 | 24 | 1 | 9 |
-| Kotlin | SDK | 15 | 16 | 8 | 1 |
-| Kotlin | Example app | 6 | 16 | 8 | 10 |
+| Kotlin | SDK | 17 | 16 | 6 | 1 |
+| Kotlin | Example app | 6 | 18 | 6 | 10 |
 
 ## Restart coverage
 
