@@ -415,8 +415,15 @@ object MasternodeVotingKeyRecords {
     ): MasternodeVotingKeyCheckOutcome? =
         recordWithRevision(database, identityId, networkRaw, storedIdentifier, check, rules)?.outcome
 
-    /** What [recordWithRevision] did: Rust's [outcome], and the row's revision after it. */
-    data class Recorded(val outcome: MasternodeVotingKeyCheckOutcome, val revision: Long)
+    /**
+     * What [recordWithRevision] did: Rust's [outcome], the row's revision after it, and the
+     * record the row holds after it ([record]: the one written, or the one Rust kept).
+     */
+    data class Recorded(
+        val outcome: MasternodeVotingKeyCheckOutcome,
+        val revision: Long,
+        val record: MasternodeRecordedVotingKey? = null,
+    )
 
     /**
      * [record], also returning the row's `votingKeyCheckRevision` as the same transaction left
@@ -452,8 +459,8 @@ object MasternodeVotingKeyRecords {
                     address = record.votingAddress.bytes,
                 )
             }
-            val revision = dao.getByIdentityId(identityId)?.votingKeyCheckRevision ?: 0L
-            Recorded(outcome, revision)
+            val after = dao.getByIdentityId(identityId)
+            Recorded(outcome, after?.votingKeyCheckRevision ?: 0L, after?.recordedVotingKey)
         }
     }
 

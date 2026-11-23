@@ -339,8 +339,15 @@ internal fun isVotingKeyRefused(state: VoterKeyState?, rules: MasternodeVotingKe
 
 /** How the check of the picked identity's stored voting key went. */
 internal sealed interface PickedVotingKeyCheck {
-    /** Rust says the key needs no check before use. */
-    data object NotNeeded : PickedVotingKeyCheck
+    /**
+     * Rust says the key needs no check before use, from [record], the record the helper's own
+     * read found (or the dialog's override), at [revision]: the picker holds it until Room
+     * delivers that revision, so an older displayed record never stands in for it.
+     */
+    data class NotNeeded(
+        val record: MasternodeRecordedVotingKey? = null,
+        val revision: Long = 0,
+    ) : PickedVotingKeyCheck
 
     /**
      * Checked and recorded what Rust said to record: [record], null when Rust said to keep the
@@ -407,7 +414,10 @@ internal suspend fun checkPickedVotingKeyIfNeeded(
     val recorded = knownOverride(identifier, row.votingKeyCheckRevision ?: 0, picked)
         ?.takeIf { it.votingAddress == address }
         ?: row.recordedVotingKey
-    if (!rules.use(recorded, address).checkBeforeUse) return PickedVotingKeyCheck.NotNeeded
+    val rowRevision = row.votingKeyCheckRevision ?: 0
+    if (!rules.use(recorded, address).checkBeforeUse) {
+        return PickedVotingKeyCheck.NotNeeded(recorded, rowRevision)
+    }
     val answer = try {
         check(wireOrderProTxHash(identityId), address)
     } catch (e: CancellationException) {
@@ -432,7 +442,8 @@ internal suspend fun checkPickedVotingKeyIfNeeded(
     return if (written == null) {
         PickedVotingKeyCheck.Dropped
     } else {
-        PickedVotingKeyCheck.Recorded(answer, written.outcome.record, written.revision)
+        // The record the row holds after the write: the one written, or the one Rust kept.
+        PickedVotingKeyCheck.Recorded(answer, written.record, written.revision)
     }
 }
 
@@ -785,22 +796,26 @@ fun MasternodeVoterSection(
             is PickedVotingKeyCheck.Recorded -> {
                 if (checkFailure?.first == hex) checkFailure = null
                 pickedChecks = pickedChecks + (
-                    hex to if (result.record != null) {
+                    // The row's record after the write stands until Room delivers that revision.
+                    hex to PickedKeyCheckState(
+                        identifier, result.record, savedRevision = result.revision,
+                        checkedRevision = result.revision,
+                    )
+                )
+            }
+            is PickedVotingKeyCheck.NotNeeded -> {
+                if (checkFailure?.first == hex) checkFailure = null
+                pickedChecks = pickedChecks + (
+                    hex to if (previous?.known != null && previous.savedRevision == null) {
+                        // A refusal that could not be saved keeps standing.
+                        previous.copy(finished = true, checkedRevision = maxOf(revisionAtStart, result.revision))
+                    } else {
+                        // What the helper's own read found stands until Room delivers it.
                         PickedKeyCheckState(
                             identifier, result.record, savedRevision = result.revision,
                             checkedRevision = result.revision,
                         )
-                    } else {
-                        (previous ?: PickedKeyCheckState(identifier))
-                            .copy(finished = true, checkedRevision = maxOf(revisionAtStart, result.revision))
                     }
-                )
-            }
-            PickedVotingKeyCheck.NotNeeded -> {
-                if (checkFailure?.first == hex) checkFailure = null
-                pickedChecks = pickedChecks + (
-                    hex to (previous ?: PickedKeyCheckState(identifier))
-                        .copy(finished = true, checkedRevision = revisionAtStart)
                 )
             }
             PickedVotingKeyCheck.Dropped -> Unit

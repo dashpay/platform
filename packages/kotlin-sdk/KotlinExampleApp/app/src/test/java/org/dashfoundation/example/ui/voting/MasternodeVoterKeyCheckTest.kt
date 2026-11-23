@@ -323,9 +323,17 @@ class MasternodeVoterKeyCheckTest {
 
         val result = checkPicked(picked = PickedKeyCheckState(identifierA, undetermined, savedRevision = 2))
 
-        assertEquals(PickedVotingKeyCheck.NotNeeded, result)
+        // The refusal the helper read, at its revision, goes back to the picker.
+        assertEquals(PickedVotingKeyCheck.NotNeeded(refusal, 3), result)
         assertTrue(checkedWith.isEmpty())
         assertEquals(refusal to addressA, rules.usedWith.single())
+        // Held as the dialog's record until Room delivers revision 3, no voter is published
+        // against the older displayed row (revision 2, undetermined).
+        val held = PickedKeyCheckState(identifierA, refusal, savedRevision = 3, checkedRevision = 3)
+        assertEquals(
+            StoredVoterDecision.REFUSED,
+            storedVoterDecision(stateAt(2, undetermined), held, rules),
+        )
     }
 
     /**
@@ -366,7 +374,7 @@ class MasternodeVoterKeyCheckTest {
         val refusal = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Invalid("rotated"), addressA)
         rules.use = refusedUse
 
-        assertEquals(PickedVotingKeyCheck.NotNeeded, checkPicked(picked = PickedKeyCheckState(identifierA, refusal)))
+        assertTrue(checkPicked(picked = PickedKeyCheckState(identifierA, refusal)) is PickedVotingKeyCheck.NotNeeded)
         assertTrue(checkedWith.isEmpty())
         assertEquals(refusal to addressA, rules.usedWith.single())
         // And the picker keeps it refused.
@@ -433,7 +441,7 @@ class MasternodeVoterKeyCheckTest {
         db.identityDao().upsert(row(identifierA))
         rules.use = MasternodeRecordedVotingKeyUse(canVote = true, checkBeforeUse = false)
 
-        assertEquals(PickedVotingKeyCheck.NotNeeded, checkPicked())
+        assertTrue(checkPicked() is PickedVotingKeyCheck.NotNeeded)
         assertTrue(checkedWith.isEmpty())
     }
 
