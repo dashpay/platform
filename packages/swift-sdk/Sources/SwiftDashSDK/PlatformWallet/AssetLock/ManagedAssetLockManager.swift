@@ -166,8 +166,10 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
             ).check()
         }
 
+        // The output guards carry no payment class: this call only builds,
+        // and dispatch is a separate call, so Swift has no verdict to give.
         guard let txPtr = txBytesPtr, txLen > 0 else {
-            throw PlatformWalletError.unknown("FFI returned success but transaction buffer was empty", payment: .maybeSent)
+            throw PlatformWalletError.unknown("FFI returned success but transaction buffer was empty")
         }
         defer { asset_lock_manager_free_tx_bytes(txPtr, txLen) }
         defer { if let p = pathPtr { platform_wallet_string_free(p) } }
@@ -181,8 +183,7 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
         // names the actual contract violation.
         guard let pathPtr, pathPtr.pointee != 0 else {
             throw PlatformWalletError.unknown(
-                "FFI returned success but derivation path was NULL or empty",
-                payment: .maybeSent
+                "FFI returned success but derivation path was NULL or empty"
             )
         }
         let path = String(cString: pathPtr)

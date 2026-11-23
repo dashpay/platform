@@ -60,17 +60,21 @@ class PaymentFailureTest {
     }
 
     /**
-     * Only a payment that was attempted is a payment failure: a wallet error
-     * the native wallet gave no class is a refusal before any payment and
-     * shows as the screen's own message (← Swift
-     * `testShouldPresentOnlyAnAttemptedPaymentAsAPaymentFailure`).
+     * Only the screen's own input check is not a payment failure. A wallet
+     * error the native wallet gave no class (an older native library that
+     * does not report it) may come from a payment that was sent: it is
+     * unresolved and holds its slot, so Send stays disabled.
      */
     @Test
     fun shouldPresentOnlyAnAttemptedPaymentAsAPaymentFailure() {
         assertEquals(PaymentFailure.Action.Wait, PaymentFailure.ofPayment(walletError(6, 2, false))?.action)
         assertEquals(PaymentFailure.Action.Wait, PaymentFailure.ofPayment(DashSdkError.Timeout("t"))?.action)
-        assertNull(PaymentFailure.ofPayment(walletError(2, 4, false)))
-        assertNull(PaymentFailure.ofPayment(walletError(2, 0, false)))
+        listOf(walletError(18, 4, false), walletError(20, 0, false), walletError(2, 0, false)).forEach {
+            val unclassified = PaymentFailure.ofPayment(it)
+            assertEquals(it.toString(), PaymentRecovery.Unconfirmed, unclassified?.recovery)
+            assertTrue(it.toString(), unclassified?.holdsSlot == true)
+            assertFalse(it.toString(), unclassified?.permitsRestart(null) == true)
+        }
         assertNull(PaymentFailure.ofPayment(IllegalStateException("x")))
         assertEquals(
             PaymentFailure.Action.Wait,
