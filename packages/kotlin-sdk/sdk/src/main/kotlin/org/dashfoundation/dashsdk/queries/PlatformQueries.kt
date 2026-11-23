@@ -189,6 +189,42 @@ class Addresses internal constructor(private val sdk: Sdk) {
 class Voting internal constructor(private val sdk: Sdk) {
 
     /**
+     * Whether the voting key with [votingAddress] can vote for the masternode
+     * [wireOrderProTxHash], as Platform's state proves it
+     * (`dash_sdk_masternode_check_voting_key`, rs-sdk's `check_masternode_voting_key`). Port of
+     * Swift `SDK.checkMasternodeVotingKey(proTxHash:votingAddress:)`
+     * (`SDK+MasternodeVotingKeyCheck.swift`).
+     *
+     * One proof-verified fetch of the masternode's voter identity; no Core or SPV sync. A
+     * failed fetch is [org.dashfoundation.dashsdk.voting.MasternodeVotingKeyCheck.Undetermined],
+     * not a throw. A masternode registered, or a voting key changed, in the last few blocks
+     * reads as Invalid until Platform processes the masternode list update.
+     *
+     * @param wireOrderProTxHash the masternode's 32-byte pro_tx_hash in **wire order**, as the
+     *   vote calls take it, not the byte order of the hex Core displays.
+     * @throws DashSdkError.InvalidParameter for a value of the wrong length.
+     */
+    suspend fun checkMasternodeVotingKey(
+        wireOrderProTxHash: ByteArray,
+        votingAddress: org.dashfoundation.dashsdk.voting.MasternodeVotingKeyAddress,
+    ): org.dashfoundation.dashsdk.voting.MasternodeVotingKeyCheck {
+        if (wireOrderProTxHash.size != 32) {
+            throw DashSdkError.InvalidParameter("proTxHash must be exactly 32 bytes")
+        }
+        return sdk.queryGate.op {
+            org.dashfoundation.dashsdk.voting.MasternodeVotingKeyCheckCodec.decodeCheck(
+                mapNativeErrors {
+                    org.dashfoundation.dashsdk.ffi.MasternodeVotingKeyNative.checkVotingKey(
+                        sdk.handle,
+                        wireOrderProTxHash,
+                        votingAddress.bytes,
+                    )
+                },
+            )
+        }
+    }
+
+    /**
      * Contested resources for a contract/document-type/index. The index-value
      * JSON bounds ([startIndexValuesJson], [endIndexValuesJson], each a JSON
      * array of strings) and [orderAscending] mirror the iOS catalog. Returns

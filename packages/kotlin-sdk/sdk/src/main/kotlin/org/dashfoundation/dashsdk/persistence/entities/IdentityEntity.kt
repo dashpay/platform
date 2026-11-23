@@ -62,6 +62,24 @@ data class IdentityEntity(
     val walletId: ByteArray? = null,
     /** DIP-9 identity index within the owning wallet. Swift `UInt32`. */
     val identityIndex: Int = 0,
+    /**
+     * What Platform proved, when last asked, about the voting key stored for this masternode
+     * or evonode identity: `"valid"`, `"invalid"` or `"undetermined"`; null when it was never
+     * checked (no voting key, or stored before keys were checked). Swift
+     * `PersistentIdentity.votingKeyCheckRaw`. Read through
+     * `org.dashfoundation.dashsdk.voting.votingKeyCheck` and written only by
+     * `MasternodeVotingKeyRecords.record`, with what Rust says to record.
+     */
+    val votingKeyCheckRaw: String? = null,
+    /** The reason that came with an invalid or undetermined check, worded in Rust. */
+    val votingKeyCheckMessage: String? = null,
+    /**
+     * The 20-byte voting address of the key the check was made of. A record outlives a key
+     * replaced without one, so the address ties it to the key it describes: Rust reads a
+     * record of another address as nothing recorded. Swift
+     * `PersistentIdentity.votingKeyCheckAddress`.
+     */
+    val votingKeyCheckAddress: ByteArray? = null,
 ) {
     override fun equals(other: Any?): Boolean =
         other is IdentityEntity && identityId.contentEquals(other.identityId)

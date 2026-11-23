@@ -201,9 +201,17 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * id a host stores before it calls the drain. NULL for every pre-existing
  * lock and empty after the migration: no lock built before it belongs to a
  * drain.
+ *
+ * Version 18 (masternode voting key check): adds the nullable
+ * `identities.votingKeyCheckRaw`, `identities.votingKeyCheckMessage` and
+ * `identities.votingKeyCheckAddress` columns, what Platform proved when a
+ * stored voting key was last checked and the address of the key it was made
+ * of (Swift `PersistentIdentity`, `DashSchemaV5`). NULL for every
+ * pre-existing row: a key stored before checks existed is never checked, so
+ * it is checked when it is picked to vote.
  */
 @Database(
-    version = 17,
+    version = 18,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -793,6 +801,19 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v17 -> v18: the three nullable voting key check columns on
+         * `identities`, see the version-18 class doc above. NULL for every
+         * pre-existing row: nothing recorded.
+         */
+        val MIGRATION_17_18: Migration = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `identities` ADD COLUMN `votingKeyCheckRaw` TEXT")
+                db.execSQL("ALTER TABLE `identities` ADD COLUMN `votingKeyCheckMessage` TEXT")
+                db.execSQL("ALTER TABLE `identities` ADD COLUMN `votingKeyCheckAddress` BLOB")
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -824,6 +845,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_14_15,
                     MIGRATION_15_16,
                     MIGRATION_16_17,
+                    MIGRATION_17_18,
                 )
                 .build()
 
