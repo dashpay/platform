@@ -129,6 +129,14 @@ class Sdk private constructor(
     }
 
     /**
+     * Blocks with their state transitions and a transition's status by hash (protocol
+     * version 15) — mirrors Swift's `SDK.getBlocks` and its siblings.
+     */
+    val blocks: org.dashfoundation.dashsdk.queries.PlatformBlocks by lazy {
+        org.dashfoundation.dashsdk.queries.PlatformBlocks(this)
+    }
+
+    /**
      * The raw native handle for FFI calls. Throws if the SDK was closed —
      * matching the Swift SDK where a nil handle is a programmer error.
      */

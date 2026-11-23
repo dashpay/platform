@@ -492,6 +492,19 @@ import kotlinx.serialization.Serializable
  */
 @Serializable data class PrivateDocumentEntries(val contractIdHex: String, val typeName: String)
 
+/**
+ * Block explorer: blocks with their state transitions, and one identity's transitions in a
+ * block (← `PlatformBlocksView.swift`, protocol version 15). Reached from the Platform Queries
+ * list.
+ */
+@Serializable object BlockExplorer
+
+/**
+ * A state transition's status by hash, proved by its block (← `TransitionStatusCheckView.swift`,
+ * protocol version 15). Reached from the Platform Queries list.
+ */
+@Serializable object TransitionStatusCheck
+
 /** Query test-runner + environment snapshot (← `DiagnosticsView.swift`). */
 @Serializable object Diagnostics
 

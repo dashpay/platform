@@ -2591,10 +2591,10 @@
           "reason": "SDK.getBlocks, getOwnerTransactionsInBlock, getRecentStateTransitionStatus and getStateTransitionStatusByHash decode the FFI's JSON one to one, with the proved flag Rust sets. The example app reaches them from the Platform Queries catalog and from two views, the Block Explorer (blocks, a block's transitions, an identity's transitions in it) and the Transition Status Checker (proved in a block, otherwise the node's unproved word), but no gate has run them against a protocol version 15 network yet: TEST_PLAN SYS-09..12 are the manual gates still to run. No write result screen links to the status checker, since none has the transition hash at hand. The reads keep nothing, so there is nothing to resume after a restart."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
+          "sdk": "partial",
+          "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "Not ported: rs-unified-sdk-jni binds none of dash_sdk_system_get_blocks, dash_sdk_system_get_owner_transactions_in_block, dash_sdk_system_get_recent_state_transition_status or dash_sdk_system_get_state_transition_status_by_hash, and KotlinExampleApp has no block or transition status screen."
+          "reason": "Sdk.blocks (PlatformBlocks.kt) wraps the four reads through rs-unified-sdk-jni's PlatformBlocksNative, one JNI export per FFI function, and decodes the FFI's JSON one to one with the proved flag Rust sets (JVM decoding tests; PlatformBlocksFfiTest, which checks the symbols, descriptors and argument refusals on a device, has not been run yet). KotlinExampleApp reaches them from the Platform Queries catalog and from two screens, the Block Explorer (blocks, a block's transitions, an identity's transitions in it) and the Transition Status Checker, but no gate has run them against a protocol version 15 network yet: TEST_PLAN SYS-10..13 are the manual gates still to run. The reads keep nothing, so there is nothing to resume after a restart."
         }
       },
       "verification": [
@@ -2688,6 +2688,66 @@
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
           "id": "SYS-12",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/queries/PlatformBlocksDecodingTest.kt",
+          "id": "shouldDecodeABlockWithItsTransactions",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*PlatformBlocksDecodingTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/queries/PlatformBlocksDecodingTest.kt",
+          "id": "shouldDecodeATransitionFoundInItsBlockAsProved",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*PlatformBlocksDecodingTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/queries/PlatformBlocksDecodingTest.kt",
+          "id": "shouldDecodeEveryUnprovedStatusByHash",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*PlatformBlocksDecodingTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/PlatformBlocksFfiTest.kt",
+          "id": "shouldRefuseAMalformedOwnerOrHashBeforeTheNetwork",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=org.dashfoundation.dashsdk.PlatformBlocksFfiTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SYS-10",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SYS-11",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SYS-12",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SYS-13",
           "covers_restart": false
         }
       ]
