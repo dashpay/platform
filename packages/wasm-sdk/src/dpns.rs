@@ -632,13 +632,13 @@ impl WasmSdk {
         query = query.with_where(WhereClause {
             field: "normalizedLabel".to_string(),
             operator: WhereOperator::Equal,
-            value: Value::Text(label.to_lowercase()),
+            value: Value::Text(convert_to_homograph_safe_chars(label)),
         });
 
         query = query.with_where(WhereClause {
             field: "normalizedParentDomainName".to_string(),
             operator: WhereOperator::Equal,
-            value: Value::Text(domain.to_lowercase()),
+            value: Value::Text(convert_to_homograph_safe_chars(domain)),
         });
 
         let documents = Document::fetch_many(self.as_ref(), query).await?;
@@ -677,13 +677,13 @@ impl WasmSdk {
         query = query.with_where(WhereClause {
             field: "normalizedLabel".to_string(),
             operator: WhereOperator::Equal,
-            value: Value::Text(label.to_lowercase()),
+            value: Value::Text(convert_to_homograph_safe_chars(label)),
         });
 
         query = query.with_where(WhereClause {
             field: "normalizedParentDomainName".to_string(),
             operator: WhereOperator::Equal,
-            value: Value::Text(domain.to_lowercase()),
+            value: Value::Text(convert_to_homograph_safe_chars(domain)),
         });
 
         let (documents, metadata, proof) =
@@ -779,5 +779,65 @@ impl WasmSdk {
         response.set_data(username);
 
         Ok(response)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dash_sdk::dpp::document::DocumentV0;
+    use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dash_sdk::Sdk;
+
+    /// DPNS keeps a name under its homograph-safe label: `alice.dash` is stored as `a11ce`
+    /// under `dash`. A lookup of the name as a user types it has to search for that form, or
+    /// it finds nothing for any label with an `i`, `l` or `o`.
+    #[tokio::test]
+    async fn should_find_a_username_whose_label_dpns_stores_in_homograph_safe_form() {
+        let mut inner_sdk = Sdk::new_mock();
+        let dpns = load_system_data_contract(SystemDataContract::DPNS, inner_sdk.version())
+            .expect("the DPNS contract loads");
+        let owner = Identifier::new([7; 32]);
+        let domain = Document::V0(DocumentV0 {
+            id: Identifier::new([9; 32]),
+            owner_id: owner,
+            ..Default::default()
+        });
+        inner_sdk
+            .mock()
+            .expect_fetch(dpns.id(), Some(dpns.clone()))
+            .await
+            .expect("the DPNS contract fetch is expected");
+        let stored_name_query = DocumentQuery::new(Arc::new(dpns), DPNS_DOCUMENT_TYPE)
+            .expect("the domain query builds")
+            .with_where(WhereClause {
+                field: "normalizedLabel".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("a11ce".to_string()),
+            })
+            .with_where(WhereClause {
+                field: "normalizedParentDomainName".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("dash".to_string()),
+            });
+        inner_sdk
+            .mock()
+            .expect_fetch_many::<Identifier, Document, DocumentQuery, Documents>(
+                stored_name_query,
+                Some([(domain.id(), Some(domain))].into_iter().collect()),
+            )
+            .await
+            .expect("the domain query is expected");
+        let sdk = WasmSdk::new_for_testing(inner_sdk, None);
+
+        let info = sdk
+            .get_dpns_username_by_name("Alice.DASH")
+            .await
+            .expect("the lookup succeeds")
+            .expect("the name is found");
+
+        assert_eq!(info.username, "Alice.DASH");
+        assert_eq!(Identifier::from(info.identity_id), owner);
     }
 }
