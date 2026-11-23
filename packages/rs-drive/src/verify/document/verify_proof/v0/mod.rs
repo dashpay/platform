@@ -1,4 +1,4 @@
-use crate::verify::RootHash;
+use crate::verify::{with_proved_root_on_budget_exceeded, RootHash};
 
 use crate::error::Error;
 use crate::query::DriveDocumentQuery;
@@ -60,7 +60,9 @@ impl DriveDocumentQuery<'_> {
                             &mut budget,
                             platform_version,
                         )
-                        .map_err(Error::from)
+                        .map_err(|error| {
+                            with_proved_root_on_budget_exceeded(root_hash, error.into())
+                        })
                     })
                     .collect::<Result<Vec<Document>, Error>>()?;
                 Ok((root_hash, documents))
@@ -169,11 +171,9 @@ mod tests {
         use crate::error::Error;
         use crate::query::{InternalClauses, OrderClause, WhereClause, WhereOperator};
         use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
-        use dpp::data_contract::errors::DataContractError;
         use dpp::data_contract::DataContract;
         use dpp::document::{Document, DocumentV0};
         use dpp::platform_value::{platform_value, Identifier, Value};
-        use dpp::ProtocolError;
         use indexmap::IndexMap;
         use std::collections::BTreeMap;
 
@@ -354,7 +354,7 @@ mod tests {
             .expect("proof executes");
 
         // Header-only cursor comparison succeeds without expanding the oversized row's properties.
-        let (_, serialized_docs) = query
+        let (expected_root, serialized_docs) = query
             .verify_proof_keep_serialized(&proof, latest)
             .expect("keep_serialized must compare cursor ID from header only");
         assert_eq!(serialized_docs.len(), 1);
@@ -364,22 +364,20 @@ mod tests {
             oversized_doc.id()
         );
 
-        // Full verification decodes under the page budget and refuses the oversized row.
+        // Full verification decodes under the page budget and refuses the oversized row
+        // with the reconstructed root hash so callers can authenticate it as an honest refusal.
         let error = query
             .verify_proof(&proof, latest)
             .expect_err("oversized row must exceed decoded value budget");
         assert!(
             matches!(
                 error,
-                Error::Protocol(ref protocol_error)
-                    if matches!(
-                        protocol_error.as_ref(),
-                        ProtocolError::DataContractError(
-                            DataContractError::DecodedValueBudgetExceeded(_)
-                        )
-                    )
+                Error::Proof(crate::error::proof::ProofError::DecodedValueBudgetExceeded {
+                    root_hash,
+                    ..
+                }) if root_hash == expected_root
             ),
-            "expected DecodedValueBudgetExceeded, got: {error:?}"
+            "expected ProofError::DecodedValueBudgetExceeded with matching root, got: {error:?}"
         );
     }
 

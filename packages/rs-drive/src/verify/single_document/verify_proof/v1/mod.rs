@@ -1,7 +1,7 @@
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::SingleDocumentDriveQuery;
-use crate::verify::RootHash;
+use crate::verify::{with_proved_root_on_budget_exceeded, RootHash};
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::{
     DecodedValueBudget, DocumentTypeRef, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
@@ -30,7 +30,8 @@ impl SingleDocumentDriveQuery {
                     document_type,
                     &mut budget,
                     platform_version,
-                )?;
+                )
+                .map_err(|error| with_proved_root_on_budget_exceeded(root, error.into()))?;
                 if document.id().as_slice() != self.document_id
                     || document_type.requires_revision()
                         && document.revision() != Some(retained.revision)

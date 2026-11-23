@@ -7,7 +7,7 @@ use crate::query::refuse_a_private_document_type;
 use crate::verify::grovedb_proof_envelope::{
     require_supported_grovedb_proof_envelope, MINIMUM_GROVEDB_PROOF_ENVELOPE_VERSION,
 };
-use crate::verify::RootHash;
+use crate::verify::{with_proved_root_on_budget_exceeded, RootHash};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{
     DecodedValueBudget, DocumentTypeRef, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
@@ -43,9 +43,9 @@ impl Drive {
             &version.drive.grove_version,
         )?;
         let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
-        Ok((
-            root,
-            query.decode_result(rows, document_type, Some(&mut budget), version)?,
-        ))
+        let result = query
+            .decode_result(rows, document_type, Some(&mut budget), version)
+            .map_err(|error| with_proved_root_on_budget_exceeded(root, error))?;
+        Ok((root, result))
     }
 }

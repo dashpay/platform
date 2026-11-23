@@ -3,7 +3,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::Error;
-use crate::verify::RootHash;
+use crate::verify::{with_proved_root_on_budget_exceeded, RootHash};
 use dpp::data_contract::document_type::{
     DecodedValueBudget, DocumentPropertyType, DocumentTypeRef,
     DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
@@ -85,7 +85,9 @@ impl Drive {
                                 &mut budget,
                                 platform_version,
                             )
-                            .map_err(Error::from)
+                            .map_err(|error| {
+                                with_proved_root_on_budget_exceeded(root_hash, error.into())
+                            })
                         })
                 })
                 .transpose()?;

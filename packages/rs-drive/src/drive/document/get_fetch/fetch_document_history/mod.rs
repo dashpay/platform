@@ -9,6 +9,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::document_history_drive_query::{
     DocumentHistoryDriveQuery, DocumentHistoryDriveQueryExecutionResult,
+    SerializedDocumentHistoryDriveQueryExecutionResult,
 };
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
@@ -80,6 +81,36 @@ impl Drive {
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_document_history".to_string(),
+                known_versions: vec![1],
+                received: version,
+            })),
+        }
+    }
+
+    /// Fetches a page and lifecycle from the per-type composite-keyed history tree,
+    /// validating each entry from its header without decoding document properties.
+    pub fn fetch_document_history_serialized(
+        &self,
+        query: &DocumentHistoryDriveQuery,
+        document_type: DocumentTypeRef,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<SerializedDocumentHistoryDriveQueryExecutionResult, Error> {
+        match platform_version
+            .drive
+            .methods
+            .document
+            .query
+            .fetch_document_history
+        {
+            1 => self.fetch_document_history_serialized_v1(
+                query,
+                document_type,
+                transaction,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "fetch_document_history_serialized".to_string(),
                 known_versions: vec![1],
                 received: version,
             })),
@@ -513,11 +544,9 @@ mod tests {
     fn should_enforce_shared_decoded_value_budget_on_pv15_document_history_proof() {
         use crate::query::DocumentHistoryFilter;
         use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
-        use dpp::data_contract::errors::DataContractError;
         use dpp::data_contract::DataContract;
         use dpp::document::DocumentV0;
         use dpp::platform_value::{platform_value, Identifier, Value};
-        use dpp::ProtocolError;
         use std::collections::BTreeMap;
 
         let pv14 = PlatformVersion::get(14).expect("PV14 exists");
@@ -655,12 +684,15 @@ mod tests {
         let one_rev_proof = drive
             .prove_document_history(&one_rev_query, document_type, None, latest)
             .expect("prove 1-revision history");
-        let (_, verified_one) =
+        let (expected_root, verified_one) =
             Drive::verify_document_history(&one_rev_query, &one_rev_proof, document_type, latest)
                 .expect("single-revision history page fits in client budget");
         assert_eq!(verified_one.entries.len(), 1);
 
-        // A 5-revision page succeeds on the server reader but exceeds the client proof budget.
+        // A 5-revision page can be fetched serialized (header-only validation) and proved
+        // without materializing properties on the node, while client proof verification
+        // refuses it with the reconstructed root hash so callers can authenticate it as an
+        // honest refusal rather than a node fault.
         let five_rev_query = DocumentHistoryDriveQuery {
             contract_id: contract.id().to_buffer(),
             document_type_name: "note".to_string(),
@@ -668,10 +700,12 @@ mod tests {
             filter: DocumentHistoryFilter::StartAtTime(0),
             limit: Some(5),
         };
-        let fetched = drive
-            .fetch_document_history(&five_rev_query, document_type, None, latest)
-            .expect("server history fetch stays unbounded");
-        assert_eq!(fetched.entries.len(), 5);
+        let fetched_serialized = drive
+            .fetch_document_history_serialized(&five_rev_query, document_type, None, latest)
+            .expect(
+                "serialized server history fetch validates headers without expanding properties",
+            );
+        assert_eq!(fetched_serialized.entries.len(), 5);
 
         let five_rev_proof = drive
             .prove_document_history(&five_rev_query, document_type, None, latest)
@@ -682,15 +716,12 @@ mod tests {
         assert!(
             matches!(
                 error,
-                Error::Protocol(ref protocol_error)
-                    if matches!(
-                        protocol_error.as_ref(),
-                        ProtocolError::DataContractError(
-                            DataContractError::DecodedValueBudgetExceeded(_)
-                        )
-                    )
+                Error::Proof(crate::error::proof::ProofError::DecodedValueBudgetExceeded {
+                    root_hash,
+                    ..
+                }) if root_hash == expected_root
             ),
-            "expected DecodedValueBudgetExceeded, got: {error:?}"
+            "expected ProofError::DecodedValueBudgetExceeded with matching root, got: {error:?}"
         );
     }
 }

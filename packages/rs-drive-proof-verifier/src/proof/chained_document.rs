@@ -26,8 +26,7 @@
 //! be built from a trusted node's unproven wire by the SDK if it
 //! chooses, but the canonical path proves.
 
-use crate::error::MapGroveDbError;
-use crate::verify::{document_query_proof_bytes, verify_tenderdash_proof};
+use crate::verify::{document_query_proof_bytes, verify_tenderdash_proof, MapProvedBudgetError};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
@@ -139,7 +138,7 @@ pub fn verify_chained_documents_proof(
             document_query_proof_bytes(proof, mtd, platform_version)?,
             platform_version,
         )
-        .map_drive_error(proof, mtd)?;
+        .map_proved_budget_error(proof, mtd, provider)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 

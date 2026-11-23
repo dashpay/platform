@@ -4,7 +4,7 @@ use crate::error::Error;
 use crate::query::index_only_synthesis::synthesize_index_only_document;
 use crate::query::moderated_join::decode_removals;
 use crate::query::{ChainedDocumentsResult, ChainedOuterDocuments, DriveDocumentQuery};
-use crate::verify::RootHash;
+use crate::verify::{with_proved_root_on_budget_exceeded, RootHash};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{
@@ -119,9 +119,12 @@ impl DriveDocumentQuery<'_> {
                         Some(&element),
                         platform_version,
                     )?;
-                    budget
-                        .charge_document(&document)
-                        .map_err(|e| Error::Protocol(Box::new(e.into())))?;
+                    budget.charge_document(&document).map_err(|error| {
+                        with_proved_root_on_budget_exceeded(
+                            root_hash,
+                            Error::Protocol(Box::new(error.into())),
+                        )
+                    })?;
                     inner_documents.push(document);
                 }
                 Some(segment) if segment == outer_type_name => {
@@ -144,7 +147,12 @@ impl DriveDocumentQuery<'_> {
                             &mut budget,
                             platform_version,
                         )
-                        .map_err(|e| Error::Protocol(Box::new(e)))?,
+                        .map_err(|error| {
+                            with_proved_root_on_budget_exceeded(
+                                root_hash,
+                                Error::Protocol(Box::new(error)),
+                            )
+                        })?,
                     );
                 }
                 _ => {

@@ -1,4 +1,4 @@
-use crate::verify::RootHash;
+use crate::verify::{with_proved_root_on_budget_exceeded, RootHash};
 
 use crate::error::Error;
 use crate::query::SingleDocumentDriveQuery;
@@ -52,7 +52,9 @@ impl SingleDocumentDriveQuery {
                             &mut budget,
                             platform_version,
                         )
-                        .map_err(Error::from)
+                        .map_err(|error| {
+                            with_proved_root_on_budget_exceeded(root_hash, error.into())
+                        })
                     })
                     .transpose()?;
                 Ok((root_hash, document))

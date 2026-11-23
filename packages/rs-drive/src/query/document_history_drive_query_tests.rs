@@ -565,14 +565,22 @@ fn should_read_lifecycle_current_pointer_from_header_without_decoding_properties
         .expect("profile type");
     let query = fixture.query(DocumentHistoryFilter::StartAtRevision(4), Some(1));
 
-    // Build a current-document byte slice containing only the format-3 header through
-    // revision (format + contract version stamp + id + owner_id + revision), followed by
-    // no decodable properties at all. `Document::from_bytes` would reject this slice.
-    let Element::Item(full_bytes, _) = fixture.document_element(3) else {
-        panic!("expected document item");
-    };
-    // Format 3: 1-byte format + 1-byte stamp + 32-byte id + 32-byte owner_id + 1-byte revision = 67 bytes.
-    let header_only = full_bytes[..67].to_vec();
+    // Explicitly construct a format-3 header truncated immediately after the revision:
+    // 1-byte format (3) + 1-byte contract version stamp (7) + 32-byte id + 32-byte owner_id
+    // + 1-byte revision (3) = 67 bytes with zero property bytes following.
+    // Using distinct stamp (7) and revision (3) values proves `lifecycle` consumes the
+    // format-3 stamp and reads revision 3 (matching remaining_revisions == 3) without
+    // decoding properties. `Document::from_bytes` must reject this slice.
+    let mut header_only = Vec::with_capacity(67);
+    header_only.push(3u8); // format 3
+    header_only.push(7u8); // contract version stamp 7
+    header_only.extend_from_slice(fixture.document.id().as_bytes());
+    header_only.extend_from_slice(fixture.document.owner_id().as_bytes());
+    header_only.push(3u8); // revision 3
+    assert_eq!(header_only.len(), 67);
+    assert_eq!(header_only[0], 3);
+    assert_eq!(header_only[1], 7);
+    assert_eq!(header_only[66], 3);
     assert!(
         Document::from_bytes(&header_only, document_type, PlatformVersion::latest()).is_err(),
         "header-only bytes must not decode as a full document"
@@ -593,7 +601,7 @@ fn should_read_lifecycle_current_pointer_from_header_without_decoding_properties
             Some(&mut budget),
             PlatformVersion::latest(),
         )
-        .expect("lifecycle must read current document id and revision from header only");
+        .expect("lifecycle must read current document id and revision from format-3 header only");
     assert!(result.entries.is_empty());
     assert_eq!(budget.remaining(), 1);
 }

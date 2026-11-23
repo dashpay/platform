@@ -919,3 +919,236 @@ fn should_derive_deleted_and_erasing_lifecycle_from_the_proof() {
         );
     }
 }
+
+#[test]
+fn should_surface_oversized_pv15_history_proof_as_unusable_verified_result_when_signed() {
+    use dapi_grpc::platform::v0::get_document_history_request::Version as RequestVersion;
+    use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+    use dpp::document::{Document, DocumentV0};
+    use dpp::platform_value::{platform_value, Value};
+    use std::collections::BTreeMap;
+
+    let pv14 = PlatformVersion::get(14).expect("PV14 exists");
+    let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+    let mut state = state.as_ref().clone();
+
+    let field_count = 60usize;
+    let mut properties = Vec::with_capacity(field_count);
+    let mut doc_properties = BTreeMap::new();
+    for i in 0..field_count {
+        let name = format!("f{i:02}");
+        properties.push((
+            Value::Text(name.clone()),
+            platform_value!({
+                "type": "array",
+                "maxItems": 1024,
+                "items": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 0,
+                    "maxItems": 0,
+                },
+                "position": i as u32,
+            }),
+        ));
+        doc_properties.insert(name, Value::Array(vec![Value::Bytes(vec![]); 1024]));
+    }
+    let contract = DataContract::from_value(
+        platform_value!({
+            "$formatVersion": "1",
+            "id": Identifier::new([0x71; 32]),
+            "version": 1u32,
+            "ownerId": Identifier::new([0x72; 32]),
+            "config": {
+                "$formatVersion": "1",
+                "canBeDeleted": false,
+                "readonly": false,
+                "keepsHistory": false,
+                "documentsKeepHistoryContractDefault": true,
+                "documentsMutableContractDefault": true,
+                "documentsCanBeDeletedContractDefault": false,
+                "requiresIdentityEncryptionBoundedKey": Value::Null,
+                "requiresIdentityDecryptionBoundedKey": Value::Null,
+                "sizedIntegerTypes": true,
+            },
+            "documentSchemas": {
+                "note": {
+                    "type": "object",
+                    "documentsKeepHistory": true,
+                    "documentsMutable": true,
+                    "canBeDeleted": false,
+                    "properties": Value::Map(properties),
+                    "additionalProperties": false,
+                }
+            }
+        }),
+        true,
+        pv14,
+    )
+    .expect("PV14 history contract validates");
+
+    platform
+        .drive
+        .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+        .expect("apply contract");
+
+    let document_type = contract.document_type_for_name("note").expect("note type");
+    let owner_id = Identifier::new([0x73; 32]);
+    let doc_id = Identifier::new([0x74; 32]);
+    let mut document = Document::V0(DocumentV0 {
+        id: doc_id,
+        owner_id,
+        properties: doc_properties,
+        revision: Some(1),
+        ..Default::default()
+    });
+    platform
+        .drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentInfo::DocumentRefInfo((&document, None)),
+                    owner_id: None,
+                },
+                contract: &contract,
+                document_type,
+            },
+            true,
+            BlockInfo::default_with_time(1000),
+            true,
+            None,
+            version,
+        )
+        .expect("insert revision 1");
+    for revision in 2u64..=5 {
+        document.set_revision(Some(revision));
+        platform
+            .drive
+            .update_document_for_contract(
+                &document,
+                &contract,
+                document_type,
+                Some(owner_id.to_buffer()),
+                BlockInfo::default_with_time(1000 * revision),
+                true,
+                None,
+                None,
+                version,
+            )
+            .expect("update revision");
+    }
+
+    let key = SecretKey::from_be_bytes(&[1; 32]).unwrap();
+    let provider = Provider {
+        contract: Arc::new(contract.clone()),
+        key: key.public_key().to_bytes(),
+    };
+    state.last_committed_block_info = Some(
+        ExtendedBlockInfoV0 {
+            basic_info: BlockInfo {
+                height: 42,
+                core_height: 12,
+                time_ms: 6000,
+                epoch: Default::default(),
+            },
+            app_hash: [0; 32],
+            quorum_hash: [9; 32],
+            block_id_hash: [7; 32],
+            proposer_pro_tx_hash: [0; 32],
+            signature: [0; 96],
+            round: 0,
+        }
+        .into(),
+    );
+    let metadata = platform.response_metadata_v0(&state, CheckpointUsed::Current);
+    let root = platform
+        .drive
+        .grove
+        .root_hash(None, &version.drive.grove_version)
+        .value
+        .unwrap();
+
+    let request = GetDocumentHistoryRequestV1 {
+        data_contract_id: contract.id().to_vec(),
+        document_type_name: "note".to_string(),
+        document_id: doc_id.to_vec(),
+        limit: Some(5),
+        prove: true,
+        filter: Some(Filter::StartAtMs(0)),
+    };
+
+    // Unproved response serves stored bytes directly without decoding properties.
+    let mut unproved_request = request.clone();
+    unproved_request.prove = false;
+    let unproved = platform
+        .query_document_history_v1(unproved_request, &state, version)
+        .expect("unproved query succeeds")
+        .into_data()
+        .expect("unproved data");
+    let Some(ResponseResult::History(unproved_history)) = unproved.result else {
+        panic!("expected history result");
+    };
+    assert_eq!(unproved_history.entries.len(), 5);
+
+    // Proved response generates without decoding properties; under a valid quorum signature
+    // the client decode-budget refusal maps to `UnusableVerifiedResult` so healthy nodes are
+    // not banned, while a bad signature remains `InvalidSignature`.
+    let mut proved = platform
+        .query_document_history_v1(request.clone(), &state, version)
+        .expect("proved query succeeds")
+        .into_data()
+        .expect("proved data");
+    let grovedb_proof = proof_mut(&mut proved).grovedb_proof.clone();
+    let quorum_type = platform.config.validator_set.quorum_type as u32;
+    let signed = signed_proof(grovedb_proof, root, &metadata, &key, quorum_type);
+    *proof_mut(&mut proved) = signed.clone();
+    proved.metadata = Some(metadata.clone());
+
+    let outer_request = GetDocumentHistoryRequest {
+        version: Some(RequestVersion::V1(request)),
+    };
+    let signed_response = GetDocumentHistoryResponse {
+        version: Some(ResponseVersion::V1(proved.clone())),
+    };
+    let error = DocumentHistory::maybe_from_proof_with_metadata(
+        outer_request.clone(),
+        signed_response,
+        Network::Testnet,
+        version,
+        &provider,
+    )
+    .expect_err("five-revision page exceeds client decoded-value budget");
+    assert!(
+        matches!(
+            error,
+            drive_proof_verifier::Error::UnusableVerifiedResult { ref reason }
+                if reason.contains("decoded value budget exceeded")
+        ),
+        "valid signed proof over oversized page must surface as UnusableVerifiedResult, got: {error:?}"
+    );
+
+    let mut wrong_root = root;
+    wrong_root[0] ^= 1;
+    let mut bad_sig_proved = proved;
+    let grovedb_proof = proof_mut(&mut bad_sig_proved).grovedb_proof.clone();
+    *proof_mut(&mut bad_sig_proved) =
+        signed_proof(grovedb_proof, wrong_root, &metadata, &key, quorum_type);
+    let bad_sig_response = GetDocumentHistoryResponse {
+        version: Some(ResponseVersion::V1(bad_sig_proved)),
+    };
+    let bad_sig_error = DocumentHistory::maybe_from_proof_with_metadata(
+        outer_request,
+        bad_sig_response,
+        Network::Testnet,
+        version,
+        &provider,
+    )
+    .expect_err("signature over wrong root must fail as InvalidSignature");
+    assert!(
+        matches!(
+            bad_sig_error,
+            drive_proof_verifier::Error::InvalidSignature { .. }
+        ),
+        "forged signature must stay a node fault, got: {bad_sig_error:?}"
+    );
+}

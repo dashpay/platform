@@ -13,7 +13,6 @@ use dapi_grpc::platform::v0::get_document_history_response::{
 use dpp::check_validation_result_with_data;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::query::document_history_drive_query::{
@@ -110,7 +109,7 @@ impl<C> Platform<C> {
                 .1;
             ResponseResult::Proof(proof)
         } else {
-            let history = match self.drive.fetch_document_history(
+            let history = match self.drive.fetch_document_history_serialized(
                 &query,
                 document_type,
                 None,
@@ -127,17 +126,12 @@ impl<C> Platform<C> {
             let entries = history
                 .entries
                 .into_iter()
-                .map(|entry| {
-                    Ok(Entry {
-                        time_ms: entry.time_ms,
-                        revision: entry.revision,
-                        document: entry
-                            .document
-                            .serialize(document_type, contract, platform_version)
-                            .map_err(Error::Protocol)?,
-                    })
+                .map(|entry| Entry {
+                    time_ms: entry.time_ms,
+                    revision: entry.revision,
+                    document: entry.document_bytes,
                 })
-                .collect::<Result<Vec<_>, Error>>()?;
+                .collect();
             ResponseResult::History(History {
                 entries,
                 lifecycle: history.lifecycle.map(|lifecycle| Lifecycle {

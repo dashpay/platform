@@ -2517,10 +2517,8 @@ fn should_reject_a_proof_withholding_a_removal_record_of_a_moderated_document_jo
 #[test]
 fn should_charge_shared_page_budget_for_overlapping_composite_join_clones() {
     use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
-    use dpp::data_contract::errors::DataContractError;
     use dpp::document::DocumentV0;
     use dpp::platform_value::platform_value;
-    use dpp::ProtocolError;
 
     let pv14 = PlatformVersion::get(14).expect("PV14 exists");
     let pv = platform_version();
@@ -2724,13 +2722,14 @@ fn should_charge_shared_page_budget_for_overlapping_composite_join_clones() {
     let (single_proof, _) = drive
         .query_composite_documents_with_proof(&single_join_query, pv)
         .expect("single-join proof generates");
-    let (_, verified_single) = single_join_query
+    let (expected_root, verified_single) = single_join_query
         .verify_composite_documents_proof(&single_proof, pv)
         .expect("single join fits in page budget");
     assert_eq!(verified_single.sub_results[0].documents().len(), 3);
 
     // Two overlapping joins referencing the exact same 3 payload documents clone each
-    // payload a second time (369,000 total retained values > 262,144) and must be refused.
+    // payload a second time (369,000 total retained values > 262,144) and must be refused
+    // with the reconstructed root hash so callers can authenticate it as an honest refusal.
     let overlapping_query = make_query(vec![make_join("left"), make_join("right")]);
     let (overlapping_proof, _) = drive
         .query_composite_documents_with_proof(&overlapping_query, pv)
@@ -2741,14 +2740,11 @@ fn should_charge_shared_page_budget_for_overlapping_composite_join_clones() {
     assert!(
         matches!(
             error,
-            Error::Protocol(ref protocol_error)
-                if matches!(
-                    protocol_error.as_ref(),
-                    ProtocolError::DataContractError(
-                        DataContractError::DecodedValueBudgetExceeded(_)
-                    )
-                )
+            Error::Proof(crate::error::proof::ProofError::DecodedValueBudgetExceeded {
+                root_hash,
+                ..
+            }) if root_hash == expected_root
         ),
-        "expected DecodedValueBudgetExceeded, got: {error:?}"
+        "expected ProofError::DecodedValueBudgetExceeded with matching root, got: {error:?}"
     );
 }

@@ -56,7 +56,9 @@ pub mod yes_no_vote_polls;
 
 use crate::from_request::TryFromRequest;
 use crate::verify::{
-    document_query_proof_bytes, supported_grovedb_proof_bytes, require_supported_grovedb_proof_bytes, verify_page_drive_proves, verify_tenderdash_proof, verify_tenderdash_signature,
+    document_query_proof_bytes, require_supported_grovedb_proof_bytes,
+    supported_grovedb_proof_bytes, verify_page_drive_proves, verify_tenderdash_proof,
+    verify_tenderdash_signature, MapProvedBudgetError,
 };
 use crate::{types::*, ContextProvider, ContextProviderError, Error};
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
@@ -1566,7 +1568,7 @@ fn verify_document_history_response_v0(
         offset,
         query_version,
     )
-    .map_drive_error(proof, metadata)?;
+    .map_proved_budget_error(proof, metadata, provider)?;
     verify_tenderdash_proof(proof, metadata, &root, provider)?;
     Ok((
         history.map(|history| DocumentHistory {
@@ -1645,7 +1647,7 @@ fn verify_document_history_response_v1(
         document_type,
         query_version,
     )
-    .map_drive_error(proof, metadata)?;
+    .map_proved_budget_error(proof, metadata, provider)?;
     verify_tenderdash_proof(proof, metadata, &root, provider)?;
     Ok((
         Some(DocumentHistory {
@@ -1845,7 +1847,7 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
                     query_platform_version,
                     platform_version,
                 )
-                .map_drive_error(proof, mtd)
+                .map_proved_budget_error(proof, mtd, provider)
             })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -2247,7 +2249,7 @@ where
                 document_query_proof_bytes(proof, mtd, platform_version)?,
                 platform_version,
             )
-            .map_drive_error(proof, mtd)?;
+            .map_proved_budget_error(proof, mtd, provider)?;
 
         let documents = documents
             .into_iter()
