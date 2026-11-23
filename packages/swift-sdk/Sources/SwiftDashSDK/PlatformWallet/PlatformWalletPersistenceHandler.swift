@@ -3747,6 +3747,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     ) -> Bool {
         onQueue {
         do {
+        // `identityId` is unique across networks, so a row on another network
+        // is a conflict to refuse, never a row this wallet's round may adopt,
+        // restamp or delete.
+        let callbackNetworkRaw = walletNetwork(walletId: walletId)?.rawValue ?? network?.rawValue
+        func onOtherNetwork(_ row: PersistentIdentity) -> Bool {
+            guard let callbackNetworkRaw, row.networkRaw != callbackNetworkRaw else { return false }
+            SDKLogger.event("persistence_identity_network_conflict", category: .persistence,
+                severity: .error)
+            return true
+        }
         for entry in upserts {
             let identityId = entry.identityId
             let descriptor = FetchDescriptor<PersistentIdentity>(
@@ -3754,6 +3764,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             )
             let row: PersistentIdentity
             if let existing = try? backgroundContext.fetch(descriptor).first {
+                if onOtherNetwork(existing) { return false }
                 row = existing
             } else {
                 // Resolve the network from the owning wallet row.
@@ -3765,7 +3776,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // missing network column (the CreateIdentity flow
                 // restamps the network on return anyway).
                 let networkWalletId = entry.walletId ?? walletId
-                let network = walletNetwork(walletId: networkWalletId) ?? .testnet
+                let network = callbackNetworkRaw.flatMap(Network.init(rawValue:))
+                    ?? walletNetwork(walletId: networkWalletId) ?? .testnet
                 // `isLocal` = "this identity is yours or tracked
                 // here": wallet-derived identities are ALWAYS local
                 // (promoted below once the wallet linkage attaches)
@@ -3899,6 +3911,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // A failed fetch fails the changeset rather than reading as an
             // absent row, which would strand the identity and its sidecar.
             if let existing = try backgroundContext.fetch(descriptor).first {
+                if onOtherNetwork(existing) { return false }
                 try PersistentDashpayPaymentAddresses.removeOwned(in: backgroundContext,
                     networkRaw: existing.networkRaw, ownerIdentityId: identityId)
                 backgroundContext.delete(existing)

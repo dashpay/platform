@@ -318,6 +318,32 @@ final class DashPayContactPersistenceTests: XCTestCase {
         XCTAssertTrue(try reader.fetch(FetchDescriptor<PersistentDashpayProfile>()).isEmpty)
     }
 
+    func testScalarIdentityRoundRefusesARowFromAnotherNetwork() throws {
+        let otherWalletId = Data(repeating: 0xBB, count: 32)
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: otherWalletId, network: .devnet))
+        try context.save()
+        let otherNetwork = PlatformWalletPersistenceHandler(modelContainer: container, network: .devnet)
+
+        otherNetwork.beginChangeset(walletId: otherWalletId)
+        let removed = otherNetwork.persistIdentities(walletId: otherWalletId, upserts: [], removed: [ownerId])
+        XCTAssertFalse(removed)
+        XCTAssertFalse(otherNetwork.endChangeset(walletId: otherWalletId, success: removed))
+
+        otherNetwork.beginChangeset(walletId: otherWalletId)
+        let upserted = otherNetwork.persistIdentities(walletId: otherWalletId, upserts: [.init(
+            identityId: ownerId, balance: 7, revision: 1, identityIndex: 0,
+            label: nil, status: 0, walletId: otherWalletId, dpnsNames: [], dashpayProfile: nil,
+            contactProfiles: [])], removed: [])
+        XCTAssertFalse(upserted)
+        XCTAssertFalse(otherNetwork.endChangeset(walletId: otherWalletId, success: upserted))
+
+        let row = try XCTUnwrap(try ModelContext(container).fetch(FetchDescriptor<PersistentIdentity>()).first)
+        XCTAssertEqual(row.identityId, ownerId)
+        XCTAssertEqual(row.networkRaw, Network.testnet.rawValue)
+        XCTAssertEqual(row.balance, 0)
+    }
+
     func testObservedProfileSurvivesAdoptionAndExplicitCallbackCanRemoveIt() throws {
         let callbacks = handler.makePersistenceCallbacksExtension()
         let persist = try XCTUnwrap(callbacks.on_persist_dashpay_profiles_fn)
