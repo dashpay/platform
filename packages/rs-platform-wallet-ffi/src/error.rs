@@ -228,11 +228,6 @@ pub enum PlatformWalletFFIResultCode {
     ErrorAssetLockNotTracked = 23,
     /// Asset-lock funding cannot reuse this one-shot output; Platform
     /// completion for the requested operation is unconfirmed.
-    ///
-    /// Also `PlatformWalletError::AssetLockConsumptionUnknown`: an unbound
-    /// identity top-up lock that records no recipient and whose Platform
-    /// consumption is unknown (rebuilt from the chain after a restore) cannot
-    /// be assigned a recipient. Nothing was assigned; the lock stays tracked.
     ErrorAssetLockAlreadyConsumed = 24,
     /// Existing-lock recovery attempted to use a lock for the wrong funding
     /// family or bound identity index.
@@ -789,9 +784,10 @@ pub enum PlatformWalletFFIResultCode {
     /// failure of the lookup, not Platform's answer that the identity does not
     /// exist, which is [`Self::ErrorIdentityNotFound`] (7)). Nothing was
     /// signed, reserved or broadcast, so the operation may be retried as it
-    /// is; a host need not treat it as possibly delivered. Returned by both
-    /// identity top-ups from Platform addresses: the external one (identity
-    /// lookup) and the managed one (balance read before signing).
+    /// is; a host need not treat it as possibly delivered. Returned by every
+    /// identity top-up from Platform addresses (the identity lookup before
+    /// signing): the top-up of any identity and the deprecated external and
+    /// managed ones.
     ErrorIdentityLookupFailed = 80,
     /// Maps `PlatformWalletError::AssetLockRecipientUnknown`: an unbound
     /// identity top-up lock records no identity to pay (it was rebuilt from
@@ -803,8 +799,17 @@ pub enum PlatformWalletFFIResultCode {
     /// (`platform_wallet_assign_identity_top_up_recipient`), after which a
     /// resume to that identity proceeds. One whose Platform consumption is
     /// unknown (status `RecoveredFromChain`) is not flagged, and assigning it
-    /// is refused with [`Self::ErrorAssetLockAlreadyConsumed`] (24).
+    /// is refused with [`Self::ErrorAssetLockConsumptionUnknown`] (82).
     ErrorAssetLockRecipientUnknown = 81,
+    /// Maps `PlatformWalletError::AssetLockConsumptionUnknown`: an unbound
+    /// identity top-up lock that records no recipient and whose Platform
+    /// consumption is unknown (rebuilt from the chain after a restore, status
+    /// `RecoveredFromChain`) cannot be assigned a recipient, since Platform
+    /// may already have used it. Nothing was assigned; the lock stays
+    /// tracked. Distinct from [`Self::ErrorAssetLockAlreadyConsumed`] (24),
+    /// a confirmed use: this one is unknown, and the funds may still be
+    /// unspent on Platform.
+    ErrorAssetLockConsumptionUnknown = 82,
 
     /// The named thing does not exist.
     ///
@@ -1233,9 +1238,13 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             // An assignment refused because Platform may already have
             // consumed the lock: this lock cannot be used here either.
-            PlatformWalletError::AssetLockAlreadyConsumed(..)
-            | PlatformWalletError::AssetLockConsumptionUnknown(..) => {
+            PlatformWalletError::AssetLockAlreadyConsumed(..) => {
                 PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed
+            }
+            // The use is unknown, not confirmed: kept apart from 24 so a host
+            // can tell a lock that may still be unspent on Platform.
+            PlatformWalletError::AssetLockConsumptionUnknown(..) => {
+                PlatformWalletFFIResultCode::ErrorAssetLockConsumptionUnknown
             }
             PlatformWalletError::AssetLockFundingMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockFundingMismatch
@@ -1887,7 +1896,7 @@ mod tests {
             ),
             (
                 PlatformWalletError::AssetLockConsumptionUnknown(out_point),
-                PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed,
+                PlatformWalletFFIResultCode::ErrorAssetLockConsumptionUnknown,
             ),
             (
                 PlatformWalletError::AssetLockFundingMismatch {
@@ -2710,6 +2719,20 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorAssetLockRecipientUnknown
         );
         assert!(message_of(&result).contains("assign a recipient"));
+    }
+
+    #[test]
+    fn should_pin_the_consumption_unknown_code_at_82() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorAssetLockConsumptionUnknown as i32,
+            82
+        );
+        let result: PlatformWalletFFIResult =
+            PlatformWalletError::AssetLockConsumptionUnknown(dashcore::OutPoint::null()).into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockConsumptionUnknown
+        );
     }
 
     #[test]

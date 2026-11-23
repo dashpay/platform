@@ -125,10 +125,19 @@ class IdentityTopUpResult(
     override fun toString(): String = "IdentityTopUpResult(newBalance=$newBalance)"
 }
 
+internal fun interface AddressTopUpNativeCall {
+    fun call(
+        walletHandle: Long,
+        identityId: ByteArray,
+        inputsBlob: ByteArray,
+        signerHandle: Long,
+    ): Long
+}
+
 /**
  * One Platform-address funding input for an identity top-up — port of the
  * `IdentityAddressInput` tuple the Swift `TopUpIdentityView` packs. Encodes
- * to the flat blob [CreditsNative.topUpFromAddresses] consumes.
+ * to the flat blob [CreditsNative.topUpIdentityFromAddresses] consumes.
  *
  * @property addressType 0 = P2PKH, 1 = P2SH.
  * @property hash the 20-byte address hash.
@@ -142,6 +151,12 @@ data class FundingInput(
     init {
         require(hash.size == 20) { "FundingInput.hash must be 20 bytes, got ${hash.size}" }
         require(credits > 0) { "FundingInput.credits must be positive, got $credits" }
+        // The row carries the type as one byte; a wider value would be truncated to another
+        // type (256 → 0, P2PKH) and the signer asked to authorize an address the caller did
+        // not name. Which byte values are supported stays Rust's decision.
+        require(addressType in 0..255) {
+            "FundingInput.addressType must fit in a u8, got $addressType"
+        }
     }
 
     override fun equals(other: Any?): Boolean =
@@ -186,6 +201,11 @@ data class FundingInput(
 class IdentityCredits internal constructor(
     private val gate: org.dashfoundation.dashsdk.wallet.TeardownGate? = null,
     private val native: TopUpNative = TopUpNative.Jni,
+    private val addressTopUpNative: AddressTopUpNativeCall =
+        AddressTopUpNativeCall(CreditsNative::topUpIdentityFromAddresses),
+    @Suppress("DEPRECATION")
+    private val managedAddressTopUpNative: AddressTopUpNativeCall =
+        AddressTopUpNativeCall(CreditsNative::topUpFromAddresses),
 ) {
 
     /**
@@ -317,17 +337,58 @@ class IdentityCredits internal constructor(
     }
 
     /**
-     * Top up [identityId] (32 bytes) from Platform-address [inputs],
-     * signed via [signerHandle]. Returns the post-transition balance.
+     * Top up [identityId] (32 bytes) from Platform-address [inputs], whoever
+     * owns the identity (one of the wallet's or someone else's), signed via
+     * [signerHandle]. Rust fetches the identity from Platform, never adds it
+     * to the wallet, and updates the balance of an identity the wallet
+     * manages, so the caller does not decide whether it is its own. Returns
+     * the identity's post-transition balance.
+     *
+     * Cancellation: a top-up that completed natively still returns its
+     * balance to a cancelled caller (see `TeardownGate.opReturningCompletedResult`).
      */
+    suspend fun topUpIdentityFromAddresses(
+        walletHandle: Long,
+        identityId: ByteArray,
+        inputs: List<FundingInput>,
+        signerHandle: Long,
+    ): Long = gate.opReturningCompletedResult {
+        mapNativeErrors {
+            addressTopUpNative.call(
+                walletHandle,
+                identityId,
+                FundingInput.encode(inputs),
+                signerHandle,
+            )
+        }
+    }
+
+    /**
+     * Top up [identityId] (32 bytes), an identity the wallet manages, from
+     * Platform-address [inputs], signed via [signerHandle]. Returns the
+     * post-transition balance.
+     *
+     * **Deprecated:** use [topUpIdentityFromAddresses], which tops up any
+     * identity and updates a managed one's balance the same way; this one
+     * differs only in refusing an identity the wallet does not manage
+     * (`IdentityNotFound`) before Platform is asked, and in reporting
+     * Platform not showing the wallet's identity yet as the retryable
+     * `IdentityBalanceUnavailable`.
+     *
+     * Cancellation: as for [topUpIdentityFromAddresses].
+     */
+    @Deprecated(
+        "Use topUpIdentityFromAddresses, which tops up any identity.",
+        ReplaceWith("topUpIdentityFromAddresses(walletHandle, identityId, inputs, signerHandle)"),
+    )
     suspend fun topUpFromAddresses(
         walletHandle: Long,
         identityId: ByteArray,
         inputs: List<FundingInput>,
         signerHandle: Long,
-    ): Long = gate.op {
+    ): Long = gate.opReturningCompletedResult {
         mapNativeErrors {
-            CreditsNative.topUpFromAddresses(
+            managedAddressTopUpNative.call(
                 walletHandle,
                 identityId,
                 FundingInput.encode(inputs),

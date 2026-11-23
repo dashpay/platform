@@ -475,13 +475,15 @@ unsafe fn resume_identity_top_up_to_recorded_recipient_signer_inner(
 /// `ErrorIdentityLookupFailed` (80).
 ///
 /// Errors: `ErrorAssetLockNotTracked` (23) for an unknown outpoint,
-/// `ErrorAssetLockAlreadyConsumed` (24) for a consumed lock and for a
-/// recipient-less lock whose Platform consumption is unknown (status
+/// `ErrorAssetLockAlreadyConsumed` (24) for a consumed lock,
+/// `ErrorAssetLockConsumptionUnknown` (82) for a recipient-less lock whose
+/// Platform consumption is unknown (status
 /// `RecoveredFromChain`, not flagged `identity_recipient_unassigned`),
 /// `ErrorAssetLockRecipientMismatch` (61) when the lock already records a
 /// different identity (assigning the recorded one again is a no-op), and a
 /// persistence error when the host's persister does not keep identity
-/// recipients (`ASSET_LOCK_IDENTITY_RECIPIENTS`) or the store fails. After a
+/// recipients (`ASSET_LOCK_IDENTITY_RECIPIENTS` with `ATOMIC_CHANGESETS` and
+/// `ASSET_LOCK_FUNDING_INDICES`) or the store fails. After a
 /// transient store failure (or a failed flush on a persister that commits
 /// each store inline) the assignment still holds for this session and
 /// another identity is refused (61); calling again with the same identity

@@ -21,11 +21,13 @@ pub mod manager;
 pub mod orchestration;
 pub mod restored_record;
 pub(crate) mod sync;
+mod top_up_floor;
 pub mod tracked;
 
 pub use build::AssetLockBuiltObserver;
 pub use lock_notify_handler::LockNotifyHandler;
 pub use orchestration::AssetLockFunding;
+pub use top_up_floor::min_top_up_duffs;
 
 /// The asset-lock input cap this protocol version holds an instant proof to
 /// (`max_asset_lock_transaction_inputs`, 100 since protocol version 11).

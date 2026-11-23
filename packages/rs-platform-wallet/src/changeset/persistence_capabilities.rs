@@ -203,6 +203,19 @@ impl PersistenceCapabilities {
     pub const ASSET_LOCK_RECONCILIATION: Self =
         Self(Self::ATOMIC_CHANGESETS.0 | Self::TRACKED_ASSET_LOCKS.0);
 
+    /// Capabilities required to build an unbound identity top-up lock, or
+    /// assign one a recipient: the recipient itself, atomic changesets (the
+    /// recipient reaches an FFI host in a callback of its own beside the
+    /// lock's row, and a crash between two committed writes would restore a
+    /// signed lock that records no recipient), and the funding indices (the
+    /// stored address pool is the only record of the credit output's key,
+    /// which a resume after a restart signs the top-up with).
+    pub const IDENTITY_RECIPIENT_TOP_UP: Self = Self(
+        Self::ATOMIC_CHANGESETS.0
+            | Self::ASSET_LOCK_FUNDING_INDICES.0
+            | Self::ASSET_LOCK_IDENTITY_RECIPIENTS.0,
+    );
+
     /// Durable correlation and funding-key indices required for wallet drain.
     pub const WALLET_DRAIN: Self = Self(
         Self::ASSET_LOCK_RECONCILIATION.0

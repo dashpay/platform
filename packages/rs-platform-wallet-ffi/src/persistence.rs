@@ -204,9 +204,14 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_ST
 /// identity and refuses another. Attested when the host wires both
 /// `on_persist_asset_lock_identity_recipient_fn` and
 /// `on_load_asset_lock_identity_recipient_fn` next to the legacy asset-lock
-/// persist/load callbacks and the wallet-list restore pair. Required: the
+/// persist/load callbacks and the wallet-list restore pair, and read back on
+/// load only for a host that declares it. Required, together with
+/// `ATOMIC_CHANGESETS` (the row and its recipient arrive in separate
+/// callbacks, so only the changeset brackets keep a crash from committing one
+/// without the other) and `ASSET_LOCK_FUNDING_INDICES` (the stored address
+/// pool is the only record of the key a resume signs the top-up with): the
 /// wallet builds no unbound top-up lock, and assigns no recipient, for a host
-/// that does not declare it.
+/// that does not declare all three.
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_IDENTITY_RECIPIENTS: u64 = 1 << 17;
 
 /// Locked outpoints (masternode collateral, and outpoints locked by hand)
@@ -4160,9 +4165,17 @@ impl PlatformWalletPersistence for FFIPersister {
                     &mut wallet_state.unused_asset_locks,
                 )?;
             }
+            // Read only for a host that attests the recipient contract, not
+            // one that merely wires the slot: an undeclared loader may run
+            // before its schema exists, and its error would abort the whole
+            // load. A host that attests it keeps read errors fatal.
             if let Some(cb) = self
                 .tracked_masternodes_callbacks
                 .load_asset_lock_identity_recipient
+                .filter(|_| {
+                    self.persistence_capabilities()
+                        .contains(PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS)
+                })
             {
                 load_asset_lock_identity_recipients(
                     cb,
