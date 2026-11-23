@@ -282,6 +282,8 @@ mod tests {
     use dpp::data_contract::document_type::action_fees::ContractFeePotLastClaim;
     use dpp::document::{Document, DocumentV0, DocumentV0Getters};
     use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::{Purpose, SecurityLevel};
     use dpp::moderation_charter::{
         property_names, ElectedCharter, ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
         ELECTED_CHARTER_DOCUMENT_TYPE_NAME, MODERATION_CHARTERS_CONTRACT_ID,
@@ -749,14 +751,23 @@ mod tests {
                 .identity
                 .clone()
         };
-        let first_key_id = *claimant
+        // rs-sdk signs a claim with the first CRITICAL authentication key without
+        // contract bounds that the signer holds (`FixedSignatureSigner` holds all).
+        // The expectation names that key by those properties, not by its place in
+        // the key map, so a fixture key added ahead of it does not move it.
+        let signing_key_id = claimant
             .public_keys()
-            .keys()
-            .next()
-            .expect("the claimant's first key");
+            .values()
+            .find(|key| {
+                key.purpose() == Purpose::AUTHENTICATION
+                    && key.security_level() == SecurityLevel::CRITICAL
+                    && key.contract_bounds().is_none()
+            })
+            .expect("the claimant's CRITICAL authentication key")
+            .id();
         let claim = ContractFeeClaimTransition::try_from_identity_with_signer(
             &claimant,
-            &first_key_id,
+            &signing_key_id,
             contract_id,
             ContractFeePot::Owner,
             STORED_NONCE + 1,
