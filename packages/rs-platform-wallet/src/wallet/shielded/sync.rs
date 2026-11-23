@@ -247,6 +247,15 @@ impl MultiSyncNotesResult {
 /// skip every append and checkpoint it already made, so what a stop
 /// costs is the download and decryption of the chunks it had consumed.
 /// It is a clean early stop, not an error.
+///
+/// A gap between ranges: ranges are fetched concurrently, each proved at
+/// its own height, so one answered a block earlier can end short of the
+/// next one's start while the next holds notes. The pass uses only the run
+/// of positions it read without a gap and stops there: no commitment, note,
+/// spent mark or watermark comes from past it. Unlike a cancelled prefix,
+/// that run is the whole pool as it stood when the short range was proved,
+/// so the pass publishes it as a completed scan of that height, and the
+/// next pass reads on from the gap.
 pub(super) async fn sync_notes_across<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
@@ -476,14 +485,15 @@ where
     // positions are already in the tree, so they don't advance the
     // commit count beyond `tree_size`).
     let mut leaves_committed: u64 = tree_size;
-    // Cumulative notes scanned across every batch (decrypted + skipped)
-    // — drives the watermark advance and the host-visible scan volume,
-    // exactly as `result.total_notes_scanned` did in the one-shot path.
+    // Cumulative notes scanned across every batch the pass used (decrypted
+    // + skipped): the host-visible scan volume. The watermark is not
+    // computed from it: it is `scanned_to`, the end of the run of positions
+    // read without a gap.
     let mut total_notes_scanned: u64 = 0;
     // Track the last non-empty batch's `(start_index, is_partial)` —
     // diagnostic only. The one-shot path used this to rewind its resume
     // point to the mutable buffer chunk's start; the streaming path's
-    // watermark is `aligned_start + total_notes_scanned` (the partial
+    // watermark is `scanned_to` (the partial
     // chunk is re-fetched via the chunk-boundary realignment at the
     // next pass's start instead), so this value never feeds the
     // watermark — it is surfaced in the completion log for parity with
@@ -555,6 +565,27 @@ where
             // so a late chunk proven at a slightly higher block never lowers
             // it. Stays 0 (indeterminate) only if no batch is ever produced.
             total_target = total_target.max(batch.total_count);
+            // Adjacent ranges are fetched concurrently and each is proved at
+            // its own height. One answered a block earlier comes back short
+            // of the next one's start, while the next, answered after the
+            // tree grew, holds notes: the positions between them were never
+            // read. The pass ends at that gap and uses nothing past it: a
+            // commitment appended from there would sit at the wrong position
+            // in the local tree, and a watermark past it would leave the
+            // skipped positions undecrypted for good. What was read up to
+            // the gap is the pool as it stood when the short range was
+            // proved, so the pass completes as one that ran then, and the
+            // next pass reads on from the gap. An empty range past the run
+            // holds nothing to use and is passed over, as before.
+            if batch.start_index > scanned_to && !batch.notes.is_empty() {
+                info!(
+                    scanned_to,
+                    next_range = batch.start_index,
+                    "Shielded note sync read a range that starts past the positions read so \
+                     far; stopping at the gap, which the next pass reads"
+                );
+                break false;
+            }
             total_notes_scanned += batch.notes.len() as u64;
             highest_batch_height = highest_batch_height.max(Some(batch.block_height));
             if batch.start_index <= scanned_to {
@@ -696,7 +727,7 @@ where
 
     // Diagnostic mirror of the SDK's one-shot `next_start_index`
     // (rewinds to the last partial chunk's start). NOT the watermark:
-    // the streaming path persists `aligned_start + total_notes_scanned`
+    // the streaming path persists `scanned_to`
     // below, and re-covers the partial buffer chunk through the
     // chunk-boundary realignment at the next pass's start. The old
     // "next_start_index is 0 — next sync will rescan from the
@@ -894,9 +925,10 @@ where
 
     // Advance every subwallet's watermark to the same global
     // tree position so the next sync resumes coherently across
-    // the union. `total_notes_scanned` is accumulated from every
-    // streamed batch's note count — identical to the one-shot path's
-    // `result.total_notes_scanned`.
+    // the union: `scanned_to`, the end of the run of positions this pass
+    // read without a gap from `aligned_start`. A watermark never covers a
+    // position the scan did not read; a pass that met a gap between two
+    // ranges stopped there (see the loop above).
     //
     // Never rewind. `aligned_start` is the MIN watermark across the
     // union, so a pass that re-walks a lagging subwallet's range can
@@ -906,7 +938,7 @@ where
     // write is unconditional: the setter also stamps the scan coverage
     // and the `ScannedThisSession` balance source, which is exactly what
     // reaching the tip means.
-    let new_index = aligned_start + total_notes_scanned;
+    let new_index = scanned_to;
     for (id, _) in subwallets {
         let prior = watermarks.get(id).copied().unwrap_or(0);
         let advanced = prior.max(new_index);
@@ -1528,6 +1560,11 @@ mod cancel_tests;
 
 #[cfg(test)]
 mod concurrent_sync_tests;
+
+/// A pass stops at a gap between two fetched ranges, and the next pass reads
+/// the positions it skipped.
+#[cfg(test)]
+mod range_gap_tests;
 
 /// A pending spend whose input another transition spent is failed from the
 /// action the scan reads for it, and one that landed is not.
