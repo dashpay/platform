@@ -2458,6 +2458,29 @@ impl PlatformWalletPersistence for FFIPersister {
             ));
         }
 
+        // A profile tombstone rides only in the overlay: the scalar identity
+        // snapshot keeps the cached profile on absence. Without the overlay
+        // callback the host cannot apply it, and acknowledging the round would
+        // let Rust treat the deletion as stored while the old profile and its
+        // payment addresses stay on disk for the next restore.
+        if self
+            .tracked_masternodes_callbacks
+            .persist_dashpay_profiles
+            .is_none()
+            && changeset.dashpay_profiles.as_ref().is_some_and(|profiles| {
+                let removed = changeset.identities.as_ref().map(|ids| &ids.removed);
+                profiles.iter().any(|(id, profile)| {
+                    profile.is_none() && !removed.is_some_and(|ids| ids.contains(id))
+                })
+            })
+        {
+            return Err(PersistenceError::backend_with_kind(
+                PersistenceErrorKind::Fatal,
+                "the changeset deletes a DashPay profile but the host registered no \
+                 profile callback to apply the deletion",
+            ));
+        }
+
         // Open the round on the Rust side (rejects a nested begin / an
         // unclean round left open by a prior unwind — error, never
         // panic). Matched 1:1 with the `round.end_round()` below.
@@ -9835,6 +9858,59 @@ mod tests {
             .unwrap();
 
         assert_eq!(*host.ids.lock().unwrap(), vec![[10; 32]]);
+    }
+
+    #[test]
+    fn should_fail_a_profile_deletion_the_host_has_no_callback_to_apply() {
+        use platform_wallet::changeset::IdentityChangeSet;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        static BEGINS: AtomicUsize = AtomicUsize::new(0);
+        unsafe extern "C" fn counting_begin(_ctx: *mut c_void, _wallet_id: *const u8) -> i32 {
+            BEGINS.fetch_add(1, Ordering::SeqCst);
+            0
+        }
+        let persister = FFIPersister::new(PersistenceCallbacks {
+            on_changeset_begin_fn: Some(counting_begin),
+            on_changeset_end_fn: Some(noop_end),
+            ..Default::default()
+        });
+        let deleted = Identifier::from([9; 32]);
+        let error = persister
+            .store(
+                [42; 32],
+                PlatformWalletChangeSet {
+                    dashpay_profiles: Some(BTreeMap::from([(deleted, None)])),
+                    ..Default::default()
+                },
+            )
+            .expect_err("a deletion the host cannot apply must not be acknowledged");
+        assert!(!error.is_transient());
+        assert_eq!(
+            BEGINS.load(Ordering::SeqCst),
+            0,
+            "fails before the round opens"
+        );
+
+        let present = platform_wallet::DashPayProfile {
+            display_name: Some("Shown".into()),
+            ..Default::default()
+        };
+        let mut identities = IdentityChangeSet::default();
+        identities.removed.insert(deleted);
+        persister
+            .store(
+                [42; 32],
+                PlatformWalletChangeSet {
+                    identities: Some(identities),
+                    dashpay_profiles: Some(BTreeMap::from([
+                        (deleted, None),
+                        (Identifier::from([10; 32]), Some(present)),
+                    ])),
+                    ..Default::default()
+                },
+            )
+            .expect("a removed identity's tombstone and a present profile need no overlay");
     }
 
     // --- persists_durably: the fail-closed durability attestation ---

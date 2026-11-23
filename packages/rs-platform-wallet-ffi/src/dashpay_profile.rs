@@ -478,26 +478,26 @@ pub unsafe extern "C" fn platform_wallet_create_or_update_dashpay_profile_with_a
 
             let signer_addr = signer_handle as usize;
 
-            let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, move |wallet| {
-                let wallet = wallet.clone();
-                let input = ProfileUpdate {
-                    display_name,
-                    public_message,
-                    avatar_url,
-                    avatar_bytes: avatar_bytes_vec,
-                    core_payment_address,
-                    platform_payment_address,
-                    shielded_address,
-                };
-
-                block_on_worker(async move {
-                    let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-                    wallet
-                        .write_dashpay_profile(&id, input, signer, do_create)
-                        .await
-                })
+            // Clone out of the registry before waiting on the host signer: its
+            // read guard would otherwise block destroying any handle until the
+            // host answers.
+            let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.clone());
+            let wallet = unwrap_option_or_return!(option);
+            let input = ProfileUpdate {
+                display_name,
+                public_message,
+                avatar_url,
+                avatar_bytes: avatar_bytes_vec,
+                core_payment_address,
+                platform_payment_address,
+                shielded_address,
+            };
+            let result = block_on_worker(async move {
+                let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+                wallet
+                    .write_dashpay_profile(&id, input, signer, do_create)
+                    .await
             });
-            let result = unwrap_option_or_return!(option);
             let profile = unwrap_result_or_return!(result);
             *out_profile = DashPayProfileFFI::from_profile(&profile);
             PlatformWalletFFIResult::ok()
