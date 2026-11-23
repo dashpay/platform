@@ -127,15 +127,17 @@ pub struct ShieldedActivityFFI {
     /// Kind discriminant (see `ShieldedActivityKind::tag`):
     /// 0 Shield, 1 ShieldFromAssetLock, 2 Received, 3 Sent, 4 Unshield,
     /// 5 Withdrawal, 6 IdentityCreate, 7 ShieldedSpend, 8 ShieldFromIdentity,
-    /// 9 IdentityTopUp, 10 TokenPurchase, 11 TokenShieldedTransfer (the
-    /// counterparty of 10 and 11 is the token id).
+    /// 9 IdentityTopUp, 10 TokenPurchase, 11 TokenShieldedTransfer,
+    /// 12 TokenUnshield (the counterparty of 10 to 12 is the token id; 12
+    /// carries the credited identity in `identity_id`).
     pub kind_tag: u8,
     /// Direction: 0 In, 1 Out, 2 Self.
     pub direction: u8,
     /// Status: 0 Pending, 1 Confirmed, 2 Failed, 3 Unknown.
     pub status: u8,
-    /// Display amount in credits (principal; excludes self-change and
-    /// zero-value fillers).
+    /// Display principal, excluding self-change and zero-value fillers: in
+    /// the token's smallest unit for kind tags 11 and 12 (a token transfer or
+    /// unshield), in credits otherwise. `fee` is always in credits.
     pub amount: u64,
     /// Exact fee in credits when `has_fee == 1`.
     pub fee: u64,
@@ -158,10 +160,14 @@ pub struct ShieldedActivityFFI {
     pub min_note_position: u64,
     /// `1` if `min_note_position` is meaningful.
     pub has_min_note_position: u8,
-    /// Created identity id (only meaningful when `kind_tag == 6` /
-    /// IdentityCreate); all-zero and ignored otherwise.
+    /// The identity the entry names: the created identity (`kind_tag` 6,
+    /// IdentityCreate), the funding identity (8, ShieldFromIdentity), the
+    /// credited identity (9, IdentityTopUp) or the identity a token unshield
+    /// credits (12, TokenUnshield). All-zero and ignored for every other kind.
     pub identity_id: [u8; 32],
-    /// `1` when `identity_id` is meaningful (IdentityCreate), else `0`.
+    /// `1` when `identity_id` is meaningful (an identity create, shield from
+    /// identity, identity top-up or token unshield), else `0`. A token
+    /// unshield (tag 12) restored with `0` is an opaque spend.
     pub has_identity_id: u8,
     /// Counterparty bytes pointer (43B Orchard / 21B PlatformAddress /
     /// Core script) or null. Valid for the callback window only.

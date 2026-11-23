@@ -50,7 +50,10 @@ public final class PersistentShieldedActivity {
     /// 8 ShieldFromIdentity, 9 IdentityTopUp (from the pool),
     /// 10 TokenPurchase (from the pool; `counterparty` is the token id),
     /// 11 TokenShieldedTransfer (`counterparty` is the token id and
-    /// `amount` the tokens sent, in the token's smallest unit).
+    /// `amount` the tokens sent, in the token's smallest unit),
+    /// 12 TokenUnshield (`counterparty` is the token id, `identityId` the
+    /// credited identity and `amount` the tokens moved, in the token's
+    /// smallest unit).
     public var kindTag: Int
     /// Direction: 0 In, 1 Out, 2 Self.
     public var direction: Int
@@ -58,8 +61,9 @@ public final class PersistentShieldedActivity {
     public var status: Int
 
     /// Display amount in credits (principal; excludes self-change /
-    /// zero-value fillers). For `kindTag == 11` (TokenShieldedTransfer) it
-    /// is the tokens sent, in the token's smallest unit, not credits.
+    /// zero-value fillers). For `kindTag` 11 (TokenShieldedTransfer) and 12
+    /// (TokenUnshield) it is the tokens moved, in the token's smallest unit,
+    /// not credits.
     public var amount: UInt64
     /// Exact fee in credits when `hasFee == true`; otherwise unknown.
     public var fee: UInt64
@@ -93,10 +97,12 @@ public final class PersistentShieldedActivity {
     /// Identity id (32 bytes) when the kind carries one: the created
     /// identity for `kindTag == 6` (IdentityCreate), the debited identity
     /// for `kindTag == 8` (ShieldFromIdentity), the credited identity for
-    /// `kindTag == 9` (IdentityTopUp from the pool). Empty otherwise.
+    /// `kindTag == 9` (IdentityTopUp from the pool), the identity whose
+    /// token balance was credited for `kindTag == 12` (TokenUnshield).
+    /// Empty otherwise.
     public var identityId: Data
     /// Counterparty bytes (43B Orchard / 21B PlatformAddress / Core
-    /// script, or the 32-byte token id for `kindTag` 10 and 11) when
+    /// script, or the 32-byte token id for `kindTag` 10 to 12) when
     /// present; empty otherwise.
     public var counterparty: Data
     /// 36-byte memo when present and non-zero; empty otherwise.

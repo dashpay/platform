@@ -888,34 +888,7 @@ pub(crate) fn reserve_token_notes<S: TokenPoolConnection>(
     max_notes: usize,
 ) -> Result<(Vec<TokenPoolNote>, TokenNoteReservation), PlatformWalletError> {
     store.with_token_pool_conn(|conn| {
-        let mut free = spendable_notes(conn, id, token_id)?;
-        free.sort_by(|a, b| b.value.cmp(&a.value).then(a.position.cmp(&b.position)));
-        let available = free
-            .iter()
-            .try_fold(0u64, |total, note| total.checked_add(note.value))
-            .unwrap_or(u64::MAX);
-        let mut selected = Vec::new();
-        let mut covered = 0u64;
-        for note in free {
-            if covered >= amount {
-                break;
-            }
-            covered = covered.saturating_add(note.value);
-            selected.push(note);
-        }
-        if covered < amount || selected.is_empty() {
-            return Err(PlatformWalletError::TokenShieldedInsufficientBalance {
-                token_id,
-                available,
-                required: amount,
-            });
-        }
-        if selected.len() > max_notes {
-            return Err(PlatformWalletError::ShieldedTooManyNotes {
-                required_notes: selected.len(),
-                max_notes,
-            });
-        }
+        let selected = select_token_notes(conn, id, token_id, amount, max_notes)?;
         let marker = new_reservation_marker();
         let tx = conn.transaction().map_err(storage("reserve"))?;
         for note in &selected {
@@ -944,6 +917,46 @@ pub(crate) fn reserve_token_notes<S: TokenPoolConnection>(
             .collect();
         Ok((selected, TokenNoteReservation { marker }))
     })
+}
+
+/// The notes [`reserve_token_notes`] would reserve, refused as it refuses,
+/// without reserving them.
+pub(crate) fn select_token_notes(
+    conn: &Connection,
+    id: SubwalletId,
+    token_id: Identifier,
+    amount: u64,
+    max_notes: usize,
+) -> Result<Vec<TokenPoolNote>, PlatformWalletError> {
+    let mut free = spendable_notes(conn, id, token_id)?;
+    free.sort_by(|a, b| b.value.cmp(&a.value).then(a.position.cmp(&b.position)));
+    let available = free
+        .iter()
+        .try_fold(0u64, |total, note| total.checked_add(note.value))
+        .unwrap_or(u64::MAX);
+    let mut selected = Vec::new();
+    let mut covered = 0u64;
+    for note in free {
+        if covered >= amount {
+            break;
+        }
+        covered = covered.saturating_add(note.value);
+        selected.push(note);
+    }
+    if covered < amount || selected.is_empty() {
+        return Err(PlatformWalletError::TokenShieldedInsufficientBalance {
+            token_id,
+            available,
+            required: amount,
+        });
+    }
+    if selected.len() > max_notes {
+        return Err(PlatformWalletError::ShieldedTooManyNotes {
+            required_notes: selected.len(),
+            max_notes,
+        });
+    }
+    Ok(selected)
 }
 
 /// One reservation as read: wallet id, account, token id, marker bytes,
