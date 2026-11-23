@@ -127,21 +127,31 @@ suspend fun syncPrivateContactRequests(
 }
 
 /**
- * Accept the incoming request from [senderId] to [ourIdentityId] with the
- * wallet's one accept, which replies the way the request came: privately
- * (paid from the wallet's shielded balance) or with a document, signed by the
- * manager's identity signer either way. The wallet decides; the app makes one
- * call. Returns false when the request is not in local state.
- * ← Swift `PlatformWalletManager.acceptContactRequestReplyingInKind`, as
- * `ContactRequestsView.swift` and `AddContactView.swift` call it.
+ * Accept the incoming request from [senderId] to [ourIdentityId], signed by
+ * the manager's identity signer. By default ([CollisionAccept.ReplyInKind])
+ * with the wallet's one accept, which replies the way the request came:
+ * privately (paid from the wallet's shielded balance) or with a document; the
+ * wallet decides and the app makes one call. [CollisionAccept.PrivateReply]
+ * replies privately, paid from the shielded balance, even to a request that
+ * came publicly: Add Contact's collision accept with "Send privately" on.
+ * Returns false when the request is not in local state.
+ * ← Swift `PlatformWalletManager.acceptContactRequestReplyingInKind` and
+ * `acceptPrivateContactRequest`, as `ContactRequestsView.swift` and
+ * `AddContactView.swift` call them.
  */
 suspend fun acceptIncomingContactRequest(
     wallet: ManagedPlatformWallet,
     manager: PlatformWalletManager,
     ourIdentityId: ByteArray,
     senderId: ByteArray,
+    accept: CollisionAccept = CollisionAccept.ReplyInKind,
 ): Boolean {
     val request = wallet.dashpay.incomingContactRequest(ourIdentityId, senderId) ?: return false
-    request.use { manager.acceptContactRequestReplyingInKind(wallet.walletId, it).close() }
+    request.use {
+        when (accept) {
+            CollisionAccept.PrivateReply -> manager.acceptPrivateContactRequest(wallet.walletId, it)
+            CollisionAccept.ReplyInKind -> manager.acceptContactRequestReplyingInKind(wallet.walletId, it)
+        }.close()
+    }
     return true
 }

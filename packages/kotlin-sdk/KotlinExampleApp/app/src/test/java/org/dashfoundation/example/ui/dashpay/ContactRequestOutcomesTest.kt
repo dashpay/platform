@@ -637,6 +637,32 @@ class ContactRequestOutcomesTest {
         assertNull(rowMessage(snapshot, "01"))
     }
 
+    /**
+     * With "Send privately" on, Add Contact's collision dialog accepts with a
+     * private reply, paid from the shielded balance, and says so.
+     */
+    @Test
+    fun shouldAcceptACollisionPrivatelyWhenSendPrivatelyIsOn() {
+        val accept = CollisionAccept.of(sendPrivately = true)
+        assertEquals(CollisionAccept.PrivateReply, accept)
+        assertEquals("Accept privately", accept.buttonTitle)
+        assertEquals(
+            "This person already sent you a request. Accept it with a private reply instead? " +
+                "The reply is paid from this wallet's shielded balance, and no public request " +
+                "names you as its sender.",
+            accept.message,
+        )
+    }
+
+    /** With it off, the dialog leaves the reply to the wallet, which replies the way the request came. */
+    @Test
+    fun shouldAcceptACollisionInKindWhenSendPrivatelyIsOff() {
+        val accept = CollisionAccept.of(sendPrivately = false)
+        assertEquals(CollisionAccept.ReplyInKind, accept)
+        assertEquals("Accept", accept.buttonTitle)
+        assertEquals("This person already sent you a request. Accept it instead?", accept.message)
+    }
+
     /** An unconfirmed submission marks only its own contact, and a read that does not cover it leaves the mark. */
     @Test
     fun shouldKeepAnUnconfirmedSubmissionAReadDidNotCover() {

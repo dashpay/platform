@@ -453,6 +453,50 @@ object PrivatePaymentsRecovery {
 }
 
 /**
+ * How Add Contact's collision dialog accepts the request the recipient
+ * already sent us. With "Send privately" on, the user chose a private
+ * request, so the accept replies privately
+ * (`PlatformWalletManager.acceptPrivateContactRequest`, paid from the
+ * shielded balance as the private send is) even when their request came
+ * publicly: a public reply would publish this user as its owner and the
+ * contact as its recipient, against that choice. With it off, the wallet
+ * replies the way the request came
+ * (`PlatformWalletManager.acceptContactRequestReplyingInKind`). The toggle is
+ * the user's explicit choice; which reply an in-kind accept takes stays the
+ * wallet's.
+ * ← Swift `CollisionAccept` (`ContactRequestOutcomes.swift`).
+ */
+enum class CollisionAccept {
+    /** Reply privately, paid from the shielded balance. */
+    PrivateReply,
+
+    /** Reply the way the request came. */
+    ReplyInKind,
+    ;
+
+    /** The dialog's accept button. */
+    val buttonTitle: String
+        get() = when (this) {
+            PrivateReply -> "Accept privately"
+            ReplyInKind -> "Accept"
+        }
+
+    /** The dialog's message. */
+    val message: String
+        get() = when (this) {
+            PrivateReply ->
+                "This person already sent you a request. Accept it with a private reply " +
+                    "instead? The reply is paid from this wallet's shielded balance, and no " +
+                    "public request names you as its sender."
+            ReplyInKind -> "This person already sent you a request. Accept it instead?"
+        }
+
+    companion object {
+        fun of(sendPrivately: Boolean): CollisionAccept = if (sendPrivately) PrivateReply else ReplyInKind
+    }
+}
+
+/**
  * What the request list's private-store refresh tells the user. A network
  * that does not serve the store yet (before protocol version 15) is expected
  * and stays quiet; an operational failure, or requests read but not saved,
