@@ -1993,3 +1993,69 @@ fn should_hold_every_list_of_what_an_update_gains_in_a_type_it_has() {
     ];
     run(&cases, PlatformVersion::latest());
 }
+
+/// The validator follows a chain of `$ref`s to its end, so the `required` of every schema on it
+/// is held to the members of the object the type parses (from the first schema of the chain),
+/// not only that of the first. Every node refuses such a chain first (the parse's depth check
+/// under full validation, and its `check_tx` counterpart), so the test calls the check on a type
+/// parsed without full validation, to pin how the lists along a chain are read.
+#[test]
+fn should_read_every_list_a_chain_of_refs_reaches() {
+    let platform_version = PlatformVersion::latest();
+    let defs = Some(platform_value!({
+        "a": {
+            "$ref": "#/$defs/b",
+            "type": "object",
+            "properties": { "y": boolean(0) },
+            "additionalProperties": false,
+        },
+        "b": {
+            "type": "object",
+            "properties": { "y": boolean(0) },
+            "required": ["zzz"],
+            "additionalProperties": false,
+        },
+    }));
+    let defs_map = definitions_map(&defs);
+    let parse_without_full_validation = |schema: Value| {
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("expected a default config");
+        DocumentType::try_from_schema(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "note",
+            schema,
+            defs_map.as_ref(),
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("expected the type to parse without full validation")
+    };
+    let old = parse_without_full_validation(document_type_schema(
+        platform_value!({ "a": string(0, 10) }),
+        platform_value!(["a"]),
+    ));
+    let new = parse_without_full_validation(document_type_schema(
+        platform_value!({
+            "a": string(0, 10),
+            "meta": { "$ref": "#/$defs/a", "position": 1 },
+        }),
+        platform_value!(["a"]),
+    ));
+    let refusal = new.as_ref().first_unmeetable_gained_requirement(
+        Some(old.as_ref()),
+        &DefinitionsRoot::new(defs_map.as_ref()),
+        2,
+        platform_version,
+    );
+    assert!(
+        refusal
+            .as_deref()
+            .is_some_and(|refusal| refusal.contains("'zzz'")),
+        "{refusal:?}"
+    );
+}

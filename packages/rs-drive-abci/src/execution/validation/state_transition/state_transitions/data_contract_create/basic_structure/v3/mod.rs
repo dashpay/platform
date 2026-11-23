@@ -113,14 +113,16 @@ mod tests {
                     "additionalProperties": false,
                 }),
             );
+        // The given definitions join the fixture's, which its document types reference
         if let Some(defs) = defs {
-            match &mut carried {
-                DataContractInSerializationFormat::V0(v0) => v0.schema_defs = Some(defs),
-                DataContractInSerializationFormat::V1(v1) => v1.schema_defs = Some(defs),
+            let schema_defs = match &mut carried {
+                DataContractInSerializationFormat::V0(v0) => &mut v0.schema_defs,
+                DataContractInSerializationFormat::V1(v1) => &mut v1.schema_defs,
                 DataContractInSerializationFormat::V2(_) => {
                     panic!("expected a transport format")
                 }
-            }
+            };
+            schema_defs.get_or_insert_with(BTreeMap::new).extend(defs);
         }
         DataContractCreateTransitionV0 {
             data_contract: carried,

@@ -19,7 +19,7 @@ use crate::data_contract::document_type::property_names::{POSITION, PROPERTIES, 
 use platform_value::{Value, ValueMapHelper};
 use platform_version::version::PlatformVersion;
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 /// Why an object's members are refused by their order.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,21 +38,33 @@ pub enum MemberPositionOrderError {
 pub struct MemberPositionOrder<'a> {
     old_definitions: DefinitionsRoot<'a>,
     new_definitions: DefinitionsRoot<'a>,
-    /// How deep the walk of what a contract gains goes, through members and `$ref`s together:
-    /// the schema depth the parse admits, which counts a schema at least as deep, so no document
-    /// type the parse admits reaches it. A schema the contract gains nested deeper, reached
-    /// through any `$ref`, is refused, as is a `$ref` it gains that reaches itself, which the
-    /// parse refuses in every document type: a walk that stopped there could not tell what lies
-    /// below. What a contract keeps was stored with it and is not held to the depth: the parse
-    /// bounded it in a contract with a document type, and no parse reads the `$defs` of a
-    /// contract with only tokens, which may hold a cycle or a chain deeper than this. A `$ref`
-    /// the contract keeps that reaches a pair being walked ends the walk there, the schemas on
-    /// the cycle being judged where the walk entered it, and each pair is walked once a call.
+    /// How deep a walk goes, through members and `$ref`s together: the schema depth the parse
+    /// admits, which counts a schema at least as deep, so no document type the parse admits
+    /// reaches it. A schema the contract gains nested deeper, reached through any `$ref`, is
+    /// refused, as is a `$ref` it gains that reaches itself, that the document type parser can
+    /// not follow, or whose value is not text: a walk that stopped there could not tell what
+    /// lies below, and no document type could read what it reaches (the parse refuses each in
+    /// a document type, and no parse reads the `$defs` of a contract with only tokens).
+    ///
+    /// What a contract keeps was stored with it, and is never refused for its depth: the parse
+    /// bounded it in a contract with a document type, but no parse reads the `$defs` of a
+    /// contract with only tokens, which may hold a cycle or a chain of any length. A pair of
+    /// schemas a `$ref` the contract keeps points at is walked on its own, from a queue of the
+    /// call, not inside the walk that reached it: each is walked once a call, from depth 0,
+    /// whatever reaches it, so its answer is the same for every path, and no chain of `$ref`s
+    /// deepens the walk. Inside it, a schema the contract keeps past this depth is left as it
+    /// is when the update leaves it as it was, and refused when the update changes it, so the
+    /// walk never goes deeper; what the contract gains is refused past it.
     max_depth: usize,
-    /// The deepest point the walk under way has reached.
+    /// The deepest point the walk has reached, which the walk of a `$ref` the contract gains
+    /// reads as how deep the schema it points at goes.
     deepest: Cell<usize>,
     /// Whether the walk under way went deeper than `max_depth` since it was last cleared.
     cut_short: Cell<bool>,
+    /// How many walks of a schema a `$ref` the contract gains points at are under way, one
+    /// inside another: a refusal found inside one names the outermost `$ref` only, so a long
+    /// chain does not repeat its context at every link.
+    reference_nesting: Cell<usize>,
     /// What each schema a `$ref` the contract gains points at was judged, by its address in the
     /// `$defs` the judge holds: the parse reads `/` and `.` in a pointer alike, so one schema is
     /// reached by many spellings, and each is walked once. Kept as long as the judge, but for
@@ -62,38 +74,51 @@ pub struct MemberPositionOrder<'a> {
     judged_gained_references: RefCell<BTreeMap<*const Value, Judged>>,
     /// The schemas of `judged_gained_references` whose walk the depth cut short.
     cut_short_references: RefCell<Vec<*const Value>>,
-    /// What each pair of schemas a `$ref` the contract keeps points at was judged (the stored
-    /// one and the new one, with the document type schemas a pointer outside `$defs` resolves
-    /// in), by their addresses. Such a pair may lie in, and its answer depend on, the document
-    /// type schemas of one call, so it is kept for that call only.
-    judged_kept_references: RefCell<BTreeMap<KeptPair, Judged>>,
 }
 
-/// How far the walk of a pair of schemas a `$ref` points at got.
+/// How far the walk of a schema a `$ref` the contract gains points at got.
 #[derive(Clone)]
 enum Judged {
     /// Being walked: reaching it again is a cycle.
     Walking,
-    /// Walked: its refusal, if any, and how many levels below the pair the walk went, so a
-    /// `$ref` reaching the pair at any depth is held to the depth the walk would reach.
+    /// Walked: its refusal, if any, and how many levels below the schema the walk went, so a
+    /// `$ref` reaching it at any depth is held to the depth the walk would reach.
     Done {
         error: Option<MemberPositionOrderError>,
         height: usize,
     },
 }
 
-/// The addresses of the stored and the new schema a `$ref` the contract keeps points at, and of
-/// the stored and new document type schemas a pointer outside `$defs` resolves in (null while
-/// the `$defs` are walked on their own).
-type KeptPair = [*const Value; 4];
+/// One call's walk: the stored and the new schema of the document type it walks, where the parse
+/// resolves a `$ref` that does not point into `$defs` (it resolves against the type's schema
+/// with the contract's `$defs` added; neither while the `$defs` are walked on their own), and the
+/// pairs of schemas a `$ref` the contract keeps points at: those the call reached, by their
+/// addresses, so each is walked once, and those waiting to be walked.
+struct Call<'v> {
+    old_type: Option<&'v Value>,
+    new_type: Option<&'v Value>,
+    reached_kept: RefCell<BTreeSet<[*const Value; 2]>>,
+    kept: RefCell<VecDeque<KeptWork<'v>>>,
+}
 
-/// The stored and the new schema of the document type being walked, where the parse resolves a
-/// `$ref` that does not point into `$defs` (it resolves against the type's schema with the
-/// contract's `$defs` added). Neither while the `$defs` are walked on their own.
-#[derive(Clone, Copy, Default)]
-struct TypeSchemas<'v> {
-    old: Option<&'v Value>,
-    new: Option<&'v Value>,
+/// A pair of schemas a `$ref` the contract keeps points at, waiting to be walked, with the first
+/// `$ref` that reached it, which a refusal found in it names.
+struct KeptWork<'v> {
+    old: &'v Value,
+    new: &'v Value,
+    path: String,
+    reference: String,
+}
+
+impl<'v> Call<'v> {
+    fn new(old_type: Option<&'v Value>, new_type: Option<&'v Value>) -> Self {
+        Self {
+            old_type,
+            new_type,
+            reached_kept: RefCell::new(BTreeSet::new()),
+            kept: RefCell::new(VecDeque::new()),
+        }
+    }
 }
 
 impl<'a> MemberPositionOrder<'a> {
@@ -115,9 +140,9 @@ impl<'a> MemberPositionOrder<'a> {
                 .max_depth as usize,
             deepest: Cell::new(0),
             cut_short: Cell::new(false),
+            reference_nesting: Cell::new(0),
             judged_gained_references: RefCell::new(BTreeMap::new()),
             cut_short_references: RefCell::new(Vec::new()),
-            judged_kept_references: RefCell::new(BTreeMap::new()),
         }
     }
 
@@ -142,26 +167,25 @@ impl<'a> MemberPositionOrder<'a> {
         old_schema: Option<&Value>,
         new_schema: &Value,
     ) -> Option<MemberPositionOrderError> {
-        self.forget_answers_of_one_call();
+        self.forget_answers_cut_short();
+        let call = Call::new(old_schema, Some(new_schema));
         let old_properties = old_schema.and_then(inline_members);
-        let types = TypeSchemas {
-            old: old_schema,
-            new: Some(new_schema),
-        };
         inline_members(new_schema)?
             .iter()
             .find_map(|(name, property)| {
                 let name = name.as_text()?;
                 let old_property =
                     old_properties.and_then(|properties| last_value(properties, name));
-                self.first_error(old_property, property, name, types, 0)
+                self.first_error(old_property, property, name, &call, 0)
             })
+            .or_else(|| self.first_error_of_kept_references(&call))
     }
 
     /// The first `$defs` definition the registration or update writes whose members' order is
     /// refused, against the same definition the contract stores, with its name.
     pub fn first_error_of_definitions(&self) -> Option<(String, MemberPositionOrderError)> {
-        self.forget_answers_of_one_call();
+        self.forget_answers_cut_short();
+        let call = Call::new(None, None);
         self.new_definitions
             .definitions()?
             .iter()
@@ -174,44 +198,63 @@ impl<'a> MemberPositionOrder<'a> {
                     old_definition,
                     definition,
                     &format!("$defs.{name}"),
-                    TypeSchemas::default(),
+                    &call,
                     0,
                 )
+                .or_else(|| self.first_error_of_kept_references(&call))
                 .map(|error| (name.clone(), error))
             })
     }
 
     /// The first object of the property schema `new`, or of the objects inside it or reached
-    /// through its `$ref`s, at any depth, whose members' order is refused; `old` is the same
-    /// property as the contract stores it, `None` when the contract gains it, and `path` names
-    /// it. The `properties` written beside a `$ref` are not read for storage, so they are not
-    /// walked.
-    fn first_error(
-        &self,
-        old: Option<&Value>,
-        new: &Value,
+    /// through the `$ref`s it gains, whose members' order is refused; `old` is the same property
+    /// as the contract stores it, `None` when the contract gains it, and `path` names it. The
+    /// `properties` written beside a `$ref` are not read for storage, so they are not walked. A
+    /// pair a `$ref` the contract keeps points at is queued on `call`, to be walked on its own.
+    fn first_error<'v>(
+        &'v self,
+        old: Option<&'v Value>,
+        new: &'v Value,
         path: &str,
-        types: TypeSchemas,
+        call: &Call<'v>,
         depth: usize,
     ) -> Option<MemberPositionOrderError> {
         if old.is_none() {
             if let Some(refusal) = self.reached(depth, path) {
                 return Some(refusal);
             }
-        } else {
-            self.deepest.set(self.deepest.get().max(depth));
+        } else if depth > self.max_depth {
+            // Stored with the contract deeper than any document type may be, so only a contract
+            // with only tokens, whose `$defs` no parse reads, holds it: left as it is when the
+            // update leaves it so, refused when the update changes it
+            return if old == Some(new) {
+                None
+            } else {
+                self.reached(depth, path)
+            };
         }
         let new_schema = new.as_map()?;
         if let Some(reference) = new_schema.get_optional_key(REF) {
-            let reference = reference.as_text()?;
+            let Some(reference) = reference.as_text() else {
+                // A `$ref` that is not text points at nothing; one stored so stays as it is
+                let stored = old
+                    .and_then(Value::as_map)
+                    .and_then(|old| old.get_optional_key(REF));
+                return (stored != Some(reference)).then(|| {
+                    MemberPositionOrderError::ListedOutOfPositionOrder(format!(
+                        "'{path}' takes its schema from a `$ref` that is not text, which the \
+                         document type parser can not follow"
+                    ))
+                });
+            };
             let old_reference = old
                 .and_then(Value::as_map)
                 .and_then(|old| old.get_optional_key(REF))
                 .and_then(Value::as_text);
             return if old_reference == Some(reference) {
-                self.kept_reference_error(reference, path, types, depth)
+                self.queue_kept_reference(reference, path, call)
             } else {
-                self.gained_reference_error(reference, path, depth)
+                self.gained_reference_error(reference, path, call, depth)
             };
         }
         if !is_object(new_schema) {
@@ -235,19 +278,22 @@ impl<'a> MemberPositionOrder<'a> {
                 old_member,
                 member,
                 &format!("{path}.{name}"),
-                types,
+                call,
                 depth + 1,
             )
         })
     }
 
-    /// Why a `$ref` the contract gains at `path` is refused: it does not point into `$defs`, or
-    /// the schema it points at, or one reached from it, holds an object not listed at consecutive
-    /// positions. One that points at nothing is left to the parse, which refuses it.
-    fn gained_reference_error(
-        &self,
+    /// Why a `$ref` the contract gains at `path` is refused: it does not point into `$defs`, the
+    /// document type parser can not follow it there (so no document type could read what it
+    /// reaches: the parse refuses it in a document type, and no parse reads the `$defs` of a
+    /// contract with only tokens), or the schema it points at, or one reached from it, holds an
+    /// object not listed at consecutive positions.
+    fn gained_reference_error<'v>(
+        &'v self,
         reference: &str,
         path: &str,
+        call: &Call<'v>,
         depth: usize,
     ) -> Option<MemberPositionOrderError> {
         let refused = |detail: String| {
@@ -261,122 +307,115 @@ impl<'a> MemberPositionOrder<'a> {
                     .to_string(),
             );
         }
-        let target = self.new_definitions.resolve_as_parsed(reference, None)?;
-        self.judged_through_reference(None, target, reference, TypeSchemas::default(), depth)
-            .map(|error| through_reference(error, path, reference))
+        let Some(target) = self.new_definitions.resolve_as_parsed(reference, None) else {
+            return refused(
+                "the document type parser follows it to nothing in the contract's `$defs`"
+                    .to_string(),
+            );
+        };
+        let error = self.judged_gained_reference(target, reference, call, depth);
+        if self.reference_nesting.get() > 0 {
+            error
+        } else {
+            error.map(|error| through_reference(error, path, reference))
+        }
     }
 
-    /// Why a `$ref` the contract keeps at `path` is refused: the object it points at, as the
-    /// update writes it, does not keep the rule of an object the contract has against the one
-    /// it pointed at. A pointer into `$defs` is resolved in each side's `$defs`, any other in
-    /// each side's document type schema, as the parse resolves it. One that points at nothing on
-    /// either side is left as it is.
-    fn kept_reference_error(
-        &self,
+    /// Queues the pair of schemas the `$ref` the contract keeps at `path` points at, to be walked
+    /// on its own, unless the call reached it before. A pointer into `$defs` is resolved in each
+    /// side's `$defs`, any other in each side's document type schema, as the parse resolves it.
+    /// One that points at nothing on either side is left as it is.
+    fn queue_kept_reference<'v>(
+        &'v self,
         reference: &str,
         path: &str,
-        types: TypeSchemas,
-        depth: usize,
+        call: &Call<'v>,
     ) -> Option<MemberPositionOrderError> {
-        let old_target = self
+        let old = self
             .old_definitions
-            .resolve_as_parsed(reference, types.old)?;
-        let new_target = self
+            .resolve_as_parsed(reference, call.old_type)?;
+        let new = self
             .new_definitions
-            .resolve_as_parsed(reference, types.new)?;
-        self.judged_through_reference(Some(old_target), new_target, reference, types, depth)
-            .map(|error| through_reference(error, path, reference))
+            .resolve_as_parsed(reference, call.new_type)?;
+        if !call
+            .reached_kept
+            .borrow_mut()
+            .insert([std::ptr::from_ref(old), std::ptr::from_ref(new)])
+        {
+            return None;
+        }
+        call.kept.borrow_mut().push_back(KeptWork {
+            old,
+            new,
+            path: path.to_string(),
+            reference: reference.to_string(),
+        });
+        None
     }
 
-    /// [`Self::first_error`] for the schemas a `$ref` points at, walked once per pair: a pair
-    /// reached again is held to the depth its walk went to from where it is reached now.
-    fn judged_through_reference(
-        &self,
-        old: Option<&Value>,
-        new: &Value,
+    /// Walks the pairs queued on `call`, each on its own from depth 0, until the queue is empty
+    /// or one is refused: the refusal names the first `$ref` that reached the pair.
+    fn first_error_of_kept_references<'v>(
+        &'v self,
+        call: &Call<'v>,
+    ) -> Option<MemberPositionOrderError> {
+        loop {
+            // The queue is borrowed for the `pop_front` only: the walk below queues on it
+            let work = call.kept.borrow_mut().pop_front()?;
+            if let Some(error) =
+                self.first_error(Some(work.old), work.new, &work.reference, call, 0)
+            {
+                return Some(through_reference(error, &work.path, &work.reference));
+            }
+        }
+    }
+
+    /// [`Self::first_error`] for the schema a `$ref` the contract gains points at, walked once:
+    /// reached again, it is held to the depth its walk went to from where it is reached now.
+    fn judged_gained_reference<'v>(
+        &'v self,
+        new: &'v Value,
         reference: &str,
-        types: TypeSchemas,
+        call: &Call<'v>,
         depth: usize,
     ) -> Option<MemberPositionOrderError> {
-        let address = |value: Option<&Value>| value.map_or(std::ptr::null(), std::ptr::from_ref);
-        let kept_pair = old.map(|old| {
-            [
-                std::ptr::from_ref(old),
-                std::ptr::from_ref(new),
-                address(types.old),
-                address(types.new),
-            ]
-        });
-        let judged = match kept_pair {
-            Some(pair) => self.judged_kept_references.borrow().get(&pair).cloned(),
-            None => self
-                .judged_gained_references
-                .borrow()
-                .get(&std::ptr::from_ref(new))
-                .cloned(),
-        };
+        let key = std::ptr::from_ref(new);
+        let judged = self.judged_gained_references.borrow().get(&key).cloned();
         match judged {
-            // A `$ref` the contract keeps reaching a schema being walked was stored with the
-            // contract: the walk that entered the cycle judges its schemas
-            Some(Judged::Walking) if kept_pair.is_some() => return None,
             Some(Judged::Walking) => {
                 return Some(MemberPositionOrderError::ListedOutOfPositionOrder(format!(
                     "the `$ref` '{reference}' reaches the schema it is written in, which no \
                      document type may"
                 )))
             }
-            Some(Judged::Done { error, .. }) if kept_pair.is_some() => return error,
             Some(Judged::Done { error, height }) => {
                 return self.reached(depth + 1 + height, reference).or(error);
             }
             None => {}
         }
-        self.record(kept_pair, new, Judged::Walking);
+        self.judged_gained_references
+            .borrow_mut()
+            .insert(key, Judged::Walking);
         let deepest_outside = self.deepest.replace(depth + 1);
         let cut_short_outside = self.cut_short.replace(false);
-        // Below a `$ref` the contract gains, every `$ref` is gained and points into `$defs`, so
-        // its answer does not depend on the document type
-        let types = if old.is_some() {
-            types
-        } else {
-            TypeSchemas::default()
-        };
-        let error = self.first_error(old, new, reference, types, depth + 1);
+        self.reference_nesting.set(self.reference_nesting.get() + 1);
+        let error = self.first_error(None, new, reference, call, depth + 1);
+        self.reference_nesting.set(self.reference_nesting.get() - 1);
         let deepest_inside = self.deepest.get();
         self.deepest.set(deepest_outside.max(deepest_inside));
         let cut_short = self.cut_short.get();
         self.cut_short.set(cut_short_outside || cut_short);
-        self.record(
-            kept_pair,
-            new,
+        self.judged_gained_references.borrow_mut().insert(
+            key,
             Judged::Done {
                 error: error.clone(),
                 height: deepest_inside - (depth + 1),
             },
         );
-        if cut_short && kept_pair.is_none() {
-            self.cut_short_references
-                .borrow_mut()
-                .push(std::ptr::from_ref(new));
+        if cut_short {
+            self.cut_short_references.borrow_mut().push(key);
         }
         error
-    }
-
-    /// Keeps what the pair `kept_pair` of a `$ref` the contract keeps, or the schema `new` a
-    /// `$ref` it gains points at, was judged.
-    fn record(&self, kept_pair: Option<KeptPair>, new: &Value, judged: Judged) {
-        match kept_pair {
-            Some(pair) => {
-                self.judged_kept_references
-                    .borrow_mut()
-                    .insert(pair, judged);
-            }
-            None => {
-                self.judged_gained_references
-                    .borrow_mut()
-                    .insert(std::ptr::from_ref(new), judged);
-            }
-        }
     }
 
     /// Records that the walk reached `depth`, refused when that is deeper than the parse admits.
@@ -392,11 +431,9 @@ impl<'a> MemberPositionOrder<'a> {
         })
     }
 
-    /// Drops the answers that hold for one call only: those for pairs a `$ref` the contract
-    /// keeps reached, which may depend on the document type schemas an earlier call passed, and
-    /// those of walks the depth cut short.
-    fn forget_answers_of_one_call(&self) {
-        self.judged_kept_references.borrow_mut().clear();
+    /// Drops the answers of walks the depth cut short, which hold for the call that made them
+    /// only: a later call reaching the schema from less deep answers otherwise.
+    fn forget_answers_cut_short(&self) {
         let mut judged_gained_references = self.judged_gained_references.borrow_mut();
         for target in self.cut_short_references.borrow_mut().drain(..) {
             judged_gained_references.remove(&target);
@@ -985,9 +1022,8 @@ mod tests {
     }
 
     /// A `$ref` a contract gains is judged with every `$ref` the schema it points at holds, and
-    /// those with theirs, once each; one that reaches the schema it is written in is refused, as
-    /// the parse refuses it in a document type, and one that points at nothing is left to the
-    /// parse, which refuses it.
+    /// those with theirs, once each; one that reaches the schema it is written in, or points at
+    /// nothing, is refused, as the parse refuses either in a document type.
     #[test]
     fn should_judge_every_ref_a_gained_ref_reaches() {
         let definitions = BTreeMap::from([
@@ -1030,10 +1066,9 @@ mod tests {
             judge.first_error_of_document_type(None, &referencing("#/$defs/loop")),
             "reaches the schema it is written in",
         );
-        assert_eq!(
+        listed_out_of_position_order(
             judge.first_error_of_document_type(None, &referencing("#/$defs/missing")),
-            None,
-            "a $ref that points at nothing is left to the parse"
+            "follows it to nothing",
         );
     }
 
@@ -1265,6 +1300,194 @@ mod tests {
                     .first_error_of_definitions(),
                 None,
                 "the cycle through '{first}'"
+            );
+        }
+    }
+
+    /// A chain of `$ref`s a contract keeps, which a contract with only tokens may hold in
+    /// `$defs` no parse reads, is walked one pair at a time from a queue, not one inside
+    /// another: however long, it does not deepen the walk, and an update that keeps it is
+    /// accepted. A registration gaining the same chain is refused once it runs deeper than the
+    /// parse admits.
+    #[test]
+    fn should_walk_a_kept_chain_of_any_length_without_deepening_the_walk() {
+        let links = 4096;
+        let mut chain: BTreeMap<String, Value> = (0..links)
+            .map(|link| {
+                (
+                    format!("d{link:05}"),
+                    object(vec![(
+                        "next",
+                        platform_value!({
+                            "$ref": format!("#/$defs/d{:05}", link + 1),
+                            "position": 0,
+                        }),
+                    )]),
+                )
+            })
+            .collect();
+        chain.insert(format!("d{links:05}"), object(vec![("a", member(0))]));
+        let latest = PlatformVersion::latest();
+        assert_eq!(
+            MemberPositionOrder::new(Some(&chain), Some(&chain), latest)
+                .first_error_of_definitions(),
+            None,
+            "kept"
+        );
+        assert!(
+            matches!(
+                MemberPositionOrder::new(None, Some(&chain), latest).first_error_of_definitions(),
+                Some((_, MemberPositionOrderError::ListedOutOfPositionOrder(details)))
+                    if details.contains("nested deeper than")
+            ),
+            "gained"
+        );
+    }
+
+    /// A schema a contract keeps is judged from where its own walk starts, whatever path of
+    /// `$ref`s reaches it: a member it gains is held to the depth below it, so the verdict is the
+    /// same whichever path the walk takes first.
+    #[test]
+    fn should_judge_a_kept_schema_alike_whichever_path_reaches_it_first() {
+        for max_depth in [3, 5] {
+            judge_a_kept_schema_alike_whichever_path_reaches_it_first(max_depth);
+        }
+    }
+
+    fn judge_a_kept_schema_alike_whichever_path_reaches_it_first(max_depth: u16) {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .schema
+            .max_depth = max_depth;
+        let to = |name: &str| platform_value!({ "$ref": format!("#/$defs/{name}"), "position": 0 });
+        let definitions = |long: &str, gained: bool| {
+            let mut shared = vec![("a", member(0))];
+            if gained {
+                shared.push((
+                    "x",
+                    with_position(
+                        object(vec![(
+                            "y",
+                            with_position(object(vec![("z", member(0))]), 0),
+                        )]),
+                        1,
+                    ),
+                ));
+            }
+            BTreeMap::from([
+                (
+                    format!("{long}0"),
+                    object(vec![("next", to(&format!("{long}1")))]),
+                ),
+                (
+                    format!("{long}1"),
+                    object(vec![("next", to(&format!("{long}2")))]),
+                ),
+                (format!("{long}2"), object(vec![("next", to("shared"))])),
+                ("m".to_string(), object(vec![("next", to("shared"))])),
+                ("shared".to_string(), object(shared)),
+            ])
+        };
+        for long in ["a", "z"] {
+            let stored = definitions(long, false);
+            let updated = definitions(long, true);
+            assert_eq!(
+                MemberPositionOrder::new(Some(&stored), Some(&updated), &platform_version)
+                    .first_error_of_definitions(),
+                None,
+                "the long path named '{long}', max_depth {max_depth}"
+            );
+        }
+    }
+
+    /// A `$ref` a contract gains that points at nothing is refused: in a contract with only
+    /// tokens no parse reads its `$defs`, and no document type could reach the definition.
+    #[test]
+    fn should_refuse_a_gained_ref_that_points_at_nothing() {
+        let definitions = BTreeMap::from([(
+            "added".to_string(),
+            object(vec![(
+                "x",
+                platform_value!({ "$ref": "#/$defs/missing", "position": 0 }),
+            )]),
+        )]);
+        listed_out_of_position_order(
+            MemberPositionOrder::new(None, Some(&definitions), PlatformVersion::latest())
+                .first_error_of_definitions()
+                .map(|(_, error)| error),
+            "follows it to nothing",
+        );
+    }
+
+    /// A `$ref` whose value is not text points at nothing a document type could read: one a
+    /// contract gains is refused, one it stores stays as it is.
+    #[test]
+    fn should_refuse_a_gained_ref_that_is_not_text_and_keep_a_stored_one() {
+        let definitions = BTreeMap::from([(
+            "added".to_string(),
+            object(vec![("x", platform_value!({ "$ref": 7, "position": 0 }))]),
+        )]);
+        let latest = PlatformVersion::latest();
+        listed_out_of_position_order(
+            MemberPositionOrder::new(None, Some(&definitions), latest)
+                .first_error_of_definitions()
+                .map(|(_, error)| error),
+            "not text",
+        );
+        assert_eq!(
+            MemberPositionOrder::new(Some(&definitions), Some(&definitions), latest)
+                .first_error_of_definitions(),
+            None
+        );
+    }
+
+    /// A schema a contract keeps past the depth (which only a contract with only tokens can
+    /// hold) is left as it is when the update leaves it so, and refused when the update changes
+    /// it, so the walk never goes deeper and no change below it goes unjudged.
+    #[test]
+    fn should_keep_a_kept_schema_past_the_depth_only_as_it_was() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .schema
+            .max_depth = 3;
+        let nested = |innermost: Vec<(&str, Value)>| {
+            let mut schema = object(innermost);
+            for _ in 0..5 {
+                schema = object(vec![("a", with_position(schema, 0))]);
+            }
+            BTreeMap::from([("d".to_string(), schema)])
+        };
+        let stored = nested(vec![("s", member(0))]);
+        assert_eq!(
+            MemberPositionOrder::new(Some(&stored), Some(&stored), &platform_version)
+                .first_error_of_definitions(),
+            None,
+            "unchanged"
+        );
+        for (case, updated) in [
+            (
+                "a member at its next free position",
+                nested(vec![("s", member(0)), ("t", member(1))]),
+            ),
+            (
+                "a member at another position",
+                nested(vec![("s", member(0)), ("t", member(7))]),
+            ),
+        ] {
+            assert!(
+                matches!(
+                    MemberPositionOrder::new(Some(&stored), Some(&updated), &platform_version)
+                        .first_error_of_definitions(),
+                    Some((_, MemberPositionOrderError::ListedOutOfPositionOrder(details)))
+                        if details.contains("nested deeper than 3")
+                ),
+                "{case}"
             );
         }
     }

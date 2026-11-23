@@ -22,6 +22,7 @@ use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Set
 use dpp::data_contract::config::v1::DataContractConfigSettersV1;
 use dpp::data_contract::config::DataContractConfig;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::DocumentPropertyType;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::DataContractFactory;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -1531,18 +1532,33 @@ fn should_read_a_document_stored_at_protocol_version_14_after_its_object_gains_a
         .expect("the update applies at the latest protocol version");
     drive.cache.data_contracts.clear();
 
+    let persisted = drive
+        .get_contract_with_fetch_info(updated.id().to_buffer(), false, None, latest)
+        .expect("the contract fetches")
+        .expect("the updated contract is stored");
+    let persisted = &persisted.contract;
+    assert_eq!(persisted.version(), 2, "Drive holds the updated contract");
+    let page_type = persisted
+        .document_type_for_name("page")
+        .expect("document type");
+    let Some(DocumentPropertyType::Object(members)) = page_type
+        .properties()
+        .get("metadata")
+        .map(|property| &property.property_type)
+    else {
+        panic!("expected the object metadata");
+    };
+    assert_eq!(
+        members.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["slug", "title", "description", "extra"],
+        "the persisted type keeps the stored map order and appends the member"
+    );
     let Some(Element::Item(bytes, _)) =
-        stored_document(&drive, &updated, "page", Identifier::from(id))
+        stored_document(&drive, persisted, "page", Identifier::from(id))
     else {
         panic!("expected the stored document");
     };
-    let read = Document::from_bytes(
-        &bytes,
-        updated
-            .document_type_for_name("page")
-            .expect("document type"),
-        latest,
-    )
-    .expect("the document stored at 14 decodes with the updated type");
+    let read = Document::from_bytes(&bytes, page_type, latest)
+        .expect("the document stored at 14 decodes with the persisted type");
     assert_eq!(read.properties().get("metadata"), Some(&metadata));
 }

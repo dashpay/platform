@@ -1669,6 +1669,74 @@ mod tests {
         assert!(result.is_valid(), "{:?}", result.errors);
     }
 
+    /// A token-only contract whose `$defs` hold `definitions`, stored as the parse of protocol
+    /// version `platform_version` stores one, without the registration checks: no document
+    /// type, so no parse reads the `$defs`.
+    fn token_only_contract(
+        definitions: BTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
+    ) -> DataContract {
+        let mut contract = get_data_contract_fixture(
+            None,
+            IdentityNonce::default(),
+            platform_version.protocol_version,
+        )
+        .data_contract_owned();
+        contract.set_tokens(BTreeMap::from([(
+            0,
+            TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+        )]));
+        contract
+            .set_document_schemas(
+                BTreeMap::new(),
+                None,
+                true,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("expected a token-only contract to register");
+        contract
+            .set_schema_defs(Some(definitions), true, &mut Vec::new(), platform_version)
+            .expect("expected the token-only contract's $defs to register");
+        assert!(contract.document_types().is_empty());
+        contract
+    }
+
+    /// A `$ref` an update adds in a token-only contract's `$defs`, which no parse reads, is
+    /// refused when it points at nothing: no document type could later reach the definition.
+    #[test]
+    fn should_refuse_a_ref_a_token_only_contract_gains_that_points_at_nothing() {
+        let platform_version = PlatformVersion::latest();
+        let kept = BTreeMap::from([("kept".to_string(), object_of(vec![("a", string_at(0))]))]);
+        let stored = token_only_contract(kept.clone(), platform_version);
+        let mut with_dangling = kept;
+        with_dangling.insert(
+            "added".to_string(),
+            object_of(vec![(
+                "x",
+                platform_value!({ "$ref": "#/$defs/missing", "position": 0 }),
+            )]),
+        );
+        let mut updated = stored.clone();
+        updated
+            .set_schema_defs(Some(with_dangling), true, &mut Vec::new(), platform_version)
+            .expect("expected the parse to store a token-only contract's dangling $ref");
+        updated.set_version(stored.version() + 1);
+        let result = stored
+            .validate_update(&updated, &BlockInfo::default(), platform_version)
+            .expect("expected the update to be judged");
+        assert!(
+            matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(BasicError::ContractError(
+                    DataContractError::InvalidContractStructure(details)
+                ))] if details.contains("#/$defs/missing")
+            ),
+            "{:?}",
+            result.errors
+        );
+    }
+
     /// A position a contract stored before protocol version 15 that no integer reads (a float
     /// such as 2^64) leaves the object's next free position unknown. The object keeps the rule
     /// of an object stored earlier: its members keep their order and the members an update adds

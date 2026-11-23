@@ -757,8 +757,8 @@ impl GainedObjects<'_> {
 
     /// The first `required` list no document could meet in the object the contract gains at
     /// `path`, whose members as the type parses them are `members` and which the validator reads
-    /// in `schemas` as written (and in the schema each `$ref` among them points at), or in an
-    /// object inside it. Every list those schemas hold names only members of the object, no
+    /// in `schemas` as written (and in the schemas the chain of `$ref`s from each reaches), or in
+    /// an object inside it. Every list those schemas hold names only members of the object, no
     /// dotted name, and, together, no more members than the least `maxProperties` among them;
     /// a schema written with `additionalProperties: false` admits only the members its own
     /// `properties` declare, so the lists name none it does not.
@@ -812,19 +812,25 @@ impl GainedObjects<'_> {
     }
 
     /// Every schema the validator applies to an object written as `schemas`: each of them, and
-    /// the schema each `$ref` among them points at, resolved as the validator resolves it (a
-    /// `$ref` the parser reads too resolves alike for both, or the validation schema refuses the
-    /// contract). A `$ref` that points at nothing adds no schema: the validation schema refuses
-    /// it, and the lists of the others are still read.
+    /// the schemas the chain of `$ref`s from it reaches, each resolved as the validator resolves
+    /// it (a `$ref` the parser reads too resolves alike for both, or the validation schema
+    /// refuses the contract). The chain ends at a schema with no `$ref`, at one already read,
+    /// which a cycle reaches, or at a `$ref` that points at nothing, which the validation schema
+    /// refuses; the lists of the others are still read.
     fn schemas_read<'s>(&'s self, schemas: Vec<&'s Value>) -> Vec<&'s Value> {
-        let mut read = Vec::with_capacity(schemas.len() * 2);
+        let mut read: Vec<&Value> = Vec::with_capacity(schemas.len() * 2);
         for schema in schemas {
-            read.push(schema);
-            if let Some(target) = reference_of(schema).and_then(|reference| {
+            let mut current = schema;
+            read.push(current);
+            while let Some(target) = reference_of(current).and_then(|reference| {
                 self.definitions
                     .resolve_as_validated(reference, Some(self.type_schema))
             }) {
+                if read.iter().any(|seen| std::ptr::eq(*seen, target)) {
+                    break;
+                }
                 read.push(target);
+                current = target;
             }
         }
         read
