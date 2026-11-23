@@ -97,6 +97,19 @@ fn new_byte_array(env: &mut JNIEnv, blob: &[u8]) -> jbyteArray {
         .unwrap_or(ptr::null_mut())
 }
 
+/// The bytes of `value`, or `None` after throwing code 1 when the JNI read
+/// fails, so an export never returns null without a pending exception.
+fn read_bytes(env: &mut JNIEnv, value: &JByteArray, field: &str) -> Option<Vec<u8>> {
+    match env.convert_byte_array(value) {
+        Ok(bytes) => Some(bytes),
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, &format!("{field} byte[] could not be read"));
+            None
+        }
+    }
+}
+
 /// `value` as `u64`, or `None` after throwing code 1 for a negative one.
 fn non_negative(env: &mut JNIEnv, value: jlong, field: &str) -> Option<u64> {
     if value < 0 {
@@ -463,10 +476,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_AddressHistoryNative_
             throw_sdk_exception(env, 1, "key and expectedHash must not be null");
             return ptr::null_mut();
         }
-        let Ok(key) = env.convert_byte_array(&key) else {
+        let Some(key) = read_bytes(env, &key, "key") else {
             return ptr::null_mut();
         };
-        let Ok(hash) = env.convert_byte_array(&expected_hash) else {
+        let Some(hash) = read_bytes(env, &expected_hash, "expectedHash") else {
             return ptr::null_mut();
         };
         if hash.len() != 32 {
