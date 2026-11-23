@@ -88,6 +88,18 @@ class ContractModerationModelsTest {
         }
     }
 
+    /** A malformed page is named in the error by its start and length, not copied whole. */
+    @Test
+    fun shouldQuoteOnlyTheStartOfAMalformedPage() {
+        val page = "[" + "1,".repeat(10_000) + "1]"
+        val error = assertThrows(DashSdkError.SerializationError::class.java) {
+            ContractModerationJson.entriesPage(page)
+        }
+        val message = error.message.orEmpty()
+        assertTrue(message, message.length < 400)
+        assertTrue(message, message.endsWith("... (${page.length} chars)"))
+    }
+
     @Test
     fun shouldDecodeAnEntriesPageWithItsCursor() {
         val page = ContractModerationJson.entriesPage(

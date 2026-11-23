@@ -72,9 +72,13 @@ class ContractModerationViewModel : ViewModel() {
 
     private var openedOn: WeakReference<Sdk>? = null
 
-    /** Capture the SDK the hub is opened on; later calls keep the first. */
+    /**
+     * Capture the SDK the hub is opened on; later calls keep the first. Without an SDK yet
+     * (it is still being built) nothing is captured, so the SDK that arrives is the one the
+     * hub opens on.
+     */
     fun open(sdk: Sdk?) {
-        if (openedOn == null) openedOn = WeakReference(sdk)
+        if (openedOn == null && sdk != null) openedOn = WeakReference(sdk)
     }
 
     /** Whether [current] is still the SDK the hub was opened on. */

@@ -77,7 +77,23 @@ fn read_cstring_array(env: &mut JNIEnv, arr: &JObjectArray, field: &str) -> Opti
                 return None;
             }
         };
-        let value = read_cstring(env, &element, &format!("{field}[{index}]"))?;
+        // The element's field name is built only when a read fails
+        let value = if element.is_null() {
+            None
+        } else {
+            env.get_string(&element)
+                .ok()
+                .and_then(|value| CString::new(String::from(value)).ok())
+        };
+        let Some(value) = value else {
+            let _ = env.exception_clear();
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("{field}[{index}] was null, unreadable or held a NUL"),
+            );
+            return None;
+        };
         let _ = env.delete_local_ref(element);
         strings.push(value);
     }
@@ -375,4 +391,58 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_ContractModerationNat
             string_or_null(env, result)
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::decision_proposals::tests::kotlin_signature_in;
+
+    const NATIVE_KT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../kotlin-sdk/sdk/src/main/kotlin/org/dashfoundation/dashsdk/ffi/ContractModerationNative.kt"
+    ));
+
+    fn signature(name: &str) -> (Vec<String>, String) {
+        kotlin_signature_in(NATIVE_KT, name)
+    }
+
+    fn expected(parameters: &[&str]) -> (Vec<String>, String) {
+        (
+            parameters.iter().map(|kind| kind.to_string()).collect(),
+            "String?".to_string(),
+        )
+    }
+
+    /// JNI binds an export by its name alone: a Kotlin declaration whose parameters drifted
+    /// from the export's would hand it the wrong JVM values at run time, which only an
+    /// instrumented test would otherwise catch.
+    #[test]
+    fn should_declare_the_moderation_reads_as_the_exports_take_them() {
+        assert_eq!(
+            signature("getStatus"),
+            expected(&["Long", "String", "String", "ByteArray?"])
+        );
+        assert_eq!(
+            signature("getEntries"),
+            expected(&["Long", "String", "Int", "String?", "Long"])
+        );
+        assert_eq!(
+            signature("getDocumentRemovals"),
+            expected(&["Long", "String", "String", "String?", "Long"])
+        );
+        assert_eq!(
+            signature("getDocumentRemovalsByIds"),
+            expected(&["Long", "String", "String", "Array<String>"])
+        );
+        assert_eq!(
+            signature("getTeamActions"),
+            expected(&["Long", "String", "Int", "String?", "Boolean", "Long"])
+        );
+        assert_eq!(
+            signature("getTeamActionSigners"),
+            expected(&["Long", "String", "Int", "String"])
+        );
+        assert_eq!(signature("getActionCounts"), expected(&["Long", "String"]));
+        assert_eq!(signature("getFeePots"), expected(&["Long", "String"]));
+    }
 }

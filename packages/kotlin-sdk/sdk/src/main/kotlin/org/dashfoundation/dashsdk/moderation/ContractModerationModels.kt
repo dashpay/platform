@@ -452,11 +452,20 @@ internal object ContractModerationJson {
         val element = try {
             Json.parseToJsonElement(json)
         } catch (e: SerializationException) {
-            throw DashSdkError.SerializationError("Malformed contract moderation JSON: $json", e)
+            throw DashSdkError.SerializationError("Malformed contract moderation JSON: ${excerpt(json)}", e)
         }
         return element as? JsonObject
-            ?: throw DashSdkError.SerializationError("Malformed contract moderation JSON: $json")
+            ?: throw DashSdkError.SerializationError("Malformed contract moderation JSON: ${excerpt(json)}")
     }
+
+    /**
+     * The start of [json] and its length, for an error message: a page can be large (a removal
+     * page carries kept-value trees), and the message is shown on screen.
+     */
+    internal fun excerpt(json: String): String =
+        if (json.length <= EXCERPT_CHARS) json else "${json.take(EXCERPT_CHARS)}... (${json.length} chars)"
+
+    private const val EXCERPT_CHARS = 200
 
     private fun objectOf(element: JsonElement, name: String): JsonObject =
         element as? JsonObject ?: throw malformed(name)
