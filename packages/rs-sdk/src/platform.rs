@@ -33,6 +33,7 @@ pub mod private_document_entries;
 #[cfg(test)]
 mod private_document_envelope_tests;
 pub mod private_document_scan;
+pub mod private_document_seal;
 pub mod query;
 pub mod query_settings;
 #[cfg(feature = "shielded")]
