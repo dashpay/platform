@@ -372,7 +372,8 @@ jobs:
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           ## DashSDKFFI ${VERSION}
 
-          SwiftPM usage:
+          SwiftPM usage (use it with the SwiftDashSDK sources of the same tag: the
+          FFI's JSON results can change between releases):
 
           \`\`\`swift
           .binaryTarget(

@@ -304,7 +304,7 @@ pub(super) fn verify_average_query(
 /// primitive (primary-key fast path / PCPS aggregate range) as a
 /// one-element `Vec<AverageEntry>` so call sites see a uniform
 /// shape across aggregate and carrier variants.
-fn single_empty_key_entry(count: u64, sum: i64) -> Vec<AverageEntry> {
+fn single_empty_key_entry(count: u64, sum: i128) -> Vec<AverageEntry> {
     vec![AverageEntry {
         in_key: None,
         key: Vec::new(),

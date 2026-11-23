@@ -2,9 +2,12 @@
 //!
 //! A document type keeps its sums in trees with a 64-bit total or, from protocol version 15
 //! and for a summed property declared past ±2^27, in trees with a 128-bit one
-//! (`DocumentTypeV2Getters::uses_big_sums`). The sum results Drive returns carry 64 bits, so
-//! a sum read from a 128-bit tree is returned when it fits them and refused when it does
-//! not, rather than read as the zero GroveDB's 64-bit accessors give such a tree.
+//! (`DocumentTypeV2Getters::uses_big_sums`). The sum results the unproven reads return carry
+//! 64 bits, so a sum they read from a 128-bit tree is returned when it fits them and refused
+//! when it does not, rather than read as the zero GroveDB's 64-bit accessors give such a
+//! tree. The sum and average proof verifiers read a proved element's sum at 128 bits
+//! (`Element::big_sum_value_or_default`) and return it whole; a ranked entry carries 64 bits,
+//! so the ranked verifiers refuse a wider one with [`proved_sum_in_64_bits`].
 //!
 //! For every element that holds no 128-bit sum, `Element::big_sum_value_or_default` is
 //! `Element::sum_value_or_default` widened and `Element::count_big_sum_value_or_default` is
@@ -16,6 +19,7 @@ use crate::error::proof::ProofError;
 #[cfg(feature = "server")]
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+#[cfg(feature = "server")]
 use grovedb::Element;
 
 /// `sum` as a sum result carries it. A sum past 64 bits is refused: no result can carry it
@@ -48,22 +52,6 @@ pub(crate) fn element_count_and_sum(element: &Element) -> Result<(u64, i64), Err
 /// a node is not to be taken for a wrong one for it.
 pub(crate) fn proved_sum_in_64_bits(sum: i128, root_hash: [u8; 32]) -> Result<i64, Error> {
     i64::try_from(sum).map_err(|_| Error::Proof(ProofError::SumPastResultWidth { root_hash }))
-}
-
-/// `element_sum` for an element read from a proof that reconstructs `root_hash`
-/// ([`proved_sum_in_64_bits`]).
-pub(crate) fn proved_element_sum(element: &Element, root_hash: [u8; 32]) -> Result<i64, Error> {
-    proved_sum_in_64_bits(element.big_sum_value_or_default(), root_hash)
-}
-
-/// `element_count_and_sum` for an element read from a proof that reconstructs `root_hash`
-/// ([`proved_sum_in_64_bits`]).
-pub(crate) fn proved_element_count_and_sum(
-    element: &Element,
-    root_hash: [u8; 32],
-) -> Result<(u64, i64), Error> {
-    let (count, sum) = element.count_big_sum_value_or_default();
-    Ok((count, proved_sum_in_64_bits(sum, root_hash)?))
 }
 
 #[cfg(all(test, feature = "server"))]

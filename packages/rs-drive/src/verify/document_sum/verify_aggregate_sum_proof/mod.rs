@@ -9,7 +9,7 @@ use dpp::version::PlatformVersion;
 
 impl DriveDocumentSumQuery<'_> {
     /// Verifies a grovedb `AggregateSumOnRange` proof (grovedb PR
-    /// #670) and returns `(root_hash, i64 sum)`. Counterpart to the
+    /// #670) and returns `(root_hash, i128 sum)`. Counterpart to the
     /// prover-side
     /// [`Self::execute_aggregate_sum_with_proof`].
     /// Calls `GroveDb::verify_aggregate_sum_query`.
@@ -25,7 +25,7 @@ impl DriveDocumentSumQuery<'_> {
         &self,
         proof: &[u8],
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, i64), Error> {
+    ) -> Result<(RootHash, i128), Error> {
         match platform_version
             .drive
             .methods
