@@ -104,13 +104,18 @@ impl TokenPoolNoteSource for TestPool {
         let notes = self.notes.lock().unwrap();
         let start = start_index as usize;
         let mut end = (start + count as usize).min(notes.len());
-        if let Some(short) = self.behind.lock().unwrap().remove(&start_index) {
-            end = end.min(start + short);
-        }
+        // A node a block behind proves a shorter tree, at a lower height.
+        let (total_count, height) = match self.behind.lock().unwrap().remove(&start_index) {
+            Some(short) => {
+                end = end.min(start + short);
+                (end as u64, 99 + notes.len() as u64)
+            }
+            None => (notes.len() as u64, 100 + notes.len() as u64),
+        };
         Ok(TokenPoolChunk {
             notes: notes.get(start..end).map(<[_]>::to_vec).unwrap_or_default(),
-            total_count: notes.len() as u64,
-            height: 100 + notes.len() as u64,
+            total_count,
+            height,
             protocol_version: 15,
         })
     }
@@ -319,6 +324,36 @@ async fn should_not_scan_past_a_short_chunk_and_recover_its_notes_next_pass() {
     let row = &balance_rows(&tables, WALLET, &[0]).await[0];
     assert_eq!(row.scanned_note_count, Some(CHUNK_SIZE + 2));
     assert_eq!((row.balance, row.unspent_note_count), (12, 2));
+}
+
+/// A page answered by a node a block behind proves a shorter tree. After a
+/// full page proved the pool larger, such a page does not end the scan as
+/// the pool's end: the pool is not counted complete for the sweep, and what
+/// the full page proved is kept. The next pass, reaching the end, is.
+#[tokio::test]
+async fn should_not_count_a_pool_complete_from_a_page_behind_a_larger_one() {
+    let tables = TestTables::new();
+    watch(&tables, WALLET).await;
+    let mine = views(1, 0);
+    let entries: Vec<ShieldedEncryptedNote> = (0..CHUNK_SIZE as usize + 2)
+        .map(|_| foreign_entry())
+        .collect();
+    let pool = TestPool::new(entries);
+    pool.behind.lock().unwrap().insert(CHUNK_SIZE, 0);
+    let accounts = vec![(SubwalletId::new(WALLET, 0), mine)];
+
+    let summary = sync_token_pools(&pool, &tables, &accounts, &CancellationToken::new()).await;
+    assert_eq!(pool.requests(), vec![0, CHUNK_SIZE]);
+    assert!(
+        !summary.completed.contains(&token().token_id),
+        "the page behind ends short of the count the first page proved"
+    );
+    let row = &balance_rows(&tables, WALLET, &[0]).await[0];
+    assert_eq!(row.pool_note_count, Some(CHUNK_SIZE + 2));
+    assert_eq!(row.scanned_height, Some(100 + CHUNK_SIZE + 2));
+
+    let summary = sync_token_pools(&pool, &tables, &accounts, &CancellationToken::new()).await;
+    assert!(summary.completed.contains(&token().token_id));
 }
 
 #[tokio::test]
