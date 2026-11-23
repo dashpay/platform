@@ -543,12 +543,14 @@ class MasternodeVoterKeyCheckTest {
             storedVoterDecision(voterKeyState(db.identityDao().getByIdentityId(identityId)!!), saved, rules),
         )
 
-        // Platform could not answer: the pick counts as checked, as Swift lets it vote.
-        val unanswered = nextPickedState(
+        // The check's call threw: nothing was learned, so the pick stays unchecked and the key
+        // is not offered (Swift `.notFinished`, after #6145).
+        val threw = nextPickedState(
             null, identifierA, PickedVotingKeyCheck.Failed("timeout"), revisionAtStart = 1,
         )!!
         rules.use = awaitingCheck
-        assertEquals(StoredVoterDecision.CASTABLE, storedVoterDecision(stateAt(1), unanswered, rules))
+        assertFalse(threw.finished)
+        assertEquals(StoredVoterDecision.AWAITING_CHECK, storedVoterDecision(stateAt(1), threw, rules))
     }
 
     /** An unsaved refusal still refuses (Rust: may not vote) and is not checked again. */
@@ -636,7 +638,7 @@ class MasternodeVoterKeyCheckTest {
             votingKeyCheckStatusText(state(MasternodeVotingKeyCheck.Undetermined("Down.")), recheckUse, false, null),
         )
         assertEquals(
-            "Not checked. You can still vote with it." to false,
+            "Not checked. It cannot vote until a check of it finishes: pick this identity again." to true,
             votingKeyCheckStatusText(state(MasternodeVotingKeyCheck.Valid), provenUse, false, "Not checked."),
         )
         // A refusal Rust does not apply to the stored key (a record of another key) says nothing.
