@@ -2411,8 +2411,8 @@ where
             ))
             .into());
         }
-        // The fee bundle's anchor too: the credit pool prunes on a schedule,
-        // and proving may outlast it.
+        // The fee bundle's anchor too: a write to the credit pool during
+        // proving may have pruned it.
         let (credit_anchors_now, _) = fetch_recorded_anchor_set(sdk).await?;
         if !credit_anchors_now.contains(&fee_anchor.to_bytes()) {
             return Err(PlatformWalletError::ShieldedNoRecordedAnchor(
