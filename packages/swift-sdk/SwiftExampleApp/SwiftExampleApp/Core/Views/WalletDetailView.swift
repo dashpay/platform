@@ -1195,6 +1195,16 @@ struct BalanceCardView: View {
                 Text("Empty Wallet")
                     .font(.system(size: 28, weight: .medium, design: .rounded))
                     .foregroundColor(.secondary)
+                // A drained wallet still has a Platform balance history
+                // (ADDR-10); keep the way to it when the Platform row is
+                // hidden.
+                if let history = onPlatformBalanceHistory {
+                    Button(action: history) {
+                        Label("Balance History", systemImage: "clock.arrow.circlepath")
+                            .font(.subheadline)
+                    }
+                    .accessibilityIdentifier("balanceCard.platform.history")
+                }
             } else {
                 // Core Balance row
                 WalletBalanceRow(
