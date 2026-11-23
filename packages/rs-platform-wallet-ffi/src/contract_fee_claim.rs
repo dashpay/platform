@@ -235,6 +235,8 @@ unsafe fn contract_fee_claim_inner(
     check_ptr!(out_json);
     *out_json = ptr::null_mut();
     check_ptr!(signer_handle);
+    check_ptr!(claimant_identity_id);
+    check_ptr!(contract_id);
 
     let claimant_id = unwrap_result_or_return!(read_identifier(claimant_identity_id));
     let contract_id = unwrap_result_or_return!(read_identifier(contract_id));
@@ -315,6 +317,7 @@ unsafe fn contract_fee_claim_eligibility_inner(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_json);
     *out_json = ptr::null_mut();
+    check_ptr!(contract_id);
 
     let contract_id = unwrap_result_or_return!(read_identifier(contract_id));
 
@@ -490,7 +493,8 @@ mod tests {
                 ),
                 platform_wallet_contract_fee_claim_eligibility(0, ptr::null(), &mut out_json),
             ] {
-                assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+                assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+                assert!(out_json.is_null());
             }
             let bad_pot = platform_wallet_contract_fee_claim(
                 0,
