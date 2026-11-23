@@ -22,12 +22,47 @@ use platform_wallet_ffi::private_documents::{
 use rs_sdk_ffi::MnemonicResolverHandle;
 use serde_json::{json, Value};
 use std::ffi::{CStr, CString};
+use std::fmt::Write;
 use std::os::raw::c_char;
 use std::ptr;
 
-/// `bytes` as lowercase hex.
+/// `bytes` as lowercase hex, written into one buffer.
 fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        // Writing to a `String` cannot fail
+        let _ = write!(out, "{byte:02x}");
+    }
+    out
+}
+
+/// The cursor a read goes on from, given back field by field as a previous read returned it;
+/// `Ok(None)` when both fingerprints are absent, which reads from the store's start. A cursor
+/// needs both fingerprints, and its position and count cannot be negative.
+fn cursor_from_parts(
+    position: i64,
+    proved_total_count: i64,
+    has_proved_total_count: bool,
+    key_set: Option<[u8; 32]>,
+    store: Option<[u8; 32]>,
+) -> Result<Option<PrivateDocumentCursorFFI>, &'static str> {
+    let (key_set, store) = match (key_set, store) {
+        (None, None) => return Ok(None),
+        (Some(key_set), Some(store)) => (key_set, store),
+        _ => return Err("a cursor needs both fromKeySet and fromStore"),
+    };
+    let (Ok(position), Ok(proved_total_count)) =
+        (u64::try_from(position), u64::try_from(proved_total_count))
+    else {
+        return Err("the cursor's position and count must not be negative");
+    };
+    Ok(Some(PrivateDocumentCursorFFI {
+        position,
+        proved_total_count,
+        key_set,
+        store,
+        has_proved_total_count,
+    }))
 }
 
 /// A required 32-byte array; throws `InvalidParameter` and returns `None` otherwise.
@@ -182,33 +217,36 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_PrivateDocumentsNativ
             throw_sdk_exception(env, 1, "documentTypeName holds a NUL character");
             return ptr::null_mut();
         };
-        let from = if from_key_set.is_null() && from_store.is_null() {
+        // Each fingerprint read only when given, so a missing one reaches `cursor_from_parts`
+        // as absent and a wrong-length one throws here
+        let key_set = if from_key_set.is_null() {
             None
         } else {
             let Some(key_set) = read_32(env, &from_key_set, "fromKeySet") else {
                 return ptr::null_mut();
             };
+            Some(key_set)
+        };
+        let store = if from_store.is_null() {
+            None
+        } else {
             let Some(store) = read_32(env, &from_store, "fromStore") else {
                 return ptr::null_mut();
             };
-            let (Ok(position), Ok(proved_total_count)) = (
-                u64::try_from(from_position),
-                u64::try_from(from_proved_total_count),
-            ) else {
-                throw_sdk_exception(
-                    env,
-                    1,
-                    "the cursor's position and count must not be negative",
-                );
+            Some(store)
+        };
+        let from = match cursor_from_parts(
+            from_position,
+            from_proved_total_count,
+            from_has_proved_total_count != 0,
+            key_set,
+            store,
+        ) {
+            Ok(from) => from,
+            Err(reason) => {
+                throw_sdk_exception(env, 1, reason);
                 return ptr::null_mut();
-            };
-            Some(PrivateDocumentCursorFFI {
-                position,
-                proved_total_count,
-                key_set,
-                store,
-                has_proved_total_count: from_has_proved_total_count != 0,
-            })
+            }
         };
         let from_ptr = from.as_ref().map_or(ptr::null(), |cursor| {
             cursor as *const PrivateDocumentCursorFFI
@@ -345,5 +383,66 @@ mod tests {
             unsafe { read_json(&read) }["cursor"]["proved_total_count"],
             55
         );
+    }
+
+    #[test]
+    fn should_write_every_entry_of_a_read_in_store_order() {
+        let first_properties = CString::new(r#"{"note":"one"}"#).expect("no NUL");
+        let second_refusal = CString::new("missing note").expect("no NUL");
+        let mut first = entry();
+        first.properties_json = first_properties.as_ptr() as *mut _;
+        let mut second = entry();
+        second.position = 8;
+        second.direction = 1;
+        second.properties_refusal = second_refusal.as_ptr() as *mut _;
+        let mut entries = [first, second];
+        // A stack read over stack entries: never passed to the free function
+        let mut read = PrivateDocumentReadFFI::empty();
+        read.entries = entries.as_mut_ptr();
+        read.entry_count = entries.len();
+        let json = unsafe { read_json(&read) };
+        let written = json["entries"].as_array().expect("an array");
+        assert_eq!(written.len(), 2);
+        assert_eq!(written[0]["position"], 7);
+        assert_eq!(written[0]["properties_json"], r#"{"note":"one"}"#);
+        assert_eq!(written[1]["position"], 8);
+        assert_eq!(written[1]["direction"], 1);
+        assert_eq!(written[1]["properties_refusal"], "missing note");
+    }
+
+    #[test]
+    fn should_write_bytes_as_lowercase_hex() {
+        assert_eq!(hex(&[0x00, 0x0a, 0xff, 0x5c]), "000aff5c");
+        assert_eq!(hex(&[]), "");
+    }
+
+    #[test]
+    fn should_read_from_the_start_without_fingerprints() {
+        assert_eq!(cursor_from_parts(5, 9, true, None, None), Ok(None));
+    }
+
+    #[test]
+    fn should_rebuild_a_cursor_from_its_parts() {
+        let cursor = cursor_from_parts(40, 55, true, Some([1; 32]), Some([2; 32]))
+            .expect("valid")
+            .expect("a cursor");
+        assert_eq!(
+            cursor,
+            PrivateDocumentCursorFFI {
+                position: 40,
+                proved_total_count: 55,
+                key_set: [1; 32],
+                store: [2; 32],
+                has_proved_total_count: true,
+            }
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_cursor_with_one_fingerprint_or_a_negative_field() {
+        assert!(cursor_from_parts(0, 0, false, Some([1; 32]), None).is_err());
+        assert!(cursor_from_parts(0, 0, false, None, Some([2; 32])).is_err());
+        assert!(cursor_from_parts(-1, 0, false, Some([1; 32]), Some([2; 32])).is_err());
+        assert!(cursor_from_parts(0, -1, true, Some([1; 32]), Some([2; 32])).is_err());
     }
 }

@@ -1,7 +1,5 @@
 package org.dashfoundation.example.ui.contracts
 
-import android.app.Activity
-import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,7 +23,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -36,7 +33,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -71,6 +67,7 @@ import org.dashfoundation.example.ui.components.AccessiblePicker
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.identity.HoldSecureWindow
 import org.dashfoundation.example.util.hexToBytes
 
 /** The store pages one Read or Read more asks for. One tap, one call: the screen never reads on by itself. */
@@ -184,7 +181,8 @@ fun PrivateDocumentEntriesScreen(
         }
     }
 
-    SecureWindowWhileShown()
+    // The app's FLAG_SECURE toggle (LocalSecureScreen), held while this screen is shown
+    HoldSecureWindow()
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
 
     Scaffold(
@@ -293,16 +291,6 @@ internal sealed class ReadFailure {
             )
             else -> Message(error.message ?: "Read failed")
         }
-    }
-}
-
-/** Marks the window secure while this screen is in composition. */
-@Composable
-private fun SecureWindowWhileShown() {
-    val activity = LocalContext.current as? Activity ?: return
-    DisposableEffect(activity) {
-        activity.window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        onDispose { activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
     }
 }
 
