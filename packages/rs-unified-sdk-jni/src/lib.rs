@@ -30,6 +30,7 @@ mod pubkey_rows;
 mod queries;
 mod results;
 mod sdk;
+mod shielded_token_purchase;
 mod signer;
 mod support;
 mod tokens;
