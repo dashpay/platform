@@ -90,7 +90,16 @@ fn read_identity_id(env: &mut JNIEnv, value: &JByteArray) -> Option<[u8; 32]> {
         throw_sdk_exception(env, 1, "identityId must not be null");
         return None;
     }
-    let bytes = env.convert_byte_array(value).ok()?;
+    // A failed read is thrown as code 1 too, so the export never returns null
+    // without a pending exception.
+    let bytes = match env.convert_byte_array(value) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, "identityId byte[] could not be read");
+            return None;
+        }
+    };
     match <[u8; 32]>::try_from(bytes.as_slice()) {
         Ok(id) => Some(id),
         Err(_) => {
