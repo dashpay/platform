@@ -10,15 +10,15 @@ Capabilities tracked: **51**
 | --- | --- | ---: | ---: | ---: | ---: |
 | Swift | SDK | 31 | 18 | 1 | 1 |
 | Swift | Example app | 6 | 35 | 1 | 9 |
-| Kotlin | SDK | 26 | 17 | 7 | 1 |
-| Kotlin | Example app | 7 | 27 | 7 | 10 |
+| Kotlin | SDK | 26 | 18 | 6 | 1 |
+| Kotlin | Example app | 7 | 28 | 6 | 10 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
 | Swift | 2 | 19 | 30 |
-| Kotlin | 8 | 13 | 30 |
+| Kotlin | 8 | 14 | 29 |
 
 ## Capability status
 
@@ -49,7 +49,7 @@ Capabilities tracked: **51**
 | `documents.create_catalog` | supported / supported / not_applicable | supported / supported / not_applicable |
 | `contracts.update_preview` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `documents.private_document_entries_read` | partial / partial / not_applicable | supported / partial / not_applicable |
-| `documents.private_document_entry_create` | partial / partial / required | unsupported / unsupported / not_applicable |
+| `documents.private_document_entry_create` | partial / partial / required | partial / partial / required |
 | `tokens.max_supply_proposal_discovery` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `core.immature_balance_display` | supported / supported / not_applicable | supported / supported / not_applicable |
 | `security.key_security_policy_alias_split` | not-applicable / not-applicable / not_applicable | supported / supported / tested |

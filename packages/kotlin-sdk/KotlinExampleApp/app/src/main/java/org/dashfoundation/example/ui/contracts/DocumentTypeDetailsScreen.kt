@@ -44,6 +44,7 @@ import org.dashfoundation.example.navigation.CountDocuments
 import org.dashfoundation.example.navigation.Documents
 import org.dashfoundation.example.navigation.NewDocument
 import org.dashfoundation.example.navigation.PrivateDocumentEntries
+import org.dashfoundation.example.navigation.PrivateDocumentEntryCreate
 import org.dashfoundation.example.navigation.SumAverageDocuments
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
@@ -140,9 +141,15 @@ fun DocumentTypeDetailsScreen(
             // A private type takes no ordinary document and refuses document queries: its
             // entries are appended by an anonymous shielded transition and read with wallet keys
             if (isPrivateDocumentType(schema)) {
-                PrivateTypeSection(schema) {
-                    navController.navigate(PrivateDocumentEntries(contractIdHex, typeName))
-                }
+                PrivateTypeSection(
+                    schema,
+                    onReadEntries = {
+                        navController.navigate(PrivateDocumentEntries(contractIdHex, typeName))
+                    },
+                    onCreateEntry = {
+                        navController.navigate(PrivateDocumentEntryCreate(contractIdHex, typeName))
+                    },
+                )
             } else {
                 FormSection(title = "Actions") {
                     TextButton(

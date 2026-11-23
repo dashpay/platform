@@ -3,6 +3,7 @@ package org.dashfoundation.dashsdk
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.NativeLoader
+import org.dashfoundation.dashsdk.ffi.PrivateDocumentCreateNative
 import org.dashfoundation.dashsdk.ffi.PrivateDocumentsNative
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -11,12 +12,13 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Round trips of the private document read JNI export
- * (`rs-unified-sdk-jni/src/private_documents.rs`) through `platform-wallet-ffi` on a device:
- * the symbol name, the method descriptor, the argument marshalling and the error codes Kotlin
- * maps. Every call here is refused before a wallet, a resolver or the network is reached, so
- * none is needed. The read itself needs a protocol version 15 network holding a private type
- * and is exercised through KotlinExampleApp's Read Entries screen.
+ * Round trips of the private document JNI exports (`rs-unified-sdk-jni/src/private_documents.rs`
+ * for the read, `private_document_create.rs` for the create, its recipient keys and its fee)
+ * through `platform-wallet-ffi` on a device: the symbol names, the method descriptors, the
+ * argument marshalling and the error codes Kotlin maps. Every call here is refused before a
+ * wallet, a resolver or the network is reached, so none is needed. The read and the create
+ * themselves need a protocol version 15 network holding a private type and are exercised
+ * through KotlinExampleApp's Read Entries and Create Entry screens.
  */
 @RunWith(AndroidJUnit4::class)
 class PrivateDocumentsFfiTest {
@@ -59,6 +61,46 @@ class PrivateDocumentsFfiTest {
     @Test
     fun shouldRefuseANullResolverInPlatformWalletFfi() {
         assertCode(1003) { read(coreSignerHandle = 0L) }
+    }
+
+    @Suppress("LongParameterList")
+    private fun create(
+        account: Int = 0,
+        resolverHandle: Long = 0L,
+        walletId: ByteArray = ByteArray(32),
+        typeName: String = "note",
+        recipientKeyId: Long = 1L,
+        authMode: Int = 0,
+        properties: String = "{}",
+    ) = PrivateDocumentCreateNative.createEntry(
+        1L, walletId, resolverHandle, account, contractId, typeName,
+        ByteArray(32), ByteArray(32), recipientKeyId, authMode, properties,
+    )
+
+    /** The create's JNI layer refuses what its C arguments cannot hold with InvalidParameter (1). */
+    @Test
+    fun shouldRefuseWhatTheCreateJniLayerCannotMarshal() {
+        assertCode(1) { PrivateDocumentCreateNative.recipientKeys(1L, ByteArray(31)) }
+        assertCode(1) { PrivateDocumentCreateNative.createFee(1L, contractId, "note", -1) }
+        assertCode(1) { PrivateDocumentCreateNative.createFee(1L, ByteArray(31), "note", 1) }
+        assertCode(1) { PrivateDocumentCreateNative.createFee(1L, contractId, "no\u0000te", 1) }
+        assertCode(1) { create(account = -1) }
+        assertCode(1) { create(recipientKeyId = -1L) }
+        assertCode(1) { create(recipientKeyId = 1L shl 32) }
+        assertCode(1) { create(authMode = 256) }
+        assertCode(1) { create(walletId = ByteArray(31)) }
+        assertCode(1) { create(properties = "{\"a\":\"\u0000\"}") }
+    }
+
+    /**
+     * platform-wallet-ffi refuses an unknown manager handle with ErrorInvalidHandle (1) before
+     * the network, and a null resolver with ErrorNullPointer (3), each shifted by 1000.
+     */
+    @Test
+    fun shouldRefuseAnUnknownManagerOrANullResolverInPlatformWalletFfi() {
+        assertCode(1001) { PrivateDocumentCreateNative.recipientKeys(-1L, ByteArray(32)) }
+        assertCode(1001) { PrivateDocumentCreateNative.createFee(-1L, contractId, "note", 1) }
+        assertCode(1003) { create(resolverHandle = 0L) }
     }
 
     private fun assertCode(code: Int, call: () -> Unit): DashSDKException {

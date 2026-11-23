@@ -57,12 +57,12 @@ internal fun PrivateTypeBadge() {
 }
 
 /**
- * What a private type is, and the way to read the entries this app's wallets can open (←
- * `DocumentTypeDetailsView.privateTypeSection`). It stands in for the New Document and query
- * actions, which a private type does not take.
+ * What a private type is, the way to read the entries this app's wallets can open, and the way
+ * to create one (← `DocumentTypeDetailsView.privateTypeSection`). It stands in for the New
+ * Document and query actions, which a private type does not take.
  */
 @Composable
-internal fun PrivateTypeSection(schema: JsonObject, onReadEntries: () -> Unit) {
+internal fun PrivateTypeSection(schema: JsonObject, onReadEntries: () -> Unit, onCreateEntry: () -> Unit) {
     FormSection(title = "Private") {
         Column(Modifier.testTag("documentType.privateSection")) {
             Text(
@@ -98,5 +98,9 @@ internal fun PrivateTypeSection(schema: JsonObject, onReadEntries: () -> Unit) {
             onClick = onReadEntries,
             modifier = Modifier.testTag("documentType.privateEntriesLink"),
         ) { Text("Read Entries") }
+        TextButton(
+            onClick = onCreateEntry,
+            modifier = Modifier.testTag("documentType.privateEntryCreateLink"),
+        ) { Text("Create Entry") }
     }
 }
