@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build:
@@ -41,29 +42,24 @@ jobs:
             *) echo '::error::NPM release runners accept only release tags or protected-branch dispatches'; exit 1 ;;
           esac
 
-      # An earlier attempt of this run may have built the packages already.
-      # The download is the check: it fails when there is no such artifact.
-      - name: Look for packages built by an earlier attempt
-        id: download-earlier-build
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        continue-on-error: true
-        with:
-          name: js-build-${{ github.sha }}
-          path: ${{ runner.temp }}/earlier-js-build
-
-      - name: Record whether the packages exist
+      # An earlier attempt of this run may have built the packages already. The
+      # artifacts API says so without downloading them, and when it cannot be
+      # asked the job fails instead of rebuilding.
+      - name: Check for packages built by an earlier attempt
         id: check-artifact
         shell: bash
         env:
-          OUTCOME: ${{ steps.download-earlier-build.outcome }}
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: js-build-${{ github.sha }}
         run: |
           set -euo pipefail
-          rm -rf "${RUNNER_TEMP}/earlier-js-build"
-          if [ "${OUTCOME}" = success ]; then
-            echo "exists=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "exists=false" >> "${GITHUB_OUTPUT}"
-          fi
+          count="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?name=${ARTIFACT}" \
+            --jq '[.artifacts[] | select(.expired == false)] | length')"
+          case "${count}" in
+            0) echo "exists=false" >> "${GITHUB_OUTPUT}" ;;
+            [1-9]*) echo "exists=true" >> "${GITHUB_OUTPUT}" ;;
+            *) echo "::error::Unexpected answer from the artifacts API: ${count}"; exit 1 ;;
+          esac
 
       # The entire runner, including HOME and Git state, is new for this job.
       - name: Check out repo

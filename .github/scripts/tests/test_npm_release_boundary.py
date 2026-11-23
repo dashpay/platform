@@ -1,7 +1,10 @@
 """Exercise caller/runtime guards and preserve the PR/release cache boundary."""
+import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
+import tempfile
 import textwrap
 import unittest
 
@@ -100,3 +103,71 @@ class ReleaseBoundaryTests(unittest.TestCase):
         self.assertIn('if: ${{ !inputs.dry_run &&', maven)
         self.assertIn("github.ref == format('refs/tags/{0}', inputs.tag)", maven)
         self.assertIn('environment: maven-central', maven)
+
+
+# Answers `gh api <path> --jq <filter>` with GH_ARTIFACTS through real jq, as gh would; GH_FAIL
+# makes the API call fail, and GH_RAW answers with that text instead.
+GH_STUB = '''#!/bin/bash
+echo "$*" >> "$GH_LOG"
+[ -z "${GH_FAIL:-}" ] || { echo 'gh: Server Error (HTTP 502)' >&2; exit 1; }
+[ "$1" = api ] && [ "$3" = --jq ] || exit 2
+[ -z "${GH_RAW:-}" ] || { echo "$GH_RAW"; exit 0; }
+printf '%s' "$GH_ARTIFACTS" | jq -r "$4"
+'''
+
+
+@unittest.skipUnless(shutil.which('jq'), 'needs jq')
+class EarlierBuildCheckTests(unittest.TestCase):
+    """The npm build skips building when an earlier attempt of the run already uploaded the packages."""
+
+    STEP = 'Check for packages built by an earlier attempt'
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        (self.tmp / 'bin').mkdir()
+        (self.tmp / 'bin/gh').write_text(GH_STUB)
+        (self.tmp / 'bin/gh').chmod(0o755)
+
+    def run_check(self, artifacts, **overrides):
+        output = self.tmp / 'output'
+        output.write_text('')
+        env = dict(os.environ, PATH=f"{self.tmp / 'bin'}{os.pathsep}{os.environ['PATH']}",
+                   GITHUB_REPOSITORY='dashpay/platform', GITHUB_RUN_ID='123', GITHUB_OUTPUT=str(output),
+                   GH_TOKEN='token', ARTIFACT='js-build-abc', GH_LOG=str(self.tmp / 'gh.log'),
+                   GH_ARTIFACTS=json.dumps({'artifacts': artifacts}))
+        env.update(overrides)
+        result = subprocess.run(['bash', '-c', step_script('release-npm-build.yml', self.STEP)],
+                                capture_output=True, text=True, env=env)
+        return result, output.read_text().splitlines()
+
+    def test_should_report_whether_the_run_holds_the_packages(self):
+        live = {'name': 'js-build-abc', 'expired': False}
+        for artifacts, exists in [([live], 'true'), ([], 'false'), ([dict(live, expired=True)], 'false')]:
+            with self.subTest(artifacts=artifacts):
+                result, output = self.run_check(artifacts)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(output, [f'exists={exists}'])
+        # asked of the API for this run and name; nothing is downloaded
+        self.assertEqual((self.tmp / 'gh.log').read_text().splitlines()[0].split(' --jq ')[0],
+                         'api repos/dashpay/platform/actions/runs/123/artifacts?name=js-build-abc')
+
+    def test_should_fail_rather_than_rebuild_when_it_cannot_tell(self):
+        for overrides in [{'GH_FAIL': '1'}, {'GH_ARTIFACTS': 'not json'}, {'GH_RAW': 'oops'}]:
+            with self.subTest(overrides=overrides):
+                result, output = self.run_check([], **overrides)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(output, [])
+
+    def test_should_keep_the_output_its_later_steps_read(self):
+        workflow = (ROOT / '.github/workflows/release-npm-build.yml').read_text()
+        step = workflow.split('      - name: ' + self.STEP, 1)[1].split('\n      - ', 1)[0]
+        self.assertIn('id: check-artifact', step)
+        self.assertIn('ARTIFACT: js-build-${{ github.sha }}', step)
+        self.assertEqual(workflow.count("steps.check-artifact.outputs.exists != 'true'"), 4)
+        self.assertNotIn('download-artifact', workflow)
+        # listing a run's artifacts needs actions: read, granted by the caller too
+        self.assertRegex(workflow, r'\npermissions:\n  contents: read\n  actions: read\n')
+        caller = (ROOT / '.github/workflows/release.yml').read_text()
+        build_npm = caller.split('\n  build-npm:\n', 1)[1].split('\n  release-npm:\n', 1)[0]
+        self.assertRegex(build_npm, r'permissions:\n      contents: read\n      actions: read\n')
