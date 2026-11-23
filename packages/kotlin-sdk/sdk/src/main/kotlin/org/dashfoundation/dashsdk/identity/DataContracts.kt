@@ -5,6 +5,7 @@ import org.dashfoundation.dashsdk.wallet.op
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
+import org.dashfoundation.dashsdk.ffi.ContractUpdateNative
 import org.dashfoundation.dashsdk.ffi.IdentityNative
 
 /**
@@ -81,6 +82,10 @@ class DataContracts internal constructor(private val walletHandle: Long,
      * @param keywordsJson optional keywords JSON array.
      * @param description optional plain-text description.
      * @param configJson optional contract-config overlay.
+     * @param expectedCurrentVersion the contract version the caller reviewed
+     *   ([previewUpdate]'s [DataContractUpdatePreview.currentVersion]): the
+     *   wallet refuses the update when Platform now holds another version. 0
+     *   means no check.
      * @param signerHandle a native `SignerHandle`. Unlike the document ops
      *   there is no `signingKeyId` — the wallet selects the key internally.
      * @return the 32-byte updated contract id.
@@ -94,6 +99,7 @@ class DataContracts internal constructor(private val walletHandle: Long,
         keywordsJson: String? = null,
         description: String? = null,
         configJson: String? = null,
+        expectedCurrentVersion: Long = 0,
         signerHandle: Long,
     ): ByteArray = gate.op {
         require(ownerIdentityId.size == 32) { "ownerIdentityId must be 32 bytes" }
@@ -109,8 +115,51 @@ class DataContracts internal constructor(private val walletHandle: Long,
                 keywordsJson = keywordsJson,
                 description = description,
                 configJson = configJson,
+                expectedCurrentVersion = expectedCurrentVersion,
                 signerHandle = signerHandle,
             )
         }
+    }
+
+    /**
+     * What [update] with the same sections would change in the contract
+     * [contractId], without signing or broadcasting anything (no nonce is
+     * used). Kotlin counterpart of Swift's
+     * `ManagedPlatformWallet.previewDataContractUpdate`; one native call,
+     * `platform_wallet_preview_data_contract_update`: the wallet fetches the
+     * live contract, checks that [ownerIdentityId] owns it, merges the
+     * sections onto it and builds the updated contract as the update does,
+     * then compares the two. A section the update would refuse to build is
+     * the same error here. The preview says what changes, not whether
+     * Platform accepts the update.
+     *
+     * @return the preview; pass its [DataContractUpdatePreview.currentVersion]
+     *   to [update] as `expectedCurrentVersion`.
+     */
+    suspend fun previewUpdate(
+        ownerIdentityId: ByteArray,
+        contractId: ByteArray,
+        documentsSchemaJson: String,
+        tokensSchemaJson: String? = null,
+        groupsSchemaJson: String? = null,
+        keywordsJson: String? = null,
+        description: String? = null,
+        configJson: String? = null,
+    ): DataContractUpdatePreview = gate.op {
+        DataContractUpdatePreview.fromJson(
+            mapNativeErrors {
+                ContractUpdateNative.previewDataContractUpdate(
+                    walletHandle = walletHandle,
+                    ownerIdentityId = ownerIdentityId,
+                    contractId = contractId,
+                    documentsSchemaJson = documentsSchemaJson,
+                    tokensSchemaJson = tokensSchemaJson,
+                    groupsSchemaJson = groupsSchemaJson,
+                    keywordsJson = keywordsJson,
+                    description = description,
+                    configJson = configJson,
+                )
+            },
+        )
     }
 }

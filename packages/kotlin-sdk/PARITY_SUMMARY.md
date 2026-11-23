@@ -10,8 +10,8 @@ Capabilities tracked: **40**
 | --- | --- | ---: | ---: | ---: | ---: |
 | Swift | SDK | 25 | 13 | 1 | 1 |
 | Swift | Example app | 6 | 24 | 1 | 9 |
-| Kotlin | SDK | 14 | 16 | 9 | 1 |
-| Kotlin | Example app | 6 | 15 | 9 | 10 |
+| Kotlin | SDK | 15 | 16 | 8 | 1 |
+| Kotlin | Example app | 6 | 16 | 8 | 10 |
 
 ## Restart coverage
 
@@ -47,7 +47,7 @@ Capabilities tracked: **40**
 | `tokens.direct_purchase_quote` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `protocol.address_validation` | supported / supported / not_applicable | partial / partial / not_applicable |
 | `documents.create_catalog` | supported / supported / not_applicable | supported / supported / not_applicable |
-| `contracts.update_preview` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
+| `contracts.update_preview` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `documents.private_document_entries_read` | partial / partial / not_applicable | unsupported / unsupported / not_applicable |
 | `tokens.max_supply_proposal_discovery` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `core.immature_balance_display` | supported / supported / not_applicable | supported / supported / not_applicable |

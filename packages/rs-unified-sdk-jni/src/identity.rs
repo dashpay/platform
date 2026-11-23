@@ -1213,7 +1213,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_create
 /// `documentsSchemaJson` are required; `tokens`/`groups`/`keywords`/
 /// `description`/`config` are optional (null or empty ⇒ omitted). Unlike
 /// the document ops this takes NO `signingKeyId` — the wallet selects the
-/// key internally. Returns the 32-byte updated contract id.
+/// key internally. `expectedCurrentVersion` is the contract version the
+/// caller reviewed (`ContractUpdateNative.previewDataContractUpdate`'s
+/// `currentVersion`): the wallet refuses the update when Platform now holds
+/// another version; 0 means no check. It must fit a `u32`. Returns the
+/// 32-byte updated contract id.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_updateDataContract(
@@ -1228,6 +1232,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_update
     keywords_json: JString,
     description: JString,
     config_json: JString,
+    expected_current_version: jlong,
     signer_handle: jlong,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
@@ -1235,6 +1240,14 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_update
             return ptr::null_mut();
         };
         let Some(contract) = read_id32(env, &contract_id, "contractId") else {
+            return ptr::null_mut();
+        };
+        let Ok(expected_current_version) = u32::try_from(expected_current_version) else {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("expectedCurrentVersion is out of range: {expected_current_version}"),
+            );
             return ptr::null_mut();
         };
 
@@ -1291,8 +1304,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_update
                 opt_ptr(&keywords),
                 opt_ptr(&desc),
                 opt_ptr(&config),
-                // The Kotlin screen has no review step, so no version check.
-                0,
+                expected_current_version,
                 signer_handle as *mut SignerHandle,
                 out_contract_id.as_mut_ptr(),
             )

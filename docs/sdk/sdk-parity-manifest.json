@@ -1755,10 +1755,10 @@
           "reason": "UpdateContractView (Contracts -> contract -> Update Contract) calls previewDataContractUpdate and offers the update only when the preview reports a change, but the flow has not been driven on a device or simulator yet: TEST_PLAN DC-04 is the manual gate still to run."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
+          "sdk": "supported",
+          "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "Kotlin's UpdateContractScreen broadcasts without a preview, and the JNI bridge (rs-unified-sdk-jni) does not expose platform_wallet_preview_data_contract_update or platform_wallet_split_contract_update_source."
+          "reason": "DataContracts.previewUpdate and DataContractUpdateSource.split bridge platform_wallet_preview_data_contract_update and platform_wallet_split_contract_update_source through ContractUpdateNative, one JNI export each, and DataContracts.update passes the reviewed version as expectedCurrentVersion. KotlinExampleApp's UpdateContractScreen (Contracts -> contract -> Update Contract, contractDetails.updateContract) shows the preview Rust returns and offers the broadcast only when it reports a change, with Swift's updateContract.* identifiers as testTags. Partial until TEST_PLAN DC-04 is run on an emulator. Unlike Swift, a groups list whose entries carry an id is not re-keyed by position before it is sent."
         }
       },
       "verification": [
@@ -1775,6 +1775,30 @@
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
           "id": "DC-04",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/identity/DataContractUpdatePreviewTest.kt",
+          "id": "shouldDecodeAPreviewWithEveryField",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*DataContractUpdatePreviewTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/contracts/UpdateContractFieldsTest.kt",
+          "id": "shouldOfferTheUpdateOnlyForAReviewOfTheFieldsShownThatChangesSomething",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*UpdateContractFieldsTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "contractUpdateReviewSymbolsBindAndSplitASource",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
           "covers_restart": false
         }
       ]
