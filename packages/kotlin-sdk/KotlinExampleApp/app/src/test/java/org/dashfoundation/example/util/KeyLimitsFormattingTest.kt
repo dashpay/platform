@@ -138,6 +138,21 @@ class KeyLimitsFormattingTest {
     }
 
     @Test
+    fun shouldUseTheGregorianYearWhateverTheDefaultLocale() {
+        val previous = Locale.getDefault()
+        try {
+            Locale.setDefault(Locale.forLanguageTag("th-TH"))
+            assertEquals(253_402_300_799_999L, KeyLimitsFormatting.maxPickableMillis(TimeZone.getTimeZone("UTC")))
+            assertEquals(
+                1_700_006_400_000L,
+                KeyLimitsFormatting.dateUtcMillis(1_700_000_000_000L, TimeZone.getTimeZone("Asia/Bangkok")),
+            )
+        } finally {
+            Locale.setDefault(previous)
+        }
+    }
+
+    @Test
     fun shouldEndTheEditableRangeAtTheLastLocalDayOfTheDevice() {
         // 9999-12-31 20:00 UTC is noon on Dec 31 at UTC-8, so it can still be moved later there.
         val dec31Evening = 253_402_286_400_000L

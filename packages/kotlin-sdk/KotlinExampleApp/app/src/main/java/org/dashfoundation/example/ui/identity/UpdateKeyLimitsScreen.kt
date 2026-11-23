@@ -205,6 +205,13 @@ class UpdateKeyLimitsViewModel(private val saved: SavedStateHandle) : ViewModel(
     var restoredExpiryDropped by mutableStateOf(false)
         private set
 
+    /**
+     * A restored picked expiry was past this device's last pickable instant (the draft was
+     * saved in another time zone), so it was set back to a date the picker can show.
+     */
+    var restoredExpiryReset by mutableStateOf(false)
+        private set
+
     /** The last submission's error text (Rust's), with the lock reason. */
     var submitError by mutableStateOf(saved.get<String>(SUBMIT_ERROR))
         private set
@@ -306,11 +313,16 @@ class UpdateKeyLimitsViewModel(private val saved: SavedStateHandle) : ViewModel(
                 val opening = resolved.preview(null, null)
                 val expiresAt = opening.currentExpiresAt
                 val maxPickable = KeyLimitsFormatting.maxPickableMillis()
-                if (expiresAt != null && expiresAt < maxPickable.toULong() && pickedExpiryMillis == null) {
+                val restored = pickedExpiryMillis
+                if (expiresAt != null && expiresAt < maxPickable.toULong() &&
+                    (restored == null || restored > maxPickable)
+                ) {
                     // A starting point for the picker only, kept within what it can show;
-                    // Rust judges the pick.
+                    // Rust judges the pick. A restored pick past it (saved in another time
+                    // zone) would open the picker on another day, so it is replaced too.
                     val base = maxOf(expiresAt.toLong(), System.currentTimeMillis())
                     setPickedExpiry(minOf(base, maxPickable - THIRTY_DAYS_MILLIS) + THIRTY_DAYS_MILLIS)
+                    if (restored != null) restoredExpiryReset = true
                 }
                 Gate.Ready(opening)
             } catch (e: CancellationException) {
@@ -636,6 +648,14 @@ private fun ChangeSection(opening: IdentityKeyLimitsUpdatePreview, state: Update
                 )
             }
             val picked = state.pickedExpiryMillis
+            if (state.restoredExpiryReset) {
+                Text(
+                    "The expiry you had picked is past this device's last pickable day, so it " +
+                        "was set back. Check the new date before updating.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             if (state.extendExpiry && picked != null) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),

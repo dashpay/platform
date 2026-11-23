@@ -4,6 +4,7 @@ import java.text.DateFormat
 import java.text.DecimalFormatSymbols
 import java.util.Calendar
 import java.util.Date
+import java.util.GregorianCalendar
 import java.util.Locale
 import java.util.TimeZone
 
@@ -74,8 +75,8 @@ object KeyLimitsFormatting {
      * picker's selection: UTC midnight of that day), keeping its local time of day in [zone].
      */
     fun withDate(currentMillis: Long, pickedDateUtcMillis: Long, zone: TimeZone = TimeZone.getDefault()): Long {
-        val day = Calendar.getInstance(UTC).apply { timeInMillis = pickedDateUtcMillis }
-        return Calendar.getInstance(zone).apply {
+        val day = gregorian(UTC).apply { timeInMillis = pickedDateUtcMillis }
+        return gregorian(zone).apply {
             timeInMillis = currentMillis
             set(Calendar.YEAR, day.get(Calendar.YEAR))
             set(Calendar.DAY_OF_YEAR, 1)
@@ -86,7 +87,7 @@ object KeyLimitsFormatting {
 
     /** [currentMillis] at [hour]:[minute]:00.000 local time in [zone], on the same local day. */
     fun withTime(currentMillis: Long, hour: Int, minute: Int, zone: TimeZone = TimeZone.getDefault()): Long =
-        Calendar.getInstance(zone).apply {
+        gregorian(zone).apply {
             timeInMillis = currentMillis
             set(Calendar.HOUR_OF_DAY, hour)
             set(Calendar.MINUTE, minute)
@@ -96,8 +97,8 @@ object KeyLimitsFormatting {
 
     /** The local calendar day of [millis] in [zone], as a Material date picker selects it. */
     fun dateUtcMillis(millis: Long, zone: TimeZone = TimeZone.getDefault()): Long {
-        val local = Calendar.getInstance(zone).apply { timeInMillis = millis }
-        return Calendar.getInstance(UTC).apply {
+        val local = gregorian(zone).apply { timeInMillis = millis }
+        return gregorian(UTC).apply {
             clear()
             set(local.get(Calendar.YEAR), local.get(Calendar.MONTH), local.get(Calendar.DAY_OF_MONTH))
         }.timeInMillis
@@ -113,7 +114,7 @@ object KeyLimitsFormatting {
 
     /** The local hour and minute of [millis] in [zone]. */
     fun timeOfDay(millis: Long, zone: TimeZone = TimeZone.getDefault()): Pair<Int, Int> {
-        val local = Calendar.getInstance(zone).apply { timeInMillis = millis }
+        val local = gregorian(zone).apply { timeInMillis = millis }
         return local.get(Calendar.HOUR_OF_DAY) to local.get(Calendar.MINUTE)
     }
 
@@ -139,6 +140,13 @@ object KeyLimitsFormatting {
     private val UTC: TimeZone = TimeZone.getTimeZone("UTC")
 
     /**
+     * A Gregorian calendar in [zone], whatever the default locale: `Calendar.getInstance`
+     * picks the locale's calendar (Buddhist under th_TH), whose year 9999 is not the picker's.
+     * Locales are for display formatting only.
+     */
+    private fun gregorian(zone: TimeZone): Calendar = GregorianCalendar(zone, Locale.ROOT)
+
+    /**
      * "Last-synced budget 0.01 DASH · 0.004 DASH left on Platform", or "Last-synced budget
      * 0.01 DASH" without a
      * remaining figure. The total is the key row as last synced and the remaining figure is a
@@ -159,7 +167,7 @@ object KeyLimitsFormatting {
      * earlier expiry can be moved later.
      */
     fun maxPickableMillis(zone: TimeZone = TimeZone.getDefault()): Long =
-        Calendar.getInstance(zone).apply {
+        gregorian(zone).apply {
             clear()
             set(9999, Calendar.DECEMBER, 31, 23, 59, 59)
             set(Calendar.MILLISECOND, 999)

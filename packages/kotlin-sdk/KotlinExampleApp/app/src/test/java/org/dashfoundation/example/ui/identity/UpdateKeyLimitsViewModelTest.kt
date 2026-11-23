@@ -338,6 +338,33 @@ class UpdateKeyLimitsViewModelTest {
     }
 
     @Test
+    fun shouldResetARestoredPickPastThisDevicesLastPickableInstant() = runTest(dispatcher) {
+        val last = org.dashfoundation.example.util.KeyLimitsFormatting.maxPickableMillis()
+        // Saved on a device further west, where the same local day ends later.
+        val saved = SavedStateHandle(
+            mapOf("keyLimits.extendExpiry" to true, "keyLimits.pickedExpiry" to last + 1),
+        )
+        val state = UpdateKeyLimitsViewModel(saved)
+        val wallet = FakeWallet(
+            answer = { IdentityKeyLimitsUpdatePreview(identityId, 2, 0, null, 1_800_000_000_000uL, null, null) },
+        )
+        state.load { Result.success(wallet) }
+        advanceUntilIdle()
+        assertTrue(state.restoredExpiryReset)
+        assertTrue(state.pickedExpiryMillis!! <= last)
+        assertTrue(state.extendExpiry)
+
+        // A restored pick within range is kept.
+        val kept = UpdateKeyLimitsViewModel(
+            SavedStateHandle(mapOf("keyLimits.extendExpiry" to true, "keyLimits.pickedExpiry" to 1_900_000_000_000L)),
+        )
+        kept.load { Result.success(wallet) }
+        advanceUntilIdle()
+        assertFalse(kept.restoredExpiryReset)
+        assertEquals(1_900_000_000_000L, kept.pickedExpiryMillis)
+    }
+
+    @Test
     fun shouldRefuseEveryCallOnceTheWalletWasReloaded() = runTest(dispatcher) {
         val wallet = FakeWallet(walletHandle = 1L, answer = ::preview)
         val state = UpdateKeyLimitsViewModel(SavedStateHandle())
