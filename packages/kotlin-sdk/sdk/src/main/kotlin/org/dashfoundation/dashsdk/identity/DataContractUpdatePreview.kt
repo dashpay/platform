@@ -133,11 +133,15 @@ private object UpdateJson {
         val element = try {
             Json.parseToJsonElement(json)
         } catch (e: SerializationException) {
-            throw DashSdkError.SerializationError("Malformed $what JSON: $json", e)
+            throw DashSdkError.SerializationError("Malformed $what JSON: ${excerpt(json)}", e)
         }
         return element as? JsonObject
-            ?: throw DashSdkError.SerializationError("Malformed $what JSON: $json")
+            ?: throw DashSdkError.SerializationError("Malformed $what JSON: ${excerpt(json)}")
     }
+
+    /** The start of [json] and its length: the message is shown on screen, and a preview can be long. */
+    private fun excerpt(json: String): String =
+        if (json.length <= 200) json else "${json.take(200)}... (${json.length} chars)"
 
     fun JsonObject.long(name: String): Long =
         (this[name] as? JsonPrimitive)?.takeUnless { it.isString || it is JsonNull }?.longOrNull

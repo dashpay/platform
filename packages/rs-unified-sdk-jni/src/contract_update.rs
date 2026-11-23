@@ -151,3 +151,69 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_ContractUpdateNative_
             .unwrap_or(ptr::null_mut())
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::decision_proposals::tests::kotlin_signature_in;
+
+    const CONTRACT_UPDATE_NATIVE_KT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../kotlin-sdk/sdk/src/main/kotlin/org/dashfoundation/dashsdk/ffi/ContractUpdateNative.kt"
+    ));
+    const IDENTITY_NATIVE_KT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../kotlin-sdk/sdk/src/main/kotlin/org/dashfoundation/dashsdk/ffi/IdentityNative.kt"
+    ));
+
+    fn types(kinds: &[&str]) -> Vec<String> {
+        kinds.iter().map(|kind| kind.to_string()).collect()
+    }
+
+    /// JNI binds an export by its name alone: a Kotlin declaration whose parameters drifted
+    /// from the export's would hand it the wrong JVM values at run time, which only an
+    /// instrumented test would otherwise catch. The update's `expectedCurrentVersion` slot
+    /// sits before the signer handle.
+    #[test]
+    fn should_declare_the_review_and_the_update_as_the_exports_take_them() {
+        assert_eq!(
+            kotlin_signature_in(CONTRACT_UPDATE_NATIVE_KT, "previewDataContractUpdate"),
+            (
+                types(&[
+                    "Long",
+                    "ByteArray",
+                    "ByteArray",
+                    "String",
+                    "String?",
+                    "String?",
+                    "String?",
+                    "String?",
+                    "String?",
+                ]),
+                "String".to_string()
+            )
+        );
+        assert_eq!(
+            kotlin_signature_in(CONTRACT_UPDATE_NATIVE_KT, "splitContractUpdateSource"),
+            (types(&["String"]), "String".to_string())
+        );
+        assert_eq!(
+            kotlin_signature_in(IDENTITY_NATIVE_KT, "updateDataContract"),
+            (
+                types(&[
+                    "Long",
+                    "ByteArray",
+                    "ByteArray",
+                    "String",
+                    "String?",
+                    "String?",
+                    "String?",
+                    "String?",
+                    "String?",
+                    "Long",
+                    "Long",
+                ]),
+                "ByteArray".to_string()
+            )
+        );
+    }
+}
