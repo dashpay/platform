@@ -1002,10 +1002,10 @@ fun MasternodeVoterSection(
                     state = shownState,
                     keyUse = shownState?.storedAddress?.let { rules.use(shownState.recorded, it) },
                     isChecking = checkingIdentityHex == selectedHex,
-                    failure = shownCheckFailure(
-                        checkFailure?.takeIf { it.first == selectedHex }?.second,
-                        storedVoterDecision(selectedState, selectedPicked, rules),
-                    ),
+                    // The decision (a Rust call) is made only when there is a failure to filter.
+                    failure = checkFailure?.takeIf { it.first == selectedHex }?.second?.let { failure ->
+                        shownCheckFailure(failure, storedVoterDecision(selectedState, selectedPicked, rules))
+                    },
                     modifier = Modifier.testTag("$testTagPrefix.voterKeyCheck"),
                 )
             }
