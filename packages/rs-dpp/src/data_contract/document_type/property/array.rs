@@ -305,20 +305,21 @@ impl TypedArrayProperty {
         // budget (zero-width elements consume no bytes and never hit EOF).
         if self.has_zero_encoded_width_element() {
             if let Some(budget) = budget.as_deref() {
-                if count > budget.remaining() {
+                if count > budget.remaining_array_elements() {
                     return Err(DataContractError::DecodedValueBudgetExceeded(format!(
                         "typed array claims {count} element(s), {} remaining",
-                        budget.remaining()
+                        budget.remaining_array_elements()
                     )));
                 }
             }
         }
         let mut elements = Vec::new();
         for _ in 0..count {
-            let (element, _) = self.item_type.read_optionally_from_with_budget(
+            let (element, _) = self.item_type.read_optionally_from_inner(
                 buf,
                 true,
                 budget.as_deref_mut(),
+                true,
             )?;
             let Some(element) = element else {
                 return Err(DataContractError::CorruptedSerialization(

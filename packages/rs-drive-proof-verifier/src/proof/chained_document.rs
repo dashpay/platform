@@ -31,9 +31,7 @@ use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
-use dpp::data_contract::document_type::{
-    DecodedValueBudget, DocumentTypeRef, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
-};
+use dpp::data_contract::document_type::{DecodedValueBudget, DocumentTypeRef};
 use dpp::document::Document;
 use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
@@ -73,14 +71,20 @@ pub struct ChainedDocuments {
 
 impl ChainedDocuments {
     /// Decodes the kept field values of every removed outer document under
-    /// `outer_document_type`, enforcing [`DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET`]
-    /// across all live documents and removal records returned together in this response.
+    /// `outer_document_type`, enforcing a decoded-value budget proportional to
+    /// each removal record's encoded `kept_fields` length.
     pub fn decode_removed_outer_kept_values(
         &self,
         outer_document_type: DocumentTypeRef,
     ) -> Result<Vec<BTreeMap<String, Value>>, ProtocolError> {
-        let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
-        self.decode_removed_outer_kept_values_with_budget(outer_document_type, &mut budget)
+        self.removed_outer_documents
+            .iter()
+            .map(|entry| {
+                entry
+                    .removal
+                    .kept_values_with_default_budget(outer_document_type)
+            })
+            .collect()
     }
 
     /// Like [`Self::decode_removed_outer_kept_values`], charging every retained

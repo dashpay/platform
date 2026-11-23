@@ -1665,16 +1665,8 @@ fn verify_document_history_response_v1(
     )
     .map_drive_error(proof, metadata)?;
     verify_tenderdash_proof(proof, metadata, &root, provider)?;
-    let mut budget = dpp::data_contract::document_type::DecodedValueBudget::new(
-        dpp::data_contract::document_type::DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
-    );
     let history = serialized_history
-        .into_documents(
-            &query.document_id,
-            document_type,
-            &mut budget,
-            query_version,
-        )
+        .into_documents(&query.document_id, document_type, query_version)
         .map_err(|error| Error::UnusableVerifiedResult {
             reason: format!("verified document history revision could not be decoded: {error}"),
         })?;
