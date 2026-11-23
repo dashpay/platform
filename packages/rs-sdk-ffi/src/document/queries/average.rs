@@ -316,10 +316,10 @@ mod tests {
     }
 
     /// A call grouped by the `In` field whose groups verify as carrier
-    /// entries (an `in_key` and an empty `key`) returns one entry per
-    /// group, keyed by the hex of its `in_key`, each with its own average.
+    /// entries, each keyed by its `In` value, returns one entry per group,
+    /// keyed by the hex of that value, each with its own average.
     #[test]
-    fn should_key_grouped_carrier_averages_by_their_in_key() {
+    fn should_key_grouped_carrier_averages_by_their_in_value() {
         let contract = document_history_contract();
         let where_json = grouped_where_json();
         let query = ffi_query(
@@ -332,14 +332,14 @@ mod tests {
             query,
             DocumentSplitAverages(vec![
                 SplitAverageEntry {
-                    in_key: Some(GROUP_A.to_vec()),
-                    key: Vec::new(),
+                    in_key: None,
+                    key: GROUP_A.to_vec(),
                     count: Some(3),
                     sum: Some(3 * i128::from(i64::MAX)),
                 },
                 SplitAverageEntry {
-                    in_key: Some(GROUP_B.to_vec()),
-                    key: Vec::new(),
+                    in_key: None,
+                    key: GROUP_B.to_vec(),
                     count: Some(2),
                     sum: Some(70005),
                 },

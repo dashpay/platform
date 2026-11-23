@@ -293,7 +293,7 @@ pub(super) mod tests {
     pub(in crate::document::queries) const PRICE: &str = "price";
     pub(in crate::document::queries) const GROUP_BY_FIELD: &str = "dataContractId";
     pub(in crate::document::queries) const GROUP_BY_JSON: &str = r#"["dataContractId"]"#;
-    /// Two `dataContractId` values, the `in_key`s of two carrier totals.
+    /// Two `dataContractId` values, the keys of two carrier totals.
     pub(in crate::document::queries) const GROUP_A: [u8; 32] = [0xaa; 32];
     pub(in crate::document::queries) const GROUP_B: [u8; 32] = [0xbb; 32];
 
@@ -318,7 +318,7 @@ pub(super) mod tests {
 
     /// The `where` clause of a call grouped by `dataContractId`: an `in`
     /// on it and a range on `$createdAt`, so each group verifies as a
-    /// carrier total (an `in_key` and an empty `key`).
+    /// carrier total keyed by its `In` value.
     pub(in crate::document::queries) fn grouped_where_json() -> String {
         serde_json::json!([
             {
@@ -477,11 +477,10 @@ pub(super) mod tests {
     }
 
     /// A call grouped by the `In` field whose groups verify as carrier
-    /// totals (an `in_key` and an empty `key`) returns one entry per
-    /// group, keyed by the hex of its `in_key`, rather than one merged
-    /// entry under the empty key.
+    /// totals, each keyed by its `In` value, returns one entry per group,
+    /// keyed by the hex of that value.
     #[test]
-    fn should_key_grouped_carrier_sums_by_their_in_key() {
+    fn should_key_grouped_carrier_sums_by_their_in_value() {
         let contract = document_history_contract();
         let where_json = grouped_where_json();
         let query = ffi_query(
@@ -494,13 +493,13 @@ pub(super) mod tests {
             query,
             DocumentSplitSums(vec![
                 SplitSumEntry {
-                    in_key: Some(GROUP_A.to_vec()),
-                    key: Vec::new(),
+                    in_key: None,
+                    key: GROUP_A.to_vec(),
                     sum: Some(3 * i128::from(i64::MAX)),
                 },
                 SplitSumEntry {
-                    in_key: Some(GROUP_B.to_vec()),
-                    key: Vec::new(),
+                    in_key: None,
+                    key: GROUP_B.to_vec(),
                     sum: Some(70005),
                 },
             ]),

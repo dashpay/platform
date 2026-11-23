@@ -294,10 +294,18 @@ pub fn verify_primary_key_count_sum_tree_proof(
 /// the carrier-PCPS executor.
 ///
 /// Result: one [`AverageEntry`] per **present** In branch with
-/// `in_key = <serialized In value>`, `key = []`, `count = Some(n)`,
+/// `in_key = None`, `key = <serialized In value>`, `count = Some(n)`,
 /// `sum = Some(v)`. Absent In branches are omitted; the count and
 /// sum axes never disagree on present/absent because the proof
 /// commits both metrics from the same merk traversal.
+///
+/// Each total is keyed by the `In` value it belongs to (`in_key =
+/// None`, `key = <serialized In value>`): the request groups by the `In`
+/// field, so that value is its group, and this is the shape a node's
+/// unproven answer and a point lookup grouped by the `In` field give.
+/// A terminator `key` can itself be empty (a document missing an
+/// optional range property is indexed under the empty key), so the
+/// group is never inferred from an empty `key`.
 ///
 /// `platform_version` must be the protocol version `mtd` names, or the latest known
 /// version when `mtd` names a newer one; otherwise the answer is refused with
@@ -324,9 +332,9 @@ pub fn verify_carrier_aggregate_count_and_sum_proof(
 
     let entries = per_key_count_sum
         .into_iter()
-        .map(|(in_key, count, sum)| AverageEntry {
-            in_key: Some(in_key),
-            key: Vec::new(),
+        .map(|(in_value, count, sum)| AverageEntry {
+            in_key: None,
+            key: in_value,
             count: Some(count),
             sum: Some(sum),
         })

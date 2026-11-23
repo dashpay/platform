@@ -297,13 +297,13 @@ fn should_verify_signed_sums_grouped_by_contract_past_64_bits() {
         entries,
         vec![
             SplitSumEntry {
-                in_key: Some(CONTRACT_A.to_vec()),
-                key: Vec::new(),
+                in_key: None,
+                key: CONTRACT_A.to_vec(),
                 sum: Some(total(&PRICES_A)),
             },
             SplitSumEntry {
-                in_key: Some(CONTRACT_B.to_vec()),
-                key: Vec::new(),
+                in_key: None,
+                key: CONTRACT_B.to_vec(),
                 sum: Some(total(&PRICES_B)),
             },
         ]
@@ -329,14 +329,14 @@ fn should_verify_signed_averages_grouped_by_contract_past_64_bits() {
         entries,
         vec![
             SplitAverageEntry {
-                in_key: Some(CONTRACT_A.to_vec()),
-                key: Vec::new(),
+                in_key: None,
+                key: CONTRACT_A.to_vec(),
                 count: Some(3),
                 sum: Some(total(&PRICES_A)),
             },
             SplitAverageEntry {
-                in_key: Some(CONTRACT_B.to_vec()),
-                key: Vec::new(),
+                in_key: None,
+                key: CONTRACT_B.to_vec(),
                 count: Some(2),
                 sum: Some(total(&PRICES_B)),
             },

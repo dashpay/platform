@@ -199,10 +199,18 @@ pub fn verify_distinct_sum_proof(
 /// each In branch's range into a single committed sum.
 ///
 /// Result: one [`SumEntry`] per **present** In branch with
-/// `in_key = <serialized In value>`, `key = []`, `sum = Some(n)`.
+/// `in_key = None`, `key = <serialized In value>`, `sum = Some(n)`.
 /// Absent In branches are omitted; callers that need to surface
 /// "queried but absent" diff their In array against the returned
-/// `in_key`s.
+/// `key`s.
+///
+/// Each total is keyed by the `In` value it belongs to (`in_key =
+/// None`, `key = <serialized In value>`): the request groups by the `In`
+/// field, so that value is its group, and this is the shape a node's
+/// unproven answer and a point lookup grouped by the `In` field give.
+/// A terminator `key` can itself be empty (a document missing an
+/// optional range property is indexed under the empty key), so the
+/// group is never inferred from an empty `key`.
 ///
 /// `platform_version` must be the protocol version `mtd` names, or the latest known
 /// version when `mtd` names a newer one; otherwise the answer is refused with
@@ -231,9 +239,9 @@ pub fn verify_carrier_aggregate_sum_proof(
     // SDK's `Vec<SumEntry>` so the call sites stay uniform.
     let entries = per_key_sums
         .into_iter()
-        .map(|(in_key, sum)| SumEntry {
-            in_key: Some(in_key),
-            key: Vec::new(),
+        .map(|(in_value, sum)| SumEntry {
+            in_key: None,
+            key: in_value,
             sum: Some(sum),
         })
         .collect();

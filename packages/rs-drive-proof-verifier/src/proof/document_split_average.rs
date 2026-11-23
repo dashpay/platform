@@ -16,8 +16,6 @@
 //! / primary-key direct read) based on the resolved
 //! `DocumentAverageMode`.
 
-use super::document_split_sum::flat_group_key;
-
 /// A single verified `(in_key?, key, count, sum)` entry from an
 /// average query with `group_by`. Mirrors sum's `SplitSumEntry`
 /// shape with both metrics carried alongside.
@@ -65,9 +63,7 @@ pub struct DocumentSplitAverages(pub Vec<SplitAverageEntry>);
 impl DocumentSplitAverages {
     /// Convenience: collapse compound `(in_key, key)` entries into a
     /// flat `BTreeMap<key, (summed_count, summed_sum)>` by combining
-    /// each In-fork's contribution at the same terminator key; a
-    /// carrier total is keyed by its `in_key`
-    /// ([`super::document_split_sum::flat_group_key`]).
+    /// each In-fork's contribution at the same terminator key.
     /// Mirrors [`super::document_split_sum::DocumentSplitSums::try_into_flat_map`].
     ///
     /// Uses [`u64::checked_add`] on the count axis and
@@ -89,9 +85,7 @@ impl DocumentSplitAverages {
             std::collections::BTreeMap::new();
         for entry in self.0 {
             if let (Some(c), Some(s)) = (entry.count, entry.sum) {
-                let acc = out
-                    .entry(flat_group_key(entry.in_key, entry.key))
-                    .or_insert((0u64, 0i128));
+                let acc = out.entry(entry.key).or_insert((0u64, 0i128));
                 acc.0 = acc
                     .0
                     .checked_add(c)
@@ -245,34 +239,29 @@ mod tests {
         );
     }
 
-    /// Carrier totals (one per `In` value, no terminator key) stay one
-    /// entry per `In` value, keyed by it.
+    /// A document missing the optional range property (the empty key)
+    /// stays its own group, apart from an `In` value's range key with the
+    /// same bytes as another `In` value.
     #[test]
-    fn try_into_flat_map_keys_carrier_totals_by_their_in_value() {
+    fn try_into_flat_map_keeps_an_empty_range_key_as_its_own_group() {
         let splits = DocumentSplitAverages(vec![
             SplitAverageEntry {
-                in_key: Some(b"contract-a".to_vec()),
+                in_key: Some(b"a".to_vec()),
                 key: Vec::new(),
-                count: Some(3),
-                sum: Some(3 * i128::from(i64::MAX)),
+                count: Some(1),
+                sum: Some(10),
             },
             SplitAverageEntry {
-                in_key: Some(b"contract-b".to_vec()),
-                key: Vec::new(),
-                count: Some(2),
-                sum: Some(70_005),
+                in_key: Some(b"b".to_vec()),
+                key: b"a".to_vec(),
+                count: Some(1),
+                sum: Some(30),
             },
         ]);
         let flat = splits.try_into_flat_map().expect("non-overflowing fold");
         assert_eq!(flat.len(), 2);
-        assert_eq!(
-            flat.get(b"contract-a".as_slice()),
-            Some(&(3u64, 3 * i128::from(i64::MAX)))
-        );
-        assert_eq!(
-            flat.get(b"contract-b".as_slice()),
-            Some(&(2u64, 70_005i128))
-        );
+        assert_eq!(flat.get(b"".as_slice()), Some(&(1u64, 10i128)));
+        assert_eq!(flat.get(b"a".as_slice()), Some(&(1u64, 30i128)));
     }
 
     /// An entry where EITHER half is `None` (proven absent) is
