@@ -26,7 +26,7 @@ review:
   scope_blocks: true
   examples:
     blocker:
-      - "Changing how a state transition is validated, priced or stored without gating it on a new protocol version splits nodes running different versions."
+      - "Changing how a state transition is validated, priced or stored for an already shipped protocol version can make nodes disagree when they execute or replay that version. A generation selected only by an unreleased protocol version may still change in place."
 
 related_repos:
   - { repo: dashpay/dash, kind: reference, paths: [src/] }

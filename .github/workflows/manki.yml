@@ -14,7 +14,7 @@ on:
 
 permissions:
   contents: read          # read repo files and diffs
-  pull-requests: write    # post review comments and approvals
+  pull-requests: read     # read only, the Manki App posts reviews and approvals
   issues: write           # post a note on the PR when the token service gives no token
   id-token: write         # OIDC token for GitHub App identity
   actions: read           # verify workflow run is legitimate
@@ -29,7 +29,7 @@ jobs:
         with:
           node-version: '24'
       - name: Manki Review
-        uses: manki-review/manki@v7.7.3
+        uses: manki-review/manki@v7.7.4
         with:
           claude_code_oauth_token: ${{ secrets.MANKI_CLAUDE_CODE_OAUTH_TOKEN }}
           # The repository variable MANKI_OPENAI_LOGIN picks the OpenAI login: `subscription` uses the
