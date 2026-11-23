@@ -126,6 +126,26 @@ class MasternodeVoterSectionTest {
         )
     }
 
+    /**
+     * A dialog keys its answer and messages on the masternode shown, so a voter withdrawn for
+     * the same masternode (a refusal, a check it waits for) keeps what the dialog shows.
+     */
+    @Test
+    fun shouldShowTheSameMasternodeWhetherOrNotItsVoterIsPublished() {
+        val selected = identity(1)
+        val published = answerTargetOf(publish(selected = selected))
+
+        assertEquals(published, shownAnswerTarget(selected, usesTypedInput = false, typedVoter = null))
+        assertNull(shownAnswerTarget(null, usesTypedInput = false, typedVoter = null))
+        val typed = publish(selected = selected, allowsTyped = true, useTyped = true, proTxHash = proTxHashHex)
+        assertEquals(answerTargetOf(typed), shownAnswerTarget(selected, usesTypedInput = true, typedVoter = typed))
+        assertNull(shownAnswerTarget(selected, usesTypedInput = true, typedVoter = null))
+        // #6099: the masternode shown is the row's recorded pro_tx_hash; none while unresolved.
+        val shared = identity(9).copy(masternodeProTxHash = ByteArray(32) { 0x5a })
+        assertEquals(answerTargetOf(publish(selected = shared)), shownAnswerTarget(shared, usesTypedInput = false, typedVoter = null))
+        assertNull(shownAnswerTarget(shared.copy(masternodeProTxHash = null), usesTypedInput = false, typedVoter = null))
+    }
+
     @Test
     fun shouldDecodeOnlyExactly64HexCharacters() {
         assertEquals(32, decodeTyped32Bytes("  $proTxHashHex\n")?.size)

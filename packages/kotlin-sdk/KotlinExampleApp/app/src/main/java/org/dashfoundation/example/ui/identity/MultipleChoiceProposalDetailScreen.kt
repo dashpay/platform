@@ -521,16 +521,19 @@ private fun MultipleChoiceVoteDialog(
     }
     var choice by remember { mutableStateOf(answers.first()) }
     var voter by remember { mutableStateOf<MasternodeVoter?>(null) }
+    // The masternode the section shows, kept while its voter is withdrawn (a refusal, or a
+    // check it waits for), so a vote rejection or an answer read for it stays shown.
+    var answerTarget by remember { mutableStateOf<String?>(null) }
     var isBusy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var messageIsError by remember { mutableStateOf(false) }
 
     // A message names the previous voter's answer, or one read on the previous SDK (a
     // network switch or new options); drop it.
-    // Keyed on the masternode the answer names (its wire-order pro_tx_hash), not the whole
-    // voter: a voter republished with a newer clearance is the same masternode, so its answer
-    // stays shown.
-    LaunchedEffect(answerTargetOf(voter), sdk) { message = null }
+    // Keyed on the masternode shown (its wire-order pro_tx_hash), not the voter: a voter
+    // republished with a newer clearance, or withdrawn while the same masternode stays picked,
+    // keeps its answer and a vote rejection shown.
+    LaunchedEffect(answerTarget, sdk) { message = null }
 
     AlertDialog(
         onDismissRequest = { if (!isBusy) onDismiss() },
@@ -553,6 +556,7 @@ private fun MultipleChoiceVoteDialog(
                 MasternodeVoterSection(
                     testTagPrefix = "multipleChoiceProposalVote",
                     onVoterChange = { voter = it },
+                    onAnswerTargetChange = { answerTarget = it },
                     allowsTypedProTxHash = true,
                     enabled = !isBusy,
                 )
@@ -567,10 +571,10 @@ private fun MultipleChoiceVoteDialog(
                             try {
                                 val answer = currentSdk.multipleChoiceProposals
                                     .masternodeVote(proTxHash, proposal.id)
-                                // The voter or the SDK changed while the read was in flight:
-                                // this answer is not the picked masternode's on the network
-                                // now shown.
-                                if (answerTargetOf(voter) != answerTargetOf(requested) || appState.sdk.value !== currentSdk) {
+                                // The masternode shown or the SDK changed while the read was in
+                                // flight: this answer is not the shown masternode's on the
+                                // network now shown.
+                                if (answerTarget != answerTargetOf(requested) || appState.sdk.value !== currentSdk) {
                                     return@launch
                                 }
                                 message = answer?.let {
@@ -580,7 +584,7 @@ private fun MultipleChoiceVoteDialog(
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {
-                                if (answerTargetOf(voter) != answerTargetOf(requested) || appState.sdk.value !== currentSdk) {
+                                if (answerTarget != answerTargetOf(requested) || appState.sdk.value !== currentSdk) {
                                     return@launch
                                 }
                                 message = "Reading the answer failed: ${e.message}"

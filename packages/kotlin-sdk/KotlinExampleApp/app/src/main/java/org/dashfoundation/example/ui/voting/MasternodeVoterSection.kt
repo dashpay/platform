@@ -171,6 +171,18 @@ fun wireOrderProTxHash(displayOrderProTxHash: ByteArray): ByteArray = displayOrd
  */
 internal fun answerTargetOf(voter: MasternodeVoter?): String? = voter?.wireOrderProTxHash?.toHex()
 
+/**
+ * The masternode the section shows, as [answerTargetOf] names it, whether or not its key may
+ * vote now: the typed voter's when the inputs are typed ([typedVoter]), else the pro_tx_hash
+ * recorded on the picked identity's row (none while it is unresolved, #6099). A dialog keys its answer and messages on this, so a voter withdrawn for the same
+ * masternode (a refusal, or a check it waits for) keeps what the dialog shows of it.
+ */
+internal fun shownAnswerTarget(
+    selected: IdentityEntity?,
+    usesTypedInput: Boolean,
+    typedVoter: MasternodeVoter?,
+): String? = if (usesTypedInput) answerTargetOf(typedVoter) else selected?.masternodeProTxHash?.toHex()
+
 /** The identity types that carry a masternode voting key (`IdentityType.rawValue`). */
 internal val VOTING_IDENTITY_TYPES = setOf("Masternode", "Evonode")
 
@@ -823,6 +835,8 @@ fun MasternodeVoterSection(
     testTagPrefix: String,
     onVoterChange: (MasternodeVoter?) -> Unit,
     modifier: Modifier = Modifier,
+    /** The masternode shown ([shownAnswerTarget]), published with the voter. */
+    onAnswerTargetChange: (String?) -> Unit = {},
     allowsTypedProTxHash: Boolean = false,
     enabled: Boolean = true,
 ) {
@@ -895,14 +909,29 @@ fun MasternodeVoterSection(
         votingKeyText = votingKeyText,
     )
     }
-    fun publish() = onVoterChange(currentVoter())
+    fun currentAnswerTarget(): String? {
+        val typed = (BuildConfig.DEBUG && useTypedCredentials) || (allowsTypedProTxHash && useTypedProTxHash)
+        return shownAnswerTarget(
+            effectiveVoterSelection(selectedIdentityHex, candidates, ::isRefused),
+            typed,
+            if (typed) currentVoter() else null,
+        )
+    }
+    fun publish() {
+        onVoterChange(currentVoter())
+        onAnswerTargetChange(currentAnswerTarget())
+    }
     val voter = currentVoter()
+    val answerTarget = currentAnswerTarget()
     // Changes no handler makes (the identity list, the first composition) are published by
     // SideEffect, which runs when the composition that shows them is applied, in that same
     // frame and before any further input is handled, so a tap can never cast with a voter
     // the section stopped showing. Publishing an unchanged voter is a no-op for the dialog's
     // state (voters compare by value).
-    SideEffect { onVoterChange(voter) }
+    SideEffect {
+        onVoterChange(voter)
+        onAnswerTargetChange(answerTarget)
+    }
 
     // A record written since the picked key's check finished (another check, or a load) needs
     // a check of its own when Rust says so: a new check request, as Swift reruns its check
