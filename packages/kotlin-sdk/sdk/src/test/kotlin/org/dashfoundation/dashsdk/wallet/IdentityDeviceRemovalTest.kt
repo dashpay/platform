@@ -471,6 +471,72 @@ class IdentityDeviceRemovalTest {
         }
 
     @Test
+    fun `should settle a deferred delete when the round that staged its alias is abandoned`() =
+        runBlocking<Unit> {
+            handler = wiredHandler()
+            val stagedKey = ByteArray(33) { 0x6e }
+            storage.storePrivateKey(stagedKey.hex(), ByteArray(32) { 8 }, ownerWalletId = walletId)
+            storage.withPrivateKeyExclusion {
+                recordPendingIdentityKeyDeletes(listOf(PendingIdentityKeyDelete(stagedKey.hex(), walletId)))
+            }
+            handler.onChangesetBegin(walletId)
+            stageKey(stagedKey)
+            remove(id = ByteArray(32) { 0x7b })
+            assertTrue(storage.hasPrivateKey(stagedKey.hex()))
+
+            // The round never ends; the next round's begin replaces it.
+            handler.onChangesetBegin(walletId)
+            assertFalse(storage.hasPrivateKey(stagedKey.hex()))
+            handler.onChangesetEnd(walletId, success = true)
+        }
+
+    @Test
+    fun `should settle on recovery what a failed round-end settle left`() = runBlocking {
+        var failRoundEnd = true
+        handler = PlatformWalletPersistenceHandler(
+            db,
+            Dispatchers.Unconfined,
+            settlePendingKeyDeletesAfterRound = { inFlight ->
+                check(!failRoundEnd) { "storage locked" }
+                storage.withPrivateKeyExclusion { settlePendingIdentityKeyDeletes(db, this, inFlight) }
+            },
+        )
+        val stagedKey = ByteArray(33) { 0x6f }
+        storage.storePrivateKey(stagedKey.hex(), ByteArray(32) { 9 }, ownerWalletId = walletId)
+        storage.withPrivateKeyExclusion {
+            recordPendingIdentityKeyDeletes(listOf(PendingIdentityKeyDelete(stagedKey.hex(), walletId)))
+        }
+        handler.onChangesetBegin(walletId)
+        stageKey(stagedKey)
+        handler.onChangesetEnd(walletId, success = false)
+        assertTrue("the round-end settle failed", storage.hasPrivateKey(stagedKey.hex()))
+
+        // The manager's load-time recovery settles it, with no removal.
+        failRoundEnd = false
+        handler.settlePendingIdentityKeyDeletesNow()
+        assertFalse(storage.hasPrivateKey(stagedKey.hex()))
+        assertTrue(storage.withPrivateKeyExclusion { pendingIdentityKeyDeletes() }.isEmpty())
+    }
+
+    /** The handler as the manager wires it: rounds settle pending deletes when they end. */
+    private fun wiredHandler() = PlatformWalletPersistenceHandler(
+        db,
+        Dispatchers.Unconfined,
+        settlePendingKeyDeletesAfterRound = { inFlight ->
+            storage.withPrivateKeyExclusion { settlePendingIdentityKeyDeletes(db, this, inFlight) }
+        },
+    )
+
+    /** Stage an identity-key row for [key] (on the sibling) in the open round. */
+    private fun stageKey(key: ByteArray) {
+        handler.onPersistIdentityKeyUpsert(
+            walletId, siblingId, 9, 0, 0, 0, false, false, 0,
+            key, ByteArray(20), true, walletId,
+            true, 3, 5, 0, ByteArray(32), null,
+        )
+    }
+
+    @Test
     fun `should finish a voting key an earlier removal left when removed again`() = runBlocking {
         remove()
         storage.storePrivateKey(votingIdentifier, ByteArray(32) { 2 })

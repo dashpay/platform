@@ -475,6 +475,9 @@ class PlatformWalletPersistenceHandler(
         // replaced buffer). Then retry any earlier failed cleanup.
         scrubPendingAliases(key)
         retryOrphanedAliases(key)
+        // The abandoned round's staged identity-key rows never commit either:
+        // settle the pending deletes a settle deferred for them.
+        buffers.remove(key)?.let(::retryDeferredKeyDeletes)
         buffers[key] = ChangesetBuffer()
         0
     }
@@ -548,6 +551,17 @@ class PlatformWalletPersistenceHandler(
         } catch (t: Throwable) {
             Log.w(TAG, "pending identity-key deletes left for a later settle", t)
         }
+    }
+
+    /**
+     * Settle every pending identity-key delete once, as on a fresh launch
+     * where no round is open: the recovery for a round-end settle that failed
+     * or a process that died before one. Runs under [callbackExclusion].
+     * Throws what the settle throws; the caller decides whether that is fatal.
+     */
+    internal suspend fun settlePendingIdentityKeyDeletesNow() {
+        val settle = settlePendingKeyDeletesAfterRound ?: return
+        withCallbackExclusion { settle(aliasesStagedInOpenRounds()) }
     }
 
 

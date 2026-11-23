@@ -1507,6 +1507,21 @@ class PlatformWalletManager(
             )
         }
 
+        // Finish identity-key deletes an identity removal recorded but could
+        // not settle before (a failed round-end settle, a process death):
+        // best effort, retried on the next launch or removal.
+        try {
+            persistenceHandler.settlePendingIdentityKeyDeletesNow()
+        } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
+            throw cancellation
+        } catch (t: Throwable) {
+            android.util.Log.w(
+                "PlatformWalletManager",
+                "pending identity-key deletes not settled on load; retried later",
+                t,
+            )
+        }
+
         // Room is the source of truth for the restorable id list — the same
         // rows the load callback just fed to Rust. Scope to THIS network so
         // a per-network manager only restores its own wallets (matching the
