@@ -797,7 +797,7 @@
       },
       {
         "tableName": "asset_locks",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`outPointHex` TEXT NOT NULL, `walletId` BLOB NOT NULL, `transactionBytes` BLOB NOT NULL, `fundingTypeRaw` INTEGER NOT NULL, `identityIndexRaw` INTEGER NOT NULL, `accountIndexRaw` INTEGER NOT NULL, `amountDuffs` INTEGER NOT NULL, `statusRaw` INTEGER NOT NULL, `proofBytes` BLOB, `recipientPlatformAddressHash` BLOB, `recipientPlatformAddressType` INTEGER, `operationId` BLOB, `shieldedRecipientRaw43` BLOB, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`outPointHex`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`outPointHex` TEXT NOT NULL, `walletId` BLOB NOT NULL, `transactionBytes` BLOB NOT NULL, `fundingTypeRaw` INTEGER NOT NULL, `identityIndexRaw` INTEGER NOT NULL, `accountIndexRaw` INTEGER NOT NULL, `amountDuffs` INTEGER NOT NULL, `statusRaw` INTEGER NOT NULL, `proofBytes` BLOB, `recipientPlatformAddressHash` BLOB, `recipientPlatformAddressType` INTEGER, `operationId` BLOB, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `shieldedRecipientRaw43` BLOB, PRIMARY KEY(`outPointHex`))",
         "fields": [
           {
             "fieldPath": "outPointHex",
@@ -868,11 +868,6 @@
             "affinity": "BLOB"
           },
           {
-            "fieldPath": "shieldedRecipientRaw43",
-            "columnName": "shieldedRecipientRaw43",
-            "affinity": "BLOB"
-          },
-          {
             "fieldPath": "createdAt",
             "columnName": "createdAt",
             "affinity": "INTEGER",
@@ -883,6 +878,11 @@
             "columnName": "updatedAt",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "shieldedRecipientRaw43",
+            "columnName": "shieldedRecipientRaw43",
+            "affinity": "BLOB"
           }
         ],
         "primaryKey": {

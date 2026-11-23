@@ -76,6 +76,9 @@ data class AssetLockEntity(
      * after a restart, and reads its absence as "not sent".
      */
     val operationId: ByteArray? = null,
+    val createdAt: Date = Date(),
+    /** Swift names this `updatedAt` (not `lastUpdated`). */
+    val updatedAt: Date = Date(),
     /**
      * The raw 43-byte Orchard recipient a shielded funding
      * (`fundingTypeRaw == 5`) was built to pay (Swift
@@ -84,10 +87,8 @@ data class AssetLockEntity(
      * recorded. Written by `onPersistAssetLockShieldedRecipient` in the same
      * round as the row, never changed afterwards, and kept through later
      * status upserts and on the terminal row: a resume after a restart pays
-     * this recipient and refuses another.
+     * this recipient and refuses another. Last, so positional calls that
+     * pass the timestamps keep compiling.
      */
     val shieldedRecipientRaw43: ByteArray? = null,
-    val createdAt: Date = Date(),
-    /** Swift names this `updatedAt` (not `lastUpdated`). */
-    val updatedAt: Date = Date(),
 )

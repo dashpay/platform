@@ -360,22 +360,8 @@ class WalletManagerRoundTripTest {
             }
 
             // What the callbacks store for a drain's lock: a shielded top-up
-            // (5), already broadcast (1), with its operation id. The
-            // transaction only has to decode: version 3, type 0, one input
-            // (an outpoint, an empty script, a sequence), one output (a
-            // value, an empty script) and a lock time, consensus encoded.
-            val lockTransaction = java.io.ByteArrayOutputStream().apply {
-                write(byteArrayOf(3, 0, 0, 0)) // version, type
-                write(1) // input count
-                write(ByteArray(32) { 0x11 }) // previous txid
-                write(ByteArray(4)) // previous output index
-                write(0) // script length
-                write(ByteArray(4) { 0xFF.toByte() }) // sequence
-                write(1) // output count
-                write(ByteArray(8).also { it[0] = 0x10 }) // value
-                write(0) // script length
-                write(ByteArray(4)) // lock time
-            }.toByteArray()
+            // (5), already broadcast (1), with its operation id.
+            val lockTransaction = decodableLockTransaction()
             db.assetLockDao().upsert(
                 org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity(
                     outPointHex = org.dashfoundation.dashsdk.persistence.encodeOutPointHex(lockOutPoint),
@@ -442,4 +428,117 @@ class WalletManagerRoundTripTest {
             storeDir.deleteRecursively()
         }
     }
+
+    /**
+     * The shielded recipient recorded on an asset lock across a restart,
+     * offline, through the real JNI load path.
+     *
+     * A Core to shielded funding's lock is put in the store with the
+     * recipient it was built to pay, as the persistence callbacks leave it.
+     * A NEW manager over the same database restores the wallet, which hands
+     * Rust that recipient only through `onLoadAssetLockShieldedRecipient`.
+     * A resume naming another valid Orchard address is then refused with
+     * `AssetLockRecipientMismatch`. Rust decides that before any funding
+     * resolution, so nothing waits for a proof or reaches the network. A
+     * trampoline that dropped the recipient would let the resume through
+     * to funding instead.
+     *
+     * Not covered here: a resume to the recorded recipient, which needs
+     * funds and a network.
+     */
+    @Test
+    fun aResumeAfterARestartIsRefusedForAnotherRecipientThanTheLockRecorded() = runBlocking {
+        assumeTrue("the native library has no shielded support", Sdk.hasShielded())
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val storeDir = File(context.cacheDir, "shielded-recipient-round-trip-${System.nanoTime()}")
+        assertTrue(storeDir.mkdirs())
+        val storePath = File(storeDir, "shielded.sqlite").absolutePath
+        val lockTxid = ByteArray(32) { 4 }
+        val lockOutPoint = org.dashfoundation.dashsdk.persistence.makeOutpoint(lockTxid, 0)
+        try {
+            val walletId: ByteArray
+            val recorded: ByteArray
+            val other: ByteArray
+            PlatformWalletManager(sdk, Network.TESTNET, db, walletStorage).use { manager ->
+                manager.configureShielded(storePath)
+                walletId = manager.createWallet(
+                    mnemonic = testMnemonic,
+                    name = "shielded-recipient-round-trip",
+                    createDefaultAccounts = true,
+                ).walletId
+                manager.bindShielded(walletId, listOf(0))
+                // A second wallet only provides another valid Orchard address.
+                val otherWalletId = manager.createWallet(
+                    mnemonic = "legal winner thank year wave sausage worth useful legal winner " +
+                        "thank yellow",
+                    name = "another-recipient",
+                    createDefaultAccounts = true,
+                ).walletId
+                manager.bindShielded(otherWalletId, listOf(0))
+                recorded = checkNotNull(manager.shieldedDefaultAddress(walletId)) {
+                    "the bound wallet has a shielded address"
+                }
+                other = checkNotNull(manager.shieldedDefaultAddress(otherWalletId)) {
+                    "the other bound wallet has a shielded address"
+                }
+            }
+            assertTrue("two different recipients", !recorded.contentEquals(other))
+
+            // A shielded top-up (5), broadcast (1), with the recipient it
+            // was built to pay.
+            db.assetLockDao().upsert(
+                org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity(
+                    outPointHex = org.dashfoundation.dashsdk.persistence.encodeOutPointHex(lockOutPoint),
+                    walletId = walletId,
+                    transactionBytes = decodableLockTransaction(),
+                    fundingTypeRaw = 5,
+                    identityIndexRaw = 0,
+                    accountIndexRaw = 0,
+                    amountDuffs = 100_000,
+                    statusRaw = 1,
+                    shieldedRecipientRaw43 = recorded,
+                ),
+            )
+
+            PlatformWalletManager(sdk, Network.TESTNET, db, walletStorage).use { reloaded ->
+                reloaded.configureShielded(storePath)
+                assertTrue(reloaded.loadPersistedWallets().isNotEmpty())
+                reloaded.bindShielded(walletId, listOf(0))
+
+                val refused = runCatching {
+                    reloaded.shieldedResumeFundFromAssetLock(
+                        walletId = walletId,
+                        outPointTxid = lockTxid,
+                        outPointVout = 0,
+                        recipientRaw43 = other,
+                    )
+                }.exceptionOrNull()
+                assertTrue(
+                    "a resume to another recipient is refused as a mismatch: $refused",
+                    refused is org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet
+                        .AssetLockRecipientMismatch,
+                )
+            }
+        } finally {
+            storeDir.deleteRecursively()
+        }
+    }
+
+    /**
+     * An asset-lock transaction that only has to decode: version 3, type 0,
+     * one input (an outpoint, an empty script, a sequence), one output (a
+     * value, an empty script) and a lock time, consensus encoded.
+     */
+    private fun decodableLockTransaction(): ByteArray = java.io.ByteArrayOutputStream().apply {
+        write(byteArrayOf(3, 0, 0, 0)) // version, type
+        write(1) // input count
+        write(ByteArray(32) { 0x11 }) // previous txid
+        write(ByteArray(4)) // previous output index
+        write(0) // script length
+        write(ByteArray(4) { 0xFF.toByte() }) // sequence
+        write(1) // output count
+        write(ByteArray(8).also { it[0] = 0x10 }) // value
+        write(0) // script length
+        write(ByteArray(4)) // lock time
+    }.toByteArray()
 }

@@ -2258,15 +2258,13 @@ unsafe extern "C" fn tramp_persist_asset_lock_operation_id(
     })
 }
 
-/// What an asset-lock sidecar load (`onLoadAssetLockOperationId`,
-/// `onLoadAssetLockShieldedRecipient`) returned: JVM null is "this lock has
-/// none", `N` bytes is its value, and any other length is a malformed row,
-/// which fails the load.
-fn loaded_sidecar<const N: usize>(returned: Option<&[u8]>) -> Result<Option<[u8; N]>, ()> {
-    match returned {
-        None => Ok(None),
-        Some(bytes) => bytes.try_into().map(Some).map_err(|_| ()),
-    }
+/// Whether a non-null array an asset-lock sidecar load
+/// (`onLoadAssetLockOperationId`, `onLoadAssetLockShieldedRecipient`)
+/// returned has the value's width. JVM null is "this lock has none"; an
+/// array of any other length is a malformed row, which fails the load and
+/// is never copied.
+fn sidecar_length_accepted<const N: usize>(length: i32) -> bool {
+    usize::try_from(length) == Ok(N)
 }
 
 /// Call the bridge's `(walletId, outPoint) -> ByteArray?` sidecar load
@@ -2304,15 +2302,21 @@ unsafe fn load_asset_lock_sidecar<const N: usize>(
             )?
             .l()?;
         if returned.is_null() {
-            return Ok(None);
+            return Ok(Ok(None));
         }
         let returned: JByteArray = returned.into();
-        env.convert_byte_array(&returned).map(Some)
+        // The width first: a malformed value is refused without copying it.
+        if !sidecar_length_accepted::<N>(env.get_array_length(&returned)?) {
+            return Ok(Err(()));
+        }
+        let mut value = [0i8; N];
+        env.get_byte_array_region(&returned, 0, &mut value)?;
+        Ok(Ok(Some(value.map(|b| b as u8))))
     });
-    let Some(returned) = loaded else {
+    let Some(loaded) = loaded else {
         return ERR_JNI;
     };
-    match loaded_sidecar::<N>(returned.as_deref()) {
+    match loaded {
         Ok(Some(value)) => {
             ptr::copy_nonoverlapping(value.as_ptr(), out_value, N);
             *out_found = true;
@@ -5930,34 +5934,27 @@ mod tests {
         );
     }
 
-    /// A lock with no operation id loads as absent, a 16-byte value as its
-    /// id, and any other length fails the load instead of reading as absent.
+    /// A loaded operation id is accepted only at 16 bytes; any other length
+    /// fails the load before the array is copied.
     #[test]
-    fn should_read_a_loaded_operation_id_as_absent_or_sixteen_bytes_and_fail_otherwise() {
-        let loaded = loaded_sidecar::<ASSET_LOCK_OPERATION_ID_LEN>;
-        assert_eq!(loaded(None), Ok(None));
-        assert_eq!(loaded(Some(&[9; 16])), Ok(Some([9; 16])));
-        assert_eq!(loaded(Some(&[])), Err(()));
-        assert_eq!(loaded(Some(&[9; 15])), Err(()));
-        assert_eq!(loaded(Some(&[9; 17])), Err(()));
+    fn should_accept_a_loaded_operation_id_only_at_sixteen_bytes() {
+        let accepted = sidecar_length_accepted::<ASSET_LOCK_OPERATION_ID_LEN>;
+        assert!(accepted(16));
+        for length in [0, 15, 17, -1, i32::MAX] {
+            assert!(!accepted(length), "length {length}");
+        }
     }
 
-    /// A lock with no recipient loads as absent, a 43-byte value as its
-    /// recipient, and any other length fails the load instead of reading as
-    /// absent.
+    /// A loaded shielded recipient is accepted only at 43 bytes; any other
+    /// length fails the load before the array is copied.
     #[test]
-    fn should_read_a_loaded_shielded_recipient_as_absent_or_43_bytes_and_fail_otherwise() {
-        let loaded = loaded_sidecar::<ASSET_LOCK_SHIELDED_RECIPIENT_LEN>;
-        assert_eq!(loaded(None), Ok(None));
-        assert_eq!(loaded(Some(&[7; 43])), Ok(Some([7; 43])));
-        assert_eq!(loaded(Some(&[])), Err(()));
-        assert_eq!(loaded(Some(&[7; 42])), Err(()));
-        assert_eq!(loaded(Some(&[7; 44])), Err(()));
-        assert_eq!(
-            loaded(Some(&[7; 16])),
-            Err(()),
-            "an operation id is not a recipient"
-        );
+    fn should_accept_a_loaded_shielded_recipient_only_at_43_bytes() {
+        let accepted = sidecar_length_accepted::<ASSET_LOCK_SHIELDED_RECIPIENT_LEN>;
+        assert!(accepted(43));
+        for length in [0, 42, 44, -1, i32::MAX] {
+            assert!(!accepted(length), "length {length}");
+        }
+        assert!(!accepted(16), "an operation id is not a recipient");
     }
 
     /// A read position and a shielded address survive the packed arrays the
