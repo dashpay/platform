@@ -381,7 +381,8 @@ internal fun clearedRecordStillHolds(
  * against the row at [revisionAtStart]; null leaves it as it was ([PickedVotingKeyCheck.Dropped],
  * [PickedVotingKeyCheck.NotResolved]). What Rust said to record, or what the helper's own read
  * found, stands until Room delivers that revision; a refusal that could not be saved stands for
- * good, so a refusal is never lost in between.
+ * good, so a refusal is never lost in between. A pick counts as checked only when no check was
+ * needed, Platform could not answer, or the check's result was saved.
  */
 internal fun nextPickedState(
     previous: PickedKeyCheckState?,
@@ -390,7 +391,12 @@ internal fun nextPickedState(
     revisionAtStart: Long,
 ): PickedKeyCheckState? = when (result) {
     is PickedVotingKeyCheck.Failed -> if (result.unsaved != null) {
-        PickedKeyCheckState(identifier, result.unsaved, savedRevision = null, checkedRevision = revisionAtStart)
+        // An answer that could not be saved is applied (a refusal stands) but does not count
+        // as a finished check: the key stays unpublished until a pick's check is saved
+        // (Swift, after #6145).
+        PickedKeyCheckState(
+            identifier, result.unsaved, finished = false, savedRevision = null, checkedRevision = revisionAtStart,
+        )
     } else {
         (previous ?: PickedKeyCheckState(identifier)).copy(finished = true, checkedRevision = revisionAtStart)
     }
@@ -819,6 +825,8 @@ fun MasternodeVoterSection(
     var checkFailure by remember { mutableStateOf<Pair<String, String>?>(null) }
     // Why a row with no recorded pro_tx_hash could not be resolved, by identity hex.
     var notResolved by remember { mutableStateOf<Pair<String, String>?>(null) }
+    // Whether [checkFailure] left the key unpublished (a result that could not be saved).
+    var checkFailureHoldsVote by remember { mutableStateOf(false) }
     var pickedChecks by remember { mutableStateOf<Map<String, PickedKeyCheckState>>(emptyMap()) }
     // Counts explicit picks, so picking the shown identity again starts its check again.
     var pickRequest by remember { mutableIntStateOf(0) }
@@ -927,7 +935,10 @@ fun MasternodeVoterSection(
             if (checkingIdentityHex == hex) checkingIdentityHex = null
         }
         when (result) {
-            is PickedVotingKeyCheck.Failed -> checkFailure = hex to result.message
+            is PickedVotingKeyCheck.Failed -> {
+                checkFailure = hex to result.message
+                checkFailureHoldsVote = result.unsaved != null
+            }
             is PickedVotingKeyCheck.Recorded, is PickedVotingKeyCheck.NotNeeded ->
                 if (checkFailure?.first == hex) checkFailure = null
             is PickedVotingKeyCheck.NotResolved -> notResolved = hex to result.message
@@ -988,6 +999,7 @@ fun MasternodeVoterSection(
                     isChecking = checkingIdentityHex == selectedHex,
                     failure = checkFailure?.takeIf { it.first == selectedHex }?.second,
                     notResolved = notResolved?.takeIf { it.first == selectedHex }?.second,
+                    failureHoldsVote = checkFailureHoldsVote,
                     modifier = Modifier.testTag("$testTagPrefix.voterKeyCheck"),
                 )
             }
@@ -1083,10 +1095,11 @@ private fun VotingKeyCheckStatus(
     keyUse: MasternodeRecordedVotingKeyUse?,
     isChecking: Boolean,
     failure: String?,
+    failureHoldsVote: Boolean,
     notResolved: String?,
     modifier: Modifier = Modifier,
 ) {
-    when (val text = votingKeyCheckStatusText(state, keyUse, isChecking, failure, notResolved)) {
+    when (val text = votingKeyCheckStatusText(state, keyUse, isChecking, failure, notResolved = notResolved, failureHoldsVote = failureHoldsVote)) {
         null -> Unit
         else -> Row(
             modifier = modifier,
@@ -1119,6 +1132,8 @@ internal fun votingKeyCheckStatusText(
     isChecking: Boolean,
     failure: String?,
     notResolved: String? = null,
+    /** Whether [failure] left the key unpublished (its check's result could not be saved). */
+    failureHoldsVote: Boolean = false,
 ): Pair<String, Boolean>? {
     if (isChecking) return "Checking the voting key..." to false
     if (state?.identifier != null && state.storedAddress == null) {
@@ -1134,6 +1149,8 @@ internal fun votingKeyCheckStatusText(
         keyUse?.canVote == false && recorded is MasternodeVotingKeyCheck.Invalid ->
             "This voting key cannot vote for this masternode: ${recorded.message} Load the " +
                 "identity again with its voting key under Identities, Load Identity." to true
+        failure != null && failureHoldsVote ->
+            "$failure It cannot vote until a check is saved: pick this identity again." to true
         failure != null -> "$failure You can still vote with it." to false
         keyUse?.checkBeforeUse == true && recorded is MasternodeVotingKeyCheck.Undetermined ->
             "${recorded.message} You can still vote with it; it is checked again when you " +
