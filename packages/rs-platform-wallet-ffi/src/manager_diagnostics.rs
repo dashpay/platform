@@ -294,6 +294,7 @@ pub unsafe extern "C" fn platform_wallet_tracked_asset_locks_list(
                 .map(|identity| identity.to_buffer())
                 .unwrap_or([0; 32]),
             identity_recipient_unassigned: s.identity_recipient_unassigned,
+            has_platform_address_recipients: s.has_platform_address_recipients,
         })
         .collect();
     let count = entries.len();

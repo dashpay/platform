@@ -978,6 +978,10 @@ pub struct TrackedAssetLockEntryFFI {
     /// recipient with `platform_wallet_assign_identity_top_up_recipient`,
     /// rather than resuming it into one of the host's identities.
     pub identity_recipient_unassigned: bool,
+    /// An external Platform-address funding (lock type 4) that recorded the
+    /// addresses it pays: a resume pays exactly those and refuses anything
+    /// else, an owned funding included.
+    pub has_platform_address_recipients: bool,
 }
 
 /// Snapshot of the per-account metadata for one account. Strings are

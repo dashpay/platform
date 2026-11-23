@@ -463,24 +463,19 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_external_s
 /// [`platform_address_wallet_resume_fund_from_asset_lock_signer`] (same
 /// resume-by-outpoint shape).
 ///
-/// ## Why the recipients are a parameter and not recovered from state
+/// ## The recipients must be the ones the lock recorded
 ///
-/// The tracked asset lock records the L1 outpoint, its status and its
-/// proof — it does NOT record who the credits were destined for. Nothing
-/// on the Rust side ever learns the recipient set: it is chosen by the
-/// host at ST-submit time and, for a third-party payment, is not even
-/// derivable from the wallet's own key material. So a resume must be
-/// told the recipients again, exactly as the shielded resume entry point
-/// is (`platform_wallet_manager_shielded_resume_fund_from_asset_lock`).
-///
-/// The practical consequence is worth stating plainly: a resume with a
-/// DIFFERENT recipient set than the original attempt is accepted, and
-/// pays the new set. That is the correct behaviour for a flow whose
-/// first attempt never landed on Platform — the asset lock is a bearer
-/// input, not a commitment to a destination — but it does mean the host
-/// is responsible for round-tripping the intended recipient (which is
-/// what `PersistentAssetLock.recipientPlatformAddressHash` /
-/// `recipientIsExternal` exist for on the Swift side).
+/// The lock recorded its recipients when it was built
+/// (`has_platform_address_recipients` on `TrackedAssetLockFFI`; read them
+/// with `platform_wallet_get_asset_lock_platform_address_recipients`). Pass
+/// exactly those back: a resume with a different recipient set, or any
+/// resume of this lock through the owned entry point, is refused with
+/// `ErrorAssetLockRecipientMismatch` before anything is submitted, so the
+/// lock is never consumed into the wallet instead of paying the payee.
+/// [`platform_address_wallet_resume_fund_from_asset_lock_to_recorded_recipients_signer`]
+/// resumes it without the host naming them. A Platform-address lock that
+/// records none is the wallet's own and pays whatever recipient set the
+/// caller passes, as before.
 ///
 /// ## `fee_strategy` / `fee_strategy_count` are IGNORED
 ///
@@ -608,6 +603,93 @@ pub unsafe extern "C" fn platform_address_wallet_resume_fund_from_asset_lock_ext
     PlatformWalletFFIResult::ok()
 }
 
+/// Resume an interrupted external Platform-address funding to the
+/// recipients its tracked lock recorded, without the host naming them, so a
+/// recovery cannot redirect the payment or consume it into the wallet. The
+/// balances of the platform payment account holding the recorded remainder
+/// address are updated.
+///
+/// Wraps
+/// `PlatformAddressWallet::resume_platform_address_funding_to_recorded_recipients`.
+/// Refused before anything is submitted for a lock that is not tracked
+/// (`ErrorAssetLockNotTracked`), of another funding type
+/// (`ErrorAssetLockFundingMismatch`), consumed (`ErrorAssetLockAlreadyConsumed`),
+/// recording no recipients (an owned funding, resumed with
+/// [`platform_address_wallet_resume_fund_from_asset_lock_signer`]:
+/// `ErrorInvalidParameter`), or whose remainder address no platform payment
+/// account of the wallet holds.
+///
+/// # Safety
+/// - `out_point` must be non-null, properly aligned, and point to one fully
+///   initialized `OutPointFFI` that stays readable until this call returns.
+///   It is read once, by value.
+/// - `out_changeset` must be non-null, properly aligned and valid for writes
+///   of one `PlatformAddressChangeSetFFI`. It is overwritten unconditionally;
+///   any changeset already stored there is leaked rather than freed. The
+///   caller releases the written changeset with
+///   `platform_address_wallet_free_changeset`.
+/// - `signer_address_handle` must be a valid, non-destroyed
+///   `*mut SignerHandle` produced by `dash_sdk_signer_create_with_ctx`, and
+///   `core_signer_handle` a valid, non-destroyed `*mut MnemonicResolverHandle`
+///   produced by [`crate::dash_sdk_mnemonic_resolver_create`]. Both stay
+///   owned by the caller and alive, unmoved and unmutated, until this call
+///   returns.
+/// - `handle` must be a live `PlatformAddressWallet` handle.
+#[no_mangle]
+pub unsafe extern "C" fn platform_address_wallet_resume_fund_from_asset_lock_to_recorded_recipients_signer(
+    handle: Handle,
+    out_point: *const OutPointFFI,
+    signer_address_handle: *mut SignerHandle,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_changeset: *mut PlatformAddressChangeSetFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_changeset);
+    // Sentinel first — see `platform_address_wallet_fund_from_asset_lock_signer`.
+    *out_changeset = PlatformAddressChangeSetFFI::empty();
+    check_ptr!(out_point);
+    check_ptr!(signer_address_handle);
+    check_ptr!(core_signer_handle);
+
+    let out_point_ffi = *out_point;
+    let resume_outpoint = dashcore::OutPoint {
+        txid: dashcore::Txid::from_byte_array(out_point_ffi.txid),
+        vout: out_point_ffi.vout,
+    };
+
+    let signer_addr = signer_address_handle as usize;
+    let core_signer_addr = core_signer_handle as usize;
+
+    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
+        let wallet_clone = wallet.clone();
+        let wallet_id = wallet.wallet_id();
+        let network = wallet.network();
+        block_on_worker(async move {
+            // SAFETY: see the fn-level safety doc — both handles are
+            // pinned alive for the duration of this FFI call.
+            let address_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
+            let asset_lock_signer = unsafe {
+                MnemonicResolverCoreSigner::new(
+                    core_signer_addr as *mut MnemonicResolverHandle,
+                    wallet_id,
+                    network,
+                )
+            };
+            wallet_clone
+                .resume_platform_address_funding_to_recorded_recipients(
+                    resume_outpoint,
+                    address_signer,
+                    &asset_lock_signer,
+                    None,
+                )
+                .await
+        })
+    });
+    let result = unwrap_option_or_return!(option);
+    let changeset = unwrap_result_or_return!(result);
+    *out_changeset = PlatformAddressChangeSetFFI::from(&changeset);
+    PlatformWalletFFIResult::ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -681,5 +763,43 @@ mod tests {
         let err = unsafe { decode_funding_addresses(entries.as_ptr(), entries.len()) }
             .expect_err("an unknown address-type discriminant must be rejected");
         assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+    }
+
+    /// The recipient-less resume checks its pointers before anything else,
+    /// leaves the empty changeset sentinel, and reports an unknown wallet
+    /// handle as not found.
+    #[test]
+    fn should_refuse_a_recorded_recipients_resume_with_a_null_pointer_or_an_unknown_wallet() {
+        let op = OutPointFFI {
+            txid: [0u8; 32],
+            vout: 0,
+        };
+        let signer = std::ptr::NonNull::<SignerHandle>::dangling().as_ptr();
+        let core_signer = std::ptr::NonNull::<MnemonicResolverHandle>::dangling().as_ptr();
+        let mut changeset = PlatformAddressChangeSetFFI::empty();
+        let call = |op: *const OutPointFFI,
+                    signer: *mut SignerHandle,
+                    core_signer: *mut MnemonicResolverHandle,
+                    changeset: *mut PlatformAddressChangeSetFFI| unsafe {
+            platform_address_wallet_resume_fund_from_asset_lock_to_recorded_recipients_signer(
+                u64::MAX,
+                op,
+                signer,
+                core_signer,
+                changeset,
+            )
+        };
+        for code in [
+            call(&op, signer, core_signer, std::ptr::null_mut()).code,
+            call(std::ptr::null(), signer, core_signer, &mut changeset).code,
+            call(&op, std::ptr::null_mut(), core_signer, &mut changeset).code,
+            call(&op, signer, std::ptr::null_mut(), &mut changeset).code,
+        ] {
+            assert_eq!(code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        }
+        assert_eq!(
+            call(&op, signer, core_signer, &mut changeset).code,
+            PlatformWalletFFIResultCode::NotFound
+        );
     }
 }

@@ -666,6 +666,11 @@ pub enum PlatformWalletFFIResultCode {
     /// different identity than the one its row recorded
     /// (`PlatformWalletError::AssetLockIdentityRecipientMismatch`): nothing
     /// was submitted; resume to the recorded identity, which the row exposes.
+    ///
+    /// Also an external Platform-address funding lock (it recorded the
+    /// addresses it pays) resumed as an owned funding or to other recipients
+    /// (`PlatformWalletError::AssetLockPlatformAddressRecipientMismatch`):
+    /// nothing was submitted; resume to the recorded recipients.
     ErrorAssetLockRecipientMismatch = 61,
 
     /// Maps `PlatformWalletError::PrivateContactRequestNeedsPrivateReply`:
@@ -1283,7 +1288,8 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
                 PlatformWalletFFIResultCode::ErrorAssetLockTooManyInputs
             }
             PlatformWalletError::AssetLockRecipientMismatch { .. }
-            | PlatformWalletError::AssetLockIdentityRecipientMismatch { .. } => {
+            | PlatformWalletError::AssetLockIdentityRecipientMismatch { .. }
+            | PlatformWalletError::AssetLockPlatformAddressRecipientMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockRecipientMismatch
             }
             PlatformWalletError::AssetLockRecipientUnknown(..) => {
@@ -2692,6 +2698,26 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorAssetLockRecipientMismatch
         );
         assert!(message_of(&result).contains(&format!("{recorded}")));
+    }
+
+    #[test]
+    fn should_map_an_external_address_funding_resumed_elsewhere_to_61() {
+        use dpp::address_funds::PlatformAddress;
+        let recorded = platform_wallet::changeset::PlatformAddressRecipients::new(
+            [(PlatformAddress::P2pkh([3u8; 20]), None)].into(),
+        )
+        .expect("one remainder");
+        let result: PlatformWalletFFIResult =
+            PlatformWalletError::AssetLockPlatformAddressRecipientMismatch {
+                out_point: dashcore::OutPoint::null(),
+                recorded: Box::new(recorded),
+            }
+            .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockRecipientMismatch
+        );
+        assert!(message_of(&result).contains("recorded Platform addresses"));
     }
 
     /// A bound top-up lock whose identity the wallet has not loaded yet
