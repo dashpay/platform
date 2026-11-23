@@ -2624,7 +2624,7 @@ mod tests {
 
     /// The invitation claim's outcomes keep their own pinned codes, so a
     /// host can tell "this wallet already has an identity" (63) and "your
-    /// own claim landed" (64) from "someone else claimed it" (24), and the
+    /// own claim landed" (64) from "not shown to be ours" (24), and the
     /// two retry signals (65, 66) from an unknown failure.
     #[test]
     fn should_keep_distinct_pinned_codes_for_invitation_claim_outcomes() {

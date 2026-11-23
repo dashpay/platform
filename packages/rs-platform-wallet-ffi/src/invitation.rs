@@ -257,8 +257,9 @@ pub unsafe extern "C" fn platform_wallet_create_invitation(
 /// `ErrorInvitationClaimedByThisWallet` (an earlier claim of this wallet
 /// landed, or the invitation's identity is one this wallet already records;
 /// JSON detail names the identity), `ErrorAssetLockAlreadyConsumed` (claimed
-/// by an identity that does not hold the master key at `identity_index` and
-/// that this wallet does not record — usually someone else), `ErrorInvitationKeysAlreadyRegistered` (another
+/// by an identity that holds none of the submitted ECDSA or BLS keys and
+/// that this wallet does not record — not shown to be this wallet's, usually
+/// someone else's), `ErrorInvitationKeysAlreadyRegistered` (another
 /// identity holds a submitted key) and `ErrorInvitationNotReady` (the lookups
 /// could not be verified yet). `ErrorInvitationKeysAlreadyRegistered` is also
 /// returned when a key was registered after the lookup and Platform refused

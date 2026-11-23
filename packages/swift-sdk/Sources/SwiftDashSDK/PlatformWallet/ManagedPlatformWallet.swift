@@ -2887,12 +2887,16 @@ extension ManagedPlatformWallet {
     /// the voucher: it throws `.invitationClaimedByThisWallet` (an earlier
     /// claim of this wallet landed, or the wallet already records the
     /// invitation's identity; load that identity),
-    /// `.assetLockAlreadyConsumed` (claimed by an identity that does not hold
-    /// the master key at `identityIndex` and that the wallet does not record —
-    /// usually someone else),
-    /// `.invitationKeysAlreadyRegistered` (another identity holds these keys)
-    /// or `.invitationNotReady` (retry once synced). `.assetLockNotChainLocked`
-    /// means retry later. A node that has not seen an earlier landed claim
+    /// `.assetLockAlreadyConsumed` (claimed by an identity that holds none of
+    /// the submitted ECDSA or BLS keys and that the wallet does not record —
+    /// not shown to be this wallet's, usually someone else's),
+    /// `.invitationKeysAlreadyRegistered` with no consensus error (another
+    /// identity holds these keys)
+    /// or `.invitationNotReady` (retry once synced). The same
+    /// `.invitationKeysAlreadyRegistered` carrying a consensus error is
+    /// different: a key was registered after the lookup, Platform refused
+    /// the broadcast, and the voucher may have been charged.
+    /// `.assetLockNotChainLocked` means retry later. A node that has not seen an earlier landed claim
     /// lets the retry through; Platform then refuses it, and the identity is
     /// returned as the claim's result when it carries exactly these keys, or
     /// reported as `.invitationClaimedByThisWallet` / `.assetLockAlreadyConsumed`

@@ -129,7 +129,7 @@ pub enum PlatformWalletError {
     #[error("invitation was already claimed by this wallet as identity {identity_id}")]
     InvitationClaimedByThisWallet { identity_id: Identifier },
 
-    /// Someone else claimed the invitation first; nothing was broadcast unless a node that lagged behind let the claim through.
+    /// The invitation is claimed and the claim is not shown to be this wallet's (usually someone else's): the identity holds none of the submitted ECDSA or BLS keys. Nothing was broadcast unless a node that lagged behind let the claim through.
     #[error("invitation was already claimed by identity {identity_id}")]
     InvitationAlreadyClaimed { identity_id: Identifier },
 

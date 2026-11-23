@@ -170,8 +170,8 @@ pub enum InvitationError {
     #[error("{0}")]
     NotChainLocked(String),
 
-    /// The invitation's identity already exists and holds the claimant's
-    /// master key: an earlier claim of the claimant landed (for example one
+    /// The invitation's identity already exists and holds one of the
+    /// claimant's submitted ECDSA or BLS keys: an earlier claim of the claimant landed (for example one
     /// whose result was lost when the app stopped). Usually found before the
     /// broadcast; Platform's consumed-outpoint refusal also reports it when a
     /// node that lagged behind let the claim through and the identity's keys
@@ -181,10 +181,16 @@ pub enum InvitationError {
     #[error("invitation was already claimed by this claimant as identity {identity_id}")]
     ClaimedByThisWallet { identity_id: Identifier },
 
-    /// Someone else claimed the invitation: an identity exists at its id and
-    /// does not hold the claimant's master key. Usually found before the
-    /// broadcast, else from Platform's consumed-outpoint refusal.
-    #[error("invitation was already claimed by identity {identity_id}")]
+    /// The invitation is claimed and the claim is not shown to be the
+    /// claimant's: an identity exists at its id and holds none of the
+    /// claimant's submitted ECDSA or BLS keys. Usually someone else's claim;
+    /// a claimant that submitted only hash keys (`ECDSA_HASH160`) also gets
+    /// this for its own landed claim, since an equal hash proves nothing.
+    /// Usually found before the broadcast, else from Platform's
+    /// consumed-outpoint refusal.
+    #[error(
+        "invitation was already claimed by identity {identity_id}, not shown to be this claimant's"
+    )]
     AlreadyClaimed { identity_id: Identifier },
 
     /// A submitted key is already registered to another identity, so
@@ -1093,18 +1099,18 @@ impl Sdk {
         let prospective_identity_id = identity_id_for_out_point(out_point);
 
         let key_hashes = claim_key_hashes(&keys_map)?;
-        let master_key = keys_map
-            .get(&0)
-            .ok_or_else(|| invalid("keys_map must include key id=0"))?
-            .clone();
+        if !keys_map.contains_key(&0) {
+            return Err(invalid("keys_map must include key id=0"));
+        }
+        // The submission takes `keys_map`; the preflight reads its own copy.
+        let submitted_keys = keys_map.clone();
         let preflight = preflight_claim(
             prospective_identity_id,
-            &master_key,
+            &submitted_keys,
             &key_hashes,
             || Identity::fetch(self, prospective_identity_id),
             |hash| Identity::fetch(self, PublicKeyHash(hash)),
         );
-        let master_key = &master_key;
 
         claim_unless_refused(preflight, || async move {
             // Checked here, after the preflight: its lookups are proved, so the
@@ -1163,13 +1169,9 @@ impl Sdk {
             // reaches here is a claim repeated after an earlier one landed,
             // refused because its outpoint is consumed: adopt the identity
             // when it carries exactly the keys we submitted.
-            adopt_already_landed_claim(
-                submitted,
-                &out_point,
-                placeholder.public_keys(),
-                master_key,
-                || Identity::fetch(self, prospective_identity_id),
-            )
+            adopt_already_landed_claim(submitted, &out_point, placeholder.public_keys(), || {
+                Identity::fetch(self, prospective_identity_id)
+            })
             .await
         })
         .await
@@ -1215,8 +1217,10 @@ where
 /// Whether `identity` holds `master_key`: a key of the same signing type
 /// (ECDSA or BLS) with the same key data.
 ///
-/// This is how a claimant recognizes the identity its own earlier claim
-/// created, both in the claim's preflight and in the claim status. Only the
+/// This is how the claim status recognizes the identity the claimant's own
+/// earlier claim created; the claim itself applies it to every key it
+/// submitted, so a hash-only master is recognized by a full key beside it.
+/// Only the
 /// key type and data count, not the purpose, security level or bounds,
 /// because Platform accepts an ECDSA or BLS key into an identity only with a
 /// signature made by its private key: nobody else can put our key into their
@@ -1231,6 +1235,19 @@ pub fn identity_holds_master_key(identity: &Identity, master_key: &IdentityPubli
         .any(|key| key.key_type() == master_key.key_type() && key.data() == master_key.data())
 }
 
+/// Whether `identity` holds any of the claim's `submitted` keys, by the rule
+/// of [`identity_holds_master_key`]: only an ECDSA or BLS key counts, because
+/// only those are signed into an identity. A claim whose master is a hash-only
+/// key is still recognized by a full key it submitted beside it.
+fn identity_holds_a_submitted_key(
+    identity: &Identity,
+    submitted: &BTreeMap<KeyID, IdentityPublicKey>,
+) -> bool {
+    submitted
+        .values()
+        .any(|key| identity_holds_master_key(identity, key))
+}
+
 /// Look the claim up before it is broadcast, so that it is never sent when
 /// Platform would refuse it and charge the voucher.
 ///
@@ -1238,7 +1255,8 @@ pub fn identity_holds_master_key(identity: &Identity, master_key: &IdentityPubli
 /// decides the claim alone, so the claim's key hashes are not sent. Otherwise
 /// fetches the identity under every submitted key hash, concurrently, and
 /// decides from all the answers, the invitation's identity first:
-/// 1. it exists and holds `master_key` → [`InvitationError::ClaimedByThisWallet`];
+/// 1. it exists and holds a submitted ECDSA or BLS key →
+///    [`InvitationError::ClaimedByThisWallet`];
 /// 2. it exists otherwise → [`InvitationError::AlreadyClaimed`];
 /// 3. any key hash names the invitation's identity → as in 1 and 2 (the
 ///    lookup by id failed or reached a node that had not seen it yet),
@@ -1254,7 +1272,7 @@ pub fn identity_holds_master_key(identity: &Identity, master_key: &IdentityPubli
 /// passes `Identity::fetch` by id and by `PublicKeyHash`).
 async fn preflight_claim<FI, FIFut, FH, FHFut>(
     prospective_identity_id: Identifier,
-    master_key: &IdentityPublicKey,
+    submitted_keys: &BTreeMap<KeyID, IdentityPublicKey>,
     key_hashes: &[[u8; 20]],
     fetch_by_id: FI,
     fetch_by_hash: FH,
@@ -1270,7 +1288,7 @@ where
     let mut lookup_error = None;
     let mut foreign_owner = None;
     match fetch_by_id().await {
-        Ok(Some(identity)) => return Err(claimed_by(&identity, master_key)),
+        Ok(Some(identity)) => return Err(claimed_by(&identity, submitted_keys)),
         Ok(None) => {}
         Err(error) => lookup_error = Some(error),
     }
@@ -1282,7 +1300,7 @@ where
             // the invitation's identity can answer a key hash while the one
             // asked by id had not seen it yet.
             Ok(Some(identity)) if identity.id() == prospective_identity_id => {
-                return Err(claimed_by(&identity, master_key));
+                return Err(claimed_by(&identity, submitted_keys));
             }
             // A later key hash may still name the invitation's identity,
             // which decides first.
@@ -1314,9 +1332,14 @@ where
     }
 }
 
-/// Whose claim the invitation's existing identity is.
-fn claimed_by(identity: &Identity, master_key: &IdentityPublicKey) -> InvitationError {
-    if identity_holds_master_key(identity, master_key) {
+/// Whose claim the invitation's existing identity is: the claimant's only
+/// when it holds a submitted ECDSA or BLS key; otherwise not shown to be
+/// the claimant's.
+fn claimed_by(
+    identity: &Identity,
+    submitted_keys: &BTreeMap<KeyID, IdentityPublicKey>,
+) -> InvitationError {
+    if identity_holds_a_submitted_key(identity, submitted_keys) {
         InvitationError::ClaimedByThisWallet {
             identity_id: identity.id(),
         }
@@ -1550,19 +1573,19 @@ fn identity_id_for_out_point(out_point: OutPoint) -> Identifier {
 /// Recognize a claim Platform already executed. A claim repeated after an
 /// earlier attempt landed (reported as a failure, or interrupted) is refused
 /// because its outpoint is consumed; the identity at the prospective id is
-/// ours when it carries exactly the keys we submitted, and is then the
-/// claim's result. Another identity there is reported as whose claim it is
-/// ([`InvitationError::ClaimedByThisWallet`] when it holds our master key,
-/// else [`InvitationError::AlreadyClaimed`]); no identity or a failed lookup
-/// reports the original rejection.
+/// ours when it carries exactly the keys we submitted, at least one of them
+/// an ECDSA or BLS key, and is then the claim's result. Another identity
+/// there is reported as whose claim it is
+/// ([`InvitationError::ClaimedByThisWallet`] when it holds a submitted ECDSA
+/// or BLS key, else [`InvitationError::AlreadyClaimed`]); no identity or a
+/// failed lookup reports the original rejection.
 ///
-/// `master_key` is the submitted key 0. `fetch` looks up the identity at the
-/// prospective id: the injectable seam (production passes `Identity::fetch`).
+/// `fetch` looks up the identity at the prospective id: the injectable seam
+/// (production passes `Identity::fetch`).
 async fn adopt_already_landed_claim<F, Fut>(
     submitted: Result<Identity, InvitationError>,
     out_point: &OutPoint,
     submitted_keys: &BTreeMap<KeyID, IdentityPublicKey>,
-    master_key: &IdentityPublicKey,
     fetch: F,
 ) -> Result<Identity, InvitationError>
 where
@@ -1584,8 +1607,8 @@ where
             Ok(identity)
         }
         // Not exactly our submission, but whose claim it is still matters:
-        // our master key at another index, or keys changed since, is ours.
-        Ok(Some(identity)) => Err(claimed_by(&identity, master_key)),
+        // our key at another index, or keys changed since, is ours.
+        Ok(Some(identity)) => Err(claimed_by(&identity, submitted_keys)),
         Ok(None) => Err(InvitationError::Sdk(error)),
         Err(lookup) => {
             tracing::warn!(
@@ -1604,6 +1627,8 @@ where
 /// Key data is what only our signer could have produced, so a match means the
 /// identity was created by our claim, not by a finder of the link; the other
 /// fields (purpose, security level, bounds, limits) are what we asked for.
+/// That holds only for ECDSA and BLS keys, which Platform admits with a
+/// signature: a hash-only key set anyone could copy, so it never matches.
 fn identity_carries_keys(
     identity: &Identity,
     expected: &BTreeMap<KeyID, IdentityPublicKey>,
@@ -1614,7 +1639,8 @@ fn identity_carries_keys(
         key
     };
     let actual = identity.public_keys();
-    actual.len() == expected.len()
+    identity_holds_a_submitted_key(identity, expected)
+        && actual.len() == expected.len()
         && expected.iter().all(|(id, key)| {
             actual
                 .get(id)
@@ -2416,6 +2442,28 @@ mod tests {
         [(0, test_key(0, 1)), (1, test_key(1, 2))].into()
     }
 
+    /// A hash-only (`ECDSA_HASH160`) key: Platform admits it without a
+    /// signature, so it proves nothing about who submitted it.
+    fn hash_key(id: KeyID, byte: u8) -> IdentityPublicKey {
+        use dpp::identity::KeyType;
+        use dpp::platform_value::BinaryData;
+
+        let mut key = test_key(id, byte);
+        key.set_key_type(KeyType::ECDSA_HASH160);
+        key.set_data(BinaryData::new(vec![byte; 20]));
+        key
+    }
+
+    /// A hash-only master beside our full ECDSA key 1.
+    fn hash_master_keys() -> BTreeMap<KeyID, IdentityPublicKey> {
+        [(0, hash_key(0, 1)), (1, test_key(1, 2))].into()
+    }
+
+    /// Only hash-only keys: nothing in it was signed.
+    fn all_hash_keys() -> BTreeMap<KeyID, IdentityPublicKey> {
+        [(0, hash_key(0, 1)), (1, hash_key(1, 2))].into()
+    }
+
     /// A claim that already landed is recognized as ours only by its keys:
     /// the same key set is ours, anything else (a finder of the link claiming
     /// first) is not.
@@ -2431,6 +2479,23 @@ mod tests {
         assert!(!identity_carries_keys(&identity_with_keys(theirs), &ours));
         let fewer: BTreeMap<KeyID, IdentityPublicKey> = [(0, test_key(0, 1))].into();
         assert!(!identity_carries_keys(&identity_with_keys(fewer), &ours));
+    }
+
+    /// An exact match counts only through a signed key: a hash-only master
+    /// beside our full key matches, a set of hash-only keys anyone could
+    /// copy never does.
+    #[test]
+    fn should_recognize_an_exact_match_only_through_a_full_key() {
+        let hash_master = hash_master_keys();
+        assert!(identity_carries_keys(
+            &identity_with_keys(hash_master.clone()),
+            &hash_master
+        ));
+        let all_hash = all_hash_keys();
+        assert!(!identity_carries_keys(
+            &identity_with_keys(all_hash.clone()),
+            &all_hash
+        ));
     }
 
     /// Matching key data is not enough: a key that differs from what we
@@ -2735,7 +2800,7 @@ mod tests {
         use std::cell::RefCell;
 
         use super::super::{claim_unless_refused, preflight_claim, Error, InvitationError};
-        use super::{identity_with_keys, our_keys, test_key};
+        use super::{all_hash_keys, hash_master_keys, identity_with_keys, our_keys, test_key};
         use crate::error::ContextProviderError;
         use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
         use dpp::identity::{Identity, IdentityPublicKey, KeyID};
@@ -2775,11 +2840,19 @@ mod tests {
             by_id: Result<Option<Identity>, Error>,
             by_hash: impl Fn([u8; 20]) -> Result<Option<Identity>, Error>,
         ) -> (Result<(), InvitationError>, Vec<[u8; 20]>) {
+            preflight_submitting(&our_keys(), by_id, by_hash).await
+        }
+
+        /// [`preflight`] for a claim that submits `submitted`.
+        async fn preflight_submitting(
+            submitted: &BTreeMap<KeyID, IdentityPublicKey>,
+            by_id: Result<Option<Identity>, Error>,
+            by_hash: impl Fn([u8; 20]) -> Result<Option<Identity>, Error>,
+        ) -> (Result<(), InvitationError>, Vec<[u8; 20]>) {
             let looked_up = RefCell::new(Vec::new());
-            let master = test_key(0, 1);
             let result = preflight_claim(
                 ours().id(),
-                &master,
+                submitted,
                 &[OUR_HASH, OTHER_HASH],
                 || async { by_id },
                 |hash| {
@@ -2825,6 +2898,73 @@ mod tests {
                 result,
                 Err(InvitationError::ClaimedByThisWallet { identity_id })
                     if identity_id == ours().id()
+            ));
+        }
+
+        /// A retry of a landed claim whose master is hash-only is recognized
+        /// by the full key submitted beside it, found by id or, when the
+        /// lookup by id missed, by a key hash, and nothing is broadcast.
+        #[tokio::test]
+        async fn should_recognize_a_landed_hash_master_claim_by_its_full_key() {
+            let landed = identity(1, hash_master_keys());
+            let submit_calls = std::cell::Cell::new(0);
+            let result = claim_unless_refused(
+                async {
+                    preflight_submitting(&hash_master_keys(), Ok(Some(landed.clone())), |_| {
+                        Ok(None)
+                    })
+                    .await
+                    .0
+                },
+                || {
+                    submit_calls.set(submit_calls.get() + 1);
+                    async { Ok(landed.clone()) }
+                },
+            )
+            .await;
+            assert!(matches!(
+                result,
+                Err(InvitationError::ClaimedByThisWallet { identity_id })
+                    if identity_id == landed.id()
+            ));
+            assert_eq!(submit_calls.get(), 0, "nothing may be broadcast");
+
+            let (result, _) = preflight_submitting(&hash_master_keys(), Ok(None), |_| {
+                Ok(Some(identity(1, hash_master_keys())))
+            })
+            .await;
+            assert!(matches!(
+                result,
+                Err(InvitationError::ClaimedByThisWallet { .. })
+            ));
+        }
+
+        /// An equal hash is no proof: an identity that shares only our
+        /// hash-only master, or a claim that submitted only hash keys, is
+        /// not shown to be ours.
+        #[tokio::test]
+        async fn should_not_take_an_equal_hash_for_our_claim() {
+            let hash_master = hash_master_keys();
+            let shares_the_hash = identity(
+                1,
+                [(0, hash_master[&0].clone()), (1, test_key(1, 9))].into(),
+            );
+            let (result, _) =
+                preflight_submitting(&hash_master, Ok(Some(shares_the_hash)), |_| Ok(None)).await;
+            assert!(matches!(
+                result,
+                Err(InvitationError::AlreadyClaimed { .. })
+            ));
+
+            let (result, _) = preflight_submitting(
+                &all_hash_keys(),
+                Ok(Some(identity(1, all_hash_keys()))),
+                |_| Ok(None),
+            )
+            .await;
+            assert!(matches!(
+                result,
+                Err(InvitationError::AlreadyClaimed { .. })
             ));
         }
 
@@ -3122,7 +3262,7 @@ mod tests {
 
         use super::super::adopt_already_landed_claim;
         use super::super::{Error, InvitationError};
-        use super::{identity_with_keys, our_keys, test_key};
+        use super::{all_hash_keys, hash_master_keys, identity_with_keys, our_keys, test_key};
         use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
         use dpp::consensus::basic::BasicError;
         use dpp::consensus::ConsensusError;
@@ -3157,15 +3297,47 @@ mod tests {
             submitted: Result<Identity, InvitationError>,
             lookup: Result<Option<Identity>, Error>,
         ) -> (Result<Identity, InvitationError>, u32) {
+            adopt_submitting(&our_keys(), submitted, lookup).await
+        }
+
+        /// [`adopt`] for a claim that submitted `keys`.
+        async fn adopt_submitting(
+            keys: &BTreeMap<KeyID, IdentityPublicKey>,
+            submitted: Result<Identity, InvitationError>,
+            lookup: Result<Option<Identity>, Error>,
+        ) -> (Result<Identity, InvitationError>, u32) {
             let calls = Cell::new(0);
-            let keys = our_keys();
-            let result =
-                adopt_already_landed_claim(submitted, &out_point(), &keys, &keys[&0], || {
-                    calls.set(calls.get() + 1);
-                    async { lookup }
-                })
-                .await;
+            let result = adopt_already_landed_claim(submitted, &out_point(), keys, || {
+                calls.set(calls.get() + 1);
+                async { lookup }
+            })
+            .await;
             (result, calls.get())
+        }
+
+        /// A hash-only master beside our full key still adopts our landed
+        /// claim; a claim of hash-only keys never adopts, since anyone could
+        /// have submitted the same hashes first.
+        #[tokio::test]
+        async fn should_adopt_only_through_a_full_key() {
+            let (result, _) = adopt_submitting(
+                &hash_master_keys(),
+                Err(consumed(out_point())),
+                Ok(Some(identity_with_keys(hash_master_keys()))),
+            )
+            .await;
+            assert!(result.is_ok(), "our full key proves the landed claim ours");
+
+            let (result, _) = adopt_submitting(
+                &all_hash_keys(),
+                Err(consumed(out_point())),
+                Ok(Some(identity_with_keys(all_hash_keys()))),
+            )
+            .await;
+            assert!(matches!(
+                result,
+                Err(InvitationError::AlreadyClaimed { .. })
+            ));
         }
 
         #[tokio::test]
