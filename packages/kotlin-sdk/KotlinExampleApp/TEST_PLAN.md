@@ -141,6 +141,8 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | ID-16 | Resume identity top-up from a tracked asset lock | Cross | Manual | 🚧 | | Source UI selects the Rust-tracked exact outpoint, excludes locks bound to another identity, and reaches the compiled tracked-lock list/free and existing-lock registration/top-up JNI bridges. Device gate: interrupt after Core broadcast, restart, resume the same Built transaction/outpoint, and verify foreign/untracked/consumed locks return typed failures without creating a replacement funding transaction. |
 | ID-17 | Signing after biometric re-enrollment | Platform | Manual | ✅ | | Physical device with auth-gated Keystore keys. Re-enroll biometrics (add or remove a fingerprint or face), then sign any identity transition: expect `SigningKeyUnavailable` (code 31). Repair the key from the wallet's key-health sheet (`WalletKeyHealthSheet` → `PlatformWalletManager.repairIdentityKey`); the next sign succeeds. The CI emulator cannot re-enroll biometrics, so the invalidation recovery is pinned only through the fake Keystore at the unit tier. |
 | ID-18 | Remove identity from device | Platform | Thorough | ✅ | regression | Mirrors iOS `ID-18` (Kotlin's `ID-17` is a different test). Identities tab → swipe the identity's row (`identities.row.<idHex>`) from the end, or use its "Remove" accessibility action → confirm **Remove from Device** (`identities.remove.confirm`; **Keep on Device** is `identities.remove.cancel`) → `PlatformWalletManager.removeIdentityFromDevice`. Local only: nothing is broadcast and the identity stays on Platform. First Rust removes it from every running wallet that manages it (`platform_wallet_manager_remove_identity_from_device`), so a later DashPay sync cannot store it again; while its DashPay contact request channel is held (a request in flight or unconfirmed, private payments not restored) Rust refuses, the alert shows the reason, and nothing on the device is deleted. Use an identity that has a DPNS name and private keys stored on the device (for example one created with `ID-01` that registered a name with `DPNS-01`, or a masternode loaded with its voting key as in `VOTE-01`). Then one Room transaction deletes the identity's token balances, its private contact scan state (a position marked as having unresolved private payments is kept but rewound to the start) and the identity row, whose delete cascades its public keys, DPNS names, documents and DashPay rows; then its private keys are deleted from secure storage (except a key another identity references or another wallet's owner index claims; the removed identity's wallet drops its own claim on such a key, so removing the last identity that uses it deletes it); then its masternode voting key. The key aliases are recorded as pending before the rows go, so a removal interrupted after them is finished by the next removal. Pass: the row disappears; after a relaunch the identity is still gone; loading it again (`ID-02`, or Load Identity with its keys) brings it back with usable keys, and a voting key typed again is stored without a replace prompt. If the row delete fails while the identity is still listed, the alert says so and removing it again retries; if secure storage refuses a delete after the rows are gone, the identity is still removed and the alert names what was left; removing any identity again deletes the leftover identity keys. iOS does not yet tell the live wallet (#6098 stays open for Swift). Kept on purpose: the once-per-identity token claim memory (`OncePerIdentityClaimStore`), since a second claim is a paid rejection. *The Rust refusal and removal are covered by `manager::identity_removal` tests in `rs-platform-wallet`; order, refusal, failure part way, retry and shared-key cleanup by the Robolectric `IdentityDeviceRemovalTest`. Emulator: not run yet.* |
+| ID-19 | View an identity's withdrawals and their status (mirrors Swift `ID-19`) | Platform | Common | ✅ | withdrawal, read-only, proof | `IdentityDetailScreen` → **Withdrawals** (`identity.withdrawals`) → `IdentityWithdrawalsScreen` (`identityWithdrawals.list`) → `ManagedPlatformWallet.identityWithdrawals` → JNI `IdentityWithdrawalsNative.identityWithdrawals` → `platform_wallet_identity_withdrawals` (every page at one block height; proved document queries on the withdrawals system contract, most recently updated first). Each row (`identityWithdrawals.row.<idPrefix>`, prefix = first 4 bytes of the document id in hex) shows the amount, the destination address (or **Script <hex>** when the output script is not an address), the status label Rust reports (`identityWithdrawals.status.<idPrefix>`: Queued / Pooled / Broadcasted / Complete / Expired / Failed), and once pooled **Asset unlock #<index>**, plus **requested at Core height <h>** once Platform built the transaction (`identityWithdrawals.coreTransaction.<idPrefix>`), and the submit and last-update times. Verify: an identity with no withdrawals shows `identityWithdrawals.empty`; an identity after `ID-10` lists that withdrawal with the amount and address entered there; pull to refresh and **Refresh** (`identityWithdrawals.refresh`) re-read it; the whole list is shown, each withdrawal once. No Core txid is shown: Platform state stores only the asset unlock index. A failed read, including the retryable error when the listing could not be read at one block height, shows `identityWithdrawals.error` with **Try Again** (`identityWithdrawals.retry`). Nothing is persisted on the device, so after a process restart the screen reads the same list again. Decoding is pinned by `IdentityWithdrawalsDecodingTest` and the Rust golden in `rs-unified-sdk-jni`; the symbol by `FfiSmokeTest.identityWithdrawalsSymbolBindsAndRejectsInvalidInput`. *(Implemented; not yet run on an emulator.)* |
+| ID-20 | Track a submitted withdrawal until it reaches Core (mirrors Swift `ID-20`) | Cross | Thorough | ✅ | withdrawal, proof | Submit `ID-10`, then on the success note tap **View withdrawals** (`withdrawCredits.trackWithdrawal`) → `IdentityWithdrawalsScreen` for the same identity. The new withdrawal appears once Platform has recorded it (refresh if it is not there yet), listed first as **Queued**, or already as **Pooled** when pooling happened in the same block. While any row is not final (Rust's `is_final`: only Complete and Failed are final; Expired is signed again) the screen re-reads the list every 15 s while it is started (`identityWithdrawals.autoRefresh`; paused while an error is shown, stopped when the app goes to the background or the screen is left). Verify the status moves (Queued →) Pooled (asset unlock index appears) → Broadcasted (**requested at Core height** appears) → Complete, and that auto-refresh stops once every row is final. Cross-check the payout arrives at the destination address on Core. *(Implemented; not yet run on an emulator. Needs a funded identity and a withdrawal round on the network.)* |
 
 ### 4.3 Platform Addresses (DIP-17 credit addresses) — `Domain=Address`
 
@@ -346,8 +348,8 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Tier | Count (approx.) | Automatable? |
 |---|---|---|
 | Essential | 21 | yes |
-| Common | 32 | yes |
-| Thorough | 53 | yes |
+| Common | 33 | yes |
+| Thorough | 54 | yes |
 | Uncommon | 29 | yes |
 | Manual | 1 (`CORE-08`) | no — physical device |
 
@@ -356,8 +358,8 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Layer | Count (approx.) |
 |---|---|
 | Core | 17 |
-| Platform | ~94 |
-| Cross | 10 |
+| Platform | ~95 |
+| Cross | 11 |
 | Shielded | 17 |
 
 ---
@@ -367,7 +369,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 Membership of each feature category across **all** sections (primary section members + cross-cutting tests that live elsewhere).
 
 - **Core / Wallet** — `CORE-01..23`
-- **Identity** — `ID-01..18`, `SH-11`
+- **Identity** — `ID-01..20`, `SH-11`
 - **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06..11`, `ID-06`, `ID-08`, `ID-11`
 - **DPNS** — `DPNS-01..13`
 - **Voting** — `VOTE-01..20`, `DPNS-05`, `DPNS-08`
@@ -385,7 +387,7 @@ Tags are cross-cutting modalities. A test may appear under multiple tags.
 - **multiwallet** — `CORE-14..23`, `ID-14`, `ID-15`, `TOK-17`, `DPNS-08`, `DP-11`, `DP-14`, `DP-19`, `DOC-15`, `SH-14`, `SH-15`, `SH-16`, `SYS-08`
 - **group** — `TOK-15`, `TOK-16`, `TOK-18`, `TOK-19`
 - **contested** — `DPNS-05`, `DPNS-08`, `DPNS-11`, `VOTE-01..06`
-- **withdrawal** — `ID-10`, `ADDR-04`, `SH-08`, `SH-16`
+- **withdrawal** — `ID-10`, `ID-19`, `ID-20`, `ADDR-04`, `SH-08`, `SH-16`
 - **regression** — `ID-18`, `TOK-17`, `DP-10`
 - **read-only** — `ADDR-10`, `ADDR-11`, `DOC-17`, `SH-13`, `SH-25`, `SYS-05`, `SYS-06`, `SYS-10..13`, `VOTE-02..06`, `VOTE-08`, `VOTE-10`, `VOTE-13`, `VOTE-14`, `VOTE-16`, `VOTE-20`, `TOK-18`, `TOK-19`
 - **masternode** — `VOTE-01`, `VOTE-12`, `VOTE-13`, `VOTE-19`, `VOTE-20`
