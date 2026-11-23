@@ -537,14 +537,17 @@ jobs:
   # is the runner's gh and coreutils.
   release-dashmate-checksums:
     name: Release Dashmate checksums
-    needs: release-dashmate-packages
-    # Only once every leg has attached its packages, so the file is never
-    # partial. The result is tested directly, because the implicit success()
-    # also looks at the build jobs and would skip this job silently after a
-    # failed build re-run whose release legs still published.
+    needs:
+      - build-dashmate-packages
+      - release-dashmate-packages
+    # Only once every package type has been built and attached, so the file is
+    # never partial and never describes packages an earlier attempt built: a
+    # release leg also runs after its build failed, and then publishes the
+    # artifact of the last successful build.
     if: >-
       !cancelled()
       && github.event_name == 'release'
+      && needs.build-dashmate-packages.result == 'success'
       && needs.release-dashmate-packages.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 15

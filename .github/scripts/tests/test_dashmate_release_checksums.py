@@ -397,6 +397,16 @@ class ReleaseChecksumsTests(unittest.TestCase):
         self.assertEqual(sorted(required.split()), sorted(matrix))
         self.assertEqual(sorted(PACKAGES), sorted(matrix))
 
+    def test_should_publish_checksums_only_after_every_build_and_release_leg_succeeded(self):
+        # A release leg also runs after its build failed, and can then publish the packages an
+        # earlier attempt built; checksums of those must not be published as the new build's.
+        checksums = job('release-dashmate-checksums')
+        needs = re.search(r'\n    needs:((?:\n      - \S+)+|[^\n]+)', checksums).group(1)
+        self.assertIn('build-dashmate-packages', needs)
+        self.assertIn('release-dashmate-packages', needs)
+        self.assertIn("needs.build-dashmate-packages.result == 'success'", checksums)
+        self.assertIn("needs.release-dashmate-packages.result == 'success'", checksums)
+
     def test_should_publish_checksums_from_a_job_that_runs_no_repository_code(self):
         checksums = job('release-dashmate-checksums')
         uses = re.findall(r'uses: (\S+)', checksums)
