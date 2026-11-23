@@ -160,6 +160,10 @@ class RewriteDebVersionsTests(unittest.TestCase):
             'an address with a second @': ('4.1.0.61be67f7bf-1',
                                            CONTROL.replace('{maintainer}', 'Dash Core Team <dev@@dash.org>'),
                                            'Expected a Maintainer'),
+            # only a plain address is accepted, not a quoted local part
+            'a quoted local part': ('4.1.0.61be67f7bf-1',
+                                    CONTROL.replace('{maintainer}', 'Dash Core Team <"dev"@dash.org>'),
+                                    'Expected a Maintainer'),
         }
         for case, (version, control, reason) in cases.items():
             with self.subTest(case):
