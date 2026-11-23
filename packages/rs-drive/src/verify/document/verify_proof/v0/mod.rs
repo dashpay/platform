@@ -2,9 +2,6 @@ use crate::verify::{with_proved_root_on_budget_exceeded, RootHash};
 
 use crate::error::Error;
 use crate::query::DriveDocumentQuery;
-use dpp::data_contract::document_type::{
-    DecodedValueBudget, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
-};
 use dpp::document::Document;
 
 use dpp::version::PlatformVersion;
@@ -50,14 +47,12 @@ impl DriveDocumentQuery<'_> {
 
         self.verify_proof_keep_serialized(proof, platform_version)
             .map(|(root_hash, documents)| {
-                let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
                 let documents = documents
                     .into_iter()
                     .map(|serialized| {
-                        Document::from_bytes_with_budget(
+                        Document::from_bytes_bounded(
                             serialized.as_slice(),
                             self.document_type,
-                            &mut budget,
                             platform_version,
                         )
                         .map_err(|error| {
@@ -72,17 +67,25 @@ impl DriveDocumentQuery<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::query::DriveDocumentQuery;
+    use crate::error::proof::ProofError;
+    use crate::query::{
+        DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator,
+    };
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::data_contract::DataContract;
     use dpp::data_contracts::SystemDataContract;
-    use dpp::document::DocumentV0Getters;
+    use dpp::document::{Document, DocumentV0, DocumentV0Getters};
+    use dpp::platform_value::{platform_value, Identifier, Value};
     use dpp::system_data_contracts::load_system_data_contract;
     use dpp::version::PlatformVersion;
+    use indexmap::IndexMap;
+    use std::collections::BTreeMap;
 
     #[test]
     fn should_prove_and_verify_document_collection() {
@@ -372,10 +375,8 @@ mod tests {
         assert!(
             matches!(
                 error,
-                Error::Proof(crate::error::proof::ProofError::DecodedValueBudgetExceeded {
-                    root_hash,
-                    ..
-                }) if root_hash == expected_root
+                Error::Proof(ProofError::DecodedValueBudgetExceeded { root_hash, .. })
+                    if root_hash == expected_root
             ),
             "expected ProofError::DecodedValueBudgetExceeded with matching root, got: {error:?}"
         );
@@ -498,5 +499,167 @@ mod tests {
             .expect("non-cursor leading row must be checked from header alone");
         assert_eq!(skipped, 0);
         assert_eq!(kept, vec![next_header_only]);
+    }
+
+    #[test]
+    fn should_verify_a_100_document_page_of_large_u8_typed_arrays_past_262k_values() {
+        let latest = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        let contract = DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Identifier::new([0x91; 32]),
+                "version": 1u32,
+                "ownerId": Identifier::new([0x92; 32]),
+                "config": {
+                    "$formatVersion": "1",
+                    "canBeDeleted": false,
+                    "readonly": false,
+                    "keepsHistory": false,
+                    "documentsKeepHistoryContractDefault": false,
+                    "documentsMutableContractDefault": true,
+                    "documentsCanBeDeletedContractDefault": true,
+                    "requiresIdentityEncryptionBoundedKey": Value::Null,
+                    "requiresIdentityDecryptionBoundedKey": Value::Null,
+                    "sizedIntegerTypes": true,
+                },
+                "documentSchemas": {
+                    "sample": {
+                        "type": "object",
+                        "indices": [
+                            {
+                                "name": "bySeq",
+                                "properties": [
+                                    { "bucket": "asc" },
+                                    { "seq": "asc" }
+                                ]
+                            }
+                        ],
+                        "properties": {
+                            "bucket": { "type": "string", "minLength": 1, "maxLength": 16, "position": 0u32 },
+                            "seq": { "type": "integer", "minimum": 0, "maximum": 1000, "position": 1u32 },
+                            "a": {
+                                "type": "array",
+                                "maxItems": 1024,
+                                "items": { "type": "integer", "minimum": 0, "maximum": 255 },
+                                "position": 2u32
+                            },
+                            "b": {
+                                "type": "array",
+                                "maxItems": 1024,
+                                "items": { "type": "integer", "minimum": 0, "maximum": 255 },
+                                "position": 3u32
+                            },
+                            "c": {
+                                "type": "array",
+                                "maxItems": 1024,
+                                "items": { "type": "integer", "minimum": 0, "maximum": 255 },
+                                "position": 4u32
+                            }
+                        },
+                        "required": ["bucket", "seq", "a", "b", "c"],
+                        "additionalProperties": false
+                    }
+                }
+            }),
+            true,
+            latest,
+        )
+        .expect("u8 typed-array contract validates");
+
+        drive
+            .apply_contract(&contract, BlockInfo::default(), true, None, None, latest)
+            .expect("apply contract");
+
+        let document_type = contract
+            .document_type_for_name("sample")
+            .expect("sample type");
+        let owner_id = Identifier::new([0x93; 32]);
+        let array_a = Value::Array(vec![Value::U8(1); 1024]);
+        let array_b = Value::Array(vec![Value::U8(2); 1024]);
+        let array_c = Value::Array(vec![Value::U8(3); 1024]);
+
+        // 100 documents × (2 scalars + 3 arrays + 3 × 1,024 u8 elements) = 307,700 decoded values,
+        // exceeding the old hardcoded 262,144 page budget while staying strictly proportional to
+        // encoded size.
+        for seq in 0u16..100 {
+            let document = Document::V0(DocumentV0 {
+                id: Identifier::new([seq as u8; 32]),
+                owner_id,
+                revision: Some(1),
+                properties: BTreeMap::from([
+                    ("bucket".to_string(), Value::Text("all".to_string())),
+                    ("seq".to_string(), Value::U16(seq)),
+                    ("a".to_string(), array_a.clone()),
+                    ("b".to_string(), array_b.clone()),
+                    ("c".to_string(), array_c.clone()),
+                ]),
+                ..Default::default()
+            });
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&document, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    latest,
+                )
+                .expect("insert document");
+        }
+
+        let query = DriveDocumentQuery {
+            contract: &contract,
+            document_type,
+            internal_clauses: InternalClauses {
+                equal_clauses: BTreeMap::from([(
+                    "bucket".to_string(),
+                    WhereClause {
+                        field: "bucket".to_string(),
+                        operator: WhereOperator::Equal,
+                        value: Value::Text("all".to_string()),
+                    },
+                )]),
+                ..Default::default()
+            },
+            offset: None,
+            limit: Some(100),
+            order_by: IndexMap::from([(
+                "seq".to_string(),
+                OrderClause {
+                    field: "seq".to_string(),
+                    ascending: true,
+                },
+            )]),
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+            resolved_time_ranges: Vec::new(),
+            sub_queries: Vec::new(),
+        };
+
+        let (proof, _) = query
+            .clone()
+            .execute_with_proof(&drive, None, None, latest)
+            .expect("100-document page proof generates");
+        let (_, verified_documents) = query
+            .verify_proof(&proof, latest)
+            .expect("100 legitimate documents with 3x1024 u8 arrays must verify cleanly");
+        assert_eq!(verified_documents.len(), 100);
+        assert_eq!(
+            verified_documents[99]
+                .get("a")
+                .and_then(|value| value.as_array())
+                .map(Vec::len),
+            Some(1024)
+        );
     }
 }

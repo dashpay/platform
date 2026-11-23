@@ -18,6 +18,7 @@ import org.dashfoundation.example.ui.contracts.DocumentsScreen
 import org.dashfoundation.example.ui.contracts.GroveDBPathElementsScreen
 import org.dashfoundation.example.ui.contracts.GroupDetailScreen
 import org.dashfoundation.example.ui.contracts.LocalDataContractsScreen
+import org.dashfoundation.example.ui.contracts.PrivateDocumentEntriesScreen
 import org.dashfoundation.example.ui.contracts.RegisterContractSourceScreen
 import org.dashfoundation.example.ui.contracts.QueriesListScreen
 import org.dashfoundation.example.ui.contracts.QueryDetailScreen
@@ -505,6 +506,11 @@ fun AppNavHost(
         composable<GroupDetail> { entry ->
             val route = entry.toRoute<GroupDetail>()
             GroupDetailScreen(route.contractIdHex, route.position, navController)
+        }
+
+        composable<PrivateDocumentEntries> { entry ->
+            val route = entry.toRoute<PrivateDocumentEntries>()
+            PrivateDocumentEntriesScreen(route.contractIdHex, route.typeName, navController)
         }
 
         composable<Diagnostics> { DiagnosticsScreen(navController) }

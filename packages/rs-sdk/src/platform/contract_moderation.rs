@@ -369,8 +369,8 @@ impl ContractDocumentRemovalsPageQuery {
     }
 
     /// Reads the records this query names, each with the values it keeps of its document
-    /// ([`ContractDocumentRemovals::decode_kept_values`], sharing
-    /// `DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET` across the whole page), and the query of the
+    /// ([`ContractDocumentRemovals::decode_kept_values`], enforcing a decoded-value budget
+    /// proportional to each record's encoded `kept_fields` length), and the query of the
     /// page after them. The kept values are encoded under the document's type, so the contract is
     /// fetched when a record keeps any; a read whose records keep none costs the records' request
     /// alone. `None` when [`ContractDocumentRemovals::fetch`] returns none.
