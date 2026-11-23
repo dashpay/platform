@@ -1,5 +1,6 @@
 use dash_sdk::error::ContextProviderError;
 use dash_sdk::platform::dashpay::InvitationError;
+use dash_sdk::platform::private_document_seal::PrivateDocumentSealError;
 use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus;
 use dpp::address_funds::PlatformAddress;
 use dpp::consensus::state::address_funds::AddressInvalidNonceError;
@@ -1316,6 +1317,22 @@ impl From<InvitationError> for PlatformWalletError {
             }
             InvitationError::NotChainLocked(message) => Self::AssetLockNotChainLocked(message),
             InvitationError::Sdk(error) => Self::Sdk(error),
+        }
+    }
+}
+
+/// What the SDK refuses to seal as an entry of a private document type
+/// ([`PrivateDocumentSealError::is_refused_request`]: the type, a key or the
+/// properties asked for) is the caller's
+/// [`PlatformWalletError::InvalidParameter`]; a signer holding another key
+/// than the sender key, or an envelope that did not seal a checked request,
+/// is the provider's [`PlatformWalletError::InvalidIdentityData`].
+impl From<PrivateDocumentSealError> for PlatformWalletError {
+    fn from(error: PrivateDocumentSealError) -> Self {
+        if error.is_refused_request() {
+            Self::InvalidParameter(error.to_string())
+        } else {
+            Self::InvalidIdentityData(error.to_string())
         }
     }
 }

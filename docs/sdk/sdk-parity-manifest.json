@@ -112,7 +112,11 @@
     "platform_wallet_wallet_drain_preview_allows_start": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
     "platform_wallet_wallet_drain_start_offered": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
     "platform_wallet_wallet_drain_lock_listing": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
-    "platform_wallet_wallet_drain_status_during_host_call": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs"
+    "platform_wallet_wallet_drain_status_during_host_call": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
+    "platform_wallet_manager_create_private_document_entry": "packages/rs-platform-wallet-ffi/src/private_document_create.rs",
+    "platform_wallet_manager_private_document_create_fee": "packages/rs-platform-wallet-ffi/src/private_document_create.rs",
+    "platform_wallet_manager_private_document_recipient_keys": "packages/rs-platform-wallet-ffi/src/private_document_create.rs",
+    "platform_wallet_private_document_recipient_keys_free": "packages/rs-platform-wallet-ffi/src/private_document_create.rs"
   },
   "capabilities": [
     {
@@ -1975,6 +1979,81 @@
           "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/PrivateDocumentsFfiTest.kt",
           "id": "shouldRefuseWhatTheJniLayerCannotMarshal",
           "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=org.dashfoundation.dashsdk.PrivateDocumentsFfiTest",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "documents.private_document_entry_create",
+      "title": "Create an entry of any private document type from a wallet identity, paid from the shielded pool (protocol version 15)",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_manager_create_private_document_entry",
+        "platform_wallet_manager_private_document_create_fee",
+        "platform_wallet_manager_private_document_recipient_keys",
+        "platform_wallet_private_document_recipient_keys_free"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PrivateDocuments.swift wraps the create (PlatformWalletManager.createPrivateDocumentEntry), the recipient key choices and the fee preview; Rust picks the sender's encryption key, checks the recipient key, the properties against the type's schema and the entry's capacity, seals inside the Keychain mnemonic resolver, and pays as a DashPay private contact request is paid (notes reserved, the transition saved for a redrive before the broadcast). The example app creates one entry from the private type's detail screen (TEST_PLAN DOC-19), anonymous or with a deniable MAC; a signed entry is not offered. The Rust preparation, sealing, refusals, fee preview and the seal-then-read round trip and the FFI marshalling are unit-tested; no gate records the Swift call, the screen, or the spend's recovery after a restart against a protocol version 15 network."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "Not ported: no JNI binding for platform_wallet_manager_create_private_document_entry or its key and fee helpers, and the example app has no create screen for a private document type."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk/src/platform/private_document_seal.rs",
+          "id": "should_seal_an_entry_the_recipient_opens_and_the_sender_recovers",
+          "command": "cargo test -p dash-sdk --lib should_seal_an_entry_the_recipient_opens_and_the_sender_recovers",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/private_document_create.rs",
+          "id": "should_seal_an_entry_the_recipient_opens_and_the_sender_s_read_recovers",
+          "command": "cargo test -p platform-wallet --lib should_seal_an_entry_the_recipient_opens_and_the_sender_s_read_recovers",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/private_document_create.rs",
+          "id": "should_refuse_what_cannot_be_sealed_before_the_signer",
+          "command": "cargo test -p platform-wallet --lib should_refuse_what_cannot_be_sealed_before_the_signer",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/private_document_create.rs",
+          "id": "should_preview_the_fee_a_create_reserves_at_two_actions",
+          "command": "cargo test -p platform-wallet --lib should_preview_the_fee_a_create_reserves_at_two_actions",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/private_document_create.rs",
+          "id": "should_marshal_and_free_the_recipient_keys",
+          "command": "cargo test -p platform-wallet-ffi --lib should_marshal_and_free_the_recipient_keys",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DOC-19",
           "covers_restart": false
         }
       ]
