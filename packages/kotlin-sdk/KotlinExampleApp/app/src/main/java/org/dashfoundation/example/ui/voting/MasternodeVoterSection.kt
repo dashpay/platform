@@ -303,8 +303,9 @@ internal data class PickedKeyCheckState(
  * refusal that could not be saved stands for the dialog's life (Room will never show it); any
  * other unsaved answer only until the row moves past the revision it was made against, so a
  * record saved since (a refusal included) speaks (Rust's word on which is which:
- * [PickedKeyCheckState.knownRefuses]). A saved one stands until the row's revision reaches the one its write left, after which Room, holding
- * that write or a later one, decides. A record learned for another key never counts.
+ * [PickedKeyCheckState.knownRefuses]). A saved one stands until the row's revision reaches the
+ * one its write left, after which Room, holding that write or a later one, decides. A record
+ * learned for another key never counts.
  */
 internal fun knownOverride(
     identifier: String?,
