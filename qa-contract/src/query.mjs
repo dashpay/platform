@@ -115,6 +115,11 @@ async function main() {
       json: { type: 'boolean', default: false },
     },
   });
+  // `--recordedBy=` parses as an empty string, which the checks below would
+  // read as the option being absent and so widen the query. Refuse it instead.
+  for (const [name, value] of Object.entries(values)) {
+    if (typeof value === 'string' && !value.trim()) throw new Error(`--${name} needs a value.`);
+  }
   const limit = Number(values.limit);
   if (!Number.isInteger(limit) || limit <= 0) {
     throw new Error(`--limit must be a positive integer (got '${values.limit}').`);
