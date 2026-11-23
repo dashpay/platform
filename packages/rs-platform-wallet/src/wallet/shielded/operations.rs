@@ -1862,7 +1862,7 @@ pub(super) async fn ensure_token_has_shielded_pool(
 /// the network's is refused here, before anything is reserved or proved. Without a verified
 /// answer (only an SDK that enforces no protocol gate, a mock, gets here with none) the SDK's
 /// own version is taken.
-fn token_pool_paid_signing_version(
+pub(crate) fn token_pool_paid_signing_version(
     sdk_version: &'static PlatformVersion,
     verified_network_version: Option<u32>,
 ) -> Result<&'static PlatformVersion, PlatformWalletError> {
@@ -10441,6 +10441,122 @@ mod token_shielded_transfer_tests {
             .await
             .expect_err("the store holds no witness of the fee note");
         assert_nothing_held(&store, 1).await;
+    }
+
+    /// The preview refuses what the spend refuses on these notes: a zero
+    /// amount, credit notes that cannot pay the fee, and a fee needing more
+    /// credit notes than fit beside the token bundle; it holds nothing.
+    #[tokio::test]
+    async fn should_preview_the_refusals_a_token_pool_spend_meets_on_its_notes() {
+        let platform_version = PlatformVersion::latest();
+        let kind = TokenPoolSpendKind::Unshield;
+        let preview = |store| async move {
+            token_pool_spend_preview(store, subwallet(), token_id(), kind, 5, platform_version)
+                .await
+        };
+
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = store_with(&dir, &[credit_note(1, 0)], &[token_note(10, 0)]).await;
+        let err =
+            token_pool_spend_preview(&store, subwallet(), token_id(), kind, 0, platform_version)
+                .await
+                .expect_err("zero");
+        assert!(
+            matches!(err, PlatformWalletError::ShieldedBuildError(_)),
+            "got {err:?}"
+        );
+        let err = preview(&store)
+            .await
+            .expect_err("one credit cannot pay the fee");
+        assert!(
+            matches!(err, PlatformWalletError::ShieldedInsufficientBalance { .. }),
+            "got {err:?}"
+        );
+        assert_nothing_held(&store, 1).await;
+
+        // Dust notes: as many as fit beside the token bundle do not pay the
+        // fee at that count, so more would be needed than fit.
+        let max_fee_notes = kind.max_fee_notes(2, platform_version).expect("limit");
+        let fee_at_max = kind
+            .fee(2, max_fee_notes.max(2), platform_version)
+            .expect("fee");
+        let dust = fee_at_max / max_fee_notes as u64 - 1;
+        let dust_notes: Vec<ShieldedNote> = (0..50).map(|i| credit_note(dust, i)).collect();
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = store_with(&dir, &dust_notes, &[token_note(10, 0)]).await;
+        let err = preview(&store)
+            .await
+            .expect_err("the fee needs more notes than fit");
+        assert!(
+            matches!(
+                err,
+                PlatformWalletError::ShieldedTooManyNotes { max_notes, .. }
+                    if max_notes == max_fee_notes
+            ),
+            "got {err:?}"
+        );
+        assert_nothing_held(&store, 50).await;
+    }
+
+    /// The preview's fee and note counts are the ones the spend reserves on
+    /// the same notes.
+    #[tokio::test]
+    async fn should_preview_the_fee_and_notes_the_spend_reserves() {
+        let platform_version = PlatformVersion::latest();
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = store_with(
+            &dir,
+            &[credit_note(1_000_000_000_000, 0), credit_note(5, 1)],
+            &[token_note(10, 0), token_note(3, 1)],
+        )
+        .await;
+        for kind in [
+            TokenPoolSpendKind::ShieldedTransfer,
+            TokenPoolSpendKind::Unshield,
+        ] {
+            let preview = token_pool_spend_preview(
+                &store,
+                subwallet(),
+                token_id(),
+                kind,
+                12,
+                platform_version,
+            )
+            .await
+            .expect("a preview");
+            let (token_notes, token_reservation) = reserve_token_notes(
+                &*store.read().await,
+                subwallet(),
+                token_id(),
+                12,
+                kind.max_token_notes(platform_version).expect("limit"),
+            )
+            .expect("token notes");
+            let token_actions = token_pool_spend_token_actions(token_notes.len());
+            let (fee_notes, _, fee, reservation) = reserve_notes_covering_at_most(
+                &store,
+                subwallet(),
+                0,
+                2,
+                ShieldedFeeKind::TokenPoolSpend {
+                    kind,
+                    token_actions,
+                },
+                kind.max_fee_notes(token_actions, platform_version)
+                    .expect("limit"),
+                platform_version,
+            )
+            .await
+            .expect("fee notes");
+            assert_eq!(
+                (preview.token_notes, preview.fee_notes, preview.fee),
+                (token_notes.len(), fee_notes.len(), fee),
+                "{kind:?}"
+            );
+            reservation.cancel().await;
+            token_reservation.release(&*store.read().await);
+        }
+        assert_nothing_held(&store, 2).await;
     }
 
     /// The preview picks the notes the spend would pick and prices them as

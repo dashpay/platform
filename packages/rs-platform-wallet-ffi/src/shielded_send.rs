@@ -1936,9 +1936,23 @@ unsafe fn shielded_token_spend_preview_inner(
     });
     match result {
         Ok(preview) => {
+            // A count past u32 is refused rather than written as a sentinel: on
+            // success every out value is the preview's, on refusal none is set.
+            let (Ok(token_notes), Ok(fee_notes)) = (
+                u32::try_from(preview.token_notes),
+                u32::try_from(preview.fee_notes),
+            ) else {
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorWalletOperation,
+                    format!(
+                        "{TOKEN_SPEND_PREVIEW_OPERATION}: a note count past u32 ({} token, {} fee)",
+                        preview.token_notes, preview.fee_notes
+                    ),
+                );
+            };
             *out_fee = preview.fee;
-            *out_token_notes = u32::try_from(preview.token_notes).unwrap_or(u32::MAX);
-            *out_fee_notes = u32::try_from(preview.fee_notes).unwrap_or(u32::MAX);
+            *out_token_notes = token_notes;
+            *out_fee_notes = fee_notes;
             PlatformWalletFFIResult::ok()
         }
         Err(e) => map_shielded_error(e, TOKEN_SPEND_PREVIEW_OPERATION),

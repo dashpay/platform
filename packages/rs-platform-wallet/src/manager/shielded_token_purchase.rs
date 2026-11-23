@@ -17,7 +17,9 @@ use crate::error::PlatformWalletError;
 use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::manager::PlatformWalletManager;
 use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
-use crate::wallet::shielded::operations::token_pool_spend_preview;
+use crate::wallet::shielded::operations::{
+    token_pool_paid_signing_version, token_pool_spend_preview,
+};
 use crate::wallet::shielded::{
     NetworkShieldedCoordinator, ShieldedTokenPoolWatch, ShieldedTokenPurchaseOutcome,
     ShieldedTokenSpendOutcome, ShieldedTokenSpendPreview, SubwalletId, TokenPoolSpendKind,
@@ -180,9 +182,13 @@ impl ShieldedTokenPurchaser {
     /// What a token pool spend of `kind` moving `amount` of the token at
     /// `token_contract_position` of `data_contract_id` would take from
     /// `account`'s notes, from local state alone and reserving nothing
-    /// ([`token_pool_spend_preview`]), at the SDK's protocol version: the fee
-    /// a form shows before sending, or the refusal the spend would meet on
-    /// these notes.
+    /// ([`token_pool_spend_preview`]): the fee a form shows before sending, or
+    /// the refusal the spend would meet on these notes. It prices at the
+    /// version the spend would sign at, chosen as the spend chooses it
+    /// ([`token_pool_paid_signing_version`]) from the network version the SDK
+    /// last verified, with no network read: an SDK whose version is not that
+    /// one is refused here as the spend refuses it
+    /// ([`PlatformWalletError::ShieldedProtocolVersionMismatch`]).
     pub async fn preview_spend(
         &self,
         account: u32,
@@ -200,7 +206,10 @@ impl ShieldedTokenPurchaser {
             )),
             kind,
             amount,
-            self.wallet.sdk().version(),
+            token_pool_paid_signing_version(
+                self.wallet.sdk().version(),
+                self.wallet.sdk().protocol_version_info().verified_version,
+            )?,
         )
         .await
     }
