@@ -354,6 +354,7 @@ fun LoadIdentityScreen(navController: NavHostController) {
                                                 .identifierFor(refusedFor, keys.votingAddress(key)),
                                             check = MasternodeVotingKeyCheck.Invalid(load.message),
                                             refusalText = load.message,
+                                            stillCurrent = { appState.sdk.value === activeSdk },
                                         )
                                         (applied as? EnteredVotingKeyCheck.Refused)?.message ?: load.message
                                     } else {
@@ -404,9 +405,17 @@ fun LoadIdentityScreen(navController: NavHostController) {
                                 networkRaw = activeNetwork.ffiValue,
                                 enteredIdentifier = entered,
                                 check = check,
+                                stillCurrent = { appState.sdk.value === activeSdk },
                             )
                             if (preflight is EnteredVotingKeyCheck.Refused) {
                                 error = preflight.message
+                                return@launch
+                            }
+                            // The preflight read suspended: nothing is saved for a network that
+                            // was switched meanwhile.
+                            if (appState.sdk.value !== activeSdk) {
+                                error = "The network changed during the load, so the identity " +
+                                    "was not saved. Load it again."
                                 return@launch
                             }
                             votingKeyCheck = check
@@ -886,6 +895,7 @@ internal suspend fun checkEnteredVotingKey(
     enteredIdentifier: String,
     check: MasternodeVotingKeyCheck,
     refusalText: String? = null,
+    stillCurrent: () -> Boolean = { true },
 ): EnteredVotingKeyCheck {
     val row = dao.getByIdentityId(identityId)?.takeIf { it.networkRaw == networkRaw }
     val stored = row?.votingPrivateKeyIdentifier
@@ -899,7 +909,9 @@ internal suspend fun checkEnteredVotingKey(
     val outcome = rules.outcome(check, address, slot)
     if (outcome.storeKey) return EnteredVotingKeyCheck.Proceed
     var text = refusalText ?: votingKeyNotOfMasternodeMessage(identityId.toHex(), reasonOf(check))
-    if (outcome.record != null && stored != null && slot is MasternodeVotingKeySlot.SameKey) {
+    // The row read suspended: a refusal is recorded only while the network is the one the
+    // check was made on.
+    if (outcome.record != null && stored != null && slot is MasternodeVotingKeySlot.SameKey && stillCurrent()) {
         // Nothing entered is stored. What Rust says to record is for the key already stored.
         try {
             entries.recordCheck(identityId, networkRaw, stored, check)
@@ -965,13 +977,19 @@ private suspend fun recordStoredVotingKeyCheck(
     } catch (e: Exception) {
         return votingKeyCheckNotSavedMessage(e.message)
     }
+    // Null: the row no longer names the key just stored, so its check was not recorded.
+    outcome ?: return VOTING_KEY_CHANGED_BEFORE_CHECK_MESSAGE
     return uncheckedVotingKeyNote(check, outcome)
 }
 
-/** Shown when the stored key's check could not be written; it is checked again when picked. */
+/** Shown when the stored key's check could not be written; loading again retries it. */
 internal fun votingKeyCheckNotSavedMessage(reason: String?): String =
-    "The voting key check could not be saved: ${reason ?: "unknown error"}. It is checked " +
-        "again when you pick this identity to vote."
+    "The voting key check could not be saved: ${reason ?: "unknown error"}. Load the identity " +
+        "again to retry."
+
+/** Shown when the row named another key before the stored key's check could be recorded. */
+internal const val VOTING_KEY_CHANGED_BEFORE_CHECK_MESSAGE =
+    "The identity's voting key changed before its check could be saved. Load the identity again."
 
 /**
  * [result] with [note] about the stored voting key: a plain success becomes a warning that
