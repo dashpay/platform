@@ -400,6 +400,20 @@ class DashSdkErrorTest {
         assertFalse("a sync settles it, not a retry", mapped.isRetryable)
     }
 
+    /**
+     * A balance history read that could not reach consistent heights has its own,
+     * retryable code (83), as Swift's `balanceHistoryInconsistentHeights`.
+     */
+    @Test
+    fun shouldReportInconsistentBalanceHistoryHeightsByTheirOwnRetryableCode() {
+        val detail = "page proved at height 11, below height 12"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 83, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.BalanceHistoryInconsistentHeights)
+        assertEquals(detail, mapped.message)
+        assertTrue("the read can be made again", mapped.isRetryable)
+    }
+
     @Test
     fun platformShieldCapacityCode41MapsTyped() {
         val message =

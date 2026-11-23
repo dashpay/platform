@@ -10,8 +10,8 @@ Capabilities tracked: **41**
 | --- | --- | ---: | ---: | ---: | ---: |
 | Swift | SDK | 25 | 14 | 1 | 1 |
 | Swift | Example app | 6 | 25 | 1 | 9 |
-| Kotlin | SDK | 16 | 16 | 8 | 1 |
-| Kotlin | Example app | 6 | 17 | 8 | 10 |
+| Kotlin | SDK | 17 | 16 | 7 | 1 |
+| Kotlin | Example app | 6 | 18 | 7 | 10 |
 
 ## Restart coverage
 
@@ -62,7 +62,7 @@ Capabilities tracked: **41**
 | `system.block_and_transition_status_reads` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
 | `voting.masternode_vote_stored_key` | supported / partial / not_applicable | partial / partial / not_applicable |
 | `identity.load_masternode_voting_key` | supported / partial / not_applicable | partial / partial / not_applicable |
-| `addresses.balance_history` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
+| `addresses.balance_history` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `shielded.token_purchase_from_pool` | partial / partial / required | unsupported / unsupported / not_applicable |
 | `identity.withdrawal_status` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
 
