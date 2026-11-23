@@ -48,7 +48,7 @@ Publishing a GitHub **release** creates its tag, unless the tag exists already, 
    - `exit 2`: there is no such tag.
    - `exit 0`: the tag exists. The commit it names is on the line ending in `^{}` if there is one, otherwise on the only line. If that is not the merge commit, stop and ask the user.
    - Any other exit: the check failed, which says nothing about the tag. Don't publish; run it again.
-4. Create the release. Confirm the notes and the command with the user first, then run the tag check from item 3 once more, since a tag can appear in between. Without a tag, create it at the merge commit; with a tag that names the merge commit, publish that tag:
+4. Create the release. Confirm the notes and the command with the user first, then run the tag check from item 3 once more, since a tag can appear in between. For a stable release run the newest stable check from step 1 again too: if its answer changes which marker below applies, ask the user again. Without a tag, create it at the merge commit; with a tag that names the merge commit, publish that tag:
 
 ```sh
 # no v<version> tag yet
