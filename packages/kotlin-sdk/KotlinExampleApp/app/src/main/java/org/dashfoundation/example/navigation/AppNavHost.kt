@@ -58,6 +58,7 @@ import org.dashfoundation.example.ui.identity.RegisterNameScreen
 import org.dashfoundation.example.ui.identity.RegistrationProgressScreen
 import org.dashfoundation.example.ui.identity.SearchWalletsForIdentitiesScreen
 import org.dashfoundation.example.ui.identity.SelectMainNameScreen
+import org.dashfoundation.example.ui.identity.GiveUpNameScreen
 import org.dashfoundation.example.ui.credits.TopUpIdentityFromCoreScreen
 import org.dashfoundation.example.ui.credits.TopUpIdentityScreen
 import org.dashfoundation.example.ui.credits.TransferCreditsScreen
@@ -187,6 +188,11 @@ fun AppNavHost(
         composable<SelectMainName> { entry ->
             val route = entry.toRoute<SelectMainName>()
             SelectMainNameScreen(route.identityIdHex, navController)
+        }
+
+        composable<GiveUpName> { entry ->
+            val route = entry.toRoute<GiveUpName>()
+            GiveUpNameScreen(route.identityIdHex, route.name, navController)
         }
 
         composable<DpnsMarketplace> { entry ->

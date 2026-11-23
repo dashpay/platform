@@ -136,9 +136,9 @@ pub use dashpay_view::DashPayView;
 pub use discovery::IdentityDiscoveryOptions;
 pub use dpns::{ContestContender, ContestVoteState, ContestWinner};
 pub use dpns_marketplace::{
-    DepartedDpnsName, DpnsDomainState, DpnsMarketplaceSyncSummary, DpnsNameGiveUpChoices,
-    DpnsNameGiveUpMethod, DpnsNameGiveUpOutcome, DpnsNameGivenUp, DpnsNameHistoryEvent,
-    DpnsNameHistoryEventKind, DpnsPriceChange, FailedDpnsDeparture,
+    give_up_clears_main_dpns_name, DepartedDpnsName, DpnsDomainState, DpnsMarketplaceSyncSummary,
+    DpnsNameGiveUpChoices, DpnsNameGiveUpMethod, DpnsNameGiveUpOutcome, DpnsNameGivenUp,
+    DpnsNameHistoryEvent, DpnsNameHistoryEventKind, DpnsPriceChange, FailedDpnsDeparture,
     DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS,
 };
 pub use identity_handle::{
