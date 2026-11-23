@@ -71,6 +71,13 @@ struct DashPayProfileView: View {
                         .textSelection(.enabled)
                 }
 
+                DashPayPublishedPaymentAddressesSection(
+                    profile: profile,
+                    network: identity.network,
+                    identifierPrefix: "dashpay.profile.paymentAddress",
+                    showsUnpublished: true
+                )
+
                 Section("Add me (DIP-15 QR)") {
                     if let qrImage {
                         VStack(spacing: 8) {
