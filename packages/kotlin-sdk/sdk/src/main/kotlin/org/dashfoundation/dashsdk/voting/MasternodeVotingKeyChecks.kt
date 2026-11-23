@@ -599,13 +599,25 @@ object MasternodeVotingKeyRecords {
     ): MasternodeVotingKeyCheckOutcome? =
         recordWithRevision(database, identityId, networkRaw, storedIdentifier, check, rules)?.outcome
 
-    /** What [recordWithRevision] did: Rust's [outcome], and the row's revision after it. */
-    data class Recorded(val outcome: MasternodeVotingKeyCheckOutcome, val revision: Long)
+    /**
+     * What [recordWithRevision] did: Rust's [outcome], the row's revision after it, and the
+     * record the row holds after it ([record]: the one written, or the one Rust kept).
+     */
+    data class Recorded(
+        val outcome: MasternodeVotingKeyCheckOutcome,
+        val revision: Long,
+        val record: MasternodeRecordedVotingKey? = null,
+    )
 
     /**
      * [record], also returning the row's `votingKeyCheckRevision` as the same transaction left
      * it: a host holding the written record can tell from a later Room emission whether it
      * already shows this write or a later one (its revision is at least this one).
+     *
+     * With [resolvedProTxHash], the same transaction first records the pro_tx_hash and role
+     * ([resolvedRoleRaw]) Rust's load rule resolved for a row stored before they were recorded,
+     * and only while the row still records no pro_tx_hash: the binding and the record commit
+     * together or not at all, so the pro_tx_hash never sits beside an older record.
      */
     suspend fun recordWithRevision(
         database: DashDatabase,
@@ -614,6 +626,8 @@ object MasternodeVotingKeyRecords {
         storedIdentifier: String,
         check: MasternodeVotingKeyCheck,
         rules: MasternodeVotingKeyRules = MasternodeVotingKeyRules.Native,
+        resolvedProTxHash: ByteArray? = null,
+        resolvedRoleRaw: String? = null,
     ): Recorded? {
         val address = MasternodeVotingKeyAddress.ofIdentifier(storedIdentifier)
         return database.withTransaction {
@@ -624,6 +638,12 @@ object MasternodeVotingKeyRecords {
             val identifier = row.votingPrivateKeyIdentifier
                 ?.takeIf { it.equals(storedIdentifier, ignoreCase = true) }
                 ?: return@withTransaction null
+            if (resolvedProTxHash != null) {
+                val bound = dao.recordResolvedMasternode(
+                    identityId, networkRaw, resolvedProTxHash, resolvedRoleRaw ?: return@withTransaction null,
+                )
+                if (bound == 0) return@withTransaction null
+            }
             val outcome = rules.outcome(check, address, MasternodeVotingKeySlot.SameKey(row.recordedVotingKey))
             outcome.record?.let { record ->
                 val (raw, message) = rawOf(record.check)
@@ -636,8 +656,8 @@ object MasternodeVotingKeyRecords {
                     address = record.votingAddress.bytes,
                 )
             }
-            val revision = dao.getByIdentityId(identityId)?.votingKeyCheckRevision ?: 0L
-            Recorded(outcome, revision)
+            val after = dao.getByIdentityId(identityId)
+            Recorded(outcome, after?.votingKeyCheckRevision ?: 0L, after?.recordedVotingKey)
         }
     }
 

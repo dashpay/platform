@@ -1081,6 +1081,26 @@ class LoadIdentityVotingKeyTest {
         )
     }
 
+    /**
+     * A rotated shared masternode reloaded by the id its detail screen shows stores the new
+     * voter identity under another id: it is saved with the masternode's type (the form's,
+     * inferred from the typed row), so the picker offers it, never as User.
+     */
+    @Test
+    fun shouldSaveAReplacementVoterRowWithItsMasternodesType() = runBlocking {
+        val typedId = ByteArray(32) { 6 }
+        assertTrue(typePickedForSave(false, LoadIdentityType.EVONODE, identityId, typedId))
+        assertFalse(typePickedForSave(false, LoadIdentityType.EVONODE, typedId, typedId))
+        assertFalse(typePickedForSave(false, LoadIdentityType.USER, identityId, typedId))
+
+        save(
+            pickedType = LoadIdentityType.EVONODE,
+            typePicked = typePickedForSave(false, LoadIdentityType.EVONODE, identityId, typedId),
+            masternodeRole = MasternodeVotingLoadedIdentity.Role.VOTER,
+        )
+        assertEquals("Evonode", dao.getByIdentityId(identityId)!!.identityType)
+    }
+
     @Test
     fun shouldWordTheUncheckedNoteFromRustsOutcome() {
         val undetermined = MasternodeVotingKeyCheck.Undetermined("Down.")

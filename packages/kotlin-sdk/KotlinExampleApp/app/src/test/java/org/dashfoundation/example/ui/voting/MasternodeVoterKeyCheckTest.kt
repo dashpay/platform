@@ -325,9 +325,17 @@ class MasternodeVoterKeyCheckTest {
 
         val result = checkPicked(picked = PickedKeyCheckState(identifierA, undetermined, savedRevision = 2))
 
-        assertEquals(PickedVotingKeyCheck.NotNeeded, result)
+        // The refusal the helper read, at its revision, goes back to the picker.
+        assertEquals(PickedVotingKeyCheck.NotNeeded(refusal, 3), result)
         assertTrue(checkedWith.isEmpty())
         assertEquals(refusal to addressA, rules.usedWith.single())
+        // Held as the dialog's record until Room delivers revision 3, no voter is published
+        // against the older displayed row (revision 2, undetermined).
+        val held = PickedKeyCheckState(identifierA, refusal, savedRevision = 3, checkedRevision = 3)
+        assertEquals(
+            StoredVoterDecision.REFUSED,
+            storedVoterDecision(stateAt(2, undetermined), held, rules),
+        )
     }
 
     // ── A row stored before its pro_tx_hash was recorded (#6145) ────────
@@ -377,6 +385,47 @@ class MasternodeVoterKeyCheckTest {
         assertArrayEquals(identityId.reversedArray(), stored.masternodeProTxHash)
         assertEquals("owner", stored.masternodeRoleRaw)
         assertEquals(recorded, stored.recordedVotingKey)
+    }
+
+    /**
+     * The resolution and the verdict commit together: when the verdict write fails, the row
+     * stays unresolved, so a later pick resolves and checks it again.
+     */
+    @Test
+    fun shouldLeaveALegacyRowUnresolvedWhenItsVerdictCannotBeWritten() = runBlocking {
+        db.identityDao().upsert(row(identifierA, resolved = false))
+        rules.outcome = MasternodeVotingKeyCheckOutcome(
+            storeKey = false,
+            record = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Invalid("rotated"), addressA),
+        )
+        // Only the verdict column refuses writes; the pro_tx_hash binding alone would succeed.
+        db.openHelper.writableDatabase.execSQL(
+            "CREATE TRIGGER refuse_verdict BEFORE UPDATE OF votingKeyCheckRaw ON identities " +
+                "BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+        )
+
+        val result = checkPickedVotingKeyIfNeeded(
+            database = db,
+            identityId = identityId,
+            networkRaw = testnet,
+            identifier = identifierA,
+            rules = rules,
+            check = { _, _ -> error("unused") },
+            resolve = { _, _ ->
+                MasternodeVotingLoad.Loaded(
+                    MasternodeVotingLoadedIdentity(
+                        MasternodeVotingLoadedIdentity.Role.OWNER, identityId, "{}",
+                        MasternodeVotingKeyCheck.Invalid("rotated"),
+                    ),
+                )
+            },
+            stillCurrent = { true },
+        )
+
+        assertTrue(result is PickedVotingKeyCheck.Failed)
+        val stored = db.identityDao().getByIdentityId(identityId)!!
+        assertNull(stored.masternodeProTxHash)
+        assertNull(stored.masternodeRoleRaw)
     }
 
     /** A voter identity, another id, or a refusal does not resolve it, and nothing is written. */
@@ -447,7 +496,7 @@ class MasternodeVoterKeyCheckTest {
         val refusal = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Invalid("rotated"), addressA)
         rules.use = refusedUse
 
-        assertEquals(PickedVotingKeyCheck.NotNeeded, checkPicked(picked = PickedKeyCheckState(identifierA, refusal)))
+        assertTrue(checkPicked(picked = PickedKeyCheckState(identifierA, refusal)) is PickedVotingKeyCheck.NotNeeded)
         assertTrue(checkedWith.isEmpty())
         assertEquals(refusal to addressA, rules.usedWith.single())
         // And the picker keeps it refused.
@@ -514,7 +563,7 @@ class MasternodeVoterKeyCheckTest {
         db.identityDao().upsert(row(identifierA))
         rules.use = MasternodeRecordedVotingKeyUse(canVote = true, checkBeforeUse = false)
 
-        assertEquals(PickedVotingKeyCheck.NotNeeded, checkPicked())
+        assertTrue(checkPicked() is PickedVotingKeyCheck.NotNeeded)
         assertTrue(checkedWith.isEmpty())
     }
 

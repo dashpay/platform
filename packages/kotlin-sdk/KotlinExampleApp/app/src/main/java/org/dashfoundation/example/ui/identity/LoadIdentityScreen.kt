@@ -429,7 +429,7 @@ fun LoadIdentityScreen(navController: NavHostController) {
                             balance = balance,
                             alias = trimmedAlias,
                             pickedType = type,
-                            typePicked = typePicked,
+                            typePicked = typePickedForSave(typePicked, type, rowId, idBytes),
                             votingKey = votingKey,
                             votingKeyCheck = votingKeyCheck,
                             masternodeProTxHash = masternodeProTxHash,
@@ -867,6 +867,21 @@ internal suspend fun loadTargetProTxHash(dao: IdentityDao, typedId: ByteArray, n
         ?.takeIf { it.networkRaw == networkRaw }
         ?.masternodeProTxHash
         ?: wireOrderProTxHash(typedId)
+
+/**
+ * Whether the load writes [type] as the row's type. Always when the user picked it. Also when
+ * a masternode or evonode load stores a row other than the typed id's ([rowId] differs from
+ * [typedId], such as a shared masternode's new voter identity after a key rotation): the form's
+ * type then came from the typed id's stored row, the same masternode, so the new row is saved
+ * as that type and is offered for voting, never as User. Otherwise the stored row's type is
+ * kept.
+ */
+internal fun typePickedForSave(
+    typePicked: Boolean,
+    type: LoadIdentityType,
+    rowId: ByteArray,
+    typedId: ByteArray,
+): Boolean = typePicked || (type.isMasternode && !rowId.contentEquals(typedId))
 
 /** What [checkEnteredVotingKey] decided for an entered voting key. */
 internal sealed interface EnteredVotingKeyCheck {
