@@ -65,6 +65,10 @@ final class KeychainSignerStoredVotingKeyTests: XCTestCase {
         let address = try await signer.storedMasternodeVotingAddress(identityId: identityId)
         let signingAddress = try await signer.withStoredMasternodeVotingKey(identityId: identityId) { $0 }
         XCTAssertEqual(address, signingAddress)
+        XCTAssertEqual(
+            try signer.storedMasternodeVotingAddressWithoutSuspending(identityId: identityId),
+            address
+        )
         XCTAssertEqual(address.count, 20)
         XCTAssertFalse(
             signer.canSign(publicKey: address, keyType: KeyType.ecdsaHash160.rawValue)
@@ -79,6 +83,12 @@ final class KeychainSignerStoredVotingKeyTests: XCTestCase {
 
         do {
             _ = try await signer.storedMasternodeVotingAddress(identityId: identityId)
+            XCTFail("expected votingKeyNotStored")
+        } catch KeychainSigner.Error.votingKeyNotStored(let identityIdHex) {
+            XCTAssertEqual(identityIdHex, identityId.toHexString())
+        }
+        do {
+            _ = try signer.storedMasternodeVotingAddressWithoutSuspending(identityId: identityId)
             XCTFail("expected votingKeyNotStored")
         } catch KeychainSigner.Error.votingKeyNotStored(let identityIdHex) {
             XCTAssertEqual(identityIdHex, identityId.toHexString())

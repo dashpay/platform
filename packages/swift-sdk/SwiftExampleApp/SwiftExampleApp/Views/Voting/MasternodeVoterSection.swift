@@ -477,8 +477,22 @@ struct MasternodeVoterSection: View {
         // its record (Load Identity's store and replacement, and this check)
         // runs on the main actor, so none can land in between. If another
         // window replaced the key during the check, this answer is about a key
-        // that is gone and is dropped.
-        guard Self.storedVotingAddress(identityId: identityId) == checkedAddress else { return }
+        // that is gone and is dropped. A key that cannot be read now is
+        // reported, and the answer is not saved: it cannot be tied to the key.
+        let storedAddress: MasternodeVotingKeyAddress
+        do {
+            let data = try signer.storedMasternodeVotingAddressWithoutSuspending(identityId: identityId)
+            guard let address = MasternodeVotingKeyAddress(data) else {
+                throw SDKError.internalError("The stored voting key gave a voting address of \(data.count) bytes")
+            }
+            storedAddress = address
+        } catch {
+            checkFailure = (identityId, .keyUnreadable(
+                "The stored voting key could not be read, so the check's result was not saved: \(error.localizedDescription)"
+            ))
+            return
+        }
+        guard storedAddress == checkedAddress else { return }
         // The stored key is the checked key, so the slot holds the same key
         // with what its row records now.
         let outcome = check.outcome(
@@ -497,21 +511,6 @@ struct MasternodeVoterSection: View {
             ))
         }
         publish()
-    }
-
-    /// The voting address of the identity's stored voting key, read from the
-    /// Keychain without suspending, or `nil` when it cannot be read or there
-    /// is none. The key bytes are cleared once the address is formed.
-    @MainActor
-    private static func storedVotingAddress(identityId: Data) -> MasternodeVotingKeyAddress? {
-        guard case .success(var key?) = KeychainManager.shared.readSpecialKey(
-            identityId: identityId,
-            keyType: .voting
-        ) else {
-            return nil
-        }
-        defer { key.resetBytes(in: 0..<key.count) }
-        return try? SDK.masternodeVotingAddress(privateKey: key)
     }
 
     private func publish() {

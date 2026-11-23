@@ -1060,12 +1060,20 @@ extension KeychainSigner {
         // `SecItemCopyMatching` is synchronous and the caller is often the
         // main actor, so the read runs on a worker.
         try await Task.detached { [self] () -> Result<Data, Swift.Error> in
-            Result {
-                var privateKey = try self.readStoredVotingKey(identityId: identityId)
-                defer { privateKey.resetBytes(in: 0..<privateKey.count) }
-                return try Self.masternodeVotingAddress(privateKey: privateKey)
-            }
+            Result { try self.storedMasternodeVotingAddressWithoutSuspending(identityId: identityId) }
         }.value.get()
+    }
+
+    /// ``storedMasternodeVotingAddress(identityId:)`` read on the calling
+    /// thread, for a caller that must compare the stored key and write
+    /// something about it with no suspension point in between. It blocks for
+    /// one Keychain read; prefer the async form otherwise.
+    ///
+    /// - Throws: The same errors as ``storedMasternodeVotingAddress(identityId:)``.
+    public func storedMasternodeVotingAddressWithoutSuspending(identityId: Data) throws -> Data {
+        var privateKey = try readStoredVotingKey(identityId: identityId)
+        defer { privateKey.resetBytes(in: 0..<privateKey.count) }
+        return try Self.masternodeVotingAddress(privateKey: privateKey)
     }
 
     /// The voting private key stored for `identityId`. The caller resets the
