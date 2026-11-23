@@ -95,7 +95,9 @@
     "platform_wallet_topup_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
     "platform_wallet_tracked_asset_locks_free": "packages/rs-platform-wallet-ffi/src/manager_diagnostics.rs",
     "platform_wallet_tracked_asset_locks_list": "packages/rs-platform-wallet-ffi/src/manager_diagnostics.rs",
-    "restore_provider_special_txs": "packages/rs-platform-wallet-ffi/src/persistence.rs"
+    "restore_provider_special_txs": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+    "platform_wallet_manager_shielded_token_purchase_from_pool": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+    "platform_wallet_manager_shielded_token_purchase_availability": "packages/rs-platform-wallet-ffi/src/shielded_send.rs"
   },
   "capabilities": [
     {
@@ -2570,6 +2572,79 @@
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
           "id": "ADDR-10",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "shielded.token_purchase_from_pool",
+      "title": "Buy a token at its direct purchase price from the shielded credit pool (type 28)",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_manager_shielded_token_purchase_availability",
+        "platform_wallet_manager_shielded_token_purchase_from_pool"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PlatformWalletManager.shieldedTokenPurchaseFromPool and shieldedTokenPurchaseAvailability wrap the two FFI entry points; the platform-wallet manager checks the token count, the network's protocol version, the token's shielded pool and the note count, selects the credit pool notes for price plus fee, builds, broadcasts with the shielded spend recovery record, records a TokenPurchase activity row (kind tag 10) and requests a shielded sync. An accepted purchase stays pending until a shielded sync confirms it once it lands, as its result proof does not show it executed. The example app's Direct Purchase form offers a Shielded pool funding choice only on Rust's availability answer (TEST_PLAN SH-24). Partial because no device, simulator or network run has been recorded, and the bought tokens land in the token's shielded pool, which the wallet does not sync yet, so they are not shown and cannot be spent (SH-25 to SH-27). Restart recovery reuses the generic shielded spend record and redrive, with no test specific to this transition."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI wrapper or KotlinExampleApp flow for the shielded token purchase yet."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "SH-24",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
+          "id": "should_refuse_a_token_purchase_its_notes_cannot_pay_without_reserving_them",
+          "command": "cargo test -p platform-wallet --features shielded --lib token_purchase_from_pool_tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/note_selection.rs",
+          "id": "should_reserve_a_token_purchase_price_plus_the_fee_the_builder_charges",
+          "command": "cargo test -p platform-wallet --features shielded --lib should_reserve_a_token_purchase_price_plus_the_fee_the_builder_charges",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
+          "id": "should_keep_a_purchase_pending_when_platform_answers_with_the_pool_balance",
+          "command": "cargo test -p platform-wallet --features shielded --lib token_purchase_from_pool_tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
+          "id": "should_refuse_a_token_purchase_needing_more_notes_than_fit",
+          "command": "cargo test -p platform-wallet --features shielded --lib token_purchase_from_pool_tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
+          "id": "should_refuse_a_token_purchase_for_a_token_without_a_shielded_pool",
+          "command": "cargo test -p platform-wallet --features shielded --lib token_purchase_from_pool_tests",
           "covers_restart": false
         }
       ]

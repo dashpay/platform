@@ -1,6 +1,7 @@
 //! FFI bindings for the shielded spend pipeline (transitions
 //! 15/16/17/19/20 — shield, transfer, unshield, withdraw,
-//! identity-create-from-pool).
+//! identity-create-from-pool — plus 22, identity top-up from the pool,
+//! and 28, token purchase from the pool).
 //!
 //! Transitions 16/17/19 sign with the bound shielded wallet's
 //! Orchard `SpendAuthorizingKey`, which lives on the
@@ -51,7 +52,11 @@ use dpp::shielded::{
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::ProtocolError;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
-use platform_wallet::wallet::shielded::CachedOrchardProver;
+use platform_wallet::wallet::shielded::note_selection::compute_token_purchase_from_pool_fee;
+use platform_wallet::wallet::shielded::operations::token_shielded_purchase_availability;
+use platform_wallet::wallet::shielded::{
+    CachedOrchardProver, ShieldedTokenPurchaseAvailability, ShieldedTokenPurchaseOutcome,
+};
 use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::{
     MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner,
@@ -63,6 +68,7 @@ use crate::check_ptr;
 use crate::core_wallet_types::OutPointFFI;
 use crate::error::*;
 use crate::handle::*;
+use crate::identity_keys_from_mnemonic::resolve_seed_from_resolver;
 use crate::identity_registration_with_signer::{decode_identity_pubkeys, IdentityPubkeyFFI};
 use crate::runtime::{block_on_worker, runtime};
 use crate::shielded_types::{ShieldedIdentityDebitRecoveryRecordFFI, ShieldedShieldPreflightFFI};
@@ -179,6 +185,7 @@ fn shielded_fee_formula(
         2 => Some(compute_shielded_withdrawal_fee),
         3 => Some(compute_shielded_identity_balance_write_fee),
         4 => Some(compute_shielded_identity_top_up_fee),
+        5 => Some(compute_token_purchase_from_pool_fee),
         _ => None,
     }
 }
@@ -200,7 +207,10 @@ fn shielded_fee_formula(
 ///   identity to hold on top of the amount; the exact fee is metered at
 ///   execution),
 /// - `4` → IdentityTopUpFromShieldedPool (`compute_shielded_identity_top_up_fee`:
-///   base + the flat identity-balance write cost, carved from the value balance).
+///   base + the flat identity-balance write cost, carved from the value balance),
+/// - `5` → TokenPurchaseFromShieldedPool (`compute_token_purchase_from_pool_fee`:
+///   the fee paid on top of the price, for the token bundle's two actions and
+///   `num_actions` actions in the credit pool fee bundle).
 ///
 /// `num_actions` is the Orchard action count of the bundle the host will
 /// build (a single-note spend with change is 2 actions). The fee is
@@ -232,7 +242,7 @@ pub unsafe extern "C" fn platform_wallet_shielded_estimate_fee(
     let Some(formula) = shielded_fee_formula(kind) else {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            format!("unknown shielded fee kind {kind} (expected 0/1/2/3/4)"),
+            format!("unknown shielded fee kind {kind} (expected 0/1/2/3/4/5)"),
         );
     };
     let Some(platform_version) =
@@ -1398,6 +1408,210 @@ unsafe fn shielded_identity_top_up_from_pool_inner(
         r.map(|_| ())
     });
     map_spend_result(result, "shielded identity top up from pool")
+}
+
+/// Buy tokens at their direct purchase price from the wallet's shielded
+/// notes: the Type 28 `TokenPurchaseFromShieldedPool` transition. The notes of
+/// `account` pay `total_agreed_price` plus the pool-paid fee
+/// (`platform_wallet_shielded_estimate_fee` kind 5), and `token_count` tokens
+/// of the token at `token_contract_position` of `data_contract_id` are minted
+/// as a note to the account's own address in the token's shielded pool. The
+/// manager checks, selects, builds, broadcasts, records the activity and
+/// requests a shielded sync to look for it
+/// (`PlatformWalletManager::shielded_token_purchase_from_pool`); this export
+/// only marshals the arguments and the result.
+///
+/// Success means submitted, not confirmed: Platform accepted the purchase, but
+/// its result proof does not show that it executed, so it stays pending (its
+/// notes reserved) until a shielded sync confirms it. Do not retry it.
+/// `total_agreed_price` is the price the buyer agreed to; Drive refuses the
+/// purchase unless it covers the token's configured price for `token_count`.
+/// `mnemonic_resolver_handle` supplies the transient spend authority exactly
+/// as for `platform_wallet_manager_shielded_unshield`. Errors follow the other
+/// note-spending exports (`ErrorShieldedSpendUnconfirmed` once the spend may
+/// have reached a node: do not retry).
+///
+/// # Safety
+/// - `wallet_id_bytes` and `data_contract_id` must each point to 32 readable bytes.
+/// - `mnemonic_resolver_handle` must be a valid, non-destroyed handle.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_token_purchase_from_pool(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    data_contract_id: *const u8,
+    token_contract_position: u16,
+    token_count: u64,
+    total_agreed_price: u64,
+) -> PlatformWalletFFIResult {
+    // Runs under `catch_unwind` like the identity top-up export: a panic in the
+    // proving task must not reach this `extern "C"` frame, and the notes may
+    // already be reserved or the transition broadcast when it strikes.
+    catch_spend_panic(TOKEN_PURCHASE_OPERATION, || {
+        shielded_token_purchase_from_pool_inner(
+            handle,
+            wallet_id_bytes,
+            mnemonic_resolver_handle,
+            account,
+            data_contract_id,
+            token_contract_position,
+            token_count,
+            total_agreed_price,
+        )
+    })
+}
+
+/// The operation name the token purchase export reports.
+const TOKEN_PURCHASE_OPERATION: &str = "shielded token purchase from pool";
+
+/// Body of [`platform_wallet_manager_shielded_token_purchase_from_pool`], as an
+/// ordinary Rust function so a panic unwinds into [`catch_spend_panic`] instead
+/// of across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[allow(clippy::too_many_arguments)]
+unsafe fn shielded_token_purchase_from_pool_inner(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    data_contract_id: *const u8,
+    token_contract_position: u16,
+    token_count: u64,
+    total_agreed_price: u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(mnemonic_resolver_handle);
+    check_ptr!(data_contract_id);
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+    let data_contract_id = unwrap_result_or_return!(read_identifier(data_contract_id));
+
+    let Some(purchaser) = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(manager.shielded_token_purchaser(&wallet_id))
+    }) else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            format!("invalid manager handle: {handle}"),
+        );
+    };
+    let purchaser = match purchaser {
+        Ok(purchaser) => purchaser,
+        Err(e) => return map_token_purchase_result(Err(e)),
+    };
+
+    let seed = match resolve_seed_from_resolver(mnemonic_resolver_handle, &wallet_id) {
+        Ok(seed) => seed,
+        Err(result) => return result,
+    };
+
+    let result = block_on_worker(async move {
+        let prover = CachedOrchardProver::new();
+        purchaser
+            .purchase(
+                seed.as_ref(),
+                account,
+                &data_contract_id,
+                token_contract_position,
+                token_count,
+                total_agreed_price,
+                &prover,
+            )
+            .await
+    });
+    map_token_purchase_result(result)
+}
+
+/// Map a shielded token purchase's result: submitted is success (a shielded
+/// sync confirms it once it lands), every error as the other note-spending
+/// exports map it ([`map_spend_result`]).
+fn map_token_purchase_result(
+    result: Result<ShieldedTokenPurchaseOutcome, PlatformWalletError>,
+) -> PlatformWalletFFIResult {
+    map_spend_result(
+        result.map(|outcome| match outcome {
+            ShieldedTokenPurchaseOutcome::Submitted => (),
+        }),
+        TOKEN_PURCHASE_OPERATION,
+    )
+}
+
+/// Whether the token at `token_contract_position` of `data_contract_id` can be
+/// bought from the shielded pool, from a verified read of its configuration
+/// (`token_shielded_purchase_availability`), written to `out_availability`:
+/// `0` available, `1` the token has no shielded pool, `2` its configuration
+/// could not be read (a later call may succeed). A purchase form offers the
+/// shielded payment on `0` only. This export only marshals.
+///
+/// # Safety
+/// - `data_contract_id` must point to 32 readable bytes.
+/// - `out_availability` must point to one writable byte.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_token_purchase_availability(
+    handle: Handle,
+    data_contract_id: *const u8,
+    token_contract_position: u16,
+    out_availability: *mut u8,
+) -> PlatformWalletFFIResult {
+    // A panic in the read, including the worker join, must not unwind across
+    // this `extern "C"` frame. Nothing is reserved or sent, so it is a plain
+    // failure the host may ask again after.
+    catch_panic_to_code(
+        "platform_wallet_manager_shielded_token_purchase_availability",
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        "Nothing was reserved or sent; ask again.",
+        || unsafe {
+            shielded_token_purchase_availability_inner(
+                handle,
+                data_contract_id,
+                token_contract_position,
+                out_availability,
+            )
+        },
+    )
+}
+
+/// Body of [`platform_wallet_manager_shielded_token_purchase_availability`],
+/// as an ordinary Rust function so a panic unwinds into
+/// [`catch_panic_to_code`] instead of across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn shielded_token_purchase_availability_inner(
+    handle: Handle,
+    data_contract_id: *const u8,
+    token_contract_position: u16,
+    out_availability: *mut u8,
+) -> PlatformWalletFFIResult {
+    check_ptr!(data_contract_id);
+    check_ptr!(out_availability);
+    let data_contract_id = unwrap_result_or_return!(read_identifier(data_contract_id));
+    let Some(sdk) = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.sdk_arc())
+    else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            format!("invalid manager handle: {handle}"),
+        );
+    };
+    let availability = block_on_worker(async move {
+        token_shielded_purchase_availability(&sdk, data_contract_id, token_contract_position).await
+    });
+    *out_availability = token_purchase_availability_code(availability);
+    PlatformWalletFFIResult::ok()
+}
+
+/// The byte [`platform_wallet_manager_shielded_token_purchase_availability`]
+/// writes for `availability`.
+fn token_purchase_availability_code(availability: ShieldedTokenPurchaseAvailability) -> u8 {
+    match availability {
+        ShieldedTokenPurchaseAvailability::Available => 0,
+        ShieldedTokenPurchaseAvailability::NoShieldedPool => 1,
+        ShieldedTokenPurchaseAvailability::ConfigurationUnreadable => 2,
+    }
 }
 
 /// Shield: spend credits from a Platform Payment account into a
@@ -2708,6 +2922,74 @@ mod tests {
             estimate_at(2, 14),
             226_480_000,
             "shielded withdrawal fee (2 actions, protocol 14)"
+        );
+    }
+
+    /// A submitted token purchase is a success (a shielded sync confirms it once
+    /// it lands), and one that may have reached a node keeps the do-not-retry
+    /// code.
+    #[test]
+    fn should_map_a_submitted_token_purchase_to_success_and_unconfirmed_apart() {
+        assert_eq!(
+            map_token_purchase_result(Ok(ShieldedTokenPurchaseOutcome::Submitted)).code,
+            PlatformWalletFFIResultCode::Success
+        );
+        assert_eq!(
+            map_token_purchase_result(Err(PlatformWalletError::ShieldedSpendUnconfirmed {
+                operation: "token purchase from shielded pool",
+                reason: "the result wait timed out".to_string(),
+            }))
+            .code,
+            PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
+        );
+    }
+
+    /// The availability export answers a handle that names no manager with
+    /// its own code, through the panic guard, and writes nothing.
+    #[test]
+    fn should_refuse_a_token_purchase_availability_for_an_unknown_manager() {
+        let contract_id = [0x44u8; 32];
+        let mut out = 0xFFu8;
+        let result = unsafe {
+            platform_wallet_manager_shielded_token_purchase_availability(
+                Handle::MAX,
+                contract_id.as_ptr(),
+                0,
+                &mut out,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
+        assert_eq!(out, 0xFF, "nothing is written");
+    }
+
+    /// Each availability the wallet reports has its own byte.
+    #[test]
+    fn should_write_a_distinct_byte_for_each_token_purchase_availability() {
+        assert_eq!(
+            [
+                ShieldedTokenPurchaseAvailability::Available,
+                ShieldedTokenPurchaseAvailability::NoShieldedPool,
+                ShieldedTokenPurchaseAvailability::ConfigurationUnreadable,
+            ]
+            .map(token_purchase_availability_code),
+            [0, 1, 2]
+        );
+    }
+
+    /// Kind 5 quotes the fee a token purchase from the pool pays on top of the
+    /// price: the consensus formula over the token bundle's two actions and the
+    /// fee bundle's, the same the wallet reserves and the builder charges.
+    #[test]
+    fn should_estimate_a_token_purchase_fee_with_the_consensus_formula() {
+        let version = dpp::version::PlatformVersion::get(14).expect("protocol version 14");
+        assert_eq!(
+            estimate_at(5, 14),
+            dpp::shielded::compute_token_purchase_from_shielded_pool_fee(2, 2, version)
+                .expect("the consensus fee")
+        );
+        assert!(
+            estimate_at(5, 14) > estimate_at(0, 14),
+            "two bundles cost more than one"
         );
     }
 

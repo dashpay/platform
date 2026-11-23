@@ -80,6 +80,7 @@ pub(crate) use contact_address::ContactShieldedAddresses;
 pub use coordinator::NetworkShieldedCoordinator;
 pub use file_store::{FileBackedShieldedStore, FileShieldedStoreError};
 pub use keys::{AccountViewingKeys, OrchardKeySet};
+pub use operations::{ShieldedTokenPurchaseAvailability, ShieldedTokenPurchaseOutcome};
 pub use prover::CachedOrchardProver;
 pub use seed_pool::{SeedPoolOutcome, SeedPoolProgress, DEFAULT_SEED_POOL_TARGET_NOTES};
 pub use store::{
