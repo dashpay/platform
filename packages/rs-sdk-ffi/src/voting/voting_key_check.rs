@@ -131,7 +131,9 @@ unsafe fn check_voting_key_inner(
 
 /// The verdict a host receives for `check`, and the sentence it shows for `Invalid` and
 /// `Undetermined`.
-fn verdict_and_message(check: VotingKeyCheck) -> (DashSDKVotingKeyVerdict, Option<String>) {
+pub(crate) fn verdict_and_message(
+    check: VotingKeyCheck,
+) -> (DashSDKVotingKeyVerdict, Option<String>) {
     match check {
         VotingKeyCheck::Valid { .. } => (DashSDKVotingKeyVerdict::Valid, None),
         VotingKeyCheck::Invalid(problem) => (
