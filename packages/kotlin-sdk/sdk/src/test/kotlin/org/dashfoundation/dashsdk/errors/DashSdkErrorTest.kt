@@ -94,6 +94,17 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun shouldMapAnUnreadableIdentityBalanceToItsOwnType() {
+        val message = "identity balance unavailable for 7y3Q"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 58, message)
+        val mapped = DashSdkError.fromNative(native)
+
+        assertTrue(mapped is DashSdkError.PlatformWallet.IdentityBalanceUnavailable)
+        assertEquals(message, mapped.message)
+        assertEquals(native, mapped.cause)
+    }
+
+    @Test
     fun unknownNativeCodesFallBackToInternalError() {
         // A code in the rs-sdk-ffi range (< the platform-wallet offset) with
         // no dedicated mapping stays an InternalError.
