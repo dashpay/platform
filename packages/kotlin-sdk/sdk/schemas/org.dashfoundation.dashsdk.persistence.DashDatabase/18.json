@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 18,
-    "identityHash": "a5a8ec6c47beb2ab46db3d5ce173eb9a",
+    "identityHash": "628ebef851d45b4baa2dbcbe69ee64da",
     "entities": [
       {
         "tableName": "wallets",
@@ -1005,7 +1005,7 @@
       },
       {
         "tableName": "identities",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`identityId` BLOB NOT NULL, `balance` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `isLocal` INTEGER NOT NULL, `alias` TEXT, `dpnsName` TEXT, `mainDpnsName` TEXT, `identityType` TEXT NOT NULL, `votingPrivateKeyIdentifier` TEXT, `ownerPrivateKeyIdentifier` TEXT, `payoutPrivateKeyIdentifier` TEXT, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, `lastSyncedAt` INTEGER, `networkRaw` INTEGER NOT NULL, `walletId` BLOB, `identityIndex` INTEGER NOT NULL, `votingKeyCheckRaw` TEXT, `votingKeyCheckMessage` TEXT, `votingKeyCheckAddress` BLOB, PRIMARY KEY(`identityId`), FOREIGN KEY(`walletId`) REFERENCES `wallets`(`walletId`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`identityId` BLOB NOT NULL, `balance` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `isLocal` INTEGER NOT NULL, `alias` TEXT, `dpnsName` TEXT, `mainDpnsName` TEXT, `identityType` TEXT NOT NULL, `votingPrivateKeyIdentifier` TEXT, `ownerPrivateKeyIdentifier` TEXT, `payoutPrivateKeyIdentifier` TEXT, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, `lastSyncedAt` INTEGER, `networkRaw` INTEGER NOT NULL, `walletId` BLOB, `identityIndex` INTEGER NOT NULL, `votingKeyCheckRaw` TEXT, `votingKeyCheckMessage` TEXT, `votingKeyCheckAddress` BLOB, `votingKeyCheckRevision` INTEGER, PRIMARY KEY(`identityId`), FOREIGN KEY(`walletId`) REFERENCES `wallets`(`walletId`) ON UPDATE NO ACTION ON DELETE SET NULL )",
         "fields": [
           {
             "fieldPath": "identityId",
@@ -1115,6 +1115,11 @@
             "fieldPath": "votingKeyCheckAddress",
             "columnName": "votingKeyCheckAddress",
             "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "votingKeyCheckRevision",
+            "columnName": "votingKeyCheckRevision",
+            "affinity": "INTEGER"
           }
         ],
         "primaryKey": {
@@ -4367,7 +4372,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'a5a8ec6c47beb2ab46db3d5ce173eb9a')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '628ebef851d45b4baa2dbcbe69ee64da')"
     ]
   }
 }

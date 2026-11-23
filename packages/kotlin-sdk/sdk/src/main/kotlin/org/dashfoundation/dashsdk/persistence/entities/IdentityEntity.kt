@@ -80,6 +80,12 @@ data class IdentityEntity(
      * `PersistentIdentity.votingKeyCheckAddress`.
      */
     val votingKeyCheckAddress: ByteArray? = null,
+    /**
+     * How many checks were recorded on this row: each record write adds one, in the same
+     * statement. A host that saved a check compares it with this to tell whether Room has
+     * delivered that write or a later one. Null (none yet) reads as 0.
+     */
+    val votingKeyCheckRevision: Long? = null,
 ) {
     override fun equals(other: Any?): Boolean =
         other is IdentityEntity && identityId.contentEquals(other.identityId)

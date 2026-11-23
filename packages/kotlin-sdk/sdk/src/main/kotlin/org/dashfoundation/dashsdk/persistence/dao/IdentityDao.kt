@@ -139,7 +139,8 @@ interface IdentityDao {
      */
     @Query(
         "UPDATE identities SET votingKeyCheckRaw = :raw, votingKeyCheckMessage = :message, " +
-            "votingKeyCheckAddress = :address " +
+            "votingKeyCheckAddress = :address, " +
+            "votingKeyCheckRevision = COALESCE(votingKeyCheckRevision, 0) + 1 " +
             "WHERE identityId = :identityId AND networkRaw = :networkRaw " +
             "AND votingPrivateKeyIdentifier = :identifier"
     )

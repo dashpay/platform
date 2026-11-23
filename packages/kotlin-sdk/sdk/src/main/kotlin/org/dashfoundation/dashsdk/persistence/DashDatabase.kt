@@ -203,10 +203,11 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * drain.
  *
  * Version 18 (masternode voting key check): adds the nullable
- * `identities.votingKeyCheckRaw`, `identities.votingKeyCheckMessage` and
- * `identities.votingKeyCheckAddress` columns, what Platform proved when a
- * stored voting key was last checked and the address of the key it was made
- * of (Swift `PersistentIdentity`, `DashSchemaV5`). NULL for every
+ * `identities.votingKeyCheckRaw`, `identities.votingKeyCheckMessage`,
+ * `identities.votingKeyCheckAddress` and `identities.votingKeyCheckRevision`
+ * columns: what Platform proved when a stored voting key was last checked,
+ * the address of the key it was made of (Swift `PersistentIdentity`,
+ * `DashSchemaV5`), and a count of the checks recorded, which orders them. NULL for every
  * pre-existing row: a key stored before checks existed is never checked, so
  * it is checked when it is picked to vote.
  */
@@ -810,6 +811,7 @@ abstract class DashDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `identities` ADD COLUMN `votingKeyCheckRaw` TEXT")
                 db.execSQL("ALTER TABLE `identities` ADD COLUMN `votingKeyCheckMessage` TEXT")
                 db.execSQL("ALTER TABLE `identities` ADD COLUMN `votingKeyCheckAddress` BLOB")
+                db.execSQL("ALTER TABLE `identities` ADD COLUMN `votingKeyCheckRevision` INTEGER")
             }
         }
 

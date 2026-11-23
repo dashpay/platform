@@ -412,7 +412,25 @@ object MasternodeVotingKeyRecords {
         storedIdentifier: String,
         check: MasternodeVotingKeyCheck,
         rules: MasternodeVotingKeyRules = MasternodeVotingKeyRules.Native,
-    ): MasternodeVotingKeyCheckOutcome? {
+    ): MasternodeVotingKeyCheckOutcome? =
+        recordWithRevision(database, identityId, networkRaw, storedIdentifier, check, rules)?.outcome
+
+    /** What [recordWithRevision] did: Rust's [outcome], and the row's revision after it. */
+    data class Recorded(val outcome: MasternodeVotingKeyCheckOutcome, val revision: Long)
+
+    /**
+     * [record], also returning the row's `votingKeyCheckRevision` as the same transaction left
+     * it: a host holding the written record can tell from a later Room emission whether it
+     * already shows this write or a later one (its revision is at least this one).
+     */
+    suspend fun recordWithRevision(
+        database: DashDatabase,
+        identityId: ByteArray,
+        networkRaw: Int,
+        storedIdentifier: String,
+        check: MasternodeVotingKeyCheck,
+        rules: MasternodeVotingKeyRules = MasternodeVotingKeyRules.Native,
+    ): Recorded? {
         val address = MasternodeVotingKeyAddress.ofIdentifier(storedIdentifier)
         return database.withTransaction {
             val dao = database.identityDao()
@@ -434,7 +452,8 @@ object MasternodeVotingKeyRecords {
                     address = record.votingAddress.bytes,
                 )
             }
-            outcome
+            val revision = dao.getByIdentityId(identityId)?.votingKeyCheckRevision ?: 0L
+            Recorded(outcome, revision)
         }
     }
 

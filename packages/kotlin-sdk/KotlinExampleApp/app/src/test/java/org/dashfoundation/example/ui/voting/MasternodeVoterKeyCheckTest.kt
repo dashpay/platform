@@ -218,7 +218,7 @@ class MasternodeVoterKeyCheckTest {
         yield()
         assertNull(db.identityDao().getByIdentityId(identityId)!!.votingKeyCheckRaw)
 
-        assertEquals(PickedVotingKeyCheck.Recorded(MasternodeVotingKeyCheck.Valid, recorded), checkPicked())
+        assertEquals(PickedVotingKeyCheck.Recorded(MasternodeVotingKeyCheck.Valid, recorded, 1), checkPicked())
         assertEquals(addressA, checkedWith.last().second)
         assertEquals(recorded, db.identityDao().getByIdentityId(identityId)!!.recordedVotingKey)
     }
@@ -254,7 +254,7 @@ class MasternodeVoterKeyCheckTest {
             val recordedB = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressB)
             rules.outcome = MasternodeVotingKeyCheckOutcome(storeKey = true, record = recordedB)
             assertEquals(
-                PickedVotingKeyCheck.Recorded(MasternodeVotingKeyCheck.Valid, recordedB),
+                PickedVotingKeyCheck.Recorded(MasternodeVotingKeyCheck.Valid, recordedB, 1),
                 checkPicked(identifier = recovered.state.identifier!!, database = reopened),
             )
             assertEquals(addressB, checkedWith.single().second)
@@ -265,32 +265,67 @@ class MasternodeVoterKeyCheckTest {
         }
     }
 
+    /** [voterKeyState] of a row whose record was written [revision] times. */
+    private fun stateAt(revision: Long, recorded: MasternodeRecordedVotingKey? = null) =
+        voterKeyState(row(identifierA, recorded).copy(votingKeyCheckRevision = revision))
+
     /**
-     * A result this dialog saved stands only until Room shows a change to the row's record: a
-     * newer refusal of the same key, written by another check, then decides. A result that
-     * could not be saved stands, since Room will never show it.
+     * A result this dialog saved stands until Room shows that write or a later one (the row's
+     * revision reaches the one the write left); then Room decides, so a newer refusal of the
+     * same key written by another check counts. A result that could not be saved stands.
      */
     @Test
     fun shouldLetANewerRefusalInRoomSupersedeASavedResult() {
         val undetermined = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Undetermined("down"), addressA)
         val refusal = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Invalid("rotated"), addressA)
-        val saved = PickedKeyCheckState(identifierA, undetermined, saved = true, recordBefore = null)
+        val saved = PickedKeyCheckState(identifierA, undetermined, savedRevision = 1)
 
         // Before Room delivers the write, the dialog's result speaks.
-        assertEquals(undetermined, effectiveRecord(voterKeyState(row(identifierA)), saved))
-        // Room shows this write: the same record either way.
-        assertEquals(undetermined, effectiveRecord(voterKeyState(row(identifierA, undetermined)), saved))
+        assertEquals(undetermined, effectiveRecord(stateAt(0), saved))
+        // Room shows this write.
+        assertEquals(undetermined, effectiveRecord(stateAt(1, undetermined), saved))
         // Room shows a newer refusal of the same key: it decides.
-        assertEquals(refusal, effectiveRecord(voterKeyState(row(identifierA, refusal)), saved))
+        assertEquals(refusal, effectiveRecord(stateAt(2, refusal), saved))
         rules.use = refusedUse
-        assertEquals(
-            StoredVoterDecision.REFUSED,
-            storedVoterDecision(voterKeyState(row(identifierA, refusal)), saved, rules),
-        )
+        assertEquals(StoredVoterDecision.REFUSED, storedVoterDecision(stateAt(2, refusal), saved, rules))
 
-        // A refusal that could not be saved is never retired by Room's older record.
-        val unsaved = PickedKeyCheckState(identifierA, refusal, saved = false)
-        assertEquals(refusal, effectiveRecord(voterKeyState(row(identifierA, undetermined)), unsaved))
+        // A refusal that could not be saved is never retired by Room's record.
+        val unsaved = PickedKeyCheckState(identifierA, refusal, savedRevision = null)
+        assertEquals(refusal, effectiveRecord(stateAt(5, undetermined), unsaved))
+    }
+
+    /**
+     * An older record Room delivers after the dialog saved its refusal (another check's write,
+     * at a lower revision) does not release the key.
+     */
+    @Test
+    fun shouldKeepASavedRefusalOverAnOlderRecordRoomDeliversLate() {
+        val refusal = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Invalid("rotated"), addressA)
+        val olderUndetermined = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Undetermined("down"), addressA)
+        val saved = PickedKeyCheckState(identifierA, refusal, savedRevision = 2)
+        rules.use = refusedUse
+
+        assertEquals(refusal, effectiveRecord(stateAt(1, olderUndetermined), saved))
+        assertEquals(StoredVoterDecision.REFUSED, storedVoterDecision(stateAt(1, olderUndetermined), saved, rules))
+        assertEquals(refusal to addressA, rules.usedWith.last())
+    }
+
+    /**
+     * Only what the dialog learned reaches the check, and only while the row it reads is behind
+     * it: a refusal the row already holds at a newer revision decides, with no Platform call.
+     */
+    @Test
+    fun shouldNotCheckAKeyTheFreshRowAlreadyRefuses() = runBlocking {
+        val refusal = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Invalid("rotated"), addressA)
+        val undetermined = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Undetermined("down"), addressA)
+        db.identityDao().upsert(row(identifierA, refusal).copy(votingKeyCheckRevision = 3))
+        rules.use = refusedUse
+
+        val result = checkPicked(picked = PickedKeyCheckState(identifierA, undetermined, savedRevision = 2))
+
+        assertEquals(PickedVotingKeyCheck.NotNeeded, result)
+        assertTrue(checkedWith.isEmpty())
+        assertEquals(refusal to addressA, rules.usedWith.single())
     }
 
     /** A check started again for a re-picked key holds it until that check finishes. */
@@ -315,7 +350,7 @@ class MasternodeVoterKeyCheckTest {
         val refusal = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Invalid("rotated"), addressA)
         rules.use = refusedUse
 
-        assertEquals(PickedVotingKeyCheck.NotNeeded, checkPicked(known = refusal))
+        assertEquals(PickedVotingKeyCheck.NotNeeded, checkPicked(picked = PickedKeyCheckState(identifierA, refusal)))
         assertTrue(checkedWith.isEmpty())
         assertEquals(refusal to addressA, rules.usedWith.single())
         // And the picker keeps it refused.
@@ -359,7 +394,7 @@ class MasternodeVoterKeyCheckTest {
         answer: suspend () -> MasternodeVotingKeyCheck = { MasternodeVotingKeyCheck.Valid },
         stillCurrent: () -> Boolean = { true },
         identifier: String = identifierA,
-        known: MasternodeRecordedVotingKey? = null,
+        picked: PickedKeyCheckState? = null,
         database: DashDatabase = db,
     ): PickedVotingKeyCheck = checkPickedVotingKeyIfNeeded(
         database = database,
@@ -367,7 +402,7 @@ class MasternodeVoterKeyCheckTest {
         networkRaw = testnet,
         identifier = identifier,
         rules = rules,
-        known = known,
+        picked = picked,
         check = { proTxHash, address ->
             checkedWith += proTxHash to address
             answer()
@@ -393,7 +428,7 @@ class MasternodeVoterKeyCheckTest {
         val recorded = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressA)
         rules.outcome = MasternodeVotingKeyCheckOutcome(storeKey = true, record = recorded)
 
-        assertEquals(PickedVotingKeyCheck.Recorded(MasternodeVotingKeyCheck.Valid, recorded), checkPicked())
+        assertEquals(PickedVotingKeyCheck.Recorded(MasternodeVotingKeyCheck.Valid, recorded, 1), checkPicked())
 
         assertArrayEquals(identityId.reversedArray(), checkedWith.single().first)
         assertEquals(addressA, checkedWith.single().second)
