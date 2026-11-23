@@ -35,26 +35,46 @@ PACKAGES = {
 
 ASSETS_CALL = 'api --paginate repos/dashpay/platform/releases/123/assets?per_page=100'
 
-# gh needs GH_TOKEN in a workflow, and GH_REPO where nothing is checked out.
-# `gh api` answers with the release assets in GH_ASSETS, filtered through real
-# jq as gh's --jq would; `gh release upload` keeps a copy of what it uploads.
-# The log has one line per call, without the jq filter.
-GH_STUB = '''#!/bin/bash
-case "$1" in api) echo "$1 $2 $3" ;; *) echo "$*" ;; esac >> "$GH_LOG"
-[ -n "${GH_TOKEN:-}" ] || { echo 'gh: set the GH_TOKEN environment variable' >&2; exit 4; }
-case "$1 $2" in
-  'api --paginate')
-    [ -z "${GH_FAIL:-}" ] || { echo 'gh: Server Error (HTTP 502)' >&2; exit 1; }
-    [ "$4" = --jq ] || exit 2
-    printf '%s' "$GH_ASSETS" | jq -r "$5"
-    ;;
-  'release upload')
-    [ -n "${GH_REPO:-}" ] || { echo 'failed to determine base repo: no git remotes found' >&2; exit 1; }
-    mkdir -p "$UPLOADED"
-    cp "$4" "$UPLOADED/"
-    ;;
-  *) exit 2 ;;
-esac
+# gh needs GH_TOKEN in a workflow. `gh api` answers listings with the release assets in GH_ASSETS,
+# filtered through real jq as gh's --jq would. An upload through the API keeps a copy of the file
+# and answers with asset id GH_NEW_ID; reading that asset back reports the uploaded bytes' digest,
+# or GH_ATTACHED_STATE / GH_ATTACHED_DIGEST ('null' for none). GH_FAIL fails the listings. The log
+# has one line per call, without the jq filter.
+GH_STUB = '''#!/usr/bin/env python3
+import hashlib, json, os, shutil, subprocess, sys
+args = sys.argv[1:]
+jq = args[args.index('--jq') + 1] if '--jq' in args else None
+with open(os.environ['GH_LOG'], 'a') as log:
+    log.write(' '.join(a for a in args if jq is None or a not in ('--jq', jq)) + '\\n')
+if not os.environ.get('GH_TOKEN'):
+    print('gh: set the GH_TOKEN environment variable', file=sys.stderr)
+    sys.exit(4)
+
+def respond(text):
+    result = subprocess.run(['jq', '-r', jq], input=text, capture_output=True, text=True)
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
+    sys.exit(result.returncode)
+
+uploaded = os.path.join(os.environ['UPLOADED'], 'SHA256SUMS')
+if args[:2] == ['api', '--paginate']:
+    if os.environ.get('GH_FAIL'):
+        print('gh: Server Error (HTTP 502)', file=sys.stderr)
+        sys.exit(1)
+    respond(os.environ['GH_ASSETS'])
+if args[:3] == ['api', '--method', 'DELETE']:
+    sys.exit(0)
+if args[:3] == ['api', '--method', 'POST']:
+    os.makedirs(os.environ['UPLOADED'], exist_ok=True)
+    shutil.copy(args[args.index('--input') + 1], uploaded)
+    respond(json.dumps({'id': int(os.environ.get('GH_NEW_ID', '4242')), 'state': 'uploaded'}))
+if args[0] == 'api' and '/releases/assets/' in args[1]:
+    with open(uploaded, 'rb') as handle:
+        digest = 'sha256:' + hashlib.sha256(handle.read()).hexdigest()
+    digest = os.environ.get('GH_ATTACHED_DIGEST', digest)
+    respond(json.dumps({'id': int(args[1].rsplit('/', 1)[1]), 'state': os.environ.get('GH_ATTACHED_STATE', 'uploaded'),
+                        'digest': None if digest == 'null' else digest}))
+sys.exit(2)
 '''
 
 
@@ -334,74 +354,66 @@ class ReleaseChecksumsTests(unittest.TestCase):
                                    GH_FAIL='1')
             self.assertNotEqual(result.returncode, 0)
 
-    def test_should_attach_sha256sums_to_an_unsigned_release(self):
+    UPLOAD_CALL = ('api --method POST https://uploads.github.com/repos/dashpay/platform/releases/123/assets'
+                   '?name=SHA256SUMS -H Content-Type: text/plain --input SHA256SUMS')
+
+    def test_should_attach_sha256sums_and_record_the_asset_in_its_log(self):
         published = self.generated()
-
-        result = self.run_step('Attach SHA256SUMS to the release', assets=self.assets(published))
-
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.gh_calls(), [ASSETS_CALL, 'release upload v5.1.0 SHA256SUMS --clobber'])
-        self.assertEqual((self.tmp / 'uploaded/SHA256SUMS').read_bytes(), (self.tmp / 'SHA256SUMS').read_bytes())
-
-    def test_should_record_which_sha256sums_it_attached(self):
-        self.generated()
         sums = sha256((self.tmp / 'SHA256SUMS').read_bytes())
-        attached = {'id': 4242, 'name': 'SHA256SUMS', 'state': 'uploaded',
-                    'uploader': {'login': 'github-actions[bot]'}, 'digest': 'sha256:' + sums}
-
-        result = self.run_step('Record the attached SHA256SUMS', assets=[attached])
-
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual((self.tmp / 'receipt').read_text(), f'4242 {sums}\n')
-        self.assertEqual(self.gh_calls(), [ASSETS_CALL])
-        # kept with the run, under the name the signing script reads, and replaced by each run of the job
-        checksums = job('release-dashmate-checksums')
-        order = [checksums.index('- name: ' + step) for step in [
-            'Attach SHA256SUMS to the release', 'Record the attached SHA256SUMS',
-            'Upload the record of the attached SHA256SUMS']]
-        self.assertEqual(order, sorted(order))
-        upload = step_with('Upload the record of the attached SHA256SUMS')
-        self.assertEqual((upload['path'], upload['overwrite'], upload['if-no-files-found']), ('receipt', 'true', 'error'))
-        self.assertEqual(upload['name'], 'dashmate-checksums-receipt-${{ github.sha }}')
-        script = (ROOT / 'scripts/release/sign_dashmate_checksums.sh').read_text()
-        self.assertIn('"dashmate-checksums-receipt-${RUN_SHA}"', script)
-
-    def test_should_refuse_to_record_a_sha256sums_it_did_not_attach(self):
-        self.generated()
-        sums = sha256((self.tmp / 'SHA256SUMS').read_bytes())
-        attached = {'id': 4242, 'name': 'SHA256SUMS', 'state': 'uploaded',
-                    'uploader': {'login': 'github-actions[bot]'}, 'digest': 'sha256:' + sums}
-        cases = {
-            'no SHA256SUMS on the release': [],
-            'another file': [dict(attached, digest='sha256:' + 'f' * 64)],
-            'an upload that did not finish': [dict(attached, state='open')],
-            'no digest yet': [dict(attached, digest=None)],
-        }
-        for case, assets in cases.items():
+        previous = {'id': 77, 'name': 'SHA256SUMS', 'state': 'uploaded', 'digest': 'sha256:' + 'a' * 64}
+        for case, assets, replaced in [('first upload', self.assets(published), []),
+                                       ('a SHA256SUMS from an earlier run', self.assets(published) + [previous],
+                                        ['api --method DELETE repos/dashpay/platform/releases/assets/77'])]:
             with self.subTest(case):
-                result = self.run_step('Record the attached SHA256SUMS', assets=assets)
+                (self.tmp / 'gh.log').unlink(missing_ok=True)
+
+                result = self.run_step('Attach SHA256SUMS to the release', assets=assets)
+
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(self.gh_calls(), [ASSETS_CALL, *replaced, self.UPLOAD_CALL,
+                                                   'api repos/dashpay/platform/releases/assets/4242'])
+                self.assertEqual((self.tmp / 'uploaded/SHA256SUMS').read_bytes(),
+                                 (self.tmp / 'SHA256SUMS').read_bytes())
+                self.assertIn(f'SHA256SUMS attached: asset 4242 sha256 {sums}', result.stdout.splitlines())
+        # the signing script reads that line back from the job's log as this asset and sum
+        script = (ROOT / 'scripts/release/sign_dashmate_checksums.sh').read_text()
+        expression = re.search(r"sed -nE '([^']+)'", script).group(1)
+        read = subprocess.run(['sed', '-nE', expression], capture_output=True, text=True,
+                              input=f'2026-11-23T10:00:01.0000000Z SHA256SUMS attached: asset 4242 sha256 {sums}\n')
+        self.assertEqual(read.stdout, f'4242 {sums}\n')
+
+    def test_should_not_record_an_asset_that_is_not_the_file_it_uploaded(self):
+        published = self.generated()
+        for case, env in [('other bytes', {'GH_ATTACHED_DIGEST': 'sha256:' + 'f' * 64}),
+                          ('no digest yet', {'GH_ATTACHED_DIGEST': 'null'}),
+                          ('an upload that did not finish', {'GH_ATTACHED_STATE': 'open'}),
+                          ('no asset id', {'GH_NEW_ID': '0'})]:
+            with self.subTest(case):
+                result = self.run_step('Attach SHA256SUMS to the release', assets=self.assets(published), **env)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn('::error::', result.stdout)
-                self.assertFalse((self.tmp / 'receipt').exists())
+                self.assertNotIn('SHA256SUMS attached: asset', result.stdout)
 
     def test_should_never_replace_a_signed_sha256sums(self):
         published = self.generated()
+        writes = ('api --method',)
         for signature in ['SHA256SUMS.asc', 'SHA256SUMS.sig']:
             with self.subTest(signature):
-                assets = self.assets(published) + [{'name': 'SHA256SUMS', 'state': 'uploaded', 'digest': None},
-                                                   {'name': signature, 'state': 'uploaded', 'digest': None}]
+                (self.tmp / 'gh.log').unlink(missing_ok=True)
+                assets = self.assets(published) + [{'id': 77, 'name': 'SHA256SUMS', 'state': 'uploaded', 'digest': None},
+                                                   {'id': 78, 'name': signature, 'state': 'uploaded', 'digest': None}]
 
                 result = self.run_step('Attach SHA256SUMS to the release', assets=assets)
 
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(f'::error::v5.1.0 is signed ({signature})', result.stdout)
-                self.assertFalse(any(call.startswith('release upload') for call in self.gh_calls()))
+                self.assertFalse(any(call.startswith(writes) for call in self.gh_calls()))
                 self.assertFalse((self.tmp / 'uploaded').exists())
         with self.subTest('the release cannot be listed'):
             (self.tmp / 'gh.log').unlink(missing_ok=True)
             result = self.run_step('Attach SHA256SUMS to the release', assets=self.assets(published), GH_FAIL='1')
             self.assertNotEqual(result.returncode, 0)
-            self.assertFalse(any(call.startswith('release upload') for call in self.gh_calls()))
+            self.assertFalse(any(call.startswith(writes) for call in self.gh_calls()))
 
     def test_should_never_replace_the_packages_of_a_signed_release(self):
         step = 'Refuse to replace the packages of a signed release'
@@ -451,10 +463,8 @@ class ReleaseChecksumsTests(unittest.TestCase):
     def test_should_publish_checksums_from_a_job_that_runs_no_repository_code(self):
         checksums = job('release-dashmate-checksums')
         uses = re.findall(r'uses: (\S+)', checksums)
-        # first-party, pinned: one to download the legs' records, one to keep the job's own
-        self.assertEqual(len(uses), 2)
+        self.assertEqual(len(uses), 1)
         self.assertRegex(uses[0], r'^actions/download-artifact@[0-9a-f]{40}$')
-        self.assertRegex(uses[1], r'^actions/upload-artifact@[0-9a-f]{40}$')
         self.assertNotIn('checkout', checksums)
         self.assertIn('!cancelled()', checksums)
 

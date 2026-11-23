@@ -556,7 +556,6 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
       RELEASE_ID: ${{ github.event.release.id }}
       TAG: ${{ github.event.release.tag_name }}
     steps:
@@ -615,40 +614,37 @@ jobs:
 
       # A signed SHA256SUMS is never replaced: the signature would then vouch
       # for a file it never saw. Listed right before the upload, so a signature
-      # attached while this job ran is seen too.
+      # attached while this job ran is seen too. The upload goes through the API
+      # so the job learns the new asset's id, and the job writes that id and the
+      # file's sha256 into its own log: the signing script signs only that asset.
       - name: Attach SHA256SUMS to the release
         run: |
           set -euo pipefail
-          signatures="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?per_page=100" \
-            --jq '.[].name | select(startswith("SHA256SUMS."))' | paste -sd ' ' -)"
+          assets="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?per_page=100" \
+            --jq '.[] | [.name, .id] | @tsv')"
+          signatures="$(echo "${assets}" | awk -F'\t' '$1 ~ /^SHA256SUMS\./ {print $1}' | paste -sd ' ' -)"
           if [ -n "${signatures}" ]; then
             echo "::error::${TAG} is signed (${signatures}), so its SHA256SUMS is not replaced. If its packages changed, delete the signature and SHA256SUMS, re-run this job, and sign the new file."
             exit 1
           fi
-          gh release upload "${TAG}" SHA256SUMS --clobber
-
-      # Which SHA256SUMS this job attached, kept with the run: the asset's id and
-      # sha256. The signing script signs only the release asset this names.
-      - name: Record the attached SHA256SUMS
-        run: |
-          set -euo pipefail
+          previous="$(echo "${assets}" | awk -F'\t' '$1 == "SHA256SUMS" {print $2}')"
+          if [ -n "${previous}" ]; then
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${previous}"
+          fi
+          id="$(gh api --method POST \
+            "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?name=SHA256SUMS" \
+            -H 'Content-Type: text/plain' --input SHA256SUMS --jq '.id')"
           sum="$(shasum -a 256 SHA256SUMS | cut -d' ' -f1)"
-          asset="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?per_page=100" \
-            --jq '.[] | select(.name == "SHA256SUMS") | [.id, .state, (.digest // "")] | @tsv')"
-          id="$(echo "${asset}" | cut -f1)"
-          if [ -z "${id}" ] || [ "$(echo "${asset}" | cut -f2)" != uploaded ] \
-            || [ "$(echo "${asset}" | cut -f3)" != "sha256:${sum}" ]; then
-            echo "::error::${TAG} does not serve the SHA256SUMS this job uploaded (${asset:-no SHA256SUMS}); re-run this job."
+          case "${id}" in
+            '' | 0 | *[!0-9]*)
+              echo "::error::The upload of SHA256SUMS to ${TAG} returned no asset id (${id:-none}); re-run this job."
+              exit 1
+              ;;
+          esac
+          attached="$(gh api "repos/${GITHUB_REPOSITORY}/releases/assets/${id}" \
+            --jq '[.state, (.digest // "none")] | @tsv')"
+          if [ "${attached}" != "$(printf 'uploaded\tsha256:%s' "${sum}")" ]; then
+            echo "::error::Asset ${id} of ${TAG} is not the SHA256SUMS this job uploaded (${attached}); re-run this job."
             exit 1
           fi
-          printf '%s %s\n' "${id}" "${sum}" > receipt
-          cat receipt
-
-      - name: Upload the record of the attached SHA256SUMS
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: dashmate-checksums-receipt-${{ github.sha }}
-          path: receipt
-          if-no-files-found: error
-          retention-days: 90
-          overwrite: true
+          echo "SHA256SUMS attached: asset ${id} sha256 ${sum}"

@@ -128,15 +128,21 @@ sums_asset() {
 }
 
 # Every release.yml run of the tag must be over: a running attempt can still replace packages
-# or SHA256SUMS. Prints the newest run's id and commit.
+# or SHA256SUMS. Prints the newest run's id.
 finished_run() {
   local runs unfinished
   runs="$(gh api --paginate "repos/${REPO}/actions/workflows/release.yml/runs?event=release&branch=${TAG}&per_page=100" \
-    --jq '.workflow_runs[] | [.id, .status, .head_sha] | @tsv')" || fail "could not list the release.yml runs of ${TAG}"
+    --jq '.workflow_runs[] | [.id, .status] | @tsv')" || fail "could not list the release.yml runs of ${TAG}"
   [ -n "${runs}" ] || fail "found no release.yml run for ${TAG}"
   unfinished="$(echo "${runs}" | awk -F'\t' '$2 != "completed" {print $1 " (" $2 ")"}' | paste -sd ' ' -)"
   [ -z "${unfinished}" ] || fail "release.yml for ${TAG} is still running: ${unfinished}; sign once no attempt is in progress"
-  echo "${runs}" | head -n 1 | cut -f1,3
+  echo "${runs}" | head -n 1 | cut -f1
+}
+
+# The id and conclusion of the Release Dashmate checksums job of a run, in its latest attempt.
+checksums_job() {
+  gh api --paginate "repos/${REPO}/actions/runs/$1/jobs?per_page=100" \
+    --jq '.jobs[] | select(.name == "Release Dashmate checksums") | [.id, (.conclusion // "none")] | @tsv'
 }
 
 # The digests GitHub reports for the release's dashmate assets must be exactly SHA256SUMS. Prints
@@ -195,32 +201,28 @@ SUMS_ID="$(echo "${SUMS}" | cut -f4)"
 [ "${SUMS_STATE}" = uploaded ] || fail "SHA256SUMS on ${TAG} is not fully uploaded (state ${SUMS_STATE})"
 [ "${SUMS_UPLOADER}" = 'github-actions[bot]' ] || fail "SHA256SUMS on ${TAG} was uploaded by ${SUMS_UPLOADER}, not by the release workflow"
 
-RUN="$(finished_run)" || exit 1
-RUN_ID="$(echo "${RUN}" | cut -f1)"
-RUN_SHA="$(echo "${RUN}" | cut -f2)"
-CHECKSUMS_JOB="$(gh api --paginate "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" \
-  --jq '.jobs[] | select(.name == "Release Dashmate checksums") | (.conclusion // "none")')" \
-  || fail "could not list the jobs of release.yml run ${RUN_ID}"
-[ "${CHECKSUMS_JOB}" = success ] || fail "the Release Dashmate checksums job of run ${RUN_ID} did not succeed (${CHECKSUMS_JOB:-not found})"
+RUN_ID="$(finished_run)" || exit 1
+JOB="$(checksums_job "${RUN_ID}")" || fail "could not list the jobs of release.yml run ${RUN_ID}"
+JOB_ID="$(echo "${JOB}" | cut -f1)"
+[ "$(echo "${JOB}" | cut -f2)" = success ] \
+  || fail "the Release Dashmate checksums job of run ${RUN_ID} did not succeed ($(echo "${JOB}" | cut -f2 | grep . || echo 'not found'))"
 
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dashmate-sign.XXXXXX")"
 trap 'rm -rf "${WORK_DIR}"' EXIT
 DIR="${WORK_DIR}/release"
 mkdir "${DIR}"
 
-# The checksums job keeps with its run the id and sha256 of the SHA256SUMS it attached. Only that
-# asset is signed: an asset uploaded any other way, by the same bot or not, is refused.
-gh run download "${RUN_ID}" --repo "${REPO}" --name "dashmate-checksums-receipt-${RUN_SHA}" \
-  --dir "${WORK_DIR}/receipt" > /dev/null \
-  || fail "release.yml run ${RUN_ID} has no record of the SHA256SUMS its Release Dashmate checksums job attached; re-run that job"
-read -r RECEIPT_ID RECEIPT_SUM < "${WORK_DIR}/receipt/receipt" || fail "the record of run ${RUN_ID} is empty"
-id_pattern='^[0-9]+$'
-sum_pattern='^[0-9a-f]{64}$'
-if ! [[ "${RECEIPT_ID}" =~ ${id_pattern} ]] || ! [[ "${RECEIPT_SUM}" =~ ${sum_pattern} ]]; then
-  fail "the record of run ${RUN_ID} is not '<asset id> <sha256>'"
-fi
-if [ "${SUMS_ID}" != "${RECEIPT_ID}" ] || [ "${SUMS_DIGEST}" != "sha256:${RECEIPT_SUM}" ]; then
-  fail "SHA256SUMS on ${TAG} (asset ${SUMS_ID}, ${SUMS_DIGEST:-no digest}) is not the file the Release Dashmate checksums job of run ${RUN_ID} attached (asset ${RECEIPT_ID}, sha256:${RECEIPT_SUM})"
+# The checksums job writes into its own log the id and sha256 of the SHA256SUMS it attached, and
+# nothing else writes to that log. Only that asset is signed.
+LOG="$(gh api "repos/${REPO}/actions/jobs/${JOB_ID}/logs")" \
+  || fail "could not read the log of the Release Dashmate checksums job (job ${JOB_ID} of run ${RUN_ID}). GitHub keeps job logs only as long as the repository's retention setting says, and re-runs a job only within 30 days of its run; past either, this release cannot be signed with this script"
+RECORD="$(echo "${LOG}" | sed -nE 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z SHA256SUMS attached: asset ([0-9]+) sha256 ([0-9a-f]{64})$/\1 \2/p')"
+[ -n "${RECORD}" ] && [ "$(echo "${RECORD}" | wc -l | tr -d ' ')" = 1 ] \
+  || fail "the log of the Release Dashmate checksums job (job ${JOB_ID} of run ${RUN_ID}) does not record exactly one SHA256SUMS"
+RECORD_ID="${RECORD%% *}"
+RECORD_SUM="${RECORD#* }"
+if [ "${SUMS_ID}" != "${RECORD_ID}" ] || [ "${SUMS_DIGEST}" != "sha256:${RECORD_SUM}" ]; then
+  fail "SHA256SUMS on ${TAG} (asset ${SUMS_ID}, ${SUMS_DIGEST:-no digest}) is not the file the Release Dashmate checksums job ${JOB_ID} of run ${RUN_ID} attached (asset ${RECORD_ID}, sha256:${RECORD_SUM})"
 fi
 
 echo "Downloading the dashmate packages and SHA256SUMS of ${TAG} into ${DIR}"
@@ -259,13 +261,17 @@ if [ "${UPLOAD}" != true ]; then
   exit 0
 fi
 
-# Checked again right before the upload, since the passphrase prompt can take a while: no run
-# started meanwhile, nobody signed, and SHA256SUMS and the packages are still the signed ones.
-finished_run > /dev/null
+# Checked again right before the upload, since the passphrase prompt can take a while: the same
+# run and checksums job, nobody signed, and SHA256SUMS and the packages are still the signed ones.
+LATEST_RUN="$(finished_run)" || exit 1
+LATEST_JOB="$(checksums_job "${LATEST_RUN}")" || fail "could not list the jobs of release.yml run ${LATEST_RUN}"
+if [ "${LATEST_RUN}" != "${RUN_ID}" ] || [ "${LATEST_JOB}" != "${JOB}" ]; then
+  fail "the release.yml run or its Release Dashmate checksums job changed while SHA256SUMS was being signed; run this again"
+fi
 ASSETS="$(release_assets)" || fail "could not list the assets of ${TAG}"
 refuse_if_signed "${ASSETS}"
 SUMS="$(sums_asset "${ASSETS}")"
-if [ "$(echo "${SUMS}" | cut -f3)" != "${SIGNED_DIGEST}" ] || [ "$(echo "${SUMS}" | cut -f4)" != "${RECEIPT_ID}" ]; then
+if [ "$(echo "${SUMS}" | cut -f3)" != "${SIGNED_DIGEST}" ] || [ "$(echo "${SUMS}" | cut -f4)" != "${RECORD_ID}" ]; then
   fail "SHA256SUMS on ${TAG} changed while it was being signed; run this again"
 fi
 check_published_packages "${ASSETS}" "${DIR}/SHA256SUMS" \

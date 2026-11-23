@@ -18,7 +18,19 @@ STRANGER = 'C0FFEE0123456789ABCDEF0123456789ABCDEF01'
 SUBKEY = '0123456789ABCDEF0123456789ABCDEF01234567'
 RUN_ID = 77
 HEAD_SHA = 'bb78fa2220ae0d58f5a9b5c0f6b0027a292cc3d0'
-RECEIPT = f'dashmate-checksums-receipt-{HEAD_SHA}'
+CHECKSUMS_JOB = 501
+
+
+def checksums_log(*records):
+    """The log of a Release Dashmate checksums job: its script, as GitHub shows it, then the records."""
+    lines = ['\ufeff2026-11-23T10:00:00.0000000Z ##[group]Run set -euo pipefail',
+             '2026-11-23T10:00:00.0100000Z echo "SHA256SUMS attached: asset ${id} sha256 ${sum}"',
+             '2026-11-23T10:00:00.0200000Z ##[endgroup]',
+             # output that quotes the record's wording is not a record
+             '2026-11-23T10:00:00.0300000Z ##[error]dashmate.deb SHA256SUMS attached: asset 999 sha256 ' + 'e' * 64]
+    lines += [f'2026-11-23T10:00:01.0000000Z SHA256SUMS attached: asset {asset} sha256 {sum_}'
+              for asset, sum_ in records]
+    return '\n'.join(lines) + '\n'
 
 PACKAGES = ['dashmate-v5.1.0-3a5da22021-arm64.pkg', 'dashmate-v5.1.0-3a5da22021-linux-x64.tar.gz',
             'dashmate-v5.1.0-3a5da22021-x64.exe', 'dashmate_5.1.0-1_amd64.deb', 'dashmate_5.1.0-1_arm64.deb']
@@ -88,17 +100,11 @@ if args[0] == 'api':
     match = re.fullmatch(repo + r'actions/runs/(\\d+)/jobs\\?per_page=100', path)
     if match and match.group(1) in state['jobs']:
         respond({'jobs': state['jobs'][match.group(1)]}, jq)
+    match = re.fullmatch(repo + r'actions/jobs/(\\d+)/logs', path)
+    if match and match.group(1) in state['logs'] and not os.environ.get('GH_NO_LOG'):
+        sys.stdout.write(state['logs'][match.group(1)])
+        sys.exit(0)
     not_found()
-
-if args[:2] == ['run', 'download']:
-    artifact = state['artifacts'].get(args[2], {}).get(option('--name'))
-    if option('--repo') != 'dashpay/platform' or artifact is None:
-        print('no valid artifacts found to download', file=sys.stderr)
-        sys.exit(1)
-    os.makedirs(option('--dir'), exist_ok=True)
-    with open(os.path.join(option('--dir'), 'receipt'), 'w') as handle:
-        handle.write(artifact)
-    sys.exit(0)
 
 if args[:2] == ['release', 'download']:
     if args[2] != release['tag_name'] or option('--repo') != 'dashpay/platform':
@@ -126,6 +132,11 @@ if args[:2] == ['release', 'download']:
         if change == 'sums-reuploaded':
             with open(os.path.join(files, 'SHA256SUMS'), 'rb') as handle:
                 asset('SHA256SUMS', handle.read(), 'github-actions[bot]')
+        if change == 'job-rerun':
+            checksums = next(job for job in state['jobs'][str(state['runs'][0]['id'])]
+                             if job['name'] == 'Release Dashmate checksums')
+            state['logs'][str(checksums['id'] + 100)] = state['logs'][str(checksums['id'])]
+            checksums['id'] += 100
         if change == 'run-restarted':
             state['runs'][0]['status'] = 'in_progress'
         save()
@@ -269,9 +280,9 @@ class ReleaseFixture(unittest.TestCase):
                 receipt=None):
         """A published release: its files, a SHA256SUMS of `sums` (default: the files), the run behind it.
 
-        `receipt` is the run's record of the SHA256SUMS its checksums job attached, as
-        `(asset id, sha256)`: by default this release's SHA256SUMS, False for none. The record
-        of tool calls starts afresh, so each subtest sees only its own.
+        `receipt` is what the checksums job's log records it attached, as `(asset id, sha256)`: by
+        default this release's SHA256SUMS; False for no record, a list for several. The record of
+        tool calls starts afresh, so each subtest sees only its own.
         """
         (self.tmp / 'calls').unlink(missing_ok=True)
         for name, data in files.items():
@@ -292,15 +303,17 @@ class ReleaseFixture(unittest.TestCase):
         sums_asset = next(a for a in assets if a['name'] == 'SHA256SUMS')
         if receipt is None:
             receipt = (sums_asset['id'], sha256(text))
+        records = [] if receipt is False else receipt if isinstance(receipt, list) else [receipt]
         state = {
             'release': {'id': 123, 'tag_name': TAG, 'assets': assets},
             'runs': runs if runs is not None else [
                 {'id': RUN_ID, 'head_branch': TAG, 'head_sha': HEAD_SHA, 'event': 'release', 'status': 'completed'}],
-            'artifacts': {} if receipt is False else {str(RUN_ID): {RECEIPT: '%d %s\n' % receipt}},
             'jobs': jobs if jobs is not None else {str(RUN_ID): [
-                {'name': 'Release Dashmate packages (deb, ubuntu-24.04)', 'status': 'completed',
-                 'conclusion': 'success'},
-                {'name': 'Release Dashmate checksums', 'status': 'completed', 'conclusion': 'success'}]},
+                {'id': CHECKSUMS_JOB - 1, 'name': 'Release Dashmate packages (deb, ubuntu-24.04)',
+                 'status': 'completed', 'conclusion': 'success'},
+                {'id': CHECKSUMS_JOB, 'name': 'Release Dashmate checksums', 'status': 'completed',
+                 'conclusion': 'success'}]},
+            'logs': {str(CHECKSUMS_JOB): checksums_log(*records)},
         }
         (self.tmp / 'state.json').write_text(json.dumps(state))
 
@@ -313,8 +326,8 @@ class ReleaseFixture(unittest.TestCase):
         for asset in state['release']['assets']:
             if asset['name'] == name:
                 asset.update(fields)
-                if name == 'SHA256SUMS' and 'digest' in fields and state['artifacts']:
-                    state['artifacts'][str(RUN_ID)][RECEIPT] = '%d %s\n' % (asset['id'], fields['digest'][7:])
+                if name == 'SHA256SUMS' and 'digest' in fields:
+                    state['logs'][str(CHECKSUMS_JOB)] = checksums_log((asset['id'], fields['digest'][7:]))
         (self.tmp / 'state.json').write_text(json.dumps(state))
 
     def sign(self, *options, **env):
@@ -441,31 +454,31 @@ class SignDashmateChecksumsTests(ReleaseFixture):
                 self.assertEqual(self.signings(), [])
 
     def test_should_refuse_a_sha256sums_the_checksums_job_did_not_attach(self):
-        original = ''.join(f'{sha256(data)}  {name}\n' for name, data in sorted(self.packages.items()))
+        own = sha256(''.join(f'{sha256(data)}  {name}\n' for name, data in sorted(self.packages.items())).encode())
         others = {name: data + b' other build' for name, data in self.packages.items()}
+        sums_id = 1000 + len(PACKAGES)
         cases = {
-            # bot-uploaded and consistent with the packages it lists, but not the job's
-            'another SHA256SUMS that matches other packages': (others, (999, sha256(original.encode()))),
-            # the same bytes, uploaded again after the job by something else
-            'the same SHA256SUMS as another asset': (self.packages, (999, sha256(original.encode()))),
-            'no record of what the job attached': (self.packages, False),
-            'a record of other bytes under the same asset': (self.packages, None),
+            # attached by the release workflow and consistent with the packages it lists, but not
+            # the asset the checksums job recorded
+            'another SHA256SUMS that matches other packages': (others, (999, own), {}, 'job 501 of run 77 attached'),
+            # the same bytes, attached again as another asset
+            'the same SHA256SUMS as another asset': (self.packages, (999, own), {}, 'job 501 of run 77 attached'),
+            'a record of other bytes under the same asset': (self.packages, (sums_id, 'e' * 64), {},
+                                                             'job 501 of run 77 attached'),
+            'no record in the job log': (self.packages, False, {}, 'does not record exactly one SHA256SUMS'),
+            'two records in the job log': (self.packages, [(sums_id, own), (sums_id, own)], {},
+                                           'does not record exactly one SHA256SUMS'),
+            'a job log that cannot be read': (self.packages, None, {'GH_NO_LOG': '1'}, 'could not read the log'),
         }
-        for case, (files, receipt) in cases.items():
+        for case, (files, receipt, env, message) in cases.items():
             with self.subTest(case):
                 for leftover in self.files.iterdir():
                     leftover.unlink()
                 self.release(files, receipt=receipt)
-                if receipt is None:
-                    state = self.state()
-                    sums_id = next(a['id'] for a in state['release']['assets'] if a['name'] == 'SHA256SUMS')
-                    state['artifacts'][str(RUN_ID)][RECEIPT] = '%d %s\n' % (sums_id, 'e' * 64)
-                    (self.tmp / 'state.json').write_text(json.dumps(state))
 
-                result = self.sign(f'--tag={TAG}', f'--key={KEY}', '--upload')
+                result = self.sign(f'--tag={TAG}', f'--key={KEY}', '--upload', **env)
 
-                self.assertRefused(result, 'Release Dashmate checksums job of run 77' if receipt is not False
-                                   else f'release.yml run {RUN_ID} has no record')
+                self.assertRefused(result, message)
                 self.assertEqual(self.signings(), [])
 
     def test_should_refuse_until_the_release_run_has_finished_green(self):
@@ -601,6 +614,7 @@ class SignDashmateChecksumsTests(ReleaseFixture):
             'a re-run replaced SHA256SUMS': ('sums-replaced', 'changed while it was being signed'),
             'a re-run replaced a package': ('package-replaced', 'are not the ones its SHA256SUMS lists'),
             'SHA256SUMS uploaded again': ('sums-reuploaded', 'changed while it was being signed'),
+            'the checksums job ran again': ('job-rerun', 'checksums job changed while SHA256SUMS was being signed'),
             'a re-run started': ('run-restarted', f'{RUN_ID} (in_progress)'),
         }
         for case, (change, message) in cases.items():
