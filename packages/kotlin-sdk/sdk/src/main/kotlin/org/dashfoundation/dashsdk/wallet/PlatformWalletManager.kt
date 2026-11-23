@@ -774,7 +774,11 @@ class PlatformWalletManager(
                 persistenceHandler.withCallbackExclusion {
                     walletStorage.withPrivateKeyExclusion {
                         recordPendingIdentityKeyDeletes(listOf(PendingIdentityKeyDelete(pubkeyHex, walletId)))
-                        settlePendingIdentityKeyDeletes(database, this)
+                        settlePendingIdentityKeyDeletes(
+                            database,
+                            this,
+                            persistenceHandler.aliasesStagedInOpenRounds(),
+                        )
                     }
                 }
             },

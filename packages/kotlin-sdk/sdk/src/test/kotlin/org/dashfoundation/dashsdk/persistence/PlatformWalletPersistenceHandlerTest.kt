@@ -1874,6 +1874,29 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     /**
+     * A key upsert's alias counts as in flight from its callback until its
+     * round ends (committed or rolled back), so a pending identity-key delete
+     * for it is not settled in between.
+     */
+    @Test
+    fun keyUpsertAliasIsInFlightUntilItsRoundEnds() = runTest {
+        val identityId = ByteArray(32) { 33 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 34 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId, identityId, 0, 0, 0, 0, false, false, 0,
+            pubkey, ByteArray(20), true, walletId,
+            true, 3, 5, 0, ByteArray(32), null,
+        )
+        assertTrue(pubkey.toHex() in handler.withCallbackExclusion { handler.aliasesStagedInOpenRounds() })
+
+        handler.onChangesetEnd(walletId, success = true)
+        assertTrue(handler.withCallbackExclusion { handler.aliasesStagedInOpenRounds() }.isEmpty())
+    }
+
+    /**
      * A removal Rust persists records the identity's key aliases (with its
      * wallet) before its round commits, and deletes the dependent rows the
      * identity cascade does not reach, in the same round.

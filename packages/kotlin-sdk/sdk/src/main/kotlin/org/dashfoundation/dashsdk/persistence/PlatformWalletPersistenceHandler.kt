@@ -242,7 +242,25 @@ class PlatformWalletPersistenceHandler(
          * [collectFinalizedSweptTombstones] once, last.
          */
         var finalityAdvanced: Boolean = false
+
+        /**
+         * Hex of every identity-key alias this round upserts. Its row is only
+         * buffered until [onChangesetEnd], so a pending identity-key delete
+         * for it must not be settled meanwhile ([aliasesStagedInOpenRounds]).
+         */
+        val stagedKeyAliases: MutableSet<String> = mutableSetOf()
     }
+
+    /**
+     * Identity-key aliases an open round has staged a row for but not yet
+     * committed. Settling a pending identity-key delete leaves these alone:
+     * their wallet's claim and stored key belong to a row about to commit
+     * (or to a round about to roll back). The caller holds
+     * [callbackExclusion] (via [withCallbackExclusion]), which guards
+     * [buffers].
+     */
+    internal fun aliasesStagedInOpenRounds(): Set<String> =
+        buffers.values.flatMapTo(mutableSetOf()) { it.stagedKeyAliases }
 
     /** Open rounds keyed by walletId hex (a round is per-walletId). */
     private val buffers = HashMap<String, ChangesetBuffer>()
@@ -1980,6 +1998,7 @@ class PlatformWalletPersistenceHandler(
         expiresAtIsSome: Boolean,
         expiresAt: Long,
     ): Int = guarded {
+        openRound(walletId)?.stagedKeyAliases?.add(publicKeyData.toHex())
         // Item 1 — private-key persistence (the CLAUDE.md "one allowed
         // exception" shape). The `IdentityKeyEntryFFI` payload carries only
         // a derivation breadcrumb (`wallet_id` + `identity_index` +

@@ -112,7 +112,12 @@ internal suspend fun deleteIdentityFromDevice(
                 if (database.identityDao().getByIdentityId(identityId) != null) throw e
             }
             try {
-                settlePendingIdentityKeyDeletes(database, this, settleKeys)
+                settlePendingIdentityKeyDeletes(
+                    database,
+                    this,
+                    persistenceHandler.aliasesStagedInOpenRounds(),
+                    settleKeys,
+                )
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -136,18 +141,21 @@ internal suspend fun deleteIdentityFromDevice(
  * wallet still claims it, and kept otherwise (a surviving identity or a
  * pending registration needs it). Every entry is settled in the same atomic
  * write as the deletes; on a failure nothing is settled and the next call
- * retries. The caller holds the private-key exclusion ([scope]) and the
+ * retries. An alias in [inFlight] (staged by an open persistence round whose
+ * row has not committed yet) is left pending untouched, claim included, for a
+ * later call. The caller holds the private-key exclusion ([scope]) and the
  * persister's callback exclusion, and has committed the row deletes.
  */
 internal suspend fun settlePendingIdentityKeyDeletes(
     database: DashDatabase,
     scope: WalletStorage.PrivateKeyExclusion,
+    inFlight: Set<String>,
     settleKeys: suspend WalletStorage.PrivateKeyExclusion.(
         delete: Collection<String>,
         settled: Collection<PendingIdentityKeyDelete>,
     ) -> Unit = { delete, settled -> settlePendingIdentityKeyDeletes(delete, settled) },
 ) {
-    val pending = scope.pendingIdentityKeyDeletes()
+    val pending = scope.pendingIdentityKeyDeletes().filter { it.aliasHex !in inFlight }
     if (pending.isEmpty()) return
     val delete = mutableListOf<String>()
     for ((alias, entries) in pending.groupBy { it.aliasHex }) {

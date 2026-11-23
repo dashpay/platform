@@ -412,6 +412,29 @@ class IdentityDeviceRemovalTest {
         }
 
     @Test
+    fun `should leave a pending delete untouched while an open round stages its alias`() = runBlocking {
+        val stagedKey = ByteArray(33) { 0x6c }
+        storage.storePrivateKey(stagedKey.hex(), ByteArray(32) { 6 }, ownerWalletId = walletId)
+        storage.withPrivateKeyExclusion {
+            recordPendingIdentityKeyDeletes(listOf(PendingIdentityKeyDelete(stagedKey.hex(), walletId)))
+        }
+
+        // A round has stored the key for this wallet and staged its row, not
+        // committed yet: no committed row names it.
+        storage.withPrivateKeyExclusion {
+            settlePendingIdentityKeyDeletes(db, this, inFlight = setOf(stagedKey.hex()))
+        }
+        assertTrue(storage.hasPrivateKey(stagedKey.hex()))
+        assertTrue(storage.withPrivateKeyExclusion { isOwnedByAnotherWallet(stagedKey.hex(), ByteArray(32)) })
+        assertEquals(1, storage.withPrivateKeyExclusion { pendingIdentityKeyDeletes() }.size)
+
+        // Once the round is over (here: rolled back, no row), it settles.
+        storage.withPrivateKeyExclusion { settlePendingIdentityKeyDeletes(db, this, inFlight = emptySet()) }
+        assertFalse(storage.hasPrivateKey(stagedKey.hex()))
+        assertTrue(storage.withPrivateKeyExclusion { pendingIdentityKeyDeletes() }.isEmpty())
+    }
+
+    @Test
     fun `should finish a voting key an earlier removal left when removed again`() = runBlocking {
         remove()
         storage.storePrivateKey(votingIdentifier, ByteArray(32) { 2 })

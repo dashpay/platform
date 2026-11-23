@@ -86,6 +86,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 mod tests {
     use crate::error::PlatformWalletError;
     use crate::test_support::test_platform_wallet_manager;
+    use crate::wallet::core::WalletGeneration;
     use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::Identity;
@@ -176,6 +177,33 @@ mod tests {
 
         let refusal = manager.remove_identity_from_device(&id).await;
         manager.wallets.store(published);
+
+        assert!(matches!(
+            refusal,
+            Err(PlatformWalletError::WalletNotFound(_))
+        ));
+        let wm = manager.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("wallet info");
+        assert!(info.identity_manager.identity(&id).is_some());
+    }
+
+    #[tokio::test]
+    async fn should_refuse_and_keep_an_identity_whose_published_handle_is_another_generation() {
+        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+        let id = Identifier::from([1u8; 32]);
+        {
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            info.identity_manager
+                .add_identity(identity(1), 0, wallet_id, &persister)
+                .expect("add identity");
+            // The info now belongs to a newer generation than the published
+            // handle, as after a same-id replacement.
+            info.generation = Arc::new(WalletGeneration::new());
+        }
+
+        let refusal = manager.remove_identity_from_device(&id).await;
 
         assert!(matches!(
             refusal,
