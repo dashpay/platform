@@ -25,6 +25,7 @@ import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.DpnsMarketplaceNative
 import org.dashfoundation.dashsdk.ffi.FundingNative
+import org.dashfoundation.dashsdk.ffi.IdentityRemovalNative
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.NativeWalletEventBridge
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
@@ -41,6 +42,7 @@ import org.dashfoundation.dashsdk.security.IdentityKeyPrivateKeyDeriver
 import org.dashfoundation.dashsdk.security.KeystoreSigner
 import org.dashfoundation.dashsdk.security.MasternodeVotingKeyNotStoredException
 import org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore
+import org.dashfoundation.dashsdk.security.PendingIdentityKeyDelete
 import org.dashfoundation.dashsdk.security.MnemonicResolverAndPersister
 import org.dashfoundation.dashsdk.security.WalletStorage
 import org.dashfoundation.dashsdk.tokens.ContactRequestRef
@@ -572,6 +574,14 @@ class PlatformWalletManager(
                 database = database,
                 privateKeyDeriver = deriver,
                 network = network,
+                recordRemovedIdentityKeys = { deletes ->
+                    walletStorage.withPrivateKeyExclusion { recordPendingIdentityKeyDeletes(deletes) }
+                },
+                settlePendingKeyDeletesAfterRound = { inFlight ->
+                    walletStorage.withPrivateKeyExclusion {
+                        settlePendingIdentityKeyDeletes(database, this, inFlight)
+                    }
+                },
             )
             CoreChildren(resolver, keySigner, deriver, handler)
         } catch (constructionFailure: Throwable) {
@@ -756,6 +766,26 @@ class PlatformWalletManager(
                 // rules out the wrong-key-behind-locked-gate ambiguity because
                 // the blob was written under the captured public key).
                 walletStorage.probeIdentityKeyRecoverability(pubkeyHex)
+            },
+            // The identity this key was repaired for was removed meanwhile:
+            // record the key, then settle it like an identity removal would
+            // (kept while another identity uses it, this wallet's claim
+            // released), so a failed delete is retried by the next removal.
+            // Under the callback exclusion first, as settling requires: an
+            // in-flight round that stores the alias for this wallet commits its
+            // row before or after the settle, never between its read and its
+            // release.
+            abandonStoredKey = { pubkeyHex ->
+                persistenceHandler.withCallbackExclusion {
+                    walletStorage.withPrivateKeyExclusion {
+                        recordPendingIdentityKeyDeletes(listOf(PendingIdentityKeyDelete(pubkeyHex, walletId)))
+                        settlePendingIdentityKeyDeletes(
+                            database,
+                            this,
+                            persistenceHandler.aliasesStagedInOpenRounds(),
+                        )
+                    }
+                }
             },
         )
     }
@@ -1399,6 +1429,39 @@ class PlatformWalletManager(
         walletStorage.deleteMnemonic(walletId)
     }
 
+    /**
+     * Remove one identity from this device. Port of SwiftExampleApp's
+     * `IdentitiesContentView.removeIdentityLocally` (#6084), with the live
+     * wallet removal of dashpay/platform#6098 done first. Nothing is
+     * broadcast and the identity stays on Platform; it can be loaded again.
+     *
+     * Rust removes the identity from every running wallet that manages it
+     * (`platform_wallet_manager_remove_identity_from_device`), so no later
+     * sync stores it again, or refuses while its DashPay contact request
+     * channel is held. A refusal throws the platform-wallet
+     * [org.dashfoundation.dashsdk.errors.DashSdkError] and nothing on the
+     * device is deleted. Then the identity's Room rows go in one transaction,
+     * then its stored private keys and masternode voting key; a secret the
+     * secure storage refuses to delete after the rows are gone is reported in
+     * [IdentityDeviceRemovalResult.keysLeft] instead of thrown. A key another
+     * identity row references, or another wallet's owner index claims, is
+     * kept. See [deleteIdentityFromDevice] for the order.
+     *
+     * @param identityId the 32-byte identity id.
+     */
+    suspend fun removeIdentityFromDevice(identityId: ByteArray): IdentityDeviceRemovalResult =
+        teardownGate.op {
+            deleteIdentityFromDevice(
+                identityId,
+                persistenceHandler,
+                database,
+                walletStorage,
+                removeFromLiveWallets = { id ->
+                    mapNativeErrors { IdentityRemovalNative.removeIdentityFromDevice(managerHandle, id) }
+                },
+            )
+        }
+
     // ── Watch-only restore ────────────────────────────────────────────
 
     /**
@@ -1440,6 +1503,21 @@ class PlatformWalletManager(
                 "PlatformWalletManager",
                 "pending-identity-key reconstruction failed on load; repair signals will be " +
                     "rebuilt on the next launch",
+                t,
+            )
+        }
+
+        // Finish identity-key deletes an identity removal recorded but could
+        // not settle before (a failed round-end settle, a process death):
+        // best effort, retried on the next launch or removal.
+        try {
+            persistenceHandler.settlePendingIdentityKeyDeletesNow()
+        } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
+            throw cancellation
+        } catch (t: Throwable) {
+            android.util.Log.w(
+                "PlatformWalletManager",
+                "pending identity-key deletes not settled on load; retried later",
                 t,
             )
         }

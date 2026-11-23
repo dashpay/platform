@@ -7,6 +7,7 @@ import org.dashfoundation.dashsdk.ffi.AddressHistoryNative
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.DpnsGiveUpNative
+import org.dashfoundation.dashsdk.ffi.IdentityRemovalNative
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
@@ -223,6 +224,19 @@ class FfiSmokeTest {
         }
         assertThrows(DashSDKException::class.java) {
             DashpayNative.privatePaymentsRestoreFailure(0L, ByteArray(32))
+        }
+    }
+
+    /**
+     * The live-wallet identity removal binds, and an unknown manager handle
+     * throws the mapped [DashSDKException] instead of crashing. The removal
+     * itself is covered by the platform-wallet and platform-wallet-ffi tests.
+     */
+    @Test
+    fun removeIdentityFromDeviceSymbolBindsAndRejectsInvalidHandle() {
+        NativeLoader.ensureLoaded()
+        assertThrows(DashSDKException::class.java) {
+            IdentityRemovalNative.removeIdentityFromDevice(0L, ByteArray(32))
         }
     }
 
