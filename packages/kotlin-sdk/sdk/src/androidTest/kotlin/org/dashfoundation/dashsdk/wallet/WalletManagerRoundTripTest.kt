@@ -361,13 +361,26 @@ class WalletManagerRoundTripTest {
 
             // What the callbacks store for a drain's lock: a shielded top-up
             // (5), already broadcast (1), with its operation id. The
-            // transaction is the empty version-3 transaction, consensus
-            // encoded: version, type, no inputs, no outputs, lock time.
+            // transaction only has to decode: version 3, type 0, one input
+            // (an outpoint, an empty script, a sequence), one output (a
+            // value, an empty script) and a lock time, consensus encoded.
+            val lockTransaction = java.io.ByteArrayOutputStream().apply {
+                write(byteArrayOf(3, 0, 0, 0)) // version, type
+                write(1) // input count
+                write(ByteArray(32) { 0x11 }) // previous txid
+                write(ByteArray(4)) // previous output index
+                write(0) // script length
+                write(ByteArray(4) { 0xFF.toByte() }) // sequence
+                write(1) // output count
+                write(ByteArray(8).also { it[0] = 0x10 }) // value
+                write(0) // script length
+                write(ByteArray(4)) // lock time
+            }.toByteArray()
             db.assetLockDao().upsert(
                 org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity(
                     outPointHex = org.dashfoundation.dashsdk.persistence.encodeOutPointHex(lockOutPoint),
                     walletId = walletId,
-                    transactionBytes = ByteArray(10).also { it[0] = 3 },
+                    transactionBytes = lockTransaction,
                     fundingTypeRaw = 5,
                     identityIndexRaw = 0,
                     accountIndexRaw = 0,
