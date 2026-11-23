@@ -432,8 +432,8 @@ impl PlatformWallet {
 }
 
 /// Test-only pause points (between tip preparation's account snapshot and
-/// its bind, and between a profile write's publication check and its
-/// submission), keyed by wallet instance (shared by its clones) so parallel
+/// its bind, and before and after a profile write's publication check),
+/// keyed by wallet instance (shared by its clones) so parallel
 /// tests built from the same mnemonic do not interfere.
 #[cfg(test)]
 pub(crate) mod test_hooks {
@@ -446,6 +446,7 @@ pub(crate) mod test_hooks {
     #[derive(Clone, Copy, PartialEq, Eq, Hash)]
     enum Stage {
         Snapshot,
+        PublicationAdmitted,
         PublicationChecked,
     }
     static HOOKS: Mutex<Option<HashMap<(usize, Stage), Hook>>> = Mutex::new(None);
@@ -488,6 +489,18 @@ pub(crate) mod test_hooks {
 
     pub(crate) async fn after_snapshot(wallet: &PlatformWallet) {
         reach(wallet, Stage::Snapshot).await;
+    }
+
+    /// Pause a profile write right after it chose the coordinator admission
+    /// to hold, before its shielded publication check.
+    pub(crate) fn pause_before_publication_check(
+        wallet: &PlatformWallet,
+    ) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
+        pause(wallet, Stage::PublicationAdmitted)
+    }
+
+    pub(crate) async fn before_publication_check(wallet: &PlatformWallet) {
+        reach(wallet, Stage::PublicationAdmitted).await;
     }
 
     /// Pause a profile write right after its shielded publication check,
